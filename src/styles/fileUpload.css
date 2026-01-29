@@ -1,0 +1,208 @@
+/* File Upload Specific Styles */
+
+.upload-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+
+.upload-instructions {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-relaxed);
+  margin: 0;
+}
+
+.drop-zone {
+  position: relative;
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--spacing-3xl) var(--spacing-2xl);
+  text-align: center;
+  background-color: var(--color-background-secondary);
+  transition: all var(--transition-base);
+  cursor: pointer;
+}
+
+.drop-zone:hover,
+.drop-zone.drag-active {
+  border-color: var(--color-primary);
+  background: linear-gradient(135deg, var(--color-primary-light) 0%, rgba(15, 110, 255, 0.05) 100%);
+  box-shadow: var(--shadow-md);
+  border-width: 2px;
+}
+
+.drop-zone-error {
+  border-color: var(--color-error);
+  background-color: #fef2f2;
+}
+
+.file-input {
+  display: none;
+}
+
+.file-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-lg);
+  cursor: pointer;
+}
+
+.upload-icon {
+  font-size: 3rem;
+  opacity: 0.6;
+  transition: opacity var(--transition-base);
+}
+
+.drop-zone:hover .upload-icon {
+  opacity: 1;
+}
+
+.upload-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.upload-text-primary {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.upload-text-secondary {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.upload-error {
+  color: var(--color-error);
+  font-size: var(--font-size-sm);
+  margin: 0;
+  font-weight: 500;
+}
+
+.files-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  animation: slideDown 0.3s ease-out;
+}
+
+.files-list-title {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.files-list-title::before {
+  content: '';
+  width: 4px;
+  height: 4px;
+  background-color: var(--color-primary);
+  border-radius: 50%;lg);
+  background-color: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  transition: all var(--transition-base);
+}
+
+.file-item:hover {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-md);
+  background-color: var(--color-background);
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-lg(--color-border);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-base);
+}
+
+.file-item:hover {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  flex: 1;
+  min-width: 0;
+}
+
+.file-icon {
+  font-size: var(--font-size-2xl);
+  flex-shrink: 0;
+}
+
+.file-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  min-width: 0;
+  flex: 1;
+}
+
+.file-name {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-size {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.file-remove {
+  flex-shrink: 0;
+  min-width0.5rem 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.file-remove:hover {
+  color: var(--color-error);
+  background-color: #fef2f2;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 640px) {
+  .drop-zone {
+    padding: var(--spacing-2xl) var(--spacing-lg);
+  }
+  
+  .upload-icon {
+    font-size: 2rem;
+  }
+
+  .upload-text-primary {
+    font-size: var(--font-size-sm)
+    font-size: 2rem;
+  }
+}
