@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS applicants (
   item_number VARCHAR(100) NOT NULL,
   office VARCHAR(255) NOT NULL,
   is_pwd BOOLEAN DEFAULT FALSE,
+  status VARCHAR(50) DEFAULT 'Pending' CHECK (status IN ('Pending', 'Reviewed', 'Accepted', 'Rejected')),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -68,5 +69,41 @@ WITH CHECK (true);
 
 CREATE POLICY "Allow authenticated read on applicant_attachments"
 ON applicant_attachments FOR SELECT
+TO authenticated
+USING (true);
+
+-- Create evaluations table
+CREATE TABLE IF NOT EXISTS evaluations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  applicant_id UUID NOT NULL REFERENCES applicants(id) ON DELETE CASCADE,
+  interviewer_name VARCHAR(255) NOT NULL,
+  technical_score INTEGER CHECK (technical_score >= 1 AND technical_score <= 5),
+  communication_score INTEGER CHECK (communication_score >= 1 AND communication_score <= 5),
+  overall_score INTEGER CHECK (overall_score >= 1 AND overall_score <= 5),
+  comments TEXT,
+  recommendation VARCHAR(50) CHECK (recommendation IN ('Highly Recommended', 'Recommended', 'Not Recommended')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create index for evaluations
+CREATE INDEX IF NOT EXISTS idx_evaluations_applicant_id ON evaluations(applicant_id);
+
+-- Enable Row Level Security
+ALTER TABLE evaluations ENABLE ROW LEVEL SECURITY;
+
+-- Create policies for evaluations
+CREATE POLICY "Allow authenticated insert on evaluations"
+ON evaluations FOR INSERT
+TO authenticated
+WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated read on evaluations"
+ON evaluations FOR SELECT
+TO authenticated
+USING (true);
+
+CREATE POLICY "Allow authenticated update on evaluations"
+ON evaluations FOR UPDATE
 TO authenticated
 USING (true);
