@@ -4,6 +4,7 @@ import { supabase, isMockModeEnabled } from '../../lib/supabase';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { Select } from '../../components/Select';
+import { Input } from '../../components/Input';
 
 interface Applicant {
   id: string;
@@ -19,6 +20,7 @@ interface Applicant {
 export function InterviewerDashboard() {
   const navigate = useNavigate();
   const [applicants, setApplicants] = useState<Applicant[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -78,6 +80,20 @@ export function InterviewerDashboard() {
     });
   };
 
+  // Filter applicants based on search term
+  const filteredApplicants = applicants.filter((applicant) => {
+    if (!searchTerm.trim()) return true;
+    
+    const search = searchTerm.toLowerCase();
+    return (
+      applicant.name.toLowerCase().includes(search) ||
+      applicant.email.toLowerCase().includes(search) ||
+      applicant.position.toLowerCase().includes(search) ||
+      applicant.office.toLowerCase().includes(search) ||
+      applicant.contact_number.includes(search)
+    );
+  });
+
   return (
     <div className="dashboard-container">
       <div className="dashboard-header">
@@ -96,6 +112,13 @@ export function InterviewerDashboard() {
       </div>
 
       <div className="dashboard-filters">
+        <Input
+          label="Search Applicants"
+          type="text"
+          placeholder="Search by name, email, position, office, or contact..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
         <Select
           label="Filter by Status"
           value={statusFilter}
@@ -120,17 +143,19 @@ export function InterviewerDashboard() {
           <p className="error-message">❌ {error}</p>
           <Button onClick={fetchApplicants}>Retry</Button>
         </Card>
-      ) : applicants.length === 0 ? (
+      ) : filteredApplicants.length === 0 ? (
         <Card className="empty-state">
           <p className="empty-message">
-            {statusFilter === 'all' 
-              ? 'No applicants found. Applications will appear here once submitted.'
-              : `No applicants with status "${statusFilter}"`}
+            {searchTerm
+              ? `No applicants found matching "${searchTerm}"`
+              : statusFilter === 'all'
+                ? 'No applicants found. Applications will appear here once submitted.'
+                : `No applicants with status "${statusFilter}"`}
           </p>
         </Card>
       ) : (
         <div className="applicants-grid">
-          {applicants.map((applicant) => (
+          {filteredApplicants.map((applicant) => (
             <Card key={applicant.id} className="applicant-card">
               <div className="applicant-header">
                 <h3 className="applicant-name">{applicant.name}</h3>

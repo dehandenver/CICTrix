@@ -36,7 +36,10 @@
 
 .dashboard-filters {
   margin-bottom: var(--spacing-xl);
-  max-width: 300px;
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--spacing-lg);
+  align-items: end;
 }
 
 /* Loading and Error States */
