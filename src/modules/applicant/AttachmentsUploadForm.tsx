@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button, Card } from '../../components';
+import { supabase } from '../../lib/supabase';
 import '../../styles/fileUpload.css';
 import type { UploadedFile } from '../../types/applicant.types';
 
@@ -15,6 +16,27 @@ export const AttachmentsUploadForm: React.FC<AttachmentsUploadFormProps> = ({
   error,
 }) => {
   const [dragActive, setDragActive] = useState(false);
+  const [nextItemNumber, setNextItemNumber] = useState<string>('01');
+
+  // Calculate next item number on mount
+  useEffect(() => {
+    const fetchCount = async () => {
+      try {
+        const countResult = await supabase
+          .from('applicants')
+          .select('id', { count: 'exact', head: true });
+        
+        const count = (countResult as any).count || 0;
+        const itemNum = String(count + 1).padStart(2, '0');
+        setNextItemNumber(itemNum);
+      } catch (err) {
+        console.error('Error fetching applicant count:', err);
+        setNextItemNumber('01');
+      }
+    };
+
+    fetchCount();
+  }, []);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -65,7 +87,11 @@ export const AttachmentsUploadForm: React.FC<AttachmentsUploadFormProps> = ({
   };
 
   return (
-    <Card title="Upload Documents">
+    <Card title="Upload Documents">      <div className="info-notice">
+        <p className="notice-title">📋 Your Application Item Number</p>
+        <p className="notice-number">{nextItemNumber}</p>
+        <p className="notice-subtitle">This number will be assigned to your application automatically.</p>
+      </div>
       <div className="upload-section">
         <p className="upload-instructions">
           Please upload your resume and any other required documents. 

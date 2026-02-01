@@ -4,6 +4,8 @@ import type { ApplicantAttachmentInsert, ApplicantInsert } from '../types/databa
 const APPLICANTS_KEY = 'cictrix_applicants';
 const ATTACHMENTS_KEY = 'cictrix_attachments';
 const EVALUATIONS_KEY = 'cictrix_evaluations';
+const JOBS_KEY = 'cictrix_jobs';
+const RATERS_KEY = 'cictrix_raters';
 
 interface MockApplicant extends ApplicantInsert {
   id: string;
@@ -30,6 +32,28 @@ interface MockEvaluation {
   updated_at: string;
 }
 
+interface MockJob {
+  id: number;
+  title: string;
+  item_number: string;
+  salary_grade: string;
+  department: string;
+  description: string;
+  status: 'Open' | 'Closed' | 'On Hold';
+  created_at: string;
+  updated_at: string;
+}
+
+interface MockRater {
+  id: number;
+  name: string;
+  email: string;
+  department: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 const generateId = () => crypto.randomUUID();
 
 const getApplicants = (): MockApplicant[] => {
@@ -40,10 +64,20 @@ const getApplicants = (): MockApplicant[] => {
 const getAttachments = (): MockAttachment[] => {
   const data = localStorage.getItem(ATTACHMENTS_KEY);
 
-  const getEvaluations = (): MockEvaluation[] => {
-    const data = localStorage.getItem(EVALUATIONS_KEY);
-    return data ? JSON.parse(data) : [];
-  };
+const getEvaluations = (): MockEvaluation[] => {
+  const data = localStorage.getItem(EVALUATIONS_KEY);
+  return data ? JSON.parse(data) : [];
+};
+
+const getJobs = (): MockJob[] => {
+  const data = localStorage.getItem(JOBS_KEY);
+  return data ? JSON.parse(data) : [];
+};
+
+const getRaters = (): MockRater[] => {
+  const data = localStorage.getItem(RATERS_KEY);
+  return data ? JSON.parse(data) : [];
+};
   return data ? JSON.parse(data) : [];
 };
 
@@ -56,6 +90,14 @@ const saveAttachments = (attachments: MockAttachment[]) => {
 
 const saveEvaluations = (evaluations: MockEvaluation[]) => {
   localStorage.setItem(EVALUATIONS_KEY, JSON.stringify(evaluations));
+};
+
+const saveJobs = (jobs: MockJob[]) => {
+  localStorage.setItem(JOBS_KEY, JSON.stringify(jobs));
+};
+
+const saveRaters = (raters: MockRater[]) => {
+  localStorage.setItem(RATERS_KEY, JSON.stringify(raters));
 };
 };
 
@@ -156,7 +198,38 @@ export const mockDatabase = {
   // Mock Supabase query builder API
   from(table: string) {
     return {
-      select: (columns: string = '*') => {
+      select: (columns: string = '*', options?: { count?: string; head?: boolean }) => {
+        // Handle count-only queries
+        if (options?.count === 'exact' && options?.head) {
+          return {
+            eq: (column: string, value: any) => {
+              return {
+                then: async (resolve: any) => {
+                  let count = 0;
+                  if (table === 'applicants') {
+                    const applicants = getApplicants();
+                    count = applicants.filter(a => (a as any)[column] === value).length;
+                  } else if (table === 'jobs') {
+                    const jobs = getJobs();
+                    count = jobs.filter(j => (j as any)[column] === value).length;
+                  } else if (table === 'raters') {
+                    const raters = getRaters();
+                    count = raters.filter(r => (r as any)[column] === value).length;
+                  }
+                  resolve({ data: null, error: null, count });
+                }
+              };
+            },
+            then: async (resolve: any) => {
+              let count = 0;
+              if (table === 'applicants') count = getApplicants().length;
+              else if (table === 'jobs') count = getJobs().length;
+              else if (table === 'raters') count = getRaters().length;
+              resolve({ data: null, error: null, count });
+            }
+          };
+        }
+
         return {
           eq: (column: string, value: any) => {
             return {
@@ -164,6 +237,18 @@ export const mockDatabase = {
                 if (table === 'applicants') {
                   const applicants = getApplicants();
                   const found = applicants.find(a => (a as any)[column] === value);
+                  return found 
+                    ? { data: found, error: null }
+                    : { data: null, error: new Error('Not found') };
+                } else if (table === 'jobs') {
+                  const jobs = getJobs();
+                  const found = jobs.find(j => (j as any)[column] === value);
+                  return found 
+                    ? { data: found, error: null }
+                    : { data: null, error: new Error('Not found') };
+                } else if (table === 'raters') {
+                  const raters = getRaters();
+                  const found = raters.find(r => (r as any)[column] === value);
                   return found 
                     ? { data: found, error: null }
                     : { data: null, error: new Error('Not found') };
@@ -179,6 +264,14 @@ export const mockDatabase = {
                   const attachments = getAttachments();
                   const filtered = attachments.filter(a => (a as any)[column] === value);
                   resolve({ data: filtered, error: null });
+                } else if (table === 'jobs') {
+                  const jobs = getJobs();
+                  const filtered = jobs.filter(j => (j as any)[column] === value);
+                  resolve({ data: filtered, error: null });
+                } else if (table === 'raters') {
+                  const raters = getRaters();
+                  const filtered = raters.filter(r => (r as any)[column] === value);
+                  resolve({ data: filtered, error: null });
                 } else {
                   resolve({ data: [], error: null });
                 }
@@ -188,33 +281,33 @@ export const mockDatabase = {
           order: (column: string, options?: { ascending?: boolean }) => {
             return {
               then: async (resolve: any) => {
-                if (table === 'applicants') {
-                  let applicants = getApplicants();
-                  applicants.sort((a, b) => {
-                    const aVal = (a as any)[column];
-                    const bVal = (b as any)[column];
-                    return options?.ascending === false ? (bVal > aVal ? 1 : -1) : (aVal > bVal ? 1 : -1);
-                  });
-                  resolve({ data: applicants, error: null });
-                } else {
-                  resolve({ data: [], error: null });
-                }
+                let data: any[] = [];
+                if (table === 'applicants') data = getApplicants();
+                else if (table === 'jobs') data = getJobs();
+                else if (table === 'raters') data = getRaters();
+                
+                data.sort((a, b) => {
+                  const aVal = (a as any)[column];
+                  const bVal = (b as any)[column];
+                  return options?.ascending === false ? (bVal > aVal ? 1 : -1) : (aVal > bVal ? 1 : -1);
+                });
+                resolve({ data, error: null });
               },
               eq: (filterColumn: string, value: any) => {
                 return {
                   then: async (resolve: any) => {
-                    if (table === 'applicants') {
-                      let applicants = getApplicants();
-                      const filtered = applicants.filter(a => (a as any)[filterColumn] === value);
-                      filtered.sort((a, b) => {
-                        const aVal = (a as any)[column];
-                        const bVal = (b as any)[column];
-                        return options?.ascending === false ? (bVal > aVal ? 1 : -1) : (aVal > bVal ? 1 : -1);
-                      });
-                      resolve({ data: filtered, error: null });
-                    } else {
-                      resolve({ data: [], error: null });
-                    }
+                    let data: any[] = [];
+                    if (table === 'applicants') data = getApplicants();
+                    else if (table === 'jobs') data = getJobs();
+                    else if (table === 'raters') data = getRaters();
+                    
+                    const filtered = data.filter(item => (item as any)[filterColumn] === value);
+                    filtered.sort((a, b) => {
+                      const aVal = (a as any)[column];
+                      const bVal = (b as any)[column];
+                      return options?.ascending === false ? (bVal > aVal ? 1 : -1) : (aVal > bVal ? 1 : -1);
+                    });
+                    resolve({ data: filtered, error: null });
                   }
                 };
               }
@@ -225,6 +318,10 @@ export const mockDatabase = {
               resolve({ data: getApplicants(), error: null });
             } else if (table === 'applicant_attachments') {
               resolve({ data: getAttachments(), error: null });
+            } else if (table === 'jobs') {
+              resolve({ data: getJobs(), error: null });
+            } else if (table === 'raters') {
+              resolve({ data: getRaters(), error: null });
             } else {
               resolve({ data: [], error: null });
             }
@@ -237,6 +334,33 @@ export const mockDatabase = {
             if (table === 'evaluations') {
               const result = await mockDatabase.insertEvaluation(data);
               resolve(result);
+            } else if (table === 'jobs') {
+              const jobs = getJobs();
+              const newJob: MockJob = {
+                ...data,
+                id: jobs.length > 0 ? Math.max(...jobs.map(j => j.id)) + 1 : 1,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              };
+              jobs.push(newJob);
+              saveJobs(jobs);
+              resolve({ data: newJob, error: null });
+            } else if (table === 'raters') {
+              const raters = getRaters();
+              // Check for duplicate email
+              if (raters.some(r => r.email === data.email)) {
+                resolve({ data: null, error: { code: '23505', message: 'Duplicate email' } });
+                return;
+              }
+              const newRater: MockRater = {
+                ...data,
+                id: raters.length > 0 ? Math.max(...raters.map(r => r.id)) + 1 : 1,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              };
+              raters.push(newRater);
+              saveRaters(raters);
+              resolve({ data: newRater, error: null });
             } else {
               resolve({ data: null, error: new Error('Insert not supported for this table') });
             }
@@ -262,8 +386,59 @@ export const mockDatabase = {
                   } else {
                     resolve({ data: null, error: new Error('Not found') });
                   }
+                } else if (table === 'jobs') {
+                  const jobs = getJobs();
+                  const index = jobs.findIndex(j => (j as any)[column] === value);
+                  if (index !== -1) {
+                    jobs[index] = {
+                      ...jobs[index],
+                      ...updates,
+                      updated_at: new Date().toISOString()
+                    };
+                    saveJobs(jobs);
+                    resolve({ data: jobs[index], error: null });
+                  } else {
+                    resolve({ data: null, error: new Error('Not found') });
+                  }
+                } else if (table === 'raters') {
+                  const raters = getRaters();
+                  const index = raters.findIndex(r => (r as any)[column] === value);
+                  if (index !== -1) {
+                    raters[index] = {
+                      ...raters[index],
+                      ...updates,
+                      updated_at: new Date().toISOString()
+                    };
+                    saveRaters(raters);
+                    resolve({ data: raters[index], error: null });
+                  } else {
+                    resolve({ data: null, error: new Error('Not found') });
+                  }
                 } else {
                   resolve({ data: null, error: new Error('Update not supported') });
+                }
+              }
+            };
+          }
+        };
+      },
+      delete: () => {
+        return {
+          eq: (column: string, value: any) => {
+            return {
+              then: async (resolve: any) => {
+                if (table === 'jobs') {
+                  const jobs = getJobs();
+                  const filtered = jobs.filter(j => (j as any)[column] !== value);
+                  saveJobs(filtered);
+                  resolve({ data: null, error: null });
+                } else if (table === 'raters') {
+                  const raters = getRaters();
+                  const filtered = raters.filter(r => (r as any)[column] !== value);
+                  saveRaters(filtered);
+                  resolve({ data: null, error: null });
+                } else {
+                  resolve({ data: null, error: new Error('Delete not supported') });
                 }
               }
             };

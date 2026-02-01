@@ -20,14 +20,14 @@ const POSITION_OPTIONS = [
 ];
 
 const OFFICE_OPTIONS = [
-  { value: 'Head Office', label: 'Head Office' },
-  { value: 'Regional Office - North', label: 'Regional Office - North' },
-  { value: 'Regional Office - South', label: 'Regional Office - South' },
-  { value: 'Regional Office - East', label: 'Regional Office - East' },
-  { value: 'Regional Office - West', label: 'Regional Office - West' },
-  { value: 'Branch Office - Metro Manila', label: 'Branch Office - Metro Manila' },
-  { value: 'Branch Office - Cebu', label: 'Branch Office - Cebu' },
-  { value: 'Branch Office - Davao', label: 'Branch Office - Davao' },
+  { value: 'Human Resources', label: 'Human Resources' },
+  { value: 'Finance', label: 'Finance' },
+  { value: 'Information Technology', label: 'Information Technology' },
+  { value: 'Operations', label: 'Operations' },
+  { value: 'Sales & Marketing', label: 'Sales & Marketing' },
+  { value: 'Customer Support', label: 'Customer Support' },
+  { value: 'Legal', label: 'Legal' },
+  { value: 'Product Management', label: 'Product Management' },
 ];
 
 export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = ({
@@ -87,18 +87,8 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
           />
         </div>
 
-        <Input
-          label="Item Number"
-          placeholder="Enter item number"
-          value={formData.item_number}
-          onChange={(e) => onChange('item_number', e.target.value)}
-          error={errors.item_number}
-          helperText="Position item number from the posting"
-          required
-        />
-
         <Select
-          label="Preferred Office"
+          label="Department"
           options={OFFICE_OPTIONS}
           value={formData.office}
           onChange={(e) => onChange('office', e.target.value)}

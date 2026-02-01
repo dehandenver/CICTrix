@@ -36,11 +36,6 @@ export const validateApplicantForm = (data: ApplicantFormData): ValidationErrors
     errors.position = 'Position is required';
   }
 
-  // Item number validation
-  if (!data.item_number.trim()) {
-    errors.item_number = 'Item number is required';
-  }
-
   // Office validation
   if (!data.office.trim()) {
     errors.office = 'Office is required';

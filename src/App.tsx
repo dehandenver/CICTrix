@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { ApplicantWizard } from './modules/applicant/ApplicantWizard';
 import { InterviewerDashboard } from './modules/interviewer/InterviewerDashboard';
 import { EvaluationForm } from './modules/interviewer/EvaluationForm';
+import { RSPDashboard } from './modules/admin/RSPDashboard';
+import { RaterManagementPage } from './modules/admin/RaterManagementPage';
 import './styles/globals.css';
 
 function App() {
@@ -12,6 +14,8 @@ function App() {
           <Route path="/" element={<ApplicantWizard />} />
           <Route path="/dashboard" element={<InterviewerDashboard />} />
           <Route path="/evaluate/:id" element={<EvaluationForm />} />
+          <Route path="/admin" element={<RSPDashboard />} />
+          <Route path="/admin/raters" element={<RaterManagementPage />} />
         </Routes>
       </div>
     </BrowserRouter>

@@ -111,7 +111,15 @@ export const ApplicantWizard: React.FC = () => {
     setSubmitError('');
 
     try {
-      // Insert applicant data
+      // Get the count of existing applicants to generate item_number
+      const countResult = await supabase
+        .from('applicants')
+        .select('id', { count: 'exact', head: true });
+      
+      const count = (countResult as any).count || 0;
+      const newItemNumber = String(count + 1).padStart(2, '0'); // Converts to '01', '02', etc.
+
+      // Insert applicant data with auto-generated item_number
       const applicantResult = await supabase
         .from('applicants')
         .insert({
@@ -120,7 +128,7 @@ export const ApplicantWizard: React.FC = () => {
           contact_number: formData.contact_number,
           email: formData.email,
           position: formData.position,
-          item_number: formData.item_number,
+          item_number: newItemNumber,
           office: formData.office,
           is_pwd: formData.is_pwd,
         })

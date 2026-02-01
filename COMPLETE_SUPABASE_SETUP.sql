@@ -61,6 +61,30 @@ CREATE TABLE IF NOT EXISTS evaluations (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Create jobs table
+CREATE TABLE IF NOT EXISTS jobs (
+  id BIGSERIAL PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  item_number VARCHAR(100) NOT NULL,
+  salary_grade VARCHAR(50),
+  department VARCHAR(255) NOT NULL,
+  description TEXT,
+  status VARCHAR(50) DEFAULT 'Open' CHECK (status IN ('Open', 'Closed', 'On Hold')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create raters table
+CREATE TABLE IF NOT EXISTS raters (
+  id BIGSERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  department VARCHAR(255),
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Step 2: Create Indexes
 -- ======================
 
@@ -68,6 +92,10 @@ CREATE INDEX IF NOT EXISTS idx_applicants_email ON applicants(email);
 CREATE INDEX IF NOT EXISTS idx_applicants_created_at ON applicants(created_at);
 CREATE INDEX IF NOT EXISTS idx_applicant_attachments_applicant_id ON applicant_attachments(applicant_id);
 CREATE INDEX IF NOT EXISTS idx_evaluations_applicant_id ON evaluations(applicant_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+CREATE INDEX IF NOT EXISTS idx_jobs_department ON jobs(department);
+CREATE INDEX IF NOT EXISTS idx_raters_email ON raters(email);
+CREATE INDEX IF NOT EXISTS idx_raters_is_active ON raters(is_active);
 
 -- Step 3: Create Storage Bucket
 -- =============================
@@ -82,6 +110,8 @@ ON CONFLICT (id) DO NOTHING;
 ALTER TABLE applicants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE applicant_attachments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE evaluations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE raters ENABLE ROW LEVEL SECURITY;
 
 -- Step 5: Drop Old Policies (if they exist)
 -- =========================================
@@ -101,6 +131,16 @@ DROP POLICY IF EXISTS "Allow authenticated update on evaluations" ON evaluations
 DROP POLICY IF EXISTS "Allow public insert on evaluations" ON evaluations;
 DROP POLICY IF EXISTS "Allow public read on evaluations" ON evaluations;
 DROP POLICY IF EXISTS "Allow public update on evaluations" ON evaluations;
+
+DROP POLICY IF EXISTS "Allow public insert on jobs" ON jobs;
+DROP POLICY IF EXISTS "Allow public read on jobs" ON jobs;
+DROP POLICY IF EXISTS "Allow public update on jobs" ON jobs;
+DROP POLICY IF EXISTS "Allow public delete on jobs" ON jobs;
+
+DROP POLICY IF EXISTS "Allow public insert on raters" ON raters;
+DROP POLICY IF EXISTS "Allow public read on raters" ON raters;
+DROP POLICY IF EXISTS "Allow public update on raters" ON raters;
+DROP POLICY IF EXISTS "Allow public delete on raters" ON raters;
 
 DROP POLICY IF EXISTS "Allow authenticated users to upload attachments" ON storage.objects;
 DROP POLICY IF EXISTS "Allow authenticated users to read attachments" ON storage.objects;
@@ -164,3 +204,47 @@ CREATE POLICY "Allow public read attachments"
 ON storage.objects FOR SELECT
 TO anon, authenticated
 USING (bucket_id = 'applicant-attachments');
+
+-- Jobs: Allow public access for viewing and admin operations
+CREATE POLICY "Allow public insert on jobs"
+ON jobs FOR INSERT
+TO anon, authenticated
+WITH CHECK (true);
+
+CREATE POLICY "Allow public read on jobs"
+ON jobs FOR SELECT
+TO anon, authenticated
+USING (true);
+
+CREATE POLICY "Allow public update on jobs"
+ON jobs FOR UPDATE
+TO anon, authenticated
+USING (true)
+WITH CHECK (true);
+
+CREATE POLICY "Allow public delete on jobs"
+ON jobs FOR DELETE
+TO anon, authenticated
+USING (true);
+
+-- Raters: Allow public access for admin operations
+CREATE POLICY "Allow public insert on raters"
+ON raters FOR INSERT
+TO anon, authenticated
+WITH CHECK (true);
+
+CREATE POLICY "Allow public read on raters"
+ON raters FOR SELECT
+TO anon, authenticated
+USING (true);
+
+CREATE POLICY "Allow public update on raters"
+ON raters FOR UPDATE
+TO anon, authenticated
+USING (true)
+WITH CHECK (true);
+
+CREATE POLICY "Allow public delete on raters"
+ON raters FOR DELETE
+TO anon, authenticated
+USING (true);
