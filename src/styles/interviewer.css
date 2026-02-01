@@ -192,7 +192,7 @@
 
 /* Applicant Info Card */
 .applicant-info-card {
-  background: linear-gradient(135deg, rgba(15, 110, 255, 0.02) 0%, rgba(255, 255, 255, 1) 100%);
+  background: linear-gradient(135deg, rgba(11, 61, 145, 0.02) 0%, rgba(255, 255, 255, 1) 100%);
 }
 
 .info-grid {
@@ -279,7 +279,7 @@
 
 /* Evaluation Form */
 .evaluation-form-card {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 1) 0%, rgba(15, 110, 255, 0.02) 100%);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 1) 0%, rgba(11, 61, 145, 0.02) 100%);
 }
 
 .score-inputs {

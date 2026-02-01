@@ -82,10 +82,10 @@
 }
 
 .step.active .step-number {
-  background: linear-gradient(135deg, var(--color-primary) 0%, #0052cc 100%);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
   border-color: var(--color-primary);
   color: white;
-  box-shadow: 0 0 0 8px rgba(15, 110, 255, 0.1);
+  box-shadow: 0 0 0 8px rgba(11, 61, 145, 0.1);
   transform: scale(1.05);
 }
 
@@ -232,7 +232,7 @@
   }
 
   .step.active .step-number {
-    box-shadow: 0 0 0 6px rgba(15, 110, 255, 0.1);
+    box-shadow: 0 0 0 6px rgba(11, 61, 145, 0.1);
   }
 
   .step.completed .step-number {

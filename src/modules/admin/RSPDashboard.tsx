@@ -213,7 +213,7 @@ export const RSPDashboard = () => {
         {/* Stats Cards */}
         <div className="stats-grid">
           <div className="stat-card">
-            <div className="stat-icon" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+            <div className="stat-icon" style={{ background: 'linear-gradient(135deg, #0b3d91 0%, #1565d8 100%)' }}>
               <Users size={24} />
             </div>
             <div className="stat-content">
@@ -223,7 +223,7 @@ export const RSPDashboard = () => {
           </div>
 
           <div className="stat-card">
-            <div className="stat-icon" style={{ background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' }}>
+            <div className="stat-icon" style={{ background: 'linear-gradient(135deg, #f5c12a 0%, #f08c00 100%)' }}>
               <Briefcase size={24} />
             </div>
             <div className="stat-content">
@@ -233,7 +233,7 @@ export const RSPDashboard = () => {
           </div>
 
           <div className="stat-card">
-            <div className="stat-icon" style={{ background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)' }}>
+            <div className="stat-icon" style={{ background: 'linear-gradient(135deg, #d6453d 0%, #b91c1c 100%)' }}>
               <UserCheck size={24} />
             </div>
             <div className="stat-content">
@@ -243,7 +243,7 @@ export const RSPDashboard = () => {
           </div>
 
           <div className="stat-card">
-            <div className="stat-icon" style={{ background: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)' }}>
+            <div className="stat-icon" style={{ background: 'linear-gradient(135deg, #0b3d91 0%, #f5c12a 100%)' }}>
               <Search size={24} />
             </div>
             <div className="stat-content">

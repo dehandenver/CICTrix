@@ -85,6 +85,13 @@ CREATE TABLE IF NOT EXISTS raters (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Create user_roles table (linked to auth.users)
+CREATE TABLE IF NOT EXISTS user_roles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('super-admin', 'rsp', 'lnd', 'pm')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Step 2: Create Indexes
 -- ======================
 
@@ -112,6 +119,7 @@ ALTER TABLE applicant_attachments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE evaluations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE raters ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_roles ENABLE ROW LEVEL SECURITY;
 
 -- Step 5: Drop Old Policies (if they exist)
 -- =========================================
@@ -141,6 +149,8 @@ DROP POLICY IF EXISTS "Allow public insert on raters" ON raters;
 DROP POLICY IF EXISTS "Allow public read on raters" ON raters;
 DROP POLICY IF EXISTS "Allow public update on raters" ON raters;
 DROP POLICY IF EXISTS "Allow public delete on raters" ON raters;
+
+DROP POLICY IF EXISTS "Allow read own role" ON user_roles;
 
 DROP POLICY IF EXISTS "Allow authenticated users to upload attachments" ON storage.objects;
 DROP POLICY IF EXISTS "Allow authenticated users to read attachments" ON storage.objects;
@@ -248,3 +258,9 @@ CREATE POLICY "Allow public delete on raters"
 ON raters FOR DELETE
 TO anon, authenticated
 USING (true);
+
+-- User Roles: Allow authenticated users to read their own role
+CREATE POLICY "Allow read own role"
+ON user_roles FOR SELECT
+TO authenticated
+USING (auth.uid() = id);

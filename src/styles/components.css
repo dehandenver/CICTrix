@@ -41,7 +41,7 @@
 
 .input:focus {
   border-color: var(--color-border-focus);
-  box-shadow: 0 0 0 3px rgba(15, 110, 255, 0.1);
+  box-shadow: 0 0 0 3px rgba(11, 61, 145, 0.1);
   background-color: var(--color-background);
 }
 
@@ -114,13 +114,13 @@
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--color-primary) 0%, #0052cc 100%);
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
   color: white;
   box-shadow: var(--shadow-md);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--color-primary-hover) 0%, #003d99 100%);
+  background: linear-gradient(135deg, var(--color-primary-hover) 0%, var(--color-primary-dark) 100%);
   box-shadow: var(--shadow-lg);
   transform: translateY(-1px);
 }
@@ -239,7 +239,7 @@
 
 .select:focus {
   border-color: var(--color-border-focus);
-  box-shadow: 0 0 0 3px rgba(15, 110, 255, 0.1);
+  box-shadow: 0 0 0 3px rgba(11, 61, 145, 0.1);
 }
 
 .select-error {

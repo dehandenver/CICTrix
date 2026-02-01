@@ -1,7 +1,7 @@
 /* File Upload Specific Styles */
 
 .info-notice {
-  background: linear-gradient(135deg, #dbeafe 0%, #f0f9ff 100%);
+  background: linear-gradient(135deg, #fff4cc 0%, #e6eef9 100%);
   border-left: 4px solid var(--color-primary);
   border-radius: var(--radius-lg);
   padding: var(--spacing-lg);
@@ -59,7 +59,7 @@
 .drop-zone:hover,
 .drop-zone.drag-active {
   border-color: var(--color-primary);
-  background: linear-gradient(135deg, var(--color-primary-light) 0%, rgba(15, 110, 255, 0.05) 100%);
+  background: linear-gradient(135deg, var(--color-primary-light) 0%, rgba(11, 61, 145, 0.05) 100%);
   box-shadow: var(--shadow-md);
   border-width: 2px;
 }
@@ -139,30 +139,23 @@
   width: 4px;
   height: 4px;
   background-color: var(--color-primary);
-  border-radius: 50%;lg);
-  background-color: var(--color-background);
+  border-radius: 50%;
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
+  background-color: var(--color-background);
   transition: all var(--transition-base);
 }
 
 .file-item:hover {
   border-color: var(--color-primary);
   box-shadow: var(--shadow-md);
-  background-color: var(--color-background);
-}
-
-.file-info {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-lg(--color-border);
-  border-radius: var(--radius-md);
-  transition: all var(--transition-base);
-}
-
-.file-item:hover {
-  border-color: var(--color-primary);
-  box-shadow: var(--shadow-sm);
 }
 
 .file-info {
@@ -204,7 +197,7 @@
 
 .file-remove {
   flex-shrink: 0;
-  min-width0.5rem 0.75rem;
+  min-width: 0.5rem;
   color: var(--color-text-muted);
 }
 
@@ -234,7 +227,6 @@
   }
 
   .upload-text-primary {
-    font-size: var(--font-size-sm)
-    font-size: 2rem;
+    font-size: var(--font-size-sm);
   }
 }

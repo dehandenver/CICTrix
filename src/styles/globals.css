@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* CSS Reset and Base Styles */
 *,
 *::before,
@@ -8,15 +12,18 @@
 }
 
 :root {
-  /* Professional Color Palette */
-  --color-primary: #0f6eff;
-  --color-primary-hover: #0052cc;
-  --color-primary-light: #e8f1ff;
+  /* Brand Palette (Logo-based) */
+  --color-primary: #0b3d91; /* Deep blue */
+  --color-primary-dark: #0a2f6e;
+  --color-primary-hover: #0a2f6e;
+  --color-primary-light: #e6eef9;
+  --color-accent-yellow: #f5c12a;
+  --color-accent-red: #d6453d;
   --color-secondary: #6b7280;
   --color-success: #059669;
   --color-error: #dc2626;
   --color-warning: #d97706;
-  --color-info: #0f6eff;
+  --color-info: #0b3d91;
   
   /* Neutrals */
   --color-text-primary: #111827;
@@ -27,7 +34,14 @@
   --color-background-tertiary: #f3f4f6;
   --color-border: #e5e7eb;
   --color-border-light: #f3f4f6;
-  --color-border-focus: #0f6eff;
+  --color-border-focus: #0b3d91;
+
+  /* Aliases for legacy styles */
+  --primary-color: var(--color-primary);
+  --text-primary: var(--color-text-primary);
+  --text-secondary: var(--color-text-secondary);
+  --text-muted: var(--color-text-muted);
+  --border-color: var(--color-border);
   
   /* Spacing - Consistent scale */
   --spacing-xs: 0.25rem;
@@ -89,7 +103,7 @@ body {
   font-size: var(--font-size-base);
   line-height: var(--line-height-normal);
   color: var(--color-text-primary);
-  background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+  background: linear-gradient(135deg, #fff7e0 0%, #f1f5ff 100%);
   min-height: 100vh;
 }
 

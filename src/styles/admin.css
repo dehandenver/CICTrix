@@ -11,6 +11,75 @@
   padding: 2rem;
 }
 
+/* Admin Login Page */
+.admin-login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: linear-gradient(135deg, #fff7e0 0%, #e6eef9 100%);
+}
+
+.admin-login-card {
+  width: 100%;
+  max-width: 460px;
+  background: white;
+  border-radius: 16px;
+  padding: 2.5rem;
+  box-shadow: var(--shadow-xl);
+  border: 1px solid var(--border-color);
+}
+
+.admin-login-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.admin-login-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0.9rem;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+  margin-bottom: 0.75rem;
+}
+
+.admin-login-header h1 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.75rem;
+}
+
+.admin-login-header p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.admin-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.admin-login-error {
+  color: var(--color-error);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.admin-login-note {
+  margin-top: 1.25rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
 @media (max-width: 768px) {
   .admin-content {
     margin-left: 0;
@@ -171,7 +240,7 @@
 }
 
 .action-btn:hover {
-  background-color: rgba(15, 110, 255, 0.1);
+  background-color: rgba(11, 61, 145, 0.1);
   color: var(--primary-color);
 }
 
@@ -269,7 +338,7 @@
 .admin-textarea:focus {
   outline: none;
   border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px rgba(15, 110, 255, 0.1);
+  box-shadow: 0 0 0 3px rgba(11, 61, 145, 0.1);
 }
 
 .dialog-actions {
@@ -305,7 +374,7 @@
 
 .rater-card-header {
   padding: 1.5rem;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--color-accent-yellow) 100%);
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
