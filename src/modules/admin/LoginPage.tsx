@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
+import '../../styles/admin.css';
 
 type Role = 'super-admin' | 'rsp' | 'lnd' | 'pm';
 
@@ -20,6 +21,8 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<Role>('rsp');
+  const [rememberMe, setRememberMe] = useState(false);
   const navigate = useNavigate();
 
   const handleLogin = async (event: React.FormEvent) => {
@@ -73,64 +76,114 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-100 px-4">
-      <div className="w-full max-w-md bg-white shadow-xl rounded-2xl border border-slate-200 p-8">
-        <div className="text-center mb-8">
-          <div className="mx-auto mb-3 h-12 w-12 rounded-full bg-blue-900/10 flex items-center justify-center">
-            <span className="text-blue-900 font-bold">HR</span>
-          </div>
-          <h1 className="text-2xl font-bold text-slate-900">HRIS Admin Portal</h1>
-          <p className="text-sm text-slate-500 mt-1">Secure staff access</p>
+    <div className="admin-login-page">
+      <div className="admin-login-shell">
+        <div className="admin-login-illustration">
+          <span className="admin-login-orb orb-one" />
+          <span className="admin-login-orb orb-two" />
+          <span className="admin-login-orb orb-three" />
+          <div className="admin-login-logo" aria-hidden="true" />
+          <h2>HRIS Portal</h2>
+          <p>Human Resource Information System</p>
+          <ul>
+            <li>Recruitment &amp; Selection</li>
+            <li>Learning &amp; Development</li>
+            <li>Performance Management</li>
+          </ul>
         </div>
 
-        {/* Demo Credentials Notice */}
-        <div className="mb-6 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-          <p className="text-xs font-semibold text-amber-900 mb-2">Demo Credentials:</p>
-          <div className="space-y-1 text-xs text-amber-800">
-            <p><strong>Admin:</strong> admin@cictrix.com / Admin@123</p>
-            <p><strong>RSP:</strong> rsp@cictrix.com / RSP@123</p>
-            <p><strong>LND:</strong> lnd@cictrix.com / LND@123</p>
-            <p><strong>PM:</strong> pm@cictrix.com / PM@123</p>
+        <div className="admin-login-form-panel">
+          <div className="admin-login-form-header">
+            <h1>Welcome Back</h1>
+            <p>Please sign in to your account</p>
           </div>
+
+          <form onSubmit={handleLogin} className="admin-login-form">
+            <div className="field">
+              <label>Email Address</label>
+              <div className="input-with-icon">
+                <span className="input-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 4h16v16H4z" opacity="0" />
+                    <path d="M4 6h16" />
+                    <path d="m4 6 8 6 8-6" />
+                    <path d="M4 6v12h16V6" />
+                  </svg>
+                </span>
+                <input
+                  type="email"
+                  placeholder="Enter your email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email"
+                />
+              </div>
+            </div>
+
+            <div className="field">
+              <label>Password</label>
+              <div className="input-with-icon">
+                <span className="input-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="4" y="11" width="16" height="9" rx="2" />
+                    <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+                  </svg>
+                </span>
+                <input
+                  type="password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                />
+              </div>
+            </div>
+
+            <div className="role-select">
+              <p>Select Your Role</p>
+              <div className="role-grid">
+                {([
+                  { key: 'rsp', label: 'RSP', sublabel: 'Recruitment' },
+                  { key: 'lnd', label: 'L&D', sublabel: 'Learning' },
+                  { key: 'pm', label: 'PM', sublabel: 'Performance' },
+                  { key: 'super-admin', label: 'Admin', sublabel: 'HR Head' }
+                ] as { key: Role; label: string; sublabel: string }[]).map((role) => (
+                  <button
+                    key={role.key}
+                    type="button"
+                    className={`role-card ${selectedRole === role.key ? 'active' : ''}`}
+                    onClick={() => setSelectedRole(role.key)}
+                  >
+                    <span>{role.label}</span>
+                    <small>{role.sublabel}</small>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="login-actions">
+              <label className="remember-me">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(event) => setRememberMe(event.target.checked)}
+                />
+                Remember me
+              </label>
+              <button type="button" className="forgot-link">Forgot Password?</button>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="primary-login-button"
+            >
+              {loading ? 'Signing in…' : 'Sign In'}
+            </button>
+          </form>
+
+          <p className="login-footer">Protected by government security protocols</p>
         </div>
-
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-            <input
-              type="email"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-900/30 focus:border-blue-900"
-              placeholder="name@company.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
-            <input
-              type="password"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-900/30 focus:border-blue-900"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-lg bg-blue-900 text-white py-2.5 font-semibold hover:bg-blue-800 transition disabled:opacity-60"
-          >
-            {loading ? 'Signing in…' : 'Sign In'}
-          </button>
-        </form>
-
-        <p className="text-xs text-slate-500 text-center mt-6">
-          Authorized personnel only.
-        </p>
       </div>
     </div>
   );

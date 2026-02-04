@@ -44,8 +44,34 @@ export const validateApplicantForm = (data: ApplicantFormData): ValidationErrors
   return errors;
 };
 
-export const validateFiles = (files: File[]): string | null => {
-  if (files.length === 0) {
+export const validateFiles = (files: File[], categorizedFiles?: any[]): string | null => {
+  // Check if required documents are uploaded
+  if (categorizedFiles) {
+    const requiredDocTypes = [
+      'application_letter',
+      'pds_with_photo',
+      'eligibility_proof',
+      'training_certificate',
+      'transcript_of_records',
+      'drug_test'
+    ];
+
+    const uploadedTypes = categorizedFiles.map(f => f.documentType);
+    const missingRequired = requiredDocTypes.filter(type => !uploadedTypes.includes(type));
+
+    if (missingRequired.length > 0) {
+      const docNames: Record<string, string> = {
+        application_letter: 'Application Letter',
+        pds_with_photo: 'Personal Data Sheet (PDS)',
+        eligibility_proof: 'Proof of Eligibility Rating/License',
+        training_certificate: 'Certificate of Relevant Training/Seminars',
+        transcript_of_records: 'Transcript of Records',
+        drug_test: 'Drug Test Result'
+      };
+      const missing = missingRequired.map(type => docNames[type]).join(', ');
+      return `Missing required documents: ${missing}`;
+    }
+  } else if (files.length === 0) {
     return 'At least one file is required';
   }
 

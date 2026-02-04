@@ -74,7 +74,7 @@ export const ApplicantWizard: React.FC = () => {
           throw new Error(`Failed to upload ${uploadedFile.file.name}`);
         }
 
-        // Insert file record
+        // Insert file record with document type
         const insertResult = await supabase
           .from('applicant_attachments')
           .insert({
@@ -83,6 +83,7 @@ export const ApplicantWizard: React.FC = () => {
             file_path: fileName,
             file_type: uploadedFile.file.type,
             file_size: uploadedFile.file.size,
+            document_type: (uploadedFile as any).documentType || 'other',
           });
 
         const insertError = (insertResult as any).error;
@@ -101,7 +102,7 @@ export const ApplicantWizard: React.FC = () => {
 
   const handleSubmit = async () => {
     // Validate files
-    const fileValidationError = validateFiles(files.map((f) => f.file));
+    const fileValidationError = validateFiles(files.map((f) => f.file), files);
     if (fileValidationError) {
       setFileError(fileValidationError);
       return;

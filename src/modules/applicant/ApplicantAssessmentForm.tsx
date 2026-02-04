@@ -30,11 +30,32 @@ const OFFICE_OPTIONS = [
   { value: 'Product Management', label: 'Product Management' },
 ];
 
+// Position to Department Mapping
+const POSITION_TO_DEPARTMENT: Record<string, string> = {
+  'Software Developer': 'Information Technology',
+  'Project Manager': 'Operations',
+  'Business Analyst': 'Operations',
+  'QA Engineer': 'Information Technology',
+  'DevOps Engineer': 'Information Technology',
+  'UI/UX Designer': 'Product Management',
+  'Data Analyst': 'Product Management',
+  'System Administrator': 'Information Technology',
+};
+
 export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = ({
   formData,
   errors,
   onChange,
 }) => {
+  const handlePositionChange = (positionValue: string) => {
+    onChange('position', positionValue);
+    
+    // Auto-assign department based on position
+    const assignedDepartment = POSITION_TO_DEPARTMENT[positionValue];
+    if (assignedDepartment) {
+      onChange('office', assignedDepartment);
+    }
+  };
   return (
     <Card title="Applicant Assessment Form">
       <div className="grid gap-md md:grid-cols-2">
@@ -71,7 +92,7 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
           label="Position Applied For"
           options={POSITION_OPTIONS}
           value={formData.position}
-          onChange={(e) => onChange('position', e.target.value)}
+          onChange={(e) => handlePositionChange(e.target.value)}
           error={errors.position}
           required
         />
