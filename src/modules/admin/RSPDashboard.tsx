@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Users, Briefcase, UserCheck, Search, Plus, Edit2, Trash2 } from 'lucide-react';
+import { Users, Briefcase, UserCheck, Clock, Search, Plus, Edit2, Trash2, FileText, ChevronRight, ChevronLeft } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Sidebar } from '../../components/Sidebar';
 import { Button } from '../../components/Button';
@@ -17,6 +17,7 @@ interface Job {
   description: string;
   status: 'Open' | 'Closed' | 'On Hold';
   created_at: string;
+  applicant_count?: number;
 }
 
 interface Applicant {
@@ -24,7 +25,7 @@ interface Applicant {
   name: string;
   email: string;
   contact_number: string;
-  position_applied: string;
+  position: string;
   office: string;
   status: string;
 }
@@ -32,8 +33,8 @@ interface Applicant {
 interface Stats {
   totalApplicants: number;
   totalJobs: number;
-  totalRaters: number;
-  pendingReviews: number;
+  shortlistedApplicants: number;
+  positionsUnderReview: number;
 }
 
 const DEPARTMENTS = ['HR', 'Finance', 'IT', 'Operations', 'Marketing', 'Sales', 'Legal', 'Admin'];
@@ -43,14 +44,17 @@ export const RSPDashboard = () => {
   const [stats, setStats] = useState<Stats>({
     totalApplicants: 0,
     totalJobs: 0,
-    totalRaters: 0,
-    pendingReviews: 0
+    shortlistedApplicants: 0,
+    positionsUnderReview: 0
   });
   const [jobs, setJobs] = useState<Job[]>([]);
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [officeFilter, setOfficeFilter] = useState('all');
   const [showJobDialog, setShowJobDialog] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
+  const [currentJobPage, setCurrentJobPage] = useState(0);
   const [newJob, setNewJob] = useState({
     title: '',
     item_number: '',
@@ -68,18 +72,18 @@ export const RSPDashboard = () => {
 
   const fetchStats = async () => {
     try {
-      const [applicantsRes, jobsRes, ratersRes, pendingRes] = await Promise.all([
+      const [applicantsRes, jobsRes, shortlistedRes, reviewRes] = await Promise.all([
         supabase.from('applicants').select('id', { count: 'exact', head: true }),
-        supabase.from('jobs').select('id', { count: 'exact', head: true }),
-        supabase.from('raters').select('id', { count: 'exact', head: true }),
+        supabase.from('jobs').select('id', { count: 'exact', head: true }).eq('status', 'Open'),
+        supabase.from('applicants').select('id', { count: 'exact', head: true }).eq('status', 'Reviewed'),
         supabase.from('applicants').select('id', { count: 'exact', head: true }).eq('status', 'Pending')
       ]);
 
       setStats({
         totalApplicants: applicantsRes.count || 0,
         totalJobs: jobsRes.count || 0,
-        totalRaters: ratersRes.count || 0,
-        pendingReviews: pendingRes.count || 0
+        shortlistedApplicants: shortlistedRes.count || 0,
+        positionsUnderReview: reviewRes.count || 0
       });
     } catch (error) {
       console.error('Error fetching stats:', error);
@@ -88,13 +92,26 @@ export const RSPDashboard = () => {
 
   const fetchJobs = async () => {
     try {
-      const { data, error } = await supabase
+      const { data: jobsData, error: jobsError } = await supabase
         .from('jobs')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false});
 
-      if (error) throw error;
-      setJobs(data || []);
+      if (jobsError) throw jobsError;
+
+      // Get applicant count for each job
+      const jobsWithCounts = await Promise.all(
+        (jobsData || []).map(async (job) => {
+          const { count } = await supabase
+            .from('applicants')
+            .select('id', { count: 'exact', head: true })
+            .eq('position', job.title);
+          
+          return { ...job, applicant_count: count || 0 };
+        })
+      );
+
+      setJobs(jobsWithCounts);
     } catch (error) {
       console.error('Error fetching jobs:', error);
     }
@@ -104,7 +121,7 @@ export const RSPDashboard = () => {
     try {
       const { data, error } = await supabase
         .from('applicants')
-        .select('id, name, email, contact_number, position_applied, office, status')
+        .select('id, name, email, contact_number, position, office, status')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -188,17 +205,33 @@ export const RSPDashboard = () => {
   };
 
   const filteredApplicants = useMemo(() => {
-    if (!searchTerm) return applicants;
-    
-    const term = searchTerm.toLowerCase();
-    return applicants.filter(applicant =>
-      applicant.name.toLowerCase().includes(term) ||
-      applicant.email.toLowerCase().includes(term) ||
-      applicant.position_applied.toLowerCase().includes(term) ||
-      applicant.office.toLowerCase().includes(term) ||
-      applicant.contact_number.includes(term)
-    );
-  }, [applicants, searchTerm]);
+    let filtered = applicants;
+
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(applicant =>
+        applicant.name.toLowerCase().includes(term) ||
+        applicant.email.toLowerCase().includes(term) ||
+        applicant.position.toLowerCase().includes(term) ||
+        applicant.office.toLowerCase().includes(term) ||
+        applicant.contact_number.includes(term)
+      );
+    }
+
+    if (statusFilter && statusFilter !== 'all') {
+      filtered = filtered.filter(applicant => applicant.status.toLowerCase() === statusFilter);
+    }
+
+    if (officeFilter && officeFilter !== 'all') {
+      filtered = filtered.filter(applicant => applicant.office === officeFilter);
+    }
+
+    return filtered;
+  }, [applicants, searchTerm, statusFilter, officeFilter]);
+
+  const uniqueOffices = useMemo(() => {
+    return Array.from(new Set(applicants.map(a => a.office))).sort();
+  }, [applicants]);
 
   return (
     <div className="admin-layout">
@@ -353,7 +386,7 @@ export const RSPDashboard = () => {
                     <td>{applicant.name}</td>
                     <td>{applicant.email}</td>
                     <td>{applicant.contact_number}</td>
-                    <td>{applicant.position_applied}</td>
+                    <td>{applicant.position}</td>
                     <td>{applicant.office}</td>
                     <td>
                       <span className={`status-badge status-${applicant.status.toLowerCase()}`}>

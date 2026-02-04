@@ -245,6 +245,7 @@
   padding: var(--spacing-lg);
   background-color: var(--color-background);
   transition: all var(--transition-base);
+  overflow: hidden;
 }
 
 .document-item:hover {
@@ -332,6 +333,8 @@
   background-color: #f0fdf4;
   border: 1px solid #86efac;
   border-radius: var(--radius-md);
+  width: 100%;
+  flex-wrap: wrap;
 }
 
 .uploaded-file-info {
@@ -360,9 +363,8 @@
   font-weight: var(--font-weight-medium);
   color: var(--color-text-primary);
   margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  word-break: break-word;
+  white-space: normal;
 }
 
 .file-size-small {

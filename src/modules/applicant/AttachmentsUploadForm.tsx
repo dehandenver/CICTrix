@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Button, Card } from '../../components';
 import { supabase } from '../../lib/supabase';
 import '../../styles/fileUpload.css';
@@ -81,6 +81,7 @@ export const AttachmentsUploadForm: React.FC<AttachmentsUploadFormProps> = ({
   error,
 }) => {
   const [nextItemNumber, setNextItemNumber] = useState<string>('01');
+  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const categorizedFiles = files as CategorizedFile[];
 
   // Calculate next item number on mount
@@ -168,18 +169,27 @@ export const AttachmentsUploadForm: React.FC<AttachmentsUploadFormProps> = ({
 
                 <div className="document-upload-area">
                   {!uploadedFile ? (
-                    <label htmlFor={inputId} className="upload-button-label">
+                    <div className="upload-button-label">
                       <input
                         type="file"
                         id={inputId}
+                        ref={(el) => {
+                          inputRefs.current[doc.type] = el;
+                        }}
                         className="file-input-hidden"
                         accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
                         onChange={(e) => handleFileUpload(e, doc.type)}
                       />
-                      <Button type="button" variant="outline" size="sm" className="upload-trigger">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="upload-trigger"
+                        onClick={() => inputRefs.current[doc.type]?.click()}
+                      >
                         📎 Choose File
                       </Button>
-                    </label>
+                    </div>
                   ) : (
                     <div className="uploaded-file-display">
                       <div className="uploaded-file-info">

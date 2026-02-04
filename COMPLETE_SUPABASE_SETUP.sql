@@ -155,6 +155,7 @@ DROP POLICY IF EXISTS "Allow read own role" ON user_roles;
 DROP POLICY IF EXISTS "Allow authenticated users to upload attachments" ON storage.objects;
 DROP POLICY IF EXISTS "Allow authenticated users to read attachments" ON storage.objects;
 DROP POLICY IF EXISTS "Allow public read attachments" ON storage.objects;
+DROP POLICY IF EXISTS "Allow public upload attachments" ON storage.objects;
 
 -- Step 6: Create Public Access Policies
 -- =====================================

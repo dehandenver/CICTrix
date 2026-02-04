@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
+import hrisLogo from '../../assets/hris-logo.svg';
 import '../../styles/admin.css';
 
 export const AdminLogin = () => {
@@ -26,6 +27,7 @@ export const AdminLogin = () => {
     <div className="admin-login-page">
       <div className="admin-login-card">
         <div className="admin-login-header">
+          <img className="admin-login-header-logo" src={hrisLogo} alt="HRIS logo" />
           <div className="admin-login-badge">Admin</div>
           <h1>HRIS Admin Portal</h1>
           <p>Sign in to manage jobs, raters, and applicant flow.</p>
