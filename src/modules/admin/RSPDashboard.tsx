@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Users, Briefcase, UserCheck, Clock, Search, Plus, Edit2, Trash2, FileText, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Users, Briefcase, UserCheck, Clock, Search, Plus, FileText, ChevronRight, ChevronLeft } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Sidebar } from '../../components/Sidebar';
 import { Button } from '../../components/Button';
@@ -101,7 +101,7 @@ export const RSPDashboard = () => {
 
       // Get applicant count for each job
       const jobsWithCounts = await Promise.all(
-        (jobsData || []).map(async (job) => {
+        (jobsData || []).map(async (job: Job) => {
           const { count } = await supabase
             .from('applicants')
             .select('id', { count: 'exact', head: true })
@@ -239,178 +239,206 @@ export const RSPDashboard = () => {
       
       <main className="admin-content">
         <div className="admin-header">
-          <h1>RSP Dashboard</h1>
-          <p className="admin-subtitle">Recruitment & Selection Portal</p>
+          <h1>Recruitment, Selection & Placement</h1>
+          <p className="admin-subtitle">Manage job postings and review applicant submissions</p>
         </div>
 
         {/* Stats Cards */}
         <div className="stats-grid">
           <div className="stat-card">
-            <div className="stat-icon" style={{ background: 'linear-gradient(135deg, #0b3d91 0%, #1565d8 100%)' }}>
-              <Users size={24} />
+            <div className="stat-content">
+              <p className="stat-label">Total Job Openings</p>
+              <p className="stat-value">{stats.totalJobs}</p>
             </div>
+            <div className="stat-icon" style={{ background: '#E3F2FD' }}>
+              <FileText size={24} color="#1976D2" />
+            </div>
+          </div>
+
+          <div className="stat-card">
             <div className="stat-content">
               <p className="stat-label">Total Applicants</p>
               <p className="stat-value">{stats.totalApplicants}</p>
             </div>
+            <div className="stat-icon" style={{ background: '#E8F5E9' }}>
+              <Users size={24} color="#388E3C" />
+            </div>
           </div>
 
           <div className="stat-card">
-            <div className="stat-icon" style={{ background: 'linear-gradient(135deg, #f5c12a 0%, #f08c00 100%)' }}>
-              <Briefcase size={24} />
-            </div>
             <div className="stat-content">
-              <p className="stat-label">Active Jobs</p>
-              <p className="stat-value">{stats.totalJobs}</p>
+              <p className="stat-label">Shortlisted Applicants</p>
+              <p className="stat-value">{stats.shortlistedApplicants}</p>
+            </div>
+            <div className="stat-icon" style={{ background: '#F3E5F5' }}>
+              <UserCheck size={24} color="#7B1FA2" />
             </div>
           </div>
 
           <div className="stat-card">
-            <div className="stat-icon" style={{ background: 'linear-gradient(135deg, #d6453d 0%, #b91c1c 100%)' }}>
+            <div className="stat-content">
+              <p className="stat-label">Positions Under Review</p>
+              <p className="stat-value">{stats.positionsUnderReview}</p>
+            </div>
+            <div className="stat-icon" style={{ background: '#FFF3E0' }}>
+              <Clock size={24} color="#F57C00" />
+            </div>
+          </div>
+        </div>
+
+        {/* Action Cards */}
+        <div className="action-cards-grid">
+          <div className="action-card primary">
+            <div className="action-card-icon">
               <UserCheck size={24} />
             </div>
-            <div className="stat-content">
-              <p className="stat-label">Active Raters</p>
-              <p className="stat-value">{stats.totalRaters}</p>
+            <div className="action-card-content">
+              <h3>Qualified Applicants</h3>
+              <p>View all qualified candidates</p>
             </div>
+            <ChevronRight size={20} />
           </div>
 
-          <div className="stat-card">
-            <div className="stat-icon" style={{ background: 'linear-gradient(135deg, #0b3d91 0%, #f5c12a 100%)' }}>
-              <Search size={24} />
+          <div className="action-card">
+            <div className="action-card-icon">
+              <FileText size={24} />
             </div>
-            <div className="stat-content">
-              <p className="stat-label">Pending Reviews</p>
-              <p className="stat-value">{stats.pendingReviews}</p>
+            <div className="action-card-content">
+              <h3>Job Postings</h3>
+              <p>Manage postings</p>
             </div>
+            <ChevronRight size={20} />
+          </div>
+
+          <div className="action-card">
+            <div className="action-card-icon">
+              <Users size={24} />
+            </div>
+            <div className="action-card-content">
+              <h3>All Applicants</h3>
+              <p>Review submissions</p>
+            </div>
+            <ChevronRight size={20} />
           </div>
         </div>
 
-        {/* Job Management Section */}
-        <div className="admin-section">
-          <div className="section-header">
-            <h2>Job Postings</h2>
-            <Button onClick={() => setShowJobDialog(true)}>
-              <Plus size={16} />
-              Create New Job
-            </Button>
+        {/* Search and Filter Bar */}
+        <div className="search-filter-section">
+          <div className="search-input-wrapper">
+            <Search size={18} className="search-icon" />
+            <Input
+              type="text"
+              placeholder="Search by job title or item number..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="search-input"
+            />
           </div>
+          
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="filter-select"
+          >
+            <option value="all">All Status</option>
+            <option value="open">Open</option>
+            <option value="closed">Closed</option>
+            <option value="on hold">On Hold</option>
+          </select>
 
-          <div className="jobs-table-container">
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>Item No.</th>
-                  <th>Title</th>
-                  <th>Salary Grade</th>
-                  <th>Department</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {jobs.map(job => (
-                  <tr key={job.id}>
-                    <td>{job.item_number}</td>
-                    <td>{job.title}</td>
-                    <td>{job.salary_grade}</td>
-                    <td>{job.department}</td>
-                    <td>
-                      <span className={`status-badge status-${job.status.toLowerCase().replace(' ', '-')}`}>
-                        {job.status}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="table-actions">
-                        <button
-                          className="action-btn"
-                          onClick={() => setEditingJob(job)}
-                          title="Edit"
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        <button
-                          className="action-btn danger"
-                          onClick={() => handleDeleteJob(job.id)}
-                          title="Delete"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+          <select
+            value={officeFilter}
+            onChange={(e) => setOfficeFilter(e.target.value)}
+            className="filter-select"
+          >
+            <option value="all">All Offices</option>
+            {uniqueOffices.map(office => (
+              <option key={office} value={office}>{office}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Job Positions Display */}
+        <div className="job-positions-section">
+          <p className="showing-text">Showing {jobs.length} job positions</p>
+          
+          {jobs.length > 0 && (
+            <>
+              <div className="job-card-container">
+                <button 
+                  className="carousel-btn prev"
+                  onClick={() => setCurrentJobPage(Math.max(0, currentJobPage - 1))}
+                  disabled={currentJobPage === 0}
+                >
+                  <ChevronLeft size={24} />
+                </button>
+
+                <div className="job-card">
+                  <div className="job-card-header">
+                    <h3>{jobs[currentJobPage]?.title}</h3>
+                    <span className={`job-status ${jobs[currentJobPage]?.status.toLowerCase().replace(' ', '-')}`}>
+                      {jobs[currentJobPage]?.status}
+                    </span>
+                  </div>
+                  
+                  <p className="job-item-number">Item No. {jobs[currentJobPage]?.item_number}</p>
+                  
+                  <div className="job-details">
+                    <div className="job-detail-item">
+                      <Briefcase size={16} />
+                      <span>{jobs[currentJobPage]?.department}</span>
+                    </div>
+                    <div className="job-detail-item">
+                      <Clock size={16} />
+                      <span>Posted {new Date(jobs[currentJobPage]?.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                    </div>
+                    <div className="job-detail-item">
+                      <Users size={16} />
+                      <span>{jobs[currentJobPage]?.applicant_count || 0} Applicants</span>
+                    </div>
+                  </div>
+
+                  <Button className="view-applicants-btn">
+                    View Applicants <ChevronRight size={16} />
+                  </Button>
+                </div>
+
+                <button 
+                  className="carousel-btn next"
+                  onClick={() => setCurrentJobPage(Math.min(jobs.length - 1, currentJobPage + 1))}
+                  disabled={currentJobPage === jobs.length - 1}
+                >
+                  <ChevronRight size={24} />
+                </button>
+              </div>
+
+              <div className="carousel-dots">
+                {jobs.map((_, index) => (
+                  <button
+                    key={index}
+                    className={`dot ${index === currentJobPage ? 'active' : ''}`}
+                    onClick={() => setCurrentJobPage(index)}
+                  />
                 ))}
-                {jobs.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="empty-state">
-                      No job postings yet. Create your first job posting above.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+              </div>
+            </>
+          )}
 
-        {/* Smart Search Section */}
-        <div className="admin-section">
-          <div className="section-header">
-            <h2>Applicant Search</h2>
-            <div className="search-input-wrapper">
-              <Search size={18} className="search-icon" />
-              <Input
-                type="text"
-                placeholder="Search by name, email, position, department, or contact..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="search-input"
-              />
+          {jobs.length === 0 && (
+            <div className="empty-state">
+              <FileText size={48} />
+              <p>No job postings yet. Create your first job posting.</p>
+              <Button onClick={() => setShowJobDialog(true)}>
+                <Plus size={16} />
+                Create New Job
+              </Button>
             </div>
-          </div>
-
-          <div className="applicants-table-container">
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Contact</th>
-                  <th>Position</th>
-                  <th>Department</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredApplicants.map(applicant => (
-                  <tr key={applicant.id}>
-                    <td>{applicant.name}</td>
-                    <td>{applicant.email}</td>
-                    <td>{applicant.contact_number}</td>
-                    <td>{applicant.position}</td>
-                    <td>{applicant.office}</td>
-                    <td>
-                      <span className={`status-badge status-${applicant.status.toLowerCase()}`}>
-                        {applicant.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-                {filteredApplicants.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="empty-state">
-                      {searchTerm ? 'No applicants found matching your search.' : 'No applicants yet.'}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          )}
         </div>
-
         {/* Create/Edit Job Dialog */}
         {(showJobDialog || editingJob) && (
           <Dialog
-            isOpen={showJobDialog || !!editingJob}
+            open={showJobDialog || !!editingJob}
             onClose={() => {
               setShowJobDialog(false);
               setEditingJob(null);
@@ -433,7 +461,7 @@ export const RSPDashboard = () => {
                   label="Item Number *"
                   value={newJob.item_number}
                   onChange={(e) => setNewJob({ ...newJob, item_number: e.target.value })}
-                  placeholder="e.g., JOB-2024-001"
+                  placeholder="e.g., ITMO2-2025-001"
                 />
               )}
 
@@ -444,12 +472,8 @@ export const RSPDashboard = () => {
                   ? setEditingJob({ ...editingJob, salary_grade: e.target.value })
                   : setNewJob({ ...newJob, salary_grade: e.target.value })
                 }
-              >
-                <option value="">Select Salary Grade</option>
-                {SALARY_GRADES.map(grade => (
-                  <option key={grade} value={grade}>{grade}</option>
-                ))}
-              </Select>
+                options={SALARY_GRADES.map(grade => ({ value: grade, label: grade }))}
+              />
 
               <Select
                 label="Department *"
@@ -458,12 +482,8 @@ export const RSPDashboard = () => {
                   ? setEditingJob({ ...editingJob, department: e.target.value })
                   : setNewJob({ ...newJob, department: e.target.value })
                 }
-              >
-                <option value="">Select Department</option>
-                {DEPARTMENTS.map(dept => (
-                  <option key={dept} value={dept}>{dept}</option>
-                ))}
-              </Select>
+                options={DEPARTMENTS.map(dept => ({ value: dept, label: dept }))}
+              />
 
               <Select
                 label="Status"
@@ -472,11 +492,12 @@ export const RSPDashboard = () => {
                   ? setEditingJob({ ...editingJob, status: e.target.value as any })
                   : setNewJob({ ...newJob, status: e.target.value as any })
                 }
-              >
-                <option value="Open">Open</option>
-                <option value="Closed">Closed</option>
-                <option value="On Hold">On Hold</option>
-              </Select>
+                options={[
+                  { value: 'Open', label: 'Open' },
+                  { value: 'Closed', label: 'Closed' },
+                  { value: 'On Hold', label: 'On Hold' }
+                ]}
+              />
 
               <div className="form-group">
                 <label>Description</label>
