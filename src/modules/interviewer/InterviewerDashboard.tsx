@@ -1,203 +1,240 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase, isMockModeEnabled } from '../../lib/supabase';
-import { Card } from '../../components/Card';
-import { Button } from '../../components/Button';
-import { Select } from '../../components/Select';
+import { Search, Filter } from 'lucide-react';
+import { supabase } from '../../lib/supabase';
 import { Input } from '../../components/Input';
+import '../../styles/interviewer.css';
 
-interface Applicant {
-  id: string;
-  name: string;
-  email: string;
-  position: string;
+interface JobPosting {
+  id: number;
+  title: string;
+  item_number: string;
+  department: string;
   office: string;
-  contact_number: string;
-  status: 'Pending' | 'Reviewed' | 'Accepted' | 'Rejected';
+  status: string;
   created_at: string;
+  applicant_count: number;
+}
+
+interface Stats {
+  totalJobs: number;
+  totalApplicants: number;
+  upcomingInterviews: number;
 }
 
 export function InterviewerDashboard() {
   const navigate = useNavigate();
-  const [applicants, setApplicants] = useState<Applicant[]>([]);
+  const [jobs, setJobs] = useState<JobPosting[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [stats, setStats] = useState<Stats>({
+    totalJobs: 0,
+    totalApplicants: 0,
+    upcomingInterviews: 0
+  });
 
   useEffect(() => {
-    fetchApplicants();
-  }, [statusFilter]);
+    fetchJobsAndApplicants();
+  }, []);
 
-  const fetchApplicants = async () => {
+  const fetchJobsAndApplicants = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      let query = supabase.from('applicants').select('*').order('created_at', { ascending: false });
+      // Get all applicants count
+      const { count: applicantCount } = await supabase
+        .from('applicants')
+        .select('id', { count: 'exact', head: true });
 
-      if (statusFilter !== 'all') {
-        query = query.eq('status', statusFilter);
-      }
+      // Get evaluations count
+      const { count: evaluationCount } = await supabase
+        .from('evaluations')
+        .select('id', { count: 'exact', head: true });
 
-      const { data, error: fetchError } = await query;
+      // Get jobs data
+      const { data: jobsData, error: jobsError } = await supabase
+        .from('jobs')
+        .select('*')
+        .eq('status', 'Open')
+        .order('created_at', { ascending: false });
 
-      if (fetchError) throw fetchError;
+      if (jobsError) throw jobsError;
 
-      setApplicants(data || []);
+      // Get applicant counts for each job
+      const jobsWithCounts = await Promise.all(
+        (jobsData || []).map(async (job: any) => {
+          const { count } = await supabase
+            .from('applicants')
+            .select('id', { count: 'exact', head: true })
+            .eq('position', job.title);
+
+          return {
+            ...job,
+            office: job.department,
+            applicant_count: count || 0
+          };
+        })
+      );
+
+      setJobs(jobsWithCounts);
+      setStats({
+        totalJobs: jobsData?.length || 0,
+        totalApplicants: applicantCount || 0,
+        upcomingInterviews: evaluationCount || 0
+      });
     } catch (err) {
-      console.error('Error fetching applicants:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch applicants');
+      console.error('Error fetching data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch data');
     } finally {
       setLoading(false);
     }
   };
 
-  const getStatusBadgeClass = (status: string) => {
-    const baseClass = 'status-badge';
-    switch (status) {
-      case 'Pending':
-        return `${baseClass} status-pending`;
-      case 'Reviewed':
-        return `${baseClass} status-reviewed`;
-      case 'Accepted':
-        return `${baseClass} status-accepted`;
-      case 'Rejected':
-        return `${baseClass} status-rejected`;
-      default:
-        return baseClass;
-    }
-  };
+  const uniqueDepartments = useMemo(() => {
+    return Array.from(new Set(jobs.map(job => job.office))).sort();
+  }, [jobs]);
+
+  const filteredJobs = useMemo(() => {
+    return jobs.filter(job => {
+      const matchesSearch = !searchTerm || 
+        job.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        job.office.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const matchesDept = departmentFilter === 'all' || job.office === departmentFilter;
+      
+      return matchesSearch && matchesDept;
+    });
+  }, [jobs, searchTerm, departmentFilter]);
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'short', 
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
     });
   };
 
-  // Filter applicants based on search term
-  const filteredApplicants = applicants.filter((applicant) => {
-    if (!searchTerm.trim()) return true;
-    
-    const search = searchTerm.toLowerCase();
-    return (
-      applicant.name.toLowerCase().includes(search) ||
-      applicant.email.toLowerCase().includes(search) ||
-      applicant.position.toLowerCase().includes(search) ||
-      applicant.office.toLowerCase().includes(search) ||
-      applicant.contact_number.includes(search)
-    );
-  });
-
   return (
-    <div className="dashboard-container">
+    <div className="interviewer-dashboard">
+      {/* Header */}
       <div className="dashboard-header">
         <div>
-          <h1 className="dashboard-title">Interviewer Dashboard</h1>
-          <p className="dashboard-subtitle">Review and evaluate applicants</p>
-          {isMockModeEnabled && (
-            <div className="mock-mode-banner">
-              ⚠️ Running in MOCK MODE - Using localStorage
-            </div>
-          )}
+          <h1>Interviewer Dashboard</h1>
+          <p>View assigned job postings and manage applicant evaluations</p>
         </div>
-        <Button onClick={() => navigate('/')}>
-          Back to Applicant Form
-        </Button>
       </div>
 
-      <div className="dashboard-filters">
-        <Input
-          label="Search Applicants"
-          type="text"
-          placeholder="Search by name, email, position, office, or contact..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
-        <Select
-          label="Filter by Status"
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          options={[
-            { value: 'all', label: 'All Applicants' },
-            { value: 'Pending', label: 'Pending Review' },
-            { value: 'Reviewed', label: 'Reviewed' },
-            { value: 'Accepted', label: 'Accepted' },
-            { value: 'Rejected', label: 'Rejected' }
-          ]}
-        />
+      {/* Search and Filter Bar */}
+      <div className="search-filter-bar">
+        <div className="search-wrapper">
+          <Search size={20} className="search-icon" />
+          <input
+            type="text"
+            placeholder="Search by job title or office..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="search-input"
+          />
+        </div>
+
+        <div className="filter-wrapper">
+          <Filter size={20} />
+          <select
+            value={departmentFilter}
+            onChange={(e) => setDepartmentFilter(e.target.value)}
+            className="filter-select"
+          >
+            <option value="all">All Departments</option>
+            {uniqueDepartments.map(dept => (
+              <option key={dept} value={dept}>{dept}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
+      {/* Main Content */}
       {loading ? (
         <div className="loading-state">
-          <div className="spinner"></div>
-          <p>Loading applicants...</p>
+          <p>Loading job postings...</p>
         </div>
       ) : error ? (
-        <Card className="error-card">
-          <p className="error-message">❌ {error}</p>
-          <Button onClick={fetchApplicants}>Retry</Button>
-        </Card>
-      ) : filteredApplicants.length === 0 ? (
-        <Card className="empty-state">
-          <p className="empty-message">
-            {searchTerm
-              ? `No applicants found matching "${searchTerm}"`
-              : statusFilter === 'all'
-                ? 'No applicants found. Applications will appear here once submitted.'
-                : `No applicants with status "${statusFilter}"`}
-          </p>
-        </Card>
-      ) : (
-        <div className="applicants-grid">
-          {filteredApplicants.map((applicant) => (
-            <Card key={applicant.id} className="applicant-card">
-              <div className="applicant-header">
-                <h3 className="applicant-name">{applicant.name}</h3>
-                <span className={getStatusBadgeClass(applicant.status)}>
-                  {applicant.status}
-                </span>
-              </div>
-              
-              <div className="applicant-details">
-                <div className="detail-row">
-                  <span className="detail-label">Position:</span>
-                  <span className="detail-value">{applicant.position}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Office:</span>
-                  <span className="detail-value">{applicant.office}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Email:</span>
-                  <span className="detail-value">{applicant.email}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Contact:</span>
-                  <span className="detail-value">{applicant.contact_number}</span>
-                </div>
-                <div className="detail-row">
-                  <span className="detail-label">Applied:</span>
-                  <span className="detail-value">{formatDate(applicant.created_at)}</span>
-                </div>
-              </div>
-
-              <div className="applicant-actions">
-                <Button
-                  onClick={() => navigate(`/evaluate/${applicant.id}`)}
-                  className="btn-primary"
-                >
-                  {applicant.status === 'Pending' ? 'Evaluate' : 'View Evaluation'}
-                </Button>
-              </div>
-            </Card>
-          ))}
+        <div className="error-state">
+          <p>❌ Error: {error}</p>
+          <button onClick={fetchJobsAndApplicants}>Retry</button>
         </div>
+      ) : (
+        <>
+          {/* Jobs Table */}
+          <div className="jobs-table-wrapper">
+            <table className="jobs-table">
+              <thead>
+                <tr>
+                  <th>JOB TITLE / POSITION</th>
+                  <th>OFFICE / DEPARTMENT</th>
+                  <th>NO. OF APPLICANTS</th>
+                  <th>INTERVIEW DATE</th>
+                  <th>ACTION</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredJobs.length > 0 ? (
+                  filteredJobs.map((job) => (
+                    <tr key={job.id}>
+                      <td>
+                        <span className="job-title">{job.title}</span>
+                      </td>
+                      <td>
+                        <div className="office-info">
+                          <span className="office-name">{job.office}</span>
+                          <span className="department">{job.office}</span>
+                        </div>
+                      </td>
+                      <td>
+                        <span className="applicant-count">{job.applicant_count}</span>
+                      </td>
+                      <td>
+                        <span className="interview-date">{formatDate(job.created_at)}</span>
+                      </td>
+                      <td>
+                        <button
+                          className="view-applicants-link"
+                          onClick={() => navigate(`/dashboard?position=${encodeURIComponent(job.title)}`)}
+                        >
+                          View Applicants →
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="empty-message">
+                      {searchTerm ? 'No job postings found matching your search.' : 'No active job postings available.'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Stats Footer */}
+          <div className="stats-footer">
+            <div className="stat-box">
+              <span className="stat-label">Total Job Postings</span>
+              <span className="stat-value">{stats.totalJobs}</span>
+            </div>
+            <div className="stat-box">
+              <span className="stat-label">Total Applicants</span>
+              <span className="stat-value">{stats.totalApplicants}</span>
+            </div>
+            <div className="stat-box">
+              <span className="stat-label">Upcoming Interviews</span>
+              <span className="stat-value">{stats.upcomingInterviews}</span>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
