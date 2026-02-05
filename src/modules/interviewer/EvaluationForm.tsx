@@ -203,6 +203,7 @@ export function EvaluationForm() {
       <div className="evaluation-header">
         <div>
           <h1 className="evaluation-title">Applicant Evaluation</h1>
+          <p className="evaluation-subtitle">Evaluate the selected applicant</p>
           {isMockModeEnabled && (
             <div className="mock-mode-banner">
               ⚠️ Running in MOCK MODE - Using localStorage

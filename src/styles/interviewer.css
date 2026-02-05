@@ -1,4 +1,366 @@
+/* Interviewer Login Page Styles */
+
+.interviewer-login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2.5rem 1.5rem;
+  background: #f5f7fb;
+}
+
+.login-container {
+  width: 100%;
+  max-width: 1120px;
+  background: white;
+  border-radius: 28px;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 1.05fr 1fr;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
+}
+
+/* Login Illustration Panel */
+.login-illustration {
+  position: relative;
+  color: white;
+  padding: 3.5rem 3.25rem;
+  background: linear-gradient(160deg, #1b54e5 0%, #0c3a9f 100%);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.illustration-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.floating-orb {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  opacity: 0.55;
+}
+
+.orb-1 {
+  width: 140px;
+  height: 140px;
+  left: -30px;
+  top: 40px;
+}
+
+.orb-2 {
+  width: 200px;
+  height: 200px;
+  right: -60px;
+  bottom: 40px;
+}
+
+.orb-3 {
+  width: 120px;
+  height: 120px;
+  right: 40px;
+  top: 90px;
+}
+
+.illustration-content {
+  position: relative;
+  z-index: 1;
+}
+
+.logo-badge {
+  width: 110px;
+  height: 110px;
+  border-radius: 18px;
+  background: white;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #1b54e5;
+}
+
+.illustration-content h2 {
+  font-size: 2.4rem;
+  margin: 0.5rem 0 0;
+  font-weight: 700;
+}
+
+.subtitle {
+  font-size: 1rem;
+  opacity: 0.9;
+  margin: 0;
+}
+
+.feature-list {
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.feature-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.95rem;
+}
+
+.feature-item::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.8);
+  display: inline-block;
+}
+
+.feature-icon {
+  display: none;
+}
+
+/* Login Form Panel */
+.login-form-panel {
+  padding: 3.5rem 3.25rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.login-header {
+  margin-bottom: 2rem;
+}
+
+.login-header h1 {
+  margin: 0 0 0.35rem;
+  font-size: 2rem;
+  color: #0f172a;
+}
+
+.login-header p {
+  margin: 0;
+  color: #64748b;
+}
+
+.login-form {
+  margin-top: 2rem;
+  display: grid;
+  gap: 1.25rem;
+}
+
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: #FEF2F2;
+  border: 1px solid #FCA5A5;
+  border-radius: 12px;
+  color: #991B1B;
+  font-size: 0.875rem;
+}
+
+.form-field {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.form-field label {
+  font-weight: 600;
+  color: #1e293b;
+  font-size: 0.92rem;
+}
+
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-icon {
+  position: absolute;
+  left: 0.9rem;
+  color: #94a3b8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.input-wrapper input {
+  width: 100%;
+  padding: 0.85rem 0.95rem 0.85rem 2.75rem;
+  border-radius: 12px;
+  border: 1px solid #d7dce5;
+  background: #f8fafc;
+  font-size: 0.95rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.input-wrapper input:hover {
+  border-color: #cbd5e1;
+}
+
+.input-wrapper input:focus {
+  outline: none;
+  border-color: #2c6bff;
+  box-shadow: 0 0 0 3px rgba(44, 107, 255, 0.15);
+  background: white;
+}
+
+.input-wrapper input:disabled {
+  background: #f1f5f9;
+  cursor: not-allowed;
+  color: #94a3b8;
+}
+
+.form-options {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.25rem;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+.forgot-link {
+  color: #2c6bff;
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.forgot-link:hover {
+  text-decoration: underline;
+  color: #1b54e5;
+}
+
+.login-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.95rem 1.25rem;
+  background: linear-gradient(160deg, #1b54e5 0%, #0c3a9f 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 0.5rem;
+}
+
+.login-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(27, 84, 229, 0.35);
+}
+
+.login-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.login-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.spinner-small {
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.login-footer {
+  margin-top: 1.75rem;
+  text-align: center;
+}
+
+.login-footer p {
+  color: #64748b;
+  font-size: 0.875rem;
+  margin: 0 0 1rem 0;
+}
+
+.login-footer a {
+  color: #2c6bff;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.login-footer a:hover {
+  text-decoration: underline;
+}
+
+.demo-credentials {
+  padding: 1rem 1.25rem;
+  background: #f8fafc;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.demo-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #64748b;
+  margin: 0 0 0.5rem 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.demo-credentials code {
+  display: block;
+  font-family: 'Courier New', monospace;
+  font-size: 0.875rem;
+  color: #1b54e5;
+  background: white;
+  padding: 0.65rem;
+  border-radius: 8px;
+  margin: 0;
+  border: 1px solid #e2e8f0;
+}
+
+/* Responsive Design for Login */
+@media (max-width: 768px) {
+  .login-container {
+    grid-template-columns: 1fr;
+  }
+
+  .login-illustration {
+    display: none;
+  }
+
+  .login-form-panel {
+    padding: 2rem 1.5rem;
+  }
+}
+
 /* Interviewer Dashboard Styles */
+
 
 .interviewer-dashboard {
   max-width: 1400px;
@@ -239,6 +601,226 @@
   font-weight: 700;
 }
 
+.clickable-stat {
+  cursor: pointer;
+  background: linear-gradient(135deg, #E3F2FD 0%, #F3E5F5 100%);
+  border: 1px solid #BBDEFB;
+}
+
+.clickable-stat:hover {
+  border-color: #1976D2;
+  box-shadow: 0 2px 8px rgba(25, 118, 210, 0.15);
+}
+
+/* Modal Styles */
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  border-bottom: 1px solid #E0E0E0;
+}
+
+.modal-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0;
+  color: #212121;
+}
+
+.modal-close-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #757575;
+  padding: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.modal-close-btn:hover {
+  background: #F5F5F5;
+  color: #212121;
+}
+
+.modal-content {
+  padding: 1.5rem;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.applicants-list-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.applicant-modal-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: #FAFAFA;
+  border-radius: 8px;
+  border: 1px solid #E0E0E0;
+  transition: all 0.2s ease;
+}
+
+.applicant-modal-item:hover {
+  background: white;
+  border-color: #1976D2;
+  box-shadow: 0 2px 8px rgba(25, 118, 210, 0.1);
+}
+
+.applicant-modal-info {
+  flex: 1;
+}
+
+.applicant-name {
+  margin: 0 0 0.25rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #212121;
+}
+
+.applicant-meta {
+  margin: 0 0 0.25rem 0;
+  font-size: 0.875rem;
+  color: #757575;
+}
+
+.applicant-contact {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #1976D2;
+}
+
+.applicant-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.delete-applicant-btn {
+  background: none;
+  border: none;
+  color: #757575;
+  cursor: pointer;
+  padding: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.delete-applicant-btn:hover {
+  background: #FFEBEE;
+  color: #C62828;
+}
+
+.delete-confirm-content {
+  text-align: center;
+  padding: 1rem;
+}
+
+.warning-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+.delete-warning-text {
+  font-size: 1rem;
+  color: #212121;
+  margin: 0 0 0.5rem 0;
+}
+
+.delete-warning-text strong {
+  color: #C62828;
+}
+
+.delete-warning-subtext {
+  font-size: 0.875rem;
+  color: #757575;
+  margin: 0 0 1.5rem 0;
+}
+
+.delete-confirm-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+}
+
+.cancel-delete-btn,
+.confirm-delete-btn {
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: none;
+}
+
+.cancel-delete-btn {
+  background: #F5F5F5;
+  color: #616161;
+}
+
+.cancel-delete-btn:hover:not(:disabled) {
+  background: #E0E0E0;
+}
+
+.confirm-delete-btn {
+  background: #D32F2F;
+  color: white;
+}
+
+.confirm-delete-btn:hover:not(:disabled) {
+  background: #C62828;
+  box-shadow: 0 4px 12px rgba(211, 47, 47, 0.3);
+}
+
+.cancel-delete-btn:disabled,
+.confirm-delete-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.status-badge {
+  padding: 0.375rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.status-badge.status-approved {
+  background: #E8F5E9;
+  color: #2E7D32;
+}
+
+.status-badge.status-pending {
+  background: #FFF3E0;
+  color: #E65100;
+}
+
+.status-badge.status-rejected {
+  background: #FFEBEE;
+  color: #C62828;
+}
+
+.status-badge.status-shortlisted {
+  background: #E3F2FD;
+  color: #1565C0;
+}
+
 /* Loading and Error States */
 .loading-state,
 .error-state {
@@ -304,6 +886,25 @@
 }
 
 .evaluation-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 2rem;
+  gap: 1rem;
+}
+
+.evaluation-title {
+  font-size: 2rem;
+  font-weight: 600;
+  color: #212121;
+  margin: 0 0 0.5rem 0;
+}
+
+.evaluation-subtitle {
+  color: #757575;
+  font-size: 1rem;
+  margin: 0;
+}
 
 /* Loading and Error States */
 .loading-state {
