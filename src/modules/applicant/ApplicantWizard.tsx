@@ -8,7 +8,9 @@ import { ApplicantAssessmentForm } from './ApplicantAssessmentForm';
 import { AttachmentsUploadForm } from './AttachmentsUploadForm';
 
 const INITIAL_FORM_DATA: ApplicantFormData = {
-  name: '',
+  first_name: '',
+  middle_name: '',
+  last_name: '',
   address: '',
   contact_number: '',
   email: '',
@@ -124,7 +126,9 @@ export const ApplicantWizard: React.FC = () => {
       const applicantResult = await supabase
         .from('applicants')
         .insert({
-          name: formData.name,
+          first_name: formData.first_name,
+          middle_name: formData.middle_name,
+          last_name: formData.last_name,
           address: formData.address,
           contact_number: formData.contact_number,
           email: formData.email,

@@ -4,7 +4,9 @@ export interface Database {
       applicants: {
         Row: {
           id: string;
-          name: string;
+          first_name: string;
+          middle_name: string | null;
+          last_name: string;
           address: string;
           contact_number: string;
           email: string;
@@ -17,7 +19,9 @@ export interface Database {
         };
         Insert: {
           id?: string;
-          name: string;
+          first_name: string;
+          middle_name?: string | null;
+          last_name: string;
           address: string;
           contact_number: string;
           email: string;
@@ -30,7 +34,9 @@ export interface Database {
         };
         Update: {
           id?: string;
-          name?: string;
+          first_name?: string;
+          middle_name?: string | null;
+          last_name?: string;
           address?: string;
           contact_number?: string;
           email?: string;

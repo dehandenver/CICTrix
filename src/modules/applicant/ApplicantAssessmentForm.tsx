@@ -60,11 +60,28 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
     <Card title="Applicant Assessment Form">
       <div className="grid gap-md md:grid-cols-2">
         <Input
-          label="Full Name"
-          placeholder="Enter your full name"
-          value={formData.name}
-          onChange={(e) => onChange('name', e.target.value)}
-          error={errors.name}
+          label="First Name"
+          placeholder="Enter your first name"
+          value={formData.first_name}
+          onChange={(e) => onChange('first_name', e.target.value)}
+          error={errors.first_name}
+          required
+        />
+
+        <Input
+          label="Middle Name"
+          placeholder="Enter your middle name"
+          value={formData.middle_name}
+          onChange={(e) => onChange('middle_name', e.target.value)}
+          error={errors.middle_name}
+        />
+
+        <Input
+          label="Last Name"
+          placeholder="Enter your last name"
+          value={formData.last_name}
+          onChange={(e) => onChange('last_name', e.target.value)}
+          error={errors.last_name}
           required
         />
 

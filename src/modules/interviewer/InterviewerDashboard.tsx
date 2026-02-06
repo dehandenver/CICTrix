@@ -18,7 +18,9 @@ interface JobPosting {
 
 interface Applicant {
   id: string;
-  name: string;
+  first_name: string;
+  middle_name: string | null;
+  last_name: string;
   email: string;
   position: string;
   office: string;
@@ -26,6 +28,16 @@ interface Applicant {
   status: string;
   created_at: string;
 }
+
+// Helper function to construct full name
+const getFullName = (applicant: Applicant): string => {
+  const parts = [applicant.first_name];
+  if (applicant.middle_name) {
+    parts.push(applicant.middle_name);
+  }
+  parts.push(applicant.last_name);
+  return parts.join(' ');
+};
 
 interface Stats {
   totalJobs: number;
@@ -333,7 +345,7 @@ export function InterviewerDashboard() {
                   {allApplicants.map((applicant) => (
                     <div key={applicant.id} className="applicant-modal-item">
                       <div className="applicant-modal-info">
-                        <h4 className="applicant-name">{applicant.name}</h4>
+                        <h4 className="applicant-name">{getFullName(applicant)}</h4>
                         <p className="applicant-meta">
                           {applicant.position} • {applicant.office}
                         </p>
@@ -385,7 +397,7 @@ export function InterviewerDashboard() {
               <div className="delete-confirm-content">
                 <div className="warning-icon">⚠️</div>
                 <p className="delete-warning-text">
-                  Are you sure you want to delete <strong>{applicantToDelete?.name}</strong>?
+                  Are you sure you want to delete <strong>{applicantToDelete ? getFullName(applicantToDelete) : ''}</strong>?
                 </p>
                 <p className="delete-warning-subtext">
                   This action cannot be undone. All applicant data and attachments will be permanently removed.

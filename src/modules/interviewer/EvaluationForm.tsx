@@ -9,7 +9,9 @@ import { Dialog } from '../../components/Dialog';
 
 interface Applicant {
   id: string;
-  name: string;
+  first_name: string;
+  middle_name: string | null;
+  last_name: string;
   email: string;
   position: string;
   office: string;
@@ -20,6 +22,16 @@ interface Applicant {
   status: string;
   created_at: string;
 }
+
+// Helper function to construct full name
+const getFullName = (applicant: Applicant): string => {
+  const parts = [applicant.first_name];
+  if (applicant.middle_name) {
+    parts.push(applicant.middle_name);
+  }
+  parts.push(applicant.last_name);
+  return parts.join(' ');
+};
 
 interface Attachment {
   id: string;
@@ -223,7 +235,7 @@ export function EvaluationForm() {
             <div className="info-grid">
               <div className="info-item">
                 <span className="info-label">Name:</span>
-                <span className="info-value">{applicant.name}</span>
+                <span className="info-value">{getFullName(applicant)}</span>
               </div>
               <div className="info-item">
                 <span className="info-label">Email:</span>

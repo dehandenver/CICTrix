@@ -1,7 +1,9 @@
 -- Create applicants table
 CREATE TABLE IF NOT EXISTS applicants (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name VARCHAR(255) NOT NULL,
+  first_name VARCHAR(255) NOT NULL,
+  middle_name VARCHAR(255),
+  last_name VARCHAR(255) NOT NULL,
   address TEXT NOT NULL,
   contact_number VARCHAR(50) NOT NULL,
   email VARCHAR(255) NOT NULL,

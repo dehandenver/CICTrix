@@ -3,11 +3,23 @@ import type { ApplicantFormData, ValidationErrors } from '../types/applicant.typ
 export const validateApplicantForm = (data: ApplicantFormData): ValidationErrors => {
   const errors: ValidationErrors = {};
 
-  // Name validation
-  if (!data.name.trim()) {
-    errors.name = 'Name is required';
-  } else if (data.name.trim().length < 2) {
-    errors.name = 'Name must be at least 2 characters';
+  // First name validation
+  if (!data.first_name.trim()) {
+    errors.first_name = 'First name is required';
+  } else if (data.first_name.trim().length < 2) {
+    errors.first_name = 'First name must be at least 2 characters';
+  }
+
+  // Middle name validation (optional but if provided must be valid)
+  if (data.middle_name.trim() && data.middle_name.trim().length < 2) {
+    errors.middle_name = 'Middle name must be at least 2 characters';
+  }
+
+  // Last name validation
+  if (!data.last_name.trim()) {
+    errors.last_name = 'Last name is required';
+  } else if (data.last_name.trim().length < 2) {
+    errors.last_name = 'Last name must be at least 2 characters';
   }
 
   // Address validation
