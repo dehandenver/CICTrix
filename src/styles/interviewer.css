@@ -628,6 +628,12 @@
   color: #212121;
 }
 
+.modal-subtitle {
+  font-size: 0.875rem;
+  color: #757575;
+  margin: 0.25rem 0 0 0;
+}
+
 .modal-close-btn {
   background: none;
   border: none;
@@ -720,6 +726,112 @@
 .delete-applicant-btn:hover {
   background: #FFEBEE;
   color: #C62828;
+}
+
+/* Applicants Table Styles */
+.applicants-table-container {
+  overflow-x: auto;
+}
+
+.applicants-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: white;
+}
+
+.applicants-table thead {
+  background: #F8F9FA;
+  border-bottom: 2px solid #E0E0E0;
+}
+
+.applicants-table th {
+  padding: 1.25rem 1.5rem;
+  text-align: left;
+  font-size: 0.813rem;
+  font-weight: 600;
+  color: #616161;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  border-bottom: 2px solid #E0E0E0;
+}
+
+.applicants-table tbody tr {
+  border-bottom: 1px solid #F0F0F0;
+  transition: background-color 0.15s ease;
+}
+
+.applicants-table tbody tr:hover {
+  background: #FAFAFA;
+}
+
+.applicants-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.applicants-table td {
+  padding: 1.5rem 1.5rem;
+  font-size: 0.938rem;
+  color: #212121;
+  vertical-align: middle;
+}
+
+.applicants-table td:first-child {
+  font-weight: 500;
+  color: #1a1a1a;
+}
+
+.evaluation-status {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.evaluation-status.completed {
+  background: #E8F5E9;
+  color: #2E7D32;
+}
+
+.evaluation-status.in-progress {
+  background: #FFF9C4;
+  color: #F57F17;
+}
+
+.evaluation-status.pending {
+  background: #E3F2FD;
+  color: #1565C0;
+}
+
+.action-btn {
+  padding: 0.625rem 2rem;
+  border-radius: 8px;
+  font-size: 0.938rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  letter-spacing: 0.3px;
+}
+
+.action-btn.evaluate {
+  background: #1976D2;
+  color: white;
+}
+
+.action-btn.evaluate:hover {
+  background: #1565C0;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(25, 118, 210, 0.3);
+}
+
+.action-btn.evaluated {
+  background: #BDBDBD;
+  color: #FFFFFF;
+  cursor: not-allowed;
+  opacity: 0.8;
 }
 
 .delete-confirm-content {
@@ -1220,3 +1332,88 @@
     width: 100%;
   }
 }
+
+/* Interviewer Applicants List Page */
+.interviewer-applicants-list-page {
+  min-height: 100vh;
+  background: #FAFAFA;
+}
+
+.applicants-page-header {
+  background: white;
+  border-bottom: 1px solid #E0E0E0;
+  padding: 1.5rem 2rem;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.back-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #616161;
+  padding: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.back-button:hover {
+  background: #F5F5F5;
+  color: #212121;
+}
+
+.header-content h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #212121;
+}
+
+.header-details {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.938rem;
+  color: #616161;
+  margin-top: 0.25rem;
+}
+
+.header-details .divider {
+  opacity: 0.4;
+}
+
+.applicants-page-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.applicants-page-title-section {
+  margin-bottom: 2rem;
+}
+
+.applicants-page-title {
+  margin: 0 0 0.5rem 0;
+  font-size: 2rem;
+  font-weight: 600;
+  color: #212121;
+}
+
+.applicants-page-subtitle {
+  margin: 0;
+  font-size: 0.938rem;
+  color: #616161;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 3rem 2rem;
+  background: white;
+  border-radius: 8px;
+  color: #616161;
+}
+

@@ -22,13 +22,25 @@ interface Job {
 
 interface Applicant {
   id: number;
-  name: string;
+  first_name: string;
+  middle_name: string | null;
+  last_name: string;
   email: string;
   contact_number: string;
   position: string;
   office: string;
   status: string;
 }
+
+// Helper function to construct full name
+const getFullName = (applicant: Applicant): string => {
+  const parts = [applicant.first_name];
+  if (applicant.middle_name) {
+    parts.push(applicant.middle_name);
+  }
+  parts.push(applicant.last_name);
+  return parts.join(' ');
+};
 
 interface Stats {
   totalApplicants: number;
@@ -209,13 +221,14 @@ export const RSPDashboard = () => {
 
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(applicant =>
-        applicant.name.toLowerCase().includes(term) ||
-        applicant.email.toLowerCase().includes(term) ||
-        applicant.position.toLowerCase().includes(term) ||
-        applicant.office.toLowerCase().includes(term) ||
-        applicant.contact_number.includes(term)
-      );
+      filtered = filtered.filter(applicant => {
+        const fullName = getFullName(applicant).toLowerCase();
+        return fullName.includes(term) ||
+          applicant.email.toLowerCase().includes(term) ||
+          applicant.position.toLowerCase().includes(term) ||
+          applicant.office.toLowerCase().includes(term) ||
+          applicant.contact_number.includes(term);
+      });
     }
 
     if (statusFilter && statusFilter !== 'all') {

@@ -27,6 +27,7 @@ interface Applicant {
   contact_number: string;
   status: string;
   created_at: string;
+  evaluation_status: 'Completed' | 'In Progress' | 'Not Yet Rated';
 }
 
 // Helper function to construct full name
@@ -57,9 +58,6 @@ export function InterviewerDashboard() {
     totalApplicants: 0,
     upcomingInterviews: 0
   });
-  const [showApplicantsModal, setShowApplicantsModal] = useState(false);
-  const [allApplicants, setAllApplicants] = useState<Applicant[]>([]);
-  const [applicantsLoading, setApplicantsLoading] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [applicantToDelete, setApplicantToDelete] = useState<Applicant | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -149,20 +147,46 @@ export function InterviewerDashboard() {
   const handleViewAllApplicants = async () => {
     try {
       setApplicantsLoading(true);
-      const { data, error: err } = await supabase
+      
+      // Fetch applicants
+      const { data: applicantsData, error: applicantsErr } = await supabase
         .from('applicants')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (err) throw err;
-      setAllApplicants(data || []);
+      if (applicantsErr) throw applicantsErr;
+
+      // Fetch evaluations to check which applicants have been evaluated
+      const { data: evaluationsData, error: evaluationsErr } = await supabase
+        .from('evaluations')
+        .select('*');
+
+      if (evaluationsErr) throw evaluationsErr;
+
+      // Create a map of applicant IDs to their evaluation status
+      const evaluationMap = new Map();
+      evaluationsData?.forEach((e: any) => {
+        const isComplete = e.technical_score && e.communication_score && e.overall_score && e.recommendation;
+        evaluationMap.set(e.applicant_id, isComplete ? 'Completed' : 'In Progress');
+      });
+
+      // Add evaluation_status to each applicant
+      const applicantsWithEvalStatus = (applicantsData || []).map((applicant: any) => ({
+        ...applicant,
+        evaluation_status: evaluationMap.get(applicant.id) || 'Not Yet Rated'
+      }));
+
+      setAllApplicants(applicantsWithEvalStatus);
       setShowApplicantsModal(true);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching applicants:', err);
-      alert('Failed to load applicants');
     } finally {
       setApplicantsLoading(false);
     }
+  };
+
+  const handleViewJobApplicants = async (jobTitle: string) => {
+    navigate(`/interviewer/applicants?position=${encodeURIComponent(jobTitle)}`);
   };
 
   const handleDeleteClick = (applicant: Applicant) => {
@@ -286,7 +310,7 @@ export function InterviewerDashboard() {
                       <td>
                         <button
                           className="view-applicants-link"
-                          onClick={() => navigate(`/dashboard?position=${encodeURIComponent(job.title)}`)}
+                          onClick={() => handleViewJobApplicants(job.title)}
                         >
                           View Applicants →
                         </button>
@@ -327,7 +351,10 @@ export function InterviewerDashboard() {
           {/* Applicants Modal */}
           <Dialog open={showApplicantsModal} onClose={() => setShowApplicantsModal(false)}>
             <div className="modal-header">
-              <h2 className="modal-title">All Applicants</h2>
+              <div>
+                <h2 className="modal-title">Applicants List</h2>
+                <p className="modal-subtitle">{allApplicants.length} applicants for this position</p>
+              </div>
               <button 
                 onClick={() => setShowApplicantsModal(false)}
                 className="modal-close-btn"
@@ -341,39 +368,52 @@ export function InterviewerDashboard() {
                   <p>Loading applicants...</p>
                 </div>
               ) : allApplicants.length > 0 ? (
-                <div className="applicants-list-modal">
-                  {allApplicants.map((applicant) => (
-                    <div key={applicant.id} className="applicant-modal-item">
-                      <div className="applicant-modal-info">
-                        <h4 className="applicant-name">{getFullName(applicant)}</h4>
-                        <p className="applicant-meta">
-                          {applicant.position} • {applicant.office}
-                        </p>
-                        <p className="applicant-contact">{applicant.email}</p>
-                      </div>
-                      <span className={`status-badge status-${applicant.status.toLowerCase()}`}>
-                        {applicant.status}
-                      </span>
-                      <div className="applicant-actions">
-                        <button
-                          className="view-applicants-link"
-                          onClick={() => {
-                            navigate(`/interviewer/evaluate/${applicant.id}`);
-                            setShowApplicantsModal(false);
-                          }}
-                        >
-                          View <ChevronRight size={16} />
-                        </button>
-                        <button
-                          className="delete-applicant-btn"
-                          onClick={() => handleDeleteClick(applicant)}
-                          title="Delete applicant"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                <div className="applicants-table-container">
+                  <table className="applicants-table">
+                    <thead>
+                      <tr>
+                        <th>APPLICANT NAME</th>
+                        <th>CONTACT NUMBER</th>
+                        <th>APPLICATION DATE</th>
+                        <th>EVALUATION STATUS</th>
+                        <th>ACTION</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allApplicants.map((applicant) => (
+                        <tr key={applicant.id}>
+                          <td>{getFullName(applicant)}</td>
+                          <td>{applicant.contact_number}</td>
+                          <td>{formatDate(applicant.created_at)}</td>
+                          <td>
+                            <span className={`evaluation-status ${
+                              applicant.evaluation_status === 'Completed' ? 'completed' : 
+                              applicant.evaluation_status === 'In Progress' ? 'in-progress' : 'pending'
+                            }`}>
+                              {applicant.evaluation_status}
+                            </span>
+                          </td>
+                          <td>
+                            {applicant.evaluation_status === 'Completed' ? (
+                              <button className="action-btn evaluated" disabled>
+                                Evaluated
+                              </button>
+                            ) : (
+                              <button
+                                className="action-btn evaluate"
+                                onClick={() => {
+                                  navigate(`/interviewer/evaluate/${applicant.id}`);
+                                  setShowApplicantsModal(false);
+                                }}
+                              >
+                                Evaluate
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               ) : (
                 <p className="empty-message">No applicants found</p>

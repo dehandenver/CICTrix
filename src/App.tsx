@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { ApplicantWizard } from './modules/applicant/ApplicantWizard';
 import { InterviewerDashboard } from './modules/interviewer/InterviewerDashboard';
+import { InterviewerApplicantsList } from './modules/interviewer/InterviewerApplicantsList';
 import { InterviewerLogin } from './modules/interviewer/InterviewerLogin';
 import { EvaluationForm } from './modules/interviewer/EvaluationForm';
 import { SuperAdminDashboard } from './modules/admin/SuperAdminDashboard';
@@ -103,6 +104,14 @@ function App() {
             element={
               <InterviewerRoute session={interviewerSession}>
                 <InterviewerDashboard />
+              </InterviewerRoute>
+            }
+          />
+          <Route
+            path="/interviewer/applicants"
+            element={
+              <InterviewerRoute session={interviewerSession}>
+                <InterviewerApplicantsList />
               </InterviewerRoute>
             }
           />
