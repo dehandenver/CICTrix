@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS applicants (
   first_name VARCHAR(255) NOT NULL,
   middle_name VARCHAR(255),
   last_name VARCHAR(255) NOT NULL,
+  gender VARCHAR(10) CHECK (gender IN ('Male', 'Female')),
   address TEXT NOT NULL,
   contact_number VARCHAR(50) NOT NULL,
   email VARCHAR(255) NOT NULL,
@@ -82,6 +83,19 @@ CREATE TABLE IF NOT EXISTS evaluations (
   technical_score INTEGER CHECK (technical_score >= 1 AND technical_score <= 5),
   communication_score INTEGER CHECK (communication_score >= 1 AND communication_score <= 5),
   overall_score INTEGER CHECK (overall_score >= 1 AND overall_score <= 5),
+  communication_skills_score INTEGER CHECK (communication_skills_score >= 1 AND communication_skills_score <= 5),
+  confidence_score INTEGER CHECK (confidence_score >= 1 AND confidence_score <= 5),
+  comprehension_score INTEGER CHECK (comprehension_score >= 1 AND comprehension_score <= 5),
+  personality_score INTEGER CHECK (personality_score >= 1 AND personality_score <= 5),
+  job_knowledge_score INTEGER CHECK (job_knowledge_score >= 1 AND job_knowledge_score <= 5),
+  overall_impression_score INTEGER CHECK (overall_impression_score >= 1 AND overall_impression_score <= 5),
+  communication_skills_remarks TEXT,
+  confidence_remarks TEXT,
+  comprehension_remarks TEXT,
+  personality_remarks TEXT,
+  job_knowledge_remarks TEXT,
+  overall_impression_remarks TEXT,
+  interview_notes TEXT,
   comments TEXT,
   recommendation VARCHAR(50) CHECK (recommendation IN ('Highly Recommended', 'Recommended', 'Not Recommended')),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -98,6 +112,11 @@ ALTER TABLE evaluations ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow authenticated insert on evaluations"
 ON evaluations FOR INSERT
 TO authenticated
+WITH CHECK (true);
+
+CREATE POLICY "Allow public insert on evaluations"
+ON evaluations FOR INSERT
+TO anon
 WITH CHECK (true);
 
 CREATE POLICY "Allow authenticated read on evaluations"

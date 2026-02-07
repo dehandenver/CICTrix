@@ -45,7 +45,7 @@ const formatDate = (dateString: string): string => {
 export function InterviewerApplicantsList() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const jobTitle = searchParams.get('position') || '';
+  const jobTitle = searchParams.get('position') || 'N/A';
   
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [jobDetails, setJobDetails] = useState<JobPosting | null>(null);
@@ -53,7 +53,12 @@ export function InterviewerApplicantsList() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchApplicantsAndJob();
+    // Fetch when jobTitle is available
+    if (jobTitle && jobTitle !== 'N/A') {
+      fetchApplicantsAndJob();
+    } else {
+      setLoading(false);
+    }
   }, [jobTitle]);
 
   const fetchApplicantsAndJob = async () => {
@@ -61,18 +66,31 @@ export function InterviewerApplicantsList() {
       setLoading(true);
       setError(null);
 
-      // Fetch job posting to get details
-      const { data: jobData, error: jobErr } = await supabase
-        .from('job_postings')
-        .select('title, office, department')
-        .eq('title', jobTitle)
-        .single();
+      // Try to fetch job posting - but it might not exist in DB
+      // So we'll just use the title from URL params
+      let jobDetails: JobPosting = {
+        title: jobTitle,
+        office: 'N/A',
+        department: 'N/A'
+      };
 
-      if (jobErr && jobErr.code !== 'PGRST116') {
-        throw jobErr;
+      // Try to fetch from DB if it exists
+      try {
+        const { data: jobData } = await supabase
+          .from('job_postings')
+          .select('title, office, department')
+          .eq('title', jobTitle)
+          .single();
+
+        if (jobData) {
+          jobDetails = jobData as JobPosting;
+        }
+      } catch (err) {
+        // Job posting might not exist in DB, use defaults
+        console.log('Job posting not found in DB, using defaults');
       }
 
-      setJobDetails(jobData as JobPosting);
+      setJobDetails(jobDetails);
 
       // Fetch applicants for this job
       const { data: applicantsData, error: applicantsErr } = await supabase
@@ -93,7 +111,22 @@ export function InterviewerApplicantsList() {
       // Create evaluation status map
       const evaluationMap = new Map();
       evaluationsData?.forEach((e: any) => {
-        const isComplete = e.technical_score && e.communication_score && e.overall_score && e.recommendation;
+        const hasOralScores = [
+          e.communication_skills_score,
+          e.confidence_score,
+          e.comprehension_score,
+          e.personality_score,
+          e.job_knowledge_score,
+          e.overall_impression_score
+        ].every((value) => typeof value === 'number' && value > 0);
+
+        const hasLegacyScores = [
+          e.technical_score,
+          e.communication_score,
+          e.overall_score
+        ].every((value) => typeof value === 'number' && value > 0);
+
+        const isComplete = hasOralScores || hasLegacyScores;
         evaluationMap.set(e.applicant_id, isComplete ? 'Completed' : 'In Progress');
       });
 
@@ -126,11 +159,12 @@ export function InterviewerApplicantsList() {
         <button
           className="back-button"
           onClick={() => navigate('/interviewer/dashboard')}
+          title="Back to Dashboard"
         >
           <ArrowLeft size={20} />
         </button>
         <div className="header-content">
-          <h1>{jobTitle}</h1>
+          <h1>{jobTitle || 'Job Position'}</h1>
           <div className="header-details">
             <span>{jobDetails?.office || 'N/A'}</span>
             <span className="divider">•</span>
@@ -157,7 +191,7 @@ export function InterviewerApplicantsList() {
             <p>❌ Error: {error}</p>
             <button onClick={fetchApplicantsAndJob}>Retry</button>
           </div>
-        ) : applicants.length > 0 ? (
+        ) : applicants && applicants.length > 0 ? (
           <div className="applicants-table-container">
             <table className="applicants-table">
               <thead>

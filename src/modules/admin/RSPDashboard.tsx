@@ -6,6 +6,7 @@ import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
 import { Dialog } from '../../components/Dialog';
 import { Select } from '../../components/Select';
+import { POSITIONS, DEPARTMENT_OPTIONS, SALARY_GRADE_OPTIONS } from '../../constants/positions';
 import '../../styles/admin.css';
 
 interface Job {
@@ -48,9 +49,6 @@ interface Stats {
   shortlistedApplicants: number;
   positionsUnderReview: number;
 }
-
-const DEPARTMENTS = ['HR', 'Finance', 'IT', 'Operations', 'Marketing', 'Sales', 'Legal', 'Admin'];
-const SALARY_GRADES = ['SG-1', 'SG-2', 'SG-3', 'SG-4', 'SG-5', 'SG-6', 'SG-7', 'SG-8', 'SG-9', 'SG-10'];
 
 export const RSPDashboard = () => {
   const [stats, setStats] = useState<Stats>({
@@ -459,14 +457,14 @@ export const RSPDashboard = () => {
             title={editingJob ? 'Edit Job Posting' : 'Create New Job'}
           >
             <div className="job-form">
-              <Input
-                label="Job Title *"
+              <Select
+                label="Job Title / Position *"
                 value={editingJob ? editingJob.title : newJob.title}
                 onChange={(e) => editingJob 
                   ? setEditingJob({ ...editingJob, title: e.target.value })
                   : setNewJob({ ...newJob, title: e.target.value })
                 }
-                placeholder="e.g., Senior Software Engineer"
+                options={POSITIONS.map(pos => ({ value: pos, label: pos }))}
               />
 
               {!editingJob && (
@@ -485,7 +483,7 @@ export const RSPDashboard = () => {
                   ? setEditingJob({ ...editingJob, salary_grade: e.target.value })
                   : setNewJob({ ...newJob, salary_grade: e.target.value })
                 }
-                options={SALARY_GRADES.map(grade => ({ value: grade, label: grade }))}
+                options={SALARY_GRADE_OPTIONS}
               />
 
               <Select
@@ -495,7 +493,7 @@ export const RSPDashboard = () => {
                   ? setEditingJob({ ...editingJob, department: e.target.value })
                   : setNewJob({ ...newJob, department: e.target.value })
                 }
-                options={DEPARTMENTS.map(dept => ({ value: dept, label: dept }))}
+                options={DEPARTMENT_OPTIONS}
               />
 
               <Select

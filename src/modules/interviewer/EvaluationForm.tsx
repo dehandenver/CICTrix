@@ -43,10 +43,19 @@ interface Attachment {
 
 interface EvaluationData {
   interviewer_name: string;
-  technical_score: number;
-  communication_score: number;
-  overall_score: number;
-  comments: string;
+  communication_skills_score: number;
+  confidence_score: number;
+  comprehension_score: number;
+  personality_score: number;
+  job_knowledge_score: number;
+  overall_impression_score: number;
+  communication_skills_remarks: string;
+  confidence_remarks: string;
+  comprehension_remarks: string;
+  personality_remarks: string;
+  job_knowledge_remarks: string;
+  overall_impression_remarks: string;
+  interview_notes: string;
   recommendation: 'Highly Recommended' | 'Recommended' | 'Not Recommended' | '';
 }
 
@@ -60,15 +69,88 @@ export function EvaluationForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [activeTab, setActiveTab] = useState<'pcpt' | 'oral'>('pcpt');
   
   const [evaluation, setEvaluation] = useState<EvaluationData>({
     interviewer_name: '',
-    technical_score: 0,
-    communication_score: 0,
-    overall_score: 0,
-    comments: '',
+    communication_skills_score: 0,
+    confidence_score: 0,
+    comprehension_score: 0,
+    personality_score: 0,
+    job_knowledge_score: 0,
+    overall_impression_score: 0,
+    communication_skills_remarks: '',
+    confidence_remarks: '',
+    comprehension_remarks: '',
+    personality_remarks: '',
+    job_knowledge_remarks: '',
+    overall_impression_remarks: '',
+    interview_notes: '',
     recommendation: ''
   });
+
+  const [pcptScores, setPcptScores] = useState({
+    appearance: 0,
+    voice: 0,
+    personality: 0,
+    alertness: 0,
+    confidence: 0,
+    composure: 0
+  });
+
+  const handlePcptChange = (field: keyof typeof pcptScores, value: number) => {
+    setPcptScores(prev => ({ ...prev, [field]: value }));
+  };
+
+  // Helper functions inside component to access state
+  const renderStars = (score: number, onSelect: (value: number) => void) => {
+    return (
+      <span className="star-rating">
+        {[1, 2, 3, 4, 5].map(i => (
+          <span
+            key={i}
+            className={`star ${i <= score ? 'filled' : 'empty'}`}
+            role="button"
+            tabIndex={0}
+            onClick={() => onSelect(i)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onSelect(i);
+              }
+            }}
+          >
+            ★
+          </span>
+        ))}
+        <span className="score-value">{score}</span>
+      </span>
+    );
+  };
+
+  const calculateTotalScore = () => {
+    const scores = [
+      evaluation.communication_skills_score,
+      evaluation.confidence_score,
+      evaluation.comprehension_score,
+      evaluation.personality_score,
+      evaluation.job_knowledge_score,
+      evaluation.overall_impression_score
+    ];
+    return scores.reduce((a, b) => a + b, 0);
+  };
+
+  const calculatePercentage = () => {
+    const total = calculateTotalScore();
+    return ((total / 30) * 100).toFixed(2);
+  };
+
+  const getQualificationStatus = () => {
+    const percentage = parseFloat(calculatePercentage());
+    if (percentage >= 75) return 'Qualified';
+    if (percentage >= 60) return 'Conditionally Qualified';
+    return 'Not Qualified';
+  };
 
   useEffect(() => {
     if (id) {
@@ -116,10 +198,13 @@ export function EvaluationForm() {
 
   const validateForm = (): string | null => {
     if (!evaluation.interviewer_name.trim()) return 'Interviewer name is required';
-    if (evaluation.technical_score < 1 || evaluation.technical_score > 5) return 'Technical score must be 1-5';
-    if (evaluation.communication_score < 1 || evaluation.communication_score > 5) return 'Communication score must be 1-5';
-    if (evaluation.overall_score < 1 || evaluation.overall_score > 5) return 'Overall score must be 1-5';
-    if (!evaluation.recommendation) return 'Recommendation is required';
+    if (evaluation.communication_skills_score < 1 || evaluation.communication_skills_score > 5) return 'Communication Skills score must be 1-5';
+    if (evaluation.confidence_score < 1 || evaluation.confidence_score > 5) return 'Confidence score must be 1-5';
+    if (evaluation.comprehension_score < 1 || evaluation.comprehension_score > 5) return 'Comprehension score must be 1-5';
+    if (evaluation.personality_score < 1 || evaluation.personality_score > 5) return 'Personality score must be 1-5';
+    if (evaluation.job_knowledge_score < 1 || evaluation.job_knowledge_score > 5) return 'Job Knowledge score must be 1-5';
+    if (evaluation.overall_impression_score < 1 || evaluation.overall_impression_score > 5) return 'Overall Impression score must be 1-5';
+    if (!evaluation.interview_notes.trim()) return 'Interview notes are required';
     return null;
   };
 
@@ -136,15 +221,61 @@ export function EvaluationForm() {
       setSubmitting(true);
       setError(null);
 
-      // Insert evaluation
-      const { error: evalError } = await supabase
-        .from('evaluations')
-        .insert({
-          applicant_id: id,
-          ...evaluation
-        });
+      console.log('Submitting evaluation with applicant_id:', id);
+      console.log('Evaluation data:', evaluation);
 
-      if (evalError) throw evalError;
+      // Build insert object - only include non-empty values
+      const insertData: any = {
+        applicant_id: id || null,  // id is a UUID string from URL params
+        interviewer_name: evaluation.interviewer_name || null,
+        communication_skills_score: evaluation.communication_skills_score > 0 ? evaluation.communication_skills_score : null,
+        confidence_score: evaluation.confidence_score > 0 ? evaluation.confidence_score : null,
+        comprehension_score: evaluation.comprehension_score > 0 ? evaluation.comprehension_score : null,
+        personality_score: evaluation.personality_score > 0 ? evaluation.personality_score : null,
+        job_knowledge_score: evaluation.job_knowledge_score > 0 ? evaluation.job_knowledge_score : null,
+        overall_impression_score: evaluation.overall_impression_score > 0 ? evaluation.overall_impression_score : null,
+        interview_notes: evaluation.interview_notes || null,
+        recommendation: evaluation.recommendation || null
+      };
+
+      // Only add remarks if they have content
+      if (evaluation.communication_skills_remarks.trim()) {
+        insertData.communication_skills_remarks = evaluation.communication_skills_remarks;
+      }
+      if (evaluation.confidence_remarks.trim()) {
+        insertData.confidence_remarks = evaluation.confidence_remarks;
+      }
+      if (evaluation.comprehension_remarks.trim()) {
+        insertData.comprehension_remarks = evaluation.comprehension_remarks;
+      }
+      if (evaluation.personality_remarks.trim()) {
+        insertData.personality_remarks = evaluation.personality_remarks;
+      }
+      if (evaluation.job_knowledge_remarks.trim()) {
+        insertData.job_knowledge_remarks = evaluation.job_knowledge_remarks;
+      }
+      if (evaluation.overall_impression_remarks.trim()) {
+        insertData.overall_impression_remarks = evaluation.overall_impression_remarks;
+      }
+
+      console.log('Insert data being sent:', insertData);
+
+      // Insert evaluation
+      const { error: evalError, data } = await supabase
+        .from('evaluations')
+        .insert(insertData);
+
+      if (evalError) {
+        console.error('Detailed Supabase error:', {
+          message: evalError.message,
+          code: evalError.code,
+          details: evalError.details,
+          hint: evalError.hint
+        });
+        throw evalError;
+      }
+
+      console.log('Evaluation inserted successfully:', data);
 
       // Update applicant status to "Reviewed"
       const { error: updateError } = await supabase
@@ -152,12 +283,22 @@ export function EvaluationForm() {
         .update({ status: 'Reviewed' })
         .eq('id', id);
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        console.error('Error updating applicant status:', updateError);
+        throw updateError;
+      }
 
       setShowSuccess(true);
+      
+      // Auto-navigate back to applicants list after 1.5 seconds
+      setTimeout(() => {
+        navigate('/interviewer/applicants');
+      }, 1500);
     } catch (err) {
       console.error('Error submitting evaluation:', err);
-      setError(err instanceof Error ? err.message : 'Failed to submit evaluation');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to submit evaluation';
+      console.error('Final error message:', errorMessage);
+      setError(errorMessage);
     } finally {
       setSubmitting(false);
     }
@@ -193,7 +334,7 @@ export function EvaluationForm() {
       <div className="evaluation-container">
         <div className="loading-state">
           <div className="spinner"></div>
-          <p>Loading applicant data...</p>
+          <p>Loading applicant data (ID: {id})...</p>
         </div>
       </div>
     );
@@ -229,166 +370,522 @@ export function EvaluationForm() {
 
       {applicant && (
         <div className="evaluation-content">
-          {/* Applicant Information Card */}
-          <Card className="applicant-info-card">
-            <h2 className="section-title">Applicant Information</h2>
-            <div className="info-grid">
-              <div className="info-item">
-                <span className="info-label">Name:</span>
-                <span className="info-value">{getFullName(applicant)}</span>
+          <div className="evaluation-tabs">
+            <button
+              type="button"
+              className={`evaluation-tab ${activeTab === 'pcpt' ? 'active' : ''}`}
+              onClick={() => setActiveTab('pcpt')}
+            >
+              PCPT Evaluation
+            </button>
+            <button
+              type="button"
+              className={`evaluation-tab ${activeTab === 'oral' ? 'active' : ''}`}
+              onClick={() => setActiveTab('oral')}
+            >
+              Oral Interview Form
+            </button>
+          </div>
+
+          {activeTab === 'pcpt' && (
+            <div className="pcpt-tab-content">
+              <div className="pcpt-form-header">
+                <h1 className="pcpt-title">PHYSICAL CHARACTERISTICS AND PERSONALITY TRAITS</h1>
+                <h2 className="pcpt-subtitle">(PCPT) ASSESSMENT FORM</h2>
+                <hr className="pcpt-divider" />
               </div>
-              <div className="info-item">
-                <span className="info-label">Email:</span>
-                <span className="info-value">{applicant.email}</span>
+
+              <div className="pcpt-info-section">
+                <div className="pcpt-info-row">
+                  <div className="pcpt-info-group">
+                    <label className="pcpt-label">Applicant Name:</label>
+                    <span className="pcpt-value">{getFullName(applicant)}</span>
+                  </div>
+                  <div className="pcpt-info-group">
+                    <label className="pcpt-label">Position Applied For:</label>
+                    <span className="pcpt-value">{applicant.position}</span>
+                  </div>
+                </div>
+
+                <div className="pcpt-info-row">
+                  <div className="pcpt-info-group">
+                    <label className="pcpt-label">Interviewer Name:</label>
+                    <input
+                      type="text"
+                      className="pcpt-input"
+                      value={evaluation.interviewer_name}
+                      onChange={(e) => handleInputChange('interviewer_name', e.target.value)}
+                      placeholder="Enter your name"
+                      required
+                    />
+                  </div>
+                  <div className="pcpt-info-group">
+                    <label className="pcpt-label">Date of Interview:</label>
+                    <span className="pcpt-value">{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                  </div>
+                </div>
+
+                <div className="pcpt-info-row">
+                  <div className="pcpt-info-group full-width">
+                    <label className="pcpt-label">Office / Division:</label>
+                    <span className="pcpt-value">{applicant.office}</span>
+                  </div>
+                </div>
               </div>
-              <div className="info-item">
-                <span className="info-label">Contact:</span>
-                <span className="info-value">{applicant.contact_number}</span>
-              </div>
-              <div className="info-item">
-                <span className="info-label">Position:</span>
-                <span className="info-value">{applicant.position}</span>
-              </div>
-              <div className="info-item">
-                <span className="info-label">Office:</span>
-                <span className="info-value">{applicant.office}</span>
-              </div>
-              <div className="info-item">
-                <span className="info-label">Item Number:</span>
-                <span className="info-value">{applicant.item_number}</span>
-              </div>
-              <div className="info-item">
-                <span className="info-label">Address:</span>
-                <span className="info-value">{applicant.address}</span>
-              </div>
-              <div className="info-item">
-                <span className="info-label">PWD:</span>
-                <span className="info-value">{applicant.is_pwd ? 'Yes' : 'No'}</span>
-              </div>
-              <div className="info-item">
-                <span className="info-label">Status:</span>
-                <span className={`status-badge status-${applicant.status.toLowerCase()}`}>
-                  {applicant.status}
-                </span>
+
+              <div className="pcpt-table-wrapper">
+                <table className="pcpt-table">
+                  <thead>
+                    <tr>
+                      <th>TRAITS</th>
+                      <th>5 – OUTSTANDING</th>
+                      <th>4 – VERY SATISFACTORY</th>
+                      <th>3 – SATISFACTORY</th>
+                      <th>2 – FAIR</th>
+                      <th>1 – POOR</th>
+                      <th>SCORE</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><strong>1. Appearance</strong></td>
+                      <td>Neat, poised, well-groomed</td>
+                      <td>Properly attired and presentable</td>
+                      <td>Average grooming</td>
+                      <td>Slightly untidy</td>
+                      <td>Untidy and unkempt</td>
+                      <td>
+                        <select
+                          className="pcpt-score-select"
+                          value={pcptScores.appearance || '-'}
+                          onChange={(e) => handlePcptChange('appearance', e.target.value === '-' ? 0 : parseInt(e.target.value, 10))}
+                        >
+                          <option value="-">-</option>
+                          <option value="5">5</option>
+                          <option value="4">4</option>
+                          <option value="3">3</option>
+                          <option value="2">2</option>
+                          <option value="1">1</option>
+                        </select>
+                      </td>
+                    </tr>
+
+                    <tr>
+                      <td><strong>2. Voice</strong></td>
+                      <td>Clear, pleasant, confident</td>
+                      <td>Audible and fluent</td>
+                      <td>Understandable</td>
+                      <td>Weak voice</td>
+                      <td>Muffled / unclear</td>
+                      <td>
+                        <select
+                          className="pcpt-score-select"
+                          value={pcptScores.voice || '-'}
+                          onChange={(e) => handlePcptChange('voice', e.target.value === '-' ? 0 : parseInt(e.target.value, 10))}
+                        >
+                          <option value="-">-</option>
+                          <option value="5">5</option>
+                          <option value="4">4</option>
+                          <option value="3">3</option>
+                          <option value="2">2</option>
+                          <option value="1">1</option>
+                        </select>
+                      </td>
+                    </tr>
+
+                    <tr>
+                      <td><strong>3. Personality</strong></td>
+                      <td>Friendly, enthusiastic</td>
+                      <td>Cooperative, approachable</td>
+                      <td>Ordinary personality</td>
+                      <td>Passive</td>
+                      <td>Unpleasant or arrogant</td>
+                      <td>
+                        <select
+                          className="pcpt-score-select"
+                          value={pcptScores.personality || '-'}
+                          onChange={(e) => handlePcptChange('personality', e.target.value === '-' ? 0 : parseInt(e.target.value, 10))}
+                        >
+                          <option value="-">-</option>
+                          <option value="5">5</option>
+                          <option value="4">4</option>
+                          <option value="3">3</option>
+                          <option value="2">2</option>
+                          <option value="1">1</option>
+                        </select>
+                      </td>
+                    </tr>
+
+                    <tr>
+                      <td><strong>4. Alertness</strong></td>
+                      <td>Quick, responsive</td>
+                      <td>Attentive, interested</td>
+                      <td>Average alertness</td>
+                      <td>Slow</td>
+                      <td>Very slow to react</td>
+                      <td>
+                        <select
+                          className="pcpt-score-select"
+                          value={pcptScores.alertness || '-'}
+                          onChange={(e) => handlePcptChange('alertness', e.target.value === '-' ? 0 : parseInt(e.target.value, 10))}
+                        >
+                          <option value="-">-</option>
+                          <option value="5">5</option>
+                          <option value="4">4</option>
+                          <option value="3">3</option>
+                          <option value="2">2</option>
+                          <option value="1">1</option>
+                        </select>
+                      </td>
+                    </tr>
+
+                    <tr>
+                      <td><strong>5. Confidence</strong></td>
+                      <td>Self-assured, firm</td>
+                      <td>Moderately confident</td>
+                      <td>Average</td>
+                      <td>Timid</td>
+                      <td>Insecure / withdrawn</td>
+                      <td>
+                        <select
+                          className="pcpt-score-select"
+                          value={pcptScores.confidence || '-'}
+                          onChange={(e) => handlePcptChange('confidence', e.target.value === '-' ? 0 : parseInt(e.target.value, 10))}
+                        >
+                          <option value="-">-</option>
+                          <option value="5">5</option>
+                          <option value="4">4</option>
+                          <option value="3">3</option>
+                          <option value="2">2</option>
+                          <option value="1">1</option>
+                        </select>
+                      </td>
+                    </tr>
+
+                    <tr>
+                      <td><strong>6. Composure</strong></td>
+                      <td>Calm and consistent</td>
+                      <td>Usually calm</td>
+                      <td>Average composure</td>
+                      <td>Easily distracted</td>
+                      <td>Nervous</td>
+                      <td>
+                        <select
+                          className="pcpt-score-select"
+                          value={pcptScores.composure || '-'}
+                          onChange={(e) => handlePcptChange('composure', e.target.value === '-' ? 0 : parseInt(e.target.value, 10))}
+                        >
+                          <option value="-">-</option>
+                          <option value="5">5</option>
+                          <option value="4">4</option>
+                          <option value="3">3</option>
+                          <option value="2">2</option>
+                          <option value="1">1</option>
+                        </select>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
-          </Card>
-
-          {/* Attachments Card */}
-          {attachments.length > 0 && (
-            <Card className="attachments-card">
-              <h2 className="section-title">Submitted Documents</h2>
-              <div className="attachments-list">
-                {attachments.map((attachment) => (
-                  <div key={attachment.id} className="attachment-item">
-                    <div className="attachment-info">
-                      <span className="attachment-icon">📄</span>
-                      <div className="attachment-details">
-                        <span className="attachment-name">{attachment.file_name}</span>
-                        <span className="attachment-meta">
-                          {attachment.file_type} • {formatFileSize(attachment.file_size)}
-                        </span>
-                      </div>
-                    </div>
-                    <Button
-                      onClick={() => handleViewFile(attachment)}
-                      variant="secondary"
-                      size="sm"
-                    >
-                      View
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </Card>
           )}
 
-          {/* Evaluation Form Card */}
-          <Card className="evaluation-form-card">
-            <h2 className="section-title">Evaluation Form</h2>
-            <form onSubmit={handleSubmit}>
-              <Input
-                label="Interviewer Name"
-                value={evaluation.interviewer_name}
-                onChange={(e) => handleInputChange('interviewer_name', e.target.value)}
-                required
-                placeholder="Enter your name"
-              />
-
-              <div className="score-inputs">
-                <Input
-                  label="Technical Score (1-5)"
-                  type="number"
-                  min="1"
-                  max="5"
-                  value={evaluation.technical_score || ''}
-                  onChange={(e) => handleInputChange('technical_score', parseInt(e.target.value) || 0)}
-                  required
-                />
-                <Input
-                  label="Communication Score (1-5)"
-                  type="number"
-                  min="1"
-                  max="5"
-                  value={evaluation.communication_score || ''}
-                  onChange={(e) => handleInputChange('communication_score', parseInt(e.target.value) || 0)}
-                  required
-                />
-                <Input
-                  label="Overall Score (1-5)"
-                  type="number"
-                  min="1"
-                  max="5"
-                  value={evaluation.overall_score || ''}
-                  onChange={(e) => handleInputChange('overall_score', parseInt(e.target.value) || 0)}
-                  required
-                />
+          {activeTab === 'oral' && (
+            <>
+              <div className="oral-form-header">
+                <h1 className="oral-title">ORAL INTERVIEW ASSESSMENT FORM</h1>
+                <p className="oral-subtitle">Evaluate the applicant's communication ability, confidence, comprehension, and other oral interview traits</p>
+                <hr className="oral-divider" />
               </div>
 
-              <Select
-                label="Recommendation"
-                value={evaluation.recommendation}
-                onChange={(e) => handleInputChange('recommendation', e.target.value)}
-                options={[
-                  { value: '', label: 'Select recommendation' },
-                  { value: 'Highly Recommended', label: 'Highly Recommended' },
-                  { value: 'Recommended', label: 'Recommended' },
-                  { value: 'Not Recommended', label: 'Not Recommended' }
-                ]}
-                required
-              />
-
-              <div className="form-group">
-                <label className="form-label">Comments</label>
-                <textarea
-                  className="form-textarea"
-                  value={evaluation.comments}
-                  onChange={(e) => handleInputChange('comments', e.target.value)}
-                  rows={5}
-                  placeholder="Additional comments about the applicant..."
-                />
-              </div>
-
-              {error && (
-                <div className="error-message">
-                  ❌ {error}
+              <div className="oral-info-section">
+                <div className="oral-info-row">
+                  <div className="oral-info-group">
+                    <label className="oral-label">Applicant Name:</label>
+                    <span className="oral-value">{getFullName(applicant)}</span>
+                  </div>
+                  <div className="oral-info-group">
+                    <label className="oral-label">Position Applied For:</label>
+                    <span className="oral-value">{applicant.position}</span>
+                  </div>
                 </div>
-              )}
 
-              <div className="form-actions">
-                <Button type="submit" disabled={submitting}>
-                  {submitting ? 'Submitting...' : 'Submit Evaluation'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={() => navigate('/dashboard')}
-                >
-                  Cancel
-                </Button>
+                <div className="oral-info-row">
+                  <div className="oral-info-group">
+                    <label className="oral-label">Interview Schedule:</label>
+                    <span className="oral-value">{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                  </div>
+                  <div className="oral-info-group">
+                    <label className="oral-label">Interviewer Name:</label>
+                    <input
+                      type="text"
+                      className="oral-input"
+                      value={evaluation.interviewer_name}
+                      onChange={(e) => handleInputChange('interviewer_name', e.target.value)}
+                      placeholder="Enter your name"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="oral-info-row">
+                  <div className="oral-info-group full-width">
+                    <label className="oral-label">Department:</label>
+                    <span className="oral-value">{applicant.office}</span>
+                  </div>
+                </div>
               </div>
-            </form>
-          </Card>
+
+              <div className="rating-scale-box">
+                <strong>Rating Scale:</strong>
+                <span>5 – Excellent</span>
+                <span>4 – Very Good</span>
+                <span>3 – Good</span>
+                <span>2 – Fair</span>
+                <span>1 – Poor</span>
+              </div>
+
+              <form onSubmit={handleSubmit}>
+                <div className="oral-table-wrapper">
+                  <table className="oral-table">
+                    <thead>
+                      <tr>
+                        <th>CRITERIA</th>
+                        <th>DESCRIPTION</th>
+                        <th>RATING (1-5)</th>
+                        <th>REMARKS</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td><strong>Communication Skills</strong></td>
+                        <td>Clarity and organization of thoughts</td>
+                        <td className="rating-cell">
+                          {renderStars(evaluation.communication_skills_score, (value) =>
+                            handleInputChange('communication_skills_score', value)
+                          )}
+                          <select
+                            className="hidden-select"
+                            value={evaluation.communication_skills_score || 0}
+                            onChange={(e) => handleInputChange('communication_skills_score', parseInt(e.target.value, 10))}
+                          >
+                            <option value="0">0</option>
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="4">4</option>
+                            <option value="5">5</option>
+                          </select>
+                        </td>
+                        <td>
+                          <textarea
+                            className="remarks-textarea"
+                            value={evaluation.communication_skills_remarks}
+                            onChange={(e) => handleInputChange('communication_skills_remarks', e.target.value)}
+                            placeholder="Optional remarks..."
+                          />
+                        </td>
+                      </tr>
+
+                      <tr>
+                        <td><strong>Confidence</strong></td>
+                        <td>Composure, posture, and assurance during interview</td>
+                        <td className="rating-cell">
+                          {renderStars(evaluation.confidence_score, (value) =>
+                            handleInputChange('confidence_score', value)
+                          )}
+                          <select
+                            className="hidden-select"
+                            value={evaluation.confidence_score || 0}
+                            onChange={(e) => handleInputChange('confidence_score', parseInt(e.target.value, 10))}
+                          >
+                            <option value="0">0</option>
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="4">4</option>
+                            <option value="5">5</option>
+                          </select>
+                        </td>
+                        <td>
+                          <textarea
+                            className="remarks-textarea"
+                            value={evaluation.confidence_remarks}
+                            onChange={(e) => handleInputChange('confidence_remarks', e.target.value)}
+                            placeholder="Optional remarks..."
+                          />
+                        </td>
+                      </tr>
+
+                      <tr>
+                        <td><strong>Comprehension</strong></td>
+                        <td>Understanding of questions and ability to respond logically</td>
+                        <td className="rating-cell">
+                          {renderStars(evaluation.comprehension_score, (value) =>
+                            handleInputChange('comprehension_score', value)
+                          )}
+                          <select
+                            className="hidden-select"
+                            value={evaluation.comprehension_score || 0}
+                            onChange={(e) => handleInputChange('comprehension_score', parseInt(e.target.value, 10))}
+                          >
+                            <option value="0">0</option>
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="4">4</option>
+                            <option value="5">5</option>
+                          </select>
+                        </td>
+                        <td>
+                          <textarea
+                            className="remarks-textarea"
+                            value={evaluation.comprehension_remarks}
+                            onChange={(e) => handleInputChange('comprehension_remarks', e.target.value)}
+                            placeholder="Optional remarks..."
+                          />
+                        </td>
+                      </tr>
+
+                      <tr>
+                        <td><strong>Personality</strong></td>
+                        <td>Professional attitude, enthusiasm, and behavior</td>
+                        <td className="rating-cell">
+                          {renderStars(evaluation.personality_score, (value) =>
+                            handleInputChange('personality_score', value)
+                          )}
+                          <select
+                            className="hidden-select"
+                            value={evaluation.personality_score || 0}
+                            onChange={(e) => handleInputChange('personality_score', parseInt(e.target.value, 10))}
+                          >
+                            <option value="0">0</option>
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="4">4</option>
+                            <option value="5">5</option>
+                          </select>
+                        </td>
+                        <td>
+                          <textarea
+                            className="remarks-textarea"
+                            value={evaluation.personality_remarks}
+                            onChange={(e) => handleInputChange('personality_remarks', e.target.value)}
+                            placeholder="Optional remarks..."
+                          />
+                        </td>
+                      </tr>
+
+                      <tr>
+                        <td><strong>Job Knowledge</strong></td>
+                        <td>Awareness of role responsibilities and technical background</td>
+                        <td className="rating-cell">
+                          {renderStars(evaluation.job_knowledge_score, (value) =>
+                            handleInputChange('job_knowledge_score', value)
+                          )}
+                          <select
+                            className="hidden-select"
+                            value={evaluation.job_knowledge_score || 0}
+                            onChange={(e) => handleInputChange('job_knowledge_score', parseInt(e.target.value, 10))}
+                          >
+                            <option value="0">0</option>
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="4">4</option>
+                            <option value="5">5</option>
+                          </select>
+                        </td>
+                        <td>
+                          <textarea
+                            className="remarks-textarea"
+                            value={evaluation.job_knowledge_remarks}
+                            onChange={(e) => handleInputChange('job_knowledge_remarks', e.target.value)}
+                            placeholder="Optional remarks..."
+                          />
+                        </td>
+                      </tr>
+
+                      <tr>
+                        <td><strong>Overall Impression</strong></td>
+                        <td>General suitability for the position</td>
+                        <td className="rating-cell">
+                          {renderStars(evaluation.overall_impression_score, (value) =>
+                            handleInputChange('overall_impression_score', value)
+                          )}
+                          <select
+                            className="hidden-select"
+                            value={evaluation.overall_impression_score || 0}
+                            onChange={(e) => handleInputChange('overall_impression_score', parseInt(e.target.value, 10))}
+                          >
+                            <option value="0">0</option>
+                            <option value="1">1</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="4">4</option>
+                            <option value="5">5</option>
+                          </select>
+                        </td>
+                        <td>
+                          <textarea
+                            className="remarks-textarea"
+                            value={evaluation.overall_impression_remarks}
+                            onChange={(e) => handleInputChange('overall_impression_remarks', e.target.value)}
+                            placeholder="Optional remarks..."
+                          />
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="score-summary-box">
+                  <div className="score-item">
+                    <span className="score-label">TOTAL SCORE</span>
+                    <span className="score-display">{calculateTotalScore()} / 30</span>
+                  </div>
+                  <div className="score-item">
+                    <span className="score-label">EQUIVALENT PERCENTAGE</span>
+                    <span className="score-display">{calculatePercentage()}%</span>
+                  </div>
+                  <div className="score-item">
+                    <span className="score-label">QUALIFICATION STATUS</span>
+                    <span className={`qualification-status ${getQualificationStatus().toLowerCase().replace(/\s+/g, '-')}`}>
+                      {getQualificationStatus()}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="form-group interview-notes-group">
+                  <label className="form-label">INTERVIEW NOTES:</label>
+                  <textarea
+                    className="form-textarea interview-notes-textarea"
+                    value={evaluation.interview_notes}
+                    onChange={(e) => handleInputChange('interview_notes', e.target.value)}
+                    rows={6}
+                    placeholder="Summarize key points, observations, and overall impressions from the interview..."
+                    required
+                  />
+                </div>
+
+                {error && (
+                  <div className="error-message">
+                    ❌ {error}
+                  </div>
+                )}
+
+                <div className="oral-form-actions">
+                  <Button type="button" variant="secondary" onClick={() => navigate(-1)}>
+                    Save Draft
+                  </Button>
+                  <Button type="submit" disabled={submitting} className="submit-btn">
+                    {submitting ? 'Submitting...' : 'Submit Final Evaluation'}
+                  </Button>
+                </div>
+              </form>
+            </>
+          )}
         </div>
       )}
 
@@ -396,14 +893,14 @@ export function EvaluationForm() {
         isOpen={showSuccess}
         onClose={() => {
           setShowSuccess(false);
-          navigate('/dashboard');
+          navigate('/interviewer/applicants');
         }}
         title="Evaluation Submitted"
       >
         <p>✅ Evaluation has been successfully submitted!</p>
         <p>The applicant status has been updated to "Reviewed".</p>
-        <Button onClick={() => navigate('/dashboard')}>
-          Back to Dashboard
+        <Button onClick={() => navigate('/interviewer/applicants')}>
+          Back to Applicants List
         </Button>
       </Dialog>
     </div>

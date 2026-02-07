@@ -1,46 +1,13 @@
 import React from 'react';
 import { Card, Checkbox, Input, Select } from '../../components';
 import type { ApplicantFormData, ValidationErrors } from '../../types/applicant.types';
+import { POSITION_OPTIONS, DEPARTMENT_OPTIONS, POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 
 interface ApplicantAssessmentFormProps {
   formData: ApplicantFormData;
   errors: ValidationErrors;
   onChange: (field: keyof ApplicantFormData, value: string | boolean) => void;
 }
-
-const POSITION_OPTIONS = [
-  { value: 'Software Developer', label: 'Software Developer' },
-  { value: 'Project Manager', label: 'Project Manager' },
-  { value: 'Business Analyst', label: 'Business Analyst' },
-  { value: 'QA Engineer', label: 'QA Engineer' },
-  { value: 'DevOps Engineer', label: 'DevOps Engineer' },
-  { value: 'UI/UX Designer', label: 'UI/UX Designer' },
-  { value: 'Data Analyst', label: 'Data Analyst' },
-  { value: 'System Administrator', label: 'System Administrator' },
-];
-
-const OFFICE_OPTIONS = [
-  { value: 'Human Resources', label: 'Human Resources' },
-  { value: 'Finance', label: 'Finance' },
-  { value: 'Information Technology', label: 'Information Technology' },
-  { value: 'Operations', label: 'Operations' },
-  { value: 'Sales & Marketing', label: 'Sales & Marketing' },
-  { value: 'Customer Support', label: 'Customer Support' },
-  { value: 'Legal', label: 'Legal' },
-  { value: 'Product Management', label: 'Product Management' },
-];
-
-// Position to Department Mapping
-const POSITION_TO_DEPARTMENT: Record<string, string> = {
-  'Software Developer': 'Information Technology',
-  'Project Manager': 'Operations',
-  'Business Analyst': 'Operations',
-  'QA Engineer': 'Information Technology',
-  'DevOps Engineer': 'Information Technology',
-  'UI/UX Designer': 'Product Management',
-  'Data Analyst': 'Product Management',
-  'System Administrator': 'Information Technology',
-};
 
 export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = ({
   formData,
@@ -51,7 +18,7 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
     onChange('position', positionValue);
     
     // Auto-assign department based on position
-    const assignedDepartment = POSITION_TO_DEPARTMENT[positionValue];
+    const assignedDepartment = POSITION_TO_DEPARTMENT_MAP[positionValue];
     if (assignedDepartment) {
       onChange('office', assignedDepartment);
     }
@@ -82,6 +49,18 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
           value={formData.last_name}
           onChange={(e) => onChange('last_name', e.target.value)}
           error={errors.last_name}
+          required
+        />
+
+        <Select
+          label="Gender"
+          options={[
+            { value: 'Male', label: 'Male' },
+            { value: 'Female', label: 'Female' }
+          ]}
+          value={formData.gender}
+          onChange={(e) => onChange('gender', e.target.value)}
+          error={errors.gender}
           required
         />
 

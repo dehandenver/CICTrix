@@ -22,6 +22,13 @@ export const validateApplicantForm = (data: ApplicantFormData): ValidationErrors
     errors.last_name = 'Last name must be at least 2 characters';
   }
 
+  // Gender validation
+  if (!data.gender.trim()) {
+    errors.gender = 'Gender is required';
+  } else if (!['Male', 'Female'].includes(data.gender)) {
+    errors.gender = 'Please select a valid gender';
+  }
+
   // Address validation
   if (!data.address.trim()) {
     errors.address = 'Address is required';

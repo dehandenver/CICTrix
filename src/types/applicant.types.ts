@@ -2,6 +2,7 @@ export interface ApplicantFormData {
   first_name: string;
   middle_name: string;
   last_name: string;
+  gender: string;
   address: string;
   contact_number: string;
   email: string;
@@ -15,6 +16,7 @@ export interface ValidationErrors {
   first_name?: string;
   middle_name?: string;
   last_name?: string;
+  gender?: string;
   address?: string;
   contact_number?: string;
   email?: string;

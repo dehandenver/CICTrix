@@ -82,13 +82,70 @@ export function InterviewerDashboard() {
         .select('id', { count: 'exact', head: true });
 
       // Get jobs data
-      const { data: jobsData, error: jobsError } = await supabase
-        .from('jobs')
+      let { data: jobsData, error: jobsError } = await supabase
+        .from('job_postings')
         .select('*')
         .eq('status', 'Open')
         .order('created_at', { ascending: false });
 
-      if (jobsError) throw jobsError;
+      // If job_postings table doesn't exist, use mock data
+      if (jobsError && jobsError.code === 'PGRST116') {
+        console.log('job_postings table not found, using mock data');
+        jobsData = [
+          {
+            id: '1',
+            title: 'Administrative Officer',
+            department: 'Operations',
+            office: 'Operations',
+            description: 'Responsible for administrative tasks and office management',
+            item_number: '001',
+            status: 'Open',
+            created_at: new Date().toISOString()
+          },
+          {
+            id: '2',
+            title: 'Accountant',
+            department: 'Finance',
+            office: 'Finance',
+            description: 'Handle financial records and accounting tasks',
+            item_number: '002',
+            status: 'Open',
+            created_at: new Date().toISOString()
+          },
+          {
+            id: '3',
+            title: 'IT Specialist',
+            department: 'Information Technology',
+            office: 'Information Technology',
+            description: 'Manage IT infrastructure and systems',
+            item_number: '003',
+            status: 'Open',
+            created_at: new Date().toISOString()
+          },
+          {
+            id: '4',
+            title: 'Human Resource Specialist',
+            department: 'Human Resources',
+            office: 'Human Resources',
+            description: 'Recruit, hire and manage employees',
+            item_number: '004',
+            status: 'Open',
+            created_at: new Date().toISOString()
+          },
+          {
+            id: '5',
+            title: 'Project Coordinator',
+            department: 'Operations',
+            office: 'Operations',
+            description: 'Coordinate and manage projects',
+            item_number: '005',
+            status: 'Open',
+            created_at: new Date().toISOString()
+          }
+        ];
+      } else if (jobsError) {
+        throw jobsError;
+      }
 
       // Get applicant counts for each job
       const jobsWithCounts = await Promise.all(
@@ -100,7 +157,7 @@ export function InterviewerDashboard() {
 
           return {
             ...job,
-            office: job.department,
+            office: job.office || job.department,
             applicant_count: count || 0
           };
         })
@@ -144,48 +201,7 @@ export function InterviewerDashboard() {
     });
   };
 
-  const handleViewAllApplicants = async () => {
-    try {
-      setApplicantsLoading(true);
-      
-      // Fetch applicants
-      const { data: applicantsData, error: applicantsErr } = await supabase
-        .from('applicants')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (applicantsErr) throw applicantsErr;
-
-      // Fetch evaluations to check which applicants have been evaluated
-      const { data: evaluationsData, error: evaluationsErr } = await supabase
-        .from('evaluations')
-        .select('*');
-
-      if (evaluationsErr) throw evaluationsErr;
-
-      // Create a map of applicant IDs to their evaluation status
-      const evaluationMap = new Map();
-      evaluationsData?.forEach((e: any) => {
-        const isComplete = e.technical_score && e.communication_score && e.overall_score && e.recommendation;
-        evaluationMap.set(e.applicant_id, isComplete ? 'Completed' : 'In Progress');
-      });
-
-      // Add evaluation_status to each applicant
-      const applicantsWithEvalStatus = (applicantsData || []).map((applicant: any) => ({
-        ...applicant,
-        evaluation_status: evaluationMap.get(applicant.id) || 'Not Yet Rated'
-      }));
-
-      setAllApplicants(applicantsWithEvalStatus);
-      setShowApplicantsModal(true);
-    } catch (err: any) {
-      console.error('Error fetching applicants:', err);
-    } finally {
-      setApplicantsLoading(false);
-    }
-  };
-
-  const handleViewJobApplicants = async (jobTitle: string) => {
+  const handleViewJobApplicants = (jobTitle: string) => {
     navigate(`/interviewer/applicants?position=${encodeURIComponent(jobTitle)}`);
   };
 
@@ -206,8 +222,6 @@ export function InterviewerDashboard() {
 
       if (deleteError) throw deleteError;
 
-      // Update local state
-      setAllApplicants(prev => prev.filter(a => a.id !== applicantToDelete.id));
       setStats(prev => ({
         ...prev,
         totalApplicants: prev.totalApplicants - 1
@@ -334,11 +348,7 @@ export function InterviewerDashboard() {
               <span className="stat-label">Total Job Postings</span>
               <span className="stat-value">{stats.totalJobs}</span>
             </div>
-            <div 
-              className="stat-box clickable-stat"
-              onClick={handleViewAllApplicants}
-              style={{ cursor: 'pointer' }}
-            >
+            <div className="stat-box">
               <span className="stat-label">Total Applicants</span>
               <span className="stat-value">{stats.totalApplicants}</span>
             </div>
@@ -347,79 +357,6 @@ export function InterviewerDashboard() {
               <span className="stat-value">{stats.upcomingInterviews}</span>
             </div>
           </div>
-
-          {/* Applicants Modal */}
-          <Dialog open={showApplicantsModal} onClose={() => setShowApplicantsModal(false)}>
-            <div className="modal-header">
-              <div>
-                <h2 className="modal-title">Applicants List</h2>
-                <p className="modal-subtitle">{allApplicants.length} applicants for this position</p>
-              </div>
-              <button 
-                onClick={() => setShowApplicantsModal(false)}
-                className="modal-close-btn"
-              >
-                <X size={24} />
-              </button>
-            </div>
-            <div className="modal-content">
-              {applicantsLoading ? (
-                <div className="loading-state">
-                  <p>Loading applicants...</p>
-                </div>
-              ) : allApplicants.length > 0 ? (
-                <div className="applicants-table-container">
-                  <table className="applicants-table">
-                    <thead>
-                      <tr>
-                        <th>APPLICANT NAME</th>
-                        <th>CONTACT NUMBER</th>
-                        <th>APPLICATION DATE</th>
-                        <th>EVALUATION STATUS</th>
-                        <th>ACTION</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {allApplicants.map((applicant) => (
-                        <tr key={applicant.id}>
-                          <td>{getFullName(applicant)}</td>
-                          <td>{applicant.contact_number}</td>
-                          <td>{formatDate(applicant.created_at)}</td>
-                          <td>
-                            <span className={`evaluation-status ${
-                              applicant.evaluation_status === 'Completed' ? 'completed' : 
-                              applicant.evaluation_status === 'In Progress' ? 'in-progress' : 'pending'
-                            }`}>
-                              {applicant.evaluation_status}
-                            </span>
-                          </td>
-                          <td>
-                            {applicant.evaluation_status === 'Completed' ? (
-                              <button className="action-btn evaluated" disabled>
-                                Evaluated
-                              </button>
-                            ) : (
-                              <button
-                                className="action-btn evaluate"
-                                onClick={() => {
-                                  navigate(`/interviewer/evaluate/${applicant.id}`);
-                                  setShowApplicantsModal(false);
-                                }}
-                              >
-                                Evaluate
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="empty-message">No applicants found</p>
-              )}
-            </div>
-          </Dialog>
 
           {/* Delete Confirmation Dialog */}
           <Dialog open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)}>
