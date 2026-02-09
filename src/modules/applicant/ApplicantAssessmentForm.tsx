@@ -84,15 +84,6 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
           required
         />
 
-        <Select
-          label="Position Applied For"
-          options={POSITION_OPTIONS}
-          value={formData.position}
-          onChange={(e) => handlePositionChange(e.target.value)}
-          error={errors.position}
-          required
-        />
-
         <div className="md:col-span-2">
           <Input
             label="Address"
@@ -105,8 +96,17 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
         </div>
 
         <Select
+          label="Position Applied For"
+          options={POSITION_OPTIONS}
+          value={formData.position}
+          onChange={(e) => handlePositionChange(e.target.value)}
+          error={errors.position}
+          required
+        />
+
+        <Select
           label="Department"
-          options={OFFICE_OPTIONS}
+          options={DEPARTMENT_OPTIONS}
           value={formData.office}
           onChange={(e) => onChange('office', e.target.value)}
           error={errors.office}

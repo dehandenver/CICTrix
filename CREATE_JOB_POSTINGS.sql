@@ -35,21 +35,21 @@ WITH CHECK (true);
 
 -- Delete existing sample data and insert fresh data
 DELETE FROM job_postings WHERE title IN (
-  'Administrative Officer III', 'Senior Accountant', 'IT Systems Administrator',
-  'Human Resources Specialist', 'Planning Officer II', 'Civil Engineer',
-  'Health Officer', 'Legal Consultant'
+  'Administrative Officer', 'Accountant', 'IT Specialist',
+  'Human Resource Specialist', 'Budget Officer', 'Legal Officer',
+  'Project Coordinator', 'Data Analyst'
 );
 
--- Insert sample job postings
+-- Insert sample job postings using standardized position names from positions.ts
 INSERT INTO job_postings (title, department, office, description, item_number, status) VALUES
-('Administrative Officer III', 'City Social Welfare and Development', 'City Social Welfare and Development', 'Responsible for administrative tasks', '001', 'Open'),
-('Senior Accountant', 'Finance Department', 'Finance Department', 'Handle financial records and reporting', '002', 'Open'),
-('IT Systems Administrator', 'Information Technology', 'Information Technology', 'Manage IT infrastructure', '003', 'Open'),
-('Human Resources Specialist', 'Human Resources', 'Human Resources', 'Recruit and manage employees', '004', 'Open'),
-('Planning Officer II', 'Planning Department', 'Planning Department', 'Develop and implement plans', '005', 'Open'),
-('Civil Engineer', 'Engineering Department', 'Engineering Department', 'Design and supervise projects', '006', 'Open'),
-('Health Officer', 'Health Services', 'Health Services', 'Public health management', '007', 'Open'),
-('Legal Consultant', 'Legal Services', 'Legal Services', 'Provide legal advice', '008', 'Open');
+('Administrative Officer', 'Operations', 'Operations', 'Responsible for administrative tasks and office management', '001', 'Open'),
+('Human Resource Specialist', 'Human Resources', 'Human Resources', 'Recruit, hire and manage employees', '002', 'Open'),
+('IT Specialist', 'Information Technology', 'Information Technology', 'Manage IT infrastructure and systems', '003', 'Open'),
+('Accountant', 'Finance', 'Finance', 'Handle financial records and accounting tasks', '004', 'Open'),
+('Budget Officer', 'Finance', 'Finance', 'Prepare and manage organizational budgets', '005', 'Open'),
+('Legal Officer', 'Legal', 'Legal', 'Provide legal advice and services', '006', 'Open'),
+('Project Coordinator', 'Operations', 'Operations', 'Coordinate and manage projects', '007', 'Open'),
+('Data Analyst', 'Product Management', 'Product Management', 'Analyze data and provide insights', '008', 'Open');
 
 -- Show success message
 SELECT 'Job postings table updated successfully with sample data!' as message;
