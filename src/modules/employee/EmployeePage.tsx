@@ -3,40 +3,146 @@
  * Displays comprehensive employee information in an organized, professional layout
  */
 
-import { useState } from 'react';
 import {
-  LogOut,
-  Menu,
-  X,
-  User,
-  FileText,
-  Phone,
-  MapPin,
-  Calendar,
-  Heart,
-  Home,
-  IdCard,
-  Mail,
+    AlertCircle,
+    Calendar,
+    Check,
+    Clock,
+    FileText,
+    Heart,
+    Home,
+    IdCard,
+    Lock,
+    LogOut,
+    Mail,
+    Menu,
+    Phone,
+    Upload,
+    User,
+    X,
 } from 'lucide-react';
-import { Card } from '../../components/Card';
-import { Button } from '../../components/Button';
-import { Employee, EmployeeSession } from '../../types/employee.types';
+import { useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import hrisLogo from '../../assets/hris-logo.svg';
+import { Button } from '../../components/Button';
+import { Card } from '../../components/Card';
 import '../../styles/admin.css';
+import { Employee } from '../../types/employee.types';
 
 interface EmployeePageProps {
   currentUser: Employee;
   onLogout: () => void;
 }
 
-type NavigationTab = 'profile' | 'documents';
+type NavigationTab =
+  | 'dashboard'
+  | 'profile'
+  | 'document-requirements'
+  | 'submission-bin';
+type DocumentStatus = 'pending' | 'verified' | 'missing';
+
+type RequiredDocument = {
+  id: string;
+  name: string;
+  status: DocumentStatus;
+};
 
 export const EmployeePage: React.FC<EmployeePageProps> = ({
   currentUser,
   onLogout,
 }) => {
-  const [activeTab, setActiveTab] = useState<NavigationTab>('profile');
+  const location = useLocation();
+  const navigate = useNavigate();
   const [sidebarOpen, setOpenSidebar] = useState(true);
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedRequirement, setSelectedRequirement] = useState('pds');
+  const [uploadError, setUploadError] = useState('');
+
+  // Define required documents
+  const requiredDocuments: RequiredDocument[] = [
+    { id: 'pds', name: 'Personal Data Sheet (PDS)', status: 'verified' },
+    { id: 'medical', name: 'Medical Certificate', status: 'missing' },
+    { id: 'nbi', name: 'NBI Clearance', status: 'missing' },
+    { id: 'birth', name: 'Birth Certificate', status: 'missing' },
+  ];
+
+  const handleFileUpload = (file: File | null) => {
+    if (!file) return;
+
+    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/jpg'];
+    if (!allowedTypes.includes(file.type)) {
+      setUploadError('Only PDF or JPG files are allowed.');
+      return;
+    }
+
+    setUploadError('');
+    setUploadedFiles((prev) =>
+      prev.includes(selectedRequirement) ? prev : [...prev, selectedRequirement]
+    );
+    setShowSuccessToast(true);
+    setTimeout(() => setShowSuccessToast(false), 2500);
+  };
+
+  const handleSubmitForReview = () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+  };
+
+  const getDocumentStatus = (doc: RequiredDocument): DocumentStatus => {
+    if (uploadedFiles.includes(doc.id)) {
+      return 'pending';
+    }
+    return doc.status;
+  };
+
+  const pendingCount = requiredDocuments.filter(
+    (doc) => getDocumentStatus(doc) === 'missing'
+  ).length;
+
+  const getActiveTab = (pathname: string): NavigationTab => {
+    if (pathname.includes('/employee/documents/requirements')) {
+      return 'document-requirements';
+    }
+    if (pathname.includes('/employee/documents/submission')) {
+      return 'submission-bin';
+    }
+    if (pathname.includes('/employee/profile')) {
+      return 'profile';
+    }
+    return 'dashboard';
+  };
+
+  const activeTab = getActiveTab(location.pathname);
+
+  const StatusBadge = ({ status }: { status: DocumentStatus }) => {
+    const badgeStyles: Record<DocumentStatus, string> = {
+      verified: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      pending: 'bg-amber-50 text-amber-700 border-amber-200',
+      missing: 'bg-rose-50 text-rose-700 border-rose-200',
+    };
+
+    const statusIcon =
+      status === 'verified' ? (
+        <Check size={14} />
+      ) : status === 'pending' ? (
+        <Clock size={14} />
+      ) : (
+        <AlertCircle size={14} />
+      );
+
+    const label = status.charAt(0).toUpperCase() + status.slice(1);
+
+    return (
+      <span
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${badgeStyles[status]}`}
+      >
+        {statusIcon}
+        {label}
+      </span>
+    );
+  };
 
   // Format date to readable format
   const formatDate = (dateString: string | undefined): string => {
@@ -111,19 +217,39 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({
       {/* Navigation Items */}
       <nav className="flex-1 p-4 space-y-2">
         <NavLink
+          icon={<Home size={20} />}
+          label="Dashboard"
+          active={activeTab === 'dashboard'}
+          onClick={() => navigate('/employee/dashboard')}
+          sidebarOpen={sidebarOpen}
+        />
+        <NavLink
           icon={<User size={20} />}
           label="My Profile"
           active={activeTab === 'profile'}
-          onClick={() => setActiveTab('profile')}
+          onClick={() => navigate('/employee/profile')}
           sidebarOpen={sidebarOpen}
         />
         <NavLink
           icon={<FileText size={20} />}
-          label="Documents"
-          active={activeTab === 'documents'}
-          onClick={() => setActiveTab('documents')}
+          label="Document Requirements"
+          active={activeTab === 'document-requirements'}
+          onClick={() => navigate('/employee/documents/requirements')}
           sidebarOpen={sidebarOpen}
         />
+        <NavLink
+          icon={<Upload size={20} />}
+          label="Submission Bin"
+          active={activeTab === 'submission-bin'}
+          onClick={() => navigate('/employee/documents/submission')}
+          sidebarOpen={sidebarOpen}
+        >
+          {pendingCount > 0 && (
+            <span className="bg-red-500 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full">
+              {pendingCount}
+            </span>
+          )}
+        </NavLink>
       </nav>
 
       {/* Logout Button */}
@@ -150,12 +276,14 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({
     active,
     onClick,
     sidebarOpen,
+    children,
   }: {
     icon: React.ReactNode;
     label: string;
     active: boolean;
     onClick: () => void;
     sidebarOpen: boolean;
+    children?: React.ReactNode;
   }) => (
     <button
       onClick={onClick}
@@ -168,6 +296,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({
     >
       {icon}
       {sidebarOpen && <span className="font-medium">{label}</span>}
+      {children && sidebarOpen && <span className="ml-auto">{children}</span>}
     </button>
   );
 
@@ -182,7 +311,13 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({
         <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-30">
           <div className="px-8 py-4 flex items-center justify-between">
             <h2 className="text-2xl font-bold text-gray-900">
-              {activeTab === 'profile' ? 'My Profile' : 'Documents'}
+              {activeTab === 'dashboard'
+                ? 'Dashboard'
+                : activeTab === 'profile'
+                  ? 'My Profile'
+                  : activeTab === 'document-requirements'
+                    ? 'Document Requirements'
+                    : 'Submission Bin'}
             </h2>
             <div className="flex items-center gap-4">
               <img src={hrisLogo} alt="Logo" className="h-10 w-10 rounded" />
@@ -192,13 +327,82 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({
                 </p>
                 <p className="text-xs text-gray-600">{currentUser.email}</p>
               </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={onLogout}
+              >
+                <LogOut size={16} />
+                Logout
+              </Button>
             </div>
           </div>
         </header>
 
         {/* Page Content */}
         <main className="p-8">
-          {activeTab === 'profile' ? (
+          {activeTab === 'dashboard' ? (
+            <div className="space-y-6">
+              <ProfileHeader />
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <Card title="Quick Summary">
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <User size={18} className="text-blue-600" />
+                      <div>
+                        <p className="text-sm text-gray-600">Profile Status</p>
+                        <p className="text-base font-semibold text-gray-900">
+                          Active Employee
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Mail size={18} className="text-blue-600" />
+                      <div>
+                        <p className="text-sm text-gray-600">Email</p>
+                        <p className="text-base font-semibold text-gray-900">
+                          {currentUser.email}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <FileText size={18} className="text-blue-600" />
+                      <div>
+                        <p className="text-sm text-gray-600">Documents Submitted</p>
+                        <p className="text-base font-semibold text-gray-900">
+                          {uploadedFiles.length} / {requiredDocuments.length}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+
+                <Card title="Security Notice">
+                  <div className="flex items-start gap-3">
+                    <Lock size={18} className="text-blue-600" />
+                    <div className="space-y-2">
+                      <p className="text-sm text-gray-700">
+                        Your records are protected with encryption at rest and
+                        role-based access controls.
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        Please keep your credentials confidential.
+                      </p>
+                    </div>
+                  </div>
+                </Card>
+
+                <Card title="Next Steps">
+                  <div className="space-y-2 text-sm text-gray-600">
+                    <p>1. Review your profile details.</p>
+                    <p>2. Submit required documents.</p>
+                    <p>3. Wait for HRMO verification.</p>
+                  </div>
+                </Card>
+              </div>
+            </div>
+          ) : activeTab === 'profile' ? (
             <div className="space-y-6">
               {/* Profile Header */}
               <ProfileHeader />
@@ -335,25 +539,110 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({
                 </Card>
               </div>
             </div>
-          ) : (
-            // Documents Tab
+          ) : activeTab === 'document-requirements' ? (
             <div className="space-y-6">
-              <div className="bg-white rounded-xl shadow-md border border-gray-200 p-12 text-center">
-                <FileText
-                  size={48}
-                  className="mx-auto text-gray-400 mb-4"
-                />
-                <h3 className="text-xl font-bold text-gray-900 mb-2">
-                  Documents Section
-                </h3>
-                <p className="text-gray-600 mb-6">
-                  Document management features coming soon. You'll be able to
-                  download and manage your employment documents here.
-                </p>
-                <Button variant="outline" size="md">
-                  Request Document
-                </Button>
-              </div>
+              <Card title="Document Requirements">
+                <div className="space-y-4">
+                  {requiredDocuments.map((doc) => {
+                    const status = getDocumentStatus(doc);
+                    return (
+                      <div
+                        key={doc.id}
+                        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 border border-gray-100 rounded-lg"
+                      >
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900">
+                            {doc.name}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            Accepted formats: PDF, JPG
+                          </p>
+                        </div>
+                        <StatusBadge status={status} />
+                      </div>
+                    );
+                  })}
+
+                  <div className="flex items-center justify-between pt-2">
+                    <p className="text-xs text-gray-500">
+                      All documents are stored with encryption at rest.
+                    </p>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      className="gap-2"
+                      onClick={handleSubmitForReview}
+                      disabled={isSubmitting}
+                    >
+                      {isSubmitting ? 'Submitted' : 'Submit for Review'}
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {showSuccessToast && (
+                <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-lg flex items-center gap-2">
+                  <Check size={16} />
+                  File uploaded successfully. Your document is now pending review.
+                </div>
+              )}
+
+              <Card title="Submission Bin">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-700">
+                      Select requirement
+                    </label>
+                    <select
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                      value={selectedRequirement}
+                      onChange={(event) => setSelectedRequirement(event.target.value)}
+                    >
+                      {requiredDocuments.map((doc) => (
+                        <option key={doc.id} value={doc.id}>
+                          {doc.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <label
+                    htmlFor="document-upload"
+                    className="flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-blue-200 bg-blue-50/40 px-4 py-8 text-center cursor-pointer"
+                  >
+                    <Upload size={24} className="text-blue-500" />
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">
+                        Drag & drop or click to upload
+                      </p>
+                      <p className="text-xs text-gray-500">PDF or JPG only</p>
+                    </div>
+                    <input
+                      id="document-upload"
+                      type="file"
+                      className="hidden"
+                      accept=".pdf,.jpg,.jpeg"
+                      onChange={(event) =>
+                        handleFileUpload(event.target.files?.[0] ?? null)
+                      }
+                    />
+                  </label>
+
+                  {uploadError && (
+                    <div className="text-xs text-rose-600 flex items-center gap-2">
+                      <AlertCircle size={14} />
+                      {uploadError}
+                    </div>
+                  )}
+
+                  <div className="rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-500">
+                    <p className="font-semibold text-gray-700 mb-1">Security</p>
+                    <p>Files are scanned and encrypted at rest for your safety.</p>
+                  </div>
+                </div>
+              </Card>
             </div>
           )}
         </main>

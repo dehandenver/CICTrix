@@ -3,9 +3,9 @@
  * Provides authentication interface for employees to access self-service portal
  */
 
+import { Lock, LogIn, User } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Lock, User, LogIn } from 'lucide-react';
 import '../../styles/interviewer.css';
 
 interface EmployeeLoginPageProps {

@@ -1,19 +1,19 @@
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { ApplicantWizard } from './modules/applicant/ApplicantWizard';
-import { InterviewerDashboard } from './modules/interviewer/InterviewerDashboard';
-import { InterviewerApplicantsList } from './modules/interviewer/InterviewerApplicantsList';
-import { InterviewerLogin } from './modules/interviewer/InterviewerLogin';
-import { EvaluationForm } from './modules/interviewer/EvaluationForm';
-import { SuperAdminDashboard } from './modules/admin/SuperAdminDashboard';
+import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { LNDDashboard } from './modules/admin/LNDDashboard';
+import { LoginPage } from './modules/admin/LoginPage';
+import { PMDashboard } from './modules/admin/PMDashboard';
 import { RSPDashboard } from './modules/admin/RSPDashboard';
 import { RaterManagementPage } from './modules/admin/RaterManagementPage';
-import { LNDDashboard } from './modules/admin/LNDDashboard';
-import { PMDashboard } from './modules/admin/PMDashboard';
-import { LoginPage } from './modules/admin/LoginPage';
+import { SuperAdminDashboard } from './modules/admin/SuperAdminDashboard';
+import { ApplicantWizard } from './modules/applicant/ApplicantWizard';
 import { EmployeeLoginPage, EmployeePage } from './modules/employee';
-import { Employee, EmployeeSession } from './types/employee.types';
+import { EvaluationForm } from './modules/interviewer/EvaluationForm';
+import { InterviewerApplicantsList } from './modules/interviewer/InterviewerApplicantsList';
+import { InterviewerDashboard } from './modules/interviewer/InterviewerDashboard';
+import { InterviewerLogin } from './modules/interviewer/InterviewerLogin';
 import './styles/globals.css';
+import { Employee, EmployeeSession } from './types/employee.types';
 
 type Role = 'super-admin' | 'rsp' | 'lnd' | 'pm';
 type InterviewerSession = { email: string; name: string };
@@ -94,6 +94,19 @@ function AppContent() {
   const [employeeSession, setEmployeeSession] = useState<EmployeeSession | null>(null);
   const [currentEmployee, setCurrentEmployee] = useState<Employee | null>(null);
 
+  const resolveEmployeeFromSession = (session: EmployeeSession | null): Employee | null => {
+    if (!session) return null;
+
+    if (session.loginUsername && MOCK_EMPLOYEES[session.loginUsername]) {
+      return MOCK_EMPLOYEES[session.loginUsername];
+    }
+
+    const match = Object.values(MOCK_EMPLOYEES).find(
+      (employee) => employee.employeeId === session.employeeId
+    );
+    return match ?? null;
+  };
+
   useEffect(() => {
     const stored = localStorage.getItem('cictrix_admin_session');
     if (stored) {
@@ -144,6 +157,13 @@ function AppContent() {
       }
     }
   }, []);
+
+  useEffect(() => {
+    const employee = resolveEmployeeFromSession(employeeSession);
+    if (employee) {
+      setCurrentEmployee(employee);
+    }
+  }, [employeeSession]);
 
   const handleLogin = (email: string, role: Role) => {
     const session = { email, role };
@@ -226,7 +246,67 @@ function AppContent() {
             path="/employee/dashboard"
             element={
               <EmployeeRoute session={employeeSession}>
-                {currentEmployee && <EmployeePage currentUser={currentEmployee} onLogout={handleEmployeeLogout} />}
+                {resolveEmployeeFromSession(employeeSession) ? (
+                  <EmployeePage
+                    currentUser={resolveEmployeeFromSession(employeeSession) as Employee}
+                    onLogout={handleEmployeeLogout}
+                  />
+                ) : (
+                  <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-600">
+                    Loading employee profile...
+                  </div>
+                )}
+              </EmployeeRoute>
+            }
+          />
+          <Route
+            path="/employee/profile"
+            element={
+              <EmployeeRoute session={employeeSession}>
+                {resolveEmployeeFromSession(employeeSession) ? (
+                  <EmployeePage
+                    currentUser={resolveEmployeeFromSession(employeeSession) as Employee}
+                    onLogout={handleEmployeeLogout}
+                  />
+                ) : (
+                  <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-600">
+                    Loading employee profile...
+                  </div>
+                )}
+              </EmployeeRoute>
+            }
+          />
+          <Route
+            path="/employee/documents/requirements"
+            element={
+              <EmployeeRoute session={employeeSession}>
+                {resolveEmployeeFromSession(employeeSession) ? (
+                  <EmployeePage
+                    currentUser={resolveEmployeeFromSession(employeeSession) as Employee}
+                    onLogout={handleEmployeeLogout}
+                  />
+                ) : (
+                  <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-600">
+                    Loading employee profile...
+                  </div>
+                )}
+              </EmployeeRoute>
+            }
+          />
+          <Route
+            path="/employee/documents/submission"
+            element={
+              <EmployeeRoute session={employeeSession}>
+                {resolveEmployeeFromSession(employeeSession) ? (
+                  <EmployeePage
+                    currentUser={resolveEmployeeFromSession(employeeSession) as Employee}
+                    onLogout={handleEmployeeLogout}
+                  />
+                ) : (
+                  <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-600">
+                    Loading employee profile...
+                  </div>
+                )}
               </EmployeeRoute>
             }
           />
