@@ -39,6 +39,7 @@ export interface EmployeeSession {
   employeeId: string;
   email: string;
   fullName: string;
+  loginUsername?: string; // For mock demo lookups (e.g., 'employee01')
 }
 
 export interface AuthError {

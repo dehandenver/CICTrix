@@ -256,6 +256,7 @@
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
+  width: 100%;
   padding: 0.95rem 1.25rem;
   background: linear-gradient(160deg, #1b54e5 0%, #0c3a9f 100%);
   color: white;

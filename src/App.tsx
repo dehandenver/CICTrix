@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { ApplicantWizard } from './modules/applicant/ApplicantWizard';
 import { InterviewerDashboard } from './modules/interviewer/InterviewerDashboard';
@@ -87,7 +87,8 @@ const EmployeeRoute = ({
   return children;
 };
 
-function App() {
+function AppContent() {
+  const navigate = useNavigate();
   const [adminSession, setAdminSession] = useState<{ email: string; role: Role } | null>(null);
   const [interviewerSession, setInterviewerSession] = useState<InterviewerSession | null>(null);
   const [employeeSession, setEmployeeSession] = useState<EmployeeSession | null>(null);
@@ -124,7 +125,16 @@ function App() {
         const parsed = JSON.parse(employeeStored) as EmployeeSession;
         if (parsed?.employeeId) {
           setEmployeeSession(parsed);
-          const employee = MOCK_EMPLOYEES[parsed.employeeId];
+          // Look up employee using loginUsername if available, otherwise by employeeId
+          let employee: Employee | undefined;
+          if (parsed.loginUsername && MOCK_EMPLOYEES[parsed.loginUsername]) {
+            employee = MOCK_EMPLOYEES[parsed.loginUsername];
+          } else {
+            // Fallback: search through MOCK_EMPLOYEES by employeeId
+            employee = Object.values(MOCK_EMPLOYEES).find(
+              (emp) => emp.employeeId === parsed.employeeId
+            );
+          }
           if (employee) {
             setCurrentEmployee(employee);
           }
@@ -156,10 +166,13 @@ function App() {
           employeeId: employee.employeeId,
           email: employee.email,
           fullName: employee.fullName,
+          loginUsername: username, // Store username for lookup
         };
         setEmployeeSession(session);
         setCurrentEmployee(employee);
         localStorage.setItem('cictrix_employee_session', JSON.stringify(session));
+        // Navigate to dashboard after successful login
+        navigate('/employee/dashboard');
       }
     }
   };
@@ -168,12 +181,12 @@ function App() {
     setEmployeeSession(null);
     setCurrentEmployee(null);
     localStorage.removeItem('cictrix_employee_session');
+    navigate('/employee/login');
   };
 
   return (
-    <BrowserRouter>
-      <div className="app">
-        <Routes>
+    <div className="app">
+      <Routes>
           <Route path="/" element={<ApplicantWizard />} />
           
           {/* Interviewer Routes */}
@@ -277,7 +290,14 @@ function App() {
             }
           />
         </Routes>
-      </div>
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
     </BrowserRouter>
   );
 }

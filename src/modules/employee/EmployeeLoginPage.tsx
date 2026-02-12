@@ -4,11 +4,9 @@
  */
 
 import { useState } from 'react';
-import { Lock, User, AlertCircle } from 'lucide-react';
-import { Button } from '../../components/Button';
-import { Input } from '../../components/Input';
-import hrisLogo from '../../assets/hris-logo.svg';
-import '../../styles/admin.css';
+import { useNavigate } from 'react-router-dom';
+import { Lock, User, LogIn } from 'lucide-react';
+import '../../styles/interviewer.css';
 
 interface EmployeeLoginPageProps {
   onLogin: (username: string, password: string) => void;
@@ -22,13 +20,13 @@ export const EmployeeLoginPage: React.FC<EmployeeLoginPageProps> = ({
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [showCredentials, setShowCredentials] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    // Validation
     if (!username.trim()) {
       setError('Employee ID or username is required');
       return;
@@ -39,156 +37,140 @@ export const EmployeeLoginPage: React.FC<EmployeeLoginPageProps> = ({
       return;
     }
 
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
+    setLoading(true);
+    try {
+      // Call parent onLogin to set session
+      onLogin(username, password);
+      
+      // Give the parent component time to update state
+      // Then check if we have a valid session by attempting to navigate
+      setTimeout(() => {
+        const session = localStorage.getItem('cictrix_employee_session');
+        if (session) {
+          try {
+            const parsedSession = JSON.parse(session);
+            if (parsedSession?.employeeId) {
+              navigate('/employee/dashboard');
+            } else {
+              setError('Invalid credentials. Please try again.');
+              setLoading(false);
+            }
+          } catch {
+            setError('An error occurred. Please try again.');
+            setLoading(false);
+          }
+        } else {
+          setError('Invalid credentials. Please use employee01 / hr2024 for demo.');
+          setLoading(false);
+        }
+      }, 100);
+    } catch (err) {
+      console.error('Login error:', err);
+      setError('An unexpected error occurred. Please try again.');
+      setLoading(false);
     }
-
-    onLogin(username, password);
-  };
-
-  const handleDemoLogin = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setUsername('employee01');
-    setPassword('hr2024');
-    setError('');
-    setTimeout(() => {
-      onLogin('employee01', 'hr2024');
-    }, 100);
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-gray-50 to-blue-50 flex items-center justify-center px-4 py-12">
-      <div className="w-full max-w-md">
-        {/* Main Card */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-          {/* Header Section */}
-          <div className="px-6 pt-8 pb-6 text-center border-b border-gray-100">
-            <div className="flex justify-center mb-4">
-              <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-700 rounded-2xl flex items-center justify-center shadow-md">
-                <img
-                  src={hrisLogo}
-                  alt="City Hall Logo"
-                  className="w-16 h-16 rounded-xl"
+    <div className="interviewer-login-page">
+      <div className="login-container">
+        <div className="login-illustration">
+          <div className="illustration-bg">
+            <span className="floating-orb orb-1"></span>
+            <span className="floating-orb orb-2"></span>
+            <span className="floating-orb orb-3"></span>
+          </div>
+          <div className="illustration-content">
+            <div className="logo-badge">
+              <User size={48} />
+            </div>
+            <h2>Employee Portal</h2>
+            <p className="subtitle">CICTrix HRIS - Self-Service Portal</p>
+            <ul className="feature-list">
+              <li className="feature-item">View Your Profile</li>
+              <li className="feature-item">Access Documents</li>
+              <li className="feature-item">Manage Information</li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="login-form-panel">
+          <div className="login-header">
+            <h1>Welcome Back</h1>
+            <p>Sign in to access your employee self-service dashboard</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="login-form">
+            {error && (
+              <div className="error-banner">
+                <span>⚠️</span>
+                <span>{error}</span>
+              </div>
+            )}
+
+            <div className="form-field">
+              <label htmlFor="username">Employee ID or Username</label>
+              <div className="input-wrapper">
+                <User size={20} className="input-icon" />
+                <input
+                  id="username"
+                  type="text"
+                  placeholder="e.g., employee01 or your email"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  disabled={loading || isLoading}
                 />
               </div>
             </div>
 
-            <h1 className="text-2xl font-bold text-gray-900 mb-1">
-              Employee Self-Service
-            </h1>
-            <p className="text-sm text-gray-600">
-              Access your profile and documents
-            </p>
-
-            {/* Badge */}
-            <span className="inline-block mt-3 px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-semibold">
-              Iloilo City Hall
-            </span>
-          </div>
-
-          {/* Form Section */}
-          <div className="px-6 py-8">
-            <form onSubmit={handleSubmit} className="space-y-5">
-              {/* Username Field */}
-              <Input
-                type="text"
-                label="Employee ID or Username"
-                placeholder="e.g., employee01 or your email"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                disabled={isLoading}
-                icon={<User size={18} />}
-              />
-
-              {/* Password Field */}
-              <Input
-                type="password"
-                label="Password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={isLoading}
-                icon={<Lock size={18} />}
-              />
-
-              {/* Error Message */}
-              {error && (
-                <div className="rounded-lg bg-red-50 border border-red-200 p-3 flex gap-3">
-                  <AlertCircle className="text-red-600 flex-shrink-0" size={20} />
-                  <p className="text-sm text-red-800">{error}</p>
-                </div>
-              )}
-
-              {/* Sign In Button */}
-              <Button
-                type="submit"
-                size="lg"
-                disabled={isLoading}
-                className="w-full"
-              >
-                {isLoading ? 'Signing in...' : 'Sign In'}
-              </Button>
-            </form>
-
-            {/* Divider */}
-            <div className="my-6 flex items-center gap-3">
-              <div className="flex-1 h-px bg-gray-200"></div>
-              <span className="text-xs text-gray-500 font-medium">OR</span>
-              <div className="flex-1 h-px bg-gray-200"></div>
+            <div className="form-field">
+              <label htmlFor="password">Password</label>
+              <div className="input-wrapper">
+                <Lock size={20} className="input-icon" />
+                <input
+                  id="password"
+                  type="password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={loading || isLoading}
+                  autoComplete="current-password"
+                />
+              </div>
             </div>
 
-            {/* Demo Credentials Info Box */}
-            <div
-              className={`rounded-lg border-2 p-4 transition-all cursor-pointer ${
-                showCredentials
-                  ? 'bg-blue-50 border-blue-300'
-                  : 'bg-gray-50 border-gray-200 hover:border-blue-200'
-              }`}
-              onClick={() => setShowCredentials(!showCredentials)}
-            >
-              <p className="text-xs font-semibold text-gray-700 mb-2">
-                Demo Credentials
-              </p>
-              {showCredentials ? (
-                <div className="space-y-2 text-sm">
-                  <div className="bg-white rounded px-2 py-1 font-mono text-blue-700">
-                    Username: <span className="font-bold">employee01</span>
-                  </div>
-                  <div className="bg-white rounded px-2 py-1 font-mono text-blue-700">
-                    Password: <span className="font-bold">hr2024</span>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleDemoLogin}
-                    className="w-full mt-2"
-                  >
-                    Use Demo Credentials
-                  </Button>
-                </div>
+            <div className="form-options">
+              <label className="checkbox-label">
+                <input type="checkbox" />
+                <span>Remember me</span>
+              </label>
+              <a href="#" className="forgot-link" onClick={(e) => e.preventDefault()}>Forgot password?</a>
+            </div>
+
+            <button type="submit" className="login-button" disabled={loading || isLoading}>
+              {loading || isLoading ? (
+                <>
+                  <div className="spinner-small"></div>
+                  <span>Signing in...</span>
+                </>
               ) : (
-                <p className="text-xs text-gray-600">
-                  Click to view demo login credentials
-                </p>
+                <>
+                  <LogIn size={20} />
+                  <span>Sign In</span>
+                </>
               )}
+            </button>
+
+            <div className="login-footer">
+              <p>
+                Need help? Contact <a href="mailto:hrmo@ilongcity.gov.ph">HRMO</a> at ext. 5000
+              </p>
+              <div className="demo-credentials">
+                <p className="demo-title">Demo Credentials:</p>
+                <code>employee01 / hr2024</code>
+              </div>
             </div>
-          </div>
-
-          {/* Footer */}
-          <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 text-center">
-            <p className="text-xs text-gray-600">
-              Having trouble? Contact{' '}
-              <span className="font-semibold text-gray-700">HRMO at ext. 5000</span>
-            </p>
-          </div>
-        </div>
-
-        {/* Security Notice */}
-        <div className="mt-6 text-center text-xs text-gray-600">
-          <p>🔒 Your information is secure and encrypted</p>
-          <p className="mt-1">© 2024 Iloilo City Hall. All rights reserved.</p>
+          </form>
         </div>
       </div>
     </div>
