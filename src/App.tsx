@@ -11,10 +11,35 @@ import { RaterManagementPage } from './modules/admin/RaterManagementPage';
 import { LNDDashboard } from './modules/admin/LNDDashboard';
 import { PMDashboard } from './modules/admin/PMDashboard';
 import { LoginPage } from './modules/admin/LoginPage';
+import { EmployeeLoginPage, EmployeePage } from './modules/employee';
+import { Employee, EmployeeSession } from './types/employee.types';
 import './styles/globals.css';
 
 type Role = 'super-admin' | 'rsp' | 'lnd' | 'pm';
 type InterviewerSession = { email: string; name: string };
+
+// Mock employee data for demo
+const MOCK_EMPLOYEES: Record<string, Employee> = {
+  employee01: {
+    employeeId: 'EMP-2024-001',
+    fullName: 'Maria Santos',
+    email: 'maria.santos@ilongcity.gov.ph',
+    dateOfBirth: '1990-05-15',
+    age: 34,
+    gender: 'Female',
+    civilStatus: 'Married',
+    nationality: 'Filipino',
+    mobileNumber: '+63-908-123-4567',
+    homeAddress: '123 Rizal Street, Iloilo City, Iloilo 5000',
+    emergencyContactName: 'Juan Santos',
+    emergencyRelationship: 'Spouse',
+    emergencyContactNumber: '+63-908-765-4321',
+    sssNumber: '01-2345678-0',
+    philhealthNumber: 'PH-01-2345678-9',
+    pagibigNumber: '121234567890',
+    tinNumber: '123-456-789-000',
+  },
+};
 
 const AdminRoute = ({
   children,
@@ -49,9 +74,24 @@ const InterviewerRoute = ({
   return children;
 };
 
+const EmployeeRoute = ({
+  children,
+  session,
+}: {
+  children: JSX.Element;
+  session: EmployeeSession | null;
+}) => {
+  if (!session) {
+    return <Navigate to="/employee/login" replace />;
+  }
+  return children;
+};
+
 function App() {
   const [adminSession, setAdminSession] = useState<{ email: string; role: Role } | null>(null);
   const [interviewerSession, setInterviewerSession] = useState<InterviewerSession | null>(null);
+  const [employeeSession, setEmployeeSession] = useState<EmployeeSession | null>(null);
+  const [currentEmployee, setCurrentEmployee] = useState<Employee | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem('cictrix_admin_session');
@@ -77,6 +117,22 @@ function App() {
         localStorage.removeItem('cictrix_interviewer_session');
       }
     }
+
+    const employeeStored = localStorage.getItem('cictrix_employee_session');
+    if (employeeStored) {
+      try {
+        const parsed = JSON.parse(employeeStored) as EmployeeSession;
+        if (parsed?.employeeId) {
+          setEmployeeSession(parsed);
+          const employee = MOCK_EMPLOYEES[parsed.employeeId];
+          if (employee) {
+            setCurrentEmployee(employee);
+          }
+        }
+      } catch {
+        localStorage.removeItem('cictrix_employee_session');
+      }
+    }
   }, []);
 
   const handleLogin = (email: string, role: Role) => {
@@ -89,6 +145,29 @@ function App() {
     const session = { email, name };
     setInterviewerSession(session);
     localStorage.setItem('cictrix_interviewer_session', JSON.stringify(session));
+  };
+
+  const handleEmployeeLogin = (username: string, password: string) => {
+    // Demo: simple validation
+    if (username === 'employee01' && password === 'hr2024') {
+      const employee = MOCK_EMPLOYEES['employee01'];
+      if (employee) {
+        const session: EmployeeSession = {
+          employeeId: employee.employeeId,
+          email: employee.email,
+          fullName: employee.fullName,
+        };
+        setEmployeeSession(session);
+        setCurrentEmployee(employee);
+        localStorage.setItem('cictrix_employee_session', JSON.stringify(session));
+      }
+    }
+  };
+
+  const handleEmployeeLogout = () => {
+    setEmployeeSession(null);
+    setCurrentEmployee(null);
+    localStorage.removeItem('cictrix_employee_session');
   };
 
   return (
@@ -127,6 +206,17 @@ function App() {
           {/* Legacy Routes (redirect to new interviewer routes) */}
           <Route path="/dashboard" element={<Navigate to="/interviewer/dashboard" replace />} />
           <Route path="/evaluate/:id" element={<Navigate to="/interviewer/evaluate/:id" replace />} />
+          
+          {/* Employee Portal Routes */}
+          <Route path="/employee/login" element={<EmployeeLoginPage onLogin={handleEmployeeLogin} />} />
+          <Route
+            path="/employee/dashboard"
+            element={
+              <EmployeeRoute session={employeeSession}>
+                {currentEmployee && <EmployeePage currentUser={currentEmployee} onLogout={handleEmployeeLogout} />}
+              </EmployeeRoute>
+            }
+          />
           
           {/* Admin Routes */}
           <Route path="/admin/login" element={<LoginPage onLogin={handleLogin} />} />
