@@ -5,6 +5,25 @@ import '../../styles/admin.css';
 
 type Role = 'super-admin' | 'rsp' | 'lnd' | 'pm';
 
+const normalizeAdminRole = (role: string | null | undefined): Role | null => {
+  if (!role) return null;
+  const normalized = role.toLowerCase().replace(/_/g, '-');
+  if (normalized === 'super-admin' || normalized === 'superadmin' || normalized === 'admin') {
+    return 'super-admin';
+  }
+  if (normalized === 'rsp') return 'rsp';
+  if (normalized === 'lnd') return 'lnd';
+  if (normalized === 'pm') return 'pm';
+  return null;
+};
+
+const getRoleDefaultRoute = (role: Role): string => {
+  if (role === 'super-admin') return '/admin?module=dashboard';
+  if (role === 'rsp') return '/admin/rsp';
+  if (role === 'lnd') return '/admin/lnd';
+  return '/admin/pm';
+};
+
 interface LoginPageProps {
   onLogin: (email: string, role: Role) => void;
 }
@@ -38,7 +57,7 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
       const mockUser = MOCK_USERS[email];
       if (mockUser && mockUser.password === password) {
         onLogin(email, mockUser.role);
-        navigate('/admin');
+        navigate(getRoleDefaultRoute(mockUser.role));
         return;
       }
 
@@ -64,10 +83,14 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
         return;
       }
 
-      const role = roleData.role as Role;
+      const role = normalizeAdminRole(roleData.role);
+      if (!role) {
+        alert('Invalid role assignment. Contact the admin.');
+        return;
+      }
       const resolvedEmail = authData.user.email ?? email;
       onLogin(resolvedEmail, role);
-      navigate('/admin');
+      navigate(getRoleDefaultRoute(role));
     } catch {
       alert('Login failed. Please try again.');
     } finally {

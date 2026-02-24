@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { LNDDashboard } from './modules/admin/LNDDashboard';
 import { LoginPage } from './modules/admin/LoginPage';
 import { PMDashboard } from './modules/admin/PMDashboard';
 import { RSPDashboard } from './modules/admin/RSPDashboard';
 import { RaterManagementPage } from './modules/admin/RaterManagementPage';
+import { SettingsPage } from './modules/admin/SettingsPage';
 import { SuperAdminDashboard } from './modules/admin/SuperAdminDashboard';
 import { ApplicantWizard } from './modules/applicant/ApplicantWizard';
 import { EmployeeLoginPage, EmployeePage } from './modules/employee';
@@ -17,6 +18,26 @@ import { Employee, EmployeeSession } from './types/employee.types';
 
 type Role = 'super-admin' | 'rsp' | 'lnd' | 'pm';
 type InterviewerSession = { email: string; name: string };
+type AdminModule = 'dashboard' | 'rsp' | 'lnd' | 'pm' | 'settings';
+
+const normalizeAdminRole = (role: string | null | undefined): Role | null => {
+  if (!role) return null;
+  const normalized = role.toLowerCase().replace(/_/g, '-');
+  if (normalized === 'super-admin' || normalized === 'superadmin' || normalized === 'admin') {
+    return 'super-admin';
+  }
+  if (normalized === 'rsp') return 'rsp';
+  if (normalized === 'lnd') return 'lnd';
+  if (normalized === 'pm') return 'pm';
+  return null;
+};
+
+const getRoleDefaultRoute = (role: Role): string => {
+  if (role === 'super-admin') return '/admin?module=dashboard';
+  if (role === 'rsp') return '/admin/rsp';
+  if (role === 'lnd') return '/admin/lnd';
+  return '/admin/pm';
+};
 
 // Mock employee data for demo
 const MOCK_EMPLOYEES: Record<string, Employee> = {
@@ -55,7 +76,7 @@ const AdminRoute = ({
   }
 
   if (allowedRoles && !allowedRoles.includes(session.role)) {
-    return <Navigate to="/admin/login" replace />;
+    return <Navigate to={getRoleDefaultRoute(session.role)} replace />;
   }
 
   return children;
@@ -89,10 +110,19 @@ const EmployeeRoute = ({
 
 function AppContent() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [adminSession, setAdminSession] = useState<{ email: string; role: Role } | null>(null);
   const [interviewerSession, setInterviewerSession] = useState<InterviewerSession | null>(null);
   const [employeeSession, setEmployeeSession] = useState<EmployeeSession | null>(null);
-  const [currentEmployee, setCurrentEmployee] = useState<Employee | null>(null);
+  const [activeModule, setActiveModule] = useState<AdminModule>('dashboard');
+
+  const resolveAdminModule = (moduleParam: string | null): AdminModule => {
+    if (moduleParam === 'rsp') return 'rsp';
+    if (moduleParam === 'lnd') return 'lnd';
+    if (moduleParam === 'pm') return 'pm';
+    if (moduleParam === 'settings') return 'settings';
+    return 'dashboard';
+  };
 
   const resolveEmployeeFromSession = (session: EmployeeSession | null): Employee | null => {
     if (!session) return null;
@@ -111,9 +141,12 @@ function AppContent() {
     const stored = localStorage.getItem('cictrix_admin_session');
     if (stored) {
       try {
-        const parsed = JSON.parse(stored) as { email: string; role: Role };
-        if (parsed?.email && parsed?.role) {
-          setAdminSession(parsed);
+        const parsed = JSON.parse(stored) as { email: string; role: string };
+        const normalizedRole = normalizeAdminRole(parsed?.role);
+        if (parsed?.email && normalizedRole) {
+          setAdminSession({ email: parsed.email, role: normalizedRole });
+        } else {
+          localStorage.removeItem('cictrix_admin_session');
         }
       } catch {
         localStorage.removeItem('cictrix_admin_session');
@@ -149,7 +182,6 @@ function AppContent() {
             );
           }
           if (employee) {
-            setCurrentEmployee(employee);
           }
         }
       } catch {
@@ -159,11 +191,13 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    const employee = resolveEmployeeFromSession(employeeSession);
-    if (employee) {
-      setCurrentEmployee(employee);
+    if (adminSession?.role !== 'super-admin' || !location.pathname.startsWith('/admin')) {
+      return;
     }
-  }, [employeeSession]);
+
+    const moduleParam = new URLSearchParams(location.search).get('module');
+    setActiveModule(resolveAdminModule(moduleParam));
+  }, [adminSession?.role, location.pathname, location.search]);
 
   const handleLogin = (email: string, role: Role) => {
     const session = { email, role };
@@ -189,7 +223,6 @@ function AppContent() {
           loginUsername: username, // Store username for lookup
         };
         setEmployeeSession(session);
-        setCurrentEmployee(employee);
         localStorage.setItem('cictrix_employee_session', JSON.stringify(session));
         // Navigate to dashboard after successful login
         navigate('/employee/dashboard');
@@ -199,7 +232,6 @@ function AppContent() {
 
   const handleEmployeeLogout = () => {
     setEmployeeSession(null);
-    setCurrentEmployee(null);
     localStorage.removeItem('cictrix_employee_session');
     navigate('/employee/login');
   };
@@ -324,8 +356,18 @@ function AppContent() {
           <Route
             path="/admin"
             element={
-              <AdminRoute session={adminSession} allowedRoles={['super-admin']}>
-                <SuperAdminDashboard />
+              <AdminRoute session={adminSession}>
+                {adminSession?.role === 'super-admin' ? (
+                  <>
+                    {activeModule === 'dashboard' && <SuperAdminDashboard />}
+                    {activeModule === 'rsp' && <RSPDashboard />}
+                    {activeModule === 'lnd' && <LNDDashboard isDashboardView={true} />}
+                    {activeModule === 'pm' && <PMDashboard isDashboardView={true} />}
+                    {activeModule === 'settings' && <SettingsPage />}
+                  </>
+                ) : (
+                  <Navigate to={adminSession ? getRoleDefaultRoute(adminSession.role) : '/admin/login'} replace />
+                )}
               </AdminRoute>
             }
           />

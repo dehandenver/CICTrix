@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Users, GraduationCap, Award, Building2 } from 'lucide-react';
+import { Users, GraduationCap, Award, Building2, TrendingUp, AlertCircle } from 'lucide-react';
 import { Sidebar } from '../../components/Sidebar';
 import { supabase } from '../../lib/supabase';
 import '../../styles/admin.css';
@@ -17,7 +17,9 @@ export const SuperAdminDashboard = () => {
     totalPrograms: 0
   });
   const [pmStats, setPmStats] = useState({
-    evaluationStatus: 0
+    evaluationStatus: 0,
+    activeCycle: 'None',
+    pendingReviews: 0
   });
 
   useEffect(() => {
@@ -34,7 +36,8 @@ export const SuperAdminDashboard = () => {
         pendingRes,
         trainingsRes,
         activeTrainingsRes,
-        cyclesRes
+        cyclesRes,
+        activeCycleRes
       ] = await Promise.all([
         supabase.from('applicants').select('id', { count: 'exact', head: true }),
         supabase.from('jobs').select('id', { count: 'exact', head: true }),
@@ -42,7 +45,8 @@ export const SuperAdminDashboard = () => {
         supabase.from('applicants').select('id', { count: 'exact', head: true }).eq('status', 'Pending'),
         supabase.from('trainings').select('id', { count: 'exact', head: true }),
         supabase.from('trainings').select('id', { count: 'exact', head: true }).gte('date', today).neq('status', 'Cancelled'),
-        supabase.from('performance_cycles').select('id', { count: 'exact', head: true }).eq('status', 'Active')
+        supabase.from('performance_cycles').select('id', { count: 'exact', head: true }).eq('status', 'Active'),
+        supabase.from('performance_cycles').select('title').eq('status', 'Active').limit(1)
       ]);
 
       setRspStats({
@@ -58,7 +62,9 @@ export const SuperAdminDashboard = () => {
       });
 
       setPmStats({
-        evaluationStatus: cyclesRes.count || 0
+        evaluationStatus: cyclesRes.count || 0,
+        activeCycle: activeCycleRes.data?.[0]?.title || 'None',
+        pendingReviews: pendingRes.count || 0
       });
     } catch (error) {
       console.error('Error fetching summary stats:', error);
@@ -235,6 +241,40 @@ export const SuperAdminDashboard = () => {
                     <p className="text-xs text-slate-400">Out of 5.0</p>
                   </div>
                   <p className="text-2xl font-semibold text-slate-900">4.2</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* PM Dashboard Interface (copied from PM dashboard) */}
+          <div className="mt-8">
+            <h2 className="text-2xl font-bold text-slate-900 mb-6">Performance Management</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-white rounded-lg shadow-md border border-slate-200 p-6 hover:shadow-lg transition">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-600 mb-1">Active Evaluation Cycle</p>
+                    <p className="text-lg font-bold text-slate-900">
+                      {loading ? 'Loading...' : pmStats.activeCycle}
+                    </p>
+                  </div>
+                  <div className="p-3 bg-blue-900/10 rounded-lg">
+                    <TrendingUp className="w-8 h-8 text-blue-900" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg shadow-md border border-slate-200 p-6 hover:shadow-lg transition">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-600 mb-1">Pending Reviews</p>
+                    <p className="text-4xl font-bold bg-gradient-to-r from-red-600 to-red-500 bg-clip-text text-transparent">
+                      {loading ? '...' : pmStats.pendingReviews}
+                    </p>
+                  </div>
+                  <div className="p-3 bg-red-600/10 rounded-lg">
+                    <AlertCircle className="w-8 h-8 text-red-600" />
+                  </div>
                 </div>
               </div>
             </div>

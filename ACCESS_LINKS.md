@@ -84,8 +84,9 @@ Reference for local development access to frontend pages and backend API endpoin
 1. Start backend:
    ```bash
    cd c:\CICTrix
-   docker-compose up
+   docker compose up
    ```
+   If Docker is not installed, backend URLs on port `8000` will not open.
 2. Start frontend:
    ```bash
    cd c:\CICTrix
@@ -99,6 +100,9 @@ Reference for local development access to frontend pages and backend API endpoin
 - If a link shows “This site can’t be reached,” verify both frontend and backend processes are running.
 - If `localhost` fails to resolve, use the `127.0.0.1` fallback URLs.
 - Frontend is configured to use port `5173` with strict port mode; if port `5173` is occupied, the dev server will not auto-switch ports.
+- On this workstation, backend is currently unreachable until one runtime is installed:
+   - Docker Desktop (`docker compose up`), or
+   - Python 3.11+ (`cd backend && python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000`)
 
 ## Notes
 

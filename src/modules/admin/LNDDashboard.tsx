@@ -22,6 +22,27 @@ interface TrainingStats {
   totalCompleted: number;
 }
 
+const FALLBACK_TRAININGS: Training[] = [
+  {
+    id: 1,
+    title: 'Leadership Development Program',
+    date: '2026-03-15',
+    speaker: 'Dr. Maria Santos',
+    venue: 'HRMO Conference Room',
+    status: 'Scheduled',
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 2,
+    title: 'Public Service Excellence Workshop',
+    date: '2026-02-10',
+    speaker: 'Atty. John Reyes',
+    venue: 'City Hall Training Hall',
+    status: 'Completed',
+    created_at: new Date().toISOString(),
+  },
+];
+
 export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boolean }) => {
   const [stats, setStats] = useState<TrainingStats>({
     upcomingTrainings: 0,
@@ -32,6 +53,7 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
   const [showTrainingDialog, setShowTrainingDialog] = useState(false);
   const [editingTraining, setEditingTraining] = useState<Training | null>(null);
   const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [newTraining, setNewTraining] = useState<{
     title: string;
     date: string;
@@ -56,6 +78,7 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
 
   const fetchTrainings = async () => {
     setLoading(true);
+    setErrorMessage(null);
     try {
       const { data, error } = await supabase
         .from('trainings')
@@ -63,9 +86,20 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
         .order('date', { ascending: false });
 
       if (error) throw error;
-      setTrainings(data || []);
+      const safeTrainings = (Array.isArray(data) ? data : []).map((item: any, index: number) => ({
+        id: Number(item?.id ?? index + 1),
+        title: String(item?.title ?? ''),
+        date: String(item?.date ?? ''),
+        speaker: String(item?.speaker ?? ''),
+        venue: String(item?.venue ?? ''),
+        status: (item?.status === 'Completed' || item?.status === 'Cancelled' ? item.status : 'Scheduled') as 'Scheduled' | 'Completed' | 'Cancelled',
+        created_at: String(item?.created_at ?? new Date().toISOString()),
+      }));
+      setTrainings(safeTrainings);
     } catch (error) {
       console.error('Error fetching trainings:', error);
+      setTrainings(FALLBACK_TRAININGS);
+      setErrorMessage('Using local sample training data (live source unavailable).');
     } finally {
       setLoading(false);
     }
@@ -139,8 +173,8 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
   const filteredTrainings = useMemo(() => {
     const query = searchTerm.toLowerCase();
     return trainings.filter(t =>
-      t.title.toLowerCase().includes(query) ||
-      t.speaker.toLowerCase().includes(query)
+      String(t.title ?? '').toLowerCase().includes(query) ||
+      String(t.speaker ?? '').toLowerCase().includes(query)
     );
   }, [trainings, searchTerm]);
 
@@ -151,6 +185,12 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
         <main className="flex-1 overflow-auto">
           <div className="p-8">
             <h1 className="text-3xl font-bold text-slate-900 mb-8">Learning & Development</h1>
+
+            {errorMessage && (
+              <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                {errorMessage}
+              </div>
+            )}
 
             {loading ? (
               <div className="flex items-center justify-center py-12">
@@ -211,6 +251,12 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
               Add Training
             </Button>
           </div>
+
+          {errorMessage && (
+            <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              {errorMessage}
+            </div>
+          )}
 
           {/* Search Bar */}
           <div className="mb-6 flex items-center gap-2">

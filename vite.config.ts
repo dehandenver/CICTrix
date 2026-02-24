@@ -5,12 +5,12 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   plugins: [react()],
   server: {
-    host: 'localhost',
+    host: true,
     port: 5173,
     strictPort: true,
   },
   preview: {
-    host: 'localhost',
+    host: true,
     port: 5173,
     strictPort: true,
   },
