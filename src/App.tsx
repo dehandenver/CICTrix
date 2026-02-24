@@ -241,6 +241,10 @@ function AppContent() {
           <Route path="/evaluate/:id" element={<Navigate to="/interviewer/evaluate/:id" replace />} />
           
           {/* Employee Portal Routes */}
+          <Route
+            path="/employee"
+            element={<Navigate to={employeeSession ? '/employee/dashboard' : '/employee/login'} replace />}
+          />
           <Route path="/employee/login" element={<EmployeeLoginPage onLogin={handleEmployeeLogin} />} />
           <Route
             path="/employee/dashboard"
@@ -309,6 +313,10 @@ function AppContent() {
                 )}
               </EmployeeRoute>
             }
+          />
+          <Route
+            path="/employee/*"
+            element={<Navigate to={employeeSession ? '/employee/dashboard' : '/employee/login'} replace />}
           />
           
           {/* Admin Routes */}

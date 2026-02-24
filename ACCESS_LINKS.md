@@ -1,154 +1,109 @@
-# CICTrix HRIS - System Access Links
+# CICTrix HRIS Access Guide
 
-Quick reference guide for accessing all parts of the system.
+Reference for local development access to frontend pages and backend API endpoints.
 
----
+## Environment URLs
 
-## 🌐 Base URL
-**Development:** http://localhost:5173
+| Service | Primary URL | Fallback URL |
+|---|---|---|
+| Frontend (Vite) | [http://localhost:5173](http://localhost:5173) | [http://127.0.0.1:5173](http://127.0.0.1:5173) |
+| Backend API | [http://localhost:8000](http://localhost:8000) | [http://127.0.0.1:8000](http://127.0.0.1:8000) |
 
----
-
-## 👥 Public Access
+## Public Access
 
 ### Applicant Portal
-**Main Application Form**
-- **URL:** http://localhost:5173/
-- **Description:** Complete applicant registration and assessment
-- **Access:** Public (no login required)
+- URL: [http://localhost:5173/](http://localhost:5173/)
+- Description: Applicant registration and assessment workflow
+- Access: Public (no login required)
 
----
-
-## 💼 Interviewer/Rater Access
+## Employee Access
 
 ### Login
-- **URL:** http://localhost:5173/interviewer/login
-- **Description:** Interviewer/rater authentication page
-- **Credentials:** Use registered interviewer email and name
+- URL: [http://localhost:5173/employee/login](http://localhost:5173/employee/login)
+- Description: Employee authentication
+- Access: Registered employees
 
 ### Dashboard
-- **URL:** http://localhost:5173/interviewer/dashboard
-- **Description:** View assigned applicants and evaluations
-- **Access:** Requires interviewer login
+- URL: [http://localhost:5173/employee/dashboard](http://localhost:5173/employee/dashboard)
+- Description: Employee profile and assigned tasks
+- Access: Requires employee login
 
-### Evaluation Form
-- **URL:** http://localhost:5173/interviewer/evaluate/:id
-- **Description:** Evaluate specific applicant (replace `:id` with applicant ID)
-- **Example:** http://localhost:5173/interviewer/evaluate/123
-- **Access:** Requires interviewer login
-
----
-
-## 🔐 Admin Access
+## Interviewer / Rater Access
 
 ### Login
-- **URL:** http://localhost:5173/admin/login
-- **Description:** Admin authentication page
-- **Roles:** super-admin, rsp, lnd, pm
-- **Default Credentials:**
-  - **Super Admin:** admin@cictrix.gov.ph / admin123
-  - **RSP:** rsp@cictrix.gov.ph / rsp123
-  - **LND:** lnd@cictrix.gov.ph / lnd123
-  - **PM:** pm@cictrix.gov.ph / pm123
+- URL: [http://localhost:5173/interviewer/login](http://localhost:5173/interviewer/login)
+- Description: Interviewer/rater authentication
+- Access: Registered interviewers/raters
 
-### Super Admin Dashboard
-- **URL:** http://localhost:5173/admin
-- **Description:** Main administrative dashboard with full system access
-- **Access:** Super Admin only
+### Dashboard
+- URL: [http://localhost:5173/interviewer/dashboard](http://localhost:5173/interviewer/dashboard)
+- Description: Assigned applicants and evaluations
+- Access: Requires interviewer login
 
-### RSP (Recruitment, Selection & Placement) Dashboard
-- **URL:** http://localhost:5173/admin/rsp
-- **Description:** Manage recruitment and selection processes
-- **Access:** Super Admin, RSP
+### Evaluation Form
+- URL pattern: `http://localhost:5173/interviewer/evaluate/{applicantId}`
+- Example: [http://localhost:5173/interviewer/evaluate/123](http://localhost:5173/interviewer/evaluate/123)
+- Description: Evaluate a specific applicant record
+- Access: Requires interviewer login
 
-### Rater Management
-- **URL:** http://localhost:5173/admin/raters
-- **Description:** Manage interviewers/raters and assignments
-- **Access:** Super Admin, RSP
+## Admin Access
 
-### LND (Learning & Development) Dashboard
-- **URL:** http://localhost:5173/admin/lnd
-- **Description:** View LND statistics and reports
-- **Access:** Super Admin, LND
+### Login
+- URL: [http://localhost:5173/admin/login](http://localhost:5173/admin/login)
+- Description: Admin authentication
+- Roles: `super-admin`, `rsp`, `lnd`, `pm`
 
-### LND Management
-- **URL:** http://localhost:5173/admin/lnd/manage
-- **Description:** Manage learning and development activities
-- **Access:** Super Admin, LND
+### Default Development Credentials
+- Super Admin: `admin@cictrix.gov.ph / admin123`
+- RSP: `rsp@cictrix.gov.ph / rsp123`
+- LND: `lnd@cictrix.gov.ph / lnd123`
+- PM: `pm@cictrix.gov.ph / pm123`
 
-### PM (Personnel Management) Dashboard
-- **URL:** http://localhost:5173/admin/pm
-- **Description:** View personnel management overview
-- **Access:** Super Admin, PM
+### Dashboards and Management Pages
+- Super Admin Dashboard: [http://localhost:5173/admin](http://localhost:5173/admin)
+- RSP Dashboard: [http://localhost:5173/admin/rsp](http://localhost:5173/admin/rsp)
+- Rater Management: [http://localhost:5173/admin/raters](http://localhost:5173/admin/raters)
+- LND Dashboard: [http://localhost:5173/admin/lnd](http://localhost:5173/admin/lnd)
+- LND Management: [http://localhost:5173/admin/lnd/manage](http://localhost:5173/admin/lnd/manage)
+- PM Dashboard: [http://localhost:5173/admin/pm](http://localhost:5173/admin/pm)
+- PM Management: [http://localhost:5173/admin/pm/manage](http://localhost:5173/admin/pm/manage)
 
-### PM Management
-- **URL:** http://localhost:5173/admin/pm/manage
-- **Description:** Manage personnel records and assignments
-- **Access:** Super Admin, PM
+## Backend API
 
----
+### Base and Health
+- API Base URL: [http://localhost:8000](http://localhost:8000)
+- Health Check: [http://localhost:8000/health](http://localhost:8000/health)
 
-## 🔧 Backend API
+### Endpoint Roots
+- Authentication: [http://localhost:8000/api/auth/](http://localhost:8000/api/auth/)
+- Applicants: [http://localhost:8000/api/applicants/](http://localhost:8000/api/applicants/)
+- Evaluations: [http://localhost:8000/api/evaluations/](http://localhost:8000/api/evaluations/)
 
-### API Base URL
-**Development:** http://localhost:8000
+## Quick Launch
 
-### Health Check
-- **URL:** http://localhost:8000/health
-- **Description:** Check if backend is running
-
-### API Endpoints
-- **Authentication:** http://localhost:8000/api/auth/
-- **Applicants:** http://localhost:8000/api/applicants/
-- **Evaluations:** http://localhost:8000/api/evaluations/
-
----
-
-## 📋 Quick Access Links (Copy & Paste)
-
-```
-Applicant Form:          http://localhost:5173/
-Interviewer Login:       http://localhost:5173/interviewer/login
-Interviewer Dashboard:   http://localhost:5173/interviewer/dashboard
-Admin Login:             http://localhost:5173/admin/login
-Super Admin Dashboard:   http://localhost:5173/admin
-RSP Dashboard:           http://localhost:5173/admin/rsp
-LND Dashboard:           http://localhost:5173/admin/lnd
-PM Dashboard:            http://localhost:5173/admin/pm
-Backend API:             http://localhost:8000
-```
-
----
-
-## 🚀 Getting Started
-
-1. **Start the Backend:**
+1. Start backend:
    ```bash
    cd c:\CICTrix
    docker-compose up
    ```
-
-2. **Start the Frontend:**
+2. Start frontend:
    ```bash
    cd c:\CICTrix
    npm run dev
    ```
+3. Open:
+   - [http://localhost:5173/](http://localhost:5173/)
 
-3. **Access the System:**
-   - Open your browser
-   - Navigate to http://localhost:5173/
-   - Choose your role and login accordingly
+## Troubleshooting
 
----
+- If a link shows “This site can’t be reached,” verify both frontend and backend processes are running.
+- If `localhost` fails to resolve, use the `127.0.0.1` fallback URLs.
+- Frontend is configured to use port `5173` with strict port mode; if port `5173` is occupied, the dev server will not auto-switch ports.
 
-## 📝 Notes
+## Notes
 
-- All URLs are for development environment
-- For production, replace `localhost:5173` with your production domain
-- Default admin credentials are for testing only - change them in production
-- Backend must be running on port 8000 for full functionality
-- Frontend dev server runs on port 5173 (Vite default)
+- This guide is for development environment usage.
+- Replace local URLs with your production domain in deployment documentation.
+- Default credentials are for local testing only; rotate credentials before production use.
 
----
-
-**Last Updated:** February 7, 2026
+Last updated: February 24, 2026

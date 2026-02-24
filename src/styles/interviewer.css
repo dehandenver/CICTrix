@@ -164,24 +164,24 @@
   font-size: 0.875rem;
 }
 
-.form-field {
+.interviewer-login-page .form-field {
   display: grid;
   gap: 0.5rem;
 }
 
-.form-field label {
+.interviewer-login-page .form-field label {
   font-weight: 600;
   color: #1e293b;
   font-size: 0.92rem;
 }
 
-.input-wrapper {
+.interviewer-login-page .input-wrapper {
   position: relative;
   display: flex;
   align-items: center;
 }
 
-.input-icon {
+.interviewer-login-page .input-icon {
   position: absolute;
   left: 0.9rem;
   color: #94a3b8;
@@ -190,7 +190,7 @@
   justify-content: center;
 }
 
-.input-wrapper input {
+.interviewer-login-page .input-wrapper input {
   width: 100%;
   padding: 0.85rem 0.95rem 0.85rem 2.75rem;
   border-radius: 12px;
@@ -200,18 +200,18 @@
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.input-wrapper input:hover {
+.interviewer-login-page .input-wrapper input:hover {
   border-color: #cbd5e1;
 }
 
-.input-wrapper input:focus {
+.interviewer-login-page .input-wrapper input:focus {
   outline: none;
   border-color: #2c6bff;
   box-shadow: 0 0 0 3px rgba(44, 107, 255, 0.15);
   background: white;
 }
 
-.input-wrapper input:disabled {
+.interviewer-login-page .input-wrapper input:disabled {
   background: #f1f5f9;
   cursor: not-allowed;
   color: #94a3b8;

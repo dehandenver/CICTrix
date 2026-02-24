@@ -116,7 +116,7 @@ export const useEmployeePortal = () => {
  *   return (
  *     <BrowserRouter>
  *       <Routes>
- *         {/* Employee Routes */}
+ *         // Employee Routes
  *         <Route path="/employee/login" element={<EmployeeLoginPage onLogin={handleEmployeeLogin} />} />
  *         <Route
  *           path="/employee/dashboard"
@@ -129,7 +129,7 @@ export const useEmployeePortal = () => {
  *           }
  *         />
  *         
- *         {/* Other routes... */}
+ *         // Other routes...
  *       </Routes>
  *     </BrowserRouter>
  *   );
