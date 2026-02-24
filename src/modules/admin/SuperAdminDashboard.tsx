@@ -1,5 +1,5 @@
+import { AlertCircle, Award, Building2, GraduationCap, TrendingUp, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Users, GraduationCap, Award, Building2, TrendingUp, AlertCircle } from 'lucide-react';
 import { Sidebar } from '../../components/Sidebar';
 import { supabase } from '../../lib/supabase';
 import '../../styles/admin.css';

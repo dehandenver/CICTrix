@@ -1,10 +1,10 @@
-import { useEffect, useState, useMemo } from 'react';
-import { BookOpen, Plus, Edit2, Trash2, Calendar, Search } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { Sidebar } from '../../components/Sidebar';
+import { BookOpen, Calendar, Edit2, Plus, Search, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../../components/Button';
-import { Input } from '../../components/Input';
 import { Dialog } from '../../components/Dialog';
+import { Input } from '../../components/Input';
+import { Sidebar } from '../../components/Sidebar';
+import { supabase } from '../../lib/supabase';
 import '../../styles/admin.css';
 
 interface Training {

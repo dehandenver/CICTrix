@@ -1,5 +1,5 @@
+import { BookOpen, FileText, LayoutDashboard, Settings, TrendingUp, UserCog, Users } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, BookOpen, TrendingUp, UserCog, FileText, Settings } from 'lucide-react';
 import '../styles/sidebar.css';
 
 type AdminRole = 'super-admin' | 'rsp' | 'lnd' | 'pm';
@@ -95,9 +95,16 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
     }
   ];
 
-  const filteredMenuItems = menuItems.filter(item => 
-    !item.roles || item.roles.includes(resolvedRole as string)
-  );
+  const filteredMenuItems = menuItems.filter(item => {
+    // If no role defined for the item, don't show it
+    if (!item.roles || item.roles.length === 0) return false;
+    // If user has no role, don't show anything
+    if (!resolvedRole) return false;
+    // Check if user's role is in the allowed roles
+    const allowed = item.roles.includes(resolvedRole);
+    console.log(`Item: ${item.label}, Allowed roles: [${item.roles.join(', ')}], User role: ${resolvedRole}, Show: ${allowed}`);
+    return allowed;
+  });
 
   return (
     <aside className="sidebar">

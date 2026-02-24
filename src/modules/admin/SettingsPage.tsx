@@ -1,4 +1,4 @@
-import { Settings, Shield, Bell, Database } from 'lucide-react';
+import { Bell, Database, Settings, Shield } from 'lucide-react';
 import { Sidebar } from '../../components/Sidebar';
 import '../../styles/admin.css';
 

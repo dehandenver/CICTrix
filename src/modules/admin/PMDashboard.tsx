@@ -1,30 +1,36 @@
-import { useEffect, useState } from 'react';
 import {
-  TrendingUp,
-  AlertCircle,
-  Plus,
-  Edit2,
-  Trash2,
-  Eye,
-  LayoutDashboard,
-  ClipboardList,
-  CalendarCheck2,
-  Target,
-  FileCheck2,
-  BarChart3,
-  FileText,
-  Settings,
-  Search,
-  Bell,
-  HelpCircle,
-  LogOut,
-  UserCircle2,
+    AlertCircle,
+    BarChart3,
+    Bell,
+    CalendarCheck2,
+    ClipboardList,
+    Database,
+    Edit2,
+    Eye,
+    FileCheck2,
+    FileText,
+    Globe,
+    HelpCircle,
+    LayoutDashboard,
+    LogOut,
+    Mail,
+    Palette,
+    Plus,
+    Search,
+    Settings,
+    Shield,
+    Target,
+    Trash2,
+    TrendingUp,
+    User,
+    UserCircle2,
 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { Sidebar } from '../../components/Sidebar';
+import { useEffect, useState } from 'react';
 import { Button } from '../../components/Button';
-import { Input } from '../../components/Input';
 import { Dialog } from '../../components/Dialog';
+import { Input } from '../../components/Input';
+import { Sidebar } from '../../components/Sidebar';
+import { supabase } from '../../lib/supabase';
 import '../../styles/admin.css';
 
 interface EvaluationCycle {
@@ -495,7 +501,211 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
               </>
             )}
 
-            {!['dashboard', 'evaluation-status', 'performance-reviews', 'goals', 'ipcr'].includes(activeSection) && (
+            {activeSection === 'analytics' && (
+              <>
+                <h2 className="text-3xl font-bold text-slate-900">Analytics</h2>
+                <p className="mt-1 text-slate-600">Comprehensive performance insights and trends</p>
+
+                <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-slate-600">Overall Avg Rating</p>
+                        <p className="text-3xl font-bold mt-2 text-slate-400">--</p>
+                      </div>
+                      <div className="h-12 w-12 rounded-lg bg-blue-100 grid place-content-center">
+                        <TrendingUp className="h-6 w-6 text-blue-600" />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-slate-600">Top Performers</p>
+                        <p className="text-3xl font-bold mt-2 text-slate-400">--</p>
+                      </div>
+                      <div className="h-12 w-12 rounded-lg bg-emerald-100 grid place-content-center">
+                        <TrendingUp className="h-6 w-6 text-emerald-600" />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-slate-600">Departments</p>
+                        <p className="text-3xl font-bold mt-2 text-slate-400">--</p>
+                      </div>
+                      <div className="h-12 w-12 rounded-lg bg-slate-100 grid place-content-center">
+                        <FileText className="h-6 w-6 text-slate-600" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-6">
+                  <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold">Performance by Department</h3>
+                      <FileText className="h-5 w-5 text-slate-400" />
+                    </div>
+                    <div className="py-12 text-center text-sm text-slate-500">
+                      No department performance data available
+                    </div>
+                  </section>
+
+                  <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold">Performance Distribution</h3>
+                      <BarChart3 className="h-5 w-5 text-slate-400" />
+                    </div>
+                    <div className="py-12 text-center text-sm text-slate-500">
+                      No performance distribution data available
+                    </div>
+                  </section>
+                </div>
+
+                <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                  <h3 className="text-lg font-semibold mb-4">Quarterly Performance Trends</h3>
+                  <div className="py-12 text-center text-sm text-slate-500">
+                    No quarterly trend data available
+                  </div>
+                </section>
+
+                <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold">Top Performers</h3>
+                    <select className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
+                      <option>All Departments</option>
+                    </select>
+                  </div>
+                  <div className="py-12 text-center text-sm text-slate-500">
+                    No top performer data available
+                  </div>
+                </section>
+              </>
+            )}
+
+            {activeSection === 'reports' && (
+              <>
+                <h2 className="text-3xl font-bold text-slate-900">Department Reports</h2>
+                <p className="mt-1 text-slate-600">Performance reports with adjectival ratings</p>
+
+                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <select className="rounded-lg border border-slate-300 px-4 py-2 text-sm">
+                    <option>All Departments</option>
+                  </select>
+                  <select className="rounded-lg border border-slate-300 px-4 py-2 text-sm">
+                    <option>Q1 2024 (Jan-Mar)</option>
+                  </select>
+                </div>
+
+                <div className="mt-6 rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
+                  <p className="text-sm text-slate-500 text-center">No department reports available</p>
+                </div>
+              </>
+            )}
+
+            {activeSection === 'settings' && (
+              <>
+                <h2 className="text-3xl font-bold text-slate-900">Settings</h2>
+                <p className="mt-1 text-slate-600">Configure your system preferences and account settings</p>
+
+                <div className="mt-6 grid grid-cols-1 xl:grid-cols-4 gap-6">
+                  <aside className="xl:col-span-1 space-y-2">
+                    {[
+                      { id: 'profile', label: 'Profile Settings', icon: User },
+                      { id: 'notifications', label: 'Notifications', icon: Bell },
+                      { id: 'security', label: 'Security', icon: Shield },
+                      { id: 'system', label: 'System Settings', icon: Database },
+                      { id: 'email', label: 'Email Configuration', icon: Mail },
+                      { id: 'appearance', label: 'Appearance', icon: Palette },
+                      { id: 'localization', label: 'Localization', icon: Globe },
+                    ].map((tab) => {
+                      const Icon = tab.icon;
+                      const isActive = tab.id === 'profile';
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition ${
+                            isActive ? 'bg-blue-50 text-blue-600 font-medium' : 'hover:bg-slate-50 text-slate-700'
+                          }`}
+                        >
+                          <Icon className={`h-5 w-5 ${isActive ? 'text-blue-600' : 'text-slate-500'}`} />
+                          <span className="text-sm">{tab.label}</span>
+                        </button>
+                      );
+                    })}
+                  </aside>
+
+                  <div className="xl:col-span-3">
+                    <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+                      <h3 className="text-2xl font-bold text-slate-900">Profile Settings</h3>
+                      <p className="mt-1 text-sm text-slate-600">Manage your personal information and account details</p>
+
+                      <div className="mt-6 flex items-center gap-4">
+                        <div className="h-24 w-24 rounded-full bg-blue-100 grid place-content-center">
+                          <UserCircle2 className="h-12 w-12 text-blue-600" />
+                        </div>
+                        <div>
+                          <button type="button" className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition">
+                            Change Photo
+                          </button>
+                          <p className="mt-1 text-xs text-slate-500">JPG, PNG or GIF. Max size 2MB</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-2">First Name</label>
+                          <input type="text" className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm" placeholder="Enter first name" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-2">Last Name</label>
+                          <input type="text" className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm" placeholder="Enter last name" />
+                        </div>
+                      </div>
+
+                      <div className="mt-4">
+                        <label className="block text-sm font-medium text-slate-700 mb-2">Email Address</label>
+                        <input type="email" className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm" placeholder="Enter email address" />
+                      </div>
+
+                      <div className="mt-4">
+                        <label className="block text-sm font-medium text-slate-700 mb-2">Role</label>
+                        <input type="text" className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm bg-slate-50" value="PM" disabled />
+                      </div>
+
+                      <div className="mt-4">
+                        <label className="block text-sm font-medium text-slate-700 mb-2">Department</label>
+                        <select className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm">
+                          <option>Select department</option>
+                          <option>Human Resource Management Office</option>
+                          <option>Finance Department</option>
+                          <option>IT Department</option>
+                        </select>
+                      </div>
+
+                      <div className="mt-4">
+                        <label className="block text-sm font-medium text-slate-700 mb-2">Bio</label>
+                        <textarea className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm" rows={4} placeholder="Tell us about yourself..."></textarea>
+                      </div>
+
+                      <div className="mt-6 flex justify-end gap-3">
+                        <button type="button" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition">
+                          Cancel
+                        </button>
+                        <button type="button" className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition">
+                          Save Changes
+                        </button>
+                      </div>
+                    </section>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {!['dashboard', 'evaluation-status', 'performance-reviews', 'goals', 'ipcr', 'analytics', 'reports', 'settings'].includes(activeSection) && (
               <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
                 <h2 className="text-2xl font-bold text-slate-900 capitalize">{activeSection.replace('-', ' ')}</h2>
                 <p className="mt-2 text-slate-600">Section scaffold is ready. Share the next screenshots and I'll match this page exactly.</p>
