@@ -3,8 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from
 import { LNDDashboard } from './modules/admin/LNDDashboard';
 import { LoginPage } from './modules/admin/LoginPage';
 import { PMDashboard } from './modules/admin/PMDashboard';
-import { RSPDashboard } from './modules/admin/RSPDashboard';
-import { RaterManagementPage } from './modules/admin/RaterManagementPage';
+import { RSPDashboard } from './modules/admin/RSPDashboard.tsx';
 import { SettingsPage } from './modules/admin/SettingsPage';
 import { SuperAdminDashboard } from './modules/admin/SuperAdminDashboard';
 import { ApplicantWizard } from './modules/applicant/ApplicantWizard';
@@ -380,11 +379,65 @@ function AppContent() {
             }
           />
           <Route
-            path="/admin/raters"
+            path="/admin/rsp/jobs"
             element={
               <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
-                <RaterManagementPage />
+                <RSPDashboard />
               </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/rsp/qualified"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <RSPDashboard />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/rsp/new-hired"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <RSPDashboard />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/rsp/raters"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <RSPDashboard />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/rsp/accounts"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <RSPDashboard />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/rsp/reports"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <RSPDashboard />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/rsp/settings"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <RSPDashboard />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/raters"
+            element={
+              <Navigate to="/admin/rsp/raters" replace />
             }
           />
           <Route

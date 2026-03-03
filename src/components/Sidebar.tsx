@@ -22,6 +22,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
   const resolvedRole = userRole ?? session?.role;
   const activeAdminModule = new URLSearchParams(location.search).get('module') ?? 'dashboard';
   const isSuperAdmin = resolvedRole === 'super-admin';
+  const isRspRole = resolvedRole === 'rsp';
 
   const getPath = (module: 'dashboard' | 'rsp' | 'lnd' | 'pm' | 'settings', defaultPath: string) =>
     isSuperAdmin ? `/admin?module=${module}` : defaultPath;
@@ -95,14 +96,82 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
     }
   ];
 
-  const filteredMenuItems = menuItems.filter(item => {
+  const rspMenuItems = [
+    {
+      path: '/admin/rsp',
+      icon: LayoutDashboard,
+      label: 'Dashboard',
+      sublabel: '',
+      isActive: location.pathname === '/admin/rsp',
+      roles: ['rsp'] as AdminRole[],
+    },
+    {
+      path: '/admin/rsp/jobs',
+      icon: FileText,
+      label: 'Job Posts',
+      sublabel: 'Manage positions',
+      isActive: location.pathname === '/admin/rsp/jobs',
+      roles: ['rsp'] as AdminRole[],
+    },
+    {
+      path: '/admin/rsp/qualified',
+      icon: Users,
+      label: 'Qualified Applicants',
+      sublabel: 'Ready for interview',
+      isActive: location.pathname === '/admin/rsp/qualified',
+      roles: ['rsp'] as AdminRole[],
+    },
+    {
+      path: '/admin/rsp/new-hired',
+      icon: Users,
+      label: 'Newly Hired',
+      sublabel: 'Generate credentials',
+      isActive: location.pathname === '/admin/rsp/new-hired',
+      roles: ['rsp'] as AdminRole[],
+    },
+    {
+      path: '/admin/rsp/raters',
+      icon: UserCog,
+      label: 'Rater Management',
+      sublabel: 'Access control',
+      isActive: location.pathname === '/admin/rsp/raters',
+      roles: ['rsp'] as AdminRole[],
+    },
+    {
+      path: '/admin/rsp/accounts',
+      icon: Users,
+      label: 'Employee Accounts',
+      sublabel: 'All employees',
+      isActive: location.pathname === '/admin/rsp/accounts',
+      roles: ['rsp'] as AdminRole[],
+    },
+    {
+      path: '/admin/rsp/reports',
+      icon: FileText,
+      label: 'Reports',
+      sublabel: '',
+      isActive: location.pathname === '/admin/rsp/reports',
+      roles: ['rsp'] as AdminRole[],
+    },
+    {
+      path: '/admin/rsp/settings',
+      icon: Settings,
+      label: 'Settings',
+      sublabel: '',
+      isActive: location.pathname === '/admin/rsp/settings',
+      roles: ['rsp'] as AdminRole[],
+    },
+  ];
+
+  const sourceMenu = isRspRole ? rspMenuItems : menuItems;
+
+  const filteredMenuItems = sourceMenu.filter(item => {
     // If no role defined for the item, don't show it
     if (!item.roles || item.roles.length === 0) return false;
     // If user has no role, don't show anything
     if (!resolvedRole) return false;
     // Check if user's role is in the allowed roles
     const allowed = item.roles.includes(resolvedRole);
-    console.log(`Item: ${item.label}, Allowed roles: [${item.roles.join(', ')}], User role: ${resolvedRole}, Show: ${allowed}`);
     return allowed;
   });
 

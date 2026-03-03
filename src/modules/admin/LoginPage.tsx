@@ -56,6 +56,10 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
       // Try mock auth first
       const mockUser = MOCK_USERS[email];
       if (mockUser && mockUser.password === password) {
+        if (mockUser.role !== selectedRole) {
+          alert(`This account is assigned to ${mockUser.role.toUpperCase()}. Please select the correct role.`);
+          return;
+        }
         onLogin(email, mockUser.role);
         navigate(getRoleDefaultRoute(mockUser.role));
         return;
@@ -88,6 +92,12 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
         alert('Invalid role assignment. Contact the admin.');
         return;
       }
+
+      if (role !== selectedRole) {
+        alert(`Your account role is ${role.toUpperCase()}. Please select the matching role to continue.`);
+        return;
+      }
+
       const resolvedEmail = authData.user.email ?? email;
       onLogin(resolvedEmail, role);
       navigate(getRoleDefaultRoute(role));
