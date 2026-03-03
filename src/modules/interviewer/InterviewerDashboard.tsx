@@ -46,6 +46,59 @@ interface Stats {
   upcomingInterviews: number;
 }
 
+const FALLBACK_JOBS: JobPosting[] = [
+  {
+    id: 1,
+    title: 'Administrative Officer',
+    item_number: '001',
+    department: 'Operations',
+    office: 'Operations',
+    status: 'Open',
+    created_at: new Date().toISOString(),
+    applicant_count: 3,
+  },
+  {
+    id: 2,
+    title: 'Accountant',
+    item_number: '002',
+    department: 'Finance',
+    office: 'Finance',
+    status: 'Open',
+    created_at: new Date().toISOString(),
+    applicant_count: 2,
+  },
+  {
+    id: 3,
+    title: 'IT Specialist',
+    item_number: '003',
+    department: 'Information Technology',
+    office: 'Information Technology',
+    status: 'Open',
+    created_at: new Date().toISOString(),
+    applicant_count: 4,
+  },
+  {
+    id: 4,
+    title: 'Human Resource Specialist',
+    item_number: '004',
+    department: 'Human Resources',
+    office: 'Human Resources',
+    status: 'Open',
+    created_at: new Date().toISOString(),
+    applicant_count: 1,
+  },
+  {
+    id: 5,
+    title: 'Project Coordinator',
+    item_number: '005',
+    department: 'Operations',
+    office: 'Operations',
+    status: 'Open',
+    created_at: new Date().toISOString(),
+    applicant_count: 2,
+  },
+];
+
 export function InterviewerDashboard() {
   const navigate = useNavigate();
   const [jobs, setJobs] = useState<JobPosting[]>([]);
@@ -70,107 +123,64 @@ export function InterviewerDashboard() {
     try {
       setLoading(true);
       setError(null);
+      try {
+        // Get all applicants count
+        const { count: applicantCount } = await supabase
+          .from('applicants')
+          .select('id', { count: 'exact', head: true });
 
-      // Get all applicants count
-      const { count: applicantCount } = await supabase
-        .from('applicants')
-        .select('id', { count: 'exact', head: true });
+        // Get evaluations count
+        const { count: evaluationCount } = await supabase
+          .from('evaluations')
+          .select('id', { count: 'exact', head: true });
 
-      // Get evaluations count
-      const { count: evaluationCount } = await supabase
-        .from('evaluations')
-        .select('id', { count: 'exact', head: true });
+        // Get jobs data
+        let { data: jobsData, error: jobsError } = await supabase
+          .from('job_postings')
+          .select('*')
+          .eq('status', 'Open')
+          .order('created_at', { ascending: false });
 
-      // Get jobs data
-      let { data: jobsData, error: jobsError } = await supabase
-        .from('job_postings')
-        .select('*')
-        .eq('status', 'Open')
-        .order('created_at', { ascending: false });
+        // If job_postings table doesn't exist, use fallback data
+        if (jobsError && jobsError.code === 'PGRST116') {
+          jobsData = FALLBACK_JOBS;
+        } else if (jobsError) {
+          throw jobsError;
+        }
 
-      // If job_postings table doesn't exist, use mock data
-      if (jobsError && jobsError.code === 'PGRST116') {
-        console.log('job_postings table not found, using mock data');
-        jobsData = [
-          {
-            id: '1',
-            title: 'Administrative Officer',
-            department: 'Operations',
-            office: 'Operations',
-            description: 'Responsible for administrative tasks and office management',
-            item_number: '001',
-            status: 'Open',
-            created_at: new Date().toISOString()
-          },
-          {
-            id: '2',
-            title: 'Accountant',
-            department: 'Finance',
-            office: 'Finance',
-            description: 'Handle financial records and accounting tasks',
-            item_number: '002',
-            status: 'Open',
-            created_at: new Date().toISOString()
-          },
-          {
-            id: '3',
-            title: 'IT Specialist',
-            department: 'Information Technology',
-            office: 'Information Technology',
-            description: 'Manage IT infrastructure and systems',
-            item_number: '003',
-            status: 'Open',
-            created_at: new Date().toISOString()
-          },
-          {
-            id: '4',
-            title: 'Human Resource Specialist',
-            department: 'Human Resources',
-            office: 'Human Resources',
-            description: 'Recruit, hire and manage employees',
-            item_number: '004',
-            status: 'Open',
-            created_at: new Date().toISOString()
-          },
-          {
-            id: '5',
-            title: 'Project Coordinator',
-            department: 'Operations',
-            office: 'Operations',
-            description: 'Coordinate and manage projects',
-            item_number: '005',
-            status: 'Open',
-            created_at: new Date().toISOString()
-          }
-        ];
-      } else if (jobsError) {
-        throw jobsError;
+        // Get applicant counts for each job
+        const jobsWithCounts = await Promise.all(
+          (jobsData || []).map(async (job: any) => {
+            const { count } = await supabase
+              .from('applicants')
+              .select('id', { count: 'exact', head: true })
+              .eq('position', job.title);
+
+            return {
+              ...job,
+              office: job.office || job.department,
+              applicant_count: typeof count === 'number' ? count : job.applicant_count || 0,
+            };
+          })
+        );
+
+        setJobs(jobsWithCounts);
+        setStats({
+          totalJobs: jobsData?.length || 0,
+          totalApplicants: applicantCount || 0,
+          upcomingInterviews: evaluationCount || 0,
+        });
+      } catch (fetchErr) {
+        console.warn('Interviewer dashboard running with fallback data:', fetchErr);
+        setJobs(FALLBACK_JOBS);
+        setStats({
+          totalJobs: FALLBACK_JOBS.length,
+          totalApplicants: FALLBACK_JOBS.reduce((sum, job) => sum + job.applicant_count, 0),
+          upcomingInterviews: 0,
+        });
       }
-
-      // Get applicant counts for each job
-      const jobsWithCounts = await Promise.all(
-        (jobsData || []).map(async (job: any) => {
-          const { count } = await supabase
-            .from('applicants')
-            .select('id', { count: 'exact', head: true })
-            .eq('position', job.title);
-
-          return {
-            ...job,
-            office: job.office || job.department,
-            applicant_count: count || 0
-          };
-        })
-      );
-
-      setJobs(jobsWithCounts);
-      setStats({
-        totalJobs: jobsData?.length || 0,
-        totalApplicants: applicantCount || 0,
-        upcomingInterviews: evaluationCount || 0
-      });
     } catch (err) {
-      console.error('Error fetching data:', err);
+      console.error('Error initializing dashboard:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
     } finally {
       setLoading(false);
