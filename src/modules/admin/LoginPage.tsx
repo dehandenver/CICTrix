@@ -30,6 +30,13 @@ interface LoginPageProps {
 
 // Mock credentials for development
 const MOCK_USERS: Record<string, { password: string; role: Role }> = {
+  // Documented credentials (ACCESS_LINKS.md)
+  'admin@cictrix.gov.ph': { password: 'admin123', role: 'super-admin' },
+  'rsp@cictrix.gov.ph': { password: 'rsp123', role: 'rsp' },
+  'lnd@cictrix.gov.ph': { password: 'lnd123', role: 'lnd' },
+  'pm@cictrix.gov.ph': { password: 'pm123', role: 'pm' },
+
+  // Backward-compatible legacy credentials
   'admin@cictrix.com': { password: 'Admin@123', role: 'super-admin' },
   'rsp@cictrix.com': { password: 'RSP@123', role: 'rsp' },
   'lnd@cictrix.com': { password: 'LND@123', role: 'lnd' },
@@ -54,13 +61,14 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
     setLoading(true);
     try {
       // Try mock auth first
-      const mockUser = MOCK_USERS[email];
+      const normalizedEmail = email.trim().toLowerCase();
+      const mockUser = MOCK_USERS[normalizedEmail];
       if (mockUser && mockUser.password === password) {
         if (mockUser.role !== selectedRole) {
           alert(`This account is assigned to ${mockUser.role.toUpperCase()}. Please select the correct role.`);
           return;
         }
-        onLogin(email, mockUser.role);
+        onLogin(normalizedEmail, mockUser.role);
         navigate(getRoleDefaultRoute(mockUser.role));
         return;
       }

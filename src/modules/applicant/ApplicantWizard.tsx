@@ -157,6 +157,14 @@ export const ApplicantWizard: React.FC = () => {
     return error instanceof TypeError || /failed to fetch|networkerror/i.test(error.message);
   };
 
+  const persistDataSourceMode = (mode: 'local' | 'supabase') => {
+    try {
+      localStorage.setItem('cictrix_data_source_mode', mode);
+    } catch {
+      // Ignore localStorage write issues
+    }
+  };
+
   const handleSubmit = async () => {
     // Validate files
     const fileValidationError = validateFiles(files.map((f) => f.file), files);
@@ -170,6 +178,7 @@ export const ApplicantWizard: React.FC = () => {
 
     try {
       await submitWithClient(supabase);
+      persistDataSourceMode('supabase');
       completeSuccess();
     } catch (error) {
       console.error('Submission error:', error);
@@ -177,6 +186,7 @@ export const ApplicantWizard: React.FC = () => {
       if (!isMockModeEnabled && isNetworkFetchError(error)) {
         try {
           await submitWithClient(mockDatabase as any);
+          persistDataSourceMode('local');
           completeSuccess();
           return;
         } catch (fallbackError) {

@@ -64,6 +64,15 @@ const fetchEvaluationsFromClient = async (client: any): Promise<any[]> => {
   return data || [];
 };
 
+const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
+  try {
+    const mode = localStorage.getItem('cictrix_data_source_mode');
+    return mode === 'local' ? 'local' : 'supabase';
+  } catch {
+    return 'supabase';
+  }
+};
+
 const buildJobsFromApplicants = (allApplicants: any[]): JobPosting[] => {
   const groupedByPosition = new Map<string, any[]>();
 
@@ -123,46 +132,30 @@ export function InterviewerDashboard() {
     try {
       setLoading(true);
       setError(null);
-      let supabaseApplicants: any[] = [];
-      let localApplicants: any[] = [];
-      let supabaseEvaluations: any[] = [];
-      let localEvaluations: any[] = [];
+      const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
+      const primaryClient = preferredMode === 'local' ? (mockDatabase as any) : supabase;
+      const secondaryClient = preferredMode === 'local' ? supabase : (mockDatabase as any);
+
+      let allApplicants: any[] = [];
+      let allEvaluations: any[] = [];
 
       try {
-        supabaseApplicants = await fetchApplicantsFromClient(supabase);
-      } catch (supabaseApplicantsErr) {
-        console.warn('Unable to fetch applicants from Supabase:', supabaseApplicantsErr);
+        allApplicants = await fetchApplicantsFromClient(primaryClient);
+        allEvaluations = await fetchEvaluationsFromClient(primaryClient);
+      } catch (primaryErr) {
+        console.warn('Primary interviewer data source failed:', primaryErr);
       }
 
-      if (!isMockModeEnabled) {
+      if ((!allApplicants || allApplicants.length === 0) && !isMockModeEnabled) {
         try {
-          localApplicants = await fetchApplicantsFromClient(mockDatabase as any);
-        } catch (localApplicantsErr) {
-          console.warn('Unable to fetch applicants from local storage:', localApplicantsErr);
+          allApplicants = await fetchApplicantsFromClient(secondaryClient);
+          allEvaluations = await fetchEvaluationsFromClient(secondaryClient);
+        } catch (secondaryErr) {
+          console.warn('Secondary interviewer data source failed:', secondaryErr);
         }
       }
 
-      try {
-        supabaseEvaluations = await fetchEvaluationsFromClient(supabase);
-      } catch (supabaseEvaluationsErr) {
-        console.warn('Unable to fetch evaluations from Supabase:', supabaseEvaluationsErr);
-      }
-
-      if (!isMockModeEnabled) {
-        try {
-          localEvaluations = await fetchEvaluationsFromClient(mockDatabase as any);
-        } catch (localEvaluationsErr) {
-          console.warn('Unable to fetch evaluations from local storage:', localEvaluationsErr);
-        }
-      }
-
-      const applicantMap = new Map<string, any>();
-      [...supabaseApplicants, ...localApplicants].forEach((item) => applicantMap.set(item.id, item));
-      const allApplicants = Array.from(applicantMap.values()).filter((item) => !isDemoApplicant(item));
-
-      const evaluationMap = new Map<string, any>();
-      [...supabaseEvaluations, ...localEvaluations].forEach((item) => evaluationMap.set(item.id, item));
-      const allEvaluations = Array.from(evaluationMap.values());
+      allApplicants = (allApplicants || []).filter((item) => !isDemoApplicant(item));
 
       const jobsFromApplicants = buildJobsFromApplicants(allApplicants);
 

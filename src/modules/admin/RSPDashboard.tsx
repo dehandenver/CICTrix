@@ -27,7 +27,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/Button';
 import { Dialog } from '../../components/Dialog';
 import { Sidebar } from '../../components/Sidebar';
-import { supabase } from '../../lib/supabase';
+import { mockDatabase } from '../../lib/mockDatabase';
+import { isMockModeEnabled, supabase } from '../../lib/supabase';
 import '../../styles/admin.css';
 
 type JobStatus = 'Open' | 'Reviewing' | 'Closed';
@@ -116,6 +117,15 @@ const applicantNameFromRow = (row: any) => {
   return `${first} ${middle} ${last}`.replace(/\s+/g, ' ').trim() || 'Unnamed Applicant';
 };
 
+const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
+  try {
+    const mode = localStorage.getItem('cictrix_data_source_mode');
+    return mode === 'local' ? 'local' : 'supabase';
+  } catch {
+    return 'supabase';
+  }
+};
+
 export const RSPDashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -138,6 +148,8 @@ export const RSPDashboard = () => {
 
   const [raterSearch, setRaterSearch] = useState('');
   const [raterStatus, setRaterStatus] = useState('all');
+  const [accountsView, setAccountsView] = useState<'overview' | 'directory'>('overview');
+  const [employeeDirectorySearch, setEmployeeDirectorySearch] = useState('');
 
   const [showJobDialog, setShowJobDialog] = useState(false);
   const [showRaterDialog, setShowRaterDialog] = useState(false);
@@ -167,13 +179,29 @@ export const RSPDashboard = () => {
 
   useEffect(() => {
     const load = async () => {
-      const [jobPostingsRes, jobsRes, applicantsRes, ratersRes, evaluationsRes] = await Promise.allSettled([
-        supabase.from('job_postings').select('*').order('created_at', { ascending: false }),
-        supabase.from('jobs').select('*').order('created_at', { ascending: false }),
-        supabase.from('applicants').select('*').order('created_at', { ascending: false }),
-        supabase.from('raters').select('*').order('created_at', { ascending: false }),
-        supabase.from('evaluations').select('*'),
-      ]);
+      const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
+      const primaryClient = preferredMode === 'local' ? (mockDatabase as any) : supabase;
+      const secondaryClient = preferredMode === 'local' ? supabase : (mockDatabase as any);
+
+      const fetchBundle = async (client: any) =>
+        Promise.allSettled([
+          client.from('job_postings').select('*').order('created_at', { ascending: false }),
+          client.from('jobs').select('*').order('created_at', { ascending: false }),
+          client.from('applicants').select('*').order('created_at', { ascending: false }),
+          client.from('raters').select('*').order('created_at', { ascending: false }),
+          client.from('evaluations').select('*'),
+        ]);
+
+      let [jobPostingsRes, jobsRes, applicantsRes, ratersRes, evaluationsRes] = await fetchBundle(primaryClient);
+
+      const primaryApplicants =
+        applicantsRes.status === 'fulfilled' && !applicantsRes.value.error && Array.isArray(applicantsRes.value.data)
+          ? applicantsRes.value.data
+          : [];
+
+      if (primaryApplicants.length === 0 && !isMockModeEnabled) {
+        [jobPostingsRes, jobsRes, applicantsRes, ratersRes, evaluationsRes] = await fetchBundle(secondaryClient);
+      }
 
       const jobsSource =
         jobPostingsRes.status === 'fulfilled' && !jobPostingsRes.value.error && Array.isArray(jobPostingsRes.value.data)
@@ -345,6 +373,38 @@ export const RSPDashboard = () => {
     () => applicants.filter((applicant) => ['accepted', 'hired', 'qualified'].includes(applicant.status.toLowerCase())),
     [applicants]
   );
+
+  const employeeDirectoryCards = useMemo(() => {
+    const source = newlyHiredApplicants.length > 0 ? newlyHiredApplicants : applicants;
+    const searchTerm = employeeDirectorySearch.trim().toLowerCase();
+    const grouped = new Map<string, { position: string; office: string; count: number }>();
+
+    source.forEach((employee) => {
+      const position = employee.position || 'Unassigned Position';
+      const office = employee.office || 'Unassigned Office';
+      const key = `${position}__${office}`;
+      const existing = grouped.get(key);
+
+      if (existing) {
+        existing.count += 1;
+      } else {
+        grouped.set(key, { position, office, count: 1 });
+      }
+    });
+
+    let cards = Array.from(grouped.values()).sort((a, b) => a.position.localeCompare(b.position));
+
+    if (searchTerm) {
+      cards = cards.filter((card) =>
+        card.position.toLowerCase().includes(searchTerm) || card.office.toLowerCase().includes(searchTerm)
+      );
+    }
+
+    return {
+      cards,
+      totalEmployees: source.length,
+    };
+  }, [applicants, newlyHiredApplicants, employeeDirectorySearch]);
 
   const departmentsSummary = useMemo(() => {
     const map = new Map<string, { hires: number; pending: number }>();
@@ -1070,30 +1130,88 @@ export const RSPDashboard = () => {
 
           {section === 'accounts' && (
             <>
-              <section className="rounded-2xl border border-[var(--border-color)] bg-white p-6 xl:w-3/5">
-                <button
-                  type="button"
-                  onClick={() => navigate('/employee/dashboard')}
-                  className="flex w-full items-center gap-4 rounded-2xl border border-[var(--border-color)] px-6 py-6 text-left transition hover:border-[var(--primary-color)]"
-                >
-                  <div className="rounded-2xl bg-blue-100 p-4 text-blue-600"><Users size={28} /></div>
-                  <div className="flex-1">
-                    <p className="!mb-1 text-2xl font-semibold text-[var(--text-primary)]">Employee Directory</p>
-                    <p className="!mb-0 text-lg text-[var(--text-secondary)]">View and manage all employee accounts, personal information, and document requirements</p>
-                  </div>
-                  <ChevronRight size={30} className="text-[var(--text-muted)]" />
-                </button>
-              </section>
+              {accountsView === 'overview' ? (
+                <>
+                  <section className="rounded-2xl border border-[var(--border-color)] bg-white p-6 xl:w-3/5">
+                    <button
+                      type="button"
+                      onClick={() => setAccountsView('directory')}
+                      className="flex w-full items-center gap-4 rounded-2xl border border-[var(--border-color)] px-6 py-6 text-left transition hover:border-[var(--primary-color)]"
+                    >
+                      <div className="rounded-2xl bg-blue-100 p-4 text-blue-600"><Users size={28} /></div>
+                      <div className="flex-1">
+                        <p className="!mb-1 text-2xl font-semibold text-[var(--text-primary)]">Employee Directory</p>
+                        <p className="!mb-0 text-lg text-[var(--text-secondary)]">View and manage all employee accounts, personal information, and document requirements</p>
+                      </div>
+                      <ChevronRight size={30} className="text-[var(--text-muted)]" />
+                    </button>
+                  </section>
 
-              <section className="rounded-2xl border border-blue-200 bg-blue-50 p-6 xl:w-3/5">
-                <h3 className="!mb-3 text-xl font-semibold text-blue-900">What you can do:</h3>
-                <ul className="list-disc space-y-2 pl-6 text-base text-blue-800">
-                  <li>View all employees organized by position</li>
-                  <li>Access detailed employee profiles with personal information</li>
-                  <li>Request and manage employee document submissions</li>
-                  <li>Approve or request resubmission of documents</li>
-                </ul>
-              </section>
+                  <section className="rounded-2xl border border-blue-200 bg-blue-50 p-6 xl:w-3/5">
+                    <h3 className="!mb-3 text-xl font-semibold text-blue-900">What you can do:</h3>
+                    <ul className="list-disc space-y-2 pl-6 text-base text-blue-800">
+                      <li>View all employees organized by position</li>
+                      <li>Access detailed employee profiles with personal information</li>
+                      <li>Request and manage employee document submissions</li>
+                      <li>Approve or request resubmission of documents</li>
+                    </ul>
+                  </section>
+                </>
+              ) : (
+                <>
+                  <section className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="!mb-1 text-base text-blue-600">RSP / Employees</p>
+                      <h2 className="!mb-1 text-5xl font-bold text-[var(--text-primary)]">Employee Directory</h2>
+                      <p className="!mb-0 text-2xl text-[var(--text-secondary)]">
+                        Browse employees by position • {employeeDirectoryCards.totalEmployees} total employees
+                      </p>
+                    </div>
+                    <Button className="!px-6 !py-3 text-lg">
+                      <FileText size={20} /> Bulk Document Request
+                    </Button>
+                  </section>
+
+                  <section className="rounded-2xl border border-[var(--border-color)] bg-white p-4">
+                    <div className="relative max-w-2xl">
+                      <Search size={22} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                      <input
+                        value={employeeDirectorySearch}
+                        onChange={(e) => setEmployeeDirectorySearch(e.target.value)}
+                        placeholder="Search positions..."
+                        className="w-full rounded-xl border border-[var(--border-color)] py-3 pl-12 pr-4 text-lg"
+                      />
+                    </div>
+                  </section>
+
+                  <section className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+                    {employeeDirectoryCards.cards.map((card) => (
+                      <article key={`${card.position}-${card.office}`} className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
+                        <div className="mb-5 flex items-start justify-between">
+                          <div className="rounded-2xl bg-blue-100 p-4 text-blue-600"><Users size={28} /></div>
+                          <ChevronRight size={28} className="text-[var(--text-muted)]" />
+                        </div>
+                        <p className="!mb-2 text-2xl font-semibold text-[var(--text-primary)]">{card.position}</p>
+                        <p className="!mb-3 text-xl text-[var(--text-secondary)]">
+                          {card.count} employee{card.count === 1 ? '' : 's'}
+                        </p>
+                        <p className="!mb-0 border-t border-[var(--border-color)] pt-3 text-lg text-[var(--text-secondary)]">{card.office}</p>
+                      </article>
+                    ))}
+                    {employeeDirectoryCards.cards.length === 0 && (
+                      <p className="col-span-full rounded-2xl border border-[var(--border-color)] bg-white p-8 text-center text-lg text-[var(--text-secondary)]">
+                        No positions found.
+                      </p>
+                    )}
+                  </section>
+
+                  <div>
+                    <Button variant="secondary" onClick={() => setAccountsView('overview')}>
+                      <ChevronLeft size={18} /> Back to Account Management
+                    </Button>
+                  </div>
+                </>
+              )}
             </>
           )}
 

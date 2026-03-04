@@ -101,6 +101,15 @@ const fetchEvaluations = async (client: any): Promise<any[]> => {
   return data || [];
 };
 
+const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
+  try {
+    const mode = localStorage.getItem('cictrix_data_source_mode');
+    return mode === 'local' ? 'local' : 'supabase';
+  } catch {
+    return 'supabase';
+  }
+};
+
 export function InterviewerApplicantsList() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -131,48 +140,31 @@ export function InterviewerApplicantsList() {
         department: POSITION_TO_DEPARTMENT_MAP[jobTitle] || 'N/A'
       };
 
-      const mergedApplicantsById = new Map<string, any>();
+      const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
+      const primaryClient = preferredMode === 'local' ? (mockDatabase as any) : supabase;
+      const secondaryClient = preferredMode === 'local' ? supabase : (mockDatabase as any);
 
-      try {
-        const supabaseApplicants = await fetchApplicantsByPosition(supabase, jobTitle);
-        supabaseApplicants.forEach((item) => mergedApplicantsById.set(item.id, item));
-      } catch (supabaseApplicantsErr) {
-        console.warn('Unable to fetch Supabase applicants for position:', supabaseApplicantsErr);
-      }
-
-      if (!isMockModeEnabled) {
-        try {
-          const localApplicants = await fetchApplicantsByPosition(mockDatabase as any, jobTitle);
-          localApplicants.forEach((item) => {
-            if (!mergedApplicantsById.has(item.id)) {
-              mergedApplicantsById.set(item.id, item);
-            }
-          });
-        } catch (localApplicantsErr) {
-          console.warn('Unable to fetch local applicants for position:', localApplicantsErr);
-        }
-      }
-
+      let applicantsByPosition: any[] = [];
       let allEvaluations: any[] = [];
+
       try {
-        allEvaluations = await fetchEvaluations(supabase);
-      } catch (supabaseEvaluationsErr) {
-        console.warn('Unable to fetch Supabase evaluations:', supabaseEvaluationsErr);
+        applicantsByPosition = await fetchApplicantsByPosition(primaryClient, jobTitle);
+        allEvaluations = await fetchEvaluations(primaryClient);
+      } catch (primaryErr) {
+        console.warn('Primary applicants source failed:', primaryErr);
       }
 
-      if (!isMockModeEnabled) {
+      if ((!applicantsByPosition || applicantsByPosition.length === 0) && !isMockModeEnabled) {
         try {
-          const localEvaluations = await fetchEvaluations(mockDatabase as any);
-          const evalMap = new Map<string, any>();
-          [...allEvaluations, ...localEvaluations].forEach((item) => evalMap.set(item.id, item));
-          allEvaluations = Array.from(evalMap.values());
-        } catch (localEvaluationsErr) {
-          console.warn('Unable to fetch local evaluations:', localEvaluationsErr);
+          applicantsByPosition = await fetchApplicantsByPosition(secondaryClient, jobTitle);
+          allEvaluations = await fetchEvaluations(secondaryClient);
+        } catch (secondaryErr) {
+          console.warn('Secondary applicants source failed:', secondaryErr);
         }
       }
 
       const evaluationMap = buildEvaluationStatusMap(allEvaluations);
-      const applicantsWithStatus = Array.from(mergedApplicantsById.values())
+      const applicantsWithStatus = Array.from(applicantsByPosition || [])
         .filter((applicant: any) => !isDemoApplicant(applicant))
         .map((applicant: any) => ({
           ...applicant,

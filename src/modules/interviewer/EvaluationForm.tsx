@@ -151,6 +151,14 @@ export function EvaluationForm() {
     return 'Not Qualified';
   };
 
+  const persistDataSourceMode = (mode: 'local' | 'supabase') => {
+    try {
+      localStorage.setItem('cictrix_data_source_mode', mode);
+    } catch {
+      // Ignore localStorage write errors
+    }
+  };
+
   useEffect(() => {
     if (id) {
       fetchApplicantData();
@@ -242,12 +250,8 @@ export function EvaluationForm() {
       setSubmitting(true);
       setError(null);
 
-      console.log('Submitting evaluation with applicant_id:', id);
-      console.log('Evaluation data:', evaluation);
-
-      // Build insert object - only include non-empty values
       const insertData: any = {
-        applicant_id: id || null,  // id is a UUID string from URL params
+        applicant_id: id || null,
         interviewer_name: evaluation.interviewer_name || null,
         communication_skills_score: evaluation.communication_skills_score > 0 ? evaluation.communication_skills_score : null,
         confidence_score: evaluation.confidence_score > 0 ? evaluation.confidence_score : null,
@@ -259,7 +263,6 @@ export function EvaluationForm() {
         recommendation: evaluation.recommendation || null
       };
 
-      // Only add remarks if they have content
       if (evaluation.communication_skills_remarks.trim()) {
         insertData.communication_skills_remarks = evaluation.communication_skills_remarks;
       }
@@ -279,39 +282,32 @@ export function EvaluationForm() {
         insertData.overall_impression_remarks = evaluation.overall_impression_remarks;
       }
 
-      console.log('Insert data being sent:', insertData);
+      const submitWithClient = async (client: any) => {
+        const { error: evalError } = await client.from('evaluations').insert(insertData);
+        if (evalError) throw evalError;
 
-      // Insert evaluation
-      const { error: evalError, data } = await supabase
-        .from('evaluations')
-        .insert(insertData);
+        const { error: updateError } = await client
+          .from('applicants')
+          .update({ status: 'Reviewed' })
+          .eq('id', id);
 
-      if (evalError) {
-        console.error('Detailed Supabase error:', {
-          message: evalError.message,
-          code: evalError.code,
-          details: evalError.details,
-          hint: evalError.hint
-        });
-        throw evalError;
-      }
+        if (updateError) throw updateError;
+      };
 
-      console.log('Evaluation inserted successfully:', data);
+      try {
+        await submitWithClient(supabase);
+        persistDataSourceMode('supabase');
+      } catch (primaryErr) {
+        if (isMockModeEnabled) {
+          throw primaryErr;
+        }
 
-      // Update applicant status to "Reviewed"
-      const { error: updateError } = await supabase
-        .from('applicants')
-        .update({ status: 'Reviewed' })
-        .eq('id', id);
-
-      if (updateError) {
-        console.error('Error updating applicant status:', updateError);
-        throw updateError;
+        await submitWithClient(mockDatabase as any);
+        persistDataSourceMode('local');
       }
 
       setShowSuccess(true);
-      
-      // Auto-navigate back to applicants list after 1.5 seconds
+
       setTimeout(() => {
         navigate('/interviewer/applicants');
       }, 1500);
