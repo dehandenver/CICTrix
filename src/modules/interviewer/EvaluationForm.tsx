@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase, isMockModeEnabled, ATTACHMENTS_BUCKET } from '../../lib/supabase';
+import { mockDatabase } from '../../lib/mockDatabase';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { Input } from '../../components/Input';
@@ -186,7 +187,29 @@ export function EvaluationForm() {
 
     } catch (err) {
       console.error('Error fetching applicant:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load applicant data');
+      try {
+        const { data: localApplicantData, error: localApplicantError } = await (mockDatabase as any)
+          .from('applicants')
+          .select('*')
+          .eq('id', id)
+          .single();
+
+        if (localApplicantError || !localApplicantData) {
+          throw localApplicantError || new Error('Applicant not found');
+        }
+
+        setApplicant(localApplicantData);
+
+        const { data: localAttachmentsData } = await (mockDatabase as any)
+          .from('applicant_attachments')
+          .select('*')
+          .eq('applicant_id', id);
+
+        setAttachments(localAttachmentsData || []);
+        setError(null);
+      } catch {
+        setError(err instanceof Error ? err.message : 'Failed to load applicant data');
+      }
     } finally {
       setLoading(false);
     }
