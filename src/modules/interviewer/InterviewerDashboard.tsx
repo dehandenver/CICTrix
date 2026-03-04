@@ -1,8 +1,10 @@
-import { useEffect, useState, useMemo } from 'react';
+import { Filter, Search, Trash2, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter, X, ChevronRight, Trash2 } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import { Dialog } from '../../components/Dialog';
+import { mockDatabase } from '../../lib/mockDatabase';
+import { isMockModeEnabled, supabase } from '../../lib/supabase';
 import '../../styles/interviewer.css';
 
 interface JobPosting {
@@ -46,58 +48,56 @@ interface Stats {
   upcomingInterviews: number;
 }
 
-const FALLBACK_JOBS: JobPosting[] = [
-  {
-    id: 1,
-    title: 'Administrative Officer',
-    item_number: '001',
-    department: 'Operations',
-    office: 'Operations',
-    status: 'Open',
-    created_at: new Date().toISOString(),
-    applicant_count: 3,
-  },
-  {
-    id: 2,
-    title: 'Accountant',
-    item_number: '002',
-    department: 'Finance',
-    office: 'Finance',
-    status: 'Open',
-    created_at: new Date().toISOString(),
-    applicant_count: 2,
-  },
-  {
-    id: 3,
-    title: 'IT Specialist',
-    item_number: '003',
-    department: 'Information Technology',
-    office: 'Information Technology',
-    status: 'Open',
-    created_at: new Date().toISOString(),
-    applicant_count: 4,
-  },
-  {
-    id: 4,
-    title: 'Human Resource Specialist',
-    item_number: '004',
-    department: 'Human Resources',
-    office: 'Human Resources',
-    status: 'Open',
-    created_at: new Date().toISOString(),
-    applicant_count: 1,
-  },
-  {
-    id: 5,
-    title: 'Project Coordinator',
-    item_number: '005',
-    department: 'Operations',
-    office: 'Operations',
-    status: 'Open',
-    created_at: new Date().toISOString(),
-    applicant_count: 2,
-  },
-];
+const isDemoApplicant = (applicant: any): boolean => {
+  const applicantId = String(applicant?.id || '').toLowerCase();
+  const applicantEmail = String(applicant?.email || '').toLowerCase();
+  return applicantId.startsWith('mock-') || applicantEmail.endsWith('@example.com');
+};
+
+const fetchApplicantsFromClient = async (client: any): Promise<any[]> => {
+  const { data } = await client.from('applicants').select('*');
+  return data || [];
+};
+
+const fetchEvaluationsFromClient = async (client: any): Promise<any[]> => {
+  const { data } = await client.from('evaluations').select('*');
+  return data || [];
+};
+
+const buildJobsFromApplicants = (allApplicants: any[]): JobPosting[] => {
+  const groupedByPosition = new Map<string, any[]>();
+
+  allApplicants
+    .filter((applicant) => !isDemoApplicant(applicant))
+    .forEach((applicant) => {
+    const position = applicant.position || 'Unspecified Position';
+    const group = groupedByPosition.get(position) || [];
+    group.push(applicant);
+    groupedByPosition.set(position, group);
+  });
+
+  return Array.from(groupedByPosition.entries())
+    .map(([title, applicants], index) => {
+      const latestApplicant = applicants.reduce((latest: any, current: any) => {
+        if (!latest) return current;
+        return new Date(current.created_at).getTime() > new Date(latest.created_at).getTime() ? current : latest;
+      }, null);
+
+      const office = latestApplicant?.office || POSITION_TO_DEPARTMENT_MAP[title] || 'N/A';
+
+      return {
+        id: index + 1,
+        title,
+        item_number: latestApplicant?.item_number || 'N/A',
+        department: office,
+        office,
+        status: 'Open',
+        created_at: latestApplicant?.created_at || new Date().toISOString(),
+        applicant_count: applicants.length,
+      };
+    })
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+};
 
 export function InterviewerDashboard() {
   const navigate = useNavigate();
@@ -123,62 +123,55 @@ export function InterviewerDashboard() {
     try {
       setLoading(true);
       setError(null);
+      let supabaseApplicants: any[] = [];
+      let localApplicants: any[] = [];
+      let supabaseEvaluations: any[] = [];
+      let localEvaluations: any[] = [];
+
       try {
-        // Get all applicants count
-        const { count: applicantCount } = await supabase
-          .from('applicants')
-          .select('id', { count: 'exact', head: true });
-
-        // Get evaluations count
-        const { count: evaluationCount } = await supabase
-          .from('evaluations')
-          .select('id', { count: 'exact', head: true });
-
-        // Get jobs data
-        let { data: jobsData, error: jobsError } = await supabase
-          .from('job_postings')
-          .select('*')
-          .eq('status', 'Open')
-          .order('created_at', { ascending: false });
-
-        // If job_postings table doesn't exist, use fallback data
-        if (jobsError && jobsError.code === 'PGRST116') {
-          jobsData = FALLBACK_JOBS;
-        } else if (jobsError) {
-          throw jobsError;
-        }
-
-        // Get applicant counts for each job
-        const jobsWithCounts = await Promise.all(
-          (jobsData || []).map(async (job: any) => {
-            const { count } = await supabase
-              .from('applicants')
-              .select('id', { count: 'exact', head: true })
-              .eq('position', job.title);
-
-            return {
-              ...job,
-              office: job.office || job.department,
-              applicant_count: typeof count === 'number' ? count : job.applicant_count || 0,
-            };
-          })
-        );
-
-        setJobs(jobsWithCounts);
-        setStats({
-          totalJobs: jobsData?.length || 0,
-          totalApplicants: applicantCount || 0,
-          upcomingInterviews: evaluationCount || 0,
-        });
-      } catch (fetchErr) {
-        console.warn('Interviewer dashboard running with fallback data:', fetchErr);
-        setJobs(FALLBACK_JOBS);
-        setStats({
-          totalJobs: FALLBACK_JOBS.length,
-          totalApplicants: FALLBACK_JOBS.reduce((sum, job) => sum + job.applicant_count, 0),
-          upcomingInterviews: 0,
-        });
+        supabaseApplicants = await fetchApplicantsFromClient(supabase);
+      } catch (supabaseApplicantsErr) {
+        console.warn('Unable to fetch applicants from Supabase:', supabaseApplicantsErr);
       }
+
+      if (!isMockModeEnabled) {
+        try {
+          localApplicants = await fetchApplicantsFromClient(mockDatabase as any);
+        } catch (localApplicantsErr) {
+          console.warn('Unable to fetch applicants from local storage:', localApplicantsErr);
+        }
+      }
+
+      try {
+        supabaseEvaluations = await fetchEvaluationsFromClient(supabase);
+      } catch (supabaseEvaluationsErr) {
+        console.warn('Unable to fetch evaluations from Supabase:', supabaseEvaluationsErr);
+      }
+
+      if (!isMockModeEnabled) {
+        try {
+          localEvaluations = await fetchEvaluationsFromClient(mockDatabase as any);
+        } catch (localEvaluationsErr) {
+          console.warn('Unable to fetch evaluations from local storage:', localEvaluationsErr);
+        }
+      }
+
+      const applicantMap = new Map<string, any>();
+      [...supabaseApplicants, ...localApplicants].forEach((item) => applicantMap.set(item.id, item));
+      const allApplicants = Array.from(applicantMap.values()).filter((item) => !isDemoApplicant(item));
+
+      const evaluationMap = new Map<string, any>();
+      [...supabaseEvaluations, ...localEvaluations].forEach((item) => evaluationMap.set(item.id, item));
+      const allEvaluations = Array.from(evaluationMap.values());
+
+      const jobsFromApplicants = buildJobsFromApplicants(allApplicants);
+
+      setJobs(jobsFromApplicants);
+      setStats({
+        totalJobs: jobsFromApplicants.length,
+        totalApplicants: allApplicants.length,
+        upcomingInterviews: allEvaluations.length,
+      });
     } catch (err) {
       console.error('Error initializing dashboard:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch data');

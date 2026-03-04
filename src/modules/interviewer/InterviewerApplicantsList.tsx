@@ -1,8 +1,9 @@
+import { ArrowLeft } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import { mockDatabase } from '../../lib/mockDatabase';
+import { isMockModeEnabled, supabase } from '../../lib/supabase';
 import '../../styles/interviewer.css';
 
 interface Applicant {
@@ -25,6 +26,38 @@ interface JobPosting {
   department: string;
 }
 
+const isDemoApplicant = (applicant: any): boolean => {
+  const applicantId = String(applicant?.id || '').toLowerCase();
+  const applicantEmail = String(applicant?.email || '').toLowerCase();
+  return applicantId.startsWith('mock-') || applicantEmail.endsWith('@example.com');
+};
+
+const buildEvaluationStatusMap = (evaluations: any[] = []) => {
+  const evaluationMap = new Map();
+
+  evaluations.forEach((e: any) => {
+    const hasOralScores = [
+      e.communication_skills_score,
+      e.confidence_score,
+      e.comprehension_score,
+      e.personality_score,
+      e.job_knowledge_score,
+      e.overall_impression_score
+    ].every((value) => typeof value === 'number' && value > 0);
+
+    const hasLegacyScores = [
+      e.technical_score,
+      e.communication_score,
+      e.overall_score
+    ].every((value) => typeof value === 'number' && value > 0);
+
+    const isComplete = hasOralScores || hasLegacyScores;
+    evaluationMap.set(e.applicant_id, isComplete ? 'Completed' : 'In Progress');
+  });
+
+  return evaluationMap;
+};
+
 const getFullName = (applicant: Applicant): string => {
   const parts = [applicant.first_name];
   if (applicant.middle_name) {
@@ -41,6 +74,31 @@ const formatDate = (dateString: string): string => {
     month: 'long',
     day: 'numeric'
   });
+};
+
+const fetchApplicantsByPosition = async (client: any, position: string): Promise<any[]> => {
+  if (typeof client?.insertApplicant === 'function') {
+    const { data } = await client
+      .from('applicants')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .eq('position', position);
+
+    return data || [];
+  }
+
+  const { data } = await client
+    .from('applicants')
+    .select('*')
+    .eq('position', position)
+    .order('created_at', { ascending: false });
+
+  return data || [];
+};
+
+const fetchEvaluations = async (client: any): Promise<any[]> => {
+  const { data } = await client.from('evaluations').select('*');
+  return data || [];
 };
 
 export function InterviewerApplicantsList() {
@@ -67,124 +125,75 @@ export function InterviewerApplicantsList() {
       setLoading(true);
       setError(null);
 
-      // Try to fetch job posting - but it might not exist in DB
-      // So we'll just use the title from URL params
-      let jobDetails: JobPosting = {
+      let resolvedJobDetails: JobPosting = {
         title: jobTitle,
-        office: 'N/A',
-        department: 'N/A'
+        office: POSITION_TO_DEPARTMENT_MAP[jobTitle] || 'N/A',
+        department: POSITION_TO_DEPARTMENT_MAP[jobTitle] || 'N/A'
       };
 
-      // Try to fetch from DB if it exists
-      try {
-        const { data: jobData } = await supabase
-          .from('job_postings')
-          .select('title, office, department')
-          .eq('title', jobTitle)
-          .single();
+      const mergedApplicantsById = new Map<string, any>();
 
-        if (jobData) {
-          jobDetails = jobData as JobPosting;
-        }
-      } catch (err) {
-        // Job posting might not exist in DB, use defaults
-        console.log('Job posting not found in DB, using defaults');
+      try {
+        const supabaseApplicants = await fetchApplicantsByPosition(supabase, jobTitle);
+        supabaseApplicants.forEach((item) => mergedApplicantsById.set(item.id, item));
+      } catch (supabaseApplicantsErr) {
+        console.warn('Unable to fetch Supabase applicants for position:', supabaseApplicantsErr);
       }
 
-      setJobDetails(jobDetails);
+      if (!isMockModeEnabled) {
+        try {
+          const localApplicants = await fetchApplicantsByPosition(mockDatabase as any, jobTitle);
+          localApplicants.forEach((item) => {
+            if (!mergedApplicantsById.has(item.id)) {
+              mergedApplicantsById.set(item.id, item);
+            }
+          });
+        } catch (localApplicantsErr) {
+          console.warn('Unable to fetch local applicants for position:', localApplicantsErr);
+        }
+      }
 
+      let allEvaluations: any[] = [];
       try {
-        // Fetch applicants for this job
-        const { data: applicantsData, error: applicantsErr } = await supabase
-          .from('applicants')
-          .select('*')
-          .eq('position', jobTitle)
-          .order('created_at', { ascending: false });
+        allEvaluations = await fetchEvaluations(supabase);
+      } catch (supabaseEvaluationsErr) {
+        console.warn('Unable to fetch Supabase evaluations:', supabaseEvaluationsErr);
+      }
 
-        if (applicantsErr) throw applicantsErr;
+      if (!isMockModeEnabled) {
+        try {
+          const localEvaluations = await fetchEvaluations(mockDatabase as any);
+          const evalMap = new Map<string, any>();
+          [...allEvaluations, ...localEvaluations].forEach((item) => evalMap.set(item.id, item));
+          allEvaluations = Array.from(evalMap.values());
+        } catch (localEvaluationsErr) {
+          console.warn('Unable to fetch local evaluations:', localEvaluationsErr);
+        }
+      }
 
-        // Fetch evaluations
-        const { data: evaluationsData, error: evaluationsErr } = await supabase
-          .from('evaluations')
-          .select('*');
-
-        if (evaluationsErr) throw evaluationsErr;
-
-        // Create evaluation status map
-        const evaluationMap = new Map();
-        evaluationsData?.forEach((e: any) => {
-          const hasOralScores = [
-            e.communication_skills_score,
-            e.confidence_score,
-            e.comprehension_score,
-            e.personality_score,
-            e.job_knowledge_score,
-            e.overall_impression_score
-          ].every((value) => typeof value === 'number' && value > 0);
-
-          const hasLegacyScores = [
-            e.technical_score,
-            e.communication_score,
-            e.overall_score
-          ].every((value) => typeof value === 'number' && value > 0);
-
-          const isComplete = hasOralScores || hasLegacyScores;
-          evaluationMap.set(e.applicant_id, isComplete ? 'Completed' : 'In Progress');
-        });
-
-        // Add evaluation status to applicants
-        const applicantsWithStatus = (applicantsData || []).map((applicant: any) => ({
+      const evaluationMap = buildEvaluationStatusMap(allEvaluations);
+      const applicantsWithStatus = Array.from(mergedApplicantsById.values())
+        .filter((applicant: any) => !isDemoApplicant(applicant))
+        .map((applicant: any) => ({
           ...applicant,
           evaluation_status: evaluationMap.get(applicant.id) || 'Not Yet Rated'
-        }));
+        }))
+        .sort(
+          (a: Applicant, b: Applicant) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
 
-        setApplicants(applicantsWithStatus);
-      } catch (fetchErr) {
-        console.warn('Primary applicant fetch failed, trying local fallback:', fetchErr);
-
-        try {
-          const { data: localApplicantsData } = await (mockDatabase as any)
-            .from('applicants')
-            .select('*')
-            .eq('position', jobTitle)
-            .order('created_at', { ascending: false });
-
-          const { data: localEvaluationsData } = await (mockDatabase as any)
-            .from('evaluations')
-            .select('*');
-
-          const evaluationMap = new Map();
-          localEvaluationsData?.forEach((e: any) => {
-            const hasOralScores = [
-              e.communication_skills_score,
-              e.confidence_score,
-              e.comprehension_score,
-              e.personality_score,
-              e.job_knowledge_score,
-              e.overall_impression_score
-            ].every((value) => typeof value === 'number' && value > 0);
-
-            const hasLegacyScores = [
-              e.technical_score,
-              e.communication_score,
-              e.overall_score
-            ].every((value) => typeof value === 'number' && value > 0);
-
-            const isComplete = hasOralScores || hasLegacyScores;
-            evaluationMap.set(e.applicant_id, isComplete ? 'Completed' : 'In Progress');
-          });
-
-          const applicantsWithStatus = (localApplicantsData || []).map((applicant: any) => ({
-            ...applicant,
-            evaluation_status: evaluationMap.get(applicant.id) || 'Not Yet Rated'
-          }));
-
-          setApplicants(applicantsWithStatus);
-        } catch (localFallbackErr) {
-          console.warn('Local fallback fetch failed:', localFallbackErr);
-          setApplicants([]);
-        }
+      if (applicantsWithStatus.length > 0) {
+        const office = applicantsWithStatus[0].office || POSITION_TO_DEPARTMENT_MAP[jobTitle] || 'N/A';
+        resolvedJobDetails = {
+          title: jobTitle,
+          office,
+          department: office
+        };
       }
+
+      setApplicants(applicantsWithStatus);
+      setJobDetails(resolvedJobDetails);
     } catch (err: any) {
       console.error('Error fetching applicants:', err);
       setError(err?.message || 'Failed to load applicants');

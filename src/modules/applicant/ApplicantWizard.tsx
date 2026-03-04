@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Button, Dialog } from '../../components';
-import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../../lib/supabase';
 import { mockDatabase } from '../../lib/mockDatabase';
+import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../../lib/supabase';
+import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import '../../styles/wizard.css';
 import type { ApplicantFormData, UploadedFile, ValidationErrors } from '../../types/applicant.types';
 import { validateApplicantForm, validateFiles } from '../../utils/validation';
@@ -62,15 +63,6 @@ export const ApplicantWizard: React.FC = () => {
     setCurrentStep(1);
   };
 
-  const fileToDataUrl = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ''));
-      reader.onerror = () => reject(new Error(`Failed to process ${file.name}`));
-      reader.readAsDataURL(file);
-    });
-  };
-
   const uploadFiles = async (client: any, applicantId: string): Promise<void> => {
     for (const uploadedFile of files) {
       const generatedPath = `${applicantId}/${Date.now()}-${uploadedFile.file.name}`;
@@ -86,7 +78,7 @@ export const ApplicantWizard: React.FC = () => {
           throw new Error(`Failed to upload ${uploadedFile.file.name}`);
         }
       } else {
-        filePath = await fileToDataUrl(uploadedFile.file);
+        filePath = `mock://attachment/${applicantId}/${Date.now()}-${encodeURIComponent(uploadedFile.file.name)}`;
       }
 
       const attachmentPayload = {
@@ -129,7 +121,7 @@ export const ApplicantWizard: React.FC = () => {
       email: formData.email,
       position: formData.position,
       item_number: newItemNumber,
-      office: formData.office,
+      office: POSITION_TO_DEPARTMENT_MAP[formData.position] || formData.office,
       is_pwd: formData.is_pwd,
     };
 

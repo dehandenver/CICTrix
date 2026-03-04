@@ -63,6 +63,8 @@ const getApplicants = (): MockApplicant[] => {
 
 const getAttachments = (): MockAttachment[] => {
   const data = localStorage.getItem(ATTACHMENTS_KEY);
+  return data ? JSON.parse(data) : [];
+};
 
 const getEvaluations = (): MockEvaluation[] => {
   const data = localStorage.getItem(EVALUATIONS_KEY);
@@ -78,7 +80,18 @@ const getRaters = (): MockRater[] => {
   const data = localStorage.getItem(RATERS_KEY);
   return data ? JSON.parse(data) : [];
 };
-  return data ? JSON.parse(data) : [];
+
+const compactAttachmentPaths = (attachments: MockAttachment[]): MockAttachment[] => {
+  return attachments.map((attachment, index) => {
+    const filePath = typeof attachment.file_path === 'string' ? attachment.file_path : '';
+    if (filePath.startsWith('data:')) {
+      return {
+        ...attachment,
+        file_path: `mock://attachment/${attachment.id || index}`,
+      };
+    }
+    return attachment;
+  });
 };
 
 const saveApplicants = (applicants: MockApplicant[]) => {
@@ -86,7 +99,32 @@ const saveApplicants = (applicants: MockApplicant[]) => {
 };
 
 const saveAttachments = (attachments: MockAttachment[]) => {
-  localStorage.setItem(ATTACHMENTS_KEY, JSON.stringify(attachments));
+  const compacted = compactAttachmentPaths(attachments);
+
+  try {
+    localStorage.setItem(ATTACHMENTS_KEY, JSON.stringify(compacted));
+    return;
+  } catch (error) {
+    if (!(error instanceof DOMException) || error.name !== 'QuotaExceededError') {
+      throw error;
+    }
+  }
+
+  const trimmed = [...compacted];
+  while (trimmed.length > 0) {
+    trimmed.shift();
+    try {
+      localStorage.setItem(ATTACHMENTS_KEY, JSON.stringify(trimmed));
+      return;
+    } catch (error) {
+      if (!(error instanceof DOMException) || error.name !== 'QuotaExceededError') {
+        throw error;
+      }
+    }
+  }
+
+  localStorage.setItem(ATTACHMENTS_KEY, JSON.stringify([]));
+};
 
 const saveEvaluations = (evaluations: MockEvaluation[]) => {
   localStorage.setItem(EVALUATIONS_KEY, JSON.stringify(evaluations));
@@ -98,7 +136,6 @@ const saveJobs = (jobs: MockJob[]) => {
 
 const saveRaters = (raters: MockRater[]) => {
   localStorage.setItem(RATERS_KEY, JSON.stringify(raters));
-};
 };
 
 export const mockDatabase = {

@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { supabase, isMockModeEnabled, ATTACHMENTS_BUCKET } from '../../lib/supabase';
-import { mockDatabase } from '../../lib/mockDatabase';
-import { Card } from '../../components/Card';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '../../components/Button';
-import { Input } from '../../components/Input';
-import { Select } from '../../components/Select';
+import { Card } from '../../components/Card';
 import { Dialog } from '../../components/Dialog';
+import { mockDatabase } from '../../lib/mockDatabase';
+import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../../lib/supabase';
 
 interface Applicant {
   id: string;
