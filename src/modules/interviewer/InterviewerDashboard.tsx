@@ -1,8 +1,8 @@
 import { Filter, Search, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import { Dialog } from '../../components/Dialog';
+import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import { mockDatabase } from '../../lib/mockDatabase';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
 import '../../styles/interviewer.css';

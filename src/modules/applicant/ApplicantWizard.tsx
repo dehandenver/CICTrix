@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Button, Dialog } from '../../components';
+import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import { mockDatabase } from '../../lib/mockDatabase';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../../lib/supabase';
-import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import '../../styles/wizard.css';
 import type { ApplicantFormData, UploadedFile, ValidationErrors } from '../../types/applicant.types';
 import { validateApplicantForm, validateFiles } from '../../utils/validation';

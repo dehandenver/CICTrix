@@ -86,7 +86,7 @@ Reference for local development access to frontend pages and backend API endpoin
    cd c:\CICTrix
    start-dev.bat
    ```
-   This starts backend (if Docker is running) and opens a frontend terminal.
+   This starts backend (if Docker is running), opens the app in your browser, and keeps the frontend server running in the same window.
 2. Manual start backend:
    ```bash
    cd c:\CICTrix
@@ -99,7 +99,7 @@ Reference for local development access to frontend pages and backend API endpoin
    npm run dev
    ```
 4. Open:
-   - [http://localhost:5173/](http://localhost:5173/)
+   - [http://127.0.0.1:5173/](http://127.0.0.1:5173/)
 
 ### Optional: Auto-start on Windows login
 
@@ -121,7 +121,7 @@ Reference for local development access to frontend pages and backend API endpoin
    - After reboot or closing terminals/VS Code, both servers stop, so browser shows “This site can’t be reached.”
    - Solution: run `start-dev.bat` each time you start your PC/dev session.
 - If a link shows “This site can’t be reached,” verify both frontend and backend processes are running.
-- If `localhost` fails to resolve, use the `127.0.0.1` fallback URLs.
+- If `localhost` fails to resolve, use the `127.0.0.1` URLs as primary.
 - Frontend is configured to use port `5173` with strict port mode; if port `5173` is occupied, the dev server will not auto-switch ports.
 - On this workstation, backend is currently unreachable until one runtime is installed:
    - Docker Desktop (`docker compose up`), or

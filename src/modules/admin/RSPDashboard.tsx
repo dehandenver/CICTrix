@@ -1,31 +1,31 @@
-import { useEffect, useMemo, useState } from 'react';
 import {
-  Bell,
-  Briefcase,
-  Building2,
-  Calculator,
-  Calendar,
-  ChevronLeft,
-  ChevronRight,
-  Clock3,
-  Download,
-  FileText,
-  Filter,
-  Lock,
-  Mail,
-  Plus,
-  Search,
-  Settings,
-  Shield,
-  Trash2,
-  User,
-  UserCheck,
-  UserPlus,
-  Users,
+    Bell,
+    Briefcase,
+    Building2,
+    Calculator,
+    Calendar,
+    Check,
+    ChevronLeft,
+    ChevronRight,
+    Clock3,
+    Download,
+    FileText,
+    Filter,
+    Lock,
+    Mail,
+    Plus,
+    Search,
+    Settings,
+    Shield,
+    Trash2,
+    User,
+    UserCheck,
+    UserPlus,
+    Users,
 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/Button';
-import { Dialog } from '../../components/Dialog';
 import { Sidebar } from '../../components/Sidebar';
 import { mockDatabase } from '../../lib/mockDatabase';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
@@ -33,6 +33,7 @@ import '../../styles/admin.css';
 
 type JobStatus = 'Open' | 'Reviewing' | 'Closed';
 type Section = 'dashboard' | 'jobs' | 'qualified' | 'new-hired' | 'raters' | 'accounts' | 'reports' | 'settings';
+type BulkRecipientMode = 'all' | 'department' | 'selected';
 
 interface JobRecord {
   id: number | string;
@@ -64,6 +65,45 @@ interface RaterRecord {
   is_active: boolean;
   last_login: string | null;
 }
+
+interface BulkRequestEmployee {
+  id: string;
+  name: string;
+  department: string;
+}
+
+const BULK_REQUEST_TEMPLATES = [
+  {
+    id: 'nbi',
+    name: 'NBI Clearance',
+    description: 'Updated NBI Clearance (must be valid for current year)',
+  },
+  {
+    id: 'medical',
+    name: 'Medical Certificate',
+    description: 'Recent medical certificate issued by an accredited clinic or hospital',
+  },
+  {
+    id: 'saln',
+    name: 'SALN (Statement of Assets, Liabilities and Net Worth)',
+    description: 'Latest signed SALN form based on agency template',
+  },
+  {
+    id: 'training',
+    name: 'Certificate of Training',
+    description: 'Certificate for completed mandatory orientation or skills training',
+  },
+  {
+    id: 'pef',
+    name: 'Performance Evaluation Form',
+    description: 'Completed and signed latest performance evaluation form',
+  },
+  {
+    id: 'resume',
+    name: 'Updated Resume/CV',
+    description: 'Most recent resume with updated work experience and credentials',
+  },
+] as const;
 
 const SETTINGS_TABS = [
   { id: 'profile', label: 'Profile Settings', icon: User },
@@ -148,23 +188,52 @@ export const RSPDashboard = () => {
 
   const [raterSearch, setRaterSearch] = useState('');
   const [raterStatus, setRaterStatus] = useState('all');
-  const [accountsView, setAccountsView] = useState<'overview' | 'directory'>('overview');
+  const [accountsView, setAccountsView] = useState<'overview' | 'directory' | 'position' | 'details'>('overview');
   const [employeeDirectorySearch, setEmployeeDirectorySearch] = useState('');
+  const [selectedDirectoryCard, setSelectedDirectoryCard] = useState<{ position: string; office: string } | null>(null);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
 
   const [showJobDialog, setShowJobDialog] = useState(false);
   const [showRaterDialog, setShowRaterDialog] = useState(false);
+  const [showBulkRequestDialog, setShowBulkRequestDialog] = useState(false);
+
+  const [bulkRequestForm, setBulkRequestForm] = useState({
+    documentName: '',
+    description: '',
+    dueDate: '',
+    recipientMode: 'all' as BulkRecipientMode,
+    department: '',
+    selectedEmployeeIds: [] as string[],
+    templateFileName: '',
+  });
 
   const [newJob, setNewJob] = useState({
     title: '',
     item_number: '',
     department: '',
     status: 'Open' as JobStatus,
+    salary_grade: '',
+    position_level: '',
+    slots: '1',
+    employment_type: 'Full-time',
+    application_deadline: '',
+    description: '',
+    responsibilities: '',
+    qualifications: '',
   });
 
   const [newRater, setNewRater] = useState({
     name: '',
     email: '',
     department: '',
+  });
+
+  const [raterAccessForm, setRaterAccessForm] = useState({
+    raterName: '',
+    accessLevel: 'Interviewer',
+    assignedPositions: [] as string[],
+    startDate: '',
+    endDate: '',
   });
 
   const [settingsTab, setSettingsTab] = useState<(typeof SETTINGS_TABS)[number]['id']>('profile');
@@ -313,7 +382,34 @@ export const RSPDashboard = () => {
   }, [applicants]);
 
   const officeOptions = useMemo(() => Array.from(new Set(applicants.map((a) => a.office).filter(Boolean))), [applicants]);
+  const departmentSelectionOptions = useMemo(() => {
+    const defaults = [
+      'Human Resource Management Office',
+      'Information Technology',
+      'Finance',
+      'Operations',
+    ];
+    return Array.from(new Set([...officeOptions, ...defaults].filter(Boolean)));
+  }, [officeOptions]);
   const positionOptions = useMemo(() => Array.from(new Set(applicants.map((a) => a.position).filter(Boolean))), [applicants]);
+  const assignableJobPositions = useMemo(() => {
+    const fromJobs = Array.from(new Set(jobs.map((job) => job.title).filter(Boolean)));
+    if (fromJobs.length > 0) return fromJobs;
+    return [
+      'IT Officer II',
+      'HR Assistant',
+      'Admin Aide II',
+      'Admin Aide III',
+      'Clerk I',
+      'Clerk II',
+      'Engineer II',
+      'HR Officer',
+      'Administrative Officer',
+      'IT Programmer',
+      'Accountant II',
+      'Legal Officer I',
+    ];
+  }, [jobs]);
 
   const filteredJobs = useMemo(() => {
     return jobsWithCounts.filter((job) => {
@@ -374,8 +470,13 @@ export const RSPDashboard = () => {
     [applicants]
   );
 
+  const directoryEmployeesSource = useMemo(
+    () => (newlyHiredApplicants.length > 0 ? newlyHiredApplicants : applicants),
+    [newlyHiredApplicants, applicants]
+  );
+
   const employeeDirectoryCards = useMemo(() => {
-    const source = newlyHiredApplicants.length > 0 ? newlyHiredApplicants : applicants;
+    const source = directoryEmployeesSource;
     const searchTerm = employeeDirectorySearch.trim().toLowerCase();
     const grouped = new Map<string, { position: string; office: string; count: number }>();
 
@@ -404,7 +505,73 @@ export const RSPDashboard = () => {
       cards,
       totalEmployees: source.length,
     };
-  }, [applicants, newlyHiredApplicants, employeeDirectorySearch]);
+  }, [directoryEmployeesSource, employeeDirectorySearch]);
+
+  const employeeNumberById = useMemo(() => {
+    const employeeNumberMap = new Map<string, string>();
+
+    directoryEmployeesSource.forEach((employee, index) => {
+      const year = Number.isNaN(new Date(employee.created_at).getFullYear())
+        ? '2026'
+        : String(new Date(employee.created_at).getFullYear());
+      employeeNumberMap.set(employee.id, `EMP-${year}-${String(index + 1).padStart(3, '0')}`);
+    });
+
+    return employeeNumberMap;
+  }, [directoryEmployeesSource]);
+
+  const selectedPositionEmployees = useMemo(() => {
+    if (!selectedDirectoryCard) return [];
+    return directoryEmployeesSource.filter(
+      (employee) => employee.position === selectedDirectoryCard.position && employee.office === selectedDirectoryCard.office
+    );
+  }, [directoryEmployeesSource, selectedDirectoryCard]);
+
+  const selectedEmployeeDetails = useMemo(
+    () => directoryEmployeesSource.find((employee) => employee.id === selectedEmployeeId) ?? null,
+    [directoryEmployeesSource, selectedEmployeeId]
+  );
+
+  const bulkRequestEmployees = useMemo<BulkRequestEmployee[]>(() => {
+    return directoryEmployeesSource.map((employee) => ({
+      id: employee.id,
+      name: employee.full_name,
+      department: employee.office || 'Unassigned Office',
+    }));
+  }, [directoryEmployeesSource]);
+
+  const bulkRequestDepartments = useMemo(
+    () => Array.from(new Set(bulkRequestEmployees.map((employee) => employee.department))).sort((a, b) => a.localeCompare(b)),
+    [bulkRequestEmployees]
+  );
+
+  const selectedDepartmentEmployees = useMemo(
+    () => bulkRequestEmployees.filter((employee) => employee.department === bulkRequestForm.department),
+    [bulkRequestEmployees, bulkRequestForm.department]
+  );
+
+  const selectedEmployeesList = useMemo(
+    () => bulkRequestEmployees.filter((employee) => bulkRequestForm.selectedEmployeeIds.includes(employee.id)),
+    [bulkRequestEmployees, bulkRequestForm.selectedEmployeeIds]
+  );
+
+  const bulkRequestRecipientCount = useMemo(() => {
+    if (bulkRequestForm.recipientMode === 'all') return bulkRequestEmployees.length;
+    if (bulkRequestForm.recipientMode === 'department') return selectedDepartmentEmployees.length;
+    return selectedEmployeesList.length;
+  }, [
+    bulkRequestEmployees.length,
+    bulkRequestForm.recipientMode,
+    selectedDepartmentEmployees.length,
+    selectedEmployeesList.length,
+  ]);
+
+  const isBulkRequestSendDisabled =
+    !bulkRequestForm.documentName.trim() ||
+    !bulkRequestForm.description.trim() ||
+    !bulkRequestForm.dueDate ||
+    bulkRequestRecipientCount === 0 ||
+    (bulkRequestForm.recipientMode === 'department' && !bulkRequestForm.department);
 
   const departmentsSummary = useMemo(() => {
     const map = new Map<string, { hires: number; pending: number }>();
@@ -481,7 +648,20 @@ export const RSPDashboard = () => {
     }
 
     setShowJobDialog(false);
-    setNewJob({ title: '', item_number: '', department: '', status: 'Open' });
+    setNewJob({
+      title: '',
+      item_number: '',
+      department: '',
+      status: 'Open',
+      salary_grade: '',
+      position_level: '',
+      slots: '1',
+      employment_type: 'Full-time',
+      application_deadline: '',
+      description: '',
+      responsibilities: '',
+      qualifications: '',
+    });
   };
 
   const handleDeleteJob = async (job: JobRecord) => {
@@ -532,6 +712,56 @@ export const RSPDashboard = () => {
 
     setShowRaterDialog(false);
     setNewRater({ name: '', email: '', department: '' });
+    setRaterAccessForm({
+      raterName: '',
+      accessLevel: 'Interviewer',
+      assignedPositions: [],
+      startDate: '',
+      endDate: '',
+    });
+  };
+
+  const closeRaterDialog = () => {
+    setShowRaterDialog(false);
+    setNewRater({ name: '', email: '', department: '' });
+    setRaterAccessForm({
+      raterName: '',
+      accessLevel: 'Interviewer',
+      assignedPositions: [],
+      startDate: '',
+      endDate: '',
+    });
+  };
+
+  const handleRaterNameChange = (nameValue: string) => {
+    setRaterAccessForm((prev) => ({ ...prev, raterName: nameValue }));
+
+    const normalizedName = nameValue.trim().toLowerCase();
+    if (!normalizedName) {
+      setNewRater({ name: '', email: '', department: '' });
+      return;
+    }
+
+    const selected = raters.find((rater) => rater.name.trim().toLowerCase() === normalizedName);
+    if (!selected) {
+      setNewRater({ name: nameValue, email: '', department: '' });
+      return;
+    }
+
+    setNewRater({
+      name: selected.name,
+      email: selected.email,
+      department: selected.department,
+    });
+  };
+
+  const toggleAssignedPosition = (position: string) => {
+    setRaterAccessForm((prev) => ({
+      ...prev,
+      assignedPositions: prev.assignedPositions.includes(position)
+        ? prev.assignedPositions.filter((item) => item !== position)
+        : [...prev.assignedPositions, position],
+    }));
   };
 
   const handleDeleteRater = async (id: number) => {
@@ -540,6 +770,76 @@ export const RSPDashboard = () => {
       await supabase.from('raters').delete().eq('id', id);
     } catch {
     }
+  };
+
+  const handleBulkTemplateSelect = (templateId: (typeof BULK_REQUEST_TEMPLATES)[number]['id']) => {
+    const template = BULK_REQUEST_TEMPLATES.find((item) => item.id === templateId);
+    if (!template) return;
+
+    setBulkRequestForm((prev) => ({
+      ...prev,
+      documentName: template.name,
+      description: template.description,
+    }));
+  };
+
+  const handleBulkRecipientModeChange = (mode: BulkRecipientMode) => {
+    setBulkRequestForm((prev) => ({
+      ...prev,
+      recipientMode: mode,
+      department: mode === 'department' ? prev.department : '',
+      selectedEmployeeIds: mode === 'selected' ? prev.selectedEmployeeIds : [],
+    }));
+  };
+
+  const handleBulkEmployeeToggle = (employeeId: string) => {
+    setBulkRequestForm((prev) => {
+      const selected = prev.selectedEmployeeIds.includes(employeeId)
+        ? prev.selectedEmployeeIds.filter((id) => id !== employeeId)
+        : [...prev.selectedEmployeeIds, employeeId];
+
+      return {
+        ...prev,
+        selectedEmployeeIds: selected,
+      };
+    });
+  };
+
+  const resetBulkRequestForm = () => {
+    setBulkRequestForm({
+      documentName: '',
+      description: '',
+      dueDate: '',
+      recipientMode: 'all',
+      department: '',
+      selectedEmployeeIds: [],
+      templateFileName: '',
+    });
+  };
+
+  const closeBulkRequestDialog = () => {
+    setShowBulkRequestDialog(false);
+    resetBulkRequestForm();
+  };
+
+  const openBulkRequestDialog = () => {
+    setShowBulkRequestDialog(true);
+  };
+
+  const openPositionEmployees = (position: string, office: string) => {
+    setSelectedDirectoryCard({ position, office });
+    setSelectedEmployeeId(null);
+    setAccountsView('position');
+  };
+
+  const openEmployeeDetails = (employeeId: string) => {
+    setSelectedEmployeeId(employeeId);
+    setAccountsView('details');
+  };
+
+  const handleSendBulkRequest = () => {
+    if (isBulkRequestSendDisabled) return;
+    closeBulkRequestDialog();
   };
 
   const urgentItems = [
@@ -1157,7 +1457,7 @@ export const RSPDashboard = () => {
                     </ul>
                   </section>
                 </>
-              ) : (
+              ) : accountsView === 'directory' ? (
                 <>
                   <section className="flex items-start justify-between gap-4">
                     <div>
@@ -1167,7 +1467,11 @@ export const RSPDashboard = () => {
                         Browse employees by position • {employeeDirectoryCards.totalEmployees} total employees
                       </p>
                     </div>
-                    <Button className="!px-6 !py-3 text-lg">
+                    <Button
+                      type="button"
+                      className="relative z-10 !px-6 !py-3 text-lg"
+                      onClick={openBulkRequestDialog}
+                    >
                       <FileText size={20} /> Bulk Document Request
                     </Button>
                   </section>
@@ -1186,7 +1490,12 @@ export const RSPDashboard = () => {
 
                   <section className="grid grid-cols-1 gap-5 xl:grid-cols-3">
                     {employeeDirectoryCards.cards.map((card) => (
-                      <article key={`${card.position}-${card.office}`} className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
+                      <button
+                        key={`${card.position}-${card.office}`}
+                        type="button"
+                        onClick={() => openPositionEmployees(card.position, card.office)}
+                        className="rounded-2xl border border-[var(--border-color)] bg-white p-6 text-left transition hover:border-[var(--primary-color)]"
+                      >
                         <div className="mb-5 flex items-start justify-between">
                           <div className="rounded-2xl bg-blue-100 p-4 text-blue-600"><Users size={28} /></div>
                           <ChevronRight size={28} className="text-[var(--text-muted)]" />
@@ -1196,7 +1505,7 @@ export const RSPDashboard = () => {
                           {card.count} employee{card.count === 1 ? '' : 's'}
                         </p>
                         <p className="!mb-0 border-t border-[var(--border-color)] pt-3 text-lg text-[var(--text-secondary)]">{card.office}</p>
-                      </article>
+                      </button>
                     ))}
                     {employeeDirectoryCards.cards.length === 0 && (
                       <p className="col-span-full rounded-2xl border border-[var(--border-color)] bg-white p-8 text-center text-lg text-[var(--text-secondary)]">
@@ -1210,6 +1519,150 @@ export const RSPDashboard = () => {
                       <ChevronLeft size={18} /> Back to Account Management
                     </Button>
                   </div>
+                </>
+              ) : accountsView === 'position' ? (
+                <>
+                  <section>
+                    <button
+                      type="button"
+                      onClick={() => setAccountsView('directory')}
+                      className="mb-3 inline-flex items-center gap-2 text-2xl font-semibold text-blue-600"
+                    >
+                      <ChevronLeft size={24} /> Employees
+                    </button>
+                    <h2 className="!mb-1 text-5xl font-bold text-[var(--text-primary)]">{selectedDirectoryCard?.position ?? 'Position'}</h2>
+                    <p className="!mb-0 text-2xl text-[var(--text-secondary)]">{selectedPositionEmployees.length} employee{selectedPositionEmployees.length === 1 ? '' : 's'}</p>
+                  </section>
+
+                  <section className="overflow-hidden rounded-2xl border border-[var(--border-color)] bg-white">
+                    <table className="w-full border-collapse">
+                      <thead className="bg-slate-50 text-left text-sm uppercase tracking-wide text-[var(--text-secondary)]">
+                        <tr>
+                          <th className="px-5 py-4">Employee Name</th>
+                          <th className="px-5 py-4">Employee Number</th>
+                          <th className="px-5 py-4">Position</th>
+                          <th className="px-5 py-4">Department</th>
+                          <th className="px-5 py-4">Status</th>
+                          <th className="px-5 py-4">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedPositionEmployees.map((employee) => {
+                          const statusLabel = employee.status.toLowerCase().includes('inactive') ? 'Inactive' : 'Active';
+                          return (
+                            <tr key={employee.id} className="border-t border-[var(--border-color)] text-lg">
+                              <td className="px-5 py-4">
+                                <p className="!mb-0 font-semibold text-[var(--text-primary)]">{employee.full_name}</p>
+                                <p className="!mb-0 text-base text-[var(--text-secondary)]">{employee.email || '--'}</p>
+                              </td>
+                              <td className="px-5 py-4 text-[var(--text-secondary)]">{employeeNumberById.get(employee.id) ?? '--'}</td>
+                              <td className="px-5 py-4 text-[var(--text-secondary)]">{employee.position || '--'}</td>
+                              <td className="px-5 py-4 text-[var(--text-secondary)]">{employee.office || '--'}</td>
+                              <td className="px-5 py-4">
+                                <span className={`rounded-full px-3 py-1 text-sm font-semibold ${statusLabel === 'Active' ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-700'}`}>
+                                  {statusLabel}
+                                </span>
+                              </td>
+                              <td className="px-5 py-4">
+                                <button
+                                  type="button"
+                                  onClick={() => openEmployeeDetails(employee.id)}
+                                  className="rounded-full border border-[var(--border-color)] p-2 text-[var(--text-muted)] transition hover:border-blue-400 hover:text-blue-600"
+                                >
+                                  <ChevronRight size={18} />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {selectedPositionEmployees.length === 0 && (
+                          <tr>
+                            <td colSpan={6} className="px-5 py-8 text-center text-base text-[var(--text-secondary)]">No employees found for this position.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </section>
+                </>
+              ) : (
+                <>
+                  <section>
+                    <button
+                      type="button"
+                      onClick={() => setAccountsView('position')}
+                      className="mb-3 inline-flex items-center gap-2 text-2xl font-semibold text-blue-600"
+                    >
+                      <ChevronLeft size={24} /> Back to Employees
+                    </button>
+
+                    <div className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
+                      <div className="mb-5 flex items-start gap-5">
+                        <div className="rounded-2xl bg-blue-100 p-5 text-blue-600"><User size={48} /></div>
+                        <div>
+                          <h2 className="!mb-1 text-5xl font-bold text-[var(--text-primary)]">{selectedEmployeeDetails?.full_name ?? 'Employee'}</h2>
+                          <p className="!mb-3 text-2xl text-[var(--text-secondary)]">{selectedEmployeeDetails?.position || '--'}</p>
+                          <div className="flex flex-wrap gap-2 text-base">
+                            <span className="rounded-full bg-blue-100 px-3 py-1 text-blue-700">{selectedEmployeeDetails?.office || 'Unassigned Office'}</span>
+                            <span className="rounded-full bg-green-100 px-3 py-1 text-green-700">
+                              {selectedEmployeeDetails?.status?.toLowerCase().includes('inactive') ? 'Inactive' : 'Active'}
+                            </span>
+                            <span className="rounded-full bg-slate-100 px-3 py-1 text-[var(--text-secondary)]">{selectedEmployeeDetails ? employeeNumberById.get(selectedEmployeeDetails.id) : '--'}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+                        <div className="space-y-5">
+                          <section className="rounded-2xl border border-[var(--border-color)] p-5">
+                            <h3 className="!mb-3 text-3xl font-semibold text-[var(--text-primary)]">Contact Information</h3>
+                            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                              <div>
+                                <p className="!mb-1 text-base text-[var(--text-secondary)]">Email Address</p>
+                                <p className="!mb-0 text-2xl text-[var(--text-primary)]">{selectedEmployeeDetails?.email || '--'}</p>
+                              </div>
+                              <div>
+                                <p className="!mb-1 text-base text-[var(--text-secondary)]">Contact Number</p>
+                                <p className="!mb-0 text-2xl text-[var(--text-primary)]">{selectedEmployeeDetails?.contact_number || '--'}</p>
+                              </div>
+                            </div>
+                          </section>
+
+                          <section className="rounded-2xl border border-[var(--border-color)] p-5">
+                            <h3 className="!mb-3 text-3xl font-semibold text-[var(--text-primary)]">Personal Details</h3>
+                            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                              <div>
+                                <p className="!mb-1 text-base text-[var(--text-secondary)]">Date Qualified / Hired</p>
+                                <p className="!mb-0 text-2xl text-[var(--text-primary)]">{selectedEmployeeDetails ? formatDate(selectedEmployeeDetails.created_at) : '--'}</p>
+                              </div>
+                              <div>
+                                <p className="!mb-1 text-base text-[var(--text-secondary)]">Department</p>
+                                <p className="!mb-0 text-2xl text-[var(--text-primary)]">{selectedEmployeeDetails?.office || '--'}</p>
+                              </div>
+                            </div>
+                          </section>
+                        </div>
+
+                        <div className="space-y-4">
+                          <section className="rounded-2xl border border-[var(--border-color)] p-5">
+                            <h3 className="!mb-3 text-3xl font-semibold text-[var(--text-primary)]">Employment Details</h3>
+                            <p className="!mb-1 text-base text-[var(--text-secondary)]">Employee Number</p>
+                            <p className="!mb-3 text-2xl font-semibold text-[var(--text-primary)]">{selectedEmployeeDetails ? employeeNumberById.get(selectedEmployeeDetails.id) : '--'}</p>
+                            <p className="!mb-1 text-base text-[var(--text-secondary)]">Position</p>
+                            <p className="!mb-3 text-2xl text-[var(--text-primary)]">{selectedEmployeeDetails?.position || '--'}</p>
+                            <p className="!mb-1 text-base text-[var(--text-secondary)]">Employment Status</p>
+                            <p className="!mb-0 text-2xl text-[var(--text-primary)]">{selectedEmployeeDetails?.status || '--'}</p>
+                          </section>
+
+                          <section className="rounded-2xl border border-[var(--border-color)] p-5">
+                            <h3 className="!mb-3 text-3xl font-semibold text-[var(--text-primary)]">Reset Password</h3>
+                            <button type="button" className="w-full rounded-xl bg-red-600 px-4 py-3 text-xl font-semibold text-white">
+                              Reset Password
+                            </button>
+                          </section>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
                 </>
               )}
             </>
@@ -1332,64 +1785,520 @@ export const RSPDashboard = () => {
         </div>
       </main>
 
-      <Dialog open={showJobDialog} onClose={() => setShowJobDialog(false)} title="Add New Position">
-        <div className="space-y-3">
-          <input
-            className="w-full rounded-lg border border-[var(--border-color)] p-3"
-            placeholder="Job Title"
-            value={newJob.title}
-            onChange={(e) => setNewJob((prev) => ({ ...prev, title: e.target.value }))}
-          />
-          <input
-            className="w-full rounded-lg border border-[var(--border-color)] p-3"
-            placeholder="Item Number"
-            value={newJob.item_number}
-            onChange={(e) => setNewJob((prev) => ({ ...prev, item_number: e.target.value }))}
-          />
-          <input
-            className="w-full rounded-lg border border-[var(--border-color)] p-3"
-            placeholder="Department"
-            value={newJob.department}
-            onChange={(e) => setNewJob((prev) => ({ ...prev, department: e.target.value }))}
-          />
-          <select className="w-full rounded-lg border border-[var(--border-color)] p-3" value={newJob.status} onChange={(e) => setNewJob((prev) => ({ ...prev, status: e.target.value as JobStatus }))}>
-            <option value="Open">Open</option>
-            <option value="Reviewing">Reviewing</option>
-            <option value="Closed">Closed</option>
-          </select>
-          <div className="flex gap-2 pt-2">
-            <Button variant="secondary" onClick={() => setShowJobDialog(false)} className="w-full">Cancel</Button>
-            <Button onClick={handleCreateJob} className="w-full">Save Position</Button>
-          </div>
-        </div>
-      </Dialog>
+      {showJobDialog && (
+        <div className="fixed inset-0 z-[220] flex items-center justify-center bg-black/40 px-3 py-4" onClick={() => setShowJobDialog(false)}>
+          <div className="flex h-[95vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between bg-blue-700 px-7 py-5 text-white">
+              <div>
+                <h2 className="!mb-1 text-5xl font-bold">Create New Job Position</h2>
+                <p className="!mb-0 text-2xl text-blue-100">Fill in the details to create a new job posting</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowJobDialog(false)}
+                className="rounded-lg p-2 text-white/90 transition hover:bg-white/10 hover:text-white"
+                aria-label="Close"
+              >
+                <span className="text-5xl leading-none">×</span>
+              </button>
+            </div>
 
-      <Dialog open={showRaterDialog} onClose={() => setShowRaterDialog(false)} title="Add New Rater">
-        <div className="space-y-3">
-          <input
-            className="w-full rounded-lg border border-[var(--border-color)] p-3"
-            placeholder="Full Name"
-            value={newRater.name}
-            onChange={(e) => setNewRater((prev) => ({ ...prev, name: e.target.value }))}
-          />
-          <input
-            className="w-full rounded-lg border border-[var(--border-color)] p-3"
-            placeholder="Email Address"
-            value={newRater.email}
-            onChange={(e) => setNewRater((prev) => ({ ...prev, email: e.target.value }))}
-          />
-          <input
-            className="w-full rounded-lg border border-[var(--border-color)] p-3"
-            placeholder="Department"
-            value={newRater.department}
-            onChange={(e) => setNewRater((prev) => ({ ...prev, department: e.target.value }))}
-          />
-          <div className="flex gap-2 pt-2">
-            <Button variant="secondary" onClick={() => setShowRaterDialog(false)} className="w-full">Cancel</Button>
-            <Button onClick={handleCreateRater} className="w-full">Save Rater</Button>
+            <div className="flex-1 space-y-7 overflow-y-auto px-7 py-6">
+              <section>
+                <h3 className="!mb-4 flex items-center gap-2 text-4xl font-bold text-[var(--text-primary)]">
+                  <FileText size={28} className="text-blue-600" /> Basic Information
+                </h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Position Title <span className="text-red-500">*</span></label>
+                    <input
+                      className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
+                      placeholder="e.g., Administrative Officer III"
+                      value={newJob.title}
+                      onChange={(event) => setNewJob((prev) => ({ ...prev, title: event.target.value }))}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Item Number <span className="text-red-500">*</span></label>
+                      <input
+                        className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
+                        placeholder="e.g., ITEM-2024-001"
+                        value={newJob.item_number}
+                        onChange={(event) => setNewJob((prev) => ({ ...prev, item_number: event.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Salary Grade <span className="text-red-500">*</span></label>
+                      <input
+                        className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
+                        placeholder="e.g., SG-11"
+                        value={newJob.salary_grade}
+                        onChange={(event) => setNewJob((prev) => ({ ...prev, salary_grade: event.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Office/Department <span className="text-red-500">*</span></label>
+                      <select
+                        className="w-full rounded-xl border border-[var(--border-color)] bg-white p-3 text-base"
+                        value={newJob.department}
+                        onChange={(event) => setNewJob((prev) => ({ ...prev, department: event.target.value }))}
+                      >
+                        <option value="">Select Office</option>
+                        {departmentSelectionOptions.map((office) => (
+                          <option key={office} value={office}>{office}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Position Level</label>
+                      <select
+                        className="w-full rounded-xl border border-[var(--border-color)] bg-white p-3 text-base"
+                        value={newJob.position_level}
+                        onChange={(event) => setNewJob((prev) => ({ ...prev, position_level: event.target.value }))}
+                      >
+                        <option value="">Select Level</option>
+                        <option value="Entry Level">Entry Level</option>
+                        <option value="Mid Level">Mid Level</option>
+                        <option value="Senior Level">Senior Level</option>
+                        <option value="Supervisory">Supervisory</option>
+                        <option value="Managerial">Managerial</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Number of Slots</label>
+                      <input
+                        type="number"
+                        min={1}
+                        className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
+                        value={newJob.slots}
+                        onChange={(event) => setNewJob((prev) => ({ ...prev, slots: event.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Employment Type</label>
+                      <select
+                        className="w-full rounded-xl border border-[var(--border-color)] bg-white p-3 text-base"
+                        value={newJob.employment_type}
+                        onChange={(event) => setNewJob((prev) => ({ ...prev, employment_type: event.target.value }))}
+                      >
+                        <option value="Full-time">Full-time</option>
+                        <option value="Part-time">Part-time</option>
+                        <option value="Contractual">Contractual</option>
+                        <option value="Project-based">Project-based</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Application Deadline</label>
+                      <input
+                        type="date"
+                        className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
+                        value={newJob.application_deadline}
+                        onChange={(event) => setNewJob((prev) => ({ ...prev, application_deadline: event.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Status</label>
+                      <select
+                        className="w-full rounded-xl border border-[var(--border-color)] bg-white p-3 text-base"
+                        value={newJob.status}
+                        onChange={(event) => setNewJob((prev) => ({ ...prev, status: event.target.value as JobStatus }))}
+                      >
+                        <option value="Open">Open</option>
+                        <option value="Reviewing">Reviewing</option>
+                        <option value="Closed">Closed</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="!mb-4 flex items-center gap-2 text-4xl font-bold text-[var(--text-primary)]">
+                  <FileText size={28} className="text-blue-600" /> Job Description
+                </h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Description</label>
+                    <textarea
+                      rows={4}
+                      className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
+                      placeholder="Provide a brief overview of the position..."
+                      value={newJob.description}
+                      onChange={(event) => setNewJob((prev) => ({ ...prev, description: event.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Key Responsibilities</label>
+                    <textarea
+                      rows={4}
+                      className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
+                      placeholder="List the main duties and responsibilities (one per line)..."
+                      value={newJob.responsibilities}
+                      onChange={(event) => setNewJob((prev) => ({ ...prev, responsibilities: event.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Qualifications</label>
+                    <textarea
+                      rows={4}
+                      className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
+                      placeholder="List required qualifications, education, and experience..."
+                      value={newJob.qualifications}
+                      onChange={(event) => setNewJob((prev) => ({ ...prev, qualifications: event.target.value }))}
+                    />
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-[var(--border-color)] px-7 py-4">
+              <Button variant="secondary" onClick={() => setShowJobDialog(false)} className="!px-8 !py-3 text-lg">
+                Cancel
+              </Button>
+              <Button onClick={handleCreateJob} className="!px-8 !py-3 text-lg">
+                <Plus size={18} /> Create Position
+              </Button>
+            </div>
           </div>
         </div>
-      </Dialog>
+      )}
+
+      {showRaterDialog && (
+        <div className="fixed inset-0 z-[220] flex items-center justify-center bg-black/40 px-3 py-4" onClick={closeRaterDialog}>
+          <div className="flex h-[95vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between bg-blue-700 px-7 py-5 text-white">
+              <div>
+                <h2 className="!mb-1 text-5xl font-bold">Assign Rater Access</h2>
+                <p className="!mb-0 text-2xl text-blue-100">Grant access to interviewer portal</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeRaterDialog}
+                className="rounded-lg p-2 text-white/90 transition hover:bg-white/10 hover:text-white"
+                aria-label="Close"
+              >
+                <span className="text-5xl leading-none">×</span>
+              </button>
+            </div>
+
+            <div className="flex-1 space-y-6 overflow-y-auto px-7 py-6">
+              <section>
+                <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Select Rater <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  list="rater-name-options"
+                  value={raterAccessForm.raterName}
+                  onChange={(event) => handleRaterNameChange(event.target.value)}
+                  className="w-full rounded-xl border border-[var(--border-color)] bg-white p-3 text-lg"
+                  placeholder="Type rater name..."
+                />
+                <datalist id="rater-name-options">
+                  {raters.map((rater) => (
+                    <option key={rater.id} value={rater.name} />
+                  ))}
+                </datalist>
+              </section>
+
+              <section>
+                <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Designation / Role</label>
+                <input
+                  className="w-full rounded-xl border border-[var(--border-color)] bg-slate-50 p-3 text-lg"
+                  value={newRater.department}
+                  placeholder=""
+                  readOnly
+                />
+                <p className="!mb-0 mt-2 text-base text-[var(--text-secondary)]">Auto-filled when typed name matches an existing rater</p>
+              </section>
+
+              <section>
+                <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Access Level <span className="text-red-500">*</span></label>
+                <select
+                  value={raterAccessForm.accessLevel}
+                  onChange={(event) => setRaterAccessForm((prev) => ({ ...prev, accessLevel: event.target.value }))}
+                  className="w-full rounded-xl border border-[var(--border-color)] bg-white p-3 text-lg"
+                >
+                  <option value="Interviewer">Interviewer</option>
+                </select>
+              </section>
+
+              <section>
+                <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Assign Job Positions <span className="text-red-500">*</span></label>
+                <div className="max-h-72 overflow-y-auto rounded-xl border border-[var(--border-color)] bg-white p-4">
+                  <div className="grid grid-cols-1 gap-x-10 gap-y-4 xl:grid-cols-2">
+                    {assignableJobPositions.map((position) => {
+                      const checked = raterAccessForm.assignedPositions.includes(position);
+                      return (
+                        <label key={position} className="flex cursor-pointer items-center gap-3 text-xl text-[var(--text-primary)]">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleAssignedPosition(position)}
+                            className="h-6 w-6 rounded border-[var(--border-color)]"
+                          />
+                          <span>{position}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+                <p className="!mb-0 mt-2 text-base text-[var(--text-secondary)]">Selected: {raterAccessForm.assignedPositions.length} position{raterAccessForm.assignedPositions.length === 1 ? '' : 's'}</p>
+              </section>
+
+              <section>
+                <h3 className="!mb-3 text-4xl font-bold text-[var(--text-primary)]">Access Duration (Optional)</h3>
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-base font-semibold text-[var(--text-secondary)]">Start Date</label>
+                    <div className="relative">
+                      <Calendar size={18} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                      <input
+                        type="date"
+                        value={raterAccessForm.startDate}
+                        onChange={(event) => setRaterAccessForm((prev) => ({ ...prev, startDate: event.target.value }))}
+                        className="w-full rounded-xl border border-[var(--border-color)] py-3 pl-11 pr-4 text-lg"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-base font-semibold text-[var(--text-secondary)]">End Date</label>
+                    <div className="relative">
+                      <Calendar size={18} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                      <input
+                        type="date"
+                        value={raterAccessForm.endDate}
+                        onChange={(event) => setRaterAccessForm((prev) => ({ ...prev, endDate: event.target.value }))}
+                        className="w-full rounded-xl border border-[var(--border-color)] py-3 pl-11 pr-4 text-lg"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-[var(--border-color)] px-7 py-4">
+              <Button variant="secondary" onClick={closeRaterDialog} className="!px-8 !py-3 text-lg">
+                Cancel
+              </Button>
+              <Button
+                onClick={handleCreateRater}
+                disabled={!newRater.name || !newRater.email || !newRater.department || raterAccessForm.assignedPositions.length === 0}
+                className="!px-8 !py-3 text-lg"
+              >
+                Save & Generate Access
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBulkRequestDialog && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 px-4 py-6" onClick={closeBulkRequestDialog}>
+          <div className="flex max-h-[95vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between border-b border-[var(--border-color)] px-8 py-6">
+              <div>
+                <h2 className="!mb-1 text-5xl font-bold text-[var(--text-primary)]">Bulk Document Request</h2>
+                <p className="!mb-0 text-2xl text-[var(--text-secondary)]">Request documents from multiple employees at once</p>
+              </div>
+              <button type="button" onClick={closeBulkRequestDialog} className="rounded-lg p-2 text-[var(--text-muted)] hover:bg-slate-100 hover:text-[var(--text-primary)]">
+                <span className="text-4xl leading-none">×</span>
+              </button>
+            </div>
+
+            <div className="flex-1 space-y-6 overflow-y-auto px-8 py-6">
+              <section>
+                <h3 className="!mb-3 text-2xl font-semibold text-[var(--text-primary)]">Quick Templates (Optional)</h3>
+                <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                  {BULK_REQUEST_TEMPLATES.map((template) => {
+                    const isSelected = bulkRequestForm.documentName === template.name;
+                    return (
+                      <button
+                        key={template.id}
+                        type="button"
+                        onClick={() => handleBulkTemplateSelect(template.id)}
+                        className={`rounded-2xl border px-4 py-4 text-left transition ${isSelected ? 'border-blue-500 bg-blue-50' : 'border-[var(--border-color)] hover:border-blue-300'}`}
+                      >
+                        <p className="!mb-0 text-2xl font-semibold text-[var(--text-primary)]">{template.name}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section>
+                <label className="mb-2 block text-xl font-semibold text-[var(--text-primary)]">Document Name <span className="text-red-500">*</span></label>
+                <input
+                  value={bulkRequestForm.documentName}
+                  onChange={(event) => setBulkRequestForm((prev) => ({ ...prev, documentName: event.target.value }))}
+                  className="w-full rounded-xl border border-[var(--border-color)] p-4 text-3xl"
+                  placeholder="Enter document name"
+                />
+              </section>
+
+              <section>
+                <label className="mb-2 block text-xl font-semibold text-[var(--text-primary)]">Description / Requirements <span className="text-red-500">*</span></label>
+                <textarea
+                  value={bulkRequestForm.description}
+                  onChange={(event) => setBulkRequestForm((prev) => ({ ...prev, description: event.target.value }))}
+                  className="w-full rounded-xl border border-[var(--border-color)] p-4 text-2xl"
+                  rows={4}
+                  placeholder="Describe the required document"
+                />
+              </section>
+
+              <section>
+                <label className="mb-2 block text-xl font-semibold text-[var(--text-primary)]">Due Date <span className="text-red-500">*</span></label>
+                <input
+                  type="date"
+                  value={bulkRequestForm.dueDate}
+                  onChange={(event) => setBulkRequestForm((prev) => ({ ...prev, dueDate: event.target.value }))}
+                  className="w-full rounded-xl border border-[var(--border-color)] p-4 text-3xl"
+                />
+              </section>
+
+              <section>
+                <label className="mb-2 block text-xl font-semibold text-[var(--text-primary)]">Upload Template File (Optional)</label>
+                <input
+                  type="file"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    setBulkRequestForm((prev) => ({ ...prev, templateFileName: file ? file.name : '' }));
+                  }}
+                  className="w-full rounded-xl border border-[var(--border-color)] p-4 text-xl"
+                />
+                {bulkRequestForm.templateFileName && (
+                  <p className="!mb-0 mt-2 text-base text-[var(--text-secondary)]">Selected file: {bulkRequestForm.templateFileName}</p>
+                )}
+              </section>
+
+              <section>
+                <label className="mb-3 block text-xl font-semibold text-[var(--text-primary)]">Send Request To <span className="text-red-500">*</span></label>
+
+                <div className="space-y-3">
+                  {[
+                    {
+                      id: 'all' as const,
+                      title: 'All Employees',
+                      subtitle: `${bulkRequestEmployees.length} employee${bulkRequestEmployees.length === 1 ? '' : 's'} will receive this request`,
+                      icon: Users,
+                    },
+                    {
+                      id: 'department' as const,
+                      title: 'By Department',
+                      subtitle: 'Select a specific department',
+                      icon: Building2,
+                    },
+                    {
+                      id: 'selected' as const,
+                      title: 'Selected Employees',
+                      subtitle: 'Choose specific employees from the list',
+                      icon: UserCheck,
+                    },
+                  ].map((option) => {
+                    const Icon = option.icon;
+                    const isSelected = bulkRequestForm.recipientMode === option.id;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => handleBulkRecipientModeChange(option.id)}
+                        className={`flex w-full items-center justify-between rounded-2xl border px-4 py-4 text-left transition ${isSelected ? 'border-blue-500 bg-blue-50' : 'border-[var(--border-color)] hover:border-blue-300'}`}
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className={`rounded-2xl p-3 ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-[var(--text-muted)]'}`}>
+                            <Icon size={24} />
+                          </div>
+                          <div>
+                            <p className="!mb-0 text-3xl font-semibold text-[var(--text-primary)]">{option.title}</p>
+                            <p className="!mb-0 text-xl text-[var(--text-secondary)]">{option.subtitle}</p>
+                          </div>
+                        </div>
+                        <div className={`flex h-7 w-7 items-center justify-center rounded-full border-2 ${isSelected ? 'border-blue-600 text-blue-600' : 'border-slate-300 text-transparent'}`}>
+                          <Check size={16} />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {bulkRequestForm.recipientMode === 'department' && (
+                  <div className="mt-4 rounded-2xl border border-[var(--border-color)] bg-slate-50 p-4">
+                    <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Department</label>
+                    <select
+                      value={bulkRequestForm.department}
+                      onChange={(event) => setBulkRequestForm((prev) => ({ ...prev, department: event.target.value }))}
+                      className="w-full rounded-xl border border-[var(--border-color)] p-3 text-lg"
+                    >
+                      <option value="">Select a department</option>
+                      {bulkRequestDepartments.map((department) => (
+                        <option key={department} value={department}>{department}</option>
+                      ))}
+                    </select>
+                    <p className="!mb-0 mt-2 text-base text-[var(--text-secondary)]">
+                      {bulkRequestForm.department
+                        ? `${selectedDepartmentEmployees.length} employee${selectedDepartmentEmployees.length === 1 ? '' : 's'} in this department`
+                        : 'Choose a department to preview recipients'}
+                    </p>
+                  </div>
+                )}
+
+                {bulkRequestForm.recipientMode === 'selected' && (
+                  <div className="mt-4 rounded-2xl border border-[var(--border-color)] bg-slate-50 p-4">
+                    <p className="!mb-2 text-base font-semibold text-[var(--text-primary)]">Select Employees</p>
+                    <div className="max-h-52 space-y-2 overflow-y-auto pr-1">
+                      {bulkRequestEmployees.map((employee) => {
+                        const checked = bulkRequestForm.selectedEmployeeIds.includes(employee.id);
+                        return (
+                          <label key={employee.id} className="flex cursor-pointer items-center justify-between rounded-xl border border-[var(--border-color)] bg-white px-3 py-2">
+                            <div>
+                              <p className="!mb-0 text-base font-semibold text-[var(--text-primary)]">{employee.name}</p>
+                              <p className="!mb-0 text-sm text-[var(--text-secondary)]">{employee.department}</p>
+                            </div>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => handleBulkEmployeeToggle(employee.id)}
+                              className="h-4 w-4"
+                            />
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </section>
+
+              <section className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3">
+                <p className="!mb-0 text-xl text-blue-700">
+                  <strong>Summary:</strong> This document request will be sent to <strong>{bulkRequestRecipientCount}</strong> employee{bulkRequestRecipientCount === 1 ? '' : 's'}.
+                  {bulkRequestForm.recipientMode === 'all' && ' All employees will be notified.'}
+                  {bulkRequestForm.recipientMode === 'department' && bulkRequestForm.department && ` ${bulkRequestForm.department} employees will be notified.`}
+                  {bulkRequestForm.recipientMode === 'selected' && bulkRequestRecipientCount > 0 && ' Selected employees will be notified.'}
+                </p>
+              </section>
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-[var(--border-color)] px-8 py-5">
+              <Button variant="secondary" onClick={closeBulkRequestDialog} className="!px-8 !py-3 text-lg">
+                Cancel
+              </Button>
+              <Button onClick={handleSendBulkRequest} disabled={isBulkRequestSendDisabled} className="!px-8 !py-3 text-lg">
+                <FileText size={18} /> Send to {bulkRequestRecipientCount} Employee{bulkRequestRecipientCount === 1 ? '' : 's'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
