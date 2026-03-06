@@ -13,7 +13,11 @@ echo Stopping backend containers...
 docker compose down >nul 2>nul
 
 echo Stopping Vite dev server windows...
-taskkill /FI "WINDOWTITLE eq CICTrix Frontend" /T /F >nul 2>nul
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr /R /C:":5173 .*LISTENING"') do (
+	if not "%%p"=="0" (
+		taskkill /PID %%p /T /F >nul 2>nul
+	)
+)
 
 echo.
 echo Done.

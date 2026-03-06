@@ -166,6 +166,34 @@ const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
   }
 };
 
+const getPreferredClient = () => {
+  const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
+  return preferredMode === 'local' ? (mockDatabase as any) : supabase;
+};
+
+const RATER_ASSIGNMENTS_KEY = 'cictrix_rater_assigned_positions';
+
+const normalizeEmailKey = (email: string) => email.trim().toLowerCase();
+
+const loadRaterAssignments = (): Record<string, string[]> => {
+  try {
+    const raw = localStorage.getItem(RATER_ASSIGNMENTS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed as Record<string, string[]>;
+  } catch {
+    return {};
+  }
+};
+
+const saveRaterAssignments = (assignments: Record<string, string[]>) => {
+  try {
+    localStorage.setItem(RATER_ASSIGNMENTS_KEY, JSON.stringify(assignments));
+  } catch {
+  }
+};
+
 export const RSPDashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -188,6 +216,7 @@ export const RSPDashboard = () => {
 
   const [raterSearch, setRaterSearch] = useState('');
   const [raterStatus, setRaterStatus] = useState('all');
+  const [raterAssignedPositionsByEmail, setRaterAssignedPositionsByEmail] = useState<Record<string, string[]>>({});
   const [accountsView, setAccountsView] = useState<'overview' | 'directory' | 'position' | 'details'>('overview');
   const [employeeDirectorySearch, setEmployeeDirectorySearch] = useState('');
   const [selectedDirectoryCard, setSelectedDirectoryCard] = useState<{ position: string; office: string } | null>(null);
@@ -248,6 +277,9 @@ export const RSPDashboard = () => {
 
   useEffect(() => {
     const load = async () => {
+      const localAssignments = loadRaterAssignments();
+      setRaterAssignedPositionsByEmail(localAssignments);
+
       const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
       const primaryClient = preferredMode === 'local' ? (mockDatabase as any) : supabase;
       const secondaryClient = preferredMode === 'local' ? supabase : (mockDatabase as any);
@@ -262,6 +294,11 @@ export const RSPDashboard = () => {
         ]);
 
       let [jobPostingsRes, jobsRes, applicantsRes, ratersRes, evaluationsRes] = await fetchBundle(primaryClient);
+
+      const primaryRaters =
+        ratersRes.status === 'fulfilled' && !ratersRes.value.error && Array.isArray(ratersRes.value.data)
+          ? ratersRes.value.data
+          : [];
 
       const primaryApplicants =
         applicantsRes.status === 'fulfilled' && !applicantsRes.value.error && Array.isArray(applicantsRes.value.data)
@@ -317,7 +354,26 @@ export const RSPDashboard = () => {
       }
 
       if (ratersRes.status === 'fulfilled' && !ratersRes.value.error && Array.isArray(ratersRes.value.data)) {
-        const normalized = ratersRes.value.data.map((item: any, index: number) => ({
+        const ratersSource = primaryRaters.length > 0 ? primaryRaters : ratersRes.value.data;
+        const mergedAssignments = { ...localAssignments };
+
+        ratersSource.forEach((item: any) => {
+          const emailKey = normalizeEmailKey(String(item?.email ?? ''));
+          if (!emailKey) return;
+
+          const fromRow = Array.isArray(item?.assigned_positions)
+            ? item.assigned_positions.filter((value: any) => typeof value === 'string')
+            : null;
+
+          if (fromRow && fromRow.length > 0) {
+            mergedAssignments[emailKey] = fromRow;
+          }
+        });
+
+        setRaterAssignedPositionsByEmail(mergedAssignments);
+        saveRaterAssignments(mergedAssignments);
+
+        const normalized = ratersSource.map((item: any, index: number) => ({
           id: Number(item?.id ?? index + 1),
           name: String(item?.name ?? ''),
           email: String(item?.email ?? ''),
@@ -704,9 +760,18 @@ export const RSPDashboard = () => {
       last_login: null,
     };
 
+    const assignmentKey = normalizeEmailKey(newRater.email);
+    const nextAssignments = {
+      ...raterAssignedPositionsByEmail,
+      [assignmentKey]: [...raterAccessForm.assignedPositions],
+    };
+    setRaterAssignedPositionsByEmail(nextAssignments);
+    saveRaterAssignments(nextAssignments);
+
     setRaters((prev) => [payload, ...prev]);
     try {
-      await supabase.from('raters').insert([{ ...payload, id: undefined }]);
+      const client = getPreferredClient();
+      await client.from('raters').insert([{ ...payload, id: undefined }]);
     } catch {
     }
 
@@ -735,24 +800,26 @@ export const RSPDashboard = () => {
 
   const handleRaterNameChange = (nameValue: string) => {
     setRaterAccessForm((prev) => ({ ...prev, raterName: nameValue }));
+    setNewRater((prev) => ({ ...prev, name: nameValue }));
 
     const normalizedName = nameValue.trim().toLowerCase();
     if (!normalizedName) {
-      setNewRater({ name: '', email: '', department: '' });
+      setNewRater((prev) => ({ ...prev, name: '', email: '' }));
       return;
     }
 
     const selected = raters.find((rater) => rater.name.trim().toLowerCase() === normalizedName);
     if (!selected) {
-      setNewRater({ name: nameValue, email: '', department: '' });
+      setNewRater((prev) => ({ ...prev, name: nameValue, email: '' }));
       return;
     }
 
-    setNewRater({
+    setNewRater((prev) => ({
+      ...prev,
       name: selected.name,
       email: selected.email,
       department: selected.department,
-    });
+    }));
   };
 
   const toggleAssignedPosition = (position: string) => {
@@ -765,10 +832,37 @@ export const RSPDashboard = () => {
   };
 
   const handleDeleteRater = async (id: number) => {
+    const target = raters.find((rater) => rater.id === id);
+
     setRaters((prev) => prev.filter((rater) => rater.id !== id));
+
+    if (target?.email) {
+      const assignmentKey = normalizeEmailKey(target.email);
+      const nextAssignments = { ...raterAssignedPositionsByEmail };
+      delete nextAssignments[assignmentKey];
+      setRaterAssignedPositionsByEmail(nextAssignments);
+      saveRaterAssignments(nextAssignments);
+    }
+
     try {
-      await supabase.from('raters').delete().eq('id', id);
+      const client = getPreferredClient();
+      await client.from('raters').delete().eq('id', id);
     } catch {
+    }
+  };
+
+  const handleToggleRaterAccess = async (rater: RaterRecord) => {
+    const nextIsActive = !rater.is_active;
+
+    // Optimistic UI update so status changes immediately.
+    setRaters((prev) => prev.map((item) => (item.id === rater.id ? { ...item, is_active: nextIsActive } : item)));
+
+    try {
+      const client = getPreferredClient();
+      await client.from('raters').update({ is_active: nextIsActive }).eq('id', rater.id);
+    } catch {
+      // Rollback on failure to keep UI consistent with persisted data.
+      setRaters((prev) => prev.map((item) => (item.id === rater.id ? { ...item, is_active: rater.is_active } : item)));
     }
   };
 
@@ -1379,9 +1473,9 @@ export const RSPDashboard = () => {
                 </div>
               </div>
 
-              <section className="overflow-hidden rounded-2xl border border-[var(--border-color)] bg-white">
+              <section className="overflow-hidden rounded-2xl border border-[var(--border-color)] bg-white shadow-sm">
                 <table className="w-full border-collapse">
-                  <thead className="bg-slate-50 text-left text-sm uppercase tracking-wide text-[var(--text-secondary)]">
+                  <thead className="bg-slate-50 text-left text-xs uppercase tracking-[0.08em] text-slate-600">
                     <tr>
                       <th className="px-5 py-4">Rater Name</th>
                       <th className="px-5 py-4">Designation / Position</th>
@@ -1394,26 +1488,51 @@ export const RSPDashboard = () => {
                   </thead>
                   <tbody>
                     {filteredRaters.map((rater) => (
-                      <tr key={rater.id} className="border-t border-[var(--border-color)] text-lg">
-                        <td className="px-5 py-4 font-semibold text-[var(--text-primary)]">{rater.name}</td>
-                        <td className="px-5 py-4 text-[var(--text-secondary)]">{rater.department}</td>
-                        <td className="px-5 py-4"><span className="rounded-full bg-purple-100 px-3 py-1 text-sm font-semibold text-purple-700">Interviewer</span></td>
+                      <tr key={rater.id} className="border-t border-[var(--border-color)] text-base align-middle hover:bg-slate-50/40">
+                        <td className="px-5 py-4 font-semibold text-slate-900">{rater.name}</td>
+                        <td className="px-5 py-4 text-slate-600">{rater.department}</td>
+                        <td className="px-5 py-4">
+                          <span className="inline-flex items-center rounded-full bg-indigo-50 px-3 py-1 text-sm font-semibold text-indigo-700">Interviewer</span>
+                        </td>
                         <td className="px-5 py-4">
                           <div className="flex flex-wrap gap-2">
-                            {jobsWithCounts.slice(0, 2).map((job) => (
-                              <span key={`${rater.id}-${job.id}`} className="rounded-md bg-blue-50 px-2 py-1 text-sm text-blue-700">{job.title}</span>
+                            {((raterAssignedPositionsByEmail[normalizeEmailKey(rater.email)] || []).length > 0
+                              ? raterAssignedPositionsByEmail[normalizeEmailKey(rater.email)]
+                              : ['--']
+                            ).slice(0, 3).map((position) => (
+                              <span
+                                key={`${rater.id}-${position}`}
+                                className={`${position === '--' ? 'border-slate-200 bg-slate-50 text-slate-500' : 'border-blue-100 bg-blue-50 text-blue-700'} rounded-md border px-2.5 py-1 text-sm font-medium`}
+                              >
+                                {position}
+                              </span>
                             ))}
                           </div>
                         </td>
-                        <td className="px-5 py-4 text-[var(--text-secondary)]">{rater.last_login ? formatDate(rater.last_login) : '--'}</td>
+                        <td className="px-5 py-4 text-slate-600">{rater.last_login ? formatDate(rater.last_login) : '--'}</td>
                         <td className="px-5 py-4">
-                          <span className={`rounded-full px-3 py-1 text-sm font-semibold ${rater.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-700'}`}>
+                          <span className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold ${rater.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'}`}>
                             {rater.is_active ? 'Active' : 'Inactive'}
                           </span>
                         </td>
                         <td className="px-5 py-4">
-                          <button type="button" className="mr-2 rounded-lg border border-[var(--border-color)] px-3 py-1 text-blue-600" onClick={() => setRaters((prev) => prev.map((item) => (item.id === rater.id ? { ...item, is_active: !item.is_active } : item)))}>Edit</button>
-                          <button type="button" className="rounded-lg border border-red-300 px-3 py-1 text-red-600" onClick={() => handleDeleteRater(rater.id)}>Delete</button>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              className={`rounded-lg border px-3 py-1.5 text-sm font-semibold transition-colors ${rater.is_active ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
+                              onClick={() => handleToggleRaterAccess(rater)}
+                            >
+                              {rater.is_active ? 'Revoke Access' : 'Grant Access'}
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex items-center rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-semibold text-red-600 transition-colors hover:bg-red-50"
+                              onClick={() => handleDeleteRater(rater.id)}
+                            >
+                              <Trash2 size={14} className="mr-1.5" />
+                              Delete
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -2011,14 +2130,24 @@ export const RSPDashboard = () => {
               </section>
 
               <section>
-                <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Designation / Role</label>
+                <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Email Address <span className="text-red-500">*</span></label>
                 <input
-                  className="w-full rounded-xl border border-[var(--border-color)] bg-slate-50 p-3 text-lg"
-                  value={newRater.department}
-                  placeholder=""
-                  readOnly
+                  type="email"
+                  value={newRater.email}
+                  onChange={(event) => setNewRater((prev) => ({ ...prev, email: event.target.value }))}
+                  className="w-full rounded-xl border border-[var(--border-color)] bg-white p-3 text-lg"
+                  placeholder="rater@agency.gov.ph"
                 />
-                <p className="!mb-0 mt-2 text-base text-[var(--text-secondary)]">Auto-filled when typed name matches an existing rater</p>
+              </section>
+
+              <section>
+                <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Designation / Role <span className="text-red-500">*</span></label>
+                <input
+                  className="w-full rounded-xl border border-[var(--border-color)] bg-white p-3 text-lg"
+                  value={newRater.department}
+                  placeholder="Type designation / role..."
+                  onChange={(event) => setNewRater((prev) => ({ ...prev, department: event.target.value }))}
+                />
               </section>
 
               <section>
@@ -2059,11 +2188,11 @@ export const RSPDashboard = () => {
                 <h3 className="!mb-3 text-4xl font-bold text-[var(--text-primary)]">Access Duration (Optional)</h3>
                 <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                   <div>
-                    <label className="mb-2 block text-base font-semibold text-[var(--text-secondary)]">Start Date</label>
+                    <label className="mb-2 block text-base font-semibold text-[var(--text-secondary)]">Start Time</label>
                     <div className="relative">
-                      <Calendar size={18} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                      <Clock3 size={18} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
                       <input
-                        type="date"
+                        type="time"
                         value={raterAccessForm.startDate}
                         onChange={(event) => setRaterAccessForm((prev) => ({ ...prev, startDate: event.target.value }))}
                         className="w-full rounded-xl border border-[var(--border-color)] py-3 pl-11 pr-4 text-lg"
@@ -2071,11 +2200,11 @@ export const RSPDashboard = () => {
                     </div>
                   </div>
                   <div>
-                    <label className="mb-2 block text-base font-semibold text-[var(--text-secondary)]">End Date</label>
+                    <label className="mb-2 block text-base font-semibold text-[var(--text-secondary)]">End Time</label>
                     <div className="relative">
-                      <Calendar size={18} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                      <Clock3 size={18} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
                       <input
-                        type="date"
+                        type="time"
                         value={raterAccessForm.endDate}
                         onChange={(event) => setRaterAccessForm((prev) => ({ ...prev, endDate: event.target.value }))}
                         className="w-full rounded-xl border border-[var(--border-color)] py-3 pl-11 pr-4 text-lg"

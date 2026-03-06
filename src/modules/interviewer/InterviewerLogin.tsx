@@ -33,17 +33,37 @@ export function InterviewerLogin({ onLogin }: InterviewerLoginProps) {
 
     setLoading(true);
     try {
+      const normalizedEmail = email.trim().toLowerCase();
+
+      // Access is controlled by Rater Management: account must exist and be active.
+      const { data: raterRecord } = await supabase
+        .from('raters')
+        .select('id, name, email, is_active')
+        .eq('email', normalizedEmail)
+        .single();
+
+      if (!raterRecord) {
+        setError('No interviewer access is assigned to this account. Please contact HR.');
+        return;
+      }
+
+      if (!raterRecord.is_active) {
+        setError('Your interviewer access has been revoked. Please contact HR.');
+        return;
+      }
+
       // Try mock auth first
-      const mockInterviewer = MOCK_INTERVIEWERS[email];
+      const mockInterviewer = MOCK_INTERVIEWERS[normalizedEmail];
       if (mockInterviewer && mockInterviewer.password === password) {
-        onLogin(email, mockInterviewer.name);
+        await supabase.from('raters').update({ last_login: new Date().toISOString() }).eq('id', raterRecord.id);
+        onLogin(raterRecord.email || normalizedEmail, raterRecord.name || mockInterviewer.name);
         navigate('/interviewer/dashboard');
         return;
       }
 
       // Fall back to Supabase auth
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email,
+        email: normalizedEmail,
         password,
       });
 
@@ -66,8 +86,10 @@ export function InterviewerLogin({ onLogin }: InterviewerLoginProps) {
         return;
       }
 
-      const resolvedEmail = authData.user.email ?? email;
-      const userName = roleData.name || 'Interviewer';
+      await supabase.from('raters').update({ last_login: new Date().toISOString() }).eq('id', raterRecord.id);
+
+      const resolvedEmail = authData.user.email ?? normalizedEmail;
+      const userName = raterRecord.name || roleData.name || 'Interviewer';
       onLogin(resolvedEmail, userName);
       navigate('/interviewer/dashboard');
     } catch (err) {

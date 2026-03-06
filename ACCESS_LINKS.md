@@ -86,7 +86,7 @@ Reference for local development access to frontend pages and backend API endpoin
    cd c:\CICTrix
    start-dev.bat
    ```
-   This starts backend (if Docker is running), opens the app in your browser, and keeps the frontend server running in the same window.
+   This starts backend (if Docker is running), waits for the frontend to respond on port `5173`, then opens the app in your browser. The frontend runs in a separate `CICTrix Frontend` window.
 2. Manual start backend:
    ```bash
    cd c:\CICTrix
