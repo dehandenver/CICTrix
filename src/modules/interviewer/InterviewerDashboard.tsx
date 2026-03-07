@@ -48,6 +48,11 @@ interface Stats {
   upcomingInterviews: number;
 }
 
+interface InterviewerSessionInfo {
+  email: string;
+  name: string;
+}
+
 const isDemoApplicant = (applicant: any): boolean => {
   const applicantId = String(applicant?.id || '').toLowerCase();
   const applicantEmail = String(applicant?.email || '').toLowerCase();
@@ -108,7 +113,7 @@ const buildJobsFromApplicants = (allApplicants: any[]): JobPosting[] => {
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 };
 
-export function InterviewerDashboard() {
+export function InterviewerDashboard({ session }: { session?: InterviewerSessionInfo | null }) {
   const navigate = useNavigate();
   const [jobs, setJobs] = useState<JobPosting[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -243,6 +248,9 @@ export function InterviewerDashboard() {
         <div>
           <h1>Interviewer Dashboard</h1>
           <p>View assigned job postings and manage applicant evaluations</p>
+          {session?.name && (
+            <p className="mt-1 text-sm text-gray-600">Signed in as: {session.name}</p>
+          )}
         </div>
       </div>
 

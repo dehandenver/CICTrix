@@ -8,7 +8,6 @@ import {
     FileSpreadsheet,
     Mail,
     MessageSquare,
-    MoreVertical,
     Search,
     UserCheck,
     X,
@@ -22,13 +21,11 @@ import {
     formatPHDateTime,
     getApplicants,
     getJobPostings,
-    getNewlyHired,
     saveApplicants,
-    saveNewlyHired,
     toCsv,
 } from '../lib/recruitmentData';
 import { ATTACHMENTS_BUCKET, supabase } from '../lib/supabase';
-import { Applicant, ApplicantStatus, JobPosting, NewlyHired } from '../types/recruitment.types';
+import { Applicant, ApplicantStatus, JobPosting } from '../types/recruitment.types';
 import { RecruitmentNavigationGuide } from './RecruitmentNavigationGuide';
 import { Sidebar } from './Sidebar';
 
@@ -45,6 +42,11 @@ type ResolvedDocument = {
   url: string;
 };
 
+type ApplicantDocumentRef = {
+  type: string;
+  url: string;
+};
+
 const ATTACHMENTS_STORAGE_KEY = 'cictrix_attachments';
 const ATTACHMENT_PREVIEW_CACHE_KEY = 'cictrix_attachment_previews';
 
@@ -58,6 +60,21 @@ type CachedPreviewFile = {
 };
 
 const normalizeDocKey = (value: string) => value.trim().toLowerCase().replace(/\s+/g, '_');
+const looseDocKey = (value: string) => normalizeDocKey(value).replace(/[_-]/g, '');
+
+const resolveStorageOrDirectUrl = async (filePathOrUrl: string): Promise<string | null> => {
+  if (!filePathOrUrl) return null;
+  if (filePathOrUrl.startsWith('http') || filePathOrUrl.startsWith('data:') || filePathOrUrl.startsWith('blob:')) {
+    return filePathOrUrl;
+  }
+  if (filePathOrUrl.startsWith('mock://')) {
+    return null;
+  }
+
+  const signedResult = await supabase.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(filePathOrUrl, 120);
+  const signedUrl = (signedResult as any)?.data?.signedUrl as string | undefined;
+  return signedUrl ?? null;
+};
 
 const STATUS_COLORS: Record<ApplicantStatus, string> = {
   'New Application': 'bg-amber-100 text-amber-800',
@@ -83,46 +100,6 @@ const STATUS_OPTIONS: ApplicantStatus[] = [
   'Rejected',
 ];
 
-const toNewHireRecord = (applicant: Applicant, jobMap: Map<string, JobPosting>): NewlyHired => {
-  const job = jobMap.get(applicant.jobPostingId);
-  const now = new Date().toISOString();
-  return {
-    id: crypto.randomUUID(),
-    applicantId: applicant.id,
-    employeeInfo: {
-      firstName: applicant.personalInfo.firstName,
-      lastName: applicant.personalInfo.lastName,
-      email: applicant.personalInfo.email,
-      phone: applicant.personalInfo.phone,
-      emergencyContact: {
-        name: 'Not Provided',
-        relationship: 'Not Provided',
-        phone: 'Not Provided',
-      },
-      governmentIds: {},
-    },
-    position: job?.title ?? 'Pending Position',
-    department: job?.department ?? 'Unassigned',
-    division: job?.division,
-    employmentType: job?.employmentStatus ?? 'Contractual',
-    salaryGrade: job?.salaryGrade,
-    dateHired: now,
-    expectedStartDate: new Date(Date.now() + 14 * 86400000).toISOString(),
-    status: 'Pending Onboarding',
-    onboardingProgress: 0,
-    onboardingChecklist: [
-      { category: 'Pre-Boarding', item: 'Employment contract signed', completed: false },
-      { category: 'Pre-Boarding', item: 'Government IDs verified', completed: false },
-      { category: 'Day 1', item: 'Welcome orientation completed', completed: false },
-      { category: 'Week 1', item: 'HRIS system training', completed: false },
-      { category: 'First Month', item: 'Benefits enrollment completed', completed: false },
-    ],
-    documents: applicant.documents,
-    notes: [{ author: 'HR Admin', content: 'Imported from qualified applicant.', date: now }],
-    timeline: [{ event: 'Moved to Newly Hired', date: now, actor: 'HR Admin' }],
-  };
-};
-
 export const QualifiedApplicantsPage = () => {
   const navigate = useNavigate();
   const { jobId } = useParams();
@@ -137,7 +114,6 @@ export const QualifiedApplicantsPage = () => {
   const [dateTo, setDateTo] = useState('');
   const [sortBy, setSortBy] = useState<'Application Date' | 'Qualification Score' | 'Last Updated'>('Application Date');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [activeApplicant, setActiveApplicant] = useState<Applicant | null>(null);
   const [activeTab, setActiveTab] = useState<'Overview' | 'Documents' | 'Timeline' | 'Notes' | 'Interview'>('Overview');
   const [showGuide, setShowGuide] = useState(false);
@@ -239,19 +215,6 @@ export const QualifiedApplicantsPage = () => {
     setToast('Export completed (CSV).');
   };
 
-  const moveToNewlyHired = (applicant: Applicant) => {
-    const current = getNewlyHired();
-    if (current.some((row) => row.applicantId === applicant.id)) {
-      setToast('Applicant is already in Newly Hired list.');
-      return;
-    }
-
-    const nextRows = [toNewHireRecord(applicant, jobMap), ...current];
-    saveNewlyHired(nextRows);
-    updateApplicantStatus([applicant.id], 'Recommended for Hiring');
-    setToast('Applicant moved to Newly Hired module.');
-  };
-
   const allSelected = filteredRows.length > 0 && selectedIds.length === filteredRows.length;
 
   const setInterviewSchedule = (applicant: Applicant) => {
@@ -305,13 +268,26 @@ export const QualifiedApplicantsPage = () => {
       }
     })();
 
-    const target = normalizeDocKey(docType);
+    const target = looseDocKey(docType);
     return attachments.filter((entry) => {
       if (entry.applicant_id !== applicantId) return false;
-      const byDocumentType = normalizeDocKey(entry.document_type ?? '') === target;
-      const byName = normalizeDocKey(entry.file_name).includes(target);
+      const byDocumentType = looseDocKey(entry.document_type ?? '') === target;
+      const byName = looseDocKey(entry.file_name).includes(target);
       return byDocumentType || byName;
     });
+  };
+
+  const getAnyLocalAttachment = (applicantId: string): StoredAttachment | null => {
+    const attachments = (() => {
+      try {
+        return JSON.parse(localStorage.getItem(ATTACHMENTS_STORAGE_KEY) ?? '[]') as StoredAttachment[];
+      } catch {
+        return [];
+      }
+    })();
+
+    const rows = attachments.filter((entry) => entry.applicant_id === applicantId);
+    return rows[rows.length - 1] ?? null;
   };
 
   const getPreviewCacheMatch = (applicantId: string, docType: string): CachedPreviewFile | null => {
@@ -323,17 +299,34 @@ export const QualifiedApplicantsPage = () => {
       }
     })();
 
-    const target = normalizeDocKey(docType);
+    const target = looseDocKey(docType);
     return (
       entries.find(
         (entry) =>
           entry.applicantId === applicantId &&
-          (normalizeDocKey(entry.documentType) === target || normalizeDocKey(entry.fileName).includes(target))
+          (looseDocKey(entry.documentType) === target || looseDocKey(entry.fileName).includes(target))
       ) ?? null
     );
   };
 
-  const resolveDocumentForApplicant = async (applicantId: string, docType: string): Promise<ResolvedDocument | null> => {
+  const getAnyPreviewCacheMatch = (applicantId: string): CachedPreviewFile | null => {
+    const entries = (() => {
+      try {
+        return JSON.parse(localStorage.getItem(ATTACHMENT_PREVIEW_CACHE_KEY) ?? '[]') as CachedPreviewFile[];
+      } catch {
+        return [];
+      }
+    })();
+
+    const rows = entries.filter((entry) => entry.applicantId === applicantId);
+    return rows[rows.length - 1] ?? null;
+  };
+
+  const resolveDocumentForApplicant = async (
+    applicantId: string,
+    docType: string,
+    fallbackDoc?: ApplicantDocumentRef
+  ): Promise<ResolvedDocument | null> => {
     const previewCacheMatch = getPreviewCacheMatch(applicantId, docType);
     if (previewCacheMatch) {
       return {
@@ -342,24 +335,33 @@ export const QualifiedApplicantsPage = () => {
       };
     }
 
+    const anyPreview = getAnyPreviewCacheMatch(applicantId);
+    if (anyPreview) {
+      return {
+        fileName: anyPreview.fileName,
+        url: anyPreview.dataUrl,
+      };
+    }
+
     const localMatches = getLocalAttachmentMatches(applicantId, docType);
     for (const match of localMatches) {
-      if (match.file_path?.startsWith('http') || match.file_path?.startsWith('data:') || match.file_path?.startsWith('blob:')) {
+      const resolvedUrl = await resolveStorageOrDirectUrl(match.file_path ?? '');
+      if (resolvedUrl) {
         return {
           fileName: match.file_name,
-          url: match.file_path,
+          url: resolvedUrl,
         };
       }
+    }
 
-      if (match.file_path && !match.file_path.startsWith('mock://')) {
-        const signedResult = await supabase.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(match.file_path, 120);
-        const signedUrl = (signedResult as any)?.data?.signedUrl as string | undefined;
-        if (signedUrl) {
-          return {
-            fileName: match.file_name,
-            url: signedUrl,
-          };
-        }
+    const anyLocal = getAnyLocalAttachment(applicantId);
+    if (anyLocal?.file_path) {
+      const resolvedUrl = await resolveStorageOrDirectUrl(anyLocal.file_path);
+      if (resolvedUrl) {
+        return {
+          fileName: anyLocal.file_name,
+          url: resolvedUrl,
+        };
       }
     }
 
@@ -374,39 +376,54 @@ export const QualifiedApplicantsPage = () => {
       document_type?: string;
     }>;
 
-    const target = normalizeDocKey(docType);
+    const target = looseDocKey(docType);
     const remoteMatch = remoteRows.find((entry) => {
-      const byDocumentType = normalizeDocKey(entry.document_type ?? '') === target;
-      const byName = normalizeDocKey(entry.file_name ?? '').includes(target);
+      const byDocumentType = looseDocKey(entry.document_type ?? '') === target;
+      const byName = looseDocKey(entry.file_name ?? '').includes(target);
       return byDocumentType || byName;
     });
 
-    if (!remoteMatch || !remoteMatch.file_path) return null;
-
-    if (remoteMatch.file_path.startsWith('http') || remoteMatch.file_path.startsWith('data:') || remoteMatch.file_path.startsWith('blob:')) {
-      return {
-        fileName: remoteMatch.file_name,
-        url: remoteMatch.file_path,
-      };
+    if (remoteMatch?.file_path) {
+      const resolvedUrl = await resolveStorageOrDirectUrl(remoteMatch.file_path);
+      if (resolvedUrl) {
+        return {
+          fileName: remoteMatch.file_name,
+          url: resolvedUrl,
+        };
+      }
     }
 
-    const signedResult = await supabase.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(remoteMatch.file_path, 120);
-    const signedUrl = (signedResult as any)?.data?.signedUrl as string | undefined;
-    if (!signedUrl) return null;
+    for (const entry of remoteRows) {
+      const resolvedUrl = await resolveStorageOrDirectUrl(entry.file_path ?? '');
+      if (resolvedUrl) {
+        return {
+          fileName: entry.file_name,
+          url: resolvedUrl,
+        };
+      }
+    }
 
-    return {
-      fileName: remoteMatch.file_name,
-      url: signedUrl,
-    };
+    // Final fallback: use the document URL saved on applicant record itself.
+    if (fallbackDoc?.url) {
+      const fallbackUrl = await resolveStorageOrDirectUrl(fallbackDoc.url);
+      if (fallbackUrl) {
+        return {
+          fileName: fallbackDoc.type,
+          url: fallbackUrl,
+        };
+      }
+    }
+
+    return null;
   };
 
-  const handlePreviewDocument = async (docType: string) => {
+  const handlePreviewDocument = async (doc: ApplicantDocumentRef) => {
     if (!activeApplicant) return;
 
-    const actionKey = `${activeApplicant.id}-${docType}-preview`;
+    const actionKey = `${activeApplicant.id}-${doc.type}-preview`;
     setDocumentActionBusy(actionKey);
     try {
-      const resolved = await resolveDocumentForApplicant(activeApplicant.id, docType);
+      const resolved = await resolveDocumentForApplicant(activeApplicant.id, doc.type, doc);
       if (!resolved) {
         setToast('No previewable file found for this document yet.');
         return;
@@ -420,13 +437,13 @@ export const QualifiedApplicantsPage = () => {
     }
   };
 
-  const handleDownloadDocument = async (docType: string) => {
+  const handleDownloadDocument = async (doc: ApplicantDocumentRef) => {
     if (!activeApplicant) return;
 
-    const actionKey = `${activeApplicant.id}-${docType}-download`;
+    const actionKey = `${activeApplicant.id}-${doc.type}-download`;
     setDocumentActionBusy(actionKey);
     try {
-      const resolved = await resolveDocumentForApplicant(activeApplicant.id, docType);
+      const resolved = await resolveDocumentForApplicant(activeApplicant.id, doc.type, doc);
       if (!resolved) {
         setToast('No downloadable file found for this document yet.');
         return;
@@ -450,7 +467,10 @@ export const QualifiedApplicantsPage = () => {
 
     let downloaded = 0;
     for (const doc of activeApplicant.documents) {
-      const resolved = await resolveDocumentForApplicant(activeApplicant.id, doc.type);
+      const resolved = await resolveDocumentForApplicant(activeApplicant.id, doc.type, {
+        type: doc.type,
+        url: doc.url,
+      });
       if (!resolved) continue;
       const anchor = document.createElement('a');
       anchor.href = resolved.url;
@@ -578,7 +598,6 @@ export const QualifiedApplicantsPage = () => {
                   <th className="px-3 py-3">Date Applied</th>
                   <th className="px-3 py-3">Qualification Score</th>
                   <th className="px-3 py-3">Status</th>
-                  <th className="px-3 py-3">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -586,11 +605,19 @@ export const QualifiedApplicantsPage = () => {
                   const fullName = `${applicant.personalInfo.firstName} ${applicant.personalInfo.lastName}`;
                   const job = jobMap.get(applicant.jobPostingId);
                   return (
-                    <tr key={applicant.id} className="border-t border-slate-100">
+                    <tr
+                      key={applicant.id}
+                      className="border-t border-slate-100 cursor-pointer hover:bg-slate-50"
+                      onClick={() => {
+                        setActiveApplicant(applicant);
+                        setActiveTab('Overview');
+                      }}
+                    >
                       <td className="px-3 py-3">
                         <input
                           type="checkbox"
                           checked={selectedIds.includes(applicant.id)}
+                          onClick={(event) => event.stopPropagation()}
                           onChange={() =>
                             setSelectedIds((current) =>
                               current.includes(applicant.id)
@@ -600,7 +627,7 @@ export const QualifiedApplicantsPage = () => {
                           }
                         />
                       </td>
-                      <td className="px-3 py-3 font-medium text-slate-900">{fullName}</td>
+                      <td className="px-3 py-3 font-medium text-blue-700 underline decoration-blue-200 underline-offset-2">{fullName}</td>
                       <td className="px-3 py-3 text-slate-600">
                         <p>{applicant.personalInfo.email}</p>
                         <p className="text-xs text-slate-500">{applicant.personalInfo.phone}</p>
@@ -620,30 +647,6 @@ export const QualifiedApplicantsPage = () => {
                       </td>
                       <td className="px-3 py-3">
                         <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_COLORS[applicant.status]}`}>{applicant.status}</span>
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="relative">
-                          <button className="rounded-md p-1 text-slate-500 hover:bg-slate-100" onClick={() => setOpenMenuId(openMenuId === applicant.id ? null : applicant.id)}>
-                            <MoreVertical className="h-4 w-4" />
-                          </button>
-                          {openMenuId === applicant.id ? (
-                            <div className="absolute right-0 z-10 mt-1 w-52 rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
-                              <button className="block w-full rounded px-2 py-1 text-left hover:bg-slate-100" onClick={() => { setActiveApplicant(applicant); setOpenMenuId(null); }}>View Application Details</button>
-                              <button className="block w-full rounded px-2 py-1 text-left hover:bg-slate-100" onClick={() => { setToast('Documents download started.'); setOpenMenuId(null); }}>Download Resume/Documents</button>
-                              <button className="block w-full rounded px-2 py-1 text-left hover:bg-slate-100" onClick={() => { setInterviewSchedule(applicant); setOpenMenuId(null); }}>Schedule Interview</button>
-                              <button className="block w-full rounded px-2 py-1 text-left hover:bg-slate-100" onClick={() => { updateApplicantStatus([applicant.id], 'Shortlisted'); setOpenMenuId(null); }}>Add To Shortlist</button>
-                              {applicant.status === 'Recommended for Hiring' ? (
-                                <button className="block w-full rounded px-2 py-1 text-left text-green-700 hover:bg-green-50" onClick={() => { moveToNewlyHired(applicant); setOpenMenuId(null); }}>
-                                  Move To Newly Hired
-                                </button>
-                              ) : (
-                                <button className="block w-full rounded px-2 py-1 text-left text-green-700 hover:bg-green-50" onClick={() => { updateApplicantStatus([applicant.id], 'Recommended for Hiring'); setOpenMenuId(null); }}>
-                                  Recommend For Hiring
-                                </button>
-                              )}
-                            </div>
-                          ) : null}
-                        </div>
                       </td>
                     </tr>
                   );
@@ -735,14 +738,14 @@ export const QualifiedApplicantsPage = () => {
                       <div className="mt-3 flex gap-2">
                         <button
                           className="rounded-lg border border-slate-300 px-2 py-1 text-sm disabled:opacity-50"
-                          onClick={() => handlePreviewDocument(doc.type)}
+                          onClick={() => handlePreviewDocument({ type: doc.type, url: doc.url })}
                           disabled={documentActionBusy !== null}
                         >
                           <Eye className="inline h-4 w-4" /> Preview
                         </button>
                         <button
                           className="rounded-lg border border-slate-300 px-2 py-1 text-sm disabled:opacity-50"
-                          onClick={() => handleDownloadDocument(doc.type)}
+                          onClick={() => handleDownloadDocument({ type: doc.type, url: doc.url })}
                           disabled={documentActionBusy !== null}
                         >
                           <Download className="inline h-4 w-4" /> Download

@@ -11,7 +11,7 @@ import { ApplicantAssessmentForm } from './ApplicantAssessmentForm';
 import { AttachmentsUploadForm } from './AttachmentsUploadForm';
 
 const ATTACHMENT_PREVIEW_CACHE_KEY = 'cictrix_attachment_previews';
-const MAX_PREVIEWABLE_FILE_BYTES = 1024 * 1024;
+const MAX_PREVIEWABLE_FILE_BYTES = 10 * 1024 * 1024;
 
 type CachedPreviewFile = {
   applicantId: string;
@@ -91,7 +91,18 @@ export const ApplicantWizard: React.FC = () => {
           throw new Error(`Failed to upload ${uploadedFile.file.name}`);
         }
       } else {
-        filePath = `mock://attachment/${applicantId}/${Date.now()}-${encodeURIComponent(uploadedFile.file.name)}`;
+        // In local/mock mode, keep images (and other common previewables) as data URLs
+        // so preview/download actions work even without cloud storage.
+        const isPreviewFriendlyType =
+          uploadedFile.file.type.startsWith('image/') ||
+          uploadedFile.file.type === 'application/pdf' ||
+          uploadedFile.file.type.startsWith('text/');
+
+        if (isPreviewFriendlyType && uploadedFile.file.size <= MAX_PREVIEWABLE_FILE_BYTES) {
+          filePath = await toDataUrl(uploadedFile.file);
+        } else {
+          filePath = `mock://attachment/${applicantId}/${Date.now()}-${encodeURIComponent(uploadedFile.file.name)}`;
+        }
       }
 
       const attachmentPayload = {

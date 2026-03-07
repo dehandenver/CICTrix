@@ -171,6 +171,82 @@ const getPreferredClient = () => {
   return preferredMode === 'local' ? (mockDatabase as any) : supabase;
 };
 
+const getAccessClient = () => {
+  // Access toggles should use the real rater DB when Supabase is configured.
+  return isMockModeEnabled ? (mockDatabase as any) : supabase;
+};
+const RATER_ACCESS_STATE_KEY = 'cictrix_rater_access_state_map';
+
+const saveRaterAccessState = (email: string, isActive: boolean) => {
+  try {
+    const normalizedEmail = String(email ?? '').trim().toLowerCase();
+    const raw = localStorage.getItem(RATER_ACCESS_STATE_KEY);
+    const current = raw ? JSON.parse(raw) : {};
+    const next = current && typeof current === 'object' ? { ...current } : {};
+    next[normalizedEmail] = isActive;
+    localStorage.setItem(RATER_ACCESS_STATE_KEY, JSON.stringify(next));
+  } catch {
+  }
+};
+
+const runRaterEmailUpdate = async (
+  client: any,
+  updates: Record<string, unknown>,
+  email: string,
+  anchorId?: number | string
+) => {
+  const normalizedEmail = normalizeEmailKey(email);
+  const { data, error } = await client.from('raters').select('id,email');
+  if (error) {
+    throw error;
+  }
+
+  const rows = Array.isArray(data) ? data : [];
+  const matchedIds = rows
+    .filter((row: any) => String(row?.email ?? '').trim().toLowerCase() === normalizedEmail)
+    .map((row: any) => String(row?.id ?? '').trim())
+    .filter(Boolean);
+
+  const normalizedAnchorId = String(anchorId ?? '').trim();
+  if (normalizedAnchorId && !matchedIds.includes(normalizedAnchorId)) {
+    matchedIds.push(normalizedAnchorId);
+  }
+
+  if (matchedIds.length === 0) {
+    throw new Error('No matching rater account found for update.');
+  }
+
+  const updateResults = await Promise.all(
+    matchedIds.map((id) => client.from('raters').update(updates).eq('id', id))
+  );
+
+  const allFailed = updateResults.every((result: any) => Boolean(result?.error));
+  if (allFailed) {
+    throw new Error('Failed to persist rater access update.');
+  }
+};
+
+const verifyRaterAccessState = async (client: any, email: string, expectedIsActive: boolean) => {
+  const normalizedEmail = normalizeEmailKey(email);
+  const { data, error } = await client.from('raters').select('id,email,is_active');
+  if (error) {
+    throw error;
+  }
+
+  const rows = (Array.isArray(data) ? data : []).filter(
+    (row: any) => String(row?.email ?? '').trim().toLowerCase() === normalizedEmail
+  );
+
+  if (rows.length === 0) {
+    throw new Error('No matching rater account found after update.');
+  }
+
+  const mismatch = rows.some((row: any) => Boolean(row?.is_active) !== expectedIsActive);
+  if (mismatch) {
+    throw new Error('Rater access update did not persist for all matching rows.');
+  }
+};
+
 const RATER_ASSIGNMENTS_KEY = 'cictrix_rater_assigned_positions';
 
 const normalizeEmailKey = (email: string) => email.trim().toLowerCase();
@@ -765,8 +841,9 @@ export const RSPDashboard = () => {
     ));
 
     try {
-      const client = getPreferredClient();
-      await client.from('raters').update({ is_active: true }).eq('email', newRater.email);
+      const client = getAccessClient();
+      await runRaterEmailUpdate(client, { is_active: true }, newRater.email);
+      saveRaterAccessState(newRater.email, true);
     } catch {
     }
 
@@ -857,16 +934,27 @@ export const RSPDashboard = () => {
 
   const handleToggleRaterAccess = async (rater: RaterRecord) => {
     const nextIsActive = !rater.is_active;
+    const emailKey = normalizeEmailKey(rater.email);
 
     // Optimistic UI update so status changes immediately.
-    setRaters((prev) => prev.map((item) => (item.id === rater.id ? { ...item, is_active: nextIsActive } : item)));
+    setRaters((prev) =>
+      prev.map((item) =>
+        normalizeEmailKey(item.email) === emailKey ? { ...item, is_active: nextIsActive } : item
+      )
+    );
 
     try {
-      const client = getPreferredClient();
-      await client.from('raters').update({ is_active: nextIsActive }).eq('id', rater.id);
+      const client = getAccessClient();
+      await runRaterEmailUpdate(client, { is_active: nextIsActive }, emailKey, rater.id);
+      await verifyRaterAccessState(client, emailKey, nextIsActive);
+      saveRaterAccessState(emailKey, nextIsActive);
     } catch {
       // Rollback on failure to keep UI consistent with persisted data.
-      setRaters((prev) => prev.map((item) => (item.id === rater.id ? { ...item, is_active: rater.is_active } : item)));
+      setRaters((prev) =>
+        prev.map((item) =>
+          normalizeEmailKey(item.email) === emailKey ? { ...item, is_active: rater.is_active } : item
+        )
+      );
     }
   };
 

@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { Dialog } from './components/Dialog';
 import { JobPostingsPage } from './components/JobPostingsPage';
 import { NewlyHiredPage } from './components/NewlyHiredPage';
 import { QualifiedApplicantsPage } from './components/QualifiedApplicantsPage';
 import { RaterManagementPage } from './components/RaterManagementPage';
+import { mockDatabase } from './lib/mockDatabase';
+import { isMockModeEnabled, supabase } from './lib/supabase';
 import { LNDDashboard } from './modules/admin/LNDDashboard';
 import { LoginPage } from './modules/admin/LoginPage';
 import { PMDashboard } from './modules/admin/PMDashboard';
@@ -22,6 +25,35 @@ import { Employee, EmployeeSession } from './types/employee.types';
 type Role = 'super-admin' | 'rsp' | 'lnd' | 'pm';
 type InterviewerSession = { email: string; name: string };
 type AdminModule = 'dashboard' | 'rsp' | 'lnd' | 'pm' | 'settings';
+const RATER_ACCESS_STATE_KEY = 'cictrix_rater_access_state_map';
+
+const getAccessClient = () => {
+  // Access enforcement should track the authoritative rater source.
+  return isMockModeEnabled ? (mockDatabase as any) : supabase;
+};
+
+const loadRaterAccessState = (): Record<string, boolean> => {
+  try {
+    const raw = localStorage.getItem(RATER_ACCESS_STATE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const selectRaterAccessRows = async (client: any) => {
+  const query = client
+    .from('raters')
+    .select('email, is_active') as any;
+
+  if (typeof query?.limit === 'function') {
+    return query.limit(1000);
+  }
+
+  return query;
+};
 
 const normalizeAdminRole = (role: string | null | undefined): Role | null => {
   if (!role) return null;
@@ -118,6 +150,7 @@ function AppContent() {
   const [interviewerSession, setInterviewerSession] = useState<InterviewerSession | null>(null);
   const [employeeSession, setEmployeeSession] = useState<EmployeeSession | null>(null);
   const [activeModule, setActiveModule] = useState<AdminModule>('dashboard');
+  const [revokedInterviewerDialogOpen, setRevokedInterviewerDialogOpen] = useState(false);
 
   const resolveAdminModule = (moduleParam: string | null): AdminModule => {
     if (moduleParam === 'rsp') return 'rsp';
@@ -202,6 +235,69 @@ function AppContent() {
     setActiveModule(resolveAdminModule(moduleParam));
   }, [adminSession?.role, location.pathname, location.search]);
 
+  useEffect(() => {
+    if (!interviewerSession || revokedInterviewerDialogOpen) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const checkInterviewerAccess = async () => {
+      const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase();
+      const normalizedEmail = normalize(interviewerSession.email);
+
+      if (!normalizedEmail) {
+        return;
+      }
+
+      // Immediate same-browser enforcement after admin toggles.
+      const accessStateMap = loadRaterAccessState();
+      if (Object.prototype.hasOwnProperty.call(accessStateMap, normalizedEmail) && !accessStateMap[normalizedEmail]) {
+        if (!cancelled) {
+          setRevokedInterviewerDialogOpen(true);
+        }
+        return;
+      }
+
+      try {
+        const client = getAccessClient();
+        const { data, error } = await selectRaterAccessRows(client);
+
+        if (error || cancelled) {
+          return;
+        }
+
+        const matchedRows = (data ?? []).filter((row: any) => normalize(row?.email) === normalizedEmail);
+        const validMatchedRows = matchedRows.filter((row: any) => normalize(row?.email).length > 0);
+        const hasActiveAccess = validMatchedRows.some((row: any) => Boolean(row?.is_active));
+        const hasMatchingRows = validMatchedRows.length > 0;
+
+        // Revoke only when we have explicit matching rater rows and all are inactive.
+        if (hasMatchingRows && !hasActiveAccess && !cancelled) {
+          setRevokedInterviewerDialogOpen(true);
+        }
+      } catch {
+        // Ignore transient checks and keep current session state.
+      }
+    };
+
+    void checkInterviewerAccess();
+    const intervalId = window.setInterval(() => {
+      void checkInterviewerAccess();
+    }, 3000);
+
+    const handleFocus = () => {
+      void checkInterviewerAccess();
+    };
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [interviewerSession, revokedInterviewerDialogOpen]);
+
   const handleLogin = (email: string, role: Role) => {
     const session = { email, role };
     setAdminSession(session);
@@ -239,6 +335,20 @@ function AppContent() {
     navigate('/employee/login');
   };
 
+  const handleRevokedInterviewerAcknowledge = async () => {
+    setRevokedInterviewerDialogOpen(false);
+    setInterviewerSession(null);
+    localStorage.removeItem('cictrix_interviewer_session');
+
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // Ignore sign-out errors and force route reset.
+    }
+
+    navigate('/interviewer/login', { replace: true });
+  };
+
   return (
     <div className="app">
       <Routes>
@@ -250,7 +360,7 @@ function AppContent() {
             path="/interviewer/dashboard"
             element={
               <InterviewerRoute session={interviewerSession}>
-                <InterviewerDashboard />
+                <InterviewerDashboard session={interviewerSession} />
               </InterviewerRoute>
             }
           />
@@ -486,6 +596,30 @@ function AppContent() {
             }
           />
         </Routes>
+
+        <Dialog open={revokedInterviewerDialogOpen} onClose={handleRevokedInterviewerAcknowledge}>
+          <div style={{ textAlign: 'center' }}>
+            <h3 style={{ marginBottom: '10px', color: '#dc2626' }}>Access Revoked</h3>
+            <p style={{ marginBottom: '16px', color: '#374151' }}>
+              Your interviewer access has been revoked by an admin.
+            </p>
+            <button
+              type="button"
+              onClick={handleRevokedInterviewerAcknowledge}
+              style={{
+                border: 'none',
+                borderRadius: '8px',
+                padding: '10px 18px',
+                backgroundColor: '#1f2937',
+                color: '#ffffff',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Okay
+            </button>
+          </div>
+        </Dialog>
     </div>
   );
 }

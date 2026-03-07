@@ -1,18 +1,48 @@
+import { Lock, LogIn, User } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../../lib/supabase';
-import { User, Lock, LogIn } from 'lucide-react';
+import { mockDatabase } from '../../lib/mockDatabase';
+import { isMockModeEnabled, supabase } from '../../lib/supabase';
 import '../../styles/interviewer.css';
 
 interface InterviewerLoginProps {
   onLogin: (email: string, name: string) => void;
 }
+const RATER_ACCESS_STATE_KEY = 'cictrix_rater_access_state_map';
 
-// Mock credentials for development
-const MOCK_INTERVIEWERS: Record<string, { password: string; name: string }> = {
-  'interviewer@cictrix.com': { password: 'Interviewer@123', name: 'John Smith' },
-  'interviewer1@cictrix.com': { password: 'Interview@123', name: 'Maria Garcia' },
-  'interviewer2@cictrix.com': { password: 'Interview@123', name: 'Carlos Santos' },
+const getAccessClient = () => {
+  // Interviewer access should always check the real rater DB when available.
+  return isMockModeEnabled ? (mockDatabase as any) : supabase;
+};
+
+const runEmailUpdate = async (client: any, updates: Record<string, unknown>, email: string) => {
+  const normalizedEmail = email.trim().toLowerCase();
+  const updateQuery = client.from('raters').update(updates) as any;
+
+  if (typeof updateQuery?.ilike === 'function') {
+    return updateQuery.ilike('email', normalizedEmail);
+  }
+
+  return updateQuery.eq('email', normalizedEmail);
+};
+
+const selectRatersForAccess = async (client: any) => {
+  const query = client.from('raters').select('id, name, email, is_active') as any;
+  if (typeof query?.limit === 'function') {
+    return query.limit(1000);
+  }
+  return query;
+};
+
+const loadRaterAccessState = (): Record<string, boolean> => {
+  try {
+    const raw = localStorage.getItem(RATER_ACCESS_STATE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
 };
 
 export function InterviewerLogin({ onLogin }: InterviewerLoginProps) {
@@ -34,62 +64,69 @@ export function InterviewerLogin({ onLogin }: InterviewerLoginProps) {
     setLoading(true);
     try {
       const normalizedEmail = email.trim().toLowerCase();
+      const normalize = (value: unknown) => String(value ?? '').trim().toLowerCase();
 
-      // Access is controlled by Rater Management: account must exist and be active.
-      const { data: raterRecord } = await supabase
-        .from('raters')
-        .select('id, name, email, is_active')
-        .eq('email', normalizedEmail)
-        .single();
-
-      if (!raterRecord) {
-        setError('No interviewer access is assigned to this account. Please contact HR.');
-        return;
-      }
-
-      if (!raterRecord.is_active) {
+      const accessStateMap = loadRaterAccessState();
+      if (Object.prototype.hasOwnProperty.call(accessStateMap, normalizedEmail) && !accessStateMap[normalizedEmail]) {
         setError('Your interviewer access has been revoked. Please contact HR.');
         return;
       }
 
-      // Try mock auth first
-      const mockInterviewer = MOCK_INTERVIEWERS[normalizedEmail];
-      if (mockInterviewer && mockInterviewer.password === password) {
-        await supabase.from('raters').update({ last_login: new Date().toISOString() }).eq('id', raterRecord.id);
-        onLogin(raterRecord.email || normalizedEmail, raterRecord.name || mockInterviewer.name);
+      // Access is controlled by Rater Management: account must exist and be active.
+      // Fetch rows then match client-side to avoid case/whitespace mismatches.
+      const client = getAccessClient();
+      const { data: raterRows, error: raterError } = await selectRatersForAccess(client);
+
+      if (raterError) {
+        setError('Unable to verify interviewer access. Please try again.');
+        return;
+      }
+
+      const matchedRaters = (raterRows ?? []).filter((row: any) => normalize(row?.email) === normalizedEmail);
+      const raterRecord = matchedRaters[0];
+      const hasActiveRaterAccess = matchedRaters.some((row: any) => Boolean(row?.is_active));
+
+      if (!raterRecord) {
+        setError('No interviewer access is assigned to this account in the rater database.');
+        return;
+      }
+
+      if (!hasActiveRaterAccess && !Boolean(raterRecord.is_active)) {
+        setError('Your interviewer access has been revoked. Please contact HR.');
+        return;
+      }
+
+      // In local demo mode, granted active rater access is enough to allow login.
+      if (isMockModeEnabled) {
+        try {
+          await runEmailUpdate(client, { last_login: new Date().toISOString() }, normalizedEmail);
+        } catch {
+          // Do not block login when last_login write fails.
+        }
+        onLogin(raterRecord.email || normalizedEmail, raterRecord.name || 'Interviewer');
         navigate('/interviewer/dashboard');
         return;
       }
 
-      // Fall back to Supabase auth
+      // In connected mode, authenticate against Supabase Auth.
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
         password,
       });
 
       if (authError || !authData.user) {
-        setError('Invalid email or password.');
+        setError('Invalid email or password. If access was just granted, ensure this email also exists in Supabase Authentication.');
         return;
       }
 
-      // Check if user has interviewer role
-      const { data: roleData, error: roleError } = await supabase
-        .from('user_roles')
-        .select('role, name')
-        .eq('user_id', authData.user.id)
-        .eq('role', 'INTERVIEWER')
-        .single();
-
-      if (roleError || !roleData) {
-        setError('You do not have interviewer access. Please contact HR.');
-        await supabase.auth.signOut();
-        return;
+      try {
+        await runEmailUpdate(client, { last_login: new Date().toISOString() }, normalizedEmail);
+      } catch {
+        // Do not block login when last_login write fails.
       }
-
-      await supabase.from('raters').update({ last_login: new Date().toISOString() }).eq('id', raterRecord.id);
 
       const resolvedEmail = authData.user.email ?? normalizedEmail;
-      const userName = raterRecord.name || roleData.name || 'Interviewer';
+      const userName = raterRecord.name || 'Interviewer';
       onLogin(resolvedEmail, userName);
       navigate('/interviewer/dashboard');
     } catch (err) {
@@ -195,10 +232,12 @@ export function InterviewerLogin({ onLogin }: InterviewerLoginProps) {
               <p>
                 Need help? Contact <a href="mailto:hr@cictrix.com">hr@cictrix.com</a>
               </p>
-              <div className="demo-credentials">
-                <p className="demo-title">Demo Credentials:</p>
-                <code>interviewer@cictrix.com / Interviewer@123</code>
-              </div>
+              {isMockModeEnabled && (
+                <div className="demo-credentials">
+                  <p className="demo-title">Demo Mode:</p>
+                  <code>Use any active rater email with any non-empty password</code>
+                </div>
+              )}
             </div>
           </form>
         </div>

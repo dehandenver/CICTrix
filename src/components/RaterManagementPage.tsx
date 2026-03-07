@@ -1,5 +1,6 @@
 import {
     CalendarClock,
+    CheckCircle2,
     ChevronDown,
     ChevronUp,
     ClipboardCheck,
@@ -10,8 +11,10 @@ import {
     UserPlus,
     Users,
     X,
+    XCircle,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { mockDatabase } from '../lib/mockDatabase';
 import {
     downloadTextFile,
     ensureRecruitmentSeedData,
@@ -53,6 +56,8 @@ interface RaterOption {
   is_active: boolean;
 }
 
+const normalizeValue = (value: unknown) => String(value ?? '').trim().toLowerCase();
+
 const defaultAssignmentForm = (): AssignmentForm => ({
   employeeName: '',
   employeePosition: '',
@@ -64,6 +69,82 @@ const defaultAssignmentForm = (): AssignmentForm => ({
   effectiveDate: '',
   expirationDate: '',
 });
+
+const getAccessClient = () => {
+  // Access control must use the real rater DB when Supabase is configured.
+  return isMockModeEnabled ? (mockDatabase as any) : supabase;
+};
+const RATER_ACCESS_STATE_KEY = 'cictrix_rater_access_state_map';
+
+const saveRaterAccessState = (email: string, isActive: boolean) => {
+  try {
+    const normalizedEmail = String(email ?? '').trim().toLowerCase();
+    const raw = localStorage.getItem(RATER_ACCESS_STATE_KEY);
+    const current = raw ? JSON.parse(raw) : {};
+    const next = current && typeof current === 'object' ? { ...current } : {};
+    next[normalizedEmail] = isActive;
+    localStorage.setItem(RATER_ACCESS_STATE_KEY, JSON.stringify(next));
+  } catch {
+  }
+};
+
+const runRaterEmailUpdate = async (
+  client: any,
+  updates: Record<string, unknown>,
+  email: string,
+  anchorId?: string
+) => {
+  const normalizedEmail = email.trim().toLowerCase();
+  const { data, error } = await client.from('raters').select('id,email');
+  if (error) {
+    throw error;
+  }
+
+  const rows = Array.isArray(data) ? data : [];
+  const matchedIds = rows
+    .filter((row: any) => String(row?.email ?? '').trim().toLowerCase() === normalizedEmail)
+    .map((row: any) => String(row?.id ?? '').trim())
+    .filter(Boolean);
+
+  const normalizedAnchorId = String(anchorId ?? '').trim();
+  if (normalizedAnchorId && !matchedIds.includes(normalizedAnchorId)) {
+    matchedIds.push(normalizedAnchorId);
+  }
+
+  if (matchedIds.length === 0) {
+    throw new Error('No matching rater account found for update.');
+  }
+
+  const updateResults = await Promise.all(
+    matchedIds.map((id) => client.from('raters').update(updates).eq('id', id))
+  );
+
+  const allFailed = updateResults.every((result: any) => Boolean(result?.error));
+  if (allFailed) {
+    throw new Error('Failed to persist rater access update.');
+  }
+};
+
+const verifyRaterAccessState = async (client: any, email: string, expectedIsActive: boolean) => {
+  const normalizedEmail = email.trim().toLowerCase();
+  const { data, error } = await client.from('raters').select('id,email,is_active');
+  if (error) {
+    throw error;
+  }
+
+  const rows = (Array.isArray(data) ? data : []).filter(
+    (row: any) => String(row?.email ?? '').trim().toLowerCase() === normalizedEmail
+  );
+
+  if (rows.length === 0) {
+    throw new Error('No matching rater account found after update.');
+  }
+
+  const mismatch = rows.some((row: any) => Boolean(row?.is_active) !== expectedIsActive);
+  if (mismatch) {
+    throw new Error('Rater access update did not persist for all matching rows.');
+  }
+};
 
 export const RaterManagementPage = () => {
   const [assignments, setAssignments] = useState<RaterAssignment[]>([]);
@@ -85,33 +166,14 @@ export const RaterManagementPage = () => {
   const [historyEmployeeFilter, setHistoryEmployeeFilter] = useState('all');
   const [toast, setToast] = useState('');
   const [availableRaters, setAvailableRaters] = useState<RaterOption[]>([]);
+  const [assignedPositions, setAssignedPositions] = useState<string[]>([]);
 
   const fetchAvailableRaters = async () => {
     try {
-      if (isMockModeEnabled) {
-        const fallback = Array.from(
-          new Set(
-            assignments.flatMap((item) => [
-              item.raters.immediateSupervisor.name,
-              item.raters.departmentHead.name,
-              item.raters.additionalRater?.name,
-            ].filter((name): name is string => Boolean(name)))
-          )
-        ).map((name) => ({
-          id: name,
-          name,
-          email: `${name.toLowerCase().replace(/\s+/g, '.')}@local.mock`,
-          department: undefined,
-          is_active: true,
-        }));
-        setAvailableRaters(fallback);
-        return;
-      }
-
-      const response = await supabase
+      const client = getAccessClient();
+      const response = await client
         .from('raters')
         .select('id,name,email,department,is_active')
-        .eq('is_active', true)
         .order('name');
 
       const rows = (((response as any)?.data ?? []) as RaterOption[])
@@ -216,34 +278,67 @@ export const RaterManagementPage = () => {
         effectiveDate: assignment.effectiveDate.slice(0, 10),
         expirationDate: assignment.expirationDate?.slice(0, 10) ?? '',
       });
+      setAssignedPositions(
+        assignment.employeePosition
+          .split(',')
+          .map((entry) => entry.trim())
+          .filter(Boolean)
+      );
     } else {
       setEditingAssignmentId(null);
       setForm(defaultAssignmentForm());
+      setAssignedPositions([]);
     }
     setShowAssignModal(true);
   };
 
+  const handleRaterSelection = (raterName: string) => {
+    const selected = availableRaters.find((entry) => entry.name === raterName);
+    setForm((current) => ({
+      ...current,
+      employeeName: raterName,
+      department: selected?.department ?? current.department,
+      immediateSupervisor: raterName,
+      departmentHead: raterName,
+      additionalRater: '',
+    }));
+  };
+
+  const toggleAssignedPosition = (position: string) => {
+    setAssignedPositions((current) =>
+      current.includes(position)
+        ? current.filter((item) => item !== position)
+        : [...current, position]
+    );
+  };
+
   const saveAssignment = () => {
-    if (!form.employeeName || !form.employeePosition || !form.department || !form.period || !form.immediateSupervisor || !form.departmentHead || !form.effectiveDate) {
+    if (!form.employeeName || assignedPositions.length === 0) {
       setToast('Please complete required assignment fields.');
       return;
     }
+
+    const selectedRater = availableRaters.find((entry) => entry.name === form.employeeName);
+    const effectiveDateIso = form.effectiveDate
+      ? new Date(form.effectiveDate).toISOString()
+      : new Date().toISOString();
+    const resolvedPeriod = form.period || activePeriod?.name || 'Current Period';
 
     const payload: RaterAssignment = {
       id: editingAssignmentId ?? crypto.randomUUID(),
       employeeId: editingAssignmentId ?? `EMP-PENDING-${Math.floor(Math.random() * 9999)}`,
       employeeName: form.employeeName,
-      employeePosition: form.employeePosition,
-      department: form.department,
-      evaluationPeriod: form.period,
+      employeePosition: assignedPositions.join(', '),
+      department: form.department || selectedRater?.department || 'Unassigned',
+      evaluationPeriod: resolvedPeriod,
       raters: {
         immediateSupervisor: {
-          id: crypto.randomUUID(),
+          id: selectedRater?.id ?? crypto.randomUUID(),
           name: form.immediateSupervisor,
           position: 'Immediate Supervisor',
         },
         departmentHead: {
-          id: crypto.randomUUID(),
+          id: selectedRater?.id ?? crypto.randomUUID(),
           name: form.departmentHead,
           position: 'Department Head',
         },
@@ -260,9 +355,9 @@ export const RaterManagementPage = () => {
           position: 'PMD Head',
         },
       },
-      effectiveDate: new Date(form.effectiveDate).toISOString(),
+      effectiveDate: effectiveDateIso,
       expirationDate: form.expirationDate ? new Date(form.expirationDate).toISOString() : undefined,
-      status: form.immediateSupervisor && form.departmentHead ? 'Assigned' : 'Pending',
+      status: 'Assigned',
       createdBy: 'HR Admin',
       createdDate: new Date().toISOString(),
     };
@@ -273,12 +368,86 @@ export const RaterManagementPage = () => {
 
     persistAssignments(nextRows);
     setShowAssignModal(false);
+    setAssignedPositions([]);
     setToast(editingAssignmentId ? 'Assignment updated.' : 'Rater assigned successfully.');
   };
 
   const removeAssignment = (assignmentId: string) => {
     persistAssignments(assignments.filter((row) => row.id !== assignmentId));
     setToast('Assignment removed.');
+  };
+
+  const findRaterByName = (name: string) => {
+    const normalized = normalizeValue(name);
+    return availableRaters.find((rater) => normalizeValue(rater.name) === normalized);
+  };
+
+  const findRaterById = (id: string) => {
+    const normalizedId = String(id ?? '').trim();
+    if (!normalizedId) return undefined;
+    return availableRaters.find((rater) => String(rater.id ?? '').trim() === normalizedId);
+  };
+
+  const resolveRaterAccount = (raterId: string | undefined, raterName: string) => {
+    const byId = raterId ? findRaterById(raterId) : undefined;
+    if (byId) return byId;
+    return findRaterByName(raterName);
+  };
+
+  const toggleRaterAccess = async (raterId: string | undefined, raterName: string) => {
+    const client = getAccessClient();
+    let existing = resolveRaterAccount(raterId, raterName);
+
+    // Pull latest raters from DB before failing a toggle, so newly-created accounts work immediately.
+    if (!existing) {
+      try {
+        const latestResponse = await client
+          .from('raters')
+          .select('id,name,email,department,is_active')
+          .order('name');
+        const latestRows = (((latestResponse as any)?.data ?? []) as RaterOption[]).filter(
+          (row) => row?.name && row?.email
+        );
+        if (latestRows.length > 0) {
+          setAvailableRaters(latestRows);
+          const normalizedTargetId = String(raterId ?? '').trim();
+          const normalizedTargetName = normalizeValue(raterName);
+          existing =
+            latestRows.find((row) => String(row.id ?? '').trim() === normalizedTargetId) ||
+            latestRows.find((row) => normalizeValue(row.name) === normalizedTargetName);
+        }
+      } catch {
+        // Keep existing local state and show actionable toast below if still unresolved.
+      }
+    }
+
+    if (!existing) {
+      setToast('No matching rater account in database. Use Assign Rater and select a rater account first.');
+      return;
+    }
+
+    const nextIsActive = !existing.is_active;
+    const normalizedEmail = existing.email.trim().toLowerCase();
+    setAvailableRaters((current) =>
+      current.map((rater) =>
+        rater.email.trim().toLowerCase() === normalizedEmail ? { ...rater, is_active: nextIsActive } : rater
+      )
+    );
+
+    try {
+      await runRaterEmailUpdate(client, { is_active: nextIsActive }, normalizedEmail, String(existing.id));
+      await verifyRaterAccessState(client, normalizedEmail, nextIsActive);
+      saveRaterAccessState(normalizedEmail, nextIsActive);
+      await fetchAvailableRaters();
+      setToast(nextIsActive ? 'Interviewer access granted.' : 'Interviewer access revoked.');
+    } catch {
+      setAvailableRaters((current) =>
+        current.map((rater) =>
+          rater.email.trim().toLowerCase() === normalizedEmail ? { ...rater, is_active: existing.is_active } : rater
+        )
+      );
+      setToast('Failed to update interviewer access.');
+    }
   };
 
   const toggleCollapse = (department: string) => {
@@ -334,6 +503,30 @@ export const RaterManagementPage = () => {
         row.status === 'Assigned' ? 'Submitted' : 'Pending',
       ]);
   }, [assignments, historyEmployeeFilter]);
+
+  const assignableJobPositions = useMemo(() => {
+    const fromAssignments = assignments
+      .flatMap((item) => item.employeePosition.split(','))
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+
+    const defaults = [
+      'IT Officer II',
+      'HR Assistant',
+      'Admin Aide II',
+      'Admin Aide III',
+      'Clerk I',
+      'Clerk II',
+      'Engineer II',
+      'HR Officer',
+      'Administrative Officer',
+      'IT Programmer',
+      'Accountant II',
+      'Legal Officer I',
+    ];
+
+    return Array.from(new Set([...fromAssignments, ...defaults]));
+  }, [assignments]);
 
   return (
     <div className="admin-layout">
@@ -477,6 +670,31 @@ export const RaterManagementPage = () => {
                                   <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_COLORS[row.status]}`}>{row.status}</span>
                                 </td>
                                 <td className="px-3 py-3">
+                                  <div className="flex items-center gap-2">
+                                    {(() => {
+                                      const linkedRater = resolveRaterAccount(
+                                        row.raters.immediateSupervisor.id,
+                                        row.raters.immediateSupervisor.name
+                                      );
+                                      const isActive = Boolean(linkedRater?.is_active);
+                                      return (
+                                        <button
+                                          type="button"
+                                          className={`inline-flex items-center rounded-lg border px-2 py-1 text-xs font-semibold transition ${isActive ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
+                                          onClick={() =>
+                                            toggleRaterAccess(
+                                              row.raters.immediateSupervisor.id,
+                                              row.raters.immediateSupervisor.name
+                                            )
+                                          }
+                                          title={linkedRater ? '' : 'No linked rater account found. Click to see how to fix.'}
+                                        >
+                                          {isActive ? <XCircle className="mr-1 h-3.5 w-3.5" /> : <CheckCircle2 className="mr-1 h-3.5 w-3.5" />}
+                                          {isActive ? 'Revoke Access' : 'Grant Access'}
+                                        </button>
+                                      );
+                                    })()}
+
                                   <div className="relative">
                                     <button className="rounded-md p-1 text-slate-500 hover:bg-slate-100" onClick={() => setOpenMenuId(openMenuId === row.id ? null : row.id)}>
                                       <MoreVertical className="h-4 w-4" />
@@ -489,6 +707,7 @@ export const RaterManagementPage = () => {
                                         <button className="block w-full rounded px-2 py-1 text-left text-rose-700 hover:bg-rose-50" onClick={() => { removeAssignment(row.id); setOpenMenuId(null); }}>Remove Assignment</button>
                                       </div>
                                     )}
+                                  </div>
                                   </div>
                                 </td>
                               </tr>
@@ -548,77 +767,101 @@ export const RaterManagementPage = () => {
 
       {showAssignModal && (
         <div className="fixed inset-0 z-[120] bg-slate-900/70 p-4" onClick={() => setShowAssignModal(false)}>
-          <div className="mx-auto mt-10 w-full max-w-3xl rounded-2xl bg-white p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <div className="mb-4 flex items-start justify-between">
+          <div className="mx-auto mt-6 flex h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between bg-blue-700 px-6 py-4 text-white">
               <div>
-                <h2 className="text-xl font-bold text-slate-900">{editingAssignmentId ? 'Edit Rater Assignment' : 'Assign Rater'}</h2>
-                <p className="text-sm text-slate-500">Define rater hierarchy and evaluation period.</p>
+                <h2 className="text-3xl font-bold">Assign Rater Access</h2>
+                <p className="text-base text-blue-100">Grant access to interviewer portal</p>
               </div>
-              <button className="rounded-md p-1 text-slate-500 hover:bg-slate-100" onClick={() => setShowAssignModal(false)}>
+              <button className="rounded-md p-1 text-white/90 hover:bg-white/10" onClick={() => setShowAssignModal(false)}>
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="space-y-3">
-              <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Employee Name" value={form.employeeName} onChange={(event) => setForm({ ...form, employeeName: event.target.value })} />
-              <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Employee Position" value={form.employeePosition} onChange={(event) => setForm({ ...form, employeePosition: event.target.value })} />
-              <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Department" value={form.department} onChange={(event) => setForm({ ...form, department: event.target.value })} />
+            <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
+              <section>
+                <label className="mb-2 block text-base font-semibold text-slate-700">Select Rater <span className="text-red-500">*</span></label>
+                <select
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg"
+                  value={form.employeeName}
+                  onChange={(event) => handleRaterSelection(event.target.value)}
+                >
+                  <option value="">Choose a rater...</option>
+                  {availableRaters.map((rater) => (
+                    <option key={rater.id} value={rater.name}>{rater.name}</option>
+                  ))}
+                </select>
+              </section>
 
-              <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form.period} onChange={(event) => setForm({ ...form, period: event.target.value })}>
-                <option value="">Select Evaluation Period</option>
-                {periods.map((period) => <option key={period.id} value={period.name}>{period.name}</option>)}
-              </select>
+              <section>
+                <label className="mb-2 block text-base font-semibold text-slate-700">Designation / Role</label>
+                <input className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-lg" value={form.department} readOnly />
+                <p className="mt-2 text-sm text-slate-500">Auto-filled based on selected rater</p>
+              </section>
 
-              <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form.immediateSupervisor} onChange={(event) => setForm({ ...form, immediateSupervisor: event.target.value })}>
-                <option value="">Select Immediate Supervisor (Level 1)</option>
-                {availableRaters.map((rater) => (
-                  <option key={`immediate-${rater.id}`} value={rater.name}>
-                    {rater.name} ({rater.email})
-                  </option>
-                ))}
-              </select>
+              <section>
+                <label className="mb-2 block text-base font-semibold text-slate-700">Access Level <span className="text-red-500">*</span></label>
+                <select className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-lg" value="Interviewer" disabled>
+                  <option value="Interviewer">Interviewer</option>
+                </select>
+              </section>
 
-              <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form.departmentHead} onChange={(event) => setForm({ ...form, departmentHead: event.target.value })}>
-                <option value="">Select Department Head (Level 2)</option>
-                {availableRaters.map((rater) => (
-                  <option key={`head-${rater.id}`} value={rater.name}>
-                    {rater.name} ({rater.email})
-                  </option>
-                ))}
-              </select>
-
-              <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form.additionalRater} onChange={(event) => setForm({ ...form, additionalRater: event.target.value })}>
-                <option value="">Additional Rater (optional)</option>
-                {availableRaters.map((rater) => (
-                  <option key={`additional-${rater.id}`} value={rater.name}>
-                    {rater.name} ({rater.email})
-                  </option>
-                ))}
-              </select>
+              <section>
+                <label className="mb-2 block text-base font-semibold text-slate-700">Assign Job Positions <span className="text-red-500">*</span></label>
+                <div className="max-h-72 overflow-y-auto rounded-xl border border-slate-300 p-4">
+                  <div className="grid grid-cols-1 gap-x-10 gap-y-4 md:grid-cols-2">
+                    {assignableJobPositions.map((position) => {
+                      const checked = assignedPositions.includes(position);
+                      return (
+                        <label key={position} className="flex items-center gap-3 text-xl text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleAssignedPosition(position)}
+                            className="h-5 w-5 rounded"
+                          />
+                          <span>{position}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+                <p className="mt-2 text-sm text-slate-500">Selected: {assignedPositions.length} position{assignedPositions.length === 1 ? '' : 's'}</p>
+              </section>
 
               {availableRaters.length === 0 && (
                 <p className="text-xs text-amber-700">No active raters found in database. Add raters first, then reopen this form.</p>
               )}
 
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                PMD Head (Final Reviewer): Liza Manalo
-              </div>
+              <section>
+                <h3 className="mb-3 text-3xl font-bold text-slate-800">Access Duration (Optional)</h3>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-base font-semibold text-slate-600">Start Date</label>
+                    <input className="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg" type="date" value={form.effectiveDate} onChange={(event) => setForm({ ...form, effectiveDate: event.target.value })} />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-base font-semibold text-slate-600">End Date</label>
+                    <input className="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg" type="date" value={form.expirationDate} onChange={(event) => setForm({ ...form, expirationDate: event.target.value })} />
+                  </div>
+                </div>
+              </section>
 
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" type="date" value={form.effectiveDate} onChange={(event) => setForm({ ...form, effectiveDate: event.target.value })} />
-                <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" type="date" value={form.expirationDate} onChange={(event) => setForm({ ...form, expirationDate: event.target.value })} />
-              </div>
+              <select className="hidden" value={form.period} onChange={(event) => setForm({ ...form, period: event.target.value })}>
+                <option value="">Select Evaluation Period</option>
+                {periods.map((period) => <option key={period.id} value={period.name}>{period.name}</option>)}
+              </select>
 
-              <div className="space-y-1 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                <label className="inline-flex items-center gap-2"><input type="checkbox" checked readOnly /> Notify employee (ratee)</label>
-                <label className="inline-flex items-center gap-2"><input type="checkbox" checked readOnly /> Notify assigned raters</label>
-                <label className="inline-flex items-center gap-2"><input type="checkbox" checked readOnly /> Send email reminder</label>
+              <div className="hidden">
+                <input value={form.immediateSupervisor} onChange={(event) => setForm({ ...form, immediateSupervisor: event.target.value })} />
+                <input value={form.departmentHead} onChange={(event) => setForm({ ...form, departmentHead: event.target.value })} />
+                <input value={form.additionalRater} onChange={(event) => setForm({ ...form, additionalRater: event.target.value })} />
               </div>
             </div>
 
-            <div className="mt-5 flex justify-end gap-2">
-              <button className="rounded-lg border border-slate-300 px-3 py-2 text-sm" onClick={() => setShowAssignModal(false)}>Cancel</button>
-              <button className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white" onClick={saveAssignment}>Save Assignment</button>
+            <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
+              <button className="rounded-lg border border-slate-300 px-4 py-2 text-lg" onClick={() => setShowAssignModal(false)}>Cancel</button>
+              <button className="rounded-lg bg-blue-600 px-4 py-2 text-lg font-semibold text-white" onClick={saveAssignment}>Save & Generate Access</button>
             </div>
           </div>
         </div>
