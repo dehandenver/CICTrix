@@ -494,15 +494,15 @@ export const QualifiedApplicantsPage = () => {
           ))}
         </section>
 
-        <section className="mt-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
+        <section className="mt-4 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-6">
             {!jobId ? (
-              <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm" value={jobFilter} onChange={(event) => setJobFilter(event.target.value)}>
+              <select className="h-10 rounded-lg border border-slate-300 px-3 text-sm" value={jobFilter} onChange={(event) => setJobFilter(event.target.value)}>
                 <option value="all">All Job Postings</option>
                 {jobs.map((job) => <option key={job.id} value={job.id}>{job.title}</option>)}
               </select>
             ) : (
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">Filtered to selected job posting</div>
+              <div className="h-10 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600 flex items-center">Filtered to selected job posting</div>
             )}
 
             <div className="rounded-lg border border-slate-300 px-3 py-2 text-xs">
@@ -532,26 +532,26 @@ export const QualifiedApplicantsPage = () => {
               <input type="range" min={0} max={100} value={scoreMin} onChange={(event) => setScoreMin(Number(event.target.value))} className="mt-2 w-full" />
             </div>
 
-            <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
-            <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+            <input className="h-10 rounded-lg border border-slate-300 px-3 text-sm" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+            <input className="h-10 rounded-lg border border-slate-300 px-3 text-sm" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-              <input className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm" placeholder="Search name, email, ID" value={search} onChange={(event) => setSearch(event.target.value)} />
+              <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
+              <input className="h-10 w-full rounded-lg border border-slate-300 pl-9 pr-3 text-sm" placeholder="Search name, email, ID" value={search} onChange={(event) => setSearch(event.target.value)} />
             </div>
           </div>
 
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-            <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm" value={sortBy} onChange={(event) => setSortBy(event.target.value as 'Application Date' | 'Qualification Score' | 'Last Updated')}>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+            <select className="h-10 rounded-lg border border-slate-300 px-3 text-sm" value={sortBy} onChange={(event) => setSortBy(event.target.value as 'Application Date' | 'Qualification Score' | 'Last Updated')}>
               <option>Application Date</option>
               <option>Qualification Score</option>
               <option>Last Updated</option>
             </select>
 
             <div className="flex flex-wrap gap-2">
-              <button className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" onClick={() => updateApplicantStatus(selectedIds.length ? selectedIds : filteredRows.map((item) => item.id), 'Under Review')}>
+              <button className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm" onClick={() => updateApplicantStatus(selectedIds.length ? selectedIds : filteredRows.map((item) => item.id), 'Under Review')}>
                 Update Status
               </button>
-              <button className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" onClick={exportSelected}>
+              <button className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm" onClick={exportSelected}>
                 <FileSpreadsheet className="mr-1 inline h-4 w-4" />Export
               </button>
             </div>

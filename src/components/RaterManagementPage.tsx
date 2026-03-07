@@ -22,6 +22,7 @@ import {
     saveRaterAssignments,
     toCsv,
 } from '../lib/recruitmentData';
+import { isMockModeEnabled, supabase } from '../lib/supabase';
 import { EvaluationPeriod, RaterAssignment } from '../types/recruitment.types';
 import { RaterManagementNavigationGuide } from './RaterManagementNavigationGuide';
 import { Sidebar } from './Sidebar';
@@ -42,6 +43,14 @@ interface AssignmentForm {
   additionalRater: string;
   effectiveDate: string;
   expirationDate: string;
+}
+
+interface RaterOption {
+  id: string;
+  name: string;
+  email: string;
+  department?: string;
+  is_active: boolean;
 }
 
 const defaultAssignmentForm = (): AssignmentForm => ({
@@ -75,6 +84,44 @@ export const RaterManagementPage = () => {
   const [activeTab, setActiveTab] = useState<'Assignments' | 'Rating History'>('Assignments');
   const [historyEmployeeFilter, setHistoryEmployeeFilter] = useState('all');
   const [toast, setToast] = useState('');
+  const [availableRaters, setAvailableRaters] = useState<RaterOption[]>([]);
+
+  const fetchAvailableRaters = async () => {
+    try {
+      if (isMockModeEnabled) {
+        const fallback = Array.from(
+          new Set(
+            assignments.flatMap((item) => [
+              item.raters.immediateSupervisor.name,
+              item.raters.departmentHead.name,
+              item.raters.additionalRater?.name,
+            ].filter((name): name is string => Boolean(name)))
+          )
+        ).map((name) => ({
+          id: name,
+          name,
+          email: `${name.toLowerCase().replace(/\s+/g, '.')}@local.mock`,
+          department: undefined,
+          is_active: true,
+        }));
+        setAvailableRaters(fallback);
+        return;
+      }
+
+      const response = await supabase
+        .from('raters')
+        .select('id,name,email,department,is_active')
+        .eq('is_active', true)
+        .order('name');
+
+      const rows = (((response as any)?.data ?? []) as RaterOption[])
+        .filter((row) => row?.name && row?.email);
+
+      setAvailableRaters(rows);
+    } catch {
+      setToast('Unable to load raters from database.');
+    }
+  };
 
   useEffect(() => {
     ensureRecruitmentSeedData();
@@ -88,6 +135,8 @@ export const RaterManagementPage = () => {
       initialCollapsed[dept] = false;
     });
     setCollapsedDepartments(initialCollapsed);
+
+    void fetchAvailableRaters();
   }, []);
 
   useEffect(() => {
@@ -153,6 +202,7 @@ export const RaterManagementPage = () => {
   };
 
   const openAssignModal = (assignment?: RaterAssignment) => {
+    void fetchAvailableRaters();
     if (assignment) {
       setEditingAssignmentId(assignment.id);
       setForm({
@@ -519,9 +569,36 @@ export const RaterManagementPage = () => {
                 {periods.map((period) => <option key={period.id} value={period.name}>{period.name}</option>)}
               </select>
 
-              <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Immediate Supervisor (Level 1)" value={form.immediateSupervisor} onChange={(event) => setForm({ ...form, immediateSupervisor: event.target.value })} />
-              <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Department Head (Level 2)" value={form.departmentHead} onChange={(event) => setForm({ ...form, departmentHead: event.target.value })} />
-              <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Additional Rater (optional)" value={form.additionalRater} onChange={(event) => setForm({ ...form, additionalRater: event.target.value })} />
+              <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form.immediateSupervisor} onChange={(event) => setForm({ ...form, immediateSupervisor: event.target.value })}>
+                <option value="">Select Immediate Supervisor (Level 1)</option>
+                {availableRaters.map((rater) => (
+                  <option key={`immediate-${rater.id}`} value={rater.name}>
+                    {rater.name} ({rater.email})
+                  </option>
+                ))}
+              </select>
+
+              <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form.departmentHead} onChange={(event) => setForm({ ...form, departmentHead: event.target.value })}>
+                <option value="">Select Department Head (Level 2)</option>
+                {availableRaters.map((rater) => (
+                  <option key={`head-${rater.id}`} value={rater.name}>
+                    {rater.name} ({rater.email})
+                  </option>
+                ))}
+              </select>
+
+              <select className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form.additionalRater} onChange={(event) => setForm({ ...form, additionalRater: event.target.value })}>
+                <option value="">Additional Rater (optional)</option>
+                {availableRaters.map((rater) => (
+                  <option key={`additional-${rater.id}`} value={rater.name}>
+                    {rater.name} ({rater.email})
+                  </option>
+                ))}
+              </select>
+
+              {availableRaters.length === 0 && (
+                <p className="text-xs text-amber-700">No active raters found in database. Add raters first, then reopen this form.</p>
+              )}
 
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
                 PMD Head (Final Reviewer): Liza Manalo

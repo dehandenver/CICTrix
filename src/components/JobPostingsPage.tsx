@@ -94,7 +94,7 @@ export const JobPostingsPage = () => {
   const [liveApplicants, setLiveApplicants] = useState<ReturnType<typeof getApplicants>>([]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All Postings' | JobPosting['status']>('All Postings');
-  const [departmentFilter, setDepartmentFilter] = useState<string[]>([]);
+  const [departmentFilter, setDepartmentFilter] = useState<string>('all');
   const [positionTypeFilter, setPositionTypeFilter] = useState<string>('all');
   const [postedFrom, setPostedFrom] = useState('');
   const [postedTo, setPostedTo] = useState('');
@@ -137,7 +137,7 @@ export const JobPostingsPage = () => {
       const query = `${job.title} ${job.jobCode} ${job.summary}`.toLowerCase();
       const matchesSearch = !search || query.includes(search.toLowerCase());
       const matchesStatus = statusFilter === 'All Postings' || job.status === statusFilter;
-      const matchesDept = departmentFilter.length === 0 || departmentFilter.includes(job.department);
+      const matchesDept = departmentFilter === 'all' || job.department === departmentFilter;
       const matchesType = positionTypeFilter === 'all' || job.positionType === positionTypeFilter;
       const posted = new Date(job.postedDate).getTime();
       const fromOkay = !postedFrom || posted >= new Date(postedFrom).getTime();
@@ -156,7 +156,7 @@ export const JobPostingsPage = () => {
   const clearFilters = () => {
     setSearch('');
     setStatusFilter('All Postings');
-    setDepartmentFilter([]);
+    setDepartmentFilter('all');
     setPositionTypeFilter('all');
     setPostedFrom('');
     setPostedTo('');
@@ -263,12 +263,6 @@ export const JobPostingsPage = () => {
     setToast(editingId ? 'Job post updated successfully.' : 'Job post created successfully.');
   };
 
-  const toggleDepartment = (dept: string) => {
-    setDepartmentFilter((current) =>
-      current.includes(dept) ? current.filter((item) => item !== dept) : [...current, dept]
-    );
-  };
-
   const updateStatus = (id: string, nextStatus: JobPosting['status']) => {
     const nextJobs = jobs.map((job) => (job.id === id ? { ...job, status: nextStatus } : job));
     saveJobs(nextJobs);
@@ -316,49 +310,44 @@ export const JobPostingsPage = () => {
           </div>
         </header>
 
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-6">
-            <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'All Postings' | JobPosting['status'])}>
-              <option>All Postings</option>
-              <option>Draft</option>
-              <option>Active</option>
-              <option>Closed</option>
-              <option>Filled</option>
+        <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-6">
+            <select className="h-10 rounded-lg border border-slate-300 px-3 text-sm" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'All Postings' | JobPosting['status'])}>
+              <option value="All Postings">All Postings</option>
+              <option value="Draft">Draft</option>
+              <option value="Active">Active</option>
+              <option value="Closed">Closed</option>
+              <option value="Filled">Filled</option>
             </select>
 
-            <div className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Departments</p>
-              <div className="grid max-h-28 gap-1 overflow-y-auto">
-                {DEPARTMENTS.map((dept) => (
-                  <label key={dept} className="inline-flex items-center gap-2 text-xs text-slate-700">
-                    <input type="checkbox" checked={departmentFilter.includes(dept)} onChange={() => toggleDepartment(dept)} />
-                    <span>{dept}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
+            <select className="h-10 rounded-lg border border-slate-300 px-3 text-sm" value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)}>
+              <option value="all">All Departments</option>
+              {DEPARTMENTS.map((dept) => (
+                <option key={dept} value={dept}>{dept}</option>
+              ))}
+            </select>
 
-            <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm" value={positionTypeFilter} onChange={(event) => setPositionTypeFilter(event.target.value)}>
+            <select className="h-10 rounded-lg border border-slate-300 px-3 text-sm" value={positionTypeFilter} onChange={(event) => setPositionTypeFilter(event.target.value)}>
               <option value="all">All Position Types</option>
               {POSITION_TYPES.map((item) => (
                 <option key={item} value={item}>{item}</option>
               ))}
             </select>
 
-            <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" type="date" value={postedFrom} onChange={(event) => setPostedFrom(event.target.value)} />
-            <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" type="date" value={postedTo} onChange={(event) => setPostedTo(event.target.value)} />
+            <input className="h-10 rounded-lg border border-slate-300 px-3 text-sm" type="date" value={postedFrom} onChange={(event) => setPostedFrom(event.target.value)} />
+            <input className="h-10 rounded-lg border border-slate-300 px-3 text-sm" type="date" value={postedTo} onChange={(event) => setPostedTo(event.target.value)} />
 
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+              <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
               <input
-                className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm"
+                className="h-10 w-full rounded-lg border border-slate-300 pl-9 pr-3 text-sm"
                 placeholder="Search title, code, keywords"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
               />
             </div>
           </div>
-          <button className="mt-3 text-sm font-medium text-blue-700" onClick={clearFilters}>Clear Filters</button>
+          <button className="mt-2 text-sm font-medium text-blue-700" onClick={clearFilters}>Clear Filters</button>
         </section>
 
         <section className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-2">

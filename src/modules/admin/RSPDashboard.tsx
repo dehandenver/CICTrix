@@ -750,16 +750,6 @@ export const RSPDashboard = () => {
   const handleCreateRater = async () => {
     if (!newRater.name || !newRater.email || !newRater.department) return;
 
-    const localId = raters.length > 0 ? Math.max(...raters.map((rater) => rater.id)) + 1 : 1;
-    const payload: RaterRecord = {
-      id: localId,
-      name: newRater.name,
-      email: newRater.email,
-      department: newRater.department,
-      is_active: true,
-      last_login: null,
-    };
-
     const assignmentKey = normalizeEmailKey(newRater.email);
     const nextAssignments = {
       ...raterAssignedPositionsByEmail,
@@ -768,10 +758,15 @@ export const RSPDashboard = () => {
     setRaterAssignedPositionsByEmail(nextAssignments);
     saveRaterAssignments(nextAssignments);
 
-    setRaters((prev) => [payload, ...prev]);
+    setRaters((prev) => prev.map((rater) =>
+      normalizeEmailKey(rater.email) === assignmentKey
+        ? { ...rater, is_active: true }
+        : rater
+    ));
+
     try {
       const client = getPreferredClient();
-      await client.from('raters').insert([{ ...payload, id: undefined }]);
+      await client.from('raters').update({ is_active: true }).eq('email', newRater.email);
     } catch {
     }
 
@@ -804,21 +799,30 @@ export const RSPDashboard = () => {
 
     const normalizedName = nameValue.trim().toLowerCase();
     if (!normalizedName) {
-      setNewRater((prev) => ({ ...prev, name: '', email: '' }));
+      setNewRater((prev) => ({ ...prev, name: '', email: '', department: '' }));
       return;
     }
 
     const selected = raters.find((rater) => rater.name.trim().toLowerCase() === normalizedName);
     if (!selected) {
-      setNewRater((prev) => ({ ...prev, name: nameValue, email: '' }));
+      setNewRater((prev) => ({ ...prev, name: nameValue, email: '', department: '' }));
       return;
     }
+
+    const assignmentKey = normalizeEmailKey(selected.email);
+    const existingAssignments = raterAssignedPositionsByEmail[assignmentKey] ?? [];
 
     setNewRater((prev) => ({
       ...prev,
       name: selected.name,
       email: selected.email,
       department: selected.department,
+    }));
+
+    setRaterAccessForm((prev) => ({
+      ...prev,
+      raterName: selected.name,
+      assignedPositions: [...existingAssignments],
     }));
   };
 
@@ -2114,40 +2118,27 @@ export const RSPDashboard = () => {
             <div className="flex-1 space-y-6 overflow-y-auto px-7 py-6">
               <section>
                 <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Select Rater <span className="text-red-500">*</span></label>
-                <input
-                  type="text"
-                  list="rater-name-options"
+                <select
                   value={raterAccessForm.raterName}
                   onChange={(event) => handleRaterNameChange(event.target.value)}
                   className="w-full rounded-xl border border-[var(--border-color)] bg-white p-3 text-lg"
-                  placeholder="Type rater name..."
-                />
-                <datalist id="rater-name-options">
+                >
+                  <option value="">Choose a rater...</option>
                   {raters.map((rater) => (
-                    <option key={rater.id} value={rater.name} />
+                    <option key={rater.id} value={rater.name}>{rater.name} ({rater.email})</option>
                   ))}
-                </datalist>
+                </select>
               </section>
 
               <section>
-                <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Email Address <span className="text-red-500">*</span></label>
-                <input
-                  type="email"
-                  value={newRater.email}
-                  onChange={(event) => setNewRater((prev) => ({ ...prev, email: event.target.value }))}
-                  className="w-full rounded-xl border border-[var(--border-color)] bg-white p-3 text-lg"
-                  placeholder="rater@agency.gov.ph"
-                />
-              </section>
-
-              <section>
-                <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Designation / Role <span className="text-red-500">*</span></label>
+                <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Designation / Role</label>
                 <input
                   className="w-full rounded-xl border border-[var(--border-color)] bg-white p-3 text-lg"
                   value={newRater.department}
-                  placeholder="Type designation / role..."
-                  onChange={(event) => setNewRater((prev) => ({ ...prev, department: event.target.value }))}
+                  placeholder="Auto-filled based on selected rater"
+                  readOnly
                 />
+                <p className="!mb-0 mt-2 text-base text-[var(--text-secondary)]">Auto-filled based on selected rater</p>
               </section>
 
               <section>
@@ -2156,6 +2147,7 @@ export const RSPDashboard = () => {
                   value={raterAccessForm.accessLevel}
                   onChange={(event) => setRaterAccessForm((prev) => ({ ...prev, accessLevel: event.target.value }))}
                   className="w-full rounded-xl border border-[var(--border-color)] bg-white p-3 text-lg"
+                  disabled
                 >
                   <option value="Interviewer">Interviewer</option>
                 </select>
@@ -2188,11 +2180,11 @@ export const RSPDashboard = () => {
                 <h3 className="!mb-3 text-4xl font-bold text-[var(--text-primary)]">Access Duration (Optional)</h3>
                 <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                   <div>
-                    <label className="mb-2 block text-base font-semibold text-[var(--text-secondary)]">Start Time</label>
+                    <label className="mb-2 block text-base font-semibold text-[var(--text-secondary)]">Start Date</label>
                     <div className="relative">
-                      <Clock3 size={18} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                      <Calendar size={18} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
                       <input
-                        type="time"
+                        type="date"
                         value={raterAccessForm.startDate}
                         onChange={(event) => setRaterAccessForm((prev) => ({ ...prev, startDate: event.target.value }))}
                         className="w-full rounded-xl border border-[var(--border-color)] py-3 pl-11 pr-4 text-lg"
@@ -2200,11 +2192,11 @@ export const RSPDashboard = () => {
                     </div>
                   </div>
                   <div>
-                    <label className="mb-2 block text-base font-semibold text-[var(--text-secondary)]">End Time</label>
+                    <label className="mb-2 block text-base font-semibold text-[var(--text-secondary)]">End Date</label>
                     <div className="relative">
-                      <Clock3 size={18} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+                      <Calendar size={18} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
                       <input
-                        type="time"
+                        type="date"
                         value={raterAccessForm.endDate}
                         onChange={(event) => setRaterAccessForm((prev) => ({ ...prev, endDate: event.target.value }))}
                         className="w-full rounded-xl border border-[var(--border-color)] py-3 pl-11 pr-4 text-lg"
@@ -2221,7 +2213,7 @@ export const RSPDashboard = () => {
               </Button>
               <Button
                 onClick={handleCreateRater}
-                disabled={!newRater.name || !newRater.email || !newRater.department || raterAccessForm.assignedPositions.length === 0}
+                disabled={!newRater.name || !newRater.email || raterAccessForm.assignedPositions.length === 0}
                 className="!px-8 !py-3 text-lg"
               >
                 Save & Generate Access
