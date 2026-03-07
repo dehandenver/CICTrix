@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { JobPostingsPage } from './components/JobPostingsPage';
+import { NewlyHiredPage } from './components/NewlyHiredPage';
+import { QualifiedApplicantsPage } from './components/QualifiedApplicantsPage';
+import { RaterManagementPage } from './components/RaterManagementPage';
 import { LNDDashboard } from './modules/admin/LNDDashboard';
 import { LoginPage } from './modules/admin/LoginPage';
 import { PMDashboard } from './modules/admin/PMDashboard';
@@ -382,7 +386,7 @@ function AppContent() {
             path="/admin/rsp/jobs"
             element={
               <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
-                <RSPDashboard />
+                <JobPostingsPage />
               </AdminRoute>
             }
           />
@@ -390,7 +394,15 @@ function AppContent() {
             path="/admin/rsp/qualified"
             element={
               <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
-                <RSPDashboard />
+                <QualifiedApplicantsPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/rsp/qualified/:jobId"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <QualifiedApplicantsPage />
               </AdminRoute>
             }
           />
@@ -398,7 +410,7 @@ function AppContent() {
             path="/admin/rsp/new-hired"
             element={
               <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
-                <RSPDashboard />
+                <NewlyHiredPage />
               </AdminRoute>
             }
           />
@@ -406,7 +418,7 @@ function AppContent() {
             path="/admin/rsp/raters"
             element={
               <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
-                <RSPDashboard />
+                <RaterManagementPage />
               </AdminRoute>
             }
           />
@@ -440,6 +452,7 @@ function AppContent() {
               <Navigate to="/admin/rsp/raters" replace />
             }
           />
+
           <Route
             path="/admin/lnd"
             element={

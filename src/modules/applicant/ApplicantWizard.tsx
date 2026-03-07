@@ -2,12 +2,25 @@ import React, { useState } from 'react';
 import { Button, Dialog } from '../../components';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import { mockDatabase } from '../../lib/mockDatabase';
+import { syncApplicantSubmissionToRecruitment } from '../../lib/recruitmentData';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../../lib/supabase';
 import '../../styles/wizard.css';
 import type { ApplicantFormData, UploadedFile, ValidationErrors } from '../../types/applicant.types';
 import { validateApplicantForm, validateFiles } from '../../utils/validation';
 import { ApplicantAssessmentForm } from './ApplicantAssessmentForm';
 import { AttachmentsUploadForm } from './AttachmentsUploadForm';
+
+const ATTACHMENT_PREVIEW_CACHE_KEY = 'cictrix_attachment_previews';
+const MAX_PREVIEWABLE_FILE_BYTES = 1024 * 1024;
+
+type CachedPreviewFile = {
+  applicantId: string;
+  documentType: string;
+  fileName: string;
+  mimeType: string;
+  dataUrl: string;
+  createdAt: string;
+};
 
 const INITIAL_FORM_DATA: ApplicantFormData = {
   first_name: '',
@@ -103,6 +116,49 @@ export const ApplicantWizard: React.FC = () => {
     }
   };
 
+  const toDataUrl = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error('Failed to read file for preview cache'));
+      reader.readAsDataURL(file);
+    });
+
+  const cachePreviewableFiles = async (applicantId: string) => {
+    const previewable = files.filter((entry) => entry.file.size <= MAX_PREVIEWABLE_FILE_BYTES);
+    if (previewable.length === 0) return;
+
+    const cacheRows: CachedPreviewFile[] = await Promise.all(
+      previewable.map(async (entry) => ({
+        applicantId,
+        documentType: String((entry as any).documentType ?? 'other'),
+        fileName: entry.file.name,
+        mimeType: entry.file.type,
+        dataUrl: await toDataUrl(entry.file),
+        createdAt: new Date().toISOString(),
+      }))
+    );
+
+    try {
+      const existing = (() => {
+        try {
+          return JSON.parse(localStorage.getItem(ATTACHMENT_PREVIEW_CACHE_KEY) ?? '[]') as CachedPreviewFile[];
+        } catch {
+          return [];
+        }
+      })();
+
+      const incomingKeys = new Set(cacheRows.map((row) => `${row.applicantId}:${row.documentType}`));
+      const next = [
+        ...existing.filter((row) => !incomingKeys.has(`${row.applicantId}:${row.documentType}`)),
+        ...cacheRows,
+      ];
+      localStorage.setItem(ATTACHMENT_PREVIEW_CACHE_KEY, JSON.stringify(next));
+    } catch {
+      // Best effort only: if cache exceeds quota we still keep submission successful.
+    }
+  };
+
   const submitWithClient = async (client: any): Promise<void> => {
     const countResult = await client
       .from('applicants')
@@ -141,6 +197,28 @@ export const ApplicantWizard: React.FC = () => {
     }
 
     await uploadFiles(client, applicantData.id);
+
+    await cachePreviewableFiles(applicantData.id);
+
+    syncApplicantSubmissionToRecruitment({
+      applicantId: applicantData.id,
+      firstName: formData.first_name,
+      middleName: formData.middle_name,
+      lastName: formData.last_name,
+      email: formData.email,
+      phone: formData.contact_number,
+      address: formData.address,
+      position: formData.position,
+      department: POSITION_TO_DEPARTMENT_MAP[formData.position] || formData.office,
+      isPwd: formData.is_pwd,
+      submittedAt: new Date().toISOString(),
+      attachments: files.map((uploadedFile) => ({
+        name: uploadedFile.file.name,
+        type: uploadedFile.file.type,
+        size: uploadedFile.file.size,
+        documentType: (uploadedFile as any).documentType,
+      })),
+    });
   };
 
   const completeSuccess = () => {
