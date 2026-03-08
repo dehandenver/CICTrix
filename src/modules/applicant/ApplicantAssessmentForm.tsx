@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card, Checkbox, Input, Select } from '../../components';
+import { DEPARTMENT_OPTIONS, POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
+import { ensureRecruitmentSeedData, getAuthoritativeJobPostings } from '../../lib/recruitmentData';
 import type { ApplicantFormData, ValidationErrors } from '../../types/applicant.types';
-import { POSITION_OPTIONS, DEPARTMENT_OPTIONS, POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 
 interface ApplicantAssessmentFormProps {
   formData: ApplicantFormData;
@@ -14,11 +15,88 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
   errors,
   onChange,
 }) => {
+  const [dynamicPositionOptions, setDynamicPositionOptions] = useState<Array<{ value: string; label: string }>>([]);
+  const [positionDepartmentMap, setPositionDepartmentMap] = useState<Record<string, string>>({});
+
+  const syncPostedPositions = (currentSelectedPosition?: string) => {
+    ensureRecruitmentSeedData();
+
+    const activeRows = getAuthoritativeJobPostings().filter(
+      (row) => String(row?.status ?? '').trim().toLowerCase() === 'active'
+    );
+
+    if (activeRows.length === 0) {
+      setPositionDepartmentMap({});
+      setDynamicPositionOptions([]);
+
+      if (currentSelectedPosition) {
+        onChange('position', '');
+        onChange('office', '');
+      }
+
+      return;
+    }
+
+    const seen = new Set<string>();
+    const nextOptions: Array<{ value: string; label: string }> = [];
+    const nextDepartmentMap: Record<string, string> = {};
+
+    activeRows.forEach((row) => {
+      const title = String(row?.title ?? '').trim();
+      const department = String(row?.department ?? '').trim();
+      if (!title) return;
+
+      const normalized = title.toLowerCase();
+      if (!seen.has(normalized)) {
+        seen.add(normalized);
+        nextOptions.push({ value: title, label: title });
+      }
+
+      if (department && !nextDepartmentMap[title]) {
+        nextDepartmentMap[title] = department;
+      }
+    });
+
+    setPositionDepartmentMap(nextDepartmentMap);
+    setDynamicPositionOptions(nextOptions);
+
+    if (currentSelectedPosition) {
+      const stillActive = nextOptions.some((option) => option.value === currentSelectedPosition);
+      if (!stillActive) {
+        onChange('position', '');
+        onChange('office', '');
+      }
+    }
+  };
+
+  useEffect(() => {
+    syncPostedPositions(formData.position);
+
+    const onFocus = () => syncPostedPositions(formData.position);
+    const onUpdated = () => syncPostedPositions(formData.position);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('cictrix:job-postings-updated', onUpdated as EventListener);
+
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('cictrix:job-postings-updated', onUpdated as EventListener);
+    };
+  }, [formData.position, onChange]);
+
+  useEffect(() => {
+    if (!formData.position) return;
+    const exists = dynamicPositionOptions.some((option) => option.value === formData.position);
+    if (exists) return;
+
+    onChange('position', '');
+    onChange('office', '');
+  }, [dynamicPositionOptions, formData.position, onChange]);
+
   const handlePositionChange = (positionValue: string) => {
     onChange('position', positionValue);
-    
+
     // Auto-assign department based on position
-    const assignedDepartment = POSITION_TO_DEPARTMENT_MAP[positionValue];
+    const assignedDepartment = positionDepartmentMap[positionValue] ?? POSITION_TO_DEPARTMENT_MAP[positionValue];
     if (assignedDepartment) {
       onChange('office', assignedDepartment);
     }
@@ -97,7 +175,7 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
 
         <Select
           label="Position Applied For"
-          options={POSITION_OPTIONS}
+          options={dynamicPositionOptions}
           value={formData.position}
           onChange={(e) => handlePositionChange(e.target.value)}
           error={errors.position}

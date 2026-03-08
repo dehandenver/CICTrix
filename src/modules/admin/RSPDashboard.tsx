@@ -27,8 +27,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/Button';
 import { Sidebar } from '../../components/Sidebar';
+import {
+  getDeletedJobReports,
+  getJobPostings,
+  saveDeletedJobReports,
+  saveJobPostings,
+  type DeletedJobReport,
+} from '../../lib/recruitmentData';
 import { mockDatabase } from '../../lib/mockDatabase';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
+import type { JobPosting } from '../../types/recruitment.types';
 import '../../styles/admin.css';
 
 type JobStatus = 'Open' | 'Reviewing' | 'Closed';
@@ -137,6 +145,56 @@ const formatDate = (dateValue: string) => {
     day: 'numeric',
     year: 'numeric',
   });
+};
+
+const mapRecruitmentPostingsToDashboardJobs = (rows: JobPosting[]): JobRecord[] => {
+  return rows.map((item) => ({
+    id: item.id,
+    title: String(item.title ?? ''),
+    item_number: String(item.jobCode ?? ''),
+    department: String(item.department ?? 'Unassigned'),
+    status:
+      item.status === 'Closed' || item.status === 'Filled'
+        ? 'Closed'
+        : item.status === 'Draft'
+          ? 'Reviewing'
+          : 'Open',
+    created_at: String(item.postedDate ?? new Date().toISOString()),
+    applicant_count: Number(item.applicantCount ?? 0),
+  }));
+};
+
+const persistDashboardJobsToRecruitment = (rows: JobRecord[]) => {
+  const nowIso = new Date().toISOString();
+  const mapped: JobPosting[] = rows.map((row, index) => ({
+    id: String(row.id ?? crypto.randomUUID()),
+    jobCode: row.item_number || `LGU-2026-${String(index + 1).padStart(3, '0')}`,
+    title: row.title,
+    department: row.department || 'Operations',
+    division: 'Operations',
+    positionType: 'Civil Service',
+    salaryGrade: 'SG-10',
+    salaryRange: { min: 20000, max: 30000 },
+    numberOfPositions: 1,
+    employmentStatus: 'Permanent',
+    summary: `${row.title} recruitment posting.`,
+    responsibilities: ['Review and process applications.'],
+    qualifications: {
+      education: "Bachelor's Degree",
+      experience: { years: 0, field: 'General' },
+      skills: [],
+      certifications: [],
+    },
+    requiredDocuments: ['Resume/CV', 'Application Letter'],
+    applicationDeadline: new Date(Date.now() + 30 * 86400000).toISOString(),
+    status: row.status === 'Closed' ? 'Closed' : row.status === 'Reviewing' ? 'Draft' : 'Active',
+    postedDate: row.created_at || nowIso,
+    postedBy: 'HR Admin',
+    applicantCount: row.applicant_count ?? 0,
+    qualifiedCount: 0,
+  }));
+
+  saveJobPostings(mapped);
 };
 
 const getStatusClass = (status: string) => {
@@ -278,6 +336,8 @@ export const RSPDashboard = () => {
   const [jobs, setJobs] = useState<JobRecord[]>([]);
   const [applicants, setApplicants] = useState<ApplicantRecord[]>([]);
   const [raters, setRaters] = useState<RaterRecord[]>([]);
+  const [deletedJobReports, setDeletedJobReports] = useState<DeletedJobReport[]>([]);
+  const [expandedArchiveIds, setExpandedArchiveIds] = useState<Record<string, boolean>>({});
   const [completedEvaluationIds, setCompletedEvaluationIds] = useState<Set<string>>(new Set());
 
   const [jobsSearch, setJobsSearch] = useState('');
@@ -353,6 +413,8 @@ export const RSPDashboard = () => {
 
   useEffect(() => {
     const load = async () => {
+      setDeletedJobReports(getDeletedJobReports());
+
       const localAssignments = loadRaterAssignments();
       setRaterAssignedPositionsByEmail(localAssignments);
 
@@ -369,7 +431,7 @@ export const RSPDashboard = () => {
           client.from('evaluations').select('*'),
         ]);
 
-      let [jobPostingsRes, jobsRes, applicantsRes, ratersRes, evaluationsRes] = await fetchBundle(primaryClient);
+      let [, , applicantsRes, ratersRes, evaluationsRes] = await fetchBundle(primaryClient);
 
       const primaryRaters =
         ratersRes.status === 'fulfilled' && !ratersRes.value.error && Array.isArray(ratersRes.value.data)
@@ -382,35 +444,11 @@ export const RSPDashboard = () => {
           : [];
 
       if (primaryApplicants.length === 0 && !isMockModeEnabled) {
-        [jobPostingsRes, jobsRes, applicantsRes, ratersRes, evaluationsRes] = await fetchBundle(secondaryClient);
+        [, , applicantsRes, ratersRes, evaluationsRes] = await fetchBundle(secondaryClient);
       }
 
-      const jobsSource =
-        jobPostingsRes.status === 'fulfilled' && !jobPostingsRes.value.error && Array.isArray(jobPostingsRes.value.data)
-          ? jobPostingsRes.value.data
-          : jobsRes.status === 'fulfilled' && !jobsRes.value.error && Array.isArray(jobsRes.value.data)
-            ? jobsRes.value.data
-            : [];
-
-      if (jobsSource.length > 0) {
-        const normalized = jobsSource.map((item: any, index: number) => ({
-          id: item?.id ?? `job-${index + 1}`,
-          title: String(item?.title ?? ''),
-          item_number: String(item?.item_number ?? ''),
-          department: String(item?.department ?? item?.office ?? 'Unassigned'),
-          status:
-            item?.status === 'Closed'
-              ? 'Closed'
-              : item?.status === 'On Hold' || item?.status === 'Reviewing'
-                ? 'Reviewing'
-                : 'Open',
-          created_at: String(item?.created_at ?? new Date().toISOString()),
-          applicant_count: 0,
-        } as JobRecord));
-        setJobs(normalized);
-      } else {
-        setJobs([]);
-      }
+      const canonicalJobs = mapRecruitmentPostingsToDashboardJobs(getJobPostings());
+      setJobs(canonicalJobs);
 
       if (applicantsRes.status === 'fulfilled' && !applicantsRes.value.error && Array.isArray(applicantsRes.value.data)) {
         const normalized = applicantsRes.value.data.map((item: any) => ({
@@ -769,7 +807,9 @@ export const RSPDashboard = () => {
       .map((job) => (typeof job.id === 'number' ? job.id : Number.NaN))
       .filter((id) => Number.isFinite(id)) as number[];
     const localId = numericIds.length > 0 ? Math.max(...numericIds) + 1 : 1;
-    setJobs((prev) => [{ ...payload, id: localId, applicant_count: 0 }, ...prev]);
+    const nextJobs = [{ ...payload, id: localId, applicant_count: 0 } as JobRecord, ...jobs];
+    setJobs(nextJobs);
+    persistDashboardJobsToRecruitment(nextJobs);
 
     try {
       await Promise.allSettled([
@@ -797,7 +837,39 @@ export const RSPDashboard = () => {
   };
 
   const handleDeleteJob = async (job: JobRecord) => {
-    setJobs((prev) => prev.filter((item) => item.id !== job.id));
+    const nextJobs = jobs.filter((item) => item.id !== job.id);
+    setJobs(nextJobs);
+
+    // Persist through the central recruitment utility so all dependent caches/events stay in sync.
+    const nextRecruitmentRows: JobPosting[] = nextJobs.map((row, index) => ({
+      id: String(row.id ?? crypto.randomUUID()),
+      jobCode: row.item_number || `LGU-2026-${String(index + 1).padStart(3, '0')}`,
+      title: row.title,
+      department: row.department || 'Operations',
+      division: 'Operations',
+      positionType: 'Civil Service',
+      salaryGrade: 'SG-10',
+      salaryRange: { min: 20000, max: 30000 },
+      numberOfPositions: 1,
+      employmentStatus: 'Permanent',
+      summary: `${row.title} recruitment posting.`,
+      responsibilities: ['Review and process applications.'],
+      qualifications: {
+        education: "Bachelor's Degree",
+        experience: { years: 0, field: 'General' },
+        skills: [],
+        certifications: [],
+      },
+      requiredDocuments: ['Resume/CV', 'Application Letter'],
+      applicationDeadline: new Date(Date.now() + 30 * 86400000).toISOString(),
+      status: row.status === 'Closed' ? 'Closed' : row.status === 'Reviewing' ? 'Draft' : 'Active',
+      postedDate: row.created_at || new Date().toISOString(),
+      postedBy: 'HR Admin',
+      applicantCount: row.applicant_count ?? 0,
+      qualifiedCount: 0,
+    }));
+    saveJobPostings(nextRecruitmentRows);
+
     try {
       await Promise.allSettled([
         supabase.from('job_postings').delete().eq('id', job.id),
@@ -811,7 +883,39 @@ export const RSPDashboard = () => {
 
   const handleToggleJobStatus = async (job: JobRecord) => {
     const updatedStatus: JobStatus = job.status === 'Closed' ? 'Open' : 'Closed';
-    setJobs((prev) => prev.map((item) => (item.id === job.id ? { ...item, status: updatedStatus } : item)));
+    const nextJobs = jobs.map((item) => (item.id === job.id ? { ...item, status: updatedStatus } : item));
+    setJobs(nextJobs);
+
+    // Persist through the central recruitment utility so all dependent caches/events stay in sync.
+    const nextRecruitmentRows: JobPosting[] = nextJobs.map((row, index) => ({
+      id: String(row.id ?? crypto.randomUUID()),
+      jobCode: row.item_number || `LGU-2026-${String(index + 1).padStart(3, '0')}`,
+      title: row.title,
+      department: row.department || 'Operations',
+      division: 'Operations',
+      positionType: 'Civil Service',
+      salaryGrade: 'SG-10',
+      salaryRange: { min: 20000, max: 30000 },
+      numberOfPositions: 1,
+      employmentStatus: 'Permanent',
+      summary: `${row.title} recruitment posting.`,
+      responsibilities: ['Review and process applications.'],
+      qualifications: {
+        education: "Bachelor's Degree",
+        experience: { years: 0, field: 'General' },
+        skills: [],
+        certifications: [],
+      },
+      requiredDocuments: ['Resume/CV', 'Application Letter'],
+      applicationDeadline: new Date(Date.now() + 30 * 86400000).toISOString(),
+      status: row.status === 'Closed' ? 'Closed' : row.status === 'Reviewing' ? 'Draft' : 'Active',
+      postedDate: row.created_at || new Date().toISOString(),
+      postedBy: 'HR Admin',
+      applicantCount: row.applicant_count ?? 0,
+      qualifiedCount: 0,
+    }));
+    saveJobPostings(nextRecruitmentRows);
+
     try {
       await Promise.allSettled([
         supabase.from('job_postings').update({ status: updatedStatus }).eq('id', job.id),
@@ -976,6 +1080,32 @@ export const RSPDashboard = () => {
       department: mode === 'department' ? prev.department : '',
       selectedEmployeeIds: mode === 'selected' ? prev.selectedEmployeeIds : [],
     }));
+  };
+
+  const toggleArchiveDetails = (archiveId: string) => {
+    setExpandedArchiveIds((prev) => ({
+      ...prev,
+      [archiveId]: !prev[archiveId],
+    }));
+  };
+
+  const handleDeleteArchivePermanently = (archiveId: string, title: string) => {
+    const confirmed = window.confirm(
+      `Permanently delete archived report for \"${title}\"? This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setDeletedJobReports((prev) => {
+      const next = prev.filter((report) => report.id !== archiveId);
+      saveDeletedJobReports(next);
+      return next;
+    });
+
+    setExpandedArchiveIds((prev) => {
+      const next = { ...prev };
+      delete next[archiveId];
+      return next;
+    });
   };
 
   const handleBulkEmployeeToggle = (employeeId: string) => {
@@ -1428,7 +1558,7 @@ export const RSPDashboard = () => {
                     {qualifiedApplicants.map((applicant) => (
                       <tr key={applicant.id} className="border-t border-[var(--border-color)] text-lg">
                         <td className="px-5 py-4 font-semibold text-blue-600">
-                          <button type="button" className="hover:underline" onClick={() => navigate(`/interviewer/evaluate/${applicant.id}`)}>
+                          <button type="button" className="hover:underline" onClick={() => navigate(`/admin/rsp/applicant/${applicant.id}`)}>
                             {applicant.full_name}
                           </button>
                         </td>
@@ -1921,6 +2051,109 @@ export const RSPDashboard = () => {
               <section>
                 <h2 className="!mb-1 text-2xl font-semibold">Employee Documents</h2>
                 <p className="text-lg text-[var(--text-secondary)]">Access and download documents submitted by employees</p>
+              </section>
+
+              <section className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="!mb-1 text-2xl font-semibold">Deleted Job Archives</h2>
+                    <p className="text-lg text-[var(--text-secondary)]">Applicants and document references preserved when a job post is deleted</p>
+                  </div>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-base text-[var(--text-secondary)]">{deletedJobReports.length} archive{deletedJobReports.length === 1 ? '' : 's'}</span>
+                </div>
+
+                {deletedJobReports.length === 0 ? (
+                  <p className="!mb-0 text-base text-[var(--text-secondary)]">No deleted job archives yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {deletedJobReports.map((report) => {
+                      const isExpanded = Boolean(expandedArchiveIds[report.id]);
+                      const docCount = report.applicants.reduce((total, applicant) => total + applicant.documents.length, 0);
+                      return (
+                        <div key={report.id} className="rounded-xl border border-[var(--border-color)] bg-slate-50 p-4">
+                          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                            <p className="!mb-0 text-lg font-semibold text-[var(--text-primary)]">{report.job.title}</p>
+                            <span className="rounded-full bg-white px-2 py-1 text-sm text-[var(--text-secondary)]">Deleted {formatDate(report.deletedAt)}</span>
+                          </div>
+                          <p className="!mb-0 text-base text-[var(--text-secondary)]">
+                            Applicants archived: <span className="font-semibold text-[var(--text-primary)]">{report.applicants.length}</span>
+                            {' • '}
+                            Documents archived: <span className="font-semibold text-[var(--text-primary)]">{docCount}</span>
+                          </p>
+
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => toggleArchiveDetails(report.id)}
+                              className="rounded-lg border border-[var(--border-color)] bg-white px-3 py-2 text-sm font-semibold text-[var(--text-primary)]"
+                            >
+                              {isExpanded ? 'Hide Details' : 'View Details'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteArchivePermanently(report.id, report.job.title)}
+                              className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700"
+                            >
+                              Permanently Delete
+                            </button>
+                          </div>
+
+                          {isExpanded && (
+                            <div className="mt-4 space-y-3 rounded-xl border border-[var(--border-color)] bg-white p-4">
+                              <div className="grid grid-cols-1 gap-2 xl:grid-cols-2">
+                                <p className="!mb-0 text-sm text-[var(--text-secondary)]">Job Code: <span className="font-semibold text-[var(--text-primary)]">{report.job.jobCode || '--'}</span></p>
+                                <p className="!mb-0 text-sm text-[var(--text-secondary)]">Department: <span className="font-semibold text-[var(--text-primary)]">{report.job.department || '--'}</span></p>
+                                <p className="!mb-0 text-sm text-[var(--text-secondary)]">Deleted By: <span className="font-semibold text-[var(--text-primary)]">{report.deletedBy || '--'}</span></p>
+                                <p className="!mb-0 text-sm text-[var(--text-secondary)]">Deleted At: <span className="font-semibold text-[var(--text-primary)]">{formatDate(report.deletedAt)}</span></p>
+                              </div>
+
+                              <div className="space-y-2">
+                                {report.applicants.length === 0 ? (
+                                  <p className="!mb-0 text-sm text-[var(--text-secondary)]">No applicants archived for this job post.</p>
+                                ) : (
+                                  report.applicants.map((applicant) => (
+                                    <div key={applicant.id} className="rounded-lg border border-[var(--border-color)] bg-slate-50 p-3">
+                                      <p className="!mb-1 text-base font-semibold text-[var(--text-primary)]">
+                                        {applicant.personalInfo.firstName} {applicant.personalInfo.lastName}
+                                      </p>
+                                      <p className="!mb-1 text-sm text-[var(--text-secondary)]">Email: {applicant.personalInfo.email || '--'}</p>
+                                      <p className="!mb-2 text-sm text-[var(--text-secondary)]">Status: {applicant.status}</p>
+                                      <div className="space-y-1">
+                                        {applicant.documents.length === 0 ? (
+                                          <p className="!mb-0 text-sm text-[var(--text-secondary)]">No documents archived.</p>
+                                        ) : (
+                                          applicant.documents.map((doc, index) => (
+                                            <div key={`${applicant.id}-${doc.type}-${index}`} className="flex flex-wrap items-center gap-2 text-sm">
+                                              <span className="font-semibold text-[var(--text-primary)]">{doc.type}</span>
+                                              {doc.url && doc.url !== '#' && /^(https?:|data:|blob:)/i.test(doc.url) ? (
+                                                <a
+                                                  href={doc.url}
+                                                  target="_blank"
+                                                  rel="noreferrer"
+                                                  className="text-blue-700 underline"
+                                                >
+                                                  Open File
+                                                </a>
+                                              ) : doc.url && doc.url !== '#' ? (
+                                                <span className="text-[var(--text-secondary)]">Stored path: {doc.url}</span>
+                                              ) : (
+                                                <span className="text-[var(--text-secondary)]">No file URL</span>
+                                              )}
+                                            </div>
+                                          ))
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </section>
             </>
           )}

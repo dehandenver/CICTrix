@@ -13,13 +13,17 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DEPARTMENTS } from '../constants/positions';
 import {
+  archiveDeletedJobPosting,
     ensureRecruitmentSeedData,
+  excludeApplicantIdsFromBackfill,
     formatPHDate,
     getApplicants,
     getJobPostings,
+  saveApplicants,
     saveJobPostings,
     toTitleCase,
 } from '../lib/recruitmentData';
+import { supabase } from '../lib/supabase';
 import { JobPosting } from '../types/recruitment.types';
 import { RecruitmentNavigationGuide } from './RecruitmentNavigationGuide';
 import { Sidebar } from './Sidebar';
@@ -109,7 +113,10 @@ export const JobPostingsPage = () => {
 
   useEffect(() => {
     ensureRecruitmentSeedData();
-    setJobs(getJobPostings());
+    const loadedJobs = getJobPostings();
+    setJobs(loadedJobs);
+    // Normalize derived stores (legacy jobs/options) from the current source-of-truth list.
+    saveJobPostings(loadedJobs);
     setLiveApplicants(getApplicants());
   }, []);
 
@@ -284,10 +291,41 @@ export const JobPostingsPage = () => {
     setToast('Posting duplicated as draft.');
   };
 
-  const deleteDraft = (id: string) => {
-    saveJobs(jobs.filter((job) => job.id !== id));
+  const deleteJobPosting = async (job: JobPosting) => {
+    const linkedApplicants = liveApplicants.filter((row) => row.jobPostingId === job.id);
+    const linkedCount = linkedApplicants.length;
+
+    const confirmMessage = linkedCount > 0
+      ? `Delete job post \"${job.title}\"? ${linkedCount} applicant record(s) and their document references will be archived to Reports.`
+      : `Delete job post \"${job.title}\"? This action cannot be undone.`;
+    const confirmed = window.confirm(confirmMessage);
+    if (!confirmed) return;
+
+    if (linkedCount > 0) {
+      excludeApplicantIdsFromBackfill(linkedApplicants.map((row) => row.id));
+
+      archiveDeletedJobPosting({
+        job,
+        applicants: linkedApplicants,
+        deletedBy: 'HR Admin',
+      });
+
+      const remainingApplicants = liveApplicants.filter((row) => row.jobPostingId !== job.id);
+      setLiveApplicants(remainingApplicants);
+      saveApplicants(remainingApplicants);
+    }
+
+    saveJobs(jobs.filter((row) => row.id !== job.id));
+
+    await Promise.allSettled([
+      supabase.from('job_postings').delete().eq('id', job.id),
+      supabase.from('jobs').delete().eq('id', job.id),
+      supabase.from('job_postings').delete().eq('title', job.title).eq('item_number', job.jobCode),
+      supabase.from('jobs').delete().eq('title', job.title).eq('item_number', job.jobCode),
+    ]);
+
     setOpenMenuId(null);
-    setToast('Draft posting deleted.');
+    setToast(linkedCount > 0 ? 'Job post deleted and applicant data archived to Reports.' : 'Job post deleted.');
   };
 
   return (
@@ -370,7 +408,7 @@ export const JobPostingsPage = () => {
                       {job.status === 'Active' && <button className="block w-full rounded px-2 py-1 text-left hover:bg-slate-100" onClick={() => updateStatus(job.id, 'Closed')}>Close Posting</button>}
                       {job.status === 'Closed' && <button className="block w-full rounded px-2 py-1 text-left hover:bg-slate-100" onClick={() => updateStatus(job.id, 'Active')}>Reopen Posting</button>}
                       {job.status !== 'Filled' && <button className="block w-full rounded px-2 py-1 text-left hover:bg-slate-100" onClick={() => updateStatus(job.id, 'Filled')}>Mark As Filled</button>}
-                      {job.status === 'Draft' && <button className="block w-full rounded px-2 py-1 text-left text-rose-600 hover:bg-rose-50" onClick={() => deleteDraft(job.id)}>Delete Draft</button>}
+                      <button className="block w-full rounded px-2 py-1 text-left text-rose-600 hover:bg-rose-50" onClick={() => void deleteJobPosting(job)}>Delete Job Post</button>
                     </div>
                   )}
                 </div>

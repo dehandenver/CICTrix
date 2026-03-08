@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { mockDatabase } from '../lib/mockDatabase';
 import {
     downloadTextFile,
     ensureRecruitmentSeedData,
@@ -24,7 +25,7 @@ import {
     saveApplicants,
     toCsv,
 } from '../lib/recruitmentData';
-import { ATTACHMENTS_BUCKET, supabase } from '../lib/supabase';
+  import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../lib/supabase';
 import { Applicant, ApplicantStatus, JobPosting } from '../types/recruitment.types';
 import { RecruitmentNavigationGuide } from './RecruitmentNavigationGuide';
 import { Sidebar } from './Sidebar';
@@ -64,6 +65,7 @@ const looseDocKey = (value: string) => normalizeDocKey(value).replace(/[_-]/g, '
 
 const resolveStorageOrDirectUrl = async (filePathOrUrl: string): Promise<string | null> => {
   if (!filePathOrUrl) return null;
+  if (filePathOrUrl === '#') return null;
   if (filePathOrUrl.startsWith('http') || filePathOrUrl.startsWith('data:') || filePathOrUrl.startsWith('blob:')) {
     return filePathOrUrl;
   }
@@ -71,9 +73,23 @@ const resolveStorageOrDirectUrl = async (filePathOrUrl: string): Promise<string 
     return null;
   }
 
-  const signedResult = await supabase.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(filePathOrUrl, 120);
-  const signedUrl = (signedResult as any)?.data?.signedUrl as string | undefined;
-  return signedUrl ?? null;
+  try {
+    const signedResult = await supabase.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(filePathOrUrl, 120);
+    const signedUrl = (signedResult as any)?.data?.signedUrl as string | undefined;
+    if (signedUrl) return signedUrl;
+  } catch {
+    // Continue to public URL fallback.
+  }
+
+  try {
+    const publicResult = supabase.storage.from(ATTACHMENTS_BUCKET).getPublicUrl(filePathOrUrl);
+    const publicUrl = (publicResult as any)?.data?.publicUrl as string | undefined;
+    if (publicUrl) return publicUrl;
+  } catch {
+    // Final fallback below.
+  }
+
+  return null;
 };
 
 const STATUS_COLORS: Record<ApplicantStatus, string> = {
@@ -100,6 +116,78 @@ const STATUS_OPTIONS: ApplicantStatus[] = [
   'Rejected',
 ];
 
+const normalizeText = (value: string) => String(value ?? '').trim().toLowerCase();
+
+const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
+  try {
+    const mode = localStorage.getItem('cictrix_data_source_mode');
+    return mode === 'local' ? 'local' : 'supabase';
+  } catch {
+    return 'supabase';
+  }
+};
+
+type EvaluationSnapshot = {
+  score: number;
+  completed: boolean;
+  updatedAt: string;
+};
+
+const hasCompletedEvaluation = (row: any) => {
+  const oralScores = [
+    row?.communication_skills_score,
+    row?.confidence_score,
+    row?.comprehension_score,
+    row?.personality_score,
+    row?.job_knowledge_score,
+    row?.overall_impression_score,
+  ];
+
+  const oralComplete = oralScores.every((value) => typeof value === 'number' && value > 0);
+  const legacyComplete = typeof row?.overall_score === 'number' && row.overall_score > 0;
+  return oralComplete || legacyComplete;
+};
+
+const deriveEvaluationPercentage = (row: any): number => {
+  if (typeof row?.overall_score === 'number' && row.overall_score > 0) {
+    return Math.min(100, Math.max(0, row.overall_score));
+  }
+
+  const oralScores = [
+    row?.communication_skills_score,
+    row?.confidence_score,
+    row?.comprehension_score,
+    row?.personality_score,
+    row?.job_knowledge_score,
+    row?.overall_impression_score,
+  ];
+
+  const numeric = oralScores.filter((value) => typeof value === 'number') as number[];
+  if (numeric.length === 0) return 0;
+  const total = numeric.reduce((sum, value) => sum + value, 0);
+  return Math.min(100, Math.max(0, Math.round((total / 30) * 100)));
+};
+
+const toApplicantStatus = (rawStatus: string, hasCompletedEval: boolean): ApplicantStatus => {
+  const normalized = normalizeText(rawStatus);
+
+  if (normalized.includes('reject') || normalized.includes('disqual') || normalized === 'not qualified') {
+    return normalized.includes('reject') ? 'Rejected' : 'Not Qualified';
+  }
+  if (normalized.includes('recommend') || normalized.includes('qualified') || normalized.includes('accepted') || normalized.includes('hired')) {
+    return 'Recommended for Hiring';
+  }
+  if (normalized.includes('shortlist')) return 'Shortlisted';
+  if (normalized.includes('interview scheduled')) return 'Interview Scheduled';
+  if (normalized.includes('for interview')) return 'For Interview';
+  if (normalized.includes('review') || normalized === 'reviewed' || normalized === 'pending') {
+    return hasCompletedEval ? 'Interview Completed' : 'Under Review';
+  }
+  if (normalized.includes('new')) return 'New Application';
+
+  return hasCompletedEval ? 'Interview Completed' : 'Under Review';
+};
+
 export const QualifiedApplicantsPage = () => {
   const navigate = useNavigate();
   const { jobId } = useParams();
@@ -121,12 +209,187 @@ export const QualifiedApplicantsPage = () => {
   const [noteDraft, setNoteDraft] = useState('');
   const [documentActionBusy, setDocumentActionBusy] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadQualifiedApplicantsData = async () => {
     ensureRecruitmentSeedData();
-    const loadedJobs = getJobPostings();
-    setJobs(loadedJobs);
+
+    const canonicalJobs = getJobPostings();
+    if (canonicalJobs.length > 0) {
+      setJobs(canonicalJobs);
+    }
+
+    const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
+    const primaryClient = preferredMode === 'local' ? (mockDatabase as any) : supabase;
+    const secondaryClient = preferredMode === 'local' ? supabase : (mockDatabase as any);
+
+    const fetchBundle = async (client: any) =>
+      Promise.allSettled([
+        client.from('applicants').select('*').order('created_at', { ascending: false }),
+        client.from('evaluations').select('*'),
+        client.from('applicant_attachments').select('*'),
+        client.from('job_postings').select('*').order('created_at', { ascending: false }),
+      ]);
+
+    let [applicantsRes, evaluationsRes, attachmentsRes, jobPostingsRes] = await fetchBundle(primaryClient);
+
+    const primaryApplicants =
+      applicantsRes.status === 'fulfilled' && !applicantsRes.value.error && Array.isArray(applicantsRes.value.data)
+        ? applicantsRes.value.data
+        : [];
+
+    if (primaryApplicants.length === 0 && !isMockModeEnabled) {
+      [applicantsRes, evaluationsRes, attachmentsRes, jobPostingsRes] = await fetchBundle(secondaryClient);
+    }
+
+    const dbApplicants =
+      applicantsRes.status === 'fulfilled' && !applicantsRes.value.error && Array.isArray(applicantsRes.value.data)
+        ? applicantsRes.value.data
+        : [];
+
+    const dbEvaluations =
+      evaluationsRes.status === 'fulfilled' && !evaluationsRes.value.error && Array.isArray(evaluationsRes.value.data)
+        ? evaluationsRes.value.data
+        : [];
+
+    const dbAttachments =
+      attachmentsRes.status === 'fulfilled' && !attachmentsRes.value.error && Array.isArray(attachmentsRes.value.data)
+        ? attachmentsRes.value.data
+        : [];
+
+    const dbJobPostings =
+      jobPostingsRes.status === 'fulfilled' && !jobPostingsRes.value.error && Array.isArray(jobPostingsRes.value.data)
+        ? jobPostingsRes.value.data
+        : [];
+
+    if (canonicalJobs.length === 0 && dbJobPostings.length > 0) {
+      const mappedJobs: JobPosting[] = dbJobPostings.map((row: any, index: number) => ({
+        id: String(row?.id ?? `db-job-${index + 1}`),
+        jobCode: String(row?.job_code ?? row?.item_number ?? `DB-${index + 1}`),
+        title: String(row?.title ?? ''),
+        department: String(row?.department ?? row?.office ?? 'Unassigned'),
+        division: String(row?.division ?? ''),
+        positionType: 'Civil Service',
+        salaryGrade: String(row?.salary_grade ?? ''),
+        salaryRange: { min: 0, max: 0 },
+        numberOfPositions: 1,
+        employmentStatus: 'Permanent',
+        summary: String(row?.description ?? ''),
+        responsibilities: [],
+        qualifications: {
+          education: "Bachelor's Degree",
+          experience: { years: 0, field: 'General' },
+          skills: [],
+          certifications: [],
+        },
+        requiredDocuments: [],
+        applicationDeadline: new Date().toISOString(),
+        status: normalizeText(String(row?.status ?? '')) === 'closed' ? 'Closed' : 'Active',
+        postedDate: String(row?.created_at ?? new Date().toISOString()),
+        postedBy: 'System',
+        applicantCount: Number(row?.applicant_count ?? 0),
+        qualifiedCount: Number(row?.qualified_count ?? 0),
+      }));
+      setJobs(mappedJobs);
+    }
+
+    const evaluationMap = new Map<string, EvaluationSnapshot>();
+    dbEvaluations.forEach((row: any) => {
+      const applicantId = String(row?.applicant_id ?? '').trim();
+      if (!applicantId) return;
+
+      const snapshot: EvaluationSnapshot = {
+        score: deriveEvaluationPercentage(row),
+        completed: hasCompletedEvaluation(row),
+        updatedAt: String(row?.created_at ?? row?.updated_at ?? new Date().toISOString()),
+      };
+
+      const current = evaluationMap.get(applicantId);
+      if (!current || new Date(snapshot.updatedAt).getTime() >= new Date(current.updatedAt).getTime()) {
+        evaluationMap.set(applicantId, snapshot);
+      }
+    });
+
+    const attachmentMap = new Map<string, any[]>();
+    dbAttachments.forEach((row: any) => {
+      const applicantId = String(row?.applicant_id ?? '').trim();
+      if (!applicantId) return;
+      const current = attachmentMap.get(applicantId) ?? [];
+      current.push(row);
+      attachmentMap.set(applicantId, current);
+    });
+
+    const jobsSource = canonicalJobs.length > 0 ? canonicalJobs : getJobPostings();
+
+    const mappedApplicants: Applicant[] = dbApplicants.map((row: any) => {
+      const applicantId = String(row?.id ?? crypto.randomUUID());
+      const position = String(row?.position ?? '');
+      const office = String(row?.office ?? row?.department ?? 'Unassigned');
+      const matchedJob = jobsSource.find((job) => normalizeText(job.title) === normalizeText(position));
+      const evalSnapshot = evaluationMap.get(applicantId);
+      const persistedScore = typeof row?.total_score === 'number' ? row.total_score : 0;
+      const qualificationScore = evalSnapshot ? Math.max(persistedScore, evalSnapshot.score) : persistedScore;
+      const mappedStatus = toApplicantStatus(String(row?.status ?? 'New Application'), Boolean(evalSnapshot?.completed));
+      const docs = (attachmentMap.get(applicantId) ?? []).map((doc: any) => ({
+        type: String(doc?.document_type ?? doc?.file_name ?? 'Document'),
+        url: String(doc?.file_path ?? '#'),
+        verified: Boolean(doc?.verified ?? false),
+      }));
+
+      return {
+        id: applicantId,
+        jobPostingId: matchedJob?.id ?? String(row?.job_posting_id ?? 'unposted'),
+        personalInfo: {
+          firstName: String(row?.first_name ?? ''),
+          lastName: String(row?.last_name ?? ''),
+          email: String(row?.email ?? ''),
+          phone: String(row?.contact_number ?? ''),
+          address: String(row?.address ?? ''),
+          dateOfBirth: String(row?.date_of_birth ?? new Date('1995-01-01').toISOString()),
+        },
+        qualificationScore,
+        status: mappedStatus,
+        education: [],
+        experience: [],
+        skills: [],
+        certifications: [],
+        documents: docs,
+        applicationDate: String(row?.created_at ?? new Date().toISOString()),
+        notes: [],
+        timeline: [
+          {
+            event: evalSnapshot?.completed ? 'Evaluation Completed' : 'Application Received',
+            date: evalSnapshot?.updatedAt ?? String(row?.created_at ?? new Date().toISOString()),
+            actor: evalSnapshot?.completed ? 'Interviewer' : 'System',
+          },
+        ],
+      };
+    });
+
+    if (mappedApplicants.length > 0) {
+      setApplicants(mappedApplicants);
+      saveApplicants(mappedApplicants);
+      return;
+    }
+
     setApplicants(getApplicants());
+  };
+
+  useEffect(() => {
+    const run = () => {
+      loadQualifiedApplicantsData();
+    };
+
+    run();
+
+    const onUpdated = () => run();
+    window.addEventListener('focus', onUpdated);
+    window.addEventListener('cictrix:applicants-updated', onUpdated as EventListener);
+
     if (jobId) setJobFilter(jobId);
+
+    return () => {
+      window.removeEventListener('focus', onUpdated);
+      window.removeEventListener('cictrix:applicants-updated', onUpdated as EventListener);
+    };
   }, [jobId]);
 
   useEffect(() => {

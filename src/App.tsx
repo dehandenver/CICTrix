@@ -15,6 +15,7 @@ import { SettingsPage } from './modules/admin/SettingsPage';
 import { SuperAdminDashboard } from './modules/admin/SuperAdminDashboard';
 import { ApplicantWizard } from './modules/applicant/ApplicantWizard';
 import { EmployeeLoginPage, EmployeePage } from './modules/employee';
+import { ApplicantDetailsPage } from './modules/interviewer/ApplicantDetailsPage';
 import { EvaluationForm } from './modules/interviewer/EvaluationForm';
 import { InterviewerApplicantsList } from './modules/interviewer/InterviewerApplicantsList';
 import { InterviewerDashboard } from './modules/interviewer/InterviewerDashboard';
@@ -146,6 +147,7 @@ const EmployeeRoute = ({
 function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
+  const isInterviewerRoute = location.pathname.startsWith('/interviewer');
   const [adminSession, setAdminSession] = useState<{ email: string; role: Role } | null>(null);
   const [interviewerSession, setInterviewerSession] = useState<InterviewerSession | null>(null);
   const [employeeSession, setEmployeeSession] = useState<EmployeeSession | null>(null);
@@ -236,6 +238,13 @@ function AppContent() {
   }, [adminSession?.role, location.pathname, location.search]);
 
   useEffect(() => {
+    if (!isInterviewerRoute) {
+      if (revokedInterviewerDialogOpen) {
+        setRevokedInterviewerDialogOpen(false);
+      }
+      return;
+    }
+
     if (!interviewerSession || revokedInterviewerDialogOpen) {
       return;
     }
@@ -296,7 +305,7 @@ function AppContent() {
       window.clearInterval(intervalId);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [interviewerSession, revokedInterviewerDialogOpen]);
+  }, [isInterviewerRoute, interviewerSession, revokedInterviewerDialogOpen]);
 
   const handleLogin = (email: string, role: Role) => {
     const session = { email, role };
@@ -346,7 +355,9 @@ function AppContent() {
       // Ignore sign-out errors and force route reset.
     }
 
-    navigate('/interviewer/login', { replace: true });
+    if (isInterviewerRoute) {
+      navigate('/interviewer/login', { replace: true });
+    }
   };
 
   return (
@@ -509,6 +520,14 @@ function AppContent() {
             }
           />
           <Route
+            path="/admin/rsp/applicant/:id"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <ApplicantDetailsPage />
+              </AdminRoute>
+            }
+          />
+          <Route
             path="/admin/rsp/qualified/:jobId"
             element={
               <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
@@ -597,7 +616,7 @@ function AppContent() {
           />
         </Routes>
 
-        <Dialog open={revokedInterviewerDialogOpen} onClose={handleRevokedInterviewerAcknowledge}>
+        <Dialog open={isInterviewerRoute && revokedInterviewerDialogOpen} onClose={handleRevokedInterviewerAcknowledge}>
           <div style={{ textAlign: 'center' }}>
             <h3 style={{ marginBottom: '10px', color: '#dc2626' }}>Access Revoked</h3>
             <p style={{ marginBottom: '16px', color: '#374151' }}>

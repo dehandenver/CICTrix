@@ -1,4 +1,3 @@
-import { DEPARTMENTS as APPLICANT_DEPARTMENTS } from '../constants/positions';
 import {
     Applicant,
     EmployeeRecord,
@@ -9,15 +8,20 @@ import {
 } from '../types/recruitment.types';
 
 const JOB_POSTINGS_KEY = 'cictrix_job_postings';
+const AUTHORITATIVE_JOB_POSTINGS_KEY = 'cictrix_authoritative_job_postings';
+const LEGACY_JOBS_KEY = 'cictrix_jobs';
+const APPLICANT_POSITION_OPTIONS_KEY = 'cictrix_applicant_position_options';
 const APPLICANTS_KEY = 'cictrix_qualified_applicants';
+const DELETED_JOB_REPORTS_KEY = 'cictrix_deleted_job_reports';
 const NEWLY_HIRED_KEY = 'cictrix_newly_hired';
 const RATER_ASSIGNMENTS_KEY = 'cictrix_rater_assignments_v2';
 const EVALUATION_PERIODS_KEY = 'cictrix_evaluation_periods';
 const EMPLOYEE_DB_KEY = 'cictrix_employee_records';
 const LEGACY_PORTAL_APPLICANTS_KEY = 'cictrix_applicants';
 const LEGACY_PORTAL_ATTACHMENTS_KEY = 'cictrix_attachments';
+const BACKFILL_EXCLUDED_APPLICANT_IDS_KEY = 'cictrix_backfill_excluded_applicant_ids';
 const RECRUITMENT_DATA_VERSION_KEY = 'cictrix_recruitment_data_version';
-const RECRUITMENT_DATA_VERSION = '2026-03-07-department-alignment';
+const RECRUITMENT_DATA_VERSION = '2026-03-08-no-demo-job-seed';
 
 export const PH_LOCALE = 'en-PH';
 export const PH_TIMEZONE = 'Asia/Manila';
@@ -49,7 +53,20 @@ const safeJsonParse = <T>(raw: string | null, fallback: T): T => {
   }
 };
 
-const departments = [...APPLICANT_DEPARTMENTS];
+const getBackfillExcludedApplicantIds = (): string[] =>
+  safeJsonParse<string[]>(localStorage.getItem(BACKFILL_EXCLUDED_APPLICANT_IDS_KEY), []);
+
+const saveBackfillExcludedApplicantIds = (ids: string[]) =>
+  localStorage.setItem(BACKFILL_EXCLUDED_APPLICANT_IDS_KEY, JSON.stringify(ids));
+
+export const excludeApplicantIdsFromBackfill = (ids: string[]) => {
+  const normalized = ids.map((id) => String(id).trim()).filter(Boolean);
+  if (normalized.length === 0) return;
+
+  const existing = new Set(getBackfillExcludedApplicantIds());
+  normalized.forEach((id) => existing.add(id));
+  saveBackfillExcludedApplicantIds(Array.from(existing));
+};
 
 const LEGACY_DEPARTMENT_MAP: Record<string, string> = {
   'Human Resource Management Office': 'Human Resources',
@@ -65,89 +82,6 @@ const LEGACY_DEPARTMENT_MAP: Record<string, string> = {
 const normalizeDepartment = (value: string) => LEGACY_DEPARTMENT_MAP[value] ?? value;
 
 const normalizeText = (value: string) => value.trim().toLowerCase();
-
-const positions = [
-  'Administrative Officer II',
-  'HR Management Officer I',
-  'IT Officer II',
-  'Planning Officer III',
-  'Nurse II',
-  'Engineer III',
-  'Accountant II',
-  'Records Officer I',
-];
-
-const sampleSkills = [
-  'Public Service Orientation',
-  'Records Management',
-  'Data Analysis',
-  'Stakeholder Communication',
-  'Project Management',
-  'MS Office',
-  'Policy Compliance',
-  'Technical Writing',
-];
-
-const createMockJobPostings = (): JobPosting[] => {
-  const now = new Date('2026-03-07T10:00:00+08:00');
-  const statuses: JobPosting['status'][] = ['Active', 'Closed', 'Draft', 'Filled'];
-
-  return Array.from({ length: 14 }).map((_, index) => {
-    const postedDate = new Date(now);
-    postedDate.setDate(now.getDate() - index * 3);
-
-    const deadline = new Date(postedDate);
-    deadline.setDate(postedDate.getDate() + 21);
-
-    const expectedStartDate = new Date(deadline);
-    expectedStartDate.setDate(deadline.getDate() + 15);
-
-    const status = statuses[index % statuses.length];
-    const applicantCount = 8 + (index % 6) * 4;
-
-    return {
-      id: `job-${index + 1}`,
-      jobCode: `LGU-2026-${String(index + 1).padStart(3, '0')}`,
-      title: positions[index % positions.length],
-      department: departments[index % departments.length],
-      division: index % 2 === 0 ? 'Administration Division' : 'Operations Division',
-      positionType: (['Civil Service', 'COS', 'JO', 'Contractual'] as const)[index % 4],
-      salaryGrade: `SG-${9 + (index % 6)}`,
-      salaryRange: { min: 23000 + index * 1000, max: 34000 + index * 1000 },
-      numberOfPositions: (index % 3) + 1,
-      employmentStatus: (['Permanent', 'Temporary', 'Contractual'] as const)[index % 3],
-      summary: `Lead ${positions[index % positions.length]} role supporting ${departments[index % departments.length]} service delivery.`,
-      responsibilities: [
-        'Prepare and submit required reports on schedule.',
-        'Coordinate with internal and external stakeholders.',
-        'Implement office policies and process improvements.',
-      ],
-      qualifications: {
-        education: index % 3 === 0 ? 'Bachelor\'s Degree' : 'Master\'s Degree',
-        experience: { years: 2 + (index % 4), field: 'Public Administration' },
-        skills: sampleSkills.slice(0, 5),
-        certifications: ['CSC Professional Eligibility'],
-        preferred: 'Experience working in government HRIS projects.',
-      },
-      requiredDocuments: ['Resume/CV', 'Application Letter', 'Transcript of Records', 'NBI Clearance'],
-      applicationDeadline: deadline.toISOString(),
-      interviewPeriod:
-        status === 'Active'
-          ? {
-              start: new Date(deadline.getTime() + 2 * 86400000).toISOString(),
-              end: new Date(deadline.getTime() + 9 * 86400000).toISOString(),
-            }
-          : undefined,
-      expectedStartDate: expectedStartDate.toISOString(),
-      status,
-      postedDate: postedDate.toISOString(),
-      postedBy: 'HR Admin',
-      applicantCount,
-      qualifiedCount: Math.max(2, Math.floor(applicantCount * 0.35)),
-    };
-  });
-};
-
 
 const createMockEvaluationPeriods = (): EvaluationPeriod[] => [
   {
@@ -179,8 +113,14 @@ const createMockEvaluationPeriods = (): EvaluationPeriod[] => [
   },
 ];
 
+const isLikelySeededDemoJob = (job: JobPosting) => {
+  const normalizedId = String(job.id ?? '').trim();
+  const normalizedPostedBy = String(job.postedBy ?? '').trim().toLowerCase();
+  return /^job-\d+$/i.test(normalizedId) && normalizedPostedBy === 'hr admin';
+};
+
 const buildInitialData = () => {
-  const jobs = createMockJobPostings();
+  const jobs: JobPosting[] = [];
   const applicants: Applicant[] = [];
   const newlyHired: NewlyHired[] = [];
   const assignments: RaterAssignment[] = [];
@@ -202,11 +142,15 @@ export const ensureRecruitmentSeedData = () => {
     // Align old department labels to applicant-side canonical department list.
     const existingJobs = safeJsonParse<JobPosting[]>(localStorage.getItem(JOB_POSTINGS_KEY), []);
     if (existingJobs.length) {
-      const normalizedJobs = existingJobs.map((job) => ({
+      const normalizedJobs = existingJobs
+        .filter((job) => !isLikelySeededDemoJob(job))
+        .map((job) => ({
         ...job,
         department: normalizeDepartment(job.department),
       }));
-      localStorage.setItem(JOB_POSTINGS_KEY, JSON.stringify(normalizedJobs));
+      saveJobPostings(normalizedJobs);
+    } else {
+      saveJobPostings([]);
     }
 
     localStorage.setItem(RECRUITMENT_DATA_VERSION_KEY, RECRUITMENT_DATA_VERSION);
@@ -219,7 +163,7 @@ export const ensureRecruitmentSeedData = () => {
   }
 
   const seed = buildInitialData();
-  localStorage.setItem(JOB_POSTINGS_KEY, JSON.stringify(seed.jobs));
+  saveJobPostings(seed.jobs);
   localStorage.setItem(APPLICANTS_KEY, JSON.stringify(seed.applicants));
   localStorage.setItem(NEWLY_HIRED_KEY, JSON.stringify(seed.newlyHired));
   localStorage.setItem(RATER_ASSIGNMENTS_KEY, JSON.stringify(seed.assignments));
@@ -231,10 +175,119 @@ export const ensureRecruitmentSeedData = () => {
 };
 
 export const getJobPostings = () => safeJsonParse<JobPosting[]>(localStorage.getItem(JOB_POSTINGS_KEY), []);
-export const saveJobPostings = (rows: JobPosting[]) => localStorage.setItem(JOB_POSTINGS_KEY, JSON.stringify(rows));
+
+export const getAuthoritativeJobPostings = () => {
+  const authoritative = safeJsonParse<JobPosting[]>(
+    localStorage.getItem(AUTHORITATIVE_JOB_POSTINGS_KEY),
+    []
+  );
+  if (authoritative.length > 0) return authoritative;
+  return getJobPostings();
+};
+
+export type ApplicantPositionOption = {
+  value: string;
+  label: string;
+  department: string;
+};
+
+const buildApplicantPositionOptions = (rows: JobPosting[]): ApplicantPositionOption[] => {
+  const seen = new Set<string>();
+  const applicantOptions: ApplicantPositionOption[] = [];
+
+  rows
+    .filter((job) => String(job.status ?? '').trim().toLowerCase() === 'active')
+    .forEach((job) => {
+      const title = String(job.title ?? '').trim();
+      const department = String(job.department ?? '').trim();
+      if (!title) return;
+      const normalized = title.toLowerCase();
+      if (seen.has(normalized)) return;
+      seen.add(normalized);
+      applicantOptions.push({
+        value: title,
+        label: title,
+        department,
+      });
+    });
+
+  return applicantOptions;
+};
+
+export const getApplicantPositionOptions = () => {
+  // Always derive from current postings so deleted jobs never linger in applicant options.
+  const derived = buildApplicantPositionOptions(getJobPostings());
+  localStorage.setItem(APPLICANT_POSITION_OPTIONS_KEY, JSON.stringify(derived));
+  return derived;
+};
+
+export const saveJobPostings = (rows: JobPosting[]) => {
+  const normalizedRows = Array.isArray(rows) ? rows : [];
+
+  // Persist both keys so all modules read the same latest job postings state.
+  localStorage.setItem(JOB_POSTINGS_KEY, JSON.stringify(normalizedRows));
+  localStorage.setItem(AUTHORITATIVE_JOB_POSTINGS_KEY, JSON.stringify(normalizedRows));
+
+  // Keep legacy/mock jobs table in sync so pages reading `jobs` reflect the same source of truth.
+  const legacyRows = normalizedRows.map((job, index) => ({
+    id: index + 1,
+    title: job.title,
+    item_number: job.jobCode,
+    salary_grade: job.salaryGrade ?? '',
+    department: job.department,
+    description: job.summary,
+    status: job.status === 'Active' ? 'Open' : job.status === 'Closed' || job.status === 'Filled' ? 'Closed' : 'On Hold',
+    created_at: job.postedDate,
+    updated_at: new Date().toISOString(),
+  }));
+
+  localStorage.setItem(LEGACY_JOBS_KEY, JSON.stringify(legacyRows));
+
+  // Rebuild and overwrite applicant dropdown cache from current active postings.
+  const applicantOptions = buildApplicantPositionOptions(normalizedRows);
+
+  localStorage.setItem(APPLICANT_POSITION_OPTIONS_KEY, JSON.stringify(applicantOptions));
+
+  // Broadcast changes so ApplicantAssessmentForm re-syncs immediately.
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('cictrix:job-postings-updated'));
+  }
+};
 
 export const getApplicants = () => safeJsonParse<Applicant[]>(localStorage.getItem(APPLICANTS_KEY), []);
 export const saveApplicants = (rows: Applicant[]) => localStorage.setItem(APPLICANTS_KEY, JSON.stringify(rows));
+
+export interface DeletedJobReport {
+  id: string;
+  deletedAt: string;
+  deletedBy: string;
+  job: JobPosting;
+  applicants: Applicant[];
+}
+
+export const getDeletedJobReports = () =>
+  safeJsonParse<DeletedJobReport[]>(localStorage.getItem(DELETED_JOB_REPORTS_KEY), []);
+
+export const saveDeletedJobReports = (rows: DeletedJobReport[]) =>
+  localStorage.setItem(DELETED_JOB_REPORTS_KEY, JSON.stringify(rows));
+
+export const archiveDeletedJobPosting = (input: {
+  job: JobPosting;
+  applicants: Applicant[];
+  deletedBy?: string;
+}) => {
+  const reports = getDeletedJobReports();
+  const report: DeletedJobReport = {
+    id: crypto.randomUUID(),
+    deletedAt: new Date().toISOString(),
+    deletedBy: input.deletedBy ?? 'HR Admin',
+    job: input.job,
+    applicants: input.applicants,
+  };
+
+  saveDeletedJobReports([report, ...reports]);
+  return report;
+};
 
 export const getNewlyHired = () => safeJsonParse<NewlyHired[]>(localStorage.getItem(NEWLY_HIRED_KEY), []);
 export const saveNewlyHired = (rows: NewlyHired[]) => localStorage.setItem(NEWLY_HIRED_KEY, JSON.stringify(rows));
@@ -291,6 +344,7 @@ type SyncAttachment = {
   type: string;
   size: number;
   documentType?: string;
+  filePath?: string;
 };
 
 type ApplicantSubmissionSyncInput = {
@@ -328,7 +382,7 @@ type LegacyPortalAttachment = {
   document_type?: string;
 };
 
-const ensureJobPostingForSubmission = (position: string, department: string): JobPosting => {
+const findJobPostingForSubmission = (position: string, department: string): JobPosting | null => {
   const normalizedPosition = normalizeText(position);
   const normalizedDepartment = normalizeDepartment(department);
   const jobs = getJobPostings();
@@ -336,42 +390,7 @@ const ensureJobPostingForSubmission = (position: string, department: string): Jo
   const existing = jobs.find(
     (job) => normalizeText(job.title) === normalizedPosition && normalizeText(job.department) === normalizeText(normalizedDepartment)
   );
-  if (existing) return existing;
-
-  const now = new Date();
-  const deadline = new Date(now.getTime() + 30 * 86400000);
-  const nextJobNumber = jobs.length + 1;
-  const nextJob: JobPosting = {
-    id: crypto.randomUUID(),
-    jobCode: `LGU-2026-${String(nextJobNumber).padStart(3, '0')}`,
-    title: position,
-    department: normalizedDepartment,
-    division: 'Operations',
-    positionType: 'Civil Service',
-    salaryGrade: 'SG-10',
-    salaryRange: { min: 20000, max: 30000 },
-    numberOfPositions: 1,
-    employmentStatus: 'Permanent',
-    summary: `Applicant intake posting for ${position}.`,
-    responsibilities: ['Screen applicants and coordinate interview workflow.'],
-    qualifications: {
-      education: "Bachelor's Degree",
-      experience: { years: 0, field: 'General' },
-      skills: [],
-      certifications: [],
-    },
-    requiredDocuments: ['Resume/CV', 'Application Letter'],
-    applicationDeadline: deadline.toISOString(),
-    expectedStartDate: new Date(deadline.getTime() + 14 * 86400000).toISOString(),
-    status: 'Active',
-    postedDate: now.toISOString(),
-    postedBy: 'Applicant Intake Sync',
-    applicantCount: 0,
-    qualifiedCount: 0,
-  };
-
-  saveJobPostings([nextJob, ...jobs]);
-  return nextJob;
+  return existing ?? null;
 };
 
 export const syncApplicantSubmissionToRecruitment = (
@@ -387,18 +406,18 @@ export const syncApplicantSubmissionToRecruitment = (
     return;
   }
 
-  const linkedJob = ensureJobPostingForSubmission(input.position, input.department);
+  const linkedJob = findJobPostingForSubmission(input.position, input.department);
   const submittedAt = input.submittedAt ?? new Date().toISOString();
 
   const documents = (input.attachments ?? []).map((file) => ({
     type: file.documentType ?? file.name,
-    url: '#',
+    url: file.filePath ?? '#',
     verified: false,
   }));
 
   const nextApplicant: Applicant = {
     id: input.applicantId,
-    jobPostingId: linkedJob.id,
+    jobPostingId: linkedJob?.id ?? 'unposted',
     personalInfo: {
       firstName: input.firstName,
       lastName: input.lastName,
@@ -445,7 +464,13 @@ const backfillPortalApplicantsToRecruitment = () => {
     []
   );
 
+  const excludedIds = new Set(getBackfillExcludedApplicantIds());
+
   for (const portalApplicant of portalApplicants) {
+    if (excludedIds.has(String(portalApplicant.id))) {
+      continue;
+    }
+
     const attachments = portalAttachments
       .filter((entry) => entry.applicant_id === portalApplicant.id)
       .map((entry) => ({

@@ -22,6 +22,14 @@ type CachedPreviewFile = {
   createdAt: string;
 };
 
+type SyncedAttachment = {
+  name: string;
+  type: string;
+  size: number;
+  documentType?: string;
+  filePath: string;
+};
+
 const INITIAL_FORM_DATA: ApplicantFormData = {
   first_name: '',
   middle_name: '',
@@ -76,7 +84,8 @@ export const ApplicantWizard: React.FC = () => {
     setCurrentStep(1);
   };
 
-  const uploadFiles = async (client: any, applicantId: string): Promise<void> => {
+  const uploadFiles = async (client: any, applicantId: string): Promise<SyncedAttachment[]> => {
+    const persisted: SyncedAttachment[] = [];
     for (const uploadedFile of files) {
       const generatedPath = `${applicantId}/${Date.now()}-${uploadedFile.file.name}`;
       const storageBucket = client?.storage?.from?.(ATTACHMENTS_BUCKET);
@@ -124,7 +133,17 @@ export const ApplicantWizard: React.FC = () => {
       if (insertError) {
         throw new Error(`Failed to save ${uploadedFile.file.name} record`);
       }
+
+      persisted.push({
+        name: uploadedFile.file.name,
+        type: uploadedFile.file.type,
+        size: uploadedFile.file.size,
+        documentType: (uploadedFile as any).documentType,
+        filePath,
+      });
     }
+
+    return persisted;
   };
 
   const toDataUrl = (file: File): Promise<string> =>
@@ -207,7 +226,7 @@ export const ApplicantWizard: React.FC = () => {
       throw new Error(applicantError?.message || 'Failed to create applicant record');
     }
 
-    await uploadFiles(client, applicantData.id);
+    const syncedAttachments = await uploadFiles(client, applicantData.id);
 
     await cachePreviewableFiles(applicantData.id);
 
@@ -223,12 +242,7 @@ export const ApplicantWizard: React.FC = () => {
       department: POSITION_TO_DEPARTMENT_MAP[formData.position] || formData.office,
       isPwd: formData.is_pwd,
       submittedAt: new Date().toISOString(),
-      attachments: files.map((uploadedFile) => ({
-        name: uploadedFile.file.name,
-        type: uploadedFile.file.type,
-        size: uploadedFile.file.size,
-        documentType: (uploadedFile as any).documentType,
-      })),
+      attachments: syncedAttachments,
     });
   };
 
