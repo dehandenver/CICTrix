@@ -1,10 +1,10 @@
 import {
-    Applicant,
-    EmployeeRecord,
-    EvaluationPeriod,
-    JobPosting,
-    NewlyHired,
-    RaterAssignment,
+  Applicant,
+  EmployeeRecord,
+  EvaluationPeriod,
+  JobPosting,
+  NewlyHired,
+  RaterAssignment,
 } from '../types/recruitment.types';
 
 const JOB_POSTINGS_KEY = 'cictrix_job_postings';

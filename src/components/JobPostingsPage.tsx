@@ -1,27 +1,27 @@
 import {
-    Briefcase,
-    Calendar,
-    ChevronLeft,
-    ChevronRight,
-    MoreVertical,
-    Plus,
-    Search,
-    Users,
-    X,
+  Briefcase,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  MoreVertical,
+  Plus,
+  Search,
+  Users,
+  X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DEPARTMENTS } from '../constants/positions';
 import {
   archiveDeletedJobPosting,
-    ensureRecruitmentSeedData,
+  ensureRecruitmentSeedData,
   excludeApplicantIdsFromBackfill,
-    formatPHDate,
-    getApplicants,
-    getJobPostings,
+  formatPHDate,
+  getApplicants,
+  getJobPostings,
   saveApplicants,
-    saveJobPostings,
-    toTitleCase,
+  saveJobPostings,
+  toTitleCase,
 } from '../lib/recruitmentData';
 import { supabase } from '../lib/supabase';
 import { JobPosting } from '../types/recruitment.types';

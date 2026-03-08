@@ -308,6 +308,10 @@ export function EvaluationForm() {
 
       setShowSuccess(true);
 
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('cictrix:applicants-updated'));
+      }
+
       setTimeout(() => {
         navigate('/interviewer/applicants');
       }, 1500);

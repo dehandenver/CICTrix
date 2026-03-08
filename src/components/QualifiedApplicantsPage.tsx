@@ -25,7 +25,7 @@ import {
     saveApplicants,
     toCsv,
 } from '../lib/recruitmentData';
-  import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../lib/supabase';
+import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../lib/supabase';
 import { Applicant, ApplicantStatus, JobPosting } from '../types/recruitment.types';
 import { RecruitmentNavigationGuide } from './RecruitmentNavigationGuide';
 import { Sidebar } from './Sidebar';
@@ -322,7 +322,6 @@ export const QualifiedApplicantsPage = () => {
     const mappedApplicants: Applicant[] = dbApplicants.map((row: any) => {
       const applicantId = String(row?.id ?? crypto.randomUUID());
       const position = String(row?.position ?? '');
-      const office = String(row?.office ?? row?.department ?? 'Unassigned');
       const matchedJob = jobsSource.find((job) => normalizeText(job.title) === normalizeText(position));
       const evalSnapshot = evaluationMap.get(applicantId);
       const persistedScore = typeof row?.total_score === 'number' ? row.total_score : 0;
@@ -871,10 +870,7 @@ export const QualifiedApplicantsPage = () => {
                     <tr
                       key={applicant.id}
                       className="border-t border-slate-100 cursor-pointer hover:bg-slate-50"
-                      onClick={() => {
-                        setActiveApplicant(applicant);
-                        setActiveTab('Overview');
-                      }}
+                      onClick={() => navigate(`/admin/rsp/applicant/${applicant.id}`)}
                     >
                       <td className="px-3 py-3">
                         <input

@@ -1,7 +1,7 @@
-import './styles/interviewer.css';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import './styles/interviewer.css';
 
 const RUNTIME_DATA_VERSION_KEY = 'cictrix_runtime_data_version';
 const RUNTIME_DATA_VERSION = '2026-03-08-job-sync-v3';

@@ -15,7 +15,7 @@ import { SettingsPage } from './modules/admin/SettingsPage';
 import { SuperAdminDashboard } from './modules/admin/SuperAdminDashboard';
 import { ApplicantWizard } from './modules/applicant/ApplicantWizard';
 import { EmployeeLoginPage, EmployeePage } from './modules/employee';
-import { ApplicantDetailsPage } from './modules/interviewer/ApplicantDetailsPage';
+import { ApplicantDetailsPage } from './modules/interviewer/ApplicantDetailsPage.tsx';
 import { EvaluationForm } from './modules/interviewer/EvaluationForm';
 import { InterviewerApplicantsList } from './modules/interviewer/InterviewerApplicantsList';
 import { InterviewerDashboard } from './modules/interviewer/InterviewerDashboard';

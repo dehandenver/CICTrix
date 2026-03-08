@@ -1,32 +1,33 @@
 import {
-    Bell,
-    Briefcase,
-    Building2,
-    Calculator,
-    Calendar,
-    Check,
-    ChevronLeft,
-    ChevronRight,
-    Clock3,
-    Download,
-    FileText,
-    Filter,
-    Lock,
-    Mail,
-    Plus,
-    Search,
-    Settings,
-    Shield,
-    Trash2,
-    User,
-    UserCheck,
-    UserPlus,
-    Users,
+  Bell,
+  Briefcase,
+  Building2,
+  Calculator,
+  Calendar,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  Download,
+  FileText,
+  Filter,
+  Lock,
+  Mail,
+  Plus,
+  Search,
+  Settings,
+  Shield,
+  Trash2,
+  User,
+  UserCheck,
+  UserPlus,
+  Users,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/Button';
 import { Sidebar } from '../../components/Sidebar';
+import { mockDatabase } from '../../lib/mockDatabase';
 import {
   getDeletedJobReports,
   getJobPostings,
@@ -34,10 +35,9 @@ import {
   saveJobPostings,
   type DeletedJobReport,
 } from '../../lib/recruitmentData';
-import { mockDatabase } from '../../lib/mockDatabase';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
-import type { JobPosting } from '../../types/recruitment.types';
 import '../../styles/admin.css';
+import type { JobPosting } from '../../types/recruitment.types';
 
 type JobStatus = 'Open' | 'Reviewing' | 'Closed';
 type Section = 'dashboard' | 'jobs' | 'qualified' | 'new-hired' | 'raters' | 'accounts' | 'reports' | 'settings';
