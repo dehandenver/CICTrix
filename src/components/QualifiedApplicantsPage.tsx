@@ -20,8 +20,8 @@ import {
     ensureRecruitmentSeedData,
     formatPHDate,
     formatPHDateTime,
+    getAuthoritativeJobPostings,
     getApplicants,
-    getJobPostings,
     saveApplicants,
     toCsv,
 } from '../lib/recruitmentData';
@@ -212,9 +212,13 @@ export const QualifiedApplicantsPage = () => {
   const loadQualifiedApplicantsData = async () => {
     ensureRecruitmentSeedData();
 
-    const canonicalJobs = getJobPostings();
-    if (canonicalJobs.length > 0) {
-      setJobs(canonicalJobs);
+    const canonicalJobs = getAuthoritativeJobPostings();
+    const activeCanonicalJobs = canonicalJobs.filter(
+      (job) => normalizeText(String(job?.status ?? '')) === 'active'
+    );
+
+    if (activeCanonicalJobs.length > 0) {
+      setJobs(activeCanonicalJobs);
     }
 
     const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
@@ -260,7 +264,7 @@ export const QualifiedApplicantsPage = () => {
         ? jobPostingsRes.value.data
         : [];
 
-    if (canonicalJobs.length === 0 && dbJobPostings.length > 0) {
+    if (activeCanonicalJobs.length === 0 && dbJobPostings.length > 0) {
       const mappedJobs: JobPosting[] = dbJobPostings.map((row: any, index: number) => ({
         id: String(row?.id ?? `db-job-${index + 1}`),
         jobCode: String(row?.job_code ?? row?.item_number ?? `DB-${index + 1}`),
@@ -288,7 +292,10 @@ export const QualifiedApplicantsPage = () => {
         applicantCount: Number(row?.applicant_count ?? 0),
         qualifiedCount: Number(row?.qualified_count ?? 0),
       }));
-      setJobs(mappedJobs);
+      const activeMappedJobs = mappedJobs.filter(
+        (job) => normalizeText(String(job?.status ?? '')) === 'active'
+      );
+      setJobs(activeMappedJobs);
     }
 
     const evaluationMap = new Map<string, EvaluationSnapshot>();
@@ -317,12 +324,53 @@ export const QualifiedApplicantsPage = () => {
       attachmentMap.set(applicantId, current);
     });
 
-    const jobsSource = canonicalJobs.length > 0 ? canonicalJobs : getJobPostings();
+    const jobsSource: JobPosting[] = activeCanonicalJobs.length > 0
+      ? activeCanonicalJobs
+      : dbJobPostings
+          .map((row: any, index: number) => ({
+            id: String(row?.id ?? `db-job-${index + 1}`),
+            jobCode: String(row?.job_code ?? row?.item_number ?? `DB-${index + 1}`),
+            title: String(row?.title ?? ''),
+            department: String(row?.department ?? row?.office ?? 'Unassigned'),
+            division: String(row?.division ?? ''),
+            positionType: 'Civil Service' as const,
+            salaryGrade: String(row?.salary_grade ?? ''),
+            salaryRange: { min: 0, max: 0 },
+            numberOfPositions: 1,
+            employmentStatus: 'Permanent' as const,
+            summary: String(row?.description ?? ''),
+            responsibilities: [],
+            qualifications: {
+              education: "Bachelor's Degree",
+              experience: { years: 0, field: 'General' },
+              skills: [],
+              certifications: [],
+            },
+            requiredDocuments: [],
+            applicationDeadline: new Date().toISOString(),
+            status: normalizeText(String(row?.status ?? '')) === 'closed' ? 'Closed' : 'Active',
+            postedDate: String(row?.created_at ?? new Date().toISOString()),
+            postedBy: 'System',
+            applicantCount: Number(row?.applicant_count ?? 0),
+            qualifiedCount: Number(row?.qualified_count ?? 0),
+          }))
+          .filter((job: JobPosting) => normalizeText(String(job?.status ?? '')) === 'active');
 
-    const mappedApplicants: Applicant[] = dbApplicants.map((row: any) => {
+    const activeTitleSet = new Set(
+      jobsSource
+        .map((job: JobPosting) => normalizeText(String(job?.title ?? '')))
+        .filter(Boolean)
+    );
+
+    const mappedApplicants: Applicant[] = dbApplicants
+      .filter((row: any) => {
+        const position = normalizeText(String(row?.position ?? ''));
+        return Boolean(position) && activeTitleSet.has(position);
+      })
+      .map((row: any) => {
       const applicantId = String(row?.id ?? crypto.randomUUID());
       const position = String(row?.position ?? '');
-      const matchedJob = jobsSource.find((job) => normalizeText(job.title) === normalizeText(position));
+      const matchedJob = jobsSource.find((job: JobPosting) => normalizeText(job.title) === normalizeText(position));
       const evalSnapshot = evaluationMap.get(applicantId);
       const persistedScore = typeof row?.total_score === 'number' ? row.total_score : 0;
       const qualificationScore = evalSnapshot ? Math.max(persistedScore, evalSnapshot.score) : persistedScore;
@@ -369,7 +417,8 @@ export const QualifiedApplicantsPage = () => {
       return;
     }
 
-    setApplicants(getApplicants());
+    const activeJobIdSet = new Set(jobsSource.map((job: JobPosting) => job.id));
+    setApplicants(getApplicants().filter((row) => activeJobIdSet.has(row.jobPostingId)));
   };
 
   useEffect(() => {
@@ -382,12 +431,14 @@ export const QualifiedApplicantsPage = () => {
     const onUpdated = () => run();
     window.addEventListener('focus', onUpdated);
     window.addEventListener('cictrix:applicants-updated', onUpdated as EventListener);
+    window.addEventListener('cictrix:job-postings-updated', onUpdated as EventListener);
 
     if (jobId) setJobFilter(jobId);
 
     return () => {
       window.removeEventListener('focus', onUpdated);
       window.removeEventListener('cictrix:applicants-updated', onUpdated as EventListener);
+      window.removeEventListener('cictrix:job-postings-updated', onUpdated as EventListener);
     };
   }, [jobId]);
 

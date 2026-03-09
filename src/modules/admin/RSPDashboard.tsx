@@ -29,15 +29,18 @@ import { Button } from '../../components/Button';
 import { Sidebar } from '../../components/Sidebar';
 import { mockDatabase } from '../../lib/mockDatabase';
 import {
+  ensureRecruitmentSeedData,
+  getAuthoritativeJobPostings,
   getDeletedJobReports,
-  getJobPostings,
+  getNewlyHired,
   saveDeletedJobReports,
   saveJobPostings,
+  saveNewlyHired,
   type DeletedJobReport,
 } from '../../lib/recruitmentData';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
 import '../../styles/admin.css';
-import type { JobPosting } from '../../types/recruitment.types';
+import type { JobPosting, NewlyHired } from '../../types/recruitment.types';
 
 type JobStatus = 'Open' | 'Reviewing' | 'Closed';
 type Section = 'dashboard' | 'jobs' | 'qualified' | 'new-hired' | 'raters' | 'accounts' | 'reports' | 'settings';
@@ -78,6 +81,27 @@ interface BulkRequestEmployee {
   id: string;
   name: string;
   department: string;
+}
+
+interface RankingPositionCard {
+  position: string;
+  department: string;
+  itemNumber: string;
+  qualifiedCount: number;
+}
+
+interface RankingApplicantRow {
+  id: string;
+  fullName: string;
+  email: string;
+  position: string;
+  department: string;
+  total: number;
+  experience: number;
+  performance: number;
+  potential: number;
+  written: number;
+  interview: number;
 }
 
 const BULK_REQUEST_TEMPLATES = [
@@ -349,6 +373,11 @@ export const RSPDashboard = () => {
   const [qualifiedSearch, setQualifiedSearch] = useState('');
   const [qualifiedPosition, setQualifiedPosition] = useState('all');
   const [qualifiedOffice, setQualifiedOffice] = useState('all');
+  const [reportsView, setReportsView] = useState<'overview' | 'ranking'>('overview');
+  const [activeRankingPosition, setActiveRankingPosition] = useState<string | null>(null);
+  const [showRankingModal, setShowRankingModal] = useState(false);
+  const [showHireApplicantsModal, setShowHireApplicantsModal] = useState(false);
+  const [selectedHireApplicantIds, setSelectedHireApplicantIds] = useState<string[]>([]);
 
   const [raterSearch, setRaterSearch] = useState('');
   const [raterStatus, setRaterStatus] = useState('all');
@@ -413,6 +442,7 @@ export const RSPDashboard = () => {
 
   useEffect(() => {
     const load = async () => {
+      ensureRecruitmentSeedData();
       setDeletedJobReports(getDeletedJobReports());
 
       const localAssignments = loadRaterAssignments();
@@ -447,7 +477,7 @@ export const RSPDashboard = () => {
         [, , applicantsRes, ratersRes, evaluationsRes] = await fetchBundle(secondaryClient);
       }
 
-      const canonicalJobs = mapRecruitmentPostingsToDashboardJobs(getJobPostings());
+      const canonicalJobs = mapRecruitmentPostingsToDashboardJobs(getAuthoritativeJobPostings());
       setJobs(canonicalJobs);
 
       if (applicantsRes.status === 'fulfilled' && !applicantsRes.value.error && Array.isArray(applicantsRes.value.data)) {
@@ -516,7 +546,59 @@ export const RSPDashboard = () => {
       }
     };
 
-    load();
+    const syncJobs = () => {
+      void load();
+    };
+
+    const onStorage = (event: StorageEvent) => {
+      if (
+        !event.key ||
+        event.key === 'cictrix_job_postings' ||
+        event.key === 'cictrix_authoritative_job_postings'
+      ) {
+        void load();
+      }
+    };
+
+    void load();
+    window.addEventListener('focus', syncJobs);
+    window.addEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
+    window.addEventListener('storage', onStorage);
+
+    return () => {
+      window.removeEventListener('focus', syncJobs);
+      window.removeEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    // Guard against a stale modal backdrop when users navigate away from Reports.
+    if (section !== 'reports') {
+      setShowRankingModal(false);
+      setShowHireApplicantsModal(false);
+      setSelectedHireApplicantIds([]);
+      setActiveRankingPosition(null);
+      setReportsView('overview');
+    }
+  }, [section]);
+
+  useEffect(() => {
+    const forceCloseAllOverlays = () => {
+      setShowRankingModal(false);
+      setShowHireApplicantsModal(false);
+      setShowJobDialog(false);
+      setShowRaterDialog(false);
+      setShowBulkRequestDialog(false);
+      setSelectedHireApplicantIds([]);
+      setActiveRankingPosition(null);
+      setReportsView('overview');
+    };
+
+    window.addEventListener('cictrix:force-close-overlays', forceCloseAllOverlays as EventListener);
+    return () => {
+      window.removeEventListener('cictrix:force-close-overlays', forceCloseAllOverlays as EventListener);
+    };
   }, []);
 
   const jobsWithCounts = useMemo(() => {
@@ -634,6 +716,110 @@ export const RSPDashboard = () => {
     if (scored.length === 0) return 0;
     return scored.reduce((sum, applicant) => sum + applicant.total_score, 0) / scored.length;
   }, [qualifiedApplicants]);
+
+  const rankingPositionCards = useMemo<RankingPositionCard[]>(() => {
+    const reportEligibleJobs = jobs.filter((job) => job.status !== 'Closed');
+    const reportEligibleTitleSet = new Set(reportEligibleJobs.map((job) => job.title));
+    const qualifiedByPosition = new Map<string, number>();
+
+    applicants.forEach((applicant) => {
+      const normalizedStatus = (applicant.status || '').toLowerCase();
+      const hasQualifiedStatus =
+        normalizedStatus.includes('qualified') || normalizedStatus.includes('shortlist') || completedEvaluationIds.has(applicant.id);
+      if (!hasQualifiedStatus || !applicant.position || !reportEligibleTitleSet.has(applicant.position)) return;
+      qualifiedByPosition.set(applicant.position, (qualifiedByPosition.get(applicant.position) || 0) + 1);
+    });
+
+    const cardsFromJobs = reportEligibleJobs
+      .filter((job) => (qualifiedByPosition.get(job.title) || 0) > 0)
+      .map((job) => ({
+        position: job.title,
+        department: job.department || 'Unassigned Department',
+        itemNumber: job.item_number || 'N/A',
+        qualifiedCount: qualifiedByPosition.get(job.title) || 0,
+      }));
+
+    const unique = new Map<string, RankingPositionCard>();
+    cardsFromJobs.forEach((card) => {
+      if (!unique.has(card.position)) unique.set(card.position, card);
+    });
+
+    return Array.from(unique.values()).sort((a, b) => b.qualifiedCount - a.qualifiedCount || a.position.localeCompare(b.position));
+  }, [applicants, completedEvaluationIds, jobs]);
+
+  const activeRankingCard = useMemo(
+    () => rankingPositionCards.find((card) => card.position === activeRankingPosition) || null,
+    [rankingPositionCards, activeRankingPosition]
+  );
+
+  const activeRankingRows = useMemo<RankingApplicantRow[]>(() => {
+    if (!activeRankingPosition) return [];
+
+    const eligibleTitles = new Set(jobs.filter((job) => job.status !== 'Closed').map((job) => job.title));
+    if (!eligibleTitles.has(activeRankingPosition)) return [];
+
+    const candidates = applicants.filter((applicant) => {
+      if (applicant.position !== activeRankingPosition) return false;
+      const normalizedStatus = (applicant.status || '').toLowerCase();
+      return (
+        normalizedStatus.includes('qualified') ||
+        normalizedStatus.includes('shortlist') ||
+        normalizedStatus.includes('recommended') ||
+        completedEvaluationIds.has(applicant.id)
+      );
+    });
+
+    const rows = candidates
+      .map((applicant) => {
+        const total = Number((applicant.total_score || 0).toFixed(2));
+        const share = Number((total / 5).toFixed(2));
+        return {
+          id: applicant.id,
+          fullName: applicant.full_name,
+          email: applicant.email,
+          position: applicant.position,
+          department: applicant.office || activeRankingCard?.department || 'Unassigned Department',
+          total,
+          experience: share,
+          performance: share,
+          potential: share,
+          written: share,
+          interview: Number((total - share * 4).toFixed(2)),
+        };
+      })
+      .sort((a, b) => b.total - a.total || a.fullName.localeCompare(b.fullName));
+
+    return rows;
+  }, [activeRankingPosition, applicants, completedEvaluationIds, activeRankingCard, jobs]);
+
+  const rankingSummary = useMemo(() => {
+    if (activeRankingRows.length === 0) {
+      return {
+        highest: 0,
+        average: 0,
+        lowest: 0,
+      };
+    }
+
+    const totals = activeRankingRows.map((row) => row.total);
+    const sum = totals.reduce((acc, value) => acc + value, 0);
+    return {
+      highest: Math.max(...totals),
+      average: Number((sum / totals.length).toFixed(2)),
+      lowest: Math.min(...totals),
+    };
+  }, [activeRankingRows]);
+
+  useEffect(() => {
+    if (!activeRankingPosition) return;
+    const stillVisible = rankingPositionCards.some((card) => card.position === activeRankingPosition);
+    if (!stillVisible) {
+      setShowRankingModal(false);
+      setShowHireApplicantsModal(false);
+      setSelectedHireApplicantIds([]);
+      setActiveRankingPosition(null);
+    }
+  }, [activeRankingPosition, rankingPositionCards]);
 
   const newlyHiredApplicants = useMemo(
     () => applicants.filter((applicant) => ['accepted', 'hired', 'qualified'].includes(applicant.status.toLowerCase())),
@@ -1106,6 +1292,107 @@ export const RSPDashboard = () => {
       delete next[archiveId];
       return next;
     });
+  };
+
+  const openRankingReport = (position: string) => {
+    setActiveRankingPosition(position);
+    setSelectedHireApplicantIds([]);
+    setShowRankingModal(true);
+  };
+
+  const closeRankingReport = () => {
+    setShowRankingModal(false);
+    setShowHireApplicantsModal(false);
+    setSelectedHireApplicantIds([]);
+    setActiveRankingPosition(null);
+  };
+
+  const toggleHireApplicantSelection = (applicantId: string) => {
+    setSelectedHireApplicantIds((prev) =>
+      prev.includes(applicantId) ? prev.filter((id) => id !== applicantId) : [...prev, applicantId]
+    );
+  };
+
+  const handleConfirmHireApplicants = () => {
+    if (!activeRankingPosition || selectedHireApplicantIds.length === 0) return;
+
+    const selectedRows = activeRankingRows.filter((row) => selectedHireApplicantIds.includes(row.id));
+    if (selectedRows.length === 0) return;
+
+    const existing = getNewlyHired();
+    const existingApplicantIds = new Set(existing.map((item) => item.applicantId));
+    const now = new Date();
+    const startDate = new Date(now);
+    startDate.setDate(startDate.getDate() + 7);
+
+    const toAdd: NewlyHired[] = selectedRows
+      .filter((row) => !existingApplicantIds.has(row.id))
+      .map((row) => {
+        const nameParts = row.fullName.trim().split(/\s+/);
+        const firstName = nameParts[0] || row.fullName;
+        const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : 'Applicant';
+
+        return {
+          id: `hire-${row.id}-${now.getTime()}`,
+          applicantId: row.id,
+          employeeInfo: {
+            firstName,
+            lastName,
+            email: row.email,
+            phone: '',
+            emergencyContact: {
+              name: '',
+              relationship: '',
+              phone: '',
+            },
+            governmentIds: {},
+          },
+          position: row.position,
+          department: row.department,
+          employmentType: 'Permanent',
+          dateHired: now.toISOString(),
+          expectedStartDate: startDate.toISOString(),
+          status: 'Pending Onboarding',
+          onboardingProgress: 0,
+          onboardingChecklist: [
+            {
+              category: 'Documentation',
+              item: 'Sign employment contract',
+              completed: false,
+            },
+            {
+              category: 'Orientation',
+              item: 'Attend orientation',
+              completed: false,
+            },
+          ],
+          documents: [],
+          notes: [
+            {
+              author: 'RSP Admin',
+              content: 'Selected from Application Ranking Report.',
+              date: now.toISOString(),
+            },
+          ],
+          timeline: [
+            {
+              event: 'Candidate selected for hiring',
+              date: now.toISOString(),
+              actor: 'RSP Admin',
+            },
+          ],
+        };
+      });
+
+    if (toAdd.length > 0) {
+      saveNewlyHired([...existing, ...toAdd]);
+    }
+
+    const selectedIdSet = new Set(selectedRows.map((row) => row.id));
+    setApplicants((prev) => prev.map((applicant) => (selectedIdSet.has(applicant.id) ? { ...applicant, status: 'Hired' } : applicant)));
+    setShowHireApplicantsModal(false);
+    setShowRankingModal(false);
+    setSelectedHireApplicantIds([]);
   };
 
   const handleBulkEmployeeToggle = (employeeId: string) => {
@@ -2011,42 +2298,88 @@ export const RSPDashboard = () => {
 
           {section === 'reports' && (
             <>
-              <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-                {[
-                  {
-                    title: 'Application Ranking Report',
-                    subtitle: 'Generate comparative assessment reports with applicant rankings',
-                    icon: FileText,
-                    color: 'bg-blue-100 text-blue-600',
-                    path: '/interviewer/dashboard',
-                  },
-                  {
-                    title: 'Assessment Forms',
-                    subtitle: 'View and print individual applicant assessment reports',
-                    icon: Briefcase,
-                    color: 'bg-green-100 text-green-600',
-                    path: '/interviewer/applicants',
-                  },
-                ].map((card) => {
-                  const Icon = card.icon;
-                  return (
+              {reportsView === 'overview' ? (
+                <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+                  {[
+                    {
+                      title: 'Application Ranking Report',
+                      subtitle: 'Generate comparative assessment reports with applicant rankings',
+                      icon: FileText,
+                      color: 'bg-blue-100 text-blue-600',
+                      onClick: () => setReportsView('ranking'),
+                    },
+                    {
+                      title: 'Assessment Forms',
+                      subtitle: 'View and print individual applicant assessment reports',
+                      icon: Briefcase,
+                      color: 'bg-green-100 text-green-600',
+                      onClick: () => navigate('/interviewer/applicants'),
+                    },
+                  ].map((card) => {
+                    const Icon = card.icon;
+                    return (
+                      <button
+                        key={card.title}
+                        type="button"
+                        onClick={card.onClick}
+                        className="rounded-2xl border border-[var(--border-color)] bg-white p-6 text-left transition hover:border-[var(--primary-color)]"
+                      >
+                        <div className="mb-8 flex items-start justify-between">
+                          <div className={`rounded-2xl p-4 ${card.color}`}><Icon size={30} /></div>
+                          <ChevronRight size={28} className="text-[var(--text-muted)]" />
+                        </div>
+                        <h3 className="!mb-2 text-2xl font-semibold">{card.title}</h3>
+                        <p className="!mb-4 text-lg text-[var(--text-secondary)]">{card.subtitle}</p>
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-lg text-[var(--text-secondary)]">Official Template</span>
+                      </button>
+                    );
+                  })}
+                </section>
+              ) : (
+                <section className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--border-color)] bg-white p-5">
+                    <div>
+                      <p className="!mb-1 text-sm font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Reports / Application Ranking</p>
+                      <h2 className="!mb-1 text-2xl font-semibold text-[var(--text-primary)]">Application Ranking Reports</h2>
+                      <p className="!mb-0 text-base text-[var(--text-secondary)]">Generate ranking reports per position and select applicants to hire.</p>
+                    </div>
                     <button
-                      key={card.title}
                       type="button"
-                      onClick={() => navigate(card.path)}
-                      className="rounded-2xl border border-[var(--border-color)] bg-white p-6 text-left transition hover:border-[var(--primary-color)]"
+                      onClick={() => setReportsView('overview')}
+                      className="rounded-lg border border-[var(--border-color)] bg-white px-4 py-2 text-sm font-semibold text-[var(--text-primary)]"
                     >
-                      <div className="mb-8 flex items-start justify-between">
-                        <div className={`rounded-2xl p-4 ${card.color}`}><Icon size={30} /></div>
-                        <ChevronRight size={28} className="text-[var(--text-muted)]" />
-                      </div>
-                      <h3 className="!mb-2 text-2xl font-semibold">{card.title}</h3>
-                      <p className="!mb-4 text-lg text-[var(--text-secondary)]">{card.subtitle}</p>
-                      <span className="rounded-full bg-slate-100 px-3 py-1 text-lg text-[var(--text-secondary)]">Official Template</span>
+                      Back to Reports
                     </button>
-                  );
-                })}
-              </section>
+                  </div>
+
+                  {rankingPositionCards.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-[var(--border-color)] bg-white p-6 text-center">
+                      <p className="!mb-0 text-base text-[var(--text-secondary)]">No qualified applicants available for ranking reports yet.</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                      {rankingPositionCards.map((card) => (
+                        <article key={card.position} className="rounded-2xl border border-[var(--border-color)] bg-white p-5">
+                          <p className="!mb-1 text-sm text-[var(--text-secondary)]">{card.department}</p>
+                          <h3 className="!mb-2 text-xl font-semibold text-[var(--text-primary)]">{card.position}</h3>
+                          <p className="!mb-4 text-sm text-[var(--text-secondary)]">
+                            Item No.: <span className="font-semibold text-[var(--text-primary)]">{card.itemNumber}</span>
+                            {' • '}
+                            Qualified Applicants: <span className="font-semibold text-[var(--text-primary)]">{card.qualifiedCount}</span>
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => openRankingReport(card.position)}
+                            className="rounded-lg bg-[var(--primary-color)] px-4 py-2 text-sm font-semibold text-white"
+                          >
+                            Generate Ranking Report
+                          </button>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              )}
 
               <section>
                 <h2 className="!mb-1 text-2xl font-semibold">Employee Documents</h2>
@@ -2228,6 +2561,154 @@ export const RSPDashboard = () => {
           )}
         </div>
       </main>
+
+      {showRankingModal && activeRankingCard && (
+        <div className="fixed inset-0 z-[230] flex items-center justify-center bg-black/45 p-4" onClick={closeRankingReport}>
+          <div className="max-h-[92vh] w-full max-w-6xl overflow-hidden rounded-2xl bg-white" onClick={(event) => event.stopPropagation()}>
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border-color)] px-6 py-4">
+              <div>
+                <h2 className="!mb-1 text-2xl font-semibold text-[var(--text-primary)]">Application Ranking Report</h2>
+                <p className="!mb-0 text-sm text-[var(--text-secondary)]">
+                  {activeRankingCard.position} • {activeRankingCard.department} • {new Date().toLocaleDateString()}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowHireApplicantsModal(true)}
+                  className="rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white"
+                >
+                  <UserPlus size={16} className="mr-1 inline" /> Select Hired Applicants
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="rounded-lg border border-[var(--border-color)] bg-white px-4 py-2 text-sm font-semibold text-[var(--text-primary)]"
+                >
+                  Print Report
+                </button>
+                <button
+                  type="button"
+                  onClick={closeRankingReport}
+                  className="rounded-lg border border-[var(--border-color)] bg-white px-3 py-2 text-sm font-semibold text-[var(--text-primary)]"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="max-h-[76vh] space-y-4 overflow-y-auto px-6 py-4">
+              <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+                <div className="rounded-xl border border-[var(--border-color)] bg-slate-50 p-3">
+                  <p className="!mb-1 text-xs uppercase tracking-wide text-[var(--text-secondary)]">Highest Score</p>
+                  <p className="!mb-0 text-xl font-semibold text-[var(--text-primary)]">{rankingSummary.highest.toFixed(2)}</p>
+                </div>
+                <div className="rounded-xl border border-[var(--border-color)] bg-slate-50 p-3">
+                  <p className="!mb-1 text-xs uppercase tracking-wide text-[var(--text-secondary)]">Average Score</p>
+                  <p className="!mb-0 text-xl font-semibold text-[var(--text-primary)]">{rankingSummary.average.toFixed(2)}</p>
+                </div>
+                <div className="rounded-xl border border-[var(--border-color)] bg-slate-50 p-3">
+                  <p className="!mb-1 text-xs uppercase tracking-wide text-[var(--text-secondary)]">Lowest Score</p>
+                  <p className="!mb-0 text-xl font-semibold text-[var(--text-primary)]">{rankingSummary.lowest.toFixed(2)}</p>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto rounded-xl border border-[var(--border-color)]">
+                <table className="w-full min-w-[960px] border-collapse">
+                  <thead className="bg-slate-100 text-sm text-[var(--text-secondary)]">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-semibold">Rank</th>
+                      <th className="px-3 py-2 text-left font-semibold">Applicant</th>
+                      <th className="px-3 py-2 text-left font-semibold">Exp.</th>
+                      <th className="px-3 py-2 text-left font-semibold">Perf.</th>
+                      <th className="px-3 py-2 text-left font-semibold">Potential</th>
+                      <th className="px-3 py-2 text-left font-semibold">Written</th>
+                      <th className="px-3 py-2 text-left font-semibold">Interview</th>
+                      <th className="px-3 py-2 text-left font-semibold">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {activeRankingRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="px-3 py-5 text-center text-sm text-[var(--text-secondary)]">
+                          No qualified applicants found for this position.
+                        </td>
+                      </tr>
+                    ) : (
+                      activeRankingRows.map((row, index) => (
+                        <tr key={row.id} className="border-t border-[var(--border-color)] text-sm">
+                          <td className="px-3 py-2 font-semibold text-[var(--text-primary)]">#{index + 1}</td>
+                          <td className="px-3 py-2">
+                            <p className="!mb-0 font-semibold text-[var(--text-primary)]">{row.fullName}</p>
+                            <p className="!mb-0 text-xs text-[var(--text-secondary)]">{row.email}</p>
+                          </td>
+                          <td className="px-3 py-2">{row.experience.toFixed(2)}</td>
+                          <td className="px-3 py-2">{row.performance.toFixed(2)}</td>
+                          <td className="px-3 py-2">{row.potential.toFixed(2)}</td>
+                          <td className="px-3 py-2">{row.written.toFixed(2)}</td>
+                          <td className="px-3 py-2">{row.interview.toFixed(2)}</td>
+                          <td className="px-3 py-2 font-semibold text-[var(--text-primary)]">{row.total.toFixed(2)}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showHireApplicantsModal && (
+        <div className="fixed inset-0 z-[240] flex items-center justify-center bg-black/45 p-4" onClick={() => setShowHireApplicantsModal(false)}>
+          <div className="w-full max-w-3xl rounded-2xl bg-white" onClick={(event) => event.stopPropagation()}>
+            <div className="border-b border-[var(--border-color)] px-5 py-4">
+              <h3 className="!mb-1 text-xl font-semibold text-[var(--text-primary)]">Select Applicants to Hire</h3>
+              <p className="!mb-0 text-sm text-[var(--text-secondary)]">Choose applicants from ranked results to move to Newly Hired.</p>
+            </div>
+            <div className="max-h-[56vh] space-y-2 overflow-y-auto px-5 py-4">
+              {activeRankingRows.length === 0 ? (
+                <p className="!mb-0 text-sm text-[var(--text-secondary)]">No applicants available.</p>
+              ) : (
+                activeRankingRows.map((row, index) => (
+                  <label key={row.id} className="flex cursor-pointer items-center justify-between rounded-lg border border-[var(--border-color)] px-3 py-2">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedHireApplicantIds.includes(row.id)}
+                        onChange={() => toggleHireApplicantSelection(row.id)}
+                        className="h-4 w-4"
+                      />
+                      <div>
+                        <p className="!mb-0 text-sm font-semibold text-[var(--text-primary)]">#{index + 1} {row.fullName}</p>
+                        <p className="!mb-0 text-xs text-[var(--text-secondary)]">{row.email}</p>
+                      </div>
+                    </div>
+                    <span className="text-sm font-semibold text-[var(--text-primary)]">{row.total.toFixed(2)}</span>
+                  </label>
+                ))
+              )}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-[var(--border-color)] px-5 py-4">
+              <button
+                type="button"
+                onClick={() => setShowHireApplicantsModal(false)}
+                className="rounded-lg border border-[var(--border-color)] bg-white px-4 py-2 text-sm font-semibold text-[var(--text-primary)]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmHireApplicants}
+                disabled={selectedHireApplicantIds.length === 0}
+                className="rounded-lg bg-[var(--primary-color)] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Hire Selected ({selectedHireApplicantIds.length})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showJobDialog && (
         <div className="fixed inset-0 z-[220] flex items-center justify-center bg-black/40 px-3 py-4" onClick={() => setShowJobDialog(false)}>

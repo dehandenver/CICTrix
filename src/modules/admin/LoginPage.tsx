@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import '../../styles/admin.css';
@@ -50,6 +50,103 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
   const [selectedRole, setSelectedRole] = useState<Role>('rsp');
   const [rememberMe, setRememberMe] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const clearLeakedBackdrops = () => {
+      window.dispatchEvent(new Event('cictrix:force-close-overlays'));
+
+      const loginRoot = document.querySelector('.admin-login-page');
+      const nodes = Array.from(document.querySelectorAll<HTMLElement>('body *'));
+      nodes.forEach((node) => {
+        if (loginRoot && loginRoot.contains(node)) return;
+
+        const classes = typeof node.className === 'string' ? node.className : '';
+        const rect = node.getBoundingClientRect();
+        const style = window.getComputedStyle(node);
+        const isFullscreenFixed =
+          style.position === 'fixed' &&
+          rect.width >= window.innerWidth - 2 &&
+          rect.height >= window.innerHeight - 2;
+        const isKnownBackdropClass =
+          classes.includes('bg-black/') ||
+          classes.includes('bg-slate-900/') ||
+          classes.includes('dialog-overlay');
+
+        if (isFullscreenFixed || isKnownBackdropClass) {
+          node.style.display = 'none';
+          node.style.pointerEvents = 'none';
+        }
+      });
+
+      document.body.style.overflow = '';
+      document.body.style.pointerEvents = '';
+      document.documentElement.style.overflow = '';
+      document.documentElement.style.pointerEvents = '';
+    };
+
+    const peelTopBlockingLayers = () => {
+      const loginRoot = document.querySelector('.admin-login-page') as HTMLElement | null;
+      if (!loginRoot) return;
+
+      const points: Array<[number, number]> = [
+        [Math.floor(window.innerWidth / 2), Math.floor(window.innerHeight / 2)],
+        [Math.floor(window.innerWidth * 0.75), Math.floor(window.innerHeight * 0.55)],
+        [Math.floor(window.innerWidth * 0.25), Math.floor(window.innerHeight * 0.55)],
+      ];
+
+      points.forEach(([x, y]) => {
+        for (let i = 0; i < 8; i += 1) {
+          const top = document.elementFromPoint(x, y) as HTMLElement | null;
+          if (!top) break;
+
+          if (loginRoot.contains(top)) {
+            break;
+          }
+
+          if (top === document.documentElement || top === document.body) {
+            break;
+          }
+
+          const style = window.getComputedStyle(top);
+          const isOverlayLike =
+            style.position === 'fixed' ||
+            style.position === 'absolute' ||
+            Number(style.zIndex || '0') >= 40;
+
+          if (isOverlayLike) {
+            top.style.pointerEvents = 'none';
+            if (style.position === 'fixed') {
+              top.style.display = 'none';
+            }
+          } else {
+            break;
+          }
+        }
+      });
+    };
+
+    clearLeakedBackdrops();
+    peelTopBlockingLayers();
+    const raf = window.requestAnimationFrame(clearLeakedBackdrops);
+    const timer = window.setTimeout(clearLeakedBackdrops, 120);
+    const interval = window.setInterval(() => {
+      clearLeakedBackdrops();
+      peelTopBlockingLayers();
+    }, 250);
+
+    const observer = new MutationObserver(() => {
+      clearLeakedBackdrops();
+      peelTopBlockingLayers();
+    });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.clearTimeout(timer);
+      window.clearInterval(interval);
+      observer.disconnect();
+    };
+  }, []);
 
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();

@@ -4,7 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import { Dialog } from '../../components/Dialog';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import { mockDatabase } from '../../lib/mockDatabase';
+import { ensureRecruitmentSeedData, getAuthoritativeJobPostings } from '../../lib/recruitmentData';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
+import type { JobPosting as RecruitmentJobPosting } from '../../types/recruitment.types';
 import '../../styles/interviewer.css';
 
 interface JobPosting {
@@ -78,39 +80,47 @@ const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
   }
 };
 
-const buildJobsFromApplicants = (allApplicants: any[]): JobPosting[] => {
-  const groupedByPosition = new Map<string, any[]>();
+const normalizeText = (value: string) => value.trim().toLowerCase();
 
-  allApplicants
-    .filter((applicant) => !isDemoApplicant(applicant))
-    .forEach((applicant) => {
-    const position = applicant.position || 'Unspecified Position';
-    const group = groupedByPosition.get(position) || [];
-    group.push(applicant);
-    groupedByPosition.set(position, group);
+const buildJobsFromPostings = (jobRows: RecruitmentJobPosting[], allApplicants: any[]) => {
+  const activeJobs = (jobRows || []).filter((job) => String(job?.status || '').toLowerCase() === 'active');
+  const activeTitleSet = new Set(activeJobs.map((job) => normalizeText(String(job?.title || ''))).filter(Boolean));
+
+  const visibleApplicants = (allApplicants || []).filter((applicant) => {
+    const position = normalizeText(String(applicant?.position || ''));
+    return position && activeTitleSet.has(position);
   });
 
-  return Array.from(groupedByPosition.entries())
-    .map(([title, applicants], index) => {
-      const latestApplicant = applicants.reduce((latest: any, current: any) => {
-        if (!latest) return current;
-        return new Date(current.created_at).getTime() > new Date(latest.created_at).getTime() ? current : latest;
-      }, null);
+  const applicantCountByTitle = new Map<string, number>();
+  visibleApplicants.forEach((applicant) => {
+    const key = normalizeText(String(applicant?.position || ''));
+    if (!key) return;
+    applicantCountByTitle.set(key, (applicantCountByTitle.get(key) || 0) + 1);
+  });
 
-      const office = latestApplicant?.office || POSITION_TO_DEPARTMENT_MAP[title] || 'N/A';
+  const jobs = activeJobs
+    .map((job, index) => {
+      const normalizedTitle = normalizeText(String(job?.title || ''));
+      const office = String(job?.department || '').trim() || POSITION_TO_DEPARTMENT_MAP[job.title] || 'N/A';
+      const numericId = Number(job.id);
 
       return {
-        id: index + 1,
-        title,
-        item_number: latestApplicant?.item_number || 'N/A',
+        id: Number.isFinite(numericId) ? numericId : index + 1,
+        title: job.title,
+        item_number: job.jobCode || 'N/A',
         department: office,
         office,
         status: 'Open',
-        created_at: latestApplicant?.created_at || new Date().toISOString(),
-        applicant_count: applicants.length,
+        created_at: job.postedDate || new Date().toISOString(),
+        applicant_count: applicantCountByTitle.get(normalizedTitle) || 0,
       };
     })
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  return {
+    jobs,
+    visibleApplicants,
+  };
 };
 
 export function InterviewerDashboard({ session }: { session?: InterviewerSessionInfo | null }) {
@@ -130,7 +140,30 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    fetchJobsAndApplicants();
+    const syncJobs = () => {
+      void fetchJobsAndApplicants();
+    };
+
+    const onStorage = (event: StorageEvent) => {
+      if (
+        !event.key ||
+        event.key === 'cictrix_job_postings' ||
+        event.key === 'cictrix_authoritative_job_postings'
+      ) {
+        void fetchJobsAndApplicants();
+      }
+    };
+
+    void fetchJobsAndApplicants();
+    window.addEventListener('focus', syncJobs);
+    window.addEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
+    window.addEventListener('storage', onStorage);
+
+    return () => {
+      window.removeEventListener('focus', syncJobs);
+      window.removeEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
+      window.removeEventListener('storage', onStorage);
+    };
   }, []);
 
   const fetchJobsAndApplicants = async () => {
@@ -143,6 +176,8 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
 
       let allApplicants: any[] = [];
       let allEvaluations: any[] = [];
+      ensureRecruitmentSeedData();
+      const canonicalJobRows = getAuthoritativeJobPostings();
 
       try {
         allApplicants = await fetchApplicantsFromClient(primaryClient);
@@ -162,12 +197,13 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
 
       allApplicants = (allApplicants || []).filter((item) => !isDemoApplicant(item));
 
-      const jobsFromApplicants = buildJobsFromApplicants(allApplicants);
+      // Single source of truth: use canonical RSP/Admin postings only.
+      const { jobs: jobsFromPostings, visibleApplicants } = buildJobsFromPostings(canonicalJobRows, allApplicants);
 
-      setJobs(jobsFromApplicants);
+      setJobs(jobsFromPostings);
       setStats({
-        totalJobs: jobsFromApplicants.length,
-        totalApplicants: allApplicants.length,
+        totalJobs: jobsFromPostings.length,
+        totalApplicants: visibleApplicants.length,
         upcomingInterviews: allEvaluations.length,
       });
     } catch (err) {
@@ -204,11 +240,6 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
 
   const handleViewJobApplicants = (jobTitle: string) => {
     navigate(`/interviewer/applicants?position=${encodeURIComponent(jobTitle)}`);
-  };
-
-  const handleDeleteClick = (applicant: Applicant) => {
-    setApplicantToDelete(applicant);
-    setDeleteConfirmOpen(true);
   };
 
   const handleDeleteConfirm = async () => {

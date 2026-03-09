@@ -62,6 +62,10 @@ Reference for local development access to frontend pages and backend API endpoin
 ### Dashboards and Management Pages
 - Super Admin Dashboard: [http://localhost:5173/admin](http://localhost:5173/admin)
 - RSP Dashboard: [http://localhost:5173/admin/rsp](http://localhost:5173/admin/rsp)
+- Qualified Applicants: [http://localhost:5173/admin/rsp/qualified](http://localhost:5173/admin/rsp/qualified)
+- Qualified Applicant Details (pattern): `http://localhost:5173/admin/rsp/applicant/{applicantId}`
+- Qualified Applicant Details (example): [http://localhost:5173/admin/rsp/applicant/123](http://localhost:5173/admin/rsp/applicant/123)
+- Newly Hired: [http://localhost:5173/admin/rsp/new-hired](http://localhost:5173/admin/rsp/new-hired)
 - Rater Management: [http://localhost:5173/admin/raters](http://localhost:5173/admin/raters)
 - LND Dashboard: [http://localhost:5173/admin/lnd](http://localhost:5173/admin/lnd)
 - LND Management: [http://localhost:5173/admin/lnd/manage](http://localhost:5173/admin/lnd/manage)
@@ -133,4 +137,4 @@ Reference for local development access to frontend pages and backend API endpoin
 - Replace local URLs with your production domain in deployment documentation.
 - Default credentials are for local testing only; rotate credentials before production use.
 
-Last updated: February 24, 2026
+Last updated: March 9, 2026

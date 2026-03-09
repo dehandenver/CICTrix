@@ -5,6 +5,7 @@ import { JobPostingsPage } from './components/JobPostingsPage';
 import { NewlyHiredPage } from './components/NewlyHiredPage';
 import { QualifiedApplicantsPage } from './components/QualifiedApplicantsPage';
 import { RaterManagementPage } from './components/RaterManagementPage';
+import SuccessionReadinessEngine from './components/SuccessionReadinessEngine';
 import { mockDatabase } from './lib/mockDatabase';
 import { isMockModeEnabled, supabase } from './lib/supabase';
 import { LNDDashboard } from './modules/admin/LNDDashboard';
@@ -307,6 +308,37 @@ function AppContent() {
     };
   }, [isInterviewerRoute, interviewerSession, revokedInterviewerDialogOpen]);
 
+  useEffect(() => {
+    // Route changes should always clear transient overlays opened on previous pages.
+    window.dispatchEvent(new Event('cictrix:force-close-overlays'));
+
+    // Failsafe: scrub any leaked full-screen overlay nodes that can block clicks.
+    const scrubOrphanOverlays = () => {
+      const candidates = Array.from(document.querySelectorAll<HTMLElement>('div.fixed.inset-0, .dialog-overlay'));
+      candidates.forEach((node) => {
+        const className = node.className || '';
+        const isDarkBackdrop =
+          className.includes('bg-black/') ||
+          className.includes('bg-slate-900/') ||
+          className.includes('dialog-overlay');
+
+        if (isDarkBackdrop) {
+          node.style.display = 'none';
+          node.style.pointerEvents = 'none';
+        }
+      });
+
+      // Also reset global interaction styles in case a dialog left them behind.
+      document.body.style.overflow = '';
+      document.body.style.pointerEvents = '';
+      document.documentElement.style.overflow = '';
+      document.documentElement.style.pointerEvents = '';
+    };
+
+    const frame = window.requestAnimationFrame(scrubOrphanOverlays);
+    return () => window.cancelAnimationFrame(frame);
+  }, [location.pathname]);
+
   const handleLogin = (email: string, role: Role) => {
     const session = { email, role };
     setAdminSession(session);
@@ -364,6 +396,7 @@ function AppContent() {
     <div className="app">
       <Routes>
           <Route path="/" element={<ApplicantWizard />} />
+          <Route path="/succession" element={<SuccessionReadinessEngine />} />
           
           {/* Interviewer Routes */}
           <Route path="/interviewer/login" element={<InterviewerLogin onLogin={handleInterviewerLogin} />} />

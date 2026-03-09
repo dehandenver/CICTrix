@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import { mockDatabase } from '../../lib/mockDatabase';
+import { ensureRecruitmentSeedData, getAuthoritativeJobPostings } from '../../lib/recruitmentData';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
 import '../../styles/interviewer.css';
 
@@ -110,6 +111,8 @@ const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
   }
 };
 
+const normalizeText = (value: string) => value.trim().toLowerCase();
+
 export function InterviewerApplicantsList() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -121,12 +124,34 @@ export function InterviewerApplicantsList() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Fetch when jobTitle is available
-    if (jobTitle && jobTitle !== 'N/A') {
-      fetchApplicantsAndJob();
-    } else {
-      setLoading(false);
-    }
+    const syncJobs = () => {
+      if (jobTitle && jobTitle !== 'N/A') {
+        void fetchApplicantsAndJob();
+      } else {
+        setLoading(false);
+      }
+    };
+
+    const onStorage = (event: StorageEvent) => {
+      if (
+        !event.key ||
+        event.key === 'cictrix_job_postings' ||
+        event.key === 'cictrix_authoritative_job_postings'
+      ) {
+        syncJobs();
+      }
+    };
+
+    syncJobs();
+    window.addEventListener('focus', syncJobs);
+    window.addEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
+    window.addEventListener('storage', onStorage);
+
+    return () => {
+      window.removeEventListener('focus', syncJobs);
+      window.removeEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
+      window.removeEventListener('storage', onStorage);
+    };
   }, [jobTitle]);
 
   const fetchApplicantsAndJob = async () => {
@@ -134,10 +159,27 @@ export function InterviewerApplicantsList() {
       setLoading(true);
       setError(null);
 
+      ensureRecruitmentSeedData();
+      const activePosting = getAuthoritativeJobPostings().find((row) => {
+        const isActive = String(row?.status ?? '').trim().toLowerCase() === 'active';
+        return isActive && normalizeText(String(row?.title ?? '')) === normalizeText(jobTitle);
+      });
+
+      if (!activePosting) {
+        setApplicants([]);
+        setJobDetails({
+          title: jobTitle,
+          office: POSITION_TO_DEPARTMENT_MAP[jobTitle] || 'N/A',
+          department: POSITION_TO_DEPARTMENT_MAP[jobTitle] || 'N/A',
+        });
+        setError('This position is no longer active or has been removed.');
+        return;
+      }
+
       let resolvedJobDetails: JobPosting = {
-        title: jobTitle,
-        office: POSITION_TO_DEPARTMENT_MAP[jobTitle] || 'N/A',
-        department: POSITION_TO_DEPARTMENT_MAP[jobTitle] || 'N/A'
+        title: String(activePosting.title || jobTitle),
+        office: String(activePosting.department || POSITION_TO_DEPARTMENT_MAP[jobTitle] || 'N/A'),
+        department: String(activePosting.department || POSITION_TO_DEPARTMENT_MAP[jobTitle] || 'N/A')
       };
 
       const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
