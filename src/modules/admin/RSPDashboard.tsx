@@ -104,6 +104,18 @@ interface RankingApplicantRow {
   interview: number;
 }
 
+interface AssessmentPositionCard {
+  position: string;
+  department: string;
+  itemNumber: string;
+  totalApplicants: number;
+  qualifiedCount: number;
+  hiredCount: number;
+  disqualifiedCount: number;
+}
+
+type AssessmentStatusFilter = 'all' | 'qualified' | 'hired' | 'disqualified';
+
 const BULK_REQUEST_TEMPLATES = [
   {
     id: 'nbi',
@@ -237,6 +249,14 @@ const applicantNameFromRow = (row: any) => {
   const middle = row?.middle_name ?? '';
   const last = row?.last_name ?? '';
   return `${first} ${middle} ${last}`.replace(/\s+/g, ' ').trim() || 'Unnamed Applicant';
+};
+
+const toAssessmentStatusBucket = (status: string): AssessmentStatusFilter | 'other' => {
+  const normalized = (status || '').toLowerCase();
+  if (normalized.includes('hired') || normalized.includes('accept')) return 'hired';
+  if (normalized.includes('disqual') || normalized.includes('reject')) return 'disqualified';
+  if (normalized.includes('qualified') || normalized.includes('shortlist') || normalized.includes('recommend')) return 'qualified';
+  return 'other';
 };
 
 const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
@@ -373,11 +393,15 @@ export const RSPDashboard = () => {
   const [qualifiedSearch, setQualifiedSearch] = useState('');
   const [qualifiedPosition, setQualifiedPosition] = useState('all');
   const [qualifiedOffice, setQualifiedOffice] = useState('all');
-  const [reportsView, setReportsView] = useState<'overview' | 'ranking'>('overview');
+  const [reportsView, setReportsView] = useState<'overview' | 'ranking' | 'assessment'>('overview');
   const [activeRankingPosition, setActiveRankingPosition] = useState<string | null>(null);
   const [showRankingModal, setShowRankingModal] = useState(false);
   const [showHireApplicantsModal, setShowHireApplicantsModal] = useState(false);
   const [selectedHireApplicantIds, setSelectedHireApplicantIds] = useState<string[]>([]);
+  const [activeAssessmentPosition, setActiveAssessmentPosition] = useState<string | null>(null);
+  const [showAssessmentFormsModal, setShowAssessmentFormsModal] = useState(false);
+  const [assessmentStatusFilter, setAssessmentStatusFilter] = useState<AssessmentStatusFilter>('all');
+  const [assessmentSearch, setAssessmentSearch] = useState('');
 
   const [raterSearch, setRaterSearch] = useState('');
   const [raterStatus, setRaterStatus] = useState('all');
@@ -577,8 +601,12 @@ export const RSPDashboard = () => {
     if (section !== 'reports') {
       setShowRankingModal(false);
       setShowHireApplicantsModal(false);
+      setShowAssessmentFormsModal(false);
       setSelectedHireApplicantIds([]);
       setActiveRankingPosition(null);
+      setActiveAssessmentPosition(null);
+      setAssessmentStatusFilter('all');
+      setAssessmentSearch('');
       setReportsView('overview');
     }
   }, [section]);
@@ -587,11 +615,15 @@ export const RSPDashboard = () => {
     const forceCloseAllOverlays = () => {
       setShowRankingModal(false);
       setShowHireApplicantsModal(false);
+      setShowAssessmentFormsModal(false);
       setShowJobDialog(false);
       setShowRaterDialog(false);
       setShowBulkRequestDialog(false);
       setSelectedHireApplicantIds([]);
       setActiveRankingPosition(null);
+      setActiveAssessmentPosition(null);
+      setAssessmentStatusFilter('all');
+      setAssessmentSearch('');
       setReportsView('overview');
     };
 
@@ -810,6 +842,76 @@ export const RSPDashboard = () => {
     };
   }, [activeRankingRows]);
 
+  const assessmentPositionCards = useMemo<AssessmentPositionCard[]>(() => {
+    const reportEligibleJobs = jobs.filter((job) => job.status !== 'Closed');
+    const counts = new Map<string, { total: number; qualified: number; hired: number; disqualified: number }>();
+
+    applicants.forEach((applicant) => {
+      if (!applicant.position) return;
+      const current = counts.get(applicant.position) || { total: 0, qualified: 0, hired: 0, disqualified: 0 };
+      current.total += 1;
+      const bucket = toAssessmentStatusBucket(applicant.status);
+      if (bucket === 'qualified') current.qualified += 1;
+      if (bucket === 'hired') current.hired += 1;
+      if (bucket === 'disqualified') current.disqualified += 1;
+      counts.set(applicant.position, current);
+    });
+
+    return reportEligibleJobs
+      .map((job) => {
+        const count = counts.get(job.title) || { total: 0, qualified: 0, hired: 0, disqualified: 0 };
+        return {
+          position: job.title,
+          department: job.department || 'Unassigned Department',
+          itemNumber: job.item_number || 'N/A',
+          totalApplicants: count.total,
+          qualifiedCount: count.qualified,
+          hiredCount: count.hired,
+          disqualifiedCount: count.disqualified,
+        };
+      })
+      .filter((card) => card.totalApplicants > 0)
+      .sort((a, b) => b.totalApplicants - a.totalApplicants || a.position.localeCompare(b.position));
+  }, [jobs, applicants]);
+
+  const activeAssessmentCard = useMemo(
+    () => assessmentPositionCards.find((card) => card.position === activeAssessmentPosition) || null,
+    [assessmentPositionCards, activeAssessmentPosition]
+  );
+
+  const activeAssessmentApplicants = useMemo(() => {
+    if (!activeAssessmentPosition) return [] as ApplicantRecord[];
+    return applicants
+      .filter((applicant) => applicant.position === activeAssessmentPosition)
+      .sort((a, b) => (b.total_score || 0) - (a.total_score || 0) || a.full_name.localeCompare(b.full_name));
+  }, [activeAssessmentPosition, applicants]);
+
+  const filteredAssessmentApplicants = useMemo(() => {
+    const term = assessmentSearch.trim().toLowerCase();
+    return activeAssessmentApplicants.filter((applicant) => {
+      const bucket = toAssessmentStatusBucket(applicant.status);
+      if (assessmentStatusFilter !== 'all' && bucket !== assessmentStatusFilter) return false;
+      if (!term) return true;
+      return applicant.full_name.toLowerCase().includes(term) || applicant.email.toLowerCase().includes(term);
+    });
+  }, [activeAssessmentApplicants, assessmentStatusFilter, assessmentSearch]);
+
+  const assessmentFilterCounts = useMemo(() => {
+    const counts = {
+      all: activeAssessmentApplicants.length,
+      qualified: 0,
+      hired: 0,
+      disqualified: 0,
+    };
+    activeAssessmentApplicants.forEach((applicant) => {
+      const bucket = toAssessmentStatusBucket(applicant.status);
+      if (bucket === 'qualified') counts.qualified += 1;
+      if (bucket === 'hired') counts.hired += 1;
+      if (bucket === 'disqualified') counts.disqualified += 1;
+    });
+    return counts;
+  }, [activeAssessmentApplicants]);
+
   useEffect(() => {
     if (!activeRankingPosition) return;
     const stillVisible = rankingPositionCards.some((card) => card.position === activeRankingPosition);
@@ -820,6 +922,17 @@ export const RSPDashboard = () => {
       setActiveRankingPosition(null);
     }
   }, [activeRankingPosition, rankingPositionCards]);
+
+  useEffect(() => {
+    if (!activeAssessmentPosition) return;
+    const stillVisible = assessmentPositionCards.some((card) => card.position === activeAssessmentPosition);
+    if (!stillVisible) {
+      setShowAssessmentFormsModal(false);
+      setActiveAssessmentPosition(null);
+      setAssessmentStatusFilter('all');
+      setAssessmentSearch('');
+    }
+  }, [activeAssessmentPosition, assessmentPositionCards]);
 
   const newlyHiredApplicants = useMemo(
     () => applicants.filter((applicant) => ['accepted', 'hired', 'qualified'].includes(applicant.status.toLowerCase())),
@@ -1305,6 +1418,20 @@ export const RSPDashboard = () => {
     setShowHireApplicantsModal(false);
     setSelectedHireApplicantIds([]);
     setActiveRankingPosition(null);
+  };
+
+  const openAssessmentForms = (position: string) => {
+    setActiveAssessmentPosition(position);
+    setAssessmentStatusFilter('all');
+    setAssessmentSearch('');
+    setShowAssessmentFormsModal(true);
+  };
+
+  const closeAssessmentForms = () => {
+    setShowAssessmentFormsModal(false);
+    setActiveAssessmentPosition(null);
+    setAssessmentStatusFilter('all');
+    setAssessmentSearch('');
   };
 
   const toggleHireApplicantSelection = (applicantId: string) => {
@@ -2313,7 +2440,7 @@ export const RSPDashboard = () => {
                       subtitle: 'View and print individual applicant assessment reports',
                       icon: Briefcase,
                       color: 'bg-green-100 text-green-600',
-                      onClick: () => navigate('/interviewer/applicants'),
+                      onClick: () => setReportsView('assessment'),
                     },
                   ].map((card) => {
                     const Icon = card.icon;
@@ -2335,7 +2462,7 @@ export const RSPDashboard = () => {
                     );
                   })}
                 </section>
-              ) : (
+              ) : reportsView === 'ranking' ? (
                 <section className="space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--border-color)] bg-white p-5">
                     <div>
@@ -2373,6 +2500,63 @@ export const RSPDashboard = () => {
                             className="rounded-lg bg-[var(--primary-color)] px-4 py-2 text-sm font-semibold text-white"
                           >
                             Generate Ranking Report
+                          </button>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              ) : (
+                <section className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--border-color)] bg-white p-5">
+                    <div>
+                      <p className="!mb-1 text-sm font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Reports / Assessment Forms</p>
+                      <h2 className="!mb-1 text-2xl font-semibold text-[var(--text-primary)]">Assessment Forms</h2>
+                      <p className="!mb-0 text-base text-[var(--text-secondary)]">Select a job position to view and print assessment forms.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setReportsView('overview')}
+                      className="rounded-lg border border-[var(--border-color)] bg-white px-4 py-2 text-sm font-semibold text-[var(--text-primary)]"
+                    >
+                      Back to Reports
+                    </button>
+                  </div>
+
+                  {assessmentPositionCards.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-[var(--border-color)] bg-white p-6 text-center">
+                      <p className="!mb-0 text-base text-[var(--text-secondary)]">No assessment forms available for current job postings.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {assessmentPositionCards.map((card, index) => (
+                        <article key={card.position} className="rounded-2xl border border-[var(--border-color)] bg-white p-5">
+                          <div className="mb-3 flex items-start justify-between gap-3">
+                            <div>
+                              <div className="mb-2 flex flex-wrap items-center gap-2">
+                                <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">Position #{index + 1}</span>
+                                <span className="text-base text-[var(--text-secondary)]">{card.itemNumber}</span>
+                              </div>
+                              <h3 className="!mb-2 text-2xl font-semibold text-[var(--text-primary)]">{card.position}</h3>
+                              <p className="!mb-0 text-lg text-[var(--text-secondary)]">{card.department} • {card.totalApplicants} Total Applicants</p>
+                            </div>
+                            <div className="rounded-2xl bg-green-100 p-4 text-green-600">
+                              <FileText size={30} />
+                            </div>
+                          </div>
+
+                          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+                            <span className="rounded-md bg-green-100 px-2 py-1 font-semibold text-green-700">{card.hiredCount} Hired</span>
+                            <span className="rounded-md bg-blue-100 px-2 py-1 font-semibold text-blue-700">{card.qualifiedCount} Qualified</span>
+                            <span className="rounded-md bg-red-100 px-2 py-1 font-semibold text-red-700">{card.disqualifiedCount} Disqualified</span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => openAssessmentForms(card.position)}
+                            className="w-full rounded-xl bg-green-600 px-4 py-3 text-lg font-semibold text-white"
+                          >
+                            View Assessment Forms
                           </button>
                         </article>
                       ))}
@@ -2705,6 +2889,139 @@ export const RSPDashboard = () => {
               >
                 Hire Selected ({selectedHireApplicantIds.length})
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAssessmentFormsModal && activeAssessmentCard && (
+        <div className="fixed inset-0 z-[245] flex items-center justify-center bg-black/70 p-4" onClick={closeAssessmentForms}>
+          <div className="max-h-[92vh] w-full max-w-[1320px] overflow-hidden rounded-2xl bg-white" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3 border-b border-[var(--border-color)] px-6 py-5">
+              <div>
+                <h2 className="!mb-1 text-4xl font-semibold text-[var(--text-primary)]">Assessment Forms - {activeAssessmentCard.position}</h2>
+                <p className="!mb-0 text-2xl text-[var(--text-secondary)]">{activeAssessmentCard.department} • {activeAssessmentApplicants.length} applicant{activeAssessmentApplicants.length === 1 ? '' : 's'}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="rounded-xl bg-[var(--primary-color)] px-5 py-3 text-xl font-semibold text-white"
+                >
+                  Print All Forms
+                </button>
+                <button
+                  type="button"
+                  onClick={closeAssessmentForms}
+                  className="rounded-xl border border-[var(--border-color)] px-3 py-2 text-2xl text-[var(--text-muted)]"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+
+            <div className="max-h-[78vh] overflow-y-auto">
+              <div className="border-b border-[var(--border-color)] px-6 py-5">
+                <p className="!mb-2 text-xl font-semibold text-[var(--text-primary)]">Filter by Status:</p>
+                <div className="flex flex-wrap gap-2">
+                  {([
+                    { key: 'all', label: 'All Applicants', count: assessmentFilterCounts.all, activeClass: 'bg-blue-600 text-white border-blue-600' },
+                    { key: 'qualified', label: 'Qualified', count: assessmentFilterCounts.qualified, activeClass: 'bg-blue-600 text-white border-blue-600' },
+                    { key: 'hired', label: 'Hired', count: assessmentFilterCounts.hired, activeClass: 'bg-green-600 text-white border-green-600' },
+                    { key: 'disqualified', label: 'Disqualified', count: assessmentFilterCounts.disqualified, activeClass: 'bg-red-600 text-white border-red-600' },
+                  ] as Array<{ key: AssessmentStatusFilter; label: string; count: number; activeClass: string }>).map((tab) => {
+                    const active = assessmentStatusFilter === tab.key;
+                    return (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        onClick={() => setAssessmentStatusFilter(tab.key)}
+                        className={`rounded-xl border px-4 py-2 text-lg font-semibold ${active ? tab.activeClass : 'border-[var(--border-color)] bg-white text-[var(--text-primary)]'}`}
+                      >
+                        {tab.label} <span className="ml-2 rounded-full bg-black px-2 py-[2px] text-sm text-white">{tab.count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="border-b border-[var(--border-color)] px-6 py-4">
+                <input
+                  type="text"
+                  value={assessmentSearch}
+                  onChange={(event) => setAssessmentSearch(event.target.value)}
+                  placeholder="Search applicant by name to jump to their form..."
+                  className="w-full rounded-xl border border-[var(--border-color)] px-4 py-3 text-xl"
+                />
+              </div>
+
+              <div className="space-y-4 px-6 py-5">
+                {filteredAssessmentApplicants.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-[var(--border-color)] bg-slate-50 p-8 text-center text-lg text-[var(--text-secondary)]">
+                    No applicants match the selected status/filter.
+                  </div>
+                ) : (
+                  filteredAssessmentApplicants.map((applicant, index) => {
+                    const bucket = toAssessmentStatusBucket(applicant.status);
+                    const badgeClass =
+                      bucket === 'hired'
+                        ? 'bg-green-100 text-green-700'
+                        : bucket === 'disqualified'
+                          ? 'bg-red-100 text-red-700'
+                          : 'bg-blue-100 text-blue-700';
+                    const totalScore = Number((applicant.total_score || 0).toFixed(2));
+
+                    return (
+                      <article key={applicant.id} className="space-y-3">
+                        <div className="inline-flex items-center gap-3 rounded-xl bg-blue-100 px-4 py-2">
+                          <p className="!mb-0 text-3xl font-semibold text-blue-800">Form {index + 1} of {filteredAssessmentApplicants.length}: {applicant.full_name}</p>
+                          <span className={`rounded-md px-2 py-1 text-base font-semibold uppercase ${badgeClass}`}>{bucket === 'other' ? applicant.status : bucket}</span>
+                        </div>
+
+                        <div className="rounded-xl border-2 border-black bg-white p-5">
+                          <div className="mb-4 rounded-md border-2 border-black p-5 text-center">
+                            <p className="!mb-1 text-base text-black">Republic of the Philippines</p>
+                            <p className="!mb-1 text-xl font-bold text-black">CITY GOVERNMENT OF ILOILO</p>
+                            <p className="!mb-2 text-base text-black">Iloilo City</p>
+                            <p className="!mb-0 text-2xl font-bold text-black">HUMAN RESOURCE MANAGEMENT OFFICE</p>
+                            <p className="!mb-0 text-lg text-black">APPLICANT ASSESSMENT REPORT</p>
+                          </div>
+
+                          <div className="mb-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
+                            <div className="rounded-md border border-black p-3">
+                              <p className="!mb-1 text-sm text-black">POSITION:</p>
+                              <p className="!mb-0 text-xl font-semibold text-black">{activeAssessmentCard.position}</p>
+                            </div>
+                            <div className="rounded-md border border-black p-3">
+                              <p className="!mb-1 text-sm text-black">QUALIFICATION:</p>
+                              <p className="!mb-0 text-xl font-semibold text-black">{bucket === 'disqualified' ? 'Disqualified' : 'Qualified'}</p>
+                            </div>
+                          </div>
+
+                          <div className="mb-3 rounded-md border border-black p-3">
+                            <p className="!mb-1 text-sm text-black">NAME OF APPLICANT:</p>
+                            <p className="!mb-0 text-xl font-semibold text-black">{applicant.full_name.toUpperCase()}</p>
+                          </div>
+
+                          <div className="mb-3 rounded-md border border-black">
+                            <p className="!mb-0 border-b border-black bg-slate-100 px-3 py-2 text-lg font-semibold text-black">POINT-BASED ASSESSMENT</p>
+                            <div className="px-3 py-3 text-base text-black">
+                              <p className="!mb-1">Education: {Math.min(20, Math.max(0, totalScore * 0.23)).toFixed(2)} / 20</p>
+                              <p className="!mb-1">Experience: {Math.min(20, Math.max(0, totalScore * 0.20)).toFixed(2)} / 20</p>
+                              <p className="!mb-1">Performance: {Math.min(20, Math.max(0, totalScore * 0.22)).toFixed(2)} / 20</p>
+                              <p className="!mb-0">Potential: {Math.min(20, Math.max(0, totalScore * 0.20)).toFixed(2)} / 20</p>
+                            </div>
+                          </div>
+
+                          <div className="rounded-md border border-black p-3 text-right">
+                            <p className="!mb-0 text-2xl font-bold text-black">TOTAL SCORE: {totalScore.toFixed(2)}</p>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })
+                )}
+              </div>
             </div>
           </div>
         </div>
