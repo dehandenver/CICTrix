@@ -1,29 +1,29 @@
 import {
-    Calendar,
-    CalendarDays,
-    CheckCircle2,
-    Clock3,
-    Download,
-    Eye,
-    FileSpreadsheet,
-    Mail,
-    MessageSquare,
-    Search,
-    UserCheck,
-    X,
+  Calendar,
+  CalendarDays,
+  CheckCircle2,
+  Clock3,
+  Download,
+  Eye,
+  FileSpreadsheet,
+  Mail,
+  MessageSquare,
+  Search,
+  UserCheck,
+  X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { mockDatabase } from '../lib/mockDatabase';
 import {
-    downloadTextFile,
-    ensureRecruitmentSeedData,
-    formatPHDate,
-    formatPHDateTime,
-    getAuthoritativeJobPostings,
-    getApplicants,
-    saveApplicants,
-    toCsv,
+  downloadTextFile,
+  ensureRecruitmentSeedData,
+  formatPHDate,
+  formatPHDateTime,
+  getApplicants,
+  getAuthoritativeJobPostings,
+  saveApplicants,
+  toCsv,
 } from '../lib/recruitmentData';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../lib/supabase';
 import { Applicant, ApplicantStatus, JobPosting } from '../types/recruitment.types';

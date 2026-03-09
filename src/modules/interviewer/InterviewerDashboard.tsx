@@ -6,8 +6,8 @@ import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import { mockDatabase } from '../../lib/mockDatabase';
 import { ensureRecruitmentSeedData, getAuthoritativeJobPostings } from '../../lib/recruitmentData';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
-import type { JobPosting as RecruitmentJobPosting } from '../../types/recruitment.types';
 import '../../styles/interviewer.css';
+import type { JobPosting as RecruitmentJobPosting } from '../../types/recruitment.types';
 
 interface JobPosting {
   id: number;

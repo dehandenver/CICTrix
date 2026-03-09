@@ -31,6 +31,7 @@ import { mockDatabase } from '../../lib/mockDatabase';
 import {
   ensureRecruitmentSeedData,
   getAuthoritativeJobPostings,
+  getApplicants as getRecruitmentApplicants,
   getDeletedJobReports,
   getNewlyHired,
   saveDeletedJobReports,
@@ -45,6 +46,7 @@ import type { JobPosting, NewlyHired } from '../../types/recruitment.types';
 type JobStatus = 'Open' | 'Reviewing' | 'Closed';
 type Section = 'dashboard' | 'jobs' | 'qualified' | 'new-hired' | 'raters' | 'accounts' | 'reports' | 'settings';
 type BulkRecipientMode = 'all' | 'department' | 'selected';
+type EmployeeDocumentTemplateId = (typeof BULK_REQUEST_TEMPLATES)[number]['id'];
 
 interface JobRecord {
   id: number | string;
@@ -115,6 +117,19 @@ interface AssessmentPositionCard {
 }
 
 type AssessmentStatusFilter = 'all' | 'qualified' | 'hired' | 'disqualified';
+
+interface EmployeeDocumentSubmission {
+  id: string;
+  applicantId: string;
+  fullName: string;
+  employeeCode: string;
+  position: string;
+  office: string;
+  submittedDate: string;
+  status: 'Approved' | 'Pending' | 'Rejected';
+  documentUrl: string;
+  documentType: string;
+}
 
 const BULK_REQUEST_TEMPLATES = [
   {
@@ -259,6 +274,23 @@ const toAssessmentStatusBucket = (status: string): AssessmentStatusFilter | 'oth
   return 'other';
 };
 
+const normalizeTextValue = (value: string) => value.trim().toLowerCase();
+
+const documentTypeKeywordsByTemplate: Record<EmployeeDocumentTemplateId, string[]> = {
+  nbi: ['nbi'],
+  medical: ['medical', 'med cert', 'medical certificate'],
+  saln: ['saln', 'statement of assets', 'liabilities'],
+  training: ['training', 'certificate of training'],
+  pef: ['performance', 'evaluation'],
+  resume: ['resume', 'cv'],
+};
+
+const matchesDocumentTemplate = (templateId: EmployeeDocumentTemplateId, documentType: string) => {
+  const normalizedType = normalizeTextValue(documentType);
+  const keywords = documentTypeKeywordsByTemplate[templateId] || [];
+  return keywords.some((keyword) => normalizedType.includes(keyword));
+};
+
 const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
   try {
     const mode = localStorage.getItem('cictrix_data_source_mode');
@@ -393,7 +425,7 @@ export const RSPDashboard = () => {
   const [qualifiedSearch, setQualifiedSearch] = useState('');
   const [qualifiedPosition, setQualifiedPosition] = useState('all');
   const [qualifiedOffice, setQualifiedOffice] = useState('all');
-  const [reportsView, setReportsView] = useState<'overview' | 'ranking' | 'assessment'>('overview');
+  const [reportsView, setReportsView] = useState<'overview' | 'ranking' | 'assessment' | 'documents'>('overview');
   const [activeRankingPosition, setActiveRankingPosition] = useState<string | null>(null);
   const [showRankingModal, setShowRankingModal] = useState(false);
   const [showHireApplicantsModal, setShowHireApplicantsModal] = useState(false);
@@ -402,6 +434,9 @@ export const RSPDashboard = () => {
   const [showAssessmentFormsModal, setShowAssessmentFormsModal] = useState(false);
   const [assessmentStatusFilter, setAssessmentStatusFilter] = useState<AssessmentStatusFilter>('all');
   const [assessmentSearch, setAssessmentSearch] = useState('');
+  const [activeDocumentTemplateId, setActiveDocumentTemplateId] = useState<EmployeeDocumentTemplateId | null>(null);
+  const [expandedDocumentOffices, setExpandedDocumentOffices] = useState<Record<string, boolean>>({});
+  const [selectedDocumentSubmissionIds, setSelectedDocumentSubmissionIds] = useState<string[]>([]);
 
   const [raterSearch, setRaterSearch] = useState('');
   const [raterStatus, setRaterStatus] = useState('all');
@@ -607,6 +642,9 @@ export const RSPDashboard = () => {
       setActiveAssessmentPosition(null);
       setAssessmentStatusFilter('all');
       setAssessmentSearch('');
+      setActiveDocumentTemplateId(null);
+      setExpandedDocumentOffices({});
+      setSelectedDocumentSubmissionIds([]);
       setReportsView('overview');
     }
   }, [section]);
@@ -624,6 +662,9 @@ export const RSPDashboard = () => {
       setActiveAssessmentPosition(null);
       setAssessmentStatusFilter('all');
       setAssessmentSearch('');
+      setActiveDocumentTemplateId(null);
+      setExpandedDocumentOffices({});
+      setSelectedDocumentSubmissionIds([]);
       setReportsView('overview');
     };
 
@@ -911,6 +952,73 @@ export const RSPDashboard = () => {
     });
     return counts;
   }, [activeAssessmentApplicants]);
+
+  const activeDocumentTemplate = useMemo(
+    () => BULK_REQUEST_TEMPLATES.find((template) => template.id === activeDocumentTemplateId) || null,
+    [activeDocumentTemplateId]
+  );
+
+  const activeDocumentSubmissions = useMemo<EmployeeDocumentSubmission[]>(() => {
+    if (!activeDocumentTemplateId) return [];
+    const recruitmentApplicants = getRecruitmentApplicants();
+    const recruitmentById = new Map(recruitmentApplicants.map((entry) => [entry.id, entry]));
+
+    const normalized = applicants
+      .filter((applicant) => Boolean(applicant.id) && Boolean(applicant.office))
+      .map((applicant, index) => {
+        const recruitmentRecord = recruitmentById.get(applicant.id);
+        const matchingDoc = (recruitmentRecord?.documents || []).find((doc) =>
+          matchesDocumentTemplate(activeDocumentTemplateId, doc.type || '')
+        );
+        if (!matchingDoc) return null;
+
+        let status: EmployeeDocumentSubmission['status'] = 'Pending';
+        if (matchingDoc.verified) {
+          status = 'Approved';
+        } else {
+          const applicantStatus = normalizeTextValue(applicant.status || '');
+          if (applicantStatus.includes('reject') || applicantStatus.includes('disqual')) {
+            status = 'Rejected';
+          }
+        }
+
+        return {
+          id: `${activeDocumentTemplateId}-${applicant.id}`,
+          applicantId: applicant.id,
+          fullName: applicant.full_name,
+          employeeCode: `EMP-${new Date(applicant.created_at || Date.now()).getFullYear()}-${String(1000 + index)}`,
+          position: applicant.position || 'Unassigned Position',
+          office: applicant.office || 'Unassigned Office',
+          submittedDate: formatDate(recruitmentRecord?.applicationDate || applicant.created_at),
+          status,
+          documentUrl: matchingDoc.url || '#',
+          documentType: matchingDoc.type || activeDocumentTemplateId,
+        } as EmployeeDocumentSubmission;
+      })
+      .filter(Boolean) as EmployeeDocumentSubmission[];
+
+    return normalized.sort((a, b) => a.office.localeCompare(b.office) || a.fullName.localeCompare(b.fullName));
+  }, [activeDocumentTemplateId, applicants]);
+
+  const documentSubmissionsByOffice = useMemo(() => {
+    const grouped = new Map<string, EmployeeDocumentSubmission[]>();
+    activeDocumentSubmissions.forEach((submission) => {
+      const current = grouped.get(submission.office) || [];
+      current.push(submission);
+      grouped.set(submission.office, current);
+    });
+
+    return Array.from(grouped.entries())
+      .map(([office, submissions]) => ({
+        office,
+        submissions,
+        total: submissions.length,
+        selected: submissions.filter((entry) => selectedDocumentSubmissionIds.includes(entry.id)).length,
+      }))
+      .sort((a, b) => b.total - a.total || a.office.localeCompare(b.office));
+  }, [activeDocumentSubmissions, selectedDocumentSubmissionIds]);
+
+  const totalSelectedDocumentSubmissions = selectedDocumentSubmissionIds.length;
 
   useEffect(() => {
     if (!activeRankingPosition) return;
@@ -1432,6 +1540,84 @@ export const RSPDashboard = () => {
     setActiveAssessmentPosition(null);
     setAssessmentStatusFilter('all');
     setAssessmentSearch('');
+  };
+
+  const openDocumentTemplate = (templateId: EmployeeDocumentTemplateId) => {
+    setActiveDocumentTemplateId(templateId);
+    setReportsView('documents');
+    setSelectedDocumentSubmissionIds([]);
+    setExpandedDocumentOffices({});
+  };
+
+  useEffect(() => {
+    if (reportsView !== 'documents') return;
+    if (Object.keys(expandedDocumentOffices).length > 0) return;
+    if (documentSubmissionsByOffice.length === 0) return;
+
+    const initialExpanded: Record<string, boolean> = {};
+    documentSubmissionsByOffice.forEach((group, index) => {
+      initialExpanded[group.office] = index === 0;
+    });
+    setExpandedDocumentOffices(initialExpanded);
+  }, [reportsView, documentSubmissionsByOffice, expandedDocumentOffices]);
+
+  const toggleDocumentOffice = (office: string) => {
+    setExpandedDocumentOffices((prev) => ({ ...prev, [office]: !prev[office] }));
+  };
+
+  const toggleDocumentSubmission = (submissionId: string) => {
+    setSelectedDocumentSubmissionIds((prev) =>
+      prev.includes(submissionId) ? prev.filter((id) => id !== submissionId) : [...prev, submissionId]
+    );
+  };
+
+  const selectAllInOffice = (office: string, selected: boolean) => {
+    const officeIds = activeDocumentSubmissions.filter((entry) => entry.office === office).map((entry) => entry.id);
+    setSelectedDocumentSubmissionIds((prev) => {
+      if (selected) {
+        return Array.from(new Set([...prev, ...officeIds]));
+      }
+      return prev.filter((id) => !officeIds.includes(id));
+    });
+  };
+
+  const triggerDocumentDownload = (entries: EmployeeDocumentSubmission[]) => {
+    if (entries.length === 0) return;
+    const downloadable = entries.filter((entry) => entry.documentUrl && entry.documentUrl !== '#');
+
+    if (downloadable.length > 0) {
+      downloadable.forEach((entry, index) => {
+        window.setTimeout(() => {
+          const link = document.createElement('a');
+          link.href = entry.documentUrl;
+          link.target = '_blank';
+          link.rel = 'noreferrer';
+          link.download = `${entry.fullName}-${entry.documentType}`.replace(/\s+/g, '_');
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }, index * 120);
+      });
+      return;
+    }
+
+    const lines = [
+      'Name,Employee Code,Position,Office,Submitted Date,Status',
+      ...entries.map((entry) =>
+        [entry.fullName, entry.employeeCode, entry.position, entry.office, entry.submittedDate, entry.status]
+          .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+          .join(',')
+      ),
+    ];
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${activeDocumentTemplate?.id || 'employee-documents'}-${new Date().getTime()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const toggleHireApplicantSelection = (applicantId: string) => {
@@ -2565,10 +2751,153 @@ export const RSPDashboard = () => {
                 </section>
               )}
 
-              <section>
-                <h2 className="!mb-1 text-2xl font-semibold">Employee Documents</h2>
-                <p className="text-lg text-[var(--text-secondary)]">Access and download documents submitted by employees</p>
-              </section>
+              {reportsView !== 'documents' ? (
+                <>
+                  <section>
+                    <h2 className="!mb-1 text-2xl font-semibold">Employee Documents</h2>
+                    <p className="text-lg text-[var(--text-secondary)]">Access and download documents submitted by employees</p>
+                  </section>
+
+                  <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                    {BULK_REQUEST_TEMPLATES.map((template) => (
+                      <button
+                        key={template.id}
+                        type="button"
+                        onClick={() => openDocumentTemplate(template.id)}
+                        className="rounded-2xl border border-[var(--border-color)] bg-white p-5 text-center transition hover:border-[var(--primary-color)]"
+                      >
+                        <div className="mb-3 inline-flex rounded-2xl bg-indigo-100 p-4 text-indigo-600">
+                          <FileText size={28} />
+                        </div>
+                        <h3 className="!mb-0 text-xl font-semibold text-[var(--text-primary)]">{template.name.replace(' (Statement of Assets, Liabilities and Net Worth)', '')}</h3>
+                      </button>
+                    ))}
+                  </section>
+
+                  <section className="rounded-2xl border border-blue-200 bg-blue-50 p-6">
+                    <h3 className="!mb-3 text-xl font-semibold text-blue-900">Document Generation Guidelines</h3>
+                    <ul className="list-disc space-y-2 pl-6 text-lg text-blue-800">
+                      <li>All reports follow official government formatting standards</li>
+                      <li>Ranking reports are automatically formatted for landscape printing</li>
+                      <li>Assessment forms are portrait-oriented with conditional logic for disqualified applicants</li>
+                      <li>Use the Print function in your browser to generate PDF documents</li>
+                    </ul>
+                  </section>
+                </>
+              ) : (
+                <section className="space-y-4">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <p className="!mb-1 text-base text-blue-600">RSP / Reports / {activeDocumentTemplate?.name.replace(' (Statement of Assets, Liabilities and Net Worth)', '') || 'Employee Documents'}</p>
+                      <h2 className="!mb-1 text-5xl font-bold text-[var(--text-primary)]">{activeDocumentTemplate?.name.replace(' (Statement of Assets, Liabilities and Net Worth)', '') || 'Employee Documents'}</h2>
+                      <p className="!mb-0 text-2xl text-[var(--text-secondary)]">{activeDocumentSubmissions.length} total submissions across all departments</p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {totalSelectedDocumentSubmissions > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => triggerDocumentDownload(activeDocumentSubmissions.filter((entry) => selectedDocumentSubmissionIds.includes(entry.id)))}
+                          className="rounded-xl bg-purple-600 px-5 py-3 text-lg font-semibold text-white"
+                        >
+                          Download Selected ({totalSelectedDocumentSubmissions})
+                        </button>
+                      )}
+                      {totalSelectedDocumentSubmissions > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedDocumentSubmissionIds([])}
+                          className="rounded-xl border border-[var(--border-color)] bg-white px-5 py-3 text-lg font-semibold text-[var(--text-primary)]"
+                        >
+                          Clear Selection
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => window.print()}
+                        className="rounded-xl border border-[var(--border-color)] bg-white px-5 py-3 text-lg font-semibold text-[var(--text-primary)]"
+                      >
+                        Print
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {documentSubmissionsByOffice.map((group) => {
+                      const isExpanded = expandedDocumentOffices[group.office] ?? false;
+                      return (
+                        <article key={group.office} className="overflow-hidden rounded-2xl border border-[var(--border-color)] bg-white">
+                          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+                            <button
+                              type="button"
+                              onClick={() => toggleDocumentOffice(group.office)}
+                              className="inline-flex items-center gap-2 text-left text-3xl font-semibold text-[var(--text-primary)]"
+                            >
+                              <ChevronRight size={20} className={`${isExpanded ? 'rotate-90' : ''} transition`} />
+                              {group.office}
+                              <span className="rounded-md bg-purple-100 px-2 py-1 text-lg font-semibold text-purple-700">{group.total} submitted</span>
+                              {group.selected > 0 && <span className="rounded-md bg-purple-600 px-2 py-1 text-lg font-semibold text-white">{group.selected} selected</span>}
+                            </button>
+
+                            <div className="flex flex-wrap items-center gap-3 text-lg">
+                              <button type="button" onClick={() => selectAllInOffice(group.office, true)} className="text-purple-600">Select All</button>
+                              <button type="button" onClick={() => selectAllInOffice(group.office, false)} className="text-[var(--text-secondary)]">Deselect All</button>
+                              <button
+                                type="button"
+                                onClick={() => triggerDocumentDownload(group.submissions)}
+                                className="rounded-lg bg-purple-600 px-4 py-2 font-semibold text-white"
+                              >
+                                Download All
+                              </button>
+                            </div>
+                          </div>
+
+                          {isExpanded && (
+                            <div className="divide-y divide-[var(--border-color)] border-t border-[var(--border-color)]">
+                              {group.submissions.map((entry) => (
+                                <div key={entry.id} className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
+                                  <div className="flex min-w-[440px] items-center gap-4">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedDocumentSubmissionIds.includes(entry.id)}
+                                      onChange={() => toggleDocumentSubmission(entry.id)}
+                                      className="h-6 w-6"
+                                    />
+                                    <div className="rounded-full bg-purple-100 p-2 text-purple-600">
+                                      <User size={18} />
+                                    </div>
+                                    <div>
+                                      <p className="!mb-1 text-2xl font-semibold text-[var(--text-primary)]">
+                                        {entry.fullName} <span className="text-xl font-normal text-[var(--text-secondary)]">{entry.employeeCode} • {entry.position}</span>
+                                      </p>
+                                      <p className="!mb-0 text-xl text-[var(--text-secondary)]">
+                                        Submitted: {entry.submittedDate}
+                                        {' '}
+                                        <span className={`ml-2 rounded-full px-2 py-1 text-base font-semibold ${entry.status === 'Approved' ? 'bg-green-100 text-green-700' : entry.status === 'Pending' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
+                                          {entry.status}
+                                        </span>
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => triggerDocumentDownload([entry])}
+                                    disabled={!entry.documentUrl || entry.documentUrl === '#'}
+                                    className="text-xl font-semibold text-purple-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    Download
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </article>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
 
               <section className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
                 <div className="mb-3 flex items-center justify-between gap-3">
@@ -2895,9 +3224,9 @@ export const RSPDashboard = () => {
       )}
 
       {showAssessmentFormsModal && activeAssessmentCard && (
-        <div className="fixed inset-0 z-[245] flex items-center justify-center bg-black/70 p-4" onClick={closeAssessmentForms}>
-          <div className="max-h-[92vh] w-full max-w-[1320px] overflow-hidden rounded-2xl bg-white" onClick={(event) => event.stopPropagation()}>
-            <div className="flex items-start justify-between gap-3 border-b border-[var(--border-color)] px-6 py-5">
+        <div className="assessment-print-overlay fixed inset-0 z-[245] flex items-center justify-center bg-black/70 p-4" onClick={closeAssessmentForms}>
+          <div className="assessment-print-modal max-h-[92vh] w-full max-w-[1320px] overflow-hidden rounded-2xl bg-white" onClick={(event) => event.stopPropagation()}>
+            <div className="assessment-print-no flex items-start justify-between gap-3 border-b border-[var(--border-color)] px-6 py-5">
               <div>
                 <h2 className="!mb-1 text-4xl font-semibold text-[var(--text-primary)]">Assessment Forms - {activeAssessmentCard.position}</h2>
                 <p className="!mb-0 text-2xl text-[var(--text-secondary)]">{activeAssessmentCard.department} • {activeAssessmentApplicants.length} applicant{activeAssessmentApplicants.length === 1 ? '' : 's'}</p>
@@ -2920,8 +3249,8 @@ export const RSPDashboard = () => {
               </div>
             </div>
 
-            <div className="max-h-[78vh] overflow-y-auto">
-              <div className="border-b border-[var(--border-color)] px-6 py-5">
+            <div className="assessment-print-scroll max-h-[78vh] overflow-y-auto">
+              <div className="assessment-print-no border-b border-[var(--border-color)] px-6 py-5">
                 <p className="!mb-2 text-xl font-semibold text-[var(--text-primary)]">Filter by Status:</p>
                 <div className="flex flex-wrap gap-2">
                   {([
@@ -2945,7 +3274,7 @@ export const RSPDashboard = () => {
                 </div>
               </div>
 
-              <div className="border-b border-[var(--border-color)] px-6 py-4">
+              <div className="assessment-print-no border-b border-[var(--border-color)] px-6 py-4">
                 <input
                   type="text"
                   value={assessmentSearch}
@@ -2972,7 +3301,7 @@ export const RSPDashboard = () => {
                     const totalScore = Number((applicant.total_score || 0).toFixed(2));
 
                     return (
-                      <article key={applicant.id} className="space-y-3">
+                      <article key={applicant.id} className="assessment-form-card space-y-3">
                         <div className="inline-flex items-center gap-3 rounded-xl bg-blue-100 px-4 py-2">
                           <p className="!mb-0 text-3xl font-semibold text-blue-800">Form {index + 1} of {filteredAssessmentApplicants.length}: {applicant.full_name}</p>
                           <span className={`rounded-md px-2 py-1 text-base font-semibold uppercase ${badgeClass}`}>{bucket === 'other' ? applicant.status : bucket}</span>

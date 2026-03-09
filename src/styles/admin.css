@@ -979,6 +979,48 @@
   color: #EF6C00;
 }
 
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+
+  .assessment-print-overlay,
+  .assessment-print-overlay * {
+    visibility: visible !important;
+  }
+
+  .assessment-print-overlay {
+    position: static !important;
+    inset: auto !important;
+    background: #fff !important;
+    padding: 0 !important;
+    display: block !important;
+  }
+
+  .assessment-print-modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .assessment-print-scroll {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .assessment-print-no {
+    display: none !important;
+  }
+
+  .assessment-form-card {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
+
 .job-item-number {
   color: #757575;
   font-size: 0.875rem;

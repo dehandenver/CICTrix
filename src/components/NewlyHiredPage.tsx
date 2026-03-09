@@ -9,7 +9,6 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { Sidebar } from './Sidebar';
 import {
   ensureRecruitmentSeedData,
   generateEmployeeId,
@@ -19,6 +18,7 @@ import {
   saveNewlyHired,
 } from '../lib/recruitmentData';
 import type { NewlyHired, NewlyHiredStatus } from '../types/recruitment.types';
+import { Sidebar } from './Sidebar';
 
 type ViewMode = 'overview' | 'department';
 
