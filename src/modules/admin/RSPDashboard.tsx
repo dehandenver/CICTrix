@@ -31,9 +31,9 @@ import { mockDatabase } from '../../lib/mockDatabase';
 import {
   ensureRecruitmentSeedData,
   getAuthoritativeJobPostings,
-  getApplicants as getRecruitmentApplicants,
   getDeletedJobReports,
   getNewlyHired,
+  getApplicants as getRecruitmentApplicants,
   saveDeletedJobReports,
   saveJobPostings,
   saveNewlyHired,

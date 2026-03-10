@@ -63,18 +63,31 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
         const classes = typeof node.className === 'string' ? node.className : '';
         const rect = node.getBoundingClientRect();
         const style = window.getComputedStyle(node);
-        const isFullscreenFixed =
-          style.position === 'fixed' &&
+        const coversViewport =
           rect.width >= window.innerWidth - 2 &&
           rect.height >= window.innerHeight - 2;
+        const isFullscreenFixed =
+          style.position === 'fixed' &&
+          coversViewport;
+        const isFullscreenAbsolute =
+          style.position === 'absolute' &&
+          coversViewport;
         const isKnownBackdropClass =
           classes.includes('bg-black/') ||
           classes.includes('bg-slate-900/') ||
-          classes.includes('dialog-overlay');
+          classes.includes('dialog-overlay') ||
+          classes.includes('assessment-print-overlay');
 
-        if (isFullscreenFixed || isKnownBackdropClass) {
+        if (isFullscreenFixed || isFullscreenAbsolute || isKnownBackdropClass) {
+          // Remove leaked overlays entirely so they cannot keep tinting the viewport.
+          if (node.parentElement && node !== loginRoot) {
+            node.parentElement.removeChild(node);
+            return;
+          }
+
           node.style.display = 'none';
           node.style.pointerEvents = 'none';
+          node.style.opacity = '0';
         }
       });
 

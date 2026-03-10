@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button, Card } from '../../components';
 import { supabase } from '../../lib/supabase';
 import '../../styles/fileUpload.css';
@@ -10,7 +10,7 @@ interface AttachmentsUploadFormProps {
   error?: string;
 }
 
-type DocumentType = 
+export type DocumentType = 
   | 'application_letter'
   | 'pds_with_photo'
   | 'eligibility_proof'
@@ -24,7 +24,7 @@ interface CategorizedFile extends UploadedFile {
   documentType: DocumentType;
 }
 
-const REQUIRED_DOCUMENTS = [
+export const REQUIRED_DOCUMENTS = [
   {
     type: 'application_letter' as DocumentType,
     label: 'Application Letter',

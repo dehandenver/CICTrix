@@ -314,17 +314,35 @@ function AppContent() {
 
     // Failsafe: scrub any leaked full-screen overlay nodes that can block clicks.
     const scrubOrphanOverlays = () => {
-      const candidates = Array.from(document.querySelectorAll<HTMLElement>('div.fixed.inset-0, .dialog-overlay'));
+      const candidates = Array.from(document.querySelectorAll<HTMLElement>('body *'));
       candidates.forEach((node) => {
+        if (node.classList.contains('admin-login-page')) {
+          return;
+        }
+
         const className = node.className || '';
+        const style = window.getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        const isFullscreen = rect.width >= window.innerWidth - 2 && rect.height >= window.innerHeight - 2;
         const isDarkBackdrop =
           className.includes('bg-black/') ||
           className.includes('bg-slate-900/') ||
-          className.includes('dialog-overlay');
+          className.includes('dialog-overlay') ||
+          className.includes('assessment-print-overlay');
 
-        if (isDarkBackdrop) {
+        const isOverlayLike =
+          (style.position === 'fixed' || style.position === 'absolute') &&
+          isFullscreen;
+
+        if (isDarkBackdrop && isOverlayLike) {
+          if (node.parentElement) {
+            node.parentElement.removeChild(node);
+            return;
+          }
+
           node.style.display = 'none';
           node.style.pointerEvents = 'none';
+          node.style.opacity = '0';
         }
       });
 
@@ -336,8 +354,21 @@ function AppContent() {
     };
 
     const frame = window.requestAnimationFrame(scrubOrphanOverlays);
-    return () => window.cancelAnimationFrame(frame);
-  }, [location.pathname]);
+    const timer = window.setTimeout(scrubOrphanOverlays, 120);
+    const interval = window.setInterval(scrubOrphanOverlays, 350);
+
+    const observer = new MutationObserver(() => {
+      scrubOrphanOverlays();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+      window.clearInterval(interval);
+      observer.disconnect();
+    };
+  }, [location.pathname, location.search]);
 
   const handleLogin = (email: string, role: Role) => {
     const session = { email, role };

@@ -1,4 +1,14 @@
-import React, { useState } from 'react';
+import {
+    BadgeCheck,
+    CheckCircle2,
+    CircleCheck,
+    FileText,
+    ShieldCheck,
+    UserPlus,
+    Users,
+} from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import hrisLogo from '../../assets/hris-logo.svg';
 import { Button, Dialog } from '../../components';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import { mockDatabase } from '../../lib/mockDatabase';
@@ -8,7 +18,7 @@ import '../../styles/wizard.css';
 import type { ApplicantFormData, UploadedFile, ValidationErrors } from '../../types/applicant.types';
 import { validateApplicantForm, validateFiles } from '../../utils/validation';
 import { ApplicantAssessmentForm } from './ApplicantAssessmentForm';
-import { AttachmentsUploadForm } from './AttachmentsUploadForm';
+import { AttachmentsUploadForm, REQUIRED_DOCUMENTS } from './AttachmentsUploadForm';
 
 const ATTACHMENT_PREVIEW_CACHE_KEY = 'cictrix_attachment_previews';
 const MAX_PREVIEWABLE_FILE_BYTES = 10 * 1024 * 1024;
@@ -45,18 +55,24 @@ const INITIAL_FORM_DATA: ApplicantFormData = {
 };
 
 export const ApplicantWizard: React.FC = () => {
-  const [currentStep, setCurrentStep] = useState<1 | 2>(1);
+  const [entryMode, setEntryMode] = useState<'landing' | 'wizard'>('landing');
+  const [applicationType, setApplicationType] = useState<'job' | 'promotion'>('job');
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
   const [formData, setFormData] = useState<ApplicantFormData>(INITIAL_FORM_DATA);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [errors, setErrors] = useState<ValidationErrors>({});
-  const [fileError, setFileError] = useState<string>('');
+  const [fileError, setFileError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
-  const [submitError, setSubmitError] = useState<string>('');
+  const [submissionReference, setSubmissionReference] = useState('');
+  const [submitError, setSubmitError] = useState('');
+  const [showEmployeeAuth, setShowEmployeeAuth] = useState(false);
+  const [employeeNumber, setEmployeeNumber] = useState('');
+  const [employeePassword, setEmployeePassword] = useState('');
+  const [employeeAuthError, setEmployeeAuthError] = useState('');
 
   const handleFormChange = (field: keyof ApplicantFormData, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
-    // Clear error for this field when user starts typing
     if (errors[field as keyof ValidationErrors]) {
       setErrors((prev) => ({ ...prev, [field]: undefined }));
     }
@@ -68,9 +84,8 @@ export const ApplicantWizard: React.FC = () => {
   };
 
   const handleNext = () => {
-    // Validate form data before proceeding to step 2
     const validationErrors = validateApplicantForm(formData);
-    
+
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
       return;
@@ -80,12 +95,29 @@ export const ApplicantWizard: React.FC = () => {
     setCurrentStep(2);
   };
 
+  const handleNextToReview = () => {
+    const fileValidationError = validateFiles(files.map((f) => f.file), files);
+    if (fileValidationError) {
+      setFileError(fileValidationError);
+      return;
+    }
+
+    setFileError('');
+    setCurrentStep(3);
+  };
+
   const handleBack = () => {
+    if (currentStep === 3) {
+      setCurrentStep(2);
+      return;
+    }
+
     setCurrentStep(1);
   };
 
   const uploadFiles = async (client: any, applicantId: string): Promise<SyncedAttachment[]> => {
     const persisted: SyncedAttachment[] = [];
+
     for (const uploadedFile of files) {
       const generatedPath = `${applicantId}/${Date.now()}-${uploadedFile.file.name}`;
       const storageBucket = client?.storage?.from?.(ATTACHMENTS_BUCKET);
@@ -100,8 +132,6 @@ export const ApplicantWizard: React.FC = () => {
           throw new Error(`Failed to upload ${uploadedFile.file.name}`);
         }
       } else {
-        // In local/mock mode, keep images (and other common previewables) as data URLs
-        // so preview/download actions work even without cloud storage.
         const isPreviewFriendlyType =
           uploadedFile.file.type.startsWith('image/') ||
           uploadedFile.file.type === 'application/pdf' ||
@@ -125,9 +155,7 @@ export const ApplicantWizard: React.FC = () => {
 
       const insertResult = typeof client?.insertAttachment === 'function'
         ? await client.insertAttachment(attachmentPayload)
-        : await client
-            .from('applicant_attachments')
-            .insert(attachmentPayload);
+        : await client.from('applicant_attachments').insert(attachmentPayload);
 
       const insertError = (insertResult as any).error;
       if (insertError) {
@@ -185,7 +213,7 @@ export const ApplicantWizard: React.FC = () => {
       ];
       localStorage.setItem(ATTACHMENT_PREVIEW_CACHE_KEY, JSON.stringify(next));
     } catch {
-      // Best effort only: if cache exceeds quota we still keep submission successful.
+      // Best effort cache only.
     }
   };
 
@@ -227,7 +255,6 @@ export const ApplicantWizard: React.FC = () => {
     }
 
     const syncedAttachments = await uploadFiles(client, applicantData.id);
-
     await cachePreviewableFiles(applicantData.id);
 
     syncApplicantSubmissionToRecruitment({
@@ -247,16 +274,24 @@ export const ApplicantWizard: React.FC = () => {
   };
 
   const completeSuccess = () => {
+    const generatedReference = `#YEOGW${Math.random().toString(36).slice(2, 7).toUpperCase()}XX`;
+    setSubmissionReference(generatedReference);
     setShowSuccessDialog(true);
     setFormData(INITIAL_FORM_DATA);
     setFiles([]);
     setCurrentStep(1);
+    setEntryMode('landing');
+    setApplicationType('job');
+    setEmployeeNumber('');
+    setEmployeePassword('');
+    setEmployeeAuthError('');
   };
 
   const isNetworkFetchError = (error: unknown): boolean => {
     if (!(error instanceof Error)) {
       return false;
     }
+
     return error instanceof TypeError || /failed to fetch|networkerror/i.test(error.message);
   };
 
@@ -269,7 +304,6 @@ export const ApplicantWizard: React.FC = () => {
   };
 
   const handleSubmit = async () => {
-    // Validate files
     const fileValidationError = validateFiles(files.map((f) => f.file), files);
     if (fileValidationError) {
       setFileError(fileValidationError);
@@ -317,102 +351,370 @@ export const ApplicantWizard: React.FC = () => {
     setShowSuccessDialog(false);
   };
 
+  const handleStartJobApplication = () => {
+    setApplicationType('job');
+    setEntryMode('wizard');
+    setCurrentStep(1);
+    setSubmitError('');
+  };
+
+  const handleOpenEmployeeAuth = () => {
+    setEmployeeAuthError('');
+    setShowEmployeeAuth(true);
+  };
+
+  const handleCloseEmployeeAuth = () => {
+    setShowEmployeeAuth(false);
+    setEmployeeNumber('');
+    setEmployeePassword('');
+    setEmployeeAuthError('');
+  };
+
+  const handleEmployeeAuthSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!employeeNumber.trim() || !employeePassword.trim()) {
+      setEmployeeAuthError('Please enter your employee number and password.');
+      return;
+    }
+
+    if (employeeNumber.trim() !== 'EMP-2024-001' || employeePassword !== 'password123') {
+      setEmployeeAuthError('Invalid employee credentials. Please verify and try again.');
+      return;
+    }
+
+    setApplicationType('promotion');
+    setEntryMode('wizard');
+    setCurrentStep(1);
+    setSubmitError('');
+    setShowEmployeeAuth(false);
+    setEmployeeAuthError('');
+  };
+
+  const reviewedFiles = useMemo(() => {
+    return REQUIRED_DOCUMENTS.map((doc) => {
+      const uploaded = (files as Array<UploadedFile & { documentType?: string }>).find(
+        (entry) => entry.documentType === doc.type
+      );
+
+      return {
+        key: doc.type,
+        fileName: uploaded?.file.name,
+        fileSize: uploaded?.file.size,
+      };
+    }).filter((entry) => Boolean(entry.fileName));
+  }, [files]);
+
+  const formatFileSize = (bytes?: number) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    const kb = bytes / 1024;
+    if (kb < 1024) return `${kb.toFixed(1)} KB`;
+    return `${(kb / 1024).toFixed(1)} MB`;
+  };
+
   return (
-    <div className="wizard-container">
-      {isMockModeEnabled && (
-        <div className="mock-mode-banner">
-          <p>
-            ℹ️ Running in demo mode (localStorage). To use a real database, add Supabase credentials to .env
-          </p>
-        </div>
-      )}
-
-      <div className="wizard-header">
-        <h1>HRIS Applicant Module</h1>
-        <p className="wizard-subtitle">Submit your application in 2 easy steps</p>
-      </div>
-
-      {/* Step Indicator */}
-      <div className="step-indicator">
-        <div className={`step ${currentStep >= 1 ? 'active' : ''} ${currentStep > 1 ? 'completed' : ''}`}>
-          <div className="step-number">
-            {currentStep > 1 ? '✓' : '1'}
+    <div className="applicant-shell">
+      <header className="applicant-topbar">
+        <div className="applicant-brand">
+          <img src={hrisLogo} alt="HRIS logo" className="applicant-brand-logo" />
+          <div>
+            <h1>HRIS Applicant Portal</h1>
+            <p>Human Resource Information System</p>
           </div>
-          <div className="step-label">Assessment Form</div>
         </div>
-        
-        <div className="step-divider"></div>
-        
-        <div className={`step ${currentStep >= 2 ? 'active' : ''}`}>
-          <div className="step-number">2</div>
-          <div className="step-label">Upload Documents</div>
-        </div>
-      </div>
+      </header>
 
-      {/* Form Content */}
-      <div className="wizard-content">
-        {currentStep === 1 && (
-          <ApplicantAssessmentForm
-            formData={formData}
-            errors={errors}
-            onChange={handleFormChange}
-          />
-        )}
-
-        {currentStep === 2 && (
-          <AttachmentsUploadForm
-            files={files}
-            onFilesChange={handleFilesChange}
-            error={fileError}
-          />
-        )}
-      </div>
-
-      {/* Error Message */}
-      {submitError && (
-        <div className="submit-error">
-          <p>{submitError}</p>
+      {entryMode === 'wizard' && (
+        <div className="application-type-banner">
+          <strong>Application Type:</strong>{' '}
+          {applicationType === 'promotion' ? 'Promotional Application' : 'Job Application'}
         </div>
       )}
 
-      {/* Navigation Buttons */}
-      <div className="wizard-actions">
-        {currentStep === 2 && (
-          <Button variant="outline" onClick={handleBack} disabled={isSubmitting}>
-            ← Back
-          </Button>
-        )}
-        
-        <div className="flex-spacer"></div>
+      {entryMode === 'landing' ? (
+        <main className="portal-landing">
+          <div className="portal-landing-header">
+            <h2>Welcome to HRIS Applicant Portal</h2>
+            <p>Please begin your application below</p>
+          </div>
 
-        {currentStep === 1 && (
-          <Button onClick={handleNext}>
-            Next: Upload Documents →
-          </Button>
-        )}
+          <div className="application-entry-card">
+            <div className="entry-icon-wrap" aria-hidden="true">
+              <UserPlus size={46} />
+            </div>
+            <h3>Job Application</h3>
+            <p>Apply for available positions</p>
+            <Button className="entry-primary-button" onClick={handleStartJobApplication}>
+              Start Application
+            </Button>
+          </div>
 
-        {currentStep === 2 && (
-          <Button onClick={handleSubmit} loading={isSubmitting} disabled={isSubmitting}>
-            {isSubmitting ? 'Submitting...' : 'Submit Application'}
-          </Button>
-        )}
-      </div>
+          <button className="employee-promotion-button" onClick={handleOpenEmployeeAuth}>
+            <Users size={18} />
+            <span>I'm a current employee applying for promotion</span>
+          </button>
 
-      {/* Success Dialog */}
-      <Dialog
-        open={showSuccessDialog}
-        onClose={handleCloseSuccessDialog}
-        title="Application Submitted Successfully!"
-      >
-        <div className="success-dialog-content">
-          <div className="success-icon">✓</div>
-          <p className="success-message">
-            Thank you for your application! {isMockModeEnabled ? '(Demo mode - data saved to localStorage)' : 'We have received your information and documents.'}
-            Our HR team will review your application and contact you soon.
+          <div className="employee-note-card">
+            <p>
+              <strong>Note:</strong> Current employees must authenticate using their employee credentials to apply
+              for promotional positions.
+            </p>
+          </div>
+
+          {isMockModeEnabled && (
+            <div className="mock-mode-banner">
+              <p>Running in demo mode (localStorage). Add Supabase credentials to `.env` to use a live backend.</p>
+            </div>
+          )}
+        </main>
+      ) : (
+        <main className="wizard-layout">
+          <aside className="wizard-sidebar">
+            <h3>Application Progress</h3>
+
+            <div className="progress-item">
+              <div className={`progress-badge ${currentStep > 1 ? 'completed' : 'active'}`}>
+                {currentStep > 1 ? <CheckCircle2 size={18} /> : '1'}
+              </div>
+              <div>
+                <p className="progress-title">Personal &amp; Application Info</p>
+                <p className="progress-status">{currentStep > 1 ? 'Completed' : 'In Progress'}</p>
+              </div>
+            </div>
+
+            <div className="progress-item">
+              <div className={`progress-badge ${currentStep > 2 ? 'completed' : currentStep === 2 ? 'active' : ''}`}>
+                {currentStep > 2 ? <CheckCircle2 size={18} /> : '2'}
+              </div>
+              <div>
+                <p className="progress-title">Upload Requirements</p>
+                <p className="progress-status">
+                  {currentStep > 2 ? 'Completed' : currentStep === 2 ? 'In Progress' : 'Pending'}
+                </p>
+              </div>
+            </div>
+
+            <div className="progress-item">
+              <div className={`progress-badge ${currentStep === 3 ? 'active' : ''}`}>3</div>
+              <div>
+                <p className="progress-title">Review &amp; Submit</p>
+                <p className="progress-status">{currentStep === 3 ? 'In Progress' : 'Pending'}</p>
+              </div>
+            </div>
+
+            <div className="progress-reminder">
+              <p>
+                <strong>Important:</strong> Please complete all steps to submit your application. Ensure all
+                information is accurate and all required documents are uploaded.
+              </p>
+            </div>
+          </aside>
+
+          <section className="wizard-main">
+            {currentStep === 1 && (
+              <>
+                <div className="wizard-heading">
+                  <h2>Personal &amp; Application Information</h2>
+                  <p>Please provide your complete details for evaluation.</p>
+                </div>
+                <div className="wizard-content">
+                  <ApplicantAssessmentForm formData={formData} errors={errors} onChange={handleFormChange} />
+                </div>
+              </>
+            )}
+
+            {currentStep === 2 && (
+              <>
+                <div className="wizard-heading">
+                  <h2>Upload Requirements</h2>
+                  <p>Upload all required documents before proceeding to review.</p>
+                </div>
+                <div className="wizard-content">
+                  <AttachmentsUploadForm files={files} onFilesChange={handleFilesChange} error={fileError} />
+                </div>
+              </>
+            )}
+
+            {currentStep === 3 && (
+              <>
+                <div className="wizard-heading">
+                  <h2>Review &amp; Submit Application</h2>
+                  <p>Please review your information carefully before submitting your application.</p>
+                </div>
+
+                <div className="review-panel">
+                  <h4>
+                    <BadgeCheck size={20} /> Personal &amp; Application Information
+                  </h4>
+                  <div className="review-grid">
+                    <div>
+                      <label>First Name</label>
+                      <p>{formData.first_name || '-'}</p>
+                    </div>
+                    <div>
+                      <label>Middle Name</label>
+                      <p>{formData.middle_name || '-'}</p>
+                    </div>
+                    <div>
+                      <label>Last Name</label>
+                      <p>{formData.last_name || '-'}</p>
+                    </div>
+                    <div>
+                      <label>Email Address</label>
+                      <p>{formData.email || '-'}</p>
+                    </div>
+                    <div>
+                      <label>Gender</label>
+                      <p>{formData.gender || '-'}</p>
+                    </div>
+                    <div>
+                      <label>Position Applying For</label>
+                      <p>{formData.position || '-'}</p>
+                    </div>
+                    <div>
+                      <label>Address</label>
+                      <p>{formData.address || '-'}</p>
+                    </div>
+                    <div>
+                      <label>Office</label>
+                      <p>{formData.office || '-'}</p>
+                    </div>
+                    <div>
+                      <label>Contact Number</label>
+                      <p>{formData.contact_number || '-'}</p>
+                    </div>
+                    <div>
+                      <label>PWD Status</label>
+                      <p>{formData.is_pwd ? 'Yes' : 'No'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="review-panel">
+                  <h4>
+                    <FileText size={20} /> Uploaded Documents ({reviewedFiles.length})
+                  </h4>
+                  <div className="review-documents-list">
+                    {reviewedFiles.length > 0 ? (
+                      reviewedFiles.map((doc) => (
+                        <div key={doc.key} className="review-document-item">
+                          <div>
+                            <p className="doc-name">{doc.fileName}</p>
+                            <p className="doc-meta">{formatFileSize(doc.fileSize)}</p>
+                          </div>
+                          <CircleCheck size={20} className="doc-valid-icon" />
+                        </div>
+                      ))
+                    ) : (
+                      <p className="review-empty">No documents uploaded yet.</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="declaration-box">
+                  <h4>Declaration</h4>
+                  <p>
+                    I hereby certify that all information provided in this application is true and correct to the best
+                    of my knowledge. I understand that any false statement may result in the rejection of my
+                    application or termination of employment if discovered after hiring.
+                  </p>
+                </div>
+              </>
+            )}
+
+            {submitError && (
+              <div className="submit-error">
+                <p>{submitError}</p>
+              </div>
+            )}
+
+            <div className="wizard-actions">
+              {currentStep > 1 && (
+                <Button variant="outline" onClick={handleBack} disabled={isSubmitting}>
+                  ← Back
+                </Button>
+              )}
+
+              {currentStep === 1 && (
+                <Button onClick={handleNext}>
+                  Next: Upload Documents →
+                </Button>
+              )}
+
+              {currentStep === 2 && (
+                <Button onClick={handleNextToReview}>
+                  Next: Review &amp; Submit →
+                </Button>
+              )}
+
+              {currentStep === 3 && (
+                <Button onClick={handleSubmit} loading={isSubmitting} disabled={isSubmitting}>
+                  {isSubmitting ? 'Submitting...' : 'Submit Application'}
+                </Button>
+              )}
+            </div>
+          </section>
+        </main>
+      )}
+
+      <Dialog open={showEmployeeAuth} onClose={handleCloseEmployeeAuth}>
+        <div className="employee-auth-dialog">
+          <div className="employee-auth-icon" aria-hidden="true">
+            <ShieldCheck size={34} />
+          </div>
+          <h3>Employee Authentication</h3>
+          <p>Please login with your employee credentials to proceed with your promotional application.</p>
+
+          <form onSubmit={handleEmployeeAuthSubmit} className="employee-auth-form">
+            <label htmlFor="employee-number">Employee Number</label>
+            <input
+              id="employee-number"
+              value={employeeNumber}
+              onChange={(event) => setEmployeeNumber(event.target.value)}
+              placeholder="e.g., EMP-2024-001"
+            />
+
+            <label htmlFor="employee-password">Password</label>
+            <input
+              id="employee-password"
+              type="password"
+              value={employeePassword}
+              onChange={(event) => setEmployeePassword(event.target.value)}
+              placeholder="Enter your employee password"
+            />
+
+            <div className="employee-auth-hint">
+              <p>
+                <strong>For testing purposes, use:</strong>
+              </p>
+              <p>Employee Number: EMP-2024-001</p>
+              <p>Password: password123</p>
+            </div>
+
+            {employeeAuthError && <p className="employee-auth-error">{employeeAuthError}</p>}
+
+            <div className="employee-auth-actions">
+              <Button type="button" variant="outline" onClick={handleCloseEmployeeAuth}>
+                Cancel
+              </Button>
+              <Button type="submit">Login</Button>
+            </div>
+          </form>
+        </div>
+      </Dialog>
+
+      <Dialog open={showSuccessDialog} onClose={handleCloseSuccessDialog}>
+        <div className="submission-success-card">
+          <div className="success-icon-wrap" aria-hidden="true">
+            <CheckCircle2 size={42} />
+          </div>
+          <h3>Application Submitted Successfully</h3>
+          <p>
+            Your application has been received. You will be notified via email regarding the status of your
+            application.
           </p>
-          <Button onClick={handleCloseSuccessDialog} className="success-button">
-            Close
-          </Button>
+          <p className="submission-reference">Application Reference: {submissionReference}</p>
         </div>
       </Dialog>
     </div>
