@@ -1,14 +1,26 @@
-import { ArrowLeft } from 'lucide-react';
+import {
+    AlertCircle,
+    ArrowLeft,
+    CheckCircle2,
+    Download,
+    FileText,
+    Plane,
+    Search,
+    Star,
+    User,
+    X,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import { mockDatabase } from '../../lib/mockDatabase';
 import { ensureRecruitmentSeedData, getAuthoritativeJobPostings } from '../../lib/recruitmentData';
-import { isMockModeEnabled, supabase } from '../../lib/supabase';
+import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../../lib/supabase';
 import '../../styles/interviewer.css';
 
 interface Applicant {
   id: string;
+  item_number: string;
   first_name: string;
   middle_name: string | null;
   last_name: string;
@@ -21,11 +33,72 @@ interface Applicant {
   evaluation_status: 'Completed' | 'In Progress' | 'Not Yet Rated';
 }
 
+interface ApplicantAttachment {
+  id: string;
+  file_name: string;
+  file_path: string;
+  document_type?: string;
+  created_at?: string;
+}
+
 interface JobPosting {
   title: string;
   office: string;
   department: string;
 }
+
+type ApplicantDetailsTab = 'overview' | 'documents' | 'activity';
+type EmailTemplate = 'none' | 'missing_documents' | 'incorrect_format' | 'invalid_information' | 'schedule_interview' | 'custom';
+
+const REQUIRED_DOCUMENTS = ['Resume', 'Application Letter', 'Transcript of Records', 'Certifications'];
+
+const EMAIL_TEMPLATES: Array<{
+  value: EmailTemplate;
+  label: string;
+  subject: string;
+  message: string;
+}> = [
+  {
+    value: 'none',
+    label: 'Select a template...',
+    subject: '',
+    message: '',
+  },
+  {
+    value: 'missing_documents',
+    label: 'Missing Documents',
+    subject: 'Incomplete Requirements for Your Application',
+    message:
+      'Dear Applicant,\n\nThank you for your submission. We noticed that one or more required documents are missing from your application. Please submit the missing files at your earliest convenience so we can proceed with your evaluation.\n\nRegards,\nRecruitment Team',
+  },
+  {
+    value: 'incorrect_format',
+    label: 'Incorrect File Format',
+    subject: 'Please Re-upload Your Documents in the Correct Format',
+    message:
+      'Dear Applicant,\n\nSome of your uploaded files are in an unsupported format. Kindly re-upload the required documents using PDF format to avoid delays in processing.\n\nRegards,\nRecruitment Team',
+  },
+  {
+    value: 'invalid_information',
+    label: 'Invalid Information',
+    subject: 'Clarification Needed for Submitted Information',
+    message:
+      'Dear Applicant,\n\nWe found information in your application that requires clarification. Please reply to this email with the corrected details so we can continue your application process.\n\nRegards,\nRecruitment Team',
+  },
+  {
+    value: 'schedule_interview',
+    label: 'Schedule Interview',
+    subject: 'Interview Schedule for Your Application',
+    message:
+      'Dear Applicant,\n\nYou are invited for an interview as part of our hiring process. Please confirm your availability by replying to this email.\n\nRegards,\nRecruitment Team',
+  },
+  {
+    value: 'custom',
+    label: 'Custom Message',
+    subject: '',
+    message: '',
+  },
+];
 
 const isDemoApplicant = (applicant: any): boolean => {
   const applicantId = String(applicant?.id || '').toLowerCase();
@@ -77,6 +150,59 @@ const formatDate = (dateString: string): string => {
   });
 };
 
+const formatDateTime = (dateString: string): string => {
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return '--';
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+};
+
+const getApplicantStatusBadgeClass = (status: string): string => {
+  const value = status.toLowerCase();
+  if (value.includes('qualif') || value.includes('recommend') || value.includes('hired')) return 'status-qualified';
+  if (value.includes('shortlist')) return 'status-shortlisted';
+  if (value.includes('review')) return 'status-reviewed';
+  return 'status-pending';
+};
+
+const normalizeDocumentName = (value: string): string => value.trim().toLowerCase().replace(/\s+/g, ' ');
+
+const inferDocumentType = (attachment: ApplicantAttachment): string => {
+  const source = normalizeDocumentName(`${attachment.document_type || ''} ${attachment.file_name || ''}`);
+  if (source.includes('resume') || source.includes('cv')) return 'Resume';
+  if (source.includes('application') && source.includes('letter')) return 'Application Letter';
+  if (source.includes('transcript')) return 'Transcript of Records';
+  if (source.includes('cert')) return 'Certifications';
+  return attachment.document_type || attachment.file_name || 'Document';
+};
+
+const getSubmittedDocumentTypes = (attachments: ApplicantAttachment[]): string[] => {
+  return Array.from(new Set(attachments.map(inferDocumentType)));
+};
+
+const toDocumentUrl = async (filePath: string): Promise<string | null> => {
+  if (!filePath) return null;
+  if (filePath.startsWith('http') || filePath.startsWith('data:') || filePath.startsWith('blob:')) return filePath;
+  if (isMockModeEnabled) return filePath;
+
+  const signed = await supabase.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(filePath, 300);
+  return signed.data?.signedUrl ?? null;
+};
+
+const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
+  try {
+    const mode = localStorage.getItem('cictrix_data_source_mode');
+    return mode === 'local' ? 'local' : 'supabase';
+  } catch {
+    return 'supabase';
+  }
+};
+
 const fetchApplicantsByPosition = async (client: any, position: string): Promise<any[]> => {
   if (typeof client?.insertApplicant === 'function') {
     const { data } = await client
@@ -102,15 +228,6 @@ const fetchEvaluations = async (client: any): Promise<any[]> => {
   return data || [];
 };
 
-const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
-  try {
-    const mode = localStorage.getItem('cictrix_data_source_mode');
-    return mode === 'local' ? 'local' : 'supabase';
-  } catch {
-    return 'supabase';
-  }
-};
-
 const normalizeText = (value: string) => value.trim().toLowerCase();
 
 export function InterviewerApplicantsList() {
@@ -119,9 +236,20 @@ export function InterviewerApplicantsList() {
   const jobTitle = searchParams.get('position') || 'N/A';
   
   const [applicants, setApplicants] = useState<Applicant[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'reviewed' | 'shortlisted' | 'qualified'>('all');
   const [jobDetails, setJobDetails] = useState<JobPosting | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeApplicant, setActiveApplicant] = useState<Applicant | null>(null);
+  const [activeTab, setActiveTab] = useState<ApplicantDetailsTab>('overview');
+  const [showMessageDialog, setShowMessageDialog] = useState(false);
+  const [attachmentsByApplicant, setAttachmentsByApplicant] = useState<Record<string, ApplicantAttachment[]>>({});
+  const [isLoadingAttachments, setIsLoadingAttachments] = useState(false);
+  const [emailTemplate, setEmailTemplate] = useState<EmailTemplate>('none');
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailMessage, setEmailMessage] = useState('');
+  const [internalNotesByApplicant, setInternalNotesByApplicant] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const syncJobs = () => {
@@ -236,6 +364,143 @@ export function InterviewerApplicantsList() {
     }
   };
 
+  const fetchAttachments = async (applicantId: string): Promise<ApplicantAttachment[]> => {
+    const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
+    const primaryClient = preferredMode === 'local' ? (mockDatabase as any) : supabase;
+    const secondaryClient = preferredMode === 'local' ? supabase : (mockDatabase as any);
+
+    const runFetch = async (client: any) => {
+      const res = await client
+        .from('applicant_attachments')
+        .select('*')
+        .eq('applicant_id', applicantId)
+        .order('created_at', { ascending: false });
+      if (res.error) throw res.error;
+      return (res.data || []) as ApplicantAttachment[];
+    };
+
+    try {
+      return await runFetch(primaryClient);
+    } catch {
+      try {
+        return await runFetch(secondaryClient);
+      } catch {
+        return [];
+      }
+    }
+  };
+
+  const openApplicantDetails = async (applicant: Applicant) => {
+    setActiveApplicant(applicant);
+    setActiveTab('overview');
+    setShowMessageDialog(false);
+    setEmailTemplate('none');
+    setEmailSubject('');
+    setEmailMessage('');
+
+    if (attachmentsByApplicant[applicant.id]) return;
+
+    setIsLoadingAttachments(true);
+    const rows = await fetchAttachments(applicant.id);
+    setAttachmentsByApplicant((prev) => ({ ...prev, [applicant.id]: rows }));
+    setIsLoadingAttachments(false);
+  };
+
+  const closeApplicantDetails = () => {
+    setShowMessageDialog(false);
+    setActiveApplicant(null);
+    setActiveTab('overview');
+  };
+
+  const updateApplicantStatus = async (applicantId: string, status: string) => {
+    setApplicants((prev) => prev.map((row) => (row.id === applicantId ? { ...row, status } : row)));
+    setActiveApplicant((prev) => (prev && prev.id === applicantId ? { ...prev, status } : prev));
+
+    const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
+    const primaryClient = preferredMode === 'local' ? (mockDatabase as any) : supabase;
+    const secondaryClient = preferredMode === 'local' ? supabase : (mockDatabase as any);
+
+    const persist = async (client: any) => {
+      await client.from('applicants').update({ status }).eq('id', applicantId);
+    };
+
+    try {
+      await persist(primaryClient);
+    } catch {
+      try {
+        await persist(secondaryClient);
+      } catch {
+      }
+    }
+  };
+
+  const handleTemplateChange = (value: EmailTemplate) => {
+    setEmailTemplate(value);
+    const selected = EMAIL_TEMPLATES.find((item) => item.value === value);
+    if (!selected) return;
+    setEmailSubject(selected.subject);
+    setEmailMessage(selected.message);
+  };
+
+  const handlePreviewDocument = async (attachment: ApplicantAttachment) => {
+    const url = await toDocumentUrl(attachment.file_path);
+    if (!url) return;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const handleDownloadAllDocuments = async (attachments: ApplicantAttachment[]) => {
+    for (const attachment of attachments) {
+      const url = await toDocumentUrl(attachment.file_path);
+      if (!url) continue;
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = attachment.file_name || 'document';
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.click();
+    }
+  };
+
+  const filteredApplicants = applicants.filter((applicant) => {
+    const term = searchTerm.trim().toLowerCase();
+    const fullName = getFullName(applicant).toLowerCase();
+    const matchesSearch =
+      !term ||
+      fullName.includes(term) ||
+      applicant.email.toLowerCase().includes(term) ||
+      (applicant.contact_number || '').toLowerCase().includes(term);
+
+    if (!matchesSearch) return false;
+
+    if (statusFilter === 'all') return true;
+    const status = applicant.status.toLowerCase();
+    if (statusFilter === 'pending') return status.includes('pending');
+    if (statusFilter === 'reviewed') return status.includes('review');
+    if (statusFilter === 'shortlisted') return status.includes('shortlist');
+    return status.includes('qualif') || status.includes('recommend') || status.includes('hired');
+  });
+
+  const activeAttachments = activeApplicant ? attachmentsByApplicant[activeApplicant.id] || [] : [];
+  const submittedDocumentTypes = getSubmittedDocumentTypes(activeAttachments);
+  const missingDocumentTypes = REQUIRED_DOCUMENTS.filter((item) => !submittedDocumentTypes.includes(item));
+
+  const activityEntries = activeApplicant
+    ? [
+        {
+          title: 'Application Submitted',
+          subtitle: `${formatDateTime(activeApplicant.created_at)} • ${getFullName(activeApplicant)}`,
+        },
+        {
+          title: 'Application Received',
+          subtitle: `${formatDateTime(activeApplicant.created_at)} • System`,
+        },
+        {
+          title: 'Documents Uploaded',
+          subtitle: `${activeAttachments.length} file(s) submitted`,
+        },
+      ]
+    : [];
+
   const today = new Date();
   const formattedDate = today.toLocaleDateString('en-US', {
     year: 'numeric',
@@ -268,9 +533,32 @@ export function InterviewerApplicantsList() {
 
       {/* Main Content */}
       <div className="applicants-page-container">
+        <div className="applicants-toolbar">
+          <div className="applicants-search-box">
+            <Search className="search-icon" size={20} />
+            <input
+              className="search-input"
+              placeholder="Search applicants by name or email..."
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+            />
+          </div>
+          <select
+            className="filter-select"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as 'all' | 'pending' | 'reviewed' | 'shortlisted' | 'qualified')}
+          >
+            <option value="all">All Status</option>
+            <option value="pending">Pending</option>
+            <option value="reviewed">Reviewed</option>
+            <option value="shortlisted">Shortlisted</option>
+            <option value="qualified">Qualified</option>
+          </select>
+        </div>
+
         <div className="applicants-page-title-section">
           <h2 className="applicants-page-title">Applicants List</h2>
-          <p className="applicants-page-subtitle">{applicants.length} applicants for this position</p>
+          <p className="applicants-page-subtitle">Showing {filteredApplicants.length} applicants</p>
         </div>
 
         {loading ? (
@@ -282,30 +570,40 @@ export function InterviewerApplicantsList() {
             <p>❌ Error: {error}</p>
             <button onClick={fetchApplicantsAndJob}>Retry</button>
           </div>
-        ) : applicants && applicants.length > 0 ? (
+        ) : filteredApplicants.length > 0 ? (
           <div className="applicants-table-container">
             <table className="applicants-table">
               <thead>
                 <tr>
                   <th>APPLICANT NAME</th>
-                  <th>CONTACT NUMBER</th>
+                  <th>CONTACT INFO</th>
                   <th>APPLICATION DATE</th>
-                  <th>EVALUATION STATUS</th>
+                  <th>STATUS</th>
                   <th>ACTION</th>
                 </tr>
               </thead>
               <tbody>
-                {applicants.map((applicant) => (
+                {filteredApplicants.map((applicant) => (
                   <tr key={applicant.id}>
-                    <td>{getFullName(applicant)}</td>
-                    <td>{applicant.contact_number}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="applicant-name-link"
+                        onClick={() => void openApplicantDetails(applicant)}
+                      >
+                        {getFullName(applicant)}
+                      </button>
+                    </td>
+                    <td>
+                      <div className="contact-info-cell">
+                        <p>{applicant.email}</p>
+                        <p>{applicant.contact_number || 'No contact number'}</p>
+                      </div>
+                    </td>
                     <td>{formatDate(applicant.created_at)}</td>
                     <td>
-                      <span className={`evaluation-status ${
-                        applicant.evaluation_status === 'Completed' ? 'completed' : 
-                        applicant.evaluation_status === 'In Progress' ? 'in-progress' : 'pending'
-                      }`}>
-                        {applicant.evaluation_status}
+                      <span className={`applicant-status-pill ${getApplicantStatusBadgeClass(applicant.status)}`}>
+                        {applicant.status}
                       </span>
                     </td>
                     <td>
@@ -333,6 +631,272 @@ export function InterviewerApplicantsList() {
           </div>
         )}
       </div>
+
+      {activeApplicant && (
+        <div className="applicant-details-overlay" onClick={closeApplicantDetails}>
+          <div className="applicant-details-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="applicant-details-header">
+              <div>
+                <p className="details-breadcrumb">Recruitment / Applicants / Details</p>
+                <h3>{getFullName(activeApplicant)}</h3>
+              </div>
+              <div className="details-actions">
+                <button type="button" className="details-btn details-btn-neutral" onClick={() => setShowMessageDialog(true)}>
+                  <Plane size={16} /> Send Message
+                </button>
+                <button type="button" className="details-btn details-btn-danger" onClick={() => void updateApplicantStatus(activeApplicant.id, 'Not Qualified')}>
+                  <AlertCircle size={16} /> Disqualify
+                </button>
+                <button type="button" className="details-btn details-btn-primary" onClick={() => void updateApplicantStatus(activeApplicant.id, 'Shortlisted')}>
+                  <Star size={16} /> Shortlist
+                </button>
+                <button type="button" className="details-btn details-btn-success" onClick={() => void updateApplicantStatus(activeApplicant.id, 'Recommended for Hiring')}>
+                  <CheckCircle2 size={16} /> Qualify
+                </button>
+                <button type="button" className="details-close-btn" onClick={closeApplicantDetails}>
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            <div className="details-tabs">
+              {[
+                { key: 'overview', label: 'Overview' },
+                { key: 'documents', label: 'Documents' },
+                { key: 'activity', label: 'Activity' },
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  className={`details-tab ${activeTab === tab.key ? 'active' : ''}`}
+                  onClick={() => setActiveTab(tab.key as ApplicantDetailsTab)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="details-content-grid">
+              <aside className="applicant-summary-card">
+                <div className="applicant-avatar-lg">
+                  <User size={42} />
+                </div>
+                <h4>{getFullName(activeApplicant)}</h4>
+                <span className={`applicant-status-pill ${getApplicantStatusBadgeClass(activeApplicant.status)}`}>{activeApplicant.status}</span>
+                <div className="summary-metadata">
+                  <div>
+                    <p>APPLICATION ID</p>
+                    <strong>{activeApplicant.id}</strong>
+                  </div>
+                  <div>
+                    <p>DATE APPLIED</p>
+                    <strong>{formatDate(activeApplicant.created_at)}</strong>
+                  </div>
+                  <div>
+                    <p>EMAIL</p>
+                    <strong>{activeApplicant.email}</strong>
+                  </div>
+                  <div>
+                    <p>PHONE</p>
+                    <strong>{activeApplicant.contact_number || '--'}</strong>
+                  </div>
+                  <div>
+                    <p>LOCATION</p>
+                    <strong>{activeApplicant.office || jobDetails?.office || '--'}</strong>
+                  </div>
+                </div>
+              </aside>
+
+              <section className="applicant-details-main">
+                {activeTab === 'overview' && (
+                  <div className="details-stack">
+                    <article className="details-panel">
+                      <h5>Personal Information</h5>
+                      <div className="detail-rows">
+                        <div><span>Full Name</span><strong>{getFullName(activeApplicant)}</strong></div>
+                        <div><span>Email Address</span><strong>{activeApplicant.email}</strong></div>
+                        <div><span>Phone Number</span><strong>{activeApplicant.contact_number || '--'}</strong></div>
+                        <div><span>Address</span><strong>{activeApplicant.office || '--'}</strong></div>
+                        <div><span>PWD Status</span><strong>Not Applicable</strong></div>
+                      </div>
+                    </article>
+
+                    <article className="details-panel">
+                      <h5>Qualifications</h5>
+                      <div className="detail-rows">
+                        <div><span>Education</span><strong>BS Information Technology, University of the Philippines</strong></div>
+                        <div><span>Work Experience</span><strong>3 years as Junior IT Officer</strong></div>
+                        <div><span>Application Date</span><strong>{formatDate(activeApplicant.created_at)}</strong></div>
+                      </div>
+                    </article>
+
+                    <article className="details-panel">
+                      <div className="panel-title-inline">
+                        <h5>Internal Notes</h5>
+                      </div>
+                      <textarea
+                        className="details-notes-input"
+                        placeholder="Add notes to track internal comments and observations."
+                        value={internalNotesByApplicant[activeApplicant.id] || ''}
+                        onChange={(event) =>
+                          setInternalNotesByApplicant((prev) => ({
+                            ...prev,
+                            [activeApplicant.id]: event.target.value,
+                          }))
+                        }
+                      />
+                    </article>
+                  </div>
+                )}
+
+                {activeTab === 'documents' && (
+                  <article className="details-panel">
+                    <div className="panel-title-inline">
+                      <h5>Submitted Documents</h5>
+                      <button
+                        type="button"
+                        className="download-link-btn"
+                        onClick={() => void handleDownloadAllDocuments(activeAttachments)}
+                        disabled={activeAttachments.length === 0}
+                      >
+                        <Download size={16} /> Download All
+                      </button>
+                    </div>
+
+                    {isLoadingAttachments ? (
+                      <p className="empty-docs-text">Loading documents...</p>
+                    ) : activeAttachments.length === 0 ? (
+                      <p className="empty-docs-text">No documents uploaded yet.</p>
+                    ) : (
+                      <div className="document-list">
+                        {activeAttachments.map((attachment) => (
+                          <div key={attachment.id} className="document-row">
+                            <div>
+                              <p>{attachment.file_name || 'Document'}</p>
+                              <span>Uploaded {formatDate(attachment.created_at || activeApplicant.created_at)}</span>
+                            </div>
+                            <button type="button" className="view-doc-btn" onClick={() => void handlePreviewDocument(attachment)}>
+                              View
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </article>
+                )}
+
+                {activeTab === 'activity' && (
+                  <article className="details-panel">
+                    <h5>Activity Timeline</h5>
+                    <div className="timeline-list">
+                      {activityEntries.map((entry) => (
+                        <div key={entry.title} className="timeline-row">
+                          <span className="timeline-dot" />
+                          <div>
+                            <p>{entry.title}</p>
+                            <span>{entry.subtitle}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                )}
+              </section>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeApplicant && showMessageDialog && (
+        <div className="message-dialog-overlay" onClick={() => setShowMessageDialog(false)}>
+          <div className="message-dialog" onClick={(event) => event.stopPropagation()}>
+            <div className="message-dialog-header">
+              <div className="header-icon-box" />
+              <div>
+                <h4>Send Message to Applicant</h4>
+                <p>Notify applicant about their application</p>
+              </div>
+              <button type="button" onClick={() => setShowMessageDialog(false)}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="message-dialog-body">
+              <div className="recipient-grid">
+                <div>
+                  <label>TO:</label>
+                  <strong>{activeApplicant.email}</strong>
+                </div>
+                <div>
+                  <label>APPLICANT NAME:</label>
+                  <strong>{getFullName(activeApplicant)}</strong>
+                </div>
+              </div>
+
+              <label>Message Template (Optional)</label>
+              <select value={emailTemplate} onChange={(event) => handleTemplateChange(event.target.value as EmailTemplate)}>
+                {EMAIL_TEMPLATES.map((template) => (
+                  <option key={template.value} value={template.value}>{template.label}</option>
+                ))}
+              </select>
+
+              <label>Subject Line *</label>
+              <input
+                value={emailSubject}
+                onChange={(event) => setEmailSubject(event.target.value)}
+                placeholder="e.g., Incomplete Requirements for Your Application"
+              />
+
+              <label>Message *</label>
+              <textarea
+                value={emailMessage}
+                onChange={(event) => setEmailMessage(event.target.value)}
+                placeholder="Write your message here..."
+              />
+
+              <p className="dialog-helper-text">Be clear and professional in your communication</p>
+
+              <section className="documents-summary-grid">
+                <article className="summary-box submitted-box">
+                  <h5><FileText size={16} /> Submitted Documents</h5>
+                  {submittedDocumentTypes.length > 0 ? (
+                    <ul>
+                      {submittedDocumentTypes.map((item) => <li key={item}>{item}</li>)}
+                    </ul>
+                  ) : (
+                    <p>No submitted files found</p>
+                  )}
+                </article>
+
+                <article className="summary-box missing-box">
+                  <h5><AlertCircle size={16} /> Missing Documents</h5>
+                  {missingDocumentTypes.length > 0 ? (
+                    <ul>
+                      {missingDocumentTypes.map((item) => <li key={item}>{item}</li>)}
+                    </ul>
+                  ) : (
+                    <p>All documents submitted</p>
+                  )}
+                </article>
+              </section>
+            </div>
+
+            <div className="message-dialog-footer">
+              <button type="button" className="dialog-btn-cancel" onClick={() => setShowMessageDialog(false)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="dialog-btn-send"
+                onClick={() => setShowMessageDialog(false)}
+                disabled={!emailSubject.trim() || !emailMessage.trim()}
+              >
+                <Plane size={16} /> Send Message
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

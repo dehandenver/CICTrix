@@ -49,6 +49,7 @@ export interface Applicant {
   personalInfo: {
     firstName: string;
     lastName: string;
+    itemNumber?: string;
     email: string;
     phone: string;
     address: string;

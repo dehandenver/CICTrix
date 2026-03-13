@@ -11,10 +11,15 @@ import {
   Download,
   FileText,
   Filter,
+  FileUser,
+  GraduationCap,
+  HeartPulse,
+  Landmark,
   Lock,
   Mail,
   Plus,
   Search,
+  ShieldCheck,
   Settings,
   Shield,
   Trash2,
@@ -136,31 +141,37 @@ const BULK_REQUEST_TEMPLATES = [
     id: 'nbi',
     name: 'NBI Clearance',
     description: 'Updated NBI Clearance (must be valid for current year)',
+    icon: ShieldCheck,
   },
   {
     id: 'medical',
     name: 'Medical Certificate',
     description: 'Recent medical certificate issued by an accredited clinic or hospital',
+    icon: HeartPulse,
   },
   {
     id: 'saln',
     name: 'SALN (Statement of Assets, Liabilities and Net Worth)',
     description: 'Latest signed SALN form based on agency template',
+    icon: Landmark,
   },
   {
     id: 'training',
     name: 'Certificate of Training',
     description: 'Certificate for completed mandatory orientation or skills training',
+    icon: GraduationCap,
   },
   {
     id: 'pef',
     name: 'Performance Evaluation Form',
     description: 'Completed and signed latest performance evaluation form',
+    icon: FileText,
   },
   {
     id: 'resume',
     name: 'Updated Resume/CV',
     description: 'Most recent resume with updated work experience and credentials',
+    icon: FileUser,
   },
 ] as const;
 
@@ -2759,19 +2770,22 @@ export const RSPDashboard = () => {
                   </section>
 
                   <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-                    {BULK_REQUEST_TEMPLATES.map((template) => (
-                      <button
-                        key={template.id}
-                        type="button"
-                        onClick={() => openDocumentTemplate(template.id)}
-                        className="rounded-2xl border border-[var(--border-color)] bg-white p-5 text-center transition hover:border-[var(--primary-color)]"
-                      >
-                        <div className="mb-3 inline-flex rounded-2xl bg-indigo-100 p-4 text-indigo-600">
-                          <FileText size={28} />
-                        </div>
-                        <h3 className="!mb-0 text-xl font-semibold text-[var(--text-primary)]">{template.name.replace(' (Statement of Assets, Liabilities and Net Worth)', '')}</h3>
-                      </button>
-                    ))}
+                    {BULK_REQUEST_TEMPLATES.map((template) => {
+                      const Icon = template.icon;
+                      return (
+                        <button
+                          key={template.id}
+                          type="button"
+                          onClick={() => openDocumentTemplate(template.id)}
+                          className="rounded-2xl border border-[var(--border-color)] bg-white p-5 text-center transition hover:border-[var(--primary-color)]"
+                        >
+                          <div className="mb-3 inline-flex rounded-2xl bg-indigo-100 p-4 text-indigo-600">
+                            <Icon size={28} />
+                          </div>
+                          <h3 className="!mb-0 text-xl font-semibold text-[var(--text-primary)]">{template.name.replace(' (Statement of Assets, Liabilities and Net Worth)', '')}</h3>
+                        </button>
+                      );
+                    })}
                   </section>
 
                   <section className="rounded-2xl border border-blue-200 bg-blue-50 p-6">

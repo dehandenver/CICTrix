@@ -7,7 +7,7 @@ import {
     UserPlus,
     Users,
 } from 'lucide-react';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import hrisLogo from '../../assets/hris-logo.svg';
 import { Button, Dialog } from '../../components';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
@@ -54,6 +54,11 @@ const INITIAL_FORM_DATA: ApplicantFormData = {
   is_pwd: false,
 };
 
+const buildApplicantItemNumber = (sequence: number): string => {
+  const year = new Date().getFullYear();
+  return `ITEM-${year}-${String(sequence).padStart(4, '0')}`;
+};
+
 export const ApplicantWizard: React.FC = () => {
   const [entryMode, setEntryMode] = useState<'landing' | 'wizard'>('landing');
   const [applicationType, setApplicationType] = useState<'job' | 'promotion'>('job');
@@ -70,6 +75,7 @@ export const ApplicantWizard: React.FC = () => {
   const [employeeNumber, setEmployeeNumber] = useState('');
   const [employeePassword, setEmployeePassword] = useState('');
   const [employeeAuthError, setEmployeeAuthError] = useState('');
+  const isGeneratingItemNumberRef = useRef(false);
 
   const handleFormChange = (field: keyof ApplicantFormData, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -218,12 +224,7 @@ export const ApplicantWizard: React.FC = () => {
   };
 
   const submitWithClient = async (client: any): Promise<void> => {
-    const countResult = await client
-      .from('applicants')
-      .select('id', { count: 'exact', head: true });
-
-    const count = (countResult as any).count || 0;
-    const newItemNumber = String(count + 1).padStart(2, '0');
+    const itemNumber = formData.item_number || buildApplicantItemNumber(Date.now() % 10000);
 
     const applicantPayload = {
       first_name: formData.first_name,
@@ -234,7 +235,7 @@ export const ApplicantWizard: React.FC = () => {
       contact_number: formData.contact_number,
       email: formData.email,
       position: formData.position,
-      item_number: newItemNumber,
+      item_number: itemNumber,
       office: POSITION_TO_DEPARTMENT_MAP[formData.position] || formData.office,
       is_pwd: formData.is_pwd,
     };
@@ -413,6 +414,77 @@ export const ApplicantWizard: React.FC = () => {
     return `${(kb / 1024).toFixed(1)} MB`;
   };
 
+  const hasStartedAssessment = useMemo(() => {
+    const fields = [
+      formData.first_name,
+      formData.middle_name,
+      formData.last_name,
+      formData.gender,
+      formData.address,
+      formData.contact_number,
+      formData.email,
+      formData.position,
+      formData.office,
+    ];
+
+    return fields.some((value) => value.trim().length > 0) || Boolean(formData.is_pwd);
+  }, [formData]);
+
+  useEffect(() => {
+    if (entryMode !== 'wizard' || currentStep !== 1 || !hasStartedAssessment || formData.item_number) {
+      return;
+    }
+
+    if (isGeneratingItemNumberRef.current) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const generateItemNumber = async () => {
+      isGeneratingItemNumberRef.current = true;
+      try {
+        const supabaseCountResult = await supabase
+          .from('applicants')
+          .select('id', { count: 'exact', head: true });
+        const supabaseCount = Number((supabaseCountResult as any).count ?? 0);
+
+        let nextSequence = supabaseCount + 1;
+        const supabaseCountError = (supabaseCountResult as any).error;
+        if (supabaseCountError || Number.isNaN(supabaseCount)) {
+          const localApplicantsResult = await mockDatabase.getApplicants();
+          const localCount = Array.isArray((localApplicantsResult as any).data)
+            ? (localApplicantsResult as any).data.length
+            : 0;
+          nextSequence = localCount + 1;
+        }
+
+        if (!cancelled) {
+          setFormData((prev) => {
+            if (prev.item_number) return prev;
+            return { ...prev, item_number: buildApplicantItemNumber(nextSequence) };
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          const fallbackSequence = Date.now() % 10000;
+          setFormData((prev) => {
+            if (prev.item_number) return prev;
+            return { ...prev, item_number: buildApplicantItemNumber(fallbackSequence) };
+          });
+        }
+      } finally {
+        isGeneratingItemNumberRef.current = false;
+      }
+    };
+
+    void generateItemNumber();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentStep, entryMode, formData.item_number, hasStartedAssessment]);
+
   return (
     <div className="applicant-shell">
       <header className="applicant-topbar">
@@ -531,7 +603,12 @@ export const ApplicantWizard: React.FC = () => {
                   <p>Upload all required documents before proceeding to review.</p>
                 </div>
                 <div className="wizard-content">
-                  <AttachmentsUploadForm files={files} onFilesChange={handleFilesChange} error={fileError} />
+                  <AttachmentsUploadForm
+                    files={files}
+                    onFilesChange={handleFilesChange}
+                    error={fileError}
+                    itemNumber={formData.item_number}
+                  />
                 </div>
               </>
             )}
@@ -579,6 +656,10 @@ export const ApplicantWizard: React.FC = () => {
                     <div>
                       <label>Office</label>
                       <p>{formData.office || '-'}</p>
+                    </div>
+                    <div>
+                      <label>Item Number</label>
+                      <p>{formData.item_number || '-'}</p>
                     </div>
                     <div>
                       <label>Contact Number</label>

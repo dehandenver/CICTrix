@@ -182,6 +182,13 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
           required
         />
 
+        <Input
+          label="Item Number"
+          placeholder="Generated automatically while filling out the form"
+          value={formData.item_number}
+          readOnly
+        />
+
         <Select
           label="Department"
           options={DEPARTMENT_OPTIONS}

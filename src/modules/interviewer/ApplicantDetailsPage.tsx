@@ -19,6 +19,7 @@ import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../../lib/supab
 
 type ApplicantRecord = {
   id: string;
+  item_number?: string;
   first_name: string;
   middle_name?: string | null;
   last_name: string;
@@ -282,6 +283,8 @@ export function ApplicantDetailsPage() {
                 <span>{applicant.position || 'Position Unassigned'}</span>
                 <span className="text-slate-400">•</span>
                 <span>{applicant.office || 'Department Unassigned'}</span>
+                <span className="text-slate-400">•</span>
+                <span>{applicant.item_number || 'Item N/A'}</span>
                 <span className="rounded-full bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-700">{score.adjective}</span>
               </div>
             </div>
@@ -358,6 +361,10 @@ export function ApplicantDetailsPage() {
                     <div>
                       <p className="text-sm font-semibold uppercase text-slate-500">Contact Number</p>
                       <p className="inline-flex items-center gap-2 text-2xl text-slate-900"><Phone size={18} /> {applicant.contact_number || '--'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold uppercase text-slate-500">Item Number</p>
+                      <p className="text-2xl text-slate-900">{applicant.item_number || '--'}</p>
                     </div>
                     <div>
                       <p className="text-sm font-semibold uppercase text-slate-500">Address</p>

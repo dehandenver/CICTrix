@@ -1,29 +1,28 @@
 import {
-  Calendar,
-  CalendarDays,
-  CheckCircle2,
-  Clock3,
-  Download,
-  Eye,
-  FileSpreadsheet,
-  Mail,
-  MessageSquare,
-  Search,
-  UserCheck,
-  X,
+    AlertCircle,
+    CheckCircle2,
+    Download,
+    FileSpreadsheet,
+    Mail,
+    MessageSquare,
+    Plane,
+    Search,
+    Star,
+    UserCheck,
+    X
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { mockDatabase } from '../lib/mockDatabase';
 import {
-  downloadTextFile,
-  ensureRecruitmentSeedData,
-  formatPHDate,
-  formatPHDateTime,
-  getApplicants,
-  getAuthoritativeJobPostings,
-  saveApplicants,
-  toCsv,
+    downloadTextFile,
+    ensureRecruitmentSeedData,
+    formatPHDate,
+    formatPHDateTime,
+    getApplicants,
+    getAuthoritativeJobPostings,
+    saveApplicants,
+    toCsv,
 } from '../lib/recruitmentData';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../lib/supabase';
 import { Applicant, ApplicantStatus, JobPosting } from '../types/recruitment.types';
@@ -47,6 +46,71 @@ type ApplicantDocumentRef = {
   type: string;
   url: string;
 };
+
+type ApplicantAttachmentRow = {
+  id: string;
+  file_name: string;
+  file_path: string;
+  document_type?: string;
+  created_at?: string;
+};
+
+type EmailTemplateKey = 'none' | 'missing_documents' | 'incorrect_file_format' | 'invalid_information' | 'schedule_interview' | 'custom_message';
+
+const REQUIRED_DOCUMENTS = ['Resume', 'Application Letter', 'Transcript of Records', 'Certifications'];
+
+const normalizeDocCompareKey = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+const toDocumentLabel = (value: string) =>
+  String(value || 'document')
+    .replace(/\.[a-z0-9]+$/i, '')
+    .replace(/[_-]+/g, ' ')
+    .trim();
+
+const matchesRequiredDocument = (rawDoc: string, required: string) => {
+  const doc = normalizeDocCompareKey(rawDoc);
+  const req = normalizeDocCompareKey(required);
+  if (doc.includes(req) || req.includes(doc)) return true;
+
+  if (req === 'applicationletter') return doc.includes('applicationletter');
+  if (req === 'transcriptofrecords') return doc.includes('transcript');
+  if (req === 'certifications') return doc.includes('certification') || doc.includes('training') || doc.includes('eligibility');
+  if (req === 'resume') return doc.includes('resume') || doc === 'cv';
+  return false;
+};
+
+const EMAIL_TEMPLATES: Array<{ key: EmailTemplateKey; label: string; subject: string; message: string }> = [
+  { key: 'none', label: 'Select a template...', subject: '', message: '' },
+  {
+    key: 'missing_documents',
+    label: 'Missing Documents',
+    subject: 'Incomplete Requirements for Your Application',
+    message:
+      'Dear Applicant,\n\nWe noticed that some required documents are missing from your application. Please upload the missing files so we can continue your evaluation.\n\nRegards,\nRecruitment Team',
+  },
+  {
+    key: 'incorrect_file_format',
+    label: 'Incorrect File Format',
+    subject: 'Please Re-upload Documents in Correct Format',
+    message:
+      'Dear Applicant,\n\nSome of your uploaded files are in an unsupported format. Kindly re-upload the required documents in PDF format.\n\nRegards,\nRecruitment Team',
+  },
+  {
+    key: 'invalid_information',
+    label: 'Invalid Information',
+    subject: 'Clarification Needed for Your Application',
+    message:
+      'Dear Applicant,\n\nWe found information in your application that needs clarification. Please reply with corrected details at your earliest convenience.\n\nRegards,\nRecruitment Team',
+  },
+  {
+    key: 'schedule_interview',
+    label: 'Schedule Interview',
+    subject: 'Interview Schedule for Your Application',
+    message:
+      'Dear Applicant,\n\nYou are invited for an interview. Please confirm your preferred schedule and availability.\n\nRegards,\nRecruitment Team',
+  },
+  { key: 'custom_message', label: 'Custom Message', subject: '', message: '' },
+];
 
 const ATTACHMENTS_STORAGE_KEY = 'cictrix_attachments';
 const ATTACHMENT_PREVIEW_CACHE_KEY = 'cictrix_attachment_previews';
@@ -203,7 +267,13 @@ export const QualifiedApplicantsPage = () => {
   const [sortBy, setSortBy] = useState<'Application Date' | 'Qualification Score' | 'Last Updated'>('Application Date');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeApplicant, setActiveApplicant] = useState<Applicant | null>(null);
-  const [activeTab, setActiveTab] = useState<'Overview' | 'Documents' | 'Timeline' | 'Notes' | 'Interview'>('Overview');
+  const [activeTab, setActiveTab] = useState<'Overview' | 'Documents' | 'Activity'>('Overview');
+  const [attachmentsByApplicant, setAttachmentsByApplicant] = useState<Record<string, ApplicantAttachmentRow[]>>({});
+  const [attachmentsLoading, setAttachmentsLoading] = useState(false);
+  const [showMessageDialog, setShowMessageDialog] = useState(false);
+  const [emailTemplate, setEmailTemplate] = useState<EmailTemplateKey>('none');
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailMessage, setEmailMessage] = useState('');
   const [showGuide, setShowGuide] = useState(false);
   const [toast, setToast] = useState('');
   const [noteDraft, setNoteDraft] = useState('');
@@ -387,6 +457,7 @@ export const QualifiedApplicantsPage = () => {
         personalInfo: {
           firstName: String(row?.first_name ?? ''),
           lastName: String(row?.last_name ?? ''),
+          itemNumber: String(row?.item_number ?? ''),
           email: String(row?.email ?? ''),
           phone: String(row?.contact_number ?? ''),
           address: String(row?.address ?? ''),
@@ -455,7 +526,7 @@ export const QualifiedApplicantsPage = () => {
     const rows = applicants.filter((applicant) => {
       const matchesSearch =
         !search ||
-        `${applicant.personalInfo.firstName} ${applicant.personalInfo.lastName} ${applicant.personalInfo.email} ${applicant.id}`
+        `${applicant.personalInfo.firstName} ${applicant.personalInfo.lastName} ${applicant.personalInfo.itemNumber ?? ''} ${applicant.personalInfo.email} ${applicant.id}`
           .toLowerCase()
           .includes(search.toLowerCase());
       const matchesJob = (jobId ? applicant.jobPostingId === jobId : jobFilter === 'all' || applicant.jobPostingId === jobFilter);
@@ -502,6 +573,10 @@ export const QualifiedApplicantsPage = () => {
     });
     setApplicants(nextApplicants);
     saveApplicants(nextApplicants);
+    if (activeApplicant && ids.includes(activeApplicant.id)) {
+      const updated = nextApplicants.find((item) => item.id === activeApplicant.id) ?? null;
+      setActiveApplicant(updated);
+    }
     setSelectedIds([]);
     setToast(`Status updated to ${nextStatus}.`);
   };
@@ -509,11 +584,12 @@ export const QualifiedApplicantsPage = () => {
   const exportSelected = () => {
     const target = selectedIds.length ? filteredRows.filter((item) => selectedIds.includes(item.id)) : filteredRows;
     const csv = toCsv(
-      ['Application ID', 'Name', 'Email', 'Position', 'Department', 'Score', 'Status', 'Date Applied'],
+      ['Application ID', 'Item Number', 'Name', 'Email', 'Position', 'Department', 'Score', 'Status', 'Date Applied'],
       target.map((item) => {
         const job = jobMap.get(item.jobPostingId);
         return [
           item.id,
+          item.personalInfo.itemNumber ?? '',
           `${item.personalInfo.firstName} ${item.personalInfo.lastName}`,
           item.personalInfo.email,
           job?.title ?? 'Unknown',
@@ -530,26 +606,60 @@ export const QualifiedApplicantsPage = () => {
 
   const allSelected = filteredRows.length > 0 && selectedIds.length === filteredRows.length;
 
-  const setInterviewSchedule = (applicant: Applicant) => {
-    const scheduleDate = new Date(Date.now() + 2 * 86400000).toISOString();
-    const nextApplicants = applicants.map((row) => {
-      if (row.id !== applicant.id) return row;
-      return {
-        ...row,
-        status: 'Interview Scheduled' as ApplicantStatus,
-        interview: {
-          scheduledDate: scheduleDate,
-          type: 'Online' as const,
-          meetingLink: 'https://zoom.us/j/hris-interview-room',
-          interviewers: ['HR Panel'],
-          results: row.interview?.results,
-        },
-        timeline: [...row.timeline, { event: 'Interview Scheduled', date: new Date().toISOString(), actor: 'HR Admin' }],
-      };
-    });
-    setApplicants(nextApplicants);
-    saveApplicants(nextApplicants);
-    setToast('Interview scheduled and notification sent.');
+  const fetchApplicantAttachments = async (applicantId: string): Promise<ApplicantAttachmentRow[]> => {
+    const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
+    const primaryClient = preferredMode === 'local' ? (mockDatabase as any) : supabase;
+    const secondaryClient = preferredMode === 'local' ? supabase : (mockDatabase as any);
+
+    const runFetch = async (client: any) => {
+      const result = await client
+        .from('applicant_attachments')
+        .select('id,file_name,file_path,document_type,created_at')
+        .eq('applicant_id', applicantId)
+        .order('created_at', { ascending: false });
+      if (result.error) throw result.error;
+      return ((result.data || []) as ApplicantAttachmentRow[]).filter((row) => row.file_path || row.file_name);
+    };
+
+    try {
+      return await runFetch(primaryClient);
+    } catch {
+      try {
+        return await runFetch(secondaryClient);
+      } catch {
+        return [];
+      }
+    }
+  };
+
+  const openApplicantDetails = async (applicant: Applicant) => {
+    setActiveApplicant(applicant);
+    setActiveTab('Overview');
+    setShowMessageDialog(false);
+    setEmailTemplate('none');
+    setEmailSubject('');
+    setEmailMessage('');
+    setNoteDraft('');
+
+    if (attachmentsByApplicant[applicant.id]) return;
+    setAttachmentsLoading(true);
+    const rows = await fetchApplicantAttachments(applicant.id);
+    setAttachmentsByApplicant((prev) => ({ ...prev, [applicant.id]: rows }));
+    setAttachmentsLoading(false);
+  };
+
+  const closeApplicantDetails = () => {
+    setShowMessageDialog(false);
+    setActiveApplicant(null);
+    setActiveTab('Overview');
+  };
+
+  const onTemplateChange = (templateKey: EmailTemplateKey) => {
+    setEmailTemplate(templateKey);
+    const selected = EMAIL_TEMPLATES.find((item) => item.key === templateKey);
+    if (!selected) return;
+    setEmailSubject(selected.subject);
+    setEmailMessage(selected.message);
   };
 
   const addNote = () => {
@@ -750,31 +860,6 @@ export const QualifiedApplicantsPage = () => {
     }
   };
 
-  const handleDownloadDocument = async (doc: ApplicantDocumentRef) => {
-    if (!activeApplicant) return;
-
-    const actionKey = `${activeApplicant.id}-${doc.type}-download`;
-    setDocumentActionBusy(actionKey);
-    try {
-      const resolved = await resolveDocumentForApplicant(activeApplicant.id, doc.type, doc);
-      if (!resolved) {
-        setToast('No downloadable file found for this document yet.');
-        return;
-      }
-
-      const anchor = document.createElement('a');
-      anchor.href = resolved.url;
-      anchor.download = resolved.fileName;
-      anchor.target = '_blank';
-      anchor.rel = 'noopener noreferrer';
-      anchor.click();
-    } catch {
-      setToast('Unable to download this document right now.');
-    } finally {
-      setDocumentActionBusy(null);
-    }
-  };
-
   const handleBulkDownload = async () => {
     if (!activeApplicant) return;
 
@@ -800,6 +885,22 @@ export const QualifiedApplicantsPage = () => {
     }
 
     setToast(`Started ${downloaded} document download${downloaded > 1 ? 's' : ''}.`);
+  };
+
+  const getModalDocuments = () => {
+    if (!activeApplicant) return [] as Array<{ type: string; url: string; verified: boolean; uploadedAt?: string }>;
+
+    const liveRows = attachmentsByApplicant[activeApplicant.id] || [];
+    if (liveRows.length > 0) {
+      return liveRows.map((row) => ({
+        type: toDocumentLabel(row.document_type || row.file_name || 'document'),
+        url: row.file_path || '#',
+        verified: false,
+        uploadedAt: row.created_at,
+      }));
+    }
+
+    return [];
   };
 
   return (
@@ -906,6 +1007,7 @@ export const QualifiedApplicantsPage = () => {
                     />
                   </th>
                   <th className="px-3 py-3">Applicant</th>
+                  <th className="px-3 py-3">Item Number</th>
                   <th className="px-3 py-3">Contact</th>
                   <th className="px-3 py-3">Position Applied</th>
                   <th className="px-3 py-3">Date Applied</th>
@@ -920,8 +1022,7 @@ export const QualifiedApplicantsPage = () => {
                   return (
                     <tr
                       key={applicant.id}
-                      className="border-t border-slate-100 cursor-pointer hover:bg-slate-50"
-                      onClick={() => navigate(`/admin/rsp/applicant/${applicant.id}`)}
+                      className="border-t border-slate-100 hover:bg-slate-50"
                     >
                       <td className="px-3 py-3">
                         <input
@@ -937,7 +1038,12 @@ export const QualifiedApplicantsPage = () => {
                           }
                         />
                       </td>
-                      <td className="px-3 py-3 font-medium text-blue-700 underline decoration-blue-200 underline-offset-2">{fullName}</td>
+                      <td className="px-3 py-3 font-medium text-blue-700 underline decoration-blue-200 underline-offset-2">
+                        <button type="button" className="text-left hover:text-blue-800" onClick={() => void openApplicantDetails(applicant)}>
+                          {fullName}
+                        </button>
+                      </td>
+                      <td className="px-3 py-3 text-slate-600">{applicant.personalInfo.itemNumber || 'N/A'}</td>
                       <td className="px-3 py-3 text-slate-600">
                         <p>{applicant.personalInfo.email}</p>
                         <p className="text-xs text-slate-500">{applicant.personalInfo.phone}</p>
@@ -977,150 +1083,215 @@ export const QualifiedApplicantsPage = () => {
       <RecruitmentNavigationGuide open={showGuide} onClose={() => setShowGuide(false)} />
 
       {activeApplicant && (
-        <div className="fixed inset-0 z-[120] bg-slate-900/70 p-4" onClick={() => setActiveApplicant(null)}>
-          <div className="mx-auto h-[92vh] w-full max-w-6xl overflow-y-auto rounded-2xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <div className="sticky top-0 flex items-start justify-between border-b border-slate-200 bg-white px-6 py-4">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">Applicant Details</h2>
-                <p className="text-sm text-slate-500">{activeApplicant.id}</p>
+        <div className="fixed inset-0 z-[120] bg-slate-900/70 p-4" onClick={closeApplicantDetails}>
+          <div className="mx-auto h-[94vh] w-full max-w-[1400px] overflow-hidden rounded-2xl bg-slate-100 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="border-b border-slate-200 bg-white px-6 py-4">
+              <div className="mb-2 flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm text-slate-500">Recruitment / Applicants / Details</p>
+                  <h2 className="text-4xl font-bold text-slate-900">{activeApplicant.personalInfo.firstName} {activeApplicant.personalInfo.lastName}</h2>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-base font-medium text-slate-700" onClick={() => setShowMessageDialog(true)}>
+                    <Plane className="h-4 w-4" /> Send Message
+                  </button>
+                  <button className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-white px-4 py-2 text-base font-medium text-rose-600" onClick={() => updateApplicantStatus([activeApplicant.id], 'Not Qualified')}>
+                    <AlertCircle className="h-4 w-4" /> Disqualify
+                  </button>
+                  <button className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-base font-semibold text-white" onClick={() => updateApplicantStatus([activeApplicant.id], 'Shortlisted')}>
+                    <Star className="h-4 w-4" /> Shortlist
+                  </button>
+                  <button className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-base font-semibold text-white" onClick={() => updateApplicantStatus([activeApplicant.id], 'Recommended for Hiring')}>
+                    <CheckCircle2 className="h-4 w-4" /> Qualify
+                  </button>
+                  <button className="rounded-md p-2 text-slate-500 hover:bg-slate-100" onClick={closeApplicantDetails}>
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
               </div>
-              <button className="rounded-md p-1 text-slate-500 hover:bg-slate-100" onClick={() => setActiveApplicant(null)}>
+
+              <div className="flex items-center gap-6 border-t border-slate-200 pt-3 text-lg">
+                {['Overview', 'Documents', 'Activity'].map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    className={`border-b-2 pb-2 font-semibold ${activeTab === tab ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-600'}`}
+                    onClick={() => setActiveTab(tab as 'Overview' | 'Documents' | 'Activity')}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid h-[calc(94vh-150px)] grid-cols-1 gap-4 overflow-hidden p-4 lg:grid-cols-[320px_1fr]">
+              <aside className="overflow-y-auto rounded-xl border border-slate-200 bg-white p-4">
+                <div className="mx-auto mb-4 flex h-32 w-32 items-center justify-center rounded-full bg-blue-600 text-white">
+                  <UserCheck className="h-12 w-12" />
+                </div>
+                <h3 className="text-center text-4xl font-bold text-slate-900">{activeApplicant.personalInfo.firstName} {activeApplicant.personalInfo.lastName}</h3>
+                <div className="my-3 text-center">
+                  <span className={`rounded-full px-3 py-1 text-sm font-semibold ${STATUS_COLORS[activeApplicant.status]}`}>{activeApplicant.status}</span>
+                </div>
+
+                <div className="mt-5 space-y-4 border-t border-slate-200 pt-4 text-base">
+                  <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Application ID</p><p className="font-semibold text-slate-800">{activeApplicant.id}</p></div>
+                  <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Date Applied</p><p className="font-semibold text-slate-800">{formatPHDate(activeApplicant.applicationDate)}</p></div>
+                  <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Email</p><p className="font-semibold text-slate-800">{activeApplicant.personalInfo.email}</p></div>
+                  <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Phone</p><p className="font-semibold text-slate-800">{activeApplicant.personalInfo.phone}</p></div>
+                  <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Location</p><p className="font-semibold text-slate-800">{jobMap.get(activeApplicant.jobPostingId)?.department ?? 'N/A'}</p></div>
+                </div>
+              </aside>
+
+              <section className="overflow-y-auto rounded-xl border border-slate-200 bg-white p-4">
+                {activeTab === 'Overview' && (
+                  <div className="space-y-4">
+                    <article className="rounded-xl border border-slate-200">
+                      <h4 className="border-b border-slate-200 px-4 py-3 text-2xl font-semibold text-slate-900">Personal Information</h4>
+                      <div className="grid grid-cols-1 gap-0 px-4 py-1 md:grid-cols-2">
+                        <div className="border-b border-slate-100 py-3"><p className="font-semibold text-slate-500">Full Name</p><p className="text-2xl text-slate-900">{activeApplicant.personalInfo.firstName} {activeApplicant.personalInfo.lastName}</p></div>
+                        <div className="border-b border-slate-100 py-3"><p className="font-semibold text-slate-500">Email Address</p><p className="text-2xl text-slate-900">{activeApplicant.personalInfo.email}</p></div>
+                        <div className="border-b border-slate-100 py-3"><p className="font-semibold text-slate-500">Phone Number</p><p className="text-2xl text-slate-900">{activeApplicant.personalInfo.phone || '--'}</p></div>
+                        <div className="border-b border-slate-100 py-3"><p className="font-semibold text-slate-500">Address</p><p className="text-2xl text-slate-900">{activeApplicant.personalInfo.address || '--'}</p></div>
+                        <div className="py-3"><p className="font-semibold text-slate-500">PWD Status</p><p className="text-2xl text-slate-900">Not Applicable</p></div>
+                      </div>
+                    </article>
+
+                    <article className="rounded-xl border border-slate-200">
+                      <h4 className="border-b border-slate-200 px-4 py-3 text-2xl font-semibold text-slate-900">Qualifications</h4>
+                      <div className="grid grid-cols-1 gap-0 px-4 py-1 md:grid-cols-2">
+                        <div className="border-b border-slate-100 py-3"><p className="font-semibold text-slate-500">Education</p><p className="text-2xl text-slate-900">BS Information Technology, University of the Philippines</p></div>
+                        <div className="border-b border-slate-100 py-3"><p className="font-semibold text-slate-500">Work Experience</p><p className="text-2xl text-slate-900">3 years as Junior IT Officer</p></div>
+                        <div className="py-3"><p className="font-semibold text-slate-500">Application Date</p><p className="text-2xl text-slate-900">{formatPHDate(activeApplicant.applicationDate)}</p></div>
+                      </div>
+                    </article>
+
+                    <article className="rounded-xl border border-slate-200 p-4">
+                      <div className="mb-2 flex items-center justify-between">
+                        <h4 className="text-2xl font-semibold text-slate-900">Internal Notes</h4>
+                      </div>
+                      <textarea className="min-h-24 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Add notes to track internal comments and observations." value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} />
+                      <button className="mt-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white" onClick={addNote}>Save Note</button>
+                    </article>
+                  </div>
+                )}
+
+                {activeTab === 'Documents' && (
+                  <article className="rounded-xl border border-slate-200">
+                    <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                      <h4 className="text-2xl font-semibold text-slate-900">Submitted Documents</h4>
+                      <button className="inline-flex items-center gap-2 text-xl font-medium text-blue-600" onClick={handleBulkDownload}>
+                        <Download className="h-5 w-5" /> Download All
+                      </button>
+                    </div>
+                    <div className="space-y-3 p-4">
+                      {attachmentsLoading ? (
+                        <p className="text-slate-500">Loading uploaded documents...</p>
+                      ) : getModalDocuments().length > 0 ? getModalDocuments().map((doc) => (
+                        <article key={`${doc.type}-${doc.url}`} className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3">
+                          <div>
+                            <p className="text-2xl font-semibold text-slate-900">{doc.type}</p>
+                            <p className="text-base text-slate-500">Uploaded {formatPHDate((doc as any).uploadedAt || activeApplicant.applicationDate)}</p>
+                          </div>
+                          <button className="text-xl font-semibold text-blue-600" onClick={() => handlePreviewDocument({ type: doc.type, url: doc.url })} disabled={documentActionBusy !== null}>View</button>
+                        </article>
+                      )) : <p className="text-slate-500">No uploaded documents found for this applicant yet.</p>}
+                    </div>
+                  </article>
+                )}
+
+                {activeTab === 'Activity' && (
+                  <article className="rounded-xl border border-slate-200">
+                    <h4 className="border-b border-slate-200 px-4 py-3 text-2xl font-semibold text-slate-900">Activity Timeline</h4>
+                    <div className="space-y-4 p-4">
+                      {activeApplicant.timeline.map((entry, index) => (
+                        <div key={`${entry.event}-${index}`} className="flex gap-3">
+                          <span className="mt-2 h-3 w-3 rounded-full bg-blue-600" />
+                          <div>
+                            <p className="text-2xl font-semibold text-slate-900">{entry.event}</p>
+                            <p className="text-base text-slate-500">{formatPHDateTime(entry.date)} • {entry.actor}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                )}
+              </section>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeApplicant && showMessageDialog && (
+        <div className="fixed inset-0 z-[130] bg-slate-900/75 p-4" onClick={() => setShowMessageDialog(false)}>
+          <div className="mx-auto flex h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between bg-blue-600 px-6 py-4 text-white">
+              <div>
+                <h3 className="text-4xl font-semibold">Send Message to Applicant</h3>
+                <p className="text-xl text-blue-100">Notify applicant about their application</p>
+              </div>
+              <button className="rounded-md p-2 text-blue-100 hover:bg-blue-500" onClick={() => setShowMessageDialog(false)}>
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="grid grid-cols-5 border-b border-slate-200 text-sm">
-              {['Overview', 'Documents', 'Timeline', 'Notes', 'Interview'].map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  className={`px-3 py-2 text-left ${activeTab === tab ? 'border-b-2 border-blue-600 font-semibold text-blue-700' : 'text-slate-500'}`}
-                  onClick={() => setActiveTab(tab as 'Overview' | 'Documents' | 'Timeline' | 'Notes' | 'Interview')}
-                >
-                  {tab}
-                </button>
-              ))}
+            <div className="flex-1 space-y-4 overflow-y-auto bg-slate-50 px-6 py-5">
+              <div className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-white p-4 md:grid-cols-2">
+                <div><p className="text-sm font-semibold text-slate-500">TO:</p><p className="text-2xl font-semibold text-slate-800">{activeApplicant.personalInfo.email}</p></div>
+                <div><p className="text-sm font-semibold text-slate-500">APPLICANT NAME:</p><p className="text-2xl font-semibold text-slate-800">{activeApplicant.personalInfo.firstName} {activeApplicant.personalInfo.lastName}</p></div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-2xl font-semibold text-slate-700">Message Template (Optional)</label>
+                <select className="w-full rounded-lg border border-slate-300 px-3 py-3 text-2xl" value={emailTemplate} onChange={(event) => onTemplateChange(event.target.value as EmailTemplateKey)}>
+                  {EMAIL_TEMPLATES.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-2xl font-semibold text-slate-700">Subject Line *</label>
+                <input className="w-full rounded-lg border border-slate-300 px-3 py-3 text-2xl" placeholder="e.g., Incomplete Requirements for Your Application" value={emailSubject} onChange={(event) => setEmailSubject(event.target.value)} />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-2xl font-semibold text-slate-700">Message *</label>
+                <textarea className="min-h-40 w-full rounded-lg border border-slate-300 px-3 py-3 text-xl" placeholder="Write your message here..." value={emailMessage} onChange={(event) => setEmailMessage(event.target.value)} />
+                <p className="mt-1 text-base text-slate-500">Be clear and professional in your communication</p>
+              </div>
+
+              <div>
+                <h4 className="mb-2 text-2xl font-semibold text-slate-800">Applicant Documents Summary</h4>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <article className="rounded-xl border border-green-200 bg-green-50 p-4">
+                    <h5 className="text-2xl font-semibold text-green-800">Submitted Documents</h5>
+                    {getModalDocuments().length > 0 ? (
+                      <ul className="mt-2 list-disc pl-5 text-xl text-green-700">
+                        {Array.from(new Set(getModalDocuments().map((doc) => doc.type))).map((type) => <li key={type}>{type}</li>)}
+                      </ul>
+                    ) : (
+                      <p className="mt-2 text-xl text-slate-600">No uploaded files found</p>
+                    )}
+                  </article>
+
+                  <article className="rounded-xl border border-rose-200 bg-rose-50 p-4">
+                    <h5 className="text-2xl font-semibold text-rose-800">Missing Documents</h5>
+                    {REQUIRED_DOCUMENTS.filter((doc) => !getModalDocuments().some((item) => matchesRequiredDocument(item.type, doc))).length === 0 ? (
+                      <p className="mt-2 text-xl text-green-700">All documents submitted</p>
+                    ) : (
+                      <ul className="mt-2 list-disc pl-5 text-xl text-rose-700">
+                        {REQUIRED_DOCUMENTS.filter((doc) => !getModalDocuments().some((item) => matchesRequiredDocument(item.type, doc))).map((doc) => <li key={doc}>{doc}</li>)}
+                      </ul>
+                    )}
+                  </article>
+                </div>
+              </div>
             </div>
 
-            <div className="px-6 py-5">
-              {activeTab === 'Overview' && (
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  <div className="rounded-xl border border-slate-200 p-4">
-                    <p className="text-xs uppercase tracking-wide text-slate-500">Applicant Information</p>
-                    <h3 className="mt-1 text-xl font-bold text-slate-900">{activeApplicant.personalInfo.firstName} {activeApplicant.personalInfo.lastName}</h3>
-                    <p className="mt-2 text-sm text-slate-600">{activeApplicant.personalInfo.email} • {activeApplicant.personalInfo.phone}</p>
-                    <p className="mt-1 text-sm text-slate-600">Qualification Score: <span className="font-semibold">{activeApplicant.qualificationScore}%</span></p>
-                    <span className={`mt-2 inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_COLORS[activeApplicant.status]}`}>{activeApplicant.status}</span>
-                    <div className="mt-4 flex gap-2">
-                      <button className="rounded-lg border border-slate-300 px-3 py-2 text-sm" onClick={() => updateApplicantStatus([activeApplicant.id], 'Under Review')}>Update Status</button>
-                      <button className="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white" onClick={() => setInterviewSchedule(activeApplicant)}>Schedule Interview</button>
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-slate-200 p-4">
-                    <p className="text-xs uppercase tracking-wide text-slate-500">Qualification Match</p>
-                    <div className="mt-3 space-y-3 text-sm text-slate-700">
-                      <div>
-                        <p className="mb-1">Education Match: 95%</p>
-                        <div className="h-2 rounded-full bg-slate-200"><div className="h-2 rounded-full bg-emerald-600" style={{ width: '95%' }} /></div>
-                      </div>
-                      <div>
-                        <p className="mb-1">Experience Match: 80%</p>
-                        <div className="h-2 rounded-full bg-slate-200"><div className="h-2 rounded-full bg-blue-600" style={{ width: '80%' }} /></div>
-                      </div>
-                      <div>
-                        <p className="mb-1">Skills Match: 90%</p>
-                        <div className="h-2 rounded-full bg-slate-200"><div className="h-2 rounded-full bg-violet-600" style={{ width: '90%' }} /></div>
-                      </div>
-                    </div>
-                    <p className="mt-4 text-sm text-emerald-700">Strengths: Matches most required competency tags.</p>
-                    <p className="mt-1 text-sm text-amber-700">Gaps: Additional certification validation needed.</p>
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'Documents' && (
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {activeApplicant.documents.map((doc) => (
-                    <article key={`${doc.type}-${doc.url}`} className="rounded-xl border border-slate-200 p-4">
-                      <p className="font-semibold text-slate-900">{doc.type}</p>
-                      <p className="mt-1 text-xs text-slate-500">Status: {doc.verified ? 'Verified' : 'Submitted'}</p>
-                      <div className="mt-3 flex gap-2">
-                        <button
-                          className="rounded-lg border border-slate-300 px-2 py-1 text-sm disabled:opacity-50"
-                          onClick={() => handlePreviewDocument({ type: doc.type, url: doc.url })}
-                          disabled={documentActionBusy !== null}
-                        >
-                          <Eye className="inline h-4 w-4" /> Preview
-                        </button>
-                        <button
-                          className="rounded-lg border border-slate-300 px-2 py-1 text-sm disabled:opacity-50"
-                          onClick={() => handleDownloadDocument({ type: doc.type, url: doc.url })}
-                          disabled={documentActionBusy !== null}
-                        >
-                          <Download className="inline h-4 w-4" /> Download
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                  <button className="col-span-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium" onClick={handleBulkDownload}>Bulk Download All</button>
-                </div>
-              )}
-
-              {activeTab === 'Timeline' && (
-                <div className="space-y-4">
-                  {activeApplicant.timeline.map((entry, index) => (
-                    <div key={`${entry.event}-${index}`} className="relative rounded-lg border border-slate-200 px-4 py-3">
-                      <div className="absolute left-3 top-5 h-2 w-2 rounded-full bg-blue-600" />
-                      <p className="pl-4 font-semibold text-slate-900">{entry.event}</p>
-                      <p className="pl-4 text-sm text-slate-600">{formatPHDateTime(entry.date)} by {entry.actor}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {activeTab === 'Notes' && (
-                <div>
-                  <textarea className="min-h-24 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Add internal note" value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} />
-                  <button className="mt-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white" onClick={addNote}>Save Note</button>
-                  <div className="mt-4 space-y-2">
-                    {activeApplicant.notes.map((note, index) => (
-                      <div key={`${note.date}-${index}`} className="rounded-lg border border-slate-200 p-3">
-                        <p className="text-sm text-slate-800">{note.content}</p>
-                        <p className="mt-1 text-xs text-slate-500">{note.author} • {formatPHDateTime(note.date)}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'Interview' && (
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div className="rounded-xl border border-slate-200 p-4">
-                    <h3 className="font-semibold text-slate-900">Interview Scheduling</h3>
-                    <div className="mt-3 space-y-2 text-sm text-slate-700">
-                      <p><Calendar className="mr-1 inline h-4 w-4" /> Date & Time: {activeApplicant.interview?.scheduledDate ? formatPHDateTime(activeApplicant.interview.scheduledDate) : 'Not scheduled'}</p>
-                      <p><CalendarDays className="mr-1 inline h-4 w-4" /> Type: {activeApplicant.interview?.type ?? 'N/A'}</p>
-                      <p><Clock3 className="mr-1 inline h-4 w-4" /> Meeting Link: {activeApplicant.interview?.meetingLink ?? 'N/A'}</p>
-                      <button className="mt-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white" onClick={() => setInterviewSchedule(activeApplicant)}>Schedule Interview</button>
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-slate-200 p-4">
-                    <h3 className="font-semibold text-slate-900">Interview Results</h3>
-                    {activeApplicant.interview?.results ? (
-                      <div className="mt-3 space-y-1 text-sm text-slate-700">
-                        <p>Technical Score: {activeApplicant.interview.results.technicalScore}</p>
-                        <p>Cultural Fit Score: {activeApplicant.interview.results.culturalFitScore}</p>
-                        <p>Recommendation: {activeApplicant.interview.results.recommendation}</p>
-                        <p>Comments: {activeApplicant.interview.results.comments}</p>
-                      </div>
-                    ) : (
-                      <p className="mt-3 text-sm text-slate-500">No interview result submitted yet.</p>
-                    )}
-                  </div>
-                </div>
-              )}
+            <div className="flex justify-end gap-3 border-t border-slate-200 bg-white px-6 py-4">
+              <button className="rounded-xl border border-slate-300 px-4 py-2 text-xl font-medium text-slate-700" onClick={() => setShowMessageDialog(false)}>Cancel</button>
+              <button className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2 text-xl font-semibold text-white disabled:opacity-50" disabled={!emailSubject.trim() || !emailMessage.trim()} onClick={() => { setShowMessageDialog(false); setToast('Message sent to applicant'); }}>
+                <Plane className="h-5 w-5" /> Send Message
+              </button>
             </div>
           </div>
         </div>

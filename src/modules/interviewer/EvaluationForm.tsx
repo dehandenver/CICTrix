@@ -58,6 +58,31 @@ interface EvaluationData {
   recommendation: 'Highly Recommended' | 'Recommended' | 'Not Recommended' | '';
 }
 
+const resolveInterviewerIdentity = (): { name: string; locked: boolean } => {
+  try {
+    const raw = localStorage.getItem('cictrix_interviewer_session');
+    if (!raw) {
+      return { name: '', locked: false };
+    }
+
+    const parsed = JSON.parse(raw) as { name?: string; email?: string };
+    const fromName = String(parsed?.name ?? '').trim();
+    if (fromName) {
+      return { name: fromName, locked: true };
+    }
+
+    const email = String(parsed?.email ?? '').trim();
+    if (email) {
+      const localPart = email.split('@')[0] || email;
+      return { name: localPart, locked: true };
+    }
+
+    return { name: '', locked: false };
+  } catch {
+    return { name: '', locked: false };
+  }
+};
+
 export function EvaluationForm() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -69,6 +94,7 @@ export function EvaluationForm() {
   const [error, setError] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
   const [activeTab, setActiveTab] = useState<'pcpt' | 'oral'>('pcpt');
+  const [isInterviewerNameLocked, setIsInterviewerNameLocked] = useState(false);
   
   const [evaluation, setEvaluation] = useState<EvaluationData>({
     interviewer_name: '',
@@ -158,6 +184,14 @@ export function EvaluationForm() {
       // Ignore localStorage write errors
     }
   };
+
+  useEffect(() => {
+    const { name, locked } = resolveInterviewerIdentity();
+    if (name) {
+      setEvaluation((prev) => ({ ...prev, interviewer_name: name }));
+    }
+    setIsInterviewerNameLocked(locked);
+  }, []);
 
   useEffect(() => {
     if (id) {
@@ -436,7 +470,8 @@ export function EvaluationForm() {
                       className="pcpt-input"
                       value={evaluation.interviewer_name}
                       onChange={(e) => handleInputChange('interviewer_name', e.target.value)}
-                      placeholder="Enter your name"
+                      placeholder={isInterviewerNameLocked ? 'Auto-filled from your account' : 'Enter your name'}
+                      readOnly={isInterviewerNameLocked}
                       required
                     />
                   </div>
@@ -450,6 +485,13 @@ export function EvaluationForm() {
                   <div className="pcpt-info-group full-width">
                     <label className="pcpt-label">Office / Division:</label>
                     <span className="pcpt-value">{applicant.office}</span>
+                  </div>
+                </div>
+
+                <div className="pcpt-info-row">
+                  <div className="pcpt-info-group full-width">
+                    <label className="pcpt-label">Item Number:</label>
+                    <span className="pcpt-value">{applicant.item_number || 'N/A'}</span>
                   </div>
                 </div>
               </div>
@@ -643,7 +685,8 @@ export function EvaluationForm() {
                       className="oral-input"
                       value={evaluation.interviewer_name}
                       onChange={(e) => handleInputChange('interviewer_name', e.target.value)}
-                      placeholder="Enter your name"
+                      placeholder={isInterviewerNameLocked ? 'Auto-filled from your account' : 'Enter your name'}
+                      readOnly={isInterviewerNameLocked}
                       required
                     />
                   </div>
@@ -653,6 +696,13 @@ export function EvaluationForm() {
                   <div className="oral-info-group full-width">
                     <label className="oral-label">Department:</label>
                     <span className="oral-value">{applicant.office}</span>
+                  </div>
+                </div>
+
+                <div className="oral-info-row">
+                  <div className="oral-info-group full-width">
+                    <label className="oral-label">Item Number:</label>
+                    <span className="oral-value">{applicant.item_number || 'N/A'}</span>
                   </div>
                 </div>
               </div>
