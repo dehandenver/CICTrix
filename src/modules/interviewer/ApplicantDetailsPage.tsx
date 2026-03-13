@@ -12,10 +12,12 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Sidebar } from '../../components/Sidebar';
+import { getApplicants, getAuthoritativeJobPostings, saveApplicants } from '../../lib/recruitmentData';
 import { mockDatabase } from '../../lib/mockDatabase';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../../lib/supabase';
+import type { Applicant, JobPosting } from '../../types/recruitment.types';
 
 type ApplicantRecord = {
   id: string;
@@ -53,6 +55,32 @@ type EvaluationRecord = {
   overall_impression_score?: number;
 };
 
+type CachedPreviewFile = {
+  applicantId: string;
+  documentType: string;
+  fileName: string;
+  mimeType: string;
+  dataUrl: string;
+  createdAt: string;
+};
+
+type ApplicantRouteState = {
+  from?: string;
+  applicant?: Applicant;
+};
+
+type AppointmentType = 'original' | 'promotional';
+type EducationAttainmentValue =
+  | ''
+  | 'elementary_level'
+  | 'elementary_graduate'
+  | 'high_school_level'
+  | 'high_school_graduate'
+  | 'college_level'
+  | 'college_graduate'
+  | 'masteral_units'
+  | 'graduate_school';
+
 type TabKey = 'overview' | 'qualifications' | 'documents' | 'interview';
 
 type ScoreBreakdown = {
@@ -64,6 +92,38 @@ type ScoreBreakdown = {
   pcpt: number;
   oral: number;
   adjective: string;
+};
+
+const ATTACHMENT_PREVIEW_CACHE_KEY = 'cictrix_attachment_previews';
+const SCORE_SETUP_STORAGE_KEY = 'cictrix_rsp_score_setup';
+const SCORE_EDUCATION_STORAGE_KEY = 'cictrix_rsp_score_education';
+const SCORE_EXPERIENCE_STORAGE_KEY = 'cictrix_rsp_score_experience';
+const SCORE_WRITTEN_STORAGE_KEY = 'cictrix_rsp_score_written';
+const SCORE_FINALIZED_STORAGE_KEY = 'cictrix_rsp_score_finalized';
+
+const EDUCATION_ATTAINMENT_OPTIONS: Array<{
+  value: EducationAttainmentValue;
+  label: string;
+  points: number;
+}> = [
+  { value: '', label: 'Select Educational Attainment', points: 0 },
+  { value: 'elementary_level', label: 'Elementary Level (10 pts)', points: 10 },
+  { value: 'elementary_graduate', label: 'Elementary Graduate (11 pts)', points: 11 },
+  { value: 'high_school_level', label: 'High School Level (12 pts)', points: 12 },
+  { value: 'high_school_graduate', label: 'High School Graduate (13 pts)', points: 13 },
+  { value: 'college_level', label: 'College Level (14 pts)', points: 14 },
+  { value: 'college_graduate', label: 'College Graduate (16 pts)', points: 16 },
+  { value: 'masteral_units', label: 'Masteral Units (18 pts)', points: 18 },
+  { value: 'graduate_school', label: 'Graduate School (20 pts)', points: 20 },
+];
+
+const experienceYearsToPoints = (years: number): number => {
+  if (years <= 0) return 0;
+  if (years <= 5) return 12;
+  if (years <= 10) return 14;
+  if (years <= 15) return 16;
+  if (years <= 20) return 18;
+  return 20;
 };
 
 const formatDate = (value?: string) => {
@@ -83,6 +143,14 @@ const getFullName = (applicant: ApplicantRecord) => {
     .filter(Boolean);
   return parts.join(' ');
 };
+
+const labelize = (value?: string) =>
+  String(value ?? 'Document')
+    .replace(/\.[a-z0-9]+$/i, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 const normalizeText = (value: string) => String(value ?? '').trim().toLowerCase();
 
@@ -173,16 +241,206 @@ const openDocument = async (filePath: string) => {
   }
 };
 
+const buildApplicantRecordFromRecruitment = (applicant: Applicant, job: JobPosting | null): ApplicantRecord => ({
+  id: applicant.id,
+  item_number: applicant.personalInfo.itemNumber,
+  first_name: applicant.personalInfo.firstName,
+  last_name: applicant.personalInfo.lastName,
+  email: applicant.personalInfo.email,
+  position: job?.title ?? applicant.experience?.[0]?.title ?? '',
+  office: job?.department ?? '',
+  contact_number: applicant.personalInfo.phone,
+  address: applicant.personalInfo.address,
+  is_pwd: false,
+  status: applicant.status,
+  created_at: applicant.applicationDate,
+});
+
+const buildAttachmentRowsFromRecruitment = (applicant: Applicant | null): AttachmentRecord[] => {
+  if (!applicant) return [];
+
+  const documentRows = (applicant.documents ?? []).map((document, index) => ({
+    id: `${applicant.id}-document-${index}`,
+    file_name: document.type || `Document ${index + 1}`,
+    file_path: document.url,
+    created_at: applicant.applicationDate,
+  }));
+
+  const cachedRows = (() => {
+    try {
+      const rows = JSON.parse(localStorage.getItem(ATTACHMENT_PREVIEW_CACHE_KEY) ?? '[]') as CachedPreviewFile[];
+      return rows
+        .filter((row) => row.applicantId === applicant.id)
+        .map((row, index) => ({
+          id: `${applicant.id}-cached-${index}`,
+          file_name: row.fileName || labelize(row.documentType),
+          file_path: row.dataUrl,
+          created_at: row.createdAt,
+        }));
+    } catch {
+      return [] as AttachmentRecord[];
+    }
+  })();
+
+  const merged: AttachmentRecord[] = [];
+  const seen = new Set<string>();
+  [...documentRows, ...cachedRows].forEach((row) => {
+    const key = `${row.file_name}|${row.file_path}`;
+    if (!row.file_path || seen.has(key)) return;
+    seen.add(key);
+    merged.push({ ...row, file_name: labelize(row.file_name) });
+  });
+
+  return merged;
+};
+
+const mergeAttachmentRows = (primary: AttachmentRecord[], fallback: AttachmentRecord[]) => {
+  const merged: AttachmentRecord[] = [];
+  const seen = new Set<string>();
+
+  [...primary, ...fallback].forEach((row, index) => {
+    const dedupeKey = `${row.file_name}|${row.file_path}`;
+    if ((!row.file_name && !row.file_path) || seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+    merged.push({
+      ...row,
+      id: row.id || `${dedupeKey}-${index}`,
+      file_name: labelize(row.file_name || row.file_path),
+    });
+  });
+
+  return merged;
+};
+
+const buildFallbackEvaluation = (applicant: Applicant | null): EvaluationRecord | null => {
+  if (!applicant || !(applicant.qualificationScore > 0)) return null;
+  const latestTimelineEntry = applicant.timeline?.[applicant.timeline.length - 1];
+  return {
+    overall_score: applicant.qualificationScore,
+    updated_at: latestTimelineEntry?.date ?? applicant.applicationDate,
+  };
+};
+
+const getStoredAppointmentType = (applicantId: string): AppointmentType => {
+  try {
+    const raw = localStorage.getItem(SCORE_SETUP_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, AppointmentType>) : {};
+    return parsed[applicantId] === 'promotional' ? 'promotional' : 'original';
+  } catch {
+    return 'original';
+  }
+};
+
+const saveStoredAppointmentType = (applicantId: string, appointmentType: AppointmentType) => {
+  try {
+    const raw = localStorage.getItem(SCORE_SETUP_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, AppointmentType>) : {};
+    parsed[applicantId] = appointmentType;
+    localStorage.setItem(SCORE_SETUP_STORAGE_KEY, JSON.stringify(parsed));
+  } catch {
+    // Best effort persistence only.
+  }
+};
+
+const getStoredEducationAttainment = (applicantId: string): EducationAttainmentValue => {
+  try {
+    const raw = localStorage.getItem(SCORE_EDUCATION_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, EducationAttainmentValue>) : {};
+    return parsed[applicantId] ?? '';
+  } catch {
+    return '';
+  }
+};
+
+const saveStoredEducationAttainment = (applicantId: string, educationAttainment: EducationAttainmentValue) => {
+  try {
+    const raw = localStorage.getItem(SCORE_EDUCATION_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, EducationAttainmentValue>) : {};
+    parsed[applicantId] = educationAttainment;
+    localStorage.setItem(SCORE_EDUCATION_STORAGE_KEY, JSON.stringify(parsed));
+  } catch {
+    // Best effort persistence only.
+  }
+};
+
+const getStoredExperienceYears = (applicantId: string): string => {
+  try {
+    const raw = localStorage.getItem(SCORE_EXPERIENCE_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    return parsed[applicantId] ?? '';
+  } catch {
+    return '';
+  }
+};
+
+const saveStoredExperienceYears = (applicantId: string, years: string) => {
+  try {
+    const raw = localStorage.getItem(SCORE_EXPERIENCE_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    parsed[applicantId] = years;
+    localStorage.setItem(SCORE_EXPERIENCE_STORAGE_KEY, JSON.stringify(parsed));
+  } catch {}
+};
+
+const getStoredWrittenScore = (applicantId: string): string => {
+  try {
+    const raw = localStorage.getItem(SCORE_WRITTEN_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    return parsed[applicantId] ?? '';
+  } catch {
+    return '';
+  }
+};
+
+const saveStoredWrittenScore = (applicantId: string, written: string) => {
+  try {
+    const raw = localStorage.getItem(SCORE_WRITTEN_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    parsed[applicantId] = written;
+    localStorage.setItem(SCORE_WRITTEN_STORAGE_KEY, JSON.stringify(parsed));
+  } catch {}
+};
+
+const getStoredFinalizedState = (applicantId: string): boolean => {
+  try {
+    const raw = localStorage.getItem(SCORE_FINALIZED_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    return Boolean(parsed[applicantId]);
+  } catch {
+    return false;
+  }
+};
+
+const saveStoredFinalizedState = (applicantId: string, finalized: boolean) => {
+  try {
+    const raw = localStorage.getItem(SCORE_FINALIZED_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    parsed[applicantId] = finalized;
+    localStorage.setItem(SCORE_FINALIZED_STORAGE_KEY, JSON.stringify(parsed));
+  } catch {
+    // Best effort persistence only.
+  }
+};
+
 export function ApplicantDetailsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams<{ id: string }>();
+  const routeState = (location.state as ApplicantRouteState | null) ?? null;
 
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
   const [showScoresModal, setShowScoresModal] = useState(false);
   const [notes, setNotes] = useState('');
+  const [appointmentType, setAppointmentType] = useState<AppointmentType>('original');
+  const [educationAttainment, setEducationAttainment] = useState<EducationAttainmentValue>('');
+  const [experienceYears, setExperienceYears] = useState('');
+  const [writtenScore, setWrittenScore] = useState('');
+  const [isScoreFinalized, setIsScoreFinalized] = useState(false);
 
   const [applicant, setApplicant] = useState<ApplicantRecord | null>(null);
+  const [recruitmentApplicant, setRecruitmentApplicant] = useState<Applicant | null>(routeState?.applicant ?? null);
+  const [jobPosting, setJobPosting] = useState<JobPosting | null>(null);
   const [attachments, setAttachments] = useState<AttachmentRecord[]>([]);
   const [evaluation, setEvaluation] = useState<EvaluationRecord | null>(null);
 
@@ -190,6 +448,20 @@ export function ApplicantDetailsPage() {
     const load = async () => {
       if (!id) return;
       setLoading(true);
+
+      const storedRecruitmentApplicant = routeState?.applicant ?? getApplicants().find((entry) => entry.id === id) ?? null;
+      const storedJobPosting = storedRecruitmentApplicant
+        ? getAuthoritativeJobPostings().find((entry) => entry.id === storedRecruitmentApplicant.jobPostingId) ?? null
+        : null;
+
+      setRecruitmentApplicant(storedRecruitmentApplicant);
+      setJobPosting(storedJobPosting);
+      setNotes(storedRecruitmentApplicant?.notes?.[0]?.content ?? '');
+      setAppointmentType(getStoredAppointmentType(id));
+      setEducationAttainment(getStoredEducationAttainment(id));
+      setExperienceYears(getStoredExperienceYears(id));
+      setWrittenScore(getStoredWrittenScore(id));
+      setIsScoreFinalized(getStoredFinalizedState(id));
 
       const loadFromClient = async (client: any) => {
         const applicantRes = await client.from('applicants').select('*').eq('id', id).single();
@@ -221,24 +493,104 @@ export function ApplicantDetailsPage() {
       try {
         const primary = await loadFromClient(supabase);
         setApplicant(primary.applicant);
-        setAttachments(primary.attachments);
-        setEvaluation(primary.evaluation);
+        setAttachments(mergeAttachmentRows(primary.attachments, buildAttachmentRowsFromRecruitment(storedRecruitmentApplicant)));
+        setEvaluation(primary.evaluation ?? buildFallbackEvaluation(storedRecruitmentApplicant));
       } catch {
-        const fallback = await loadFromClient(mockDatabase as any);
-        setApplicant(fallback.applicant);
-        setAttachments(fallback.attachments);
-        setEvaluation(fallback.evaluation);
+        try {
+          const fallback = await loadFromClient(mockDatabase as any);
+          setApplicant(fallback.applicant);
+          setAttachments(mergeAttachmentRows(fallback.attachments, buildAttachmentRowsFromRecruitment(storedRecruitmentApplicant)));
+          setEvaluation(fallback.evaluation ?? buildFallbackEvaluation(storedRecruitmentApplicant));
+        } catch {
+          if (storedRecruitmentApplicant) {
+            setApplicant(buildApplicantRecordFromRecruitment(storedRecruitmentApplicant, storedJobPosting));
+            setAttachments(buildAttachmentRowsFromRecruitment(storedRecruitmentApplicant));
+            setEvaluation(buildFallbackEvaluation(storedRecruitmentApplicant));
+          } else {
+            setApplicant(null);
+            setAttachments([]);
+            setEvaluation(null);
+          }
+        }
       } finally {
         setLoading(false);
       }
     };
 
     load();
-  }, [id]);
+  }, [id, routeState]);
 
   const fullName = useMemo(() => (applicant ? getFullName(applicant) : ''), [applicant]);
   const badge = statusBadge(applicant?.status);
   const score = useMemo(() => computeScoreBreakdown(evaluation), [evaluation]);
+  const backTo = routeState?.from || '/admin/rsp/qualified';
+  const primaryEducation = recruitmentApplicant?.education?.[0] ?? null;
+  const primaryExperience = recruitmentApplicant?.experience?.[0] ?? null;
+  const selectedEducationOption = EDUCATION_ATTAINMENT_OPTIONS.find((option) => option.value === educationAttainment);
+  const modalEducationScore = selectedEducationOption?.points ?? (isScoreFinalized ? score.education : 0);
+  const isPromotionalAppointment = appointmentType === 'promotional';
+  const thirdScoreLabel = isPromotionalAppointment ? 'III Performance (20%)' : 'III Written Examination (20%)';
+  const thirdScoreValue = isPromotionalAppointment ? score.performance : score.written;
+  const thirdScorePlaceholder = isPromotionalAppointment ? 'Enter performance score (0-20)' : 'Enter score (0-30)';
+  const fourthScoreLabel = isPromotionalAppointment ? 'IV Potential (20%)' : 'IV Oral Examination (20%)';
+  const fourthScoreValue = score.oral;
+  const experienceYearsNum = parseInt(experienceYears, 10);
+  const modalExperienceScore = experienceYears !== '' && !Number.isNaN(experienceYearsNum)
+    ? experienceYearsToPoints(experienceYearsNum)
+    : (isScoreFinalized ? score.experience : 0);
+  const writtenScoreNum = parseInt(writtenScore, 10);
+  const modalWrittenScore = writtenScore !== '' && !Number.isNaN(writtenScoreNum)
+    ? Math.max(0, Math.min(30, writtenScoreNum))
+    : (isScoreFinalized ? thirdScoreValue : 0);
+  const modalTotalScore = Math.max(0, Math.min(100,
+    score.total
+    - score.education + modalEducationScore
+    - score.experience + modalExperienceScore
+    - thirdScoreValue + modalWrittenScore
+  ));
+  const modalAdjective = adjectiveFromScore(modalTotalScore);
+  const scoringResponsibilityText = isPromotionalAppointment
+    ? {
+        rsp: 'Education, Experience, Performance',
+        interviewer: 'PCPT, Potential',
+      }
+    : {
+        rsp: 'Education, Experience, Written Examination',
+        interviewer: 'PCPT, Oral Examination',
+      };
+
+  const handleSaveNotes = () => {
+    if (!recruitmentApplicant || !notes.trim()) return;
+    const now = new Date().toISOString();
+    const nextApplicants = getApplicants().map((entry) => {
+      if (entry.id !== recruitmentApplicant.id) return entry;
+      return {
+        ...entry,
+        notes: [{ author: 'RSP Staff', content: notes.trim(), date: now, pinned: false }, ...entry.notes],
+        timeline: [...entry.timeline, { event: 'Internal note added', date: now, actor: 'RSP Staff' }],
+      };
+    });
+    saveApplicants(nextApplicants);
+    setRecruitmentApplicant(nextApplicants.find((entry) => entry.id === recruitmentApplicant.id) ?? recruitmentApplicant);
+    window.dispatchEvent(new CustomEvent('cictrix:applicants-updated'));
+  };
+
+  const handleSendMessage = () => {
+    if (!applicant?.email) return;
+    const subject = encodeURIComponent(`Interview update for ${fullName}`);
+    window.location.href = `mailto:${applicant.email}?subject=${subject}`;
+  };
+
+  const handleSaveScoreSetup = () => {
+    if (!applicant?.id) return;
+    saveStoredAppointmentType(applicant.id, appointmentType);
+    saveStoredEducationAttainment(applicant.id, educationAttainment);
+    saveStoredExperienceYears(applicant.id, experienceYears);
+    saveStoredWrittenScore(applicant.id, writtenScore);
+    saveStoredFinalizedState(applicant.id, true);
+    setIsScoreFinalized(true);
+    setShowScoresModal(false);
+  };
 
   if (loading) {
     return <div className="p-8 text-slate-600">Loading applicant details...</div>;
@@ -272,7 +624,7 @@ export function ApplicantDetailsPage() {
           <div className="flex items-center gap-4">
             <button
               type="button"
-              onClick={() => navigate('/admin/rsp/qualified')}
+              onClick={() => navigate(backTo)}
               className="rounded-full p-2 text-slate-500 hover:bg-slate-100"
             >
               <ArrowLeft size={24} />
@@ -393,11 +745,19 @@ export function ApplicantDetailsPage() {
                   <div className="mb-6 space-y-5 border-b border-slate-200 pb-6">
                     <div className="border-l-4 border-blue-600 pl-4">
                       <p className="text-lg font-semibold uppercase text-slate-600">Education</p>
-                      <p className="text-2xl text-slate-900">BS Information Technology, University of the Philippines</p>
+                      <p className="text-2xl text-slate-900">
+                        {primaryEducation
+                          ? `${primaryEducation.degree}, ${primaryEducation.school}`
+                          : 'No education details submitted yet.'}
+                      </p>
                     </div>
                     <div className="border-l-4 border-green-600 pl-4">
                       <p className="text-lg font-semibold uppercase text-slate-600">Work Experience</p>
-                      <p className="text-2xl text-slate-900">3 years as Junior IT Officer</p>
+                      <p className="text-2xl text-slate-900">
+                        {primaryExperience
+                          ? `${primaryExperience.years} year${primaryExperience.years === 1 ? '' : 's'} as ${primaryExperience.title}${primaryExperience.company ? ` at ${primaryExperience.company}` : ''}`
+                          : 'No work experience submitted yet.'}
+                      </p>
                     </div>
                   </div>
 
@@ -464,7 +824,7 @@ export function ApplicantDetailsPage() {
                     <li>Application status updates</li>
                   </ul>
 
-                  <button type="button" className="mb-6 inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-6 py-3 text-lg font-semibold text-white">
+                  <button type="button" onClick={handleSendMessage} className="mb-6 inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-6 py-3 text-lg font-semibold text-white">
                     <Mail size={22} /> Send Message to Applicant
                   </button>
 
@@ -479,7 +839,7 @@ export function ApplicantDetailsPage() {
                       placeholder="Add internal notes, observations, or interview feedback here..."
                       className="min-h-40 w-full rounded-2xl border border-slate-300 p-4 text-base"
                     />
-                    <button type="button" className="mt-4 rounded-2xl bg-slate-900 px-6 py-3 text-base font-semibold text-white">
+                    <button type="button" onClick={handleSaveNotes} className="mt-4 rounded-2xl bg-slate-900 px-6 py-3 text-base font-semibold text-white">
                       Save Internal Notes
                     </button>
                   </div>
@@ -504,26 +864,46 @@ export function ApplicantDetailsPage() {
             </div>
 
             <div className="space-y-6 p-8">
-              <div className="rounded-2xl border border-emerald-300 bg-emerald-50 p-5">
-                <p className="text-xl font-semibold text-emerald-800">Score Finalized - View Only Mode</p>
-                <p className="text-base text-emerald-700">
-                  This applicant's evaluation has been finalized and submitted. All fields are read-only and cannot be edited.
-                </p>
-              </div>
+              {isScoreFinalized && (
+                <div className="rounded-2xl border border-emerald-300 bg-emerald-50 p-5">
+                  <p className="text-xl font-semibold text-emerald-800">Score Finalized - View Only Mode</p>
+                  <p className="text-base text-emerald-700">
+                    This applicant's evaluation has been finalized and submitted. All fields are read-only and cannot be edited.
+                  </p>
+                </div>
+              )}
 
               <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
                 <p className="mb-3 text-xl font-semibold text-slate-800">Select Appointment Type</p>
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div className="rounded-2xl border-2 border-blue-400 bg-white p-4 text-center">
-                    <p className="text-xl font-semibold text-blue-700">Original Appointment</p>
+                  <button
+                    type="button"
+                    onClick={() => !isScoreFinalized && setAppointmentType('original')}
+                    disabled={isScoreFinalized}
+                    className={`rounded-2xl border p-4 text-center transition ${
+                      appointmentType === 'original'
+                        ? 'border-2 border-blue-400 bg-white shadow-sm'
+                        : 'border border-slate-300 bg-slate-100'
+                    } ${isScoreFinalized ? 'cursor-not-allowed opacity-80' : ''}`}
+                  >
+                    <p className={`text-xl font-semibold ${appointmentType === 'original' ? 'text-blue-700' : 'text-slate-500'}`}>Original Appointment</p>
                     <p className="text-base text-slate-500">Education • Experience • Written Exam* • PCPT*</p>
                     <p className="text-sm text-slate-500">*Interviewer-provided</p>
-                  </div>
-                  <div className="rounded-2xl border border-slate-300 bg-slate-100 p-4 text-center">
-                    <p className="text-xl font-semibold text-slate-500">Promotional Appointment</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => !isScoreFinalized && setAppointmentType('promotional')}
+                    disabled={isScoreFinalized}
+                    className={`rounded-2xl border p-4 text-center transition ${
+                      appointmentType === 'promotional'
+                        ? 'border-2 border-blue-400 bg-white shadow-sm'
+                        : 'border border-slate-300 bg-slate-100'
+                    } ${isScoreFinalized ? 'cursor-not-allowed opacity-80' : ''}`}
+                  >
+                    <p className={`text-xl font-semibold ${appointmentType === 'promotional' ? 'text-blue-700' : 'text-slate-500'}`}>Promotional Appointment</p>
                     <p className="text-base text-slate-500">Education • Experience • Performance • PCPT* • Potential</p>
                     <p className="text-sm text-slate-500">*Interviewer-provided</p>
-                  </div>
+                  </button>
                 </div>
               </section>
 
@@ -531,36 +911,66 @@ export function ApplicantDetailsPage() {
                 <div className="flex items-end justify-between">
                   <div>
                     <p className="text-lg text-slate-600">Final Numerical Score</p>
-                    <p className="text-4xl font-bold text-slate-900">{score.total.toFixed(2)}</p>
+                    <p className="text-4xl font-bold text-slate-900">{modalTotalScore.toFixed(2)}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-lg text-slate-600">Adjectival Rating</p>
-                    <p className="text-4xl font-bold text-emerald-700">{score.adjective}</p>
+                    <p className="text-4xl font-bold text-emerald-700">{modalAdjective}</p>
                   </div>
                 </div>
               </section>
 
               <section className="rounded-2xl border border-amber-300 bg-amber-50 p-5 text-base text-amber-900">
                 <p className="font-semibold">Scoring Responsibility:</p>
-                <p><strong>RSP enters:</strong> Education, Experience, Written Examination</p>
-                <p><strong>Interviewer provides:</strong> PCPT, Oral Examination</p>
+                <p><strong>RSP enters:</strong> {scoringResponsibilityText.rsp}</p>
+                <p><strong>Interviewer provides:</strong> {scoringResponsibilityText.interviewer}</p>
               </section>
 
               <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
                   <p className="mb-2 text-xl font-semibold text-slate-800">I Education (20%)</p>
-                  <input readOnly value={score.education > 0 ? 'Bachelor Degree' : 'Select Educational Attainment'} className="w-full rounded-xl border border-slate-300 p-3 text-base" />
-                  <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-blue-700">{score.education}</span></p>
+                  <select
+                    value={educationAttainment}
+                    onChange={(event) => setEducationAttainment(event.target.value as EducationAttainmentValue)}
+                    disabled={isScoreFinalized}
+                    className="w-full rounded-xl border border-slate-300 p-3 text-base disabled:cursor-not-allowed disabled:bg-slate-100"
+                  >
+                    {EDUCATION_ATTAINMENT_OPTIONS.map((option) => (
+                      <option key={option.value || 'placeholder'} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-blue-700">{modalEducationScore}</span></p>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
                   <p className="mb-2 text-xl font-semibold text-slate-800">II Experience (20%)</p>
-                  <input readOnly value={score.experience > 0 ? '3' : ''} placeholder="Enter years of experience" className="w-full rounded-xl border border-slate-300 p-3 text-base" />
-                  <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-blue-700">{score.experience}</span></p>
+                  <input
+                    type="number"
+                    min={0}
+                    max={50}
+                    value={experienceYears}
+                    onChange={(event) => setExperienceYears(event.target.value)}
+                    disabled={isScoreFinalized}
+                    placeholder="Enter years of experience"
+                    className="w-full rounded-xl border border-slate-300 p-3 text-base disabled:cursor-not-allowed disabled:bg-slate-100"
+                  />
+                  <p className="mt-1 text-sm text-slate-400">1-5 yrs: 12 pts &nbsp;|&nbsp; 6-10: 14 pts &nbsp;|&nbsp; 11-15: 16 pts &nbsp;|&nbsp; 16-20: 18 pts &nbsp;|&nbsp; 21+: 20 pts</p>
+                  <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-blue-700">{modalExperienceScore}</span></p>
                 </div>
                 <div className="rounded-2xl border border-green-200 bg-green-50 p-4">
-                  <p className="mb-2 text-xl font-semibold text-slate-800">III Written Examination (20%)</p>
-                  <input readOnly value={score.written > 0 ? `${score.written}` : ''} placeholder="Enter score (0-30)" className="w-full rounded-xl border border-slate-300 p-3 text-base" />
-                  <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-green-700">{score.written}</span></p>
+                  <p className="mb-2 text-xl font-semibold text-slate-800">{thirdScoreLabel}</p>
+                  <input
+                    type="number"
+                    min={0}
+                    max={30}
+                    value={writtenScore}
+                    onChange={(event) => setWrittenScore(event.target.value)}
+                    disabled={isScoreFinalized}
+                    placeholder={thirdScorePlaceholder}
+                    className="w-full rounded-xl border border-slate-300 p-3 text-base disabled:cursor-not-allowed disabled:bg-slate-100"
+                  />
+                  <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-green-700">{modalWrittenScore}</span></p>
                 </div>
               </section>
 
@@ -584,12 +994,12 @@ export function ApplicantDetailsPage() {
                   </div>
 
                   <div className="rounded-2xl border border-blue-200 bg-white p-4">
-                    <p className="mb-2 text-xl font-semibold text-slate-800">IV Oral Examination (20%)</p>
+                    <p className="mb-2 text-xl font-semibold text-slate-800">{fourthScoreLabel}</p>
                     <div className="rounded-xl border border-blue-300 bg-blue-50 p-3 text-base text-slate-700">
                       <span className="font-semibold">Raw Score:</span>{' '}
-                      <span className="float-right text-blue-700">{score.oral > 0 ? `${score.oral}/20` : 'Pending Interview'}</span>
+                      <span className="float-right text-blue-700">{fourthScoreValue > 0 ? `${fourthScoreValue}/20` : 'Pending Interview'}</span>
                     </div>
-                    <p className="mt-2 text-base font-semibold text-blue-700">Converted Score: {score.oral} / 20</p>
+                    <p className="mt-2 text-base font-semibold text-blue-700">Converted Score: {fourthScoreValue} / 20</p>
                   </div>
                 </div>
               </section>
@@ -616,8 +1026,8 @@ export function ApplicantDetailsPage() {
                 <button type="button" onClick={() => setShowScoresModal(false)} className="rounded-2xl border border-slate-300 bg-white px-8 py-3 text-base text-slate-700">
                   Cancel
                 </button>
-                <button type="button" className="rounded-2xl bg-blue-600 px-8 py-3 text-base font-semibold text-white">
-                  Save Evaluation
+                <button type="button" onClick={handleSaveScoreSetup} className="rounded-2xl bg-blue-600 px-8 py-3 text-base font-semibold text-white">
+                  {isScoreFinalized ? 'Saved Evaluation' : 'Save Evaluation'}
                 </button>
               </div>
             </div>

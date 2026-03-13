@@ -14,7 +14,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import { mockDatabase } from '../../lib/mockDatabase';
-import { ensureRecruitmentSeedData, getAuthoritativeJobPostings } from '../../lib/recruitmentData';
+import { ensureRecruitmentSeedData, getApplicants as getRecruitmentApplicants, getAuthoritativeJobPostings } from '../../lib/recruitmentData';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../../lib/supabase';
 import '../../styles/interviewer.css';
 
@@ -204,28 +204,54 @@ const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
 };
 
 const fetchApplicantsByPosition = async (client: any, position: string): Promise<any[]> => {
-  if (typeof client?.insertApplicant === 'function') {
-    const { data } = await client
-      .from('applicants')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .eq('position', position);
-
-    return data || [];
-  }
+  const normalizedTarget = normalizeText(position);
 
   const { data } = await client
     .from('applicants')
     .select('*')
-    .eq('position', position)
     .order('created_at', { ascending: false });
 
-  return data || [];
+  const rows = Array.isArray(data) ? data : [];
+  return rows.filter((row: any) => normalizeText(String(row?.position ?? '')) === normalizedTarget);
 };
 
 const fetchEvaluations = async (client: any): Promise<any[]> => {
   const { data } = await client.from('evaluations').select('*');
   return data || [];
+};
+
+const buildFallbackApplicantsFromRecruitmentStore = (jobTitle: string): any[] => {
+  const postingById = new Map(
+    getAuthoritativeJobPostings().map((posting) => [String(posting.id), String(posting.title || '')])
+  );
+
+  const normalizedTarget = normalizeText(jobTitle);
+  const fallbackRows = getRecruitmentApplicants();
+
+  return fallbackRows
+    .filter((row: any) => {
+      const mappedTitle = postingById.get(String(row?.jobPostingId ?? '')) || '';
+      return normalizeText(mappedTitle) === normalizedTarget;
+    })
+    .map((row: any) => ({
+      id: String(row?.id ?? crypto.randomUUID()),
+      item_number: String(row?.personalInfo?.itemNumber ?? ''),
+      first_name: String(row?.personalInfo?.firstName ?? ''),
+      middle_name: null,
+      last_name: String(row?.personalInfo?.lastName ?? ''),
+      email: String(row?.personalInfo?.email ?? ''),
+      position: jobTitle,
+      office: String(postingById.get(String(row?.jobPostingId ?? '')) ? POSITION_TO_DEPARTMENT_MAP[jobTitle] || '' : ''),
+      contact_number: String(row?.personalInfo?.phone ?? ''),
+      status: String(row?.status ?? 'Pending'),
+      created_at: String(row?.applicationDate ?? new Date().toISOString()),
+      evaluation_status:
+        String(row?.status ?? '').toLowerCase().includes('interview completed') ||
+        String(row?.status ?? '').toLowerCase().includes('recommended') ||
+        String(row?.status ?? '').toLowerCase().includes('hired')
+          ? 'Completed'
+          : 'Not Yet Rated',
+    }));
 };
 
 const normalizeText = (value: string) => value.trim().toLowerCase();
@@ -288,26 +314,14 @@ export function InterviewerApplicantsList() {
       setError(null);
 
       ensureRecruitmentSeedData();
-      const activePosting = getAuthoritativeJobPostings().find((row) => {
-        const isActive = String(row?.status ?? '').trim().toLowerCase() === 'active';
-        return isActive && normalizeText(String(row?.title ?? '')) === normalizeText(jobTitle);
-      });
-
-      if (!activePosting) {
-        setApplicants([]);
-        setJobDetails({
-          title: jobTitle,
-          office: POSITION_TO_DEPARTMENT_MAP[jobTitle] || 'N/A',
-          department: POSITION_TO_DEPARTMENT_MAP[jobTitle] || 'N/A',
-        });
-        setError('This position is no longer active or has been removed.');
-        return;
-      }
+      const matchingPosting = getAuthoritativeJobPostings().find((row) =>
+        normalizeText(String(row?.title ?? '')) === normalizeText(jobTitle)
+      );
 
       let resolvedJobDetails: JobPosting = {
-        title: String(activePosting.title || jobTitle),
-        office: String(activePosting.department || POSITION_TO_DEPARTMENT_MAP[jobTitle] || 'N/A'),
-        department: String(activePosting.department || POSITION_TO_DEPARTMENT_MAP[jobTitle] || 'N/A')
+        title: String(matchingPosting?.title || jobTitle),
+        office: String(matchingPosting?.department || POSITION_TO_DEPARTMENT_MAP[jobTitle] || 'N/A'),
+        department: String(matchingPosting?.department || POSITION_TO_DEPARTMENT_MAP[jobTitle] || 'N/A')
       };
 
       const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
@@ -333,6 +347,10 @@ export function InterviewerApplicantsList() {
         }
       }
 
+      if (!applicantsByPosition || applicantsByPosition.length === 0) {
+        applicantsByPosition = buildFallbackApplicantsFromRecruitmentStore(jobTitle);
+      }
+
       const evaluationMap = buildEvaluationStatusMap(allEvaluations);
       const applicantsWithStatus = Array.from(applicantsByPosition || [])
         .filter((applicant: any) => !isDemoApplicant(applicant))
@@ -356,6 +374,10 @@ export function InterviewerApplicantsList() {
 
       setApplicants(applicantsWithStatus);
       setJobDetails(resolvedJobDetails);
+
+      if (!matchingPosting && applicantsWithStatus.length === 0) {
+        setError('No applicants found for this job posting yet.');
+      }
     } catch (err: any) {
       console.error('Error fetching applicants:', err);
       setError(err?.message || 'Failed to load applicants');
@@ -415,6 +437,7 @@ export function InterviewerApplicantsList() {
   const updateApplicantStatus = async (applicantId: string, status: string) => {
     setApplicants((prev) => prev.map((row) => (row.id === applicantId ? { ...row, status } : row)));
     setActiveApplicant((prev) => (prev && prev.id === applicantId ? { ...prev, status } : prev));
+    window.dispatchEvent(new CustomEvent('cictrix:applicants-updated'));
 
     const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
     const primaryClient = preferredMode === 'local' ? (mockDatabase as any) : supabase;
