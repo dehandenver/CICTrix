@@ -1,21 +1,21 @@
 import {
-  ArrowLeft,
-  BookOpen,
-  Calendar,
-  Download,
-  Eye,
-  FileText,
-  Mail,
-  MessageSquare,
-  Phone,
-  User,
-  X,
+    ArrowLeft,
+    BookOpen,
+    Calendar,
+    Download,
+    Eye,
+    FileText,
+    Mail,
+    MessageSquare,
+    Phone,
+    User,
+    X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Sidebar } from '../../components/Sidebar';
-import { getApplicants, getAuthoritativeJobPostings, saveApplicants } from '../../lib/recruitmentData';
 import { mockDatabase } from '../../lib/mockDatabase';
+import { getApplicants, getAuthoritativeJobPostings, saveApplicants } from '../../lib/recruitmentData';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../../lib/supabase';
 import type { Applicant, JobPosting } from '../../types/recruitment.types';
 
