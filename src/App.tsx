@@ -6,6 +6,10 @@ import { NewlyHiredPage } from './components/NewlyHiredPage';
 import { QualifiedApplicantsPage } from './components/QualifiedApplicantsPage';
 import { RaterManagementPage } from './components/RaterManagementPage';
 import SuccessionReadinessEngine from './components/SuccessionReadinessEngine';
+import {
+    findEmployeeByEmployeeId,
+    findEmployeePortalAccount,
+} from './lib/employeePortalData';
 import { mockDatabase } from './lib/mockDatabase';
 import { isMockModeEnabled, supabase } from './lib/supabase';
 import { LNDDashboard } from './modules/admin/LNDDashboard';
@@ -22,7 +26,7 @@ import { InterviewerApplicantsList } from './modules/interviewer/InterviewerAppl
 import { InterviewerDashboard } from './modules/interviewer/InterviewerDashboard';
 import { InterviewerLogin } from './modules/interviewer/InterviewerLogin';
 import './styles/globals.css';
-import { Employee, EmployeeSession } from './types/employee.types';
+import { EmployeeSession } from './types/employee.types';
 
 type Role = 'super-admin' | 'rsp' | 'lnd' | 'pm';
 type InterviewerSession = { email: string; name: string };
@@ -74,29 +78,6 @@ const getRoleDefaultRoute = (role: Role): string => {
   if (role === 'rsp') return '/admin/rsp';
   if (role === 'lnd') return '/admin/lnd';
   return '/admin/pm';
-};
-
-// Mock employee data for demo
-const MOCK_EMPLOYEES: Record<string, Employee> = {
-  employee01: {
-    employeeId: 'EMP-2024-001',
-    fullName: 'Maria Santos',
-    email: 'maria.santos@ilongcity.gov.ph',
-    dateOfBirth: '1990-05-15',
-    age: 34,
-    gender: 'Female',
-    civilStatus: 'Married',
-    nationality: 'Filipino',
-    mobileNumber: '+63-908-123-4567',
-    homeAddress: '123 Rizal Street, Iloilo City, Iloilo 5000',
-    emergencyContactName: 'Juan Santos',
-    emergencyRelationship: 'Spouse',
-    emergencyContactNumber: '+63-908-765-4321',
-    sssNumber: '01-2345678-0',
-    philhealthNumber: 'PH-01-2345678-9',
-    pagibigNumber: '121234567890',
-    tinNumber: '123-456-789-000',
-  },
 };
 
 const AdminRoute = ({
@@ -163,17 +144,17 @@ function AppContent() {
     return 'dashboard';
   };
 
-  const resolveEmployeeFromSession = (session: EmployeeSession | null): Employee | null => {
+  const resolveEmployeeFromSession = (session: EmployeeSession | null) => {
     if (!session) return null;
 
-    if (session.loginUsername && MOCK_EMPLOYEES[session.loginUsername]) {
-      return MOCK_EMPLOYEES[session.loginUsername];
+    if (session.loginUsername) {
+      const byUsername = findEmployeePortalAccount(session.loginUsername);
+      if (byUsername) {
+        return byUsername.employee;
+      }
     }
 
-    const match = Object.values(MOCK_EMPLOYEES).find(
-      (employee) => employee.employeeId === session.employeeId
-    );
-    return match ?? null;
+    return findEmployeeByEmployeeId(session.employeeId)?.employee ?? null;
   };
 
   useEffect(() => {
@@ -209,18 +190,14 @@ function AppContent() {
       try {
         const parsed = JSON.parse(employeeStored) as EmployeeSession;
         if (parsed?.employeeId) {
-          setEmployeeSession(parsed);
-          // Look up employee using loginUsername if available, otherwise by employeeId
-          let employee: Employee | undefined;
-          if (parsed.loginUsername && MOCK_EMPLOYEES[parsed.loginUsername]) {
-            employee = MOCK_EMPLOYEES[parsed.loginUsername];
+          const account =
+            (parsed.loginUsername ? findEmployeePortalAccount(parsed.loginUsername) : null) ??
+            findEmployeeByEmployeeId(parsed.employeeId);
+
+          if (account) {
+            setEmployeeSession(parsed);
           } else {
-            // Fallback: search through MOCK_EMPLOYEES by employeeId
-            employee = Object.values(MOCK_EMPLOYEES).find(
-              (emp) => emp.employeeId === parsed.employeeId
-            );
-          }
-          if (employee) {
+            localStorage.removeItem('cictrix_employee_session');
           }
         }
       } catch {
@@ -383,21 +360,18 @@ function AppContent() {
   };
 
   const handleEmployeeLogin = (username: string, password: string) => {
-    // Demo: simple validation
-    if (username === 'employee01' && password === 'hr2024') {
-      const employee = MOCK_EMPLOYEES['employee01'];
-      if (employee) {
-        const session: EmployeeSession = {
-          employeeId: employee.employeeId,
-          email: employee.email,
-          fullName: employee.fullName,
-          loginUsername: username, // Store username for lookup
-        };
-        setEmployeeSession(session);
-        localStorage.setItem('cictrix_employee_session', JSON.stringify(session));
-        // Navigate to dashboard after successful login
-        navigate('/employee/dashboard');
-      }
+    const account = findEmployeePortalAccount(username, password);
+    if (account) {
+      const session: EmployeeSession = {
+        employeeId: account.employee.employeeId,
+        email: account.employee.email,
+        fullName: account.employee.fullName,
+        loginUsername: account.username,
+      };
+
+      setEmployeeSession(session);
+      localStorage.setItem('cictrix_employee_session', JSON.stringify(session));
+      navigate('/employee/dashboard');
     }
   };
 

@@ -32,6 +32,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/Button';
 import { Sidebar } from '../../components/Sidebar';
+import { getEmployeePortalAccounts } from '../../lib/employeePortalData';
 import { mockDatabase } from '../../lib/mockDatabase';
 import {
     ensureRecruitmentSeedData,
@@ -1163,6 +1164,18 @@ export const RSPDashboard = () => {
     return map;
   }, [credentialedNewlyHiredRows]);
 
+  const portalAccountByApplicantId = useMemo(() => {
+    const portalAccounts = getEmployeePortalAccounts();
+    const accountByEmployeeId = new Map(portalAccounts.map((a) => [String(a.employee.employeeId).trim(), a]));
+    const map = new Map<string, (typeof portalAccounts)[number]>();
+    credentialedNewlyHiredRows.forEach((row) => {
+      if (!row.applicantId || !row.employeeId) return;
+      const account = accountByEmployeeId.get(String(row.employeeId).trim());
+      if (account) map.set(String(row.applicantId), account);
+    });
+    return map;
+  }, [credentialedNewlyHiredRows]);
+
   const directoryEmployeesSource = useMemo(
     () => applicants.filter((employee) => credentialedApplicantIds.has(employee.id)),
     [applicants, credentialedApplicantIds]
@@ -1233,19 +1246,34 @@ export const RSPDashboard = () => {
 
   const selectedEmployeeProfile = useMemo(() => {
     if (!selectedEmployeeDetails) return null;
+    const portalAccount = portalAccountByApplicantId.get(selectedEmployeeDetails.id);
+    const emp = portalAccount?.employee;
+    const computeAge = (dob: string | undefined) => {
+      if (!dob) return null;
+      const birth = new Date(dob);
+      if (Number.isNaN(birth.getTime())) return null;
+      const today = new Date();
+      let years = today.getFullYear() - birth.getFullYear();
+      const hasBirthdayPassed =
+        today.getMonth() > birth.getMonth() ||
+        (today.getMonth() === birth.getMonth() && today.getDate() >= birth.getDate());
+      if (!hasBirthdayPassed) years -= 1;
+      return years;
+    };
+    const ageFromDob = computeAge(emp?.dateOfBirth);
     return {
-      address: 'Lot 5 Blk 3, Sunrise Village, Mandurriao, Iloilo City',
-      dateOfBirth: 'March 15, 1994',
-      placeOfBirth: 'Iloilo City',
-      age: '32 years old',
-      sex: 'Female',
-      civilStatus: 'Married',
-      emergencyContactName: 'Carlos Reyes',
-      emergencyContactRelationship: 'Spouse',
-      emergencyContactPhone: '+63 917 234 5678',
+      address: emp?.homeAddress || selectedEmployeeDetails.contact_number || '--',
+      dateOfBirth: emp?.dateOfBirth || '--',
+      placeOfBirth: emp?.placeOfBirth || '--',
+      age: ageFromDob != null ? `${ageFromDob} years old` : (emp?.age != null ? `${emp.age} years old` : '--'),
+      sex: emp?.gender || '--',
+      civilStatus: emp?.civilStatus || '--',
+      emergencyContactName: emp?.emergencyContactName || '--',
+      emergencyContactRelationship: emp?.emergencyRelationship || '--',
+      emergencyContactPhone: emp?.emergencyContactNumber || '--',
       dateHired: formatDate(selectedEmployeeDetails.created_at),
     };
-  }, [selectedEmployeeDetails]);
+  }, [selectedEmployeeDetails, portalAccountByApplicantId]);
 
   const selectedEmployeeDocuments = useMemo(() => {
     if (!selectedEmployeeDetails) return [] as Array<{

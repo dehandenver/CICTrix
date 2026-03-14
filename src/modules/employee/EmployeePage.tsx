@@ -1,32 +1,21 @@
-/**
- * Employee Profile & Dashboard Page Component
- * Displays comprehensive employee information in an organized, professional layout
- */
-
 import {
-    AlertCircle,
-    Calendar,
-    Check,
+    Bell,
+    ChevronRight,
     Clock,
+    Eye,
     FileText,
-    Heart,
     Home,
-    IdCard,
     Lock,
     LogOut,
-    Mail,
-    Menu,
-    Phone,
+    Pencil,
+    Save,
     Upload,
     User,
     X,
 } from 'lucide-react';
-import { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import hrisLogo from '../../assets/hris-logo.svg';
-import { Button } from '../../components/Button';
-import { Card } from '../../components/Card';
-import '../../styles/admin.css';
+import { updateEmployeePortalEmployee } from '../../lib/employeePortalData';
 import { Employee } from '../../types/employee.types';
 
 interface EmployeePageProps {
@@ -34,619 +23,826 @@ interface EmployeePageProps {
   onLogout: () => void;
 }
 
-type NavigationTab =
-  | 'dashboard'
-  | 'profile'
-  | 'document-requirements'
-  | 'submission-bin';
-type DocumentStatus = 'pending' | 'verified' | 'missing';
+type PortalTab = 'personal' | 'documents' | 'submission';
 
-type RequiredDocument = {
+interface TabConfig {
+  id: PortalTab;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  route: string;
+  count?: number;
+}
+
+interface RequirementItem {
   id: string;
-  name: string;
-  status: DocumentStatus;
+  title: string;
+  description: string;
+  status: 'required' | 'uploaded' | 'locked';
+}
+
+interface SubmissionItem {
+  id: string;
+  title: string;
+  status: 'pending' | 'submitted';
+  note?: string;
+}
+
+type EditableSection = 'personal' | 'contact' | 'emergency' | 'government' | null;
+
+type PersonalDraft = {
+  fullName: string;
+  dateOfBirth: string;
+  placeOfBirth: string;
+  gender: string;
+  homeAddress: string;
 };
 
-export const EmployeePage: React.FC<EmployeePageProps> = ({
-  currentUser,
-  onLogout,
-}) => {
-  const location = useLocation();
-  const navigate = useNavigate();
-  const [sidebarOpen, setOpenSidebar] = useState(true);
-  const [showSuccessToast, setShowSuccessToast] = useState(false);
-  const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedRequirement, setSelectedRequirement] = useState('pds');
-  const [uploadError, setUploadError] = useState('');
+type ContactDraft = {
+  email: string;
+  mobileNumber: string;
+  homeAddress: string;
+};
 
-  // Define required documents
-  const requiredDocuments: RequiredDocument[] = [
-    { id: 'pds', name: 'Personal Data Sheet (PDS)', status: 'verified' },
-    { id: 'medical', name: 'Medical Certificate', status: 'missing' },
-    { id: 'nbi', name: 'NBI Clearance', status: 'missing' },
-    { id: 'birth', name: 'Birth Certificate', status: 'missing' },
+type EmergencyDraft = {
+  emergencyContactName: string;
+  emergencyRelationship: string;
+  emergencyContactNumber: string;
+};
+
+type GovernmentDraft = {
+  sssNumber: string;
+  philhealthNumber: string;
+  pagibigNumber: string;
+  tinNumber: string;
+};
+
+interface EditableInputProps {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+  disabled?: boolean;
+}
+
+const getContactDraft = (employee: Employee): ContactDraft => ({
+  email: employee.email || '',
+  mobileNumber: employee.mobileNumber || '',
+  homeAddress: employee.homeAddress || '',
+});
+
+const getPersonalDraft = (employee: Employee): PersonalDraft => ({
+  fullName: employee.fullName || '',
+  dateOfBirth: employee.dateOfBirth || '',
+  placeOfBirth: employee.placeOfBirth || '',
+  gender: employee.gender || '',
+  homeAddress: employee.homeAddress || '',
+});
+
+const getEmergencyDraft = (employee: Employee): EmergencyDraft => ({
+  emergencyContactName: employee.emergencyContactName || '',
+  emergencyRelationship: employee.emergencyRelationship || '',
+  emergencyContactNumber: employee.emergencyContactNumber || '',
+});
+
+const getGovernmentDraft = (employee: Employee): GovernmentDraft => ({
+  sssNumber: employee.sssNumber || '',
+  philhealthNumber: employee.philhealthNumber || '',
+  pagibigNumber: employee.pagibigNumber || '',
+  tinNumber: employee.tinNumber || '',
+});
+
+interface EditableSelectProps {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: { label: string; value: string }[];
+}
+
+const EditableSelect: React.FC<EditableSelectProps> = ({ label, value, onChange, options }) => (
+  <label className="block">
+    <span className="mb-2 block text-sm font-semibold text-slate-700">{label}</span>
+    <select
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700 focus:border-blue-500 focus:outline-none"
+    >
+      <option value="">-- Select --</option>
+      {options.map((opt) => (
+        <option key={opt.value} value={opt.value}>{opt.label}</option>
+      ))}
+    </select>
+  </label>
+);
+
+const EditableInput: React.FC<EditableInputProps> = ({ label, value, onChange, type = 'text', disabled = false }) => (
+  <label className="block">
+    <span className="mb-2 block text-sm font-semibold text-slate-700">{label}</span>
+    <input
+      type={type}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      disabled={disabled}
+      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700 focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
+    />
+  </label>
+);
+
+export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogout }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [selectedFile, setSelectedFile] = useState<Record<string, string>>({});
+  const [profile, setProfile] = useState<Employee>(currentUser);
+  const [editingSection, setEditingSection] = useState<EditableSection>(null);
+  const [personalDraft, setPersonalDraft] = useState<PersonalDraft>(getPersonalDraft(currentUser));
+  const [contactDraft, setContactDraft] = useState<ContactDraft>(getContactDraft(currentUser));
+  const [emergencyDraft, setEmergencyDraft] = useState<EmergencyDraft>(getEmergencyDraft(currentUser));
+  const [governmentDraft, setGovernmentDraft] = useState<GovernmentDraft>(getGovernmentDraft(currentUser));
+
+  const profileSyncVersion = `${currentUser.employeeId}|${currentUser.updatedAt ?? ''}`;
+
+  useEffect(() => {
+    setProfile(currentUser);
+    setPersonalDraft(getPersonalDraft(currentUser));
+    setContactDraft(getContactDraft(currentUser));
+    setEmergencyDraft(getEmergencyDraft(currentUser));
+    setGovernmentDraft(getGovernmentDraft(currentUser));
+    setEditingSection(null);
+  }, [profileSyncVersion]);
+
+  const tabs: TabConfig[] = useMemo(
+    () => [
+      { id: 'personal', label: 'Personal Information', icon: User, route: '/employee/profile' },
+      { id: 'documents', label: 'Document Requirements', icon: FileText, route: '/employee/documents/requirements' },
+      { id: 'submission', label: 'Submission Bin', icon: Bell, route: '/employee/documents/submission', count: 3 },
+    ],
+    []
+  );
+
+  const activeTab = useMemo<PortalTab>(() => {
+    if (location.pathname.includes('/documents/requirements')) return 'documents';
+    if (location.pathname.includes('/documents/submission')) return 'submission';
+    if (location.pathname.includes('/profile')) return 'personal';
+    return 'personal';
+  }, [location.pathname]);
+
+  const requirementItems: RequirementItem[] = [
+    {
+      id: 'marriage_certificate',
+      title: 'Marriage Certificate',
+      description: 'Marriage Certificate (for married employees)',
+      status: 'required',
+    },
+    {
+      id: 'birth_certificate',
+      title: 'Birth Certificate',
+      description: 'Employee Birth Certificate',
+      status: 'uploaded',
+    },
+    {
+      id: 'medical_cert',
+      title: 'Medical Certificate',
+      description: 'Annual medical fitness certificate',
+      status: 'locked',
+    },
   ];
 
-  const handleFileUpload = (file: File | null) => {
-    if (!file) return;
+  const submissionItems: SubmissionItem[] = [
+    {
+      id: 'pending_1',
+      title: 'Marriage Certificate',
+      status: 'pending',
+      note: 'Uploaded file is waiting for HR verification.',
+    },
+    {
+      id: 'pending_2',
+      title: 'Updated Employee Data Sheet',
+      status: 'pending',
+      note: 'Pending review and approval.',
+    },
+    {
+      id: 'pending_3',
+      title: 'Emergency Contact Form',
+      status: 'pending',
+      note: 'Recently submitted.',
+    },
+    {
+      id: 'submitted_1',
+      title: 'Birth Certificate',
+      status: 'submitted',
+      note: 'Approved and archived by HR.',
+    },
+    {
+      id: 'submitted_2',
+      title: 'BIR Form 2316',
+      status: 'submitted',
+      note: 'Submitted during onboarding.',
+    },
+  ];
 
-    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/jpg'];
-    if (!allowedTypes.includes(file.type)) {
-      setUploadError('Only PDF or JPG files are allowed.');
+  const pendingItems = submissionItems.filter((item) => item.status === 'pending');
+  const submittedItems = submissionItems.filter((item) => item.status === 'submitted');
+
+  const handleTabSelect = (tab: TabConfig) => {
+    navigate(tab.route);
+  };
+
+  const handleFileSelect = (id: string, fileName: string) => {
+    setSelectedFile((prev) => ({ ...prev, [id]: fileName }));
+  };
+
+  const handleUpload = (id: string) => {
+    if (!selectedFile[id]) {
       return;
     }
 
-    setUploadError('');
-    setUploadedFiles((prev) =>
-      prev.includes(selectedRequirement) ? prev : [...prev, selectedRequirement]
-    );
-    setShowSuccessToast(true);
-    setTimeout(() => setShowSuccessToast(false), 2500);
+    alert(`Submitted ${selectedFile[id]} for ${id.replace('_', ' ')}`);
   };
 
-  const handleSubmitForReview = () => {
-    if (isSubmitting) return;
-    setIsSubmitting(true);
+  const persistProfilePatch = (patch: Partial<Employee>) => {
+    const nowIso = new Date().toISOString();
+    const nextProfile = { ...profile, ...patch, updatedAt: nowIso };
+    setProfile(nextProfile);
+    updateEmployeePortalEmployee(profile.employeeId, patch);
   };
 
-  const getDocumentStatus = (doc: RequiredDocument): DocumentStatus => {
-    if (uploadedFiles.includes(doc.id)) {
-      return 'pending';
+  const startEditing = (section: Exclude<EditableSection, null>) => {
+    if (section === 'personal') {
+      setPersonalDraft(getPersonalDraft(profile));
     }
-    return doc.status;
+    if (section === 'contact') {
+      setContactDraft(getContactDraft(profile));
+    }
+    if (section === 'emergency') {
+      setEmergencyDraft(getEmergencyDraft(profile));
+    }
+    if (section === 'government') {
+      setGovernmentDraft(getGovernmentDraft(profile));
+    }
+    setEditingSection(section);
   };
 
-  const pendingCount = requiredDocuments.filter(
-    (doc) => getDocumentStatus(doc) === 'missing'
-  ).length;
-
-  const getActiveTab = (pathname: string): NavigationTab => {
-    if (pathname.includes('/employee/documents/requirements')) {
-      return 'document-requirements';
-    }
-    if (pathname.includes('/employee/documents/submission')) {
-      return 'submission-bin';
-    }
-    if (pathname.includes('/employee/profile')) {
-      return 'profile';
-    }
-    return 'dashboard';
+  const cancelEditing = () => {
+    setPersonalDraft(getPersonalDraft(profile));
+    setContactDraft(getContactDraft(profile));
+    setEmergencyDraft(getEmergencyDraft(profile));
+    setGovernmentDraft(getGovernmentDraft(profile));
+    setEditingSection(null);
   };
 
-  const activeTab = getActiveTab(location.pathname);
-
-  const StatusBadge = ({ status }: { status: DocumentStatus }) => {
-    const badgeStyles: Record<DocumentStatus, string> = {
-      verified: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-      pending: 'bg-amber-50 text-amber-700 border-amber-200',
-      missing: 'bg-rose-50 text-rose-700 border-rose-200',
-    };
-
-    const statusIcon =
-      status === 'verified' ? (
-        <Check size={14} />
-      ) : status === 'pending' ? (
-        <Clock size={14} />
-      ) : (
-        <AlertCircle size={14} />
-      );
-
-    const label = status.charAt(0).toUpperCase() + status.slice(1);
-
-    return (
-      <span
-        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${badgeStyles[status]}`}
-      >
-        {statusIcon}
-        {label}
-      </span>
-    );
+  const savePersonalInfo = () => {
+    const dob = personalDraft.dateOfBirth.trim();
+    const computedAge = (() => {
+      if (!dob) return undefined;
+      const birth = new Date(dob);
+      if (Number.isNaN(birth.getTime())) return undefined;
+      const today = new Date();
+      let years = today.getFullYear() - birth.getFullYear();
+      const hasBirthdayPassed =
+        today.getMonth() > birth.getMonth() ||
+        (today.getMonth() === birth.getMonth() && today.getDate() >= birth.getDate());
+      if (!hasBirthdayPassed) years -= 1;
+      return years;
+    })();
+    persistProfilePatch({
+      fullName: personalDraft.fullName.trim(),
+      dateOfBirth: dob,
+      placeOfBirth: personalDraft.placeOfBirth.trim(),
+      ...(personalDraft.gender ? { gender: personalDraft.gender as Employee['gender'] } : {}),
+      homeAddress: personalDraft.homeAddress.trim(),
+      ...(computedAge != null ? { age: computedAge } : {}),
+    });
+    setEditingSection(null);
   };
 
-  // Format date to readable format
-  const formatDate = (dateString: string | undefined): string => {
-    if (!dateString) return 'Not provided';
-    try {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      });
-    } catch {
-      return dateString;
-    }
+  const saveContactInfo = () => {
+    persistProfilePatch({
+      email: contactDraft.email.trim(),
+      mobileNumber: contactDraft.mobileNumber.trim(),
+      homeAddress: contactDraft.homeAddress.trim(),
+    });
+    setEditingSection(null);
   };
 
-  // Data Grid Item Component
-  const DataGridItem = ({
-    label,
-    value,
-    icon: Icon,
-  }: {
-    label: string;
-    value: string | number;
-    icon?: React.ReactNode;
-  }) => (
-    <div className="flex flex-col space-y-1 pb-3 border-b border-gray-100 last:border-0">
-      <div className="flex items-center gap-2">
-        {Icon && <span className="text-blue-600">{Icon}</span>}
-        <p className="text-sm font-medium text-gray-600">{label}</p>
-      </div>
-      <p className="text-base font-semibold text-gray-900 pl-6">{value || '—'}</p>
-    </div>
-  );
+  const saveEmergencyInfo = () => {
+    persistProfilePatch({
+      emergencyContactName: emergencyDraft.emergencyContactName.trim(),
+      emergencyRelationship: emergencyDraft.emergencyRelationship.trim(),
+      emergencyContactNumber: emergencyDraft.emergencyContactNumber.trim(),
+    });
+    setEditingSection(null);
+  };
 
-  // Profile Header Card
-  const ProfileHeader = () => (
-    <div className="mb-6 bg-gradient-to-r from-blue-600 to-blue-800 rounded-2xl p-6 text-white shadow-lg">
-      <div className="flex items-center gap-4">
-        <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-md">
-          <User size={40} className="text-blue-600" />
-        </div>
-        <div className="flex-1">
-          <h1 className="text-3xl font-bold">{currentUser.fullName}</h1>
-          <p className="text-blue-100 text-sm mt-1">
-            Employee ID: <span className="font-semibold">{currentUser.employeeId}</span>
-          </p>
-          <p className="text-blue-100 text-sm">{currentUser.email}</p>
-        </div>
+  const saveGovernmentInfo = () => {
+    persistProfilePatch({
+      sssNumber: governmentDraft.sssNumber.trim(),
+      philhealthNumber: governmentDraft.philhealthNumber.trim(),
+      pagibigNumber: governmentDraft.pagibigNumber.trim(),
+      tinNumber: governmentDraft.tinNumber.trim(),
+    });
+    setEditingSection(null);
+  };
+
+  const FieldRow: React.FC<{ label: string; value?: string }> = ({ label, value }) => (
+    <div className="grid grid-cols-1 gap-1 py-2 md:grid-cols-[210px_1fr] md:gap-3">
+      <div className="text-sm font-semibold text-slate-600">{label}:</div>
+      <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+        {value?.trim() || 'Not provided'}
       </div>
     </div>
-  );
-
-  // Sidebar Navigation
-  const Sidebar = () => (
-    <aside
-      className={`${
-        sidebarOpen ? 'w-56' : 'w-20'
-      } bg-slate-900 text-white transition-all duration-300 flex flex-col h-screen fixed left-0 top-0 z-40 shadow-xl border-r border-slate-800`}
-    >
-      {/* Sidebar Header */}
-      <div className="p-4 flex items-center justify-between border-b border-slate-700">
-        {sidebarOpen && <span className="font-bold text-lg">Menu</span>}
-        <button
-          onClick={() => setOpenSidebar(!sidebarOpen)}
-          className="p-2 hover:bg-slate-800 rounded-lg transition-colors"
-          title={sidebarOpen ? 'Collapse' : 'Expand'}
-        >
-          {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
-        </button>
-      </div>
-
-      {/* Navigation Items */}
-      <nav className="flex-1 p-4 space-y-2">
-        <NavLink
-          icon={<Home size={20} />}
-          label="Dashboard"
-          active={activeTab === 'dashboard'}
-          onClick={() => navigate('/employee/dashboard')}
-          sidebarOpen={sidebarOpen}
-        />
-        <NavLink
-          icon={<User size={20} />}
-          label="My Profile"
-          active={activeTab === 'profile'}
-          onClick={() => navigate('/employee/profile')}
-          sidebarOpen={sidebarOpen}
-        />
-        <NavLink
-          icon={<FileText size={20} />}
-          label="Document Requirements"
-          active={activeTab === 'document-requirements'}
-          onClick={() => navigate('/employee/documents/requirements')}
-          sidebarOpen={sidebarOpen}
-        />
-        <NavLink
-          icon={<Upload size={20} />}
-          label="Submission Bin"
-          active={activeTab === 'submission-bin'}
-          onClick={() => navigate('/employee/documents/submission')}
-          sidebarOpen={sidebarOpen}
-        >
-          {pendingCount > 0 && (
-            <span className="bg-red-500 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full">
-              {pendingCount}
-            </span>
-          )}
-        </NavLink>
-      </nav>
-
-      {/* Logout Button */}
-      <div className="p-4 border-t border-slate-700">
-        <Button
-          variant="ghost"
-          className={`w-full justify-start gap-3 text-red-400 hover:text-red-300 hover:bg-red-900/20 ${
-            !sidebarOpen && 'px-2'
-          }`}
-          onClick={onLogout}
-          title="Logout"
-        >
-          <LogOut size={20} />
-          {sidebarOpen && <span>Logout</span>}
-        </Button>
-      </div>
-    </aside>
-  );
-
-  // Navigation Link Item
-  const NavLink = ({
-    icon,
-    label,
-    active,
-    onClick,
-    sidebarOpen,
-    children,
-  }: {
-    icon: React.ReactNode;
-    label: string;
-    active: boolean;
-    onClick: () => void;
-    sidebarOpen: boolean;
-    children?: React.ReactNode;
-  }) => (
-    <button
-      onClick={onClick}
-      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-        active
-          ? 'bg-blue-600 text-white'
-          : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-      }`}
-      title={!sidebarOpen ? label : undefined}
-    >
-      {icon}
-      {sidebarOpen && <span className="font-medium">{label}</span>}
-      {children && sidebarOpen && <span className="ml-auto">{children}</span>}
-    </button>
   );
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Sidebar */}
-      <Sidebar />
-
-      {/* Main Content */}
-      <div className={`${sidebarOpen ? 'ml-56' : 'ml-20'} transition-all duration-300`}>
-        {/* Top Header Bar */}
-        <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-30">
-          <div className="px-8 py-4 flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-gray-900">
-              {activeTab === 'dashboard'
-                ? 'Dashboard'
-                : activeTab === 'profile'
-                  ? 'My Profile'
-                  : activeTab === 'document-requirements'
-                    ? 'Document Requirements'
-                    : 'Submission Bin'}
-            </h2>
-            <div className="flex items-center gap-4">
-              <img src={hrisLogo} alt="Logo" className="h-10 w-10 rounded" />
-              <div className="text-right">
-                <p className="text-sm font-semibold text-gray-900">
-                  {currentUser.fullName}
-                </p>
-                <p className="text-xs text-gray-600">{currentUser.email}</p>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2"
-                onClick={onLogout}
-              >
-                <LogOut size={16} />
-                Logout
-              </Button>
+    <div className="min-h-screen bg-slate-100">
+      <header className="border-b border-slate-200 bg-white">
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600 text-white">
+              <Home className="h-5 w-5" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold text-slate-900">Employee Self-Service Portal</h1>
+              <p className="text-sm text-slate-500">Human Resources Information System</p>
             </div>
           </div>
-        </header>
 
-        {/* Page Content */}
-        <main className="p-8">
-          {activeTab === 'dashboard' ? (
-            <div className="space-y-6">
-              <ProfileHeader />
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <Card title="Quick Summary">
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-3">
-                      <User size={18} className="text-blue-600" />
-                      <div>
-                        <p className="text-sm text-gray-600">Profile Status</p>
-                        <p className="text-base font-semibold text-gray-900">
-                          Active Employee
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <Mail size={18} className="text-blue-600" />
-                      <div>
-                        <p className="text-sm text-gray-600">Email</p>
-                        <p className="text-base font-semibold text-gray-900">
-                          {currentUser.email}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <FileText size={18} className="text-blue-600" />
-                      <div>
-                        <p className="text-sm text-gray-600">Documents Submitted</p>
-                        <p className="text-base font-semibold text-gray-900">
-                          {uploadedFiles.length} / {requiredDocuments.length}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-
-                <Card title="Security Notice">
-                  <div className="flex items-start gap-3">
-                    <Lock size={18} className="text-blue-600" />
-                    <div className="space-y-2">
-                      <p className="text-sm text-gray-700">
-                        Your records are protected with encryption at rest and
-                        role-based access controls.
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        Please keep your credentials confidential.
-                      </p>
-                    </div>
-                  </div>
-                </Card>
-
-                <Card title="Next Steps">
-                  <div className="space-y-2 text-sm text-gray-600">
-                    <p>1. Review your profile details.</p>
-                    <p>2. Submit required documents.</p>
-                    <p>3. Wait for HRMO verification.</p>
-                  </div>
-                </Card>
-              </div>
+          <div className="flex items-center gap-3">
+            <div className="hidden text-right sm:block">
+              <p className="text-sm font-semibold text-slate-700">Welcome, {currentUser.fullName}</p>
+              <p className="text-xs text-slate-500">Employee ID: {currentUser.employeeId}</p>
             </div>
-          ) : activeTab === 'profile' ? (
-            <div className="space-y-6">
-              {/* Profile Header */}
-              <ProfileHeader />
+            <button
+              onClick={onLogout}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              <LogOut className="h-4 w-4" />
+              Logout
+            </button>
+          </div>
+        </div>
+      </header>
 
-              {/* Grid Layout for Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {/* Personal Information Card */}
-                <Card title="Personal Information" className="lg:col-span-1">
-                  <div className="space-y-3">
-                    <DataGridItem
-                      label="Date of Birth"
-                      value={formatDate(currentUser.dateOfBirth)}
-                      icon={<Calendar size={16} />}
-                    />
-                    <DataGridItem
-                      label="Age"
-                      value={currentUser.age}
-                      icon={<User size={16} />}
-                    />
-                    <DataGridItem
-                      label="Gender"
-                      value={currentUser.gender}
-                      icon={<User size={16} />}
-                    />
-                    <DataGridItem
-                      label="Civil Status"
-                      value={currentUser.civilStatus}
-                      icon={<Heart size={16} />}
-                    />
-                    <DataGridItem
-                      label="Nationality"
-                      value={currentUser.nationality}
-                      icon={<User size={16} />}
-                    />
-                  </div>
-                </Card>
+      <div className="border-b border-slate-200 bg-white">
+        <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
+          <div className="flex flex-wrap gap-2 py-3">
+            {tabs.map((tab) => {
+              const isActive = tab.id === activeTab;
+              const Icon = tab.icon;
 
-                {/* Contact & Address Card */}
-                <Card title="Contact & Address" className="lg:col-span-1">
-                  <div className="space-y-3">
-                    <DataGridItem
-                      label="Mobile Number"
-                      value={currentUser.mobileNumber}
-                      icon={<Phone size={16} />}
-                    />
-                    <DataGridItem
-                      label="Email"
-                      value={currentUser.email}
-                      icon={<Mail size={16} />}
-                    />
-                    <DataGridItem
-                      label="Home Address"
-                      value={currentUser.homeAddress}
-                      icon={<Home size={16} />}
-                    />
-                  </div>
-                </Card>
-
-                {/* Emergency Contact Card */}
-                <Card title="Emergency Contact" className="lg:col-span-1">
-                  <div className="space-y-3">
-                    <DataGridItem
-                      label="Contact Name"
-                      value={currentUser.emergencyContactName}
-                      icon={<User size={16} />}
-                    />
-                    <DataGridItem
-                      label="Relationship"
-                      value={currentUser.emergencyRelationship}
-                      icon={<Heart size={16} />}
-                    />
-                    <DataGridItem
-                      label="Contact Number"
-                      value={currentUser.emergencyContactNumber}
-                      icon={<Phone size={16} />}
-                    />
-                  </div>
-                </Card>
-
-                {/* Government Identifiers Card - Spans full width on mobile/tablet */}
-                <Card
-                  title="Government Identifiers"
-                  className="md:col-span-2 lg:col-span-3"
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => handleTabSelect(tab)}
+                  className={[
+                    'inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition',
+                    isActive
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50',
+                  ].join(' ')}
                 >
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                    <div className="flex flex-col space-y-2">
-                      <div className="flex items-center gap-2">
-                        <IdCard size={16} className="text-blue-600" />
-                        <p className="text-xs font-medium text-gray-600">
-                          SSS Number
-                        </p>
-                      </div>
-                      <p className="text-sm font-mono font-bold text-gray-900">
-                        {currentUser.sssNumber || '—'}
-                      </p>
-                    </div>
-
-                    <div className="flex flex-col space-y-2">
-                      <div className="flex items-center gap-2">
-                        <IdCard size={16} className="text-blue-600" />
-                        <p className="text-xs font-medium text-gray-600">
-                          PhilHealth No.
-                        </p>
-                      </div>
-                      <p className="text-sm font-mono font-bold text-gray-900">
-                        {currentUser.philhealthNumber || '—'}
-                      </p>
-                    </div>
-
-                    <div className="flex flex-col space-y-2">
-                      <div className="flex items-center gap-2">
-                        <IdCard size={16} className="text-blue-600" />
-                        <p className="text-xs font-medium text-gray-600">
-                          PAG-IBIG No.
-                        </p>
-                      </div>
-                      <p className="text-sm font-mono font-bold text-gray-900">
-                        {currentUser.pagibigNumber || '—'}
-                      </p>
-                    </div>
-
-                    <div className="flex flex-col space-y-2">
-                      <div className="flex items-center gap-2">
-                        <IdCard size={16} className="text-blue-600" />
-                        <p className="text-xs font-medium text-gray-600">
-                          TIN Number
-                        </p>
-                      </div>
-                      <p className="text-sm font-mono font-bold text-gray-900">
-                        {currentUser.tinNumber || '—'}
-                      </p>
-                    </div>
-                  </div>
-                </Card>
-              </div>
-            </div>
-          ) : activeTab === 'document-requirements' ? (
-            <div className="space-y-6">
-              <Card title="Document Requirements">
-                <div className="space-y-4">
-                  {requiredDocuments.map((doc) => {
-                    const status = getDocumentStatus(doc);
-                    return (
-                      <div
-                        key={doc.id}
-                        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-3 border border-gray-100 rounded-lg"
-                      >
-                        <div>
-                          <p className="text-sm font-semibold text-gray-900">
-                            {doc.name}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            Accepted formats: PDF, JPG
-                          </p>
-                        </div>
-                        <StatusBadge status={status} />
-                      </div>
-                    );
-                  })}
-
-                  <div className="flex items-center justify-between pt-2">
-                    <p className="text-xs text-gray-500">
-                      All documents are stored with encryption at rest.
-                    </p>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      className="gap-2"
-                      onClick={handleSubmitForReview}
-                      disabled={isSubmitting}
+                  <Icon className="h-4 w-4" />
+                  {tab.label}
+                  {tab.count ? (
+                    <span
+                      className={[
+                        'rounded-full px-2 py-0.5 text-xs font-bold',
+                        isActive ? 'bg-white text-blue-700' : 'bg-rose-100 text-rose-700',
+                      ].join(' ')}
                     >
-                      {isSubmitting ? 'Submitted' : 'Submit for Review'}
-                    </Button>
-                  </div>
-                </div>
-              </Card>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {showSuccessToast && (
-                <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-lg flex items-center gap-2">
-                  <Check size={16} />
-                  File uploaded successfully. Your document is now pending review.
-                </div>
-              )}
-
-              <Card title="Submission Bin">
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700">
-                      Select requirement
-                    </label>
-                    <select
-                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                      value={selectedRequirement}
-                      onChange={(event) => setSelectedRequirement(event.target.value)}
-                    >
-                      {requiredDocuments.map((doc) => (
-                        <option key={doc.id} value={doc.id}>
-                          {doc.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <label
-                    htmlFor="document-upload"
-                    className="flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-blue-200 bg-blue-50/40 px-4 py-8 text-center cursor-pointer"
-                  >
-                    <Upload size={24} className="text-blue-500" />
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">
-                        Drag & drop or click to upload
-                      </p>
-                      <p className="text-xs text-gray-500">PDF or JPG only</p>
-                    </div>
-                    <input
-                      id="document-upload"
-                      type="file"
-                      className="hidden"
-                      accept=".pdf,.jpg,.jpeg"
-                      onChange={(event) =>
-                        handleFileUpload(event.target.files?.[0] ?? null)
-                      }
-                    />
-                  </label>
-
-                  {uploadError && (
-                    <div className="text-xs text-rose-600 flex items-center gap-2">
-                      <AlertCircle size={14} />
-                      {uploadError}
-                    </div>
-                  )}
-
-                  <div className="rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-500">
-                    <p className="font-semibold text-gray-700 mb-1">Security</p>
-                    <p>Files are scanned and encrypted at rest for your safety.</p>
-                  </div>
-                </div>
-              </Card>
-            </div>
-          )}
-        </main>
+                      {tab.count}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
+
+      <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
+        {activeTab === 'personal' && (
+          <div className="space-y-5">
+            <section className="rounded-xl border border-slate-200 bg-white p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Personal Information</h2>
+                  <p className="text-sm text-slate-500">Update your basic personal details.</p>
+                </div>
+                {editingSection === 'personal' ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={cancelEditing}
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={savePersonalInfo}
+                      className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700"
+                    >
+                      <Save className="h-3.5 w-3.5" />
+                      Save
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => startEditing('personal')}
+                    className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-200"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </button>
+                )}
+              </div>
+              {editingSection === 'personal' ? (
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <EditableInput
+                    label="Full Name"
+                    value={personalDraft.fullName}
+                    onChange={(value) => setPersonalDraft((prev) => ({ ...prev, fullName: value }))}
+                  />
+                  <EditableInput label="Employee ID" value={profile.employeeId} onChange={() => undefined} disabled />
+                  <EditableInput
+                    label="Date of Birth"
+                    type="date"
+                    value={personalDraft.dateOfBirth}
+                    onChange={(value) => setPersonalDraft((prev) => ({ ...prev, dateOfBirth: value }))}
+                  />
+                  <EditableInput
+                    label="Place of Birth"
+                    value={personalDraft.placeOfBirth}
+                    onChange={(value) => setPersonalDraft((prev) => ({ ...prev, placeOfBirth: value }))}
+                  />
+                  <EditableSelect
+                    label="Gender"
+                    value={personalDraft.gender}
+                    onChange={(value) => setPersonalDraft((prev) => ({ ...prev, gender: value }))}
+                    options={[
+                      { label: 'Male', value: 'Male' },
+                      { label: 'Female', value: 'Female' },
+                    ]}
+                  />
+                  <EditableInput label="Position" value="Employee" onChange={() => undefined} disabled />
+                  <div className="md:col-span-2">
+                    <EditableInput
+                      label="Address"
+                      value={personalDraft.homeAddress}
+                      onChange={(value) => setPersonalDraft((prev) => ({ ...prev, homeAddress: value }))}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <FieldRow label="Full Name" value={profile.fullName} />
+                  <FieldRow label="Employee ID" value={profile.employeeId} />
+                  <FieldRow label="Date of Birth" value={profile.dateOfBirth} />
+                  <FieldRow label="Place of Birth" value={profile.placeOfBirth || '--'} />
+                  <FieldRow label="Gender" value={profile.gender || '--'} />
+                  <FieldRow label="Address" value={profile.homeAddress} />
+                  <FieldRow label="Position" value="Employee" />
+                </>
+              )}
+            </section>
+
+            <section className="rounded-xl border border-slate-200 bg-white p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Contact Information</h2>
+                  <p className="text-sm text-slate-500">You can edit and save your latest contact details.</p>
+                </div>
+                {editingSection === 'contact' ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={cancelEditing}
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveContactInfo}
+                      className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700"
+                    >
+                      <Save className="h-3.5 w-3.5" />
+                      Save
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => startEditing('contact')}
+                    className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-200"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </button>
+                )}
+              </div>
+              {editingSection === 'contact' ? (
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <EditableInput
+                    label="Mobile Number"
+                    value={contactDraft.mobileNumber}
+                    onChange={(value) => setContactDraft((prev) => ({ ...prev, mobileNumber: value }))}
+                  />
+                  <EditableInput
+                    label="Email Address"
+                    value={contactDraft.email}
+                    type="email"
+                    onChange={(value) => setContactDraft((prev) => ({ ...prev, email: value }))}
+                  />
+                  <div className="md:col-span-2">
+                    <EditableInput
+                      label="Home Address"
+                      value={contactDraft.homeAddress}
+                      onChange={(value) => setContactDraft((prev) => ({ ...prev, homeAddress: value }))}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <FieldRow label="Email Address" value={profile.email} />
+                  <FieldRow label="Phone Number" value={profile.mobileNumber} />
+                  <FieldRow label="Home Address" value={profile.homeAddress} />
+                </>
+              )}
+            </section>
+
+            <section className="rounded-xl border border-slate-200 bg-white p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Emergency Contact</h2>
+                  <p className="text-sm text-slate-500">Update your emergency contact person and details.</p>
+                </div>
+                {editingSection === 'emergency' ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={cancelEditing}
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveEmergencyInfo}
+                      className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700"
+                    >
+                      <Save className="h-3.5 w-3.5" />
+                      Save
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => startEditing('emergency')}
+                    className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-200"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </button>
+                )}
+              </div>
+              {editingSection === 'emergency' ? (
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <EditableInput
+                    label="Contact Person Name"
+                    value={emergencyDraft.emergencyContactName}
+                    onChange={(value) => setEmergencyDraft((prev) => ({ ...prev, emergencyContactName: value }))}
+                  />
+                  <EditableInput
+                    label="Relationship"
+                    value={emergencyDraft.emergencyRelationship}
+                    onChange={(value) => setEmergencyDraft((prev) => ({ ...prev, emergencyRelationship: value }))}
+                  />
+                  <EditableInput
+                    label="Contact Number"
+                    value={emergencyDraft.emergencyContactNumber}
+                    onChange={(value) => setEmergencyDraft((prev) => ({ ...prev, emergencyContactNumber: value }))}
+                  />
+                </div>
+              ) : (
+                <>
+                  <FieldRow label="Contact Name" value={profile.emergencyContactName} />
+                  <FieldRow label="Relationship" value={profile.emergencyRelationship} />
+                  <FieldRow label="Phone Number" value={profile.emergencyContactNumber} />
+                </>
+              )}
+            </section>
+
+            <section className="rounded-xl border border-slate-200 bg-white p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Government Identification</h2>
+                  <p className="text-sm text-slate-500">Update your government membership and tax identifiers.</p>
+                </div>
+                {editingSection === 'government' ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={cancelEditing}
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveGovernmentInfo}
+                      className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700"
+                    >
+                      <Save className="h-3.5 w-3.5" />
+                      Save
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => startEditing('government')}
+                    className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-200"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </button>
+                )}
+              </div>
+              {editingSection === 'government' ? (
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <EditableInput
+                    label="SSS Number"
+                    value={governmentDraft.sssNumber}
+                    onChange={(value) => setGovernmentDraft((prev) => ({ ...prev, sssNumber: value }))}
+                  />
+                  <EditableInput
+                    label="PhilHealth Number"
+                    value={governmentDraft.philhealthNumber}
+                    onChange={(value) => setGovernmentDraft((prev) => ({ ...prev, philhealthNumber: value }))}
+                  />
+                  <EditableInput
+                    label="Pag-IBIG Number"
+                    value={governmentDraft.pagibigNumber}
+                    onChange={(value) => setGovernmentDraft((prev) => ({ ...prev, pagibigNumber: value }))}
+                  />
+                  <EditableInput
+                    label="TIN Number"
+                    value={governmentDraft.tinNumber}
+                    onChange={(value) => setGovernmentDraft((prev) => ({ ...prev, tinNumber: value }))}
+                  />
+                </div>
+              ) : (
+                <>
+                  <FieldRow label="SSS Number" value={profile.sssNumber} />
+                  <FieldRow label="PhilHealth Number" value={profile.philhealthNumber} />
+                  <FieldRow label="Pag-IBIG Number" value={profile.pagibigNumber} />
+                  <FieldRow label="TIN Number" value={profile.tinNumber} />
+                </>
+              )}
+            </section>
+          </div>
+        )}
+
+        {activeTab === 'documents' && (
+          <div className="space-y-4">
+            <section className="rounded-xl border border-slate-200 bg-white p-5">
+              <div className="mb-5 flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Document Requirements</h2>
+                  <p className="text-sm text-slate-500">Submit all required documents for profile completion.</p>
+                </div>
+                <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700">
+                  {requirementItems.length} total
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                {requirementItems.map((item) => (
+                  <article
+                    key={item.id}
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-4"
+                  >
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <h3 className="font-semibold text-slate-900">{item.title}</h3>
+                        <p className="text-sm text-slate-500">{item.description}</p>
+                      </div>
+
+                      {item.status === 'locked' && (
+                        <button
+                          className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600"
+                          disabled
+                        >
+                          <Lock className="h-4 w-4" />
+                          Locked
+                        </button>
+                      )}
+
+                      {item.status === 'uploaded' && (
+                        <button className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">
+                          <Eye className="h-4 w-4" />
+                          Preview
+                        </button>
+                      )}
+
+                      {item.status === 'required' && (
+                        <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row">
+                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
+                            <input
+                              type="file"
+                              className="hidden"
+                              onChange={(e) => {
+                                const fileName = e.target.files?.[0]?.name || '';
+                                handleFileSelect(item.id, fileName);
+                              }}
+                            />
+                            <FileText className="h-4 w-4" />
+                            {selectedFile[item.id] ? 'Change File' : 'Select File'}
+                          </label>
+
+                          <button
+                            onClick={() => handleUpload(item.id)}
+                            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                          >
+                            <Upload className="h-4 w-4" />
+                            Upload
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {selectedFile[item.id] && (
+                      <p className="mt-3 text-xs text-slate-500">Selected file: {selectedFile[item.id]}</p>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </section>
+          </div>
+        )}
+
+        {activeTab === 'submission' && (
+          <div className="space-y-5">
+            <section className="rounded-xl border border-slate-200 bg-white p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-bold text-slate-900">Pending Submissions</h2>
+                <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                  {pendingItems.length}
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                {pendingItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-start justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3"
+                  >
+                    <div>
+                      <p className="font-semibold text-amber-900">{item.title}</p>
+                      <p className="text-sm text-amber-800">{item.note}</p>
+                    </div>
+                    <Clock className="h-4 w-4 text-amber-700" />
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-slate-200 bg-white p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-bold text-slate-900">Submitted Documents</h2>
+                <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                  {submittedItems.length}
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                {submittedItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3"
+                  >
+                    <div>
+                      <p className="font-semibold text-emerald-900">{item.title}</p>
+                      <p className="text-sm text-emerald-800">{item.note}</p>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-emerald-700" />
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <p className="text-sm text-slate-500">
+              For concerns about your pending documents, contact the HR office for verification updates.
+            </p>
+          </div>
+        )}
+      </main>
     </div>
   );
 };
+
+export default EmployeePage;

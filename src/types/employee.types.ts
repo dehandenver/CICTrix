@@ -10,6 +10,7 @@ export interface Employee {
 
   // Personal Information
   dateOfBirth: string; // ISO date: YYYY-MM-DD
+  placeOfBirth?: string;
   age: number;
   gender: 'Male' | 'Female' | 'Other' | 'Prefer not to say';
   civilStatus: 'Single' | 'Married' | 'Widowed' | 'Divorced' | 'Separated';

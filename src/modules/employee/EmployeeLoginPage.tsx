@@ -1,12 +1,6 @@
-/**
- * Employee Login Page Component
- * Provides authentication interface for employees to access self-service portal
- */
-
-import { Lock, LogIn, User } from 'lucide-react';
+import { Lock, User } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import '../../styles/interviewer.css';
 
 interface EmployeeLoginPageProps {
   onLogin: (username: string, password: string) => void;
@@ -72,107 +66,74 @@ export const EmployeeLoginPage: React.FC<EmployeeLoginPageProps> = ({
   };
 
   return (
-    <div className="interviewer-login-page">
-      <div className="login-container">
-        <div className="login-illustration">
-          <div className="illustration-bg">
-            <span className="floating-orb orb-1"></span>
-            <span className="floating-orb orb-2"></span>
-            <span className="floating-orb orb-3"></span>
+    <div className="min-h-screen bg-slate-200 px-4 py-10">
+      <div className="mx-auto w-full max-w-md rounded-2xl border border-slate-200 bg-white px-8 py-9 shadow-xl">
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-indigo-600 text-white">
+            <Lock size={28} />
           </div>
-          <div className="illustration-content">
-            <div className="logo-badge">
-              <User size={48} />
-            </div>
-            <h2>Employee Portal</h2>
-            <p className="subtitle">CICTrix HRIS - Self-Service Portal</p>
-            <ul className="feature-list">
-              <li className="feature-item">View Your Profile</li>
-              <li className="feature-item">Access Documents</li>
-              <li className="feature-item">Manage Information</li>
-            </ul>
-          </div>
+          <h1 className="text-4xl font-bold text-slate-900">Employee Portal</h1>
+          <p className="mt-1 text-lg text-slate-500">Human Resources Information System</p>
         </div>
 
-        <div className="login-form-panel">
-          <div className="login-header">
-            <h1>Welcome Back</h1>
-            <p>Sign in to access your employee self-service dashboard</p>
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {error && (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              {error}
+            </div>
+          )}
+
+          <div>
+            <label htmlFor="username" className="mb-2 block text-sm font-semibold text-slate-700">Username</label>
+            <div className="relative">
+              <User size={18} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                id="username"
+                type="text"
+                placeholder="Enter your username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                disabled={loading || isLoading}
+                className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-10 pr-3 text-base text-slate-700 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="login-form">
-            {error && (
-              <div className="error-banner">
-                <span>⚠️</span>
-                <span>{error}</span>
-              </div>
-            )}
-
-            <div className="form-field">
-              <label htmlFor="username">Employee ID or Username</label>
-              <div className="input-wrapper">
-                <User size={20} className="input-icon" />
-                <input
-                  id="username"
-                  type="text"
-                  placeholder="e.g., employee01 or your email"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  disabled={loading || isLoading}
-                />
-              </div>
+          <div>
+            <label htmlFor="password" className="mb-2 block text-sm font-semibold text-slate-700">Password</label>
+            <div className="relative">
+              <Lock size={18} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                id="password"
+                type="password"
+                placeholder="Enter your password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={loading || isLoading}
+                autoComplete="current-password"
+                className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-10 pr-3 text-base text-slate-700 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none"
+              />
             </div>
+          </div>
 
-            <div className="form-field">
-              <label htmlFor="password">Password</label>
-              <div className="input-wrapper">
-                <Lock size={20} className="input-icon" />
-                <input
-                  id="password"
-                  type="password"
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={loading || isLoading}
-                  autoComplete="current-password"
-                />
-              </div>
-            </div>
+          <button
+            type="submit"
+            disabled={loading || isLoading}
+            className="w-full rounded-xl bg-indigo-600 px-4 py-3 text-lg font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {loading || isLoading ? 'Signing in...' : 'Sign In'}
+          </button>
+        </form>
 
-            <div className="form-options">
-              <label className="checkbox-label">
-                <input type="checkbox" />
-                <span>Remember me</span>
-              </label>
-              <a href="#" className="forgot-link" onClick={(e) => e.preventDefault()}>Forgot password?</a>
-            </div>
-
-            <button type="submit" className="login-button" disabled={loading || isLoading}>
-              {loading || isLoading ? (
-                <>
-                  <div className="spinner-small"></div>
-                  <span>Signing in...</span>
-                </>
-              ) : (
-                <>
-                  <LogIn size={20} />
-                  <span>Sign In</span>
-                </>
-              )}
-            </button>
-
-            <div className="login-footer">
-              <p>
-                Need help? Contact <a href="mailto:hrmo@ilongcity.gov.ph">HRMO</a> at ext. 5000
-              </p>
-              <div className="demo-credentials">
-                <p className="demo-title">Demo Credentials:</p>
-                <code>employee01 / hr2024</code>
-              </div>
-            </div>
-          </form>
-        </div>
+        <p className="mt-8 text-center text-sm text-slate-500">
+          Login credentials are provided by HR upon hiring.
+        </p>
+        <p className="mt-2 text-center text-xs text-slate-400">
+          Demo: username: <span className="font-semibold">employee01</span> | password: <span className="font-semibold">hr2024</span>
+        </p>
       </div>
+
+      <p className="mt-10 text-center text-sm text-slate-500">© 2026 CICTrix Resorts. All rights reserved.</p>
     </div>
   );
 };

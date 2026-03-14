@@ -10,6 +10,10 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import {
+    getEmployeePortalAccounts,
+    upsertEmployeePortalAccount,
+} from '../lib/employeePortalData';
+import {
     ensureRecruitmentSeedData,
     generateEmployeeId,
     getEmployeeRecords,
@@ -37,7 +41,25 @@ const normalizeText = (value: string) => String(value ?? '').trim().toLowerCase(
 const createUsername = (firstName: string, lastName: string) => {
   const first = normalizeText(firstName).replace(/\s+/g, '.');
   const last = normalizeText(lastName).replace(/\s+/g, '.');
-  return `${first}.${last}2026`;
+  return `${first}.${last}`;
+};
+
+const createUniqueUsername = (
+  firstName: string,
+  lastName: string,
+  occupiedUsernames: Set<string>
+) => {
+  const base = createUsername(firstName, lastName);
+  let candidate = `${base}2026`;
+  let counter = 1;
+
+  while (occupiedUsernames.has(candidate)) {
+    counter += 1;
+    candidate = `${base}${2026 + counter - 1}`;
+  }
+
+  occupiedUsernames.add(candidate);
+  return candidate;
 };
 
 const createPassword = () => {
@@ -105,6 +127,11 @@ export const NewlyHiredPage = () => {
     if (selectedIds.length === 0) return;
 
     const employeeRecords = getEmployeeRecords();
+    const existingAccounts = getEmployeePortalAccounts();
+    const accountByEmployeeId = new Map(
+      existingAccounts.map((account) => [String(account.employee.employeeId || '').trim(), account])
+    );
+    const occupiedUsernames = new Set(existingAccounts.map((account) => normalizeText(account.username)));
     let sequence = employeeRecords.length + 1;
     const nowIso = new Date().toISOString();
 
@@ -113,7 +140,10 @@ export const NewlyHiredPage = () => {
 
       const existingEmployeeNumber = row.employeeId;
       const employeeNumber = existingEmployeeNumber || generateEmployeeId(sequence++);
-      const username = createUsername(row.employeeInfo.firstName, row.employeeInfo.lastName);
+      const existingAccount = accountByEmployeeId.get(employeeNumber);
+      const username = existingAccount
+        ? existingAccount.username
+        : createUniqueUsername(row.employeeInfo.firstName, row.employeeInfo.lastName, occupiedUsernames);
       const password = createPassword();
 
       const alreadyTracked = employeeRecords.some((record) => record.employeeId === employeeNumber);
@@ -132,6 +162,34 @@ export const NewlyHiredPage = () => {
       const resolvedRank = Math.max(1, Number(row.rankingRank ?? sequence - 1));
       const resolvedScore = Number(row.rankingScore ?? 0);
       const rankLine = `Rank: #${resolvedRank} • Score: ${resolvedScore.toFixed(2)}`;
+
+      upsertEmployeePortalAccount({
+        id: `employee-account-${employeeNumber}`,
+        username,
+        password,
+        employee: {
+          employeeId: employeeNumber,
+          fullName: `${row.employeeInfo.firstName} ${row.employeeInfo.lastName}`,
+          email: row.employeeInfo.email || `${username}@employee.local`,
+          dateOfBirth: '',
+          age: 0,
+          gender: 'Prefer not to say',
+          civilStatus: 'Single',
+          nationality: 'Filipino',
+          mobileNumber: row.employeeInfo.phone || '',
+          homeAddress: '',
+          emergencyContactName: row.employeeInfo.emergencyContact?.name || '',
+          emergencyRelationship: row.employeeInfo.emergencyContact?.relationship || '',
+          emergencyContactNumber: row.employeeInfo.emergencyContact?.phone || '',
+          sssNumber: row.employeeInfo.governmentIds?.sss || '',
+          philhealthNumber: row.employeeInfo.governmentIds?.philhealth || '',
+          pagibigNumber: row.employeeInfo.governmentIds?.pagibig || '',
+          tinNumber: row.employeeInfo.governmentIds?.tin || '',
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        },
+      });
+
       setGeneratedCredentials((current) => [
         ...current,
         {
