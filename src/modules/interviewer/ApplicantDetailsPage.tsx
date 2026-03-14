@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   CircleX,
     Download,
-    Eye,
     FileText,
     Mail,
     MessageSquare,
@@ -530,7 +529,6 @@ export function ApplicantDetailsPage() {
   const badge = statusBadge(resolvedStatus);
   const score = useMemo(() => computeScoreBreakdown(evaluation), [evaluation]);
   const backTo = routeState?.from || '/admin/rsp/qualified';
-  const isFromJobPosts = backTo.startsWith('/admin/rsp/jobs');
   const primaryEducation = recruitmentApplicant?.education?.[0] ?? null;
   const primaryExperience = recruitmentApplicant?.experience?.[0] ?? null;
   const selectedEducationOption = EDUCATION_ATTAINMENT_OPTIONS.find((option) => option.value === educationAttainment);
@@ -653,46 +651,35 @@ export function ApplicantDetailsPage() {
             </div>
 
             <div className="flex flex-wrap items-center justify-end gap-2">
-              {isFromJobPosts && (
-                <>
-                  <button
-                    type="button"
-                    onClick={handleSendMessage}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm"
-                  >
-                    <Send size={16} /> Send Message
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleDisqualify}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700 shadow-sm"
-                  >
-                    <CircleX size={16} /> Disqualify
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleUpdateStatus('Shortlisted')}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm"
-                  >
-                    <Star size={16} /> Shortlist
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleUpdateStatus('For Interview')}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm"
-                  >
-                    <CheckCircle2 size={16} /> Qualify
-                  </button>
-                </>
-              )}
-
               <button
                 type="button"
-                onClick={() => setShowScoresModal(true)}
+                onClick={handleSendMessage}
                 className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm"
               >
-                <Eye size={18} /> View Scores
+                <Send size={16} /> Send Message
               </button>
+              <button
+                type="button"
+                onClick={handleDisqualify}
+                className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700 shadow-sm"
+              >
+                <CircleX size={16} /> Disqualify
+              </button>
+              <button
+                type="button"
+                onClick={() => handleUpdateStatus('Shortlisted')}
+                className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm"
+              >
+                <Star size={16} /> Shortlist
+              </button>
+              <button
+                type="button"
+                onClick={() => handleUpdateStatus('Recommended for Hiring')}
+                className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm"
+              >
+                <CheckCircle2 size={16} /> Qualify
+              </button>
+
             </div>
           </div>
 
