@@ -1479,9 +1479,6 @@ export const QualifiedApplicantsPage = () => {
         <button className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold" onClick={() => setToast('Interview schedule reminder sent')}>
           <MessageSquare className="mr-1 inline h-4 w-4" /> Notify
         </button>
-        <button className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold" onClick={() => navigate('/admin/rsp/new-hired')}>
-          <CheckCircle2 className="mr-1 inline h-4 w-4" /> Go To Newly Hired
-        </button>
       </div>
     </div>
   );

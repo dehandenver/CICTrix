@@ -1,21 +1,21 @@
 import {
-  ArrowLeft,
-  CheckCircle2,
-  ChevronRight,
-  KeyRound,
-  Printer,
-  Save,
-  UserPlus,
-  X,
+    ArrowLeft,
+    CheckCircle2,
+    ChevronRight,
+    KeyRound,
+    Printer,
+    Save,
+    UserPlus,
+    X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import {
-  ensureRecruitmentSeedData,
-  generateEmployeeId,
-  getEmployeeRecords,
-  getNewlyHired,
-  saveEmployeeRecords,
-  saveNewlyHired,
+    ensureRecruitmentSeedData,
+    generateEmployeeId,
+    getEmployeeRecords,
+    getNewlyHired,
+    saveEmployeeRecords,
+    saveNewlyHired,
 } from '../lib/recruitmentData';
 import type { NewlyHired, NewlyHiredStatus } from '../types/recruitment.types';
 import { Sidebar } from './Sidebar';
