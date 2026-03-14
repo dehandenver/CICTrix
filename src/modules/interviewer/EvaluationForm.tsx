@@ -4,7 +4,7 @@ import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { Dialog } from '../../components/Dialog';
 import { mockDatabase } from '../../lib/mockDatabase';
-import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../../lib/supabase';
+import { isMockModeEnabled, supabase } from '../../lib/supabase';
 
 interface Applicant {
   id: string;
@@ -88,7 +88,7 @@ export function EvaluationForm() {
   const navigate = useNavigate();
   
   const [applicant, setApplicant] = useState<Applicant | null>(null);
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [, setAttachments] = useState<Attachment[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -357,31 +357,6 @@ export function EvaluationForm() {
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const getFileUrl = async (filePath: string) => {
-    if (isMockModeEnabled) {
-      return filePath; // In mock mode, filePath is the data URL
-    }
-
-    const { data } = await supabase.storage
-      .from(ATTACHMENTS_BUCKET)
-      .createSignedUrl(filePath, 3600); // 1 hour expiry
-
-    return data?.signedUrl || '';
-  };
-
-  const handleViewFile = async (attachment: Attachment) => {
-    const url = await getFileUrl(attachment.file_path);
-    if (url) {
-      window.open(url, '_blank');
-    }
-  };
-
-  const formatFileSize = (bytes: number): string => {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
   if (loading) {
@@ -961,7 +936,7 @@ export function EvaluationForm() {
       )}
 
       <Dialog
-        isOpen={showSuccess}
+        open={showSuccess}
         onClose={() => {
           setShowSuccess(false);
           navigate('/interviewer/applicants');

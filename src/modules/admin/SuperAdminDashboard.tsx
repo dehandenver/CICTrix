@@ -1,5 +1,6 @@
-import { AlertCircle, Award, Building2, GraduationCap, TrendingUp, Users } from 'lucide-react';
+import { AlertCircle, Award, Briefcase, Building2, GraduationCap, TrendingUp, UserCheck, UserPlus, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Sidebar } from '../../components/Sidebar';
 import { supabase } from '../../lib/supabase';
 import '../../styles/admin.css';
@@ -74,268 +75,254 @@ export const SuperAdminDashboard = () => {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50">
+    <div className="flex min-h-screen bg-slate-50">
       <Sidebar />
       <main className="flex-1 overflow-auto">
-        <div className="p-8">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-slate-900">Super Admin Dashboard</h1>
-            <p className="text-slate-500 mt-2">Comprehensive overview of all HRIS divisions</p>
+        {/* Top Bar */}
+        <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold text-slate-900">Super Admin Dashboard</h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {new Date().toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+            </p>
           </div>
+          <div className="flex items-center gap-3">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold rounded-full">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              System Online
+            </span>
+          </div>
+        </div>
 
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-10">
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500">Total Applicants</p>
-                  <p className="text-3xl font-semibold text-slate-900 mt-2">
-                    {loading ? '...' : rspStats.totalApplicants}
+        <div className="p-8 space-y-8">
+          {/* Summary Stats */}
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-5">
+            {[
+              {
+                label: 'Total Applicants',
+                value: loading ? '–' : rspStats.totalApplicants,
+                sub: 'RSP Division',
+                icon: Users,
+                iconBg: 'bg-blue-100',
+                iconColor: 'text-blue-600',
+                trend: '+12 this week',
+                trendUp: true,
+              },
+              {
+                label: 'Active Trainings',
+                value: loading ? '–' : lndStats.activeTrainings,
+                sub: 'L&D Division',
+                icon: GraduationCap,
+                iconBg: 'bg-emerald-100',
+                iconColor: 'text-emerald-600',
+                trend: `${loading ? '–' : lndStats.totalPrograms} total programs`,
+                trendUp: true,
+              },
+              {
+                label: 'Evaluation Cycles',
+                value: loading ? '–' : pmStats.evaluationStatus,
+                sub: 'PM Division',
+                icon: Award,
+                iconBg: 'bg-amber-100',
+                iconColor: 'text-amber-600',
+                trend: pmStats.activeCycle !== 'None' ? pmStats.activeCycle : 'No active cycle',
+                trendUp: pmStats.evaluationStatus > 0,
+              },
+              {
+                label: 'Active Departments',
+                value: 5,
+                sub: 'Organization',
+                icon: Building2,
+                iconBg: 'bg-purple-100',
+                iconColor: 'text-purple-600',
+                trend: `${loading ? '–' : rspStats.totalJobs} open positions`,
+                trendUp: true,
+              },
+            ].map((card) => (
+              <div key={card.label} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{card.label}</p>
+                    <p className="text-3xl font-bold text-slate-900 mt-2 leading-none">{card.value}</p>
+                    <p className="text-xs text-slate-400 mt-2">{card.sub}</p>
+                  </div>
+                  <div className={`h-11 w-11 rounded-xl ${card.iconBg} flex items-center justify-center flex-shrink-0 ml-3`}>
+                    <card.icon className={card.iconColor} size={20} />
+                  </div>
+                </div>
+                <div className="mt-4 pt-3 border-t border-slate-100">
+                  <p className={`text-xs font-medium ${card.trendUp ? 'text-emerald-600' : 'text-slate-400'}`}>
+                    {card.trendUp ? '↑ ' : ''}{card.trend}
                   </p>
-                  <p className="text-xs text-slate-400 mt-2">RSP Division</p>
-                </div>
-                <div className="h-12 w-12 rounded-xl bg-blue-100 flex items-center justify-center">
-                  <Users className="text-blue-600" size={22} />
                 </div>
               </div>
-            </div>
-
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500">Active Trainings</p>
-                  <p className="text-3xl font-semibold text-slate-900 mt-2">
-                    {loading ? '...' : lndStats.activeTrainings}
-                  </p>
-                  <p className="text-xs text-slate-400 mt-2">L&D Division</p>
-                </div>
-                <div className="h-12 w-12 rounded-xl bg-emerald-100 flex items-center justify-center">
-                  <GraduationCap className="text-emerald-600" size={22} />
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500">Evaluation Status</p>
-                  <p className="text-3xl font-semibold text-slate-900 mt-2">
-                    {loading ? '...' : pmStats.evaluationStatus}
-                  </p>
-                  <p className="text-xs text-slate-400 mt-2">PM Division</p>
-                </div>
-                <div className="h-12 w-12 rounded-xl bg-amber-100 flex items-center justify-center">
-                  <Award className="text-amber-600" size={22} />
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-slate-500">Department Summary</p>
-                  <p className="text-3xl font-semibold text-slate-900 mt-2">5</p>
-                  <p className="text-xs text-slate-400 mt-2">Active Departments</p>
-                </div>
-                <div className="h-12 w-12 rounded-xl bg-purple-100 flex items-center justify-center">
-                  <Building2 className="text-purple-600" size={22} />
-                </div>
-              </div>
-            </div>
+            ))}
           </div>
 
           {/* Division Cards */}
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            {/* RSP Division */}
             <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-white">
-              <div className="bg-blue-600 text-white p-5 flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold">RSP Division</h3>
-                  <p className="text-sm text-blue-100">Recruitment, Selection & Placement</p>
+              <div className="bg-gradient-to-br from-blue-600 to-blue-700 text-white p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+                    <Users size={20} />
+                  </div>
+                  <span className="text-xs bg-white/20 px-2.5 py-1 rounded-full font-medium">RSP</span>
                 </div>
-                <Users size={22} />
+                <h3 className="text-lg font-bold">Recruitment Division</h3>
+                <p className="text-sm text-blue-100 mt-0.5">Selection & Placement</p>
               </div>
-              <div className="p-5 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-500">Job Openings</p>
-                    <p className="text-xs text-slate-400">+2 this month</p>
+              <div className="p-5 space-y-3">
+                {[
+                  { label: 'Job Openings', value: loading ? '–' : rspStats.totalJobs, sub: '+2 this month' },
+                  { label: 'Total Applicants', value: loading ? '–' : rspStats.totalApplicants, sub: '+12 this week' },
+                  { label: 'Pending Reviews', value: loading ? '–' : rspStats.pendingReviews, sub: 'Awaiting decision' },
+                ].map((row) => (
+                  <div key={row.label} className="flex items-center justify-between py-2.5 border-b border-slate-100 last:border-0">
+                    <div>
+                      <p className="text-sm text-slate-600 font-medium">{row.label}</p>
+                      <p className="text-xs text-slate-400">{row.sub}</p>
+                    </div>
+                    <span className="text-xl font-bold text-slate-900">{row.value}</span>
                   </div>
-                  <p className="text-2xl font-semibold text-slate-900">{loading ? '...' : rspStats.totalJobs}</p>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-500">Total Applicants</p>
-                    <p className="text-xs text-slate-400">+12 this week</p>
-                  </div>
-                  <p className="text-2xl font-semibold text-slate-900">{loading ? '...' : rspStats.totalApplicants}</p>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-500">Shortlisted</p>
-                    <p className="text-xs text-slate-400">{loading ? '...' : rspStats.pendingReviews} pending</p>
-                  </div>
-                  <p className="text-2xl font-semibold text-slate-900">{loading ? '...' : rspStats.pendingReviews}</p>
-                </div>
+                ))}
+              </div>
+              <div className="px-5 pb-4">
+                <button
+                  type="button"
+                  onClick={() => navigate('/admin/rsp/jobs')}
+                  className="w-full py-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm font-semibold transition-colors"
+                >
+                  Go to RSP →
+                </button>
               </div>
             </div>
 
+            {/* L&D Division */}
             <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-white">
-              <div className="bg-emerald-600 text-white p-5 flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold">L&D Division</h3>
-                  <p className="text-sm text-emerald-100">Learning & Development</p>
+              <div className="bg-gradient-to-br from-emerald-600 to-emerald-700 text-white p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+                    <GraduationCap size={20} />
+                  </div>
+                  <span className="text-xs bg-white/20 px-2.5 py-1 rounded-full font-medium">L&D</span>
                 </div>
-                <GraduationCap size={22} />
+                <h3 className="text-lg font-bold">Learning & Development</h3>
+                <p className="text-sm text-emerald-100 mt-0.5">Training & Programs</p>
               </div>
-              <div className="p-5 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-500">Training Programs</p>
-                    <p className="text-xs text-slate-400">{loading ? '...' : lndStats.activeTrainings} upcoming</p>
+              <div className="p-5 space-y-3">
+                {[
+                  { label: 'Training Programs', value: loading ? '–' : lndStats.totalPrograms, sub: `${loading ? '–' : lndStats.activeTrainings} upcoming` },
+                  { label: 'Active Participants', value: '156', sub: '+22 this month' },
+                  { label: 'Completion Rate', value: '87%', sub: '+5% vs last month' },
+                ].map((row) => (
+                  <div key={row.label} className="flex items-center justify-between py-2.5 border-b border-slate-100 last:border-0">
+                    <div>
+                      <p className="text-sm text-slate-600 font-medium">{row.label}</p>
+                      <p className="text-xs text-slate-400">{row.sub}</p>
+                    </div>
+                    <span className="text-xl font-bold text-slate-900">{row.value}</span>
                   </div>
-                  <p className="text-2xl font-semibold text-slate-900">{loading ? '...' : lndStats.totalPrograms}</p>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-500">Active Participants</p>
-                    <p className="text-xs text-slate-400">+22 this month</p>
-                  </div>
-                  <p className="text-2xl font-semibold text-slate-900">156</p>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-500">Completion Rate</p>
-                    <p className="text-xs text-slate-400">+5% vs last month</p>
-                  </div>
-                  <p className="text-2xl font-semibold text-slate-900">87%</p>
-                </div>
+                ))}
+              </div>
+              <div className="px-5 pb-4">
+                <button
+                  type="button"
+                  onClick={() => navigate('/admin/lnd')}
+                  className="w-full py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-sm font-semibold transition-colors"
+                >
+                  Go to L&D →
+                </button>
               </div>
             </div>
 
+            {/* PM Division */}
             <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-white">
-              <div className="bg-orange-500 text-white p-5 flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold">PM Division</h3>
-                  <p className="text-sm text-orange-100">Performance Management</p>
+              <div className="bg-gradient-to-br from-orange-500 to-orange-600 text-white p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+                    <Award size={20} />
+                  </div>
+                  <span className="text-xs bg-white/20 px-2.5 py-1 rounded-full font-medium">PM</span>
                 </div>
-                <Award size={22} />
+                <h3 className="text-lg font-bold">Performance Management</h3>
+                <p className="text-sm text-orange-100 mt-0.5">IPCR & Evaluations</p>
               </div>
-              <div className="p-5 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-500">Active Employees</p>
-                    <p className="text-xs text-slate-400">Across all depts</p>
+              <div className="p-5 space-y-3">
+                {[
+                  { label: 'Active Employees', value: '184', sub: 'Across all depts' },
+                  { label: 'Active Evaluations', value: loading ? '–' : pmStats.evaluationStatus, sub: pmStats.activeCycle !== 'None' ? pmStats.activeCycle : 'None active' },
+                  { label: 'Avg Performance', value: '4.2', sub: 'Out of 5.0' },
+                ].map((row) => (
+                  <div key={row.label} className="flex items-center justify-between py-2.5 border-b border-slate-100 last:border-0">
+                    <div>
+                      <p className="text-sm text-slate-600 font-medium">{row.label}</p>
+                      <p className="text-xs text-slate-400">{row.sub}</p>
+                    </div>
+                    <span className="text-xl font-bold text-slate-900">{row.value}</span>
                   </div>
-                  <p className="text-2xl font-semibold text-slate-900">184</p>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-500">In Progress</p>
-                    <p className="text-xs text-slate-400">Evaluations ongoing</p>
-                  </div>
-                  <p className="text-2xl font-semibold text-slate-900">{loading ? '...' : rspStats.pendingReviews}</p>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-slate-500">Avg Performance</p>
-                    <p className="text-xs text-slate-400">Out of 5.0</p>
-                  </div>
-                  <p className="text-2xl font-semibold text-slate-900">4.2</p>
-                </div>
+                ))}
+              </div>
+              <div className="px-5 pb-4">
+                <button
+                  type="button"
+                  onClick={() => navigate('/admin/pm')}
+                  className="w-full py-2.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-700 text-sm font-semibold transition-colors"
+                >
+                  Go to PM →
+                </button>
               </div>
             </div>
           </div>
 
-          {/* PM Dashboard Interface (copied from PM dashboard) */}
-          <div className="mt-8">
-            <h2 className="text-2xl font-bold text-slate-900 mb-6">Performance Management</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="bg-white rounded-lg shadow-md border border-slate-200 p-6 hover:shadow-lg transition">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-slate-600 mb-1">Active Evaluation Cycle</p>
-                    <p className="text-lg font-bold text-slate-900">
-                      {loading ? 'Loading...' : pmStats.activeCycle}
-                    </p>
-                  </div>
-                  <div className="p-3 bg-blue-900/10 rounded-lg">
-                    <TrendingUp className="w-8 h-8 text-blue-900" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white rounded-lg shadow-md border border-slate-200 p-6 hover:shadow-lg transition">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-slate-600 mb-1">Pending Reviews</p>
-                    <p className="text-4xl font-bold bg-gradient-to-r from-red-600 to-red-500 bg-clip-text text-transparent">
-                      {loading ? '...' : pmStats.pendingReviews}
-                    </p>
-                  </div>
-                  <div className="p-3 bg-red-600/10 rounded-lg">
-                    <AlertCircle className="w-8 h-8 text-red-600" />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Lower Panels */}
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mt-8">
-            {/* Recent System Activity */}
+          {/* Bottom Row */}
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            {/* Recent Activity */}
             <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-slate-900">Recent System Activity</h2>
-                <span className="text-slate-400">∿</span>
-              </div>
-              <div className="space-y-4">
-                <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-                  <div className="border-l-4 border-blue-600 pl-4">
-                    <p className="text-sm font-semibold text-blue-900">New Job Position Posted</p>
-                    <p className="text-xs text-blue-700">IT Officer II - Item #ITMO2-2025-001</p>
-                    <p className="text-xs text-blue-500 mt-1">2 hours ago</p>
+              <h2 className="text-base font-bold text-slate-900 mb-5">Recent System Activity</h2>
+              <div className="space-y-3">
+                {[
+                  { color: 'bg-blue-500', title: 'New Job Position Posted', body: 'IT Officer II · Item #ITMO2-2025-001', time: '2 hours ago' },
+                  { color: 'bg-emerald-500', title: 'Training Program Completed', body: 'Project Management Fundamentals · 32 participants', time: '5 hours ago' },
+                  { color: 'bg-orange-500', title: 'Performance Evaluation Updated', body: 'Q1 2025 Evaluations · 42 in progress', time: '1 day ago' },
+                  { color: 'bg-purple-500', title: 'New Employee Onboarded', body: 'Administrative Officer III · Finance Dept', time: '2 days ago' },
+                ].map((item, i) => (
+                  <div key={i} className="flex items-start gap-3 p-3.5 rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors">
+                    <div className={`w-2 h-2 rounded-full ${item.color} mt-1.5 flex-shrink-0`} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-slate-800">{item.title}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{item.body}</p>
+                    </div>
+                    <span className="text-xs text-slate-400 flex-shrink-0">{item.time}</span>
                   </div>
-                </div>
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                  <div className="border-l-4 border-emerald-600 pl-4">
-                    <p className="text-sm font-semibold text-emerald-900">Training Program Completed</p>
-                    <p className="text-xs text-emerald-700">Project Management Fundamentals - 32 participants</p>
-                    <p className="text-xs text-emerald-500 mt-1">5 hours ago</p>
-                  </div>
-                </div>
-                <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
-                  <div className="border-l-4 border-orange-600 pl-4">
-                    <p className="text-sm font-semibold text-orange-900">Performance Evaluation Updated</p>
-                    <p className="text-xs text-orange-700">Q1 2025 evaluations - 42 in progress</p>
-                    <p className="text-xs text-orange-500 mt-1">1 day ago</p>
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
 
             {/* Department Overview */}
             <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-slate-900">Department Overview</h2>
-                <span className="text-slate-400">🏢</span>
-              </div>
-              <div className="space-y-3">
+              <h2 className="text-base font-bold text-slate-900 mb-5">Department Overview</h2>
+              <div className="space-y-2">
                 {[
-                  { name: 'IT Department', employees: 32, openings: 3, trend: 'up' },
-                  { name: 'HR Department', employees: 18, openings: 1, trend: 'up' },
-                  { name: 'Finance Department', employees: 24, openings: 1, trend: 'up' },
-                  { name: 'Operations', employees: 45, openings: 1, trend: 'up' },
-                  { name: 'Legal Department', employees: 12, openings: 0, trend: 'flat' }
+                  { name: 'IT Department', employees: 32, openings: 3 },
+                  { name: 'HR Department', employees: 18, openings: 1 },
+                  { name: 'Finance Department', employees: 24, openings: 1 },
+                  { name: 'Operations', employees: 45, openings: 1 },
+                  { name: 'Legal Department', employees: 12, openings: 0 },
                 ].map((dept) => (
-                  <div key={dept.name} className="flex items-center justify-between rounded-xl bg-slate-50 p-4">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">{dept.name}</p>
-                      <p className="text-xs text-slate-500">
-                        {dept.employees} employees • {dept.openings} open position{dept.openings === 1 ? '' : 's'}
-                      </p>
+                  <div key={dept.name} className="flex items-center justify-between p-3.5 rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+                        <Building2 size={14} className="text-blue-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">{dept.name}</p>
+                        <p className="text-xs text-slate-500">{dept.employees} employees</p>
+                      </div>
                     </div>
-                    <span className={`text-sm ${dept.trend === 'flat' ? 'text-slate-400' : 'text-emerald-600'}`}>
-                      {dept.trend === 'flat' ? '∿' : '↗'}
+                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${dept.openings > 0 ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-500'}`}>
+                      {dept.openings > 0 ? `${dept.openings} open` : 'No openings'}
                     </span>
                   </div>
                 ))}
@@ -344,13 +331,26 @@ export const SuperAdminDashboard = () => {
           </div>
 
           {/* Quick Actions */}
-          <div className="mt-8 bg-blue-600 rounded-2xl p-6 text-white shadow-sm">
-            <h2 className="text-lg font-semibold">Quick Actions</h2>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
-              <button className="h-14 rounded-xl bg-white/15 hover:bg-white/20 transition" type="button" />
-              <button className="h-14 rounded-xl bg-white/15 hover:bg-white/20 transition" type="button" />
-              <button className="h-14 rounded-xl bg-white/15 hover:bg-white/20 transition" type="button" />
-              <button className="h-14 rounded-xl bg-white/15 hover:bg-white/20 transition" type="button" />
+          <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl p-6 text-white shadow-sm">
+            <h2 className="text-base font-bold mb-1">Quick Actions</h2>
+            <p className="text-sm text-blue-200 mb-5">Navigate to frequently used sections</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { label: 'New Job Post', icon: Briefcase, path: '/admin/rsp/jobs' },
+                { label: 'View Applicants', icon: Users, path: '/admin/rsp/qualified' },
+                { label: 'Newly Hired', icon: UserPlus, path: '/admin/rsp/new-hired' },
+                { label: 'Rater Setup', icon: UserCheck, path: '/admin/rsp/raters' },
+              ].map((action) => (
+                <button
+                  key={action.label}
+                  type="button"
+                  onClick={() => navigate(action.path)}
+                  className="flex flex-col items-center gap-2 py-4 px-3 rounded-xl bg-white/15 hover:bg-white/25 transition-colors text-white"
+                >
+                  <action.icon size={20} />
+                  <span className="text-xs font-semibold">{action.label}</span>
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -358,3 +358,4 @@ export const SuperAdminDashboard = () => {
     </div>
   );
 };
+

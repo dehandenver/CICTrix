@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { getNavigationForRole, getGroupedNavigation } from '../utils/navigation';
+import { getGroupedNavigation } from '../utils/navigation';
 
 /**
  * RoleBasedSidebar Component
@@ -12,8 +12,6 @@ export const RoleBasedSidebar: React.FC = () => {
   const { role, profile, signOut } = useAuth();
   const location = useLocation();
 
-  // Get navigation items for current user's role
-  const navItems = getNavigationForRole(role);
   const groupedNav = getGroupedNavigation(role);
 
   /**

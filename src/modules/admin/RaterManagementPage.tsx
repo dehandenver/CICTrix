@@ -218,7 +218,7 @@ export const RaterManagementPage = () => {
         {/* Create/Edit Rater Dialog */}
         {(showDialog || editingRater) && (
           <Dialog
-            isOpen={showDialog || !!editingRater}
+            open={showDialog || !!editingRater}
             onClose={() => {
               setShowDialog(false);
               setEditingRater(null);
@@ -256,12 +256,8 @@ export const RaterManagementPage = () => {
                   ? setEditingRater({ ...editingRater, department: e.target.value })
                   : setFormData({ ...formData, department: e.target.value })
                 }
-              >
-                <option value="">Select Department</option>
-                {DEPARTMENTS.map(dept => (
-                  <option key={dept} value={dept}>{dept}</option>
-                ))}
-              </Select>
+                options={DEPARTMENTS.map((dept) => ({ value: dept, label: dept }))}
+              />
 
               {editingRater && (
                 <div className="form-group">

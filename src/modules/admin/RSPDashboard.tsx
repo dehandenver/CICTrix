@@ -11,15 +11,10 @@ import {
   Download,
   FileText,
   Filter,
-  FileUser,
-  GraduationCap,
-  HeartPulse,
-  Landmark,
   Lock,
   Mail,
   Plus,
   Search,
-  ShieldCheck,
   Settings,
   Shield,
   Trash2,
@@ -141,37 +136,31 @@ const BULK_REQUEST_TEMPLATES = [
     id: 'nbi',
     name: 'NBI Clearance',
     description: 'Updated NBI Clearance (must be valid for current year)',
-    icon: ShieldCheck,
   },
   {
     id: 'medical',
     name: 'Medical Certificate',
     description: 'Recent medical certificate issued by an accredited clinic or hospital',
-    icon: HeartPulse,
   },
   {
     id: 'saln',
     name: 'SALN (Statement of Assets, Liabilities and Net Worth)',
     description: 'Latest signed SALN form based on agency template',
-    icon: Landmark,
   },
   {
     id: 'training',
     name: 'Certificate of Training',
     description: 'Certificate for completed mandatory orientation or skills training',
-    icon: GraduationCap,
   },
   {
     id: 'pef',
     name: 'Performance Evaluation Form',
     description: 'Completed and signed latest performance evaluation form',
-    icon: FileText,
   },
   {
     id: 'resume',
     name: 'Updated Resume/CV',
     description: 'Most recent resume with updated work experience and credentials',
-    icon: FileUser,
   },
 ] as const;
 
@@ -1790,9 +1779,9 @@ export const RSPDashboard = () => {
       <Sidebar activeModule="RSP" userRole="rsp" />
 
       <main className="admin-content !p-0">
-        <div className="border-b border-[var(--border-color)] bg-white px-10 py-8">
-          <h1 className="!mb-1 text-3xl font-bold">{sectionTitle}</h1>
-          <p className="!mb-0 text-lg text-[var(--text-secondary)]">
+        <div className="border-b border-[var(--border-color)] bg-white px-8 py-6">
+          <h1 className={`!mb-1 font-bold ${section === 'new-hired' || section === 'reports' ? '!text-xl' : '!text-2xl'}`}>{sectionTitle}</h1>
+          <p className={`!mb-0 text-[var(--text-secondary)] ${section === 'new-hired' || section === 'reports' ? '!text-sm' : '!text-base'}`}>
             {section === 'dashboard' && 'Overview of recruitment, selection and placement activities'}
             {section === 'jobs' && 'Manage and monitor all job positions and their applicants'}
             {section === 'qualified' && 'List of applicants who passed the evaluation and are eligible for further processing'}
@@ -1804,7 +1793,7 @@ export const RSPDashboard = () => {
           </p>
         </div>
 
-        <div className="space-y-8 p-10">
+        <div className="space-y-6 p-8">
           {section === 'dashboard' && (
             <>
               <section className="grid grid-cols-1 gap-5 xl:grid-cols-4">
@@ -1816,14 +1805,14 @@ export const RSPDashboard = () => {
                 ].map((card) => {
                   const Icon = card.icon;
                   return (
-                    <article key={card.label} className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
+                    <article key={card.label} className="rounded-2xl border border-[var(--border-color)] bg-white p-5">
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="!mb-2 text-sm text-[var(--text-secondary)]">{card.label}</p>
-                          <p className="!mb-0 text-3xl font-bold text-[var(--text-primary)]">{card.value}</p>
+                          <p className="!mb-0 text-2xl font-bold text-[var(--text-primary)]">{card.value}</p>
                         </div>
-                        <div className={`flex h-16 w-16 items-center justify-center rounded-2xl ${card.iconBg}`}>
-                          <Icon className={card.iconColor} size={28} />
+                        <div className={`flex h-14 w-14 items-center justify-center rounded-2xl ${card.iconBg}`}>
+                          <Icon className={card.iconColor} size={24} />
                         </div>
                       </div>
                     </article>
@@ -1832,7 +1821,7 @@ export const RSPDashboard = () => {
               </section>
 
               <section>
-                <h2 className="!mb-4 text-xl font-semibold">Quick Actions</h2>
+                <h2 className="!mb-4 text-lg font-semibold">Quick Actions</h2>
                 <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
                   {[
                     { title: 'Manage Job Postings', subtitle: 'View and manage all positions', icon: FileText, action: 'jobs' as Section },
@@ -1851,16 +1840,16 @@ export const RSPDashboard = () => {
                             goToSection(card.action as Section);
                           }
                         }}
-                        className="flex items-center gap-4 rounded-2xl border border-[var(--border-color)] bg-white px-6 py-5 text-left transition hover:border-[var(--primary-color)]"
+                        className="flex items-center gap-4 rounded-2xl border border-[var(--border-color)] bg-white px-5 py-4 text-left transition hover:border-[var(--primary-color)]"
                       >
-                        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-100 text-blue-600">
-                          <Icon size={28} />
+                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-100 text-blue-600">
+                          <Icon size={22} />
                         </div>
                         <div className="flex-1">
-                          <p className="!mb-1 text-lg font-semibold text-[var(--text-primary)]">{card.title}</p>
-                          <p className="!mb-0 text-lg text-[var(--text-secondary)]">{card.subtitle}</p>
+                          <p className="!mb-1 text-base font-semibold text-[var(--text-primary)]">{card.title}</p>
+                          <p className="!mb-0 text-sm text-[var(--text-secondary)]">{card.subtitle}</p>
                         </div>
-                        <ChevronRight size={26} className="text-[var(--text-muted)]" />
+                        <ChevronRight size={22} className="text-[var(--text-muted)]" />
                       </button>
                     );
                   })}
@@ -1868,23 +1857,23 @@ export const RSPDashboard = () => {
               </section>
 
               <section className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-                <div className="space-y-4 rounded-2xl border border-[var(--border-color)] bg-white p-6 xl:col-span-2">
+                <div className="space-y-4 rounded-2xl border border-[var(--border-color)] bg-white p-5 xl:col-span-2">
                   <div className="flex items-center justify-between border-b border-[var(--border-color)] pb-4">
-                    <h3 className="!mb-0 text-xl font-semibold">Urgent Items</h3>
-                    <Clock3 className="text-orange-500" size={24} />
+                    <h3 className="!mb-0 text-lg font-semibold">Urgent Items</h3>
+                    <Clock3 className="text-orange-500" size={20} />
                   </div>
                   {urgentItems.map((item) => (
-                    <article key={item.title} className={`rounded-2xl p-5 ${item.color}`}>
-                      <p className="!mb-1 text-lg font-semibold text-[var(--text-primary)]">{item.title}</p>
-                      <p className="!mb-0 text-base text-[var(--text-secondary)]">{item.subtitle}</p>
+                    <article key={item.title} className={`rounded-2xl p-4 ${item.color}`}>
+                      <p className="!mb-1 text-base font-semibold text-[var(--text-primary)]">{item.title}</p>
+                      <p className="!mb-0 text-sm text-[var(--text-secondary)]">{item.subtitle}</p>
                     </article>
                   ))}
                 </div>
 
-                <div className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
+                <div className="rounded-2xl border border-[var(--border-color)] bg-white p-5">
                   <div className="flex items-center justify-between border-b border-[var(--border-color)] pb-4">
-                    <h3 className="!mb-0 text-xl font-semibold">Application Funnel</h3>
-                    <ChevronRight className="rotate-[-45deg] text-blue-600" size={22} />
+                    <h3 className="!mb-0 text-lg font-semibold">Application Funnel</h3>
+                    <ChevronRight className="rotate-[-45deg] text-blue-600" size={20} />
                   </div>
                   <div className="space-y-4 pt-5">
                     {[
@@ -1897,7 +1886,7 @@ export const RSPDashboard = () => {
                       const width = `${(item.value / maxValue) * 100}%`;
                       return (
                         <div key={item.label}>
-                          <div className="mb-1 flex items-center justify-between text-base">
+                          <div className="mb-1 flex items-center justify-between text-sm">
                             <span>{item.label}</span>
                             <span className="font-semibold">{item.value}</span>
                           </div>
@@ -1912,47 +1901,47 @@ export const RSPDashboard = () => {
               </section>
 
               <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-                <div className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
+                <div className="rounded-2xl border border-[var(--border-color)] bg-white p-5">
                   <div className="mb-4 flex items-center justify-between border-b border-[var(--border-color)] pb-4">
-                    <h3 className="!mb-0 text-xl font-semibold">Recent Activity</h3>
-                    <Calendar className="text-[var(--text-muted)]" size={24} />
+                    <h3 className="!mb-0 text-lg font-semibold">Recent Activity</h3>
+                    <Calendar className="text-[var(--text-muted)]" size={20} />
                   </div>
                   <div className="space-y-4">
                     {applicants.slice(0, 5).map((applicant) => (
                       <div key={applicant.id} className="flex items-start gap-4 border-b border-[var(--border-color)] pb-3 last:border-b-0">
                         <div className="rounded-xl bg-blue-100 p-3 text-blue-600">
-                          <FileText size={20} />
+                          <FileText size={18} />
                         </div>
                         <div>
-                          <p className="!mb-1 text-lg text-[var(--text-primary)]">{applicant.full_name}</p>
-                          <p className="!mb-0 text-lg text-[var(--text-secondary)]">{formatDate(applicant.created_at)}</p>
+                          <p className="!mb-1 text-base text-[var(--text-primary)]">{applicant.full_name}</p>
+                          <p className="!mb-0 text-sm text-[var(--text-secondary)]">{formatDate(applicant.created_at)}</p>
                         </div>
                       </div>
                     ))}
-                    {applicants.length === 0 && <p className="!mb-0 text-lg text-[var(--text-secondary)]">No recent activity found.</p>}
+                    {applicants.length === 0 && <p className="!mb-0 text-sm text-[var(--text-secondary)]">No recent activity found.</p>}
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
+                <div className="rounded-2xl border border-[var(--border-color)] bg-white p-5">
                   <div className="mb-4 flex items-center justify-between border-b border-[var(--border-color)] pb-4">
-                    <h3 className="!mb-0 text-xl font-semibold">Positions by Department</h3>
-                    <Building2 className="text-[var(--text-muted)]" size={24} />
+                    <h3 className="!mb-0 text-lg font-semibold">Positions by Department</h3>
+                    <Building2 className="text-[var(--text-muted)]" size={20} />
                   </div>
                   <div className="space-y-3">
                     {officeOptions.map((office) => {
                       const officeApplicants = applicants.filter((applicant) => applicant.office === office);
                       const officePositions = new Set(officeApplicants.map((applicant) => applicant.position)).size;
                       return (
-                        <div key={office} className="flex items-center justify-between rounded-2xl bg-slate-50 px-5 py-4">
+                        <div key={office} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
                           <div>
-                            <p className="!mb-1 text-lg font-semibold text-[var(--text-primary)]">{office}</p>
-                            <p className="!mb-0 text-lg text-[var(--text-secondary)]">{officePositions} position{officePositions === 1 ? '' : 's'}</p>
+                            <p className="!mb-1 text-base font-semibold text-[var(--text-primary)]">{office}</p>
+                            <p className="!mb-0 text-sm text-[var(--text-secondary)]">{officePositions} position{officePositions === 1 ? '' : 's'}</p>
                           </div>
-                          <p className="!mb-0 text-right text-2xl font-bold text-blue-600">{officeApplicants.length}</p>
+                          <p className="!mb-0 text-right text-xl font-bold text-blue-600">{officeApplicants.length}</p>
                         </div>
                       );
                     })}
-                    {officeOptions.length === 0 && <p className="!mb-0 text-lg text-[var(--text-secondary)]">No department data available.</p>}
+                    {officeOptions.length === 0 && <p className="!mb-0 text-sm text-[var(--text-secondary)]">No department data available.</p>}
                   </div>
                 </div>
               </section>
@@ -2200,46 +2189,46 @@ export const RSPDashboard = () => {
           {section === 'new-hired' && (
             <>
               <section className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-                <article className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
+                <article className="rounded-2xl border border-[var(--border-color)] bg-white p-5">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="!mb-2 text-base text-[var(--text-secondary)]">Total Newly Hired</p>
-                      <p className="!mb-0 text-3xl font-bold">{newlyHiredApplicants.length}</p>
+                      <p className="!mb-2 !text-xs text-[var(--text-secondary)]">Total Newly Hired</p>
+                      <p className="!mb-0 !text-xl font-bold">{newlyHiredApplicants.length}</p>
                     </div>
-                    <div className="rounded-2xl bg-blue-100 p-4 text-blue-600"><UserPlus size={28} /></div>
+                    <div className="rounded-2xl bg-blue-100 p-3 text-blue-600"><UserPlus size={22} /></div>
                   </div>
                 </article>
-                <article className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
+                <article className="rounded-2xl border border-[var(--border-color)] bg-white p-5">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="!mb-2 text-base text-[var(--text-secondary)]">With Credentials</p>
-                      <p className="!mb-0 text-3xl font-bold text-green-600">{newlyHiredApplicants.filter((a) => completedEvaluationIds.has(a.id)).length}</p>
+                      <p className="!mb-2 !text-xs text-[var(--text-secondary)]">With Credentials</p>
+                      <p className="!mb-0 !text-xl font-bold text-green-600">{newlyHiredApplicants.filter((a) => completedEvaluationIds.has(a.id)).length}</p>
                     </div>
-                    <div className="rounded-2xl bg-green-100 p-4 text-green-600"><UserCheck size={28} /></div>
+                    <div className="rounded-2xl bg-green-100 p-3 text-green-600"><UserCheck size={22} /></div>
                   </div>
                 </article>
-                <article className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
+                <article className="rounded-2xl border border-[var(--border-color)] bg-white p-5">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="!mb-2 text-base text-[var(--text-secondary)]">Pending Credentials</p>
-                      <p className="!mb-0 text-3xl font-bold text-orange-600">{newlyHiredApplicants.filter((a) => !completedEvaluationIds.has(a.id)).length}</p>
+                      <p className="!mb-2 !text-xs text-[var(--text-secondary)]">Pending Credentials</p>
+                      <p className="!mb-0 !text-xl font-bold text-orange-600">{newlyHiredApplicants.filter((a) => !completedEvaluationIds.has(a.id)).length}</p>
                     </div>
-                    <div className="rounded-2xl bg-orange-100 p-4 text-orange-600"><Lock size={28} /></div>
+                    <div className="rounded-2xl bg-orange-100 p-3 text-orange-600"><Lock size={22} /></div>
                   </div>
                 </article>
               </section>
 
-              <h2 className="!mb-3 text-xl font-semibold">Departments</h2>
+              <h2 className="!mb-3 !text-xl font-semibold">Departments</h2>
               <section className="grid grid-cols-1 gap-5 xl:grid-cols-3">
                 {departmentsSummary.map((department) => (
-                  <article key={department.department} className="flex items-center gap-4 rounded-2xl border border-[var(--border-color)] bg-white p-6">
-                    <div className="rounded-2xl bg-blue-100 p-4 text-blue-600"><Building2 size={28} /></div>
+                  <article key={department.department} className="flex items-center gap-4 rounded-2xl border border-[var(--border-color)] bg-white p-5">
+                    <div className="rounded-2xl bg-blue-100 p-3 text-blue-600"><Building2 size={22} /></div>
                     <div className="flex-1">
-                      <p className="!mb-1 text-2xl font-semibold text-[var(--text-primary)]">{department.department}</p>
-                      <p className="!mb-0 text-base text-[var(--text-secondary)]">{department.hires} Newly Hired</p>
-                      <p className="!mb-0 text-base text-[var(--text-secondary)]">{department.pending} pending</p>
+                      <p className="!mb-1 !text-lg font-semibold text-[var(--text-primary)]">{department.department}</p>
+                      <p className="!mb-0 !text-sm text-[var(--text-secondary)]">{department.hires} Newly Hired</p>
+                      <p className="!mb-0 !text-sm text-[var(--text-secondary)]">{department.pending} pending</p>
                     </div>
-                    <ChevronRight size={24} className="text-[var(--text-muted)]" />
+                    <ChevronRight size={20} className="text-[var(--text-muted)]" />
                   </article>
                 ))}
                 {departmentsSummary.length === 0 && <p className="col-span-full text-base text-[var(--text-secondary)]">No newly hired records found.</p>}
@@ -2646,15 +2635,15 @@ export const RSPDashboard = () => {
                         key={card.title}
                         type="button"
                         onClick={card.onClick}
-                        className="rounded-2xl border border-[var(--border-color)] bg-white p-6 text-left transition hover:border-[var(--primary-color)]"
+                        className="rounded-2xl border border-[var(--border-color)] bg-white p-5 text-left transition hover:border-[var(--primary-color)]"
                       >
-                        <div className="mb-8 flex items-start justify-between">
-                          <div className={`rounded-2xl p-4 ${card.color}`}><Icon size={30} /></div>
-                          <ChevronRight size={28} className="text-[var(--text-muted)]" />
+                          <div className="mb-6 flex items-start justify-between">
+                            <div className={`rounded-2xl p-3 ${card.color}`}><Icon size={24} /></div>
+                            <ChevronRight size={22} className="text-[var(--text-muted)]" />
                         </div>
-                        <h3 className="!mb-2 text-2xl font-semibold">{card.title}</h3>
-                        <p className="!mb-4 text-lg text-[var(--text-secondary)]">{card.subtitle}</p>
-                        <span className="rounded-full bg-slate-100 px-3 py-1 text-lg text-[var(--text-secondary)]">Official Template</span>
+                          <h3 className="!mb-2 !text-lg font-semibold">{card.title}</h3>
+                          <p className="!mb-4 !text-sm text-[var(--text-secondary)]">{card.subtitle}</p>
+                          <span className="rounded-full bg-slate-100 px-3 py-1 !text-xs text-[var(--text-secondary)]">Official Template</span>
                       </button>
                     );
                   })}
@@ -2732,13 +2721,13 @@ export const RSPDashboard = () => {
                             <div>
                               <div className="mb-2 flex flex-wrap items-center gap-2">
                                 <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">Position #{index + 1}</span>
-                                <span className="text-base text-[var(--text-secondary)]">{card.itemNumber}</span>
+                                <span className="text-sm text-[var(--text-secondary)]">{card.itemNumber}</span>
                               </div>
-                              <h3 className="!mb-2 text-2xl font-semibold text-[var(--text-primary)]">{card.position}</h3>
-                              <p className="!mb-0 text-lg text-[var(--text-secondary)]">{card.department} • {card.totalApplicants} Total Applicants</p>
+                              <h3 className="!mb-2 !text-lg font-semibold text-[var(--text-primary)]">{card.position}</h3>
+                              <p className="!mb-0 !text-sm text-[var(--text-secondary)]">{card.department} • {card.totalApplicants} Total Applicants</p>
                             </div>
-                            <div className="rounded-2xl bg-green-100 p-4 text-green-600">
-                              <FileText size={30} />
+                            <div className="rounded-2xl bg-green-100 p-3 text-green-600">
+                              <FileText size={24} />
                             </div>
                           </div>
 
@@ -2751,7 +2740,7 @@ export const RSPDashboard = () => {
                           <button
                             type="button"
                             onClick={() => openAssessmentForms(card.position)}
-                            className="w-full rounded-xl bg-green-600 px-4 py-3 text-lg font-semibold text-white"
+                            className="w-full rounded-xl bg-green-600 px-4 py-2.5 text-base font-semibold text-white"
                           >
                             View Assessment Forms
                           </button>
@@ -2765,32 +2754,29 @@ export const RSPDashboard = () => {
               {reportsView !== 'documents' ? (
                 <>
                   <section>
-                    <h2 className="!mb-1 text-2xl font-semibold">Employee Documents</h2>
-                    <p className="text-lg text-[var(--text-secondary)]">Access and download documents submitted by employees</p>
+                    <h2 className="!mb-1 !text-lg font-semibold">Employee Documents</h2>
+                    <p className="!text-sm text-[var(--text-secondary)]">Access and download documents submitted by employees</p>
                   </section>
 
                   <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-                    {BULK_REQUEST_TEMPLATES.map((template) => {
-                      const Icon = template.icon;
-                      return (
-                        <button
-                          key={template.id}
-                          type="button"
-                          onClick={() => openDocumentTemplate(template.id)}
-                          className="rounded-2xl border border-[var(--border-color)] bg-white p-5 text-center transition hover:border-[var(--primary-color)]"
-                        >
-                          <div className="mb-3 inline-flex rounded-2xl bg-indigo-100 p-4 text-indigo-600">
-                            <Icon size={28} />
-                          </div>
-                          <h3 className="!mb-0 text-xl font-semibold text-[var(--text-primary)]">{template.name.replace(' (Statement of Assets, Liabilities and Net Worth)', '')}</h3>
-                        </button>
-                      );
-                    })}
+                    {BULK_REQUEST_TEMPLATES.map((template) => (
+                      <button
+                        key={template.id}
+                        type="button"
+                        onClick={() => openDocumentTemplate(template.id)}
+                        className="rounded-2xl border border-[var(--border-color)] bg-white p-5 text-center transition hover:border-[var(--primary-color)]"
+                      >
+                        <div className="mb-3 inline-flex rounded-2xl bg-indigo-100 p-3 text-indigo-600">
+                          <FileText size={22} />
+                        </div>
+                        <h3 className="!mb-0 !text-sm font-semibold text-[var(--text-primary)]">{template.name.replace(' (Statement of Assets, Liabilities and Net Worth)', '')}</h3>
+                      </button>
+                    ))}
                   </section>
 
-                  <section className="rounded-2xl border border-blue-200 bg-blue-50 p-6">
-                    <h3 className="!mb-3 text-xl font-semibold text-blue-900">Document Generation Guidelines</h3>
-                    <ul className="list-disc space-y-2 pl-6 text-lg text-blue-800">
+                  <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
+                    <h3 className="!mb-3 !text-base font-semibold text-blue-900">Document Generation Guidelines</h3>
+                    <ul className="list-disc space-y-2 pl-6 !text-sm text-blue-800">
                       <li>All reports follow official government formatting standards</li>
                       <li>Ranking reports are automatically formatted for landscape printing</li>
                       <li>Assessment forms are portrait-oriented with conditional logic for disqualified applicants</li>
@@ -2802,9 +2788,9 @@ export const RSPDashboard = () => {
                 <section className="space-y-4">
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
-                      <p className="!mb-1 text-base text-blue-600">RSP / Reports / {activeDocumentTemplate?.name.replace(' (Statement of Assets, Liabilities and Net Worth)', '') || 'Employee Documents'}</p>
-                      <h2 className="!mb-1 text-5xl font-bold text-[var(--text-primary)]">{activeDocumentTemplate?.name.replace(' (Statement of Assets, Liabilities and Net Worth)', '') || 'Employee Documents'}</h2>
-                      <p className="!mb-0 text-2xl text-[var(--text-secondary)]">{activeDocumentSubmissions.length} total submissions across all departments</p>
+                      <p className="!mb-1 text-sm text-blue-600">RSP / Reports / {activeDocumentTemplate?.name.replace(' (Statement of Assets, Liabilities and Net Worth)', '') || 'Employee Documents'}</p>
+                      <h2 className="!mb-1 !text-2xl font-bold text-[var(--text-primary)]">{activeDocumentTemplate?.name.replace(' (Statement of Assets, Liabilities and Net Worth)', '') || 'Employee Documents'}</h2>
+                      <p className="!mb-0 !text-sm text-[var(--text-secondary)]">{activeDocumentSubmissions.length} total submissions across all departments</p>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
@@ -2812,7 +2798,7 @@ export const RSPDashboard = () => {
                         <button
                           type="button"
                           onClick={() => triggerDocumentDownload(activeDocumentSubmissions.filter((entry) => selectedDocumentSubmissionIds.includes(entry.id)))}
-                          className="rounded-xl bg-purple-600 px-5 py-3 text-lg font-semibold text-white"
+                          className="rounded-xl bg-purple-600 px-5 py-2.5 text-sm font-semibold text-white"
                         >
                           Download Selected ({totalSelectedDocumentSubmissions})
                         </button>
@@ -2821,7 +2807,7 @@ export const RSPDashboard = () => {
                         <button
                           type="button"
                           onClick={() => setSelectedDocumentSubmissionIds([])}
-                          className="rounded-xl border border-[var(--border-color)] bg-white px-5 py-3 text-lg font-semibold text-[var(--text-primary)]"
+                          className="rounded-xl border border-[var(--border-color)] bg-white px-5 py-2.5 text-sm font-semibold text-[var(--text-primary)]"
                         >
                           Clear Selection
                         </button>
@@ -2829,7 +2815,7 @@ export const RSPDashboard = () => {
                       <button
                         type="button"
                         onClick={() => window.print()}
-                        className="rounded-xl border border-[var(--border-color)] bg-white px-5 py-3 text-lg font-semibold text-[var(--text-primary)]"
+                        className="rounded-xl border border-[var(--border-color)] bg-white px-5 py-2.5 text-sm font-semibold text-[var(--text-primary)]"
                       >
                         Print
                       </button>
@@ -2845,15 +2831,15 @@ export const RSPDashboard = () => {
                             <button
                               type="button"
                               onClick={() => toggleDocumentOffice(group.office)}
-                              className="inline-flex items-center gap-2 text-left text-3xl font-semibold text-[var(--text-primary)]"
+                              className="inline-flex items-center gap-2 text-left !text-lg font-semibold text-[var(--text-primary)]"
                             >
                               <ChevronRight size={20} className={`${isExpanded ? 'rotate-90' : ''} transition`} />
                               {group.office}
-                              <span className="rounded-md bg-purple-100 px-2 py-1 text-lg font-semibold text-purple-700">{group.total} submitted</span>
-                              {group.selected > 0 && <span className="rounded-md bg-purple-600 px-2 py-1 text-lg font-semibold text-white">{group.selected} selected</span>}
+                              <span className="rounded-md bg-purple-100 px-2 py-1 text-sm font-semibold text-purple-700">{group.total} submitted</span>
+                              {group.selected > 0 && <span className="rounded-md bg-purple-600 px-2 py-1 text-sm font-semibold text-white">{group.selected} selected</span>}
                             </button>
 
-                            <div className="flex flex-wrap items-center gap-3 text-lg">
+                            <div className="flex flex-wrap items-center gap-3 text-sm">
                               <button type="button" onClick={() => selectAllInOffice(group.office, true)} className="text-purple-600">Select All</button>
                               <button type="button" onClick={() => selectAllInOffice(group.office, false)} className="text-[var(--text-secondary)]">Deselect All</button>
                               <button
@@ -2875,19 +2861,19 @@ export const RSPDashboard = () => {
                                       type="checkbox"
                                       checked={selectedDocumentSubmissionIds.includes(entry.id)}
                                       onChange={() => toggleDocumentSubmission(entry.id)}
-                                      className="h-6 w-6"
+                                      className="h-5 w-5"
                                     />
                                     <div className="rounded-full bg-purple-100 p-2 text-purple-600">
                                       <User size={18} />
                                     </div>
                                     <div>
-                                      <p className="!mb-1 text-2xl font-semibold text-[var(--text-primary)]">
-                                        {entry.fullName} <span className="text-xl font-normal text-[var(--text-secondary)]">{entry.employeeCode} • {entry.position}</span>
+                                      <p className="!mb-1 !text-base font-semibold text-[var(--text-primary)]">
+                                        {entry.fullName} <span className="!text-xs font-normal text-[var(--text-secondary)]">{entry.employeeCode} • {entry.position}</span>
                                       </p>
-                                      <p className="!mb-0 text-xl text-[var(--text-secondary)]">
+                                      <p className="!mb-0 !text-xs text-[var(--text-secondary)]">
                                         Submitted: {entry.submittedDate}
                                         {' '}
-                                        <span className={`ml-2 rounded-full px-2 py-1 text-base font-semibold ${entry.status === 'Approved' ? 'bg-green-100 text-green-700' : entry.status === 'Pending' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
+                                        <span className={`ml-2 rounded-full px-2 py-1 text-xs font-semibold ${entry.status === 'Approved' ? 'bg-green-100 text-green-700' : entry.status === 'Pending' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
                                           {entry.status}
                                         </span>
                                       </p>
@@ -2898,7 +2884,7 @@ export const RSPDashboard = () => {
                                     type="button"
                                     onClick={() => triggerDocumentDownload([entry])}
                                     disabled={!entry.documentUrl || entry.documentUrl === '#'}
-                                    className="text-xl font-semibold text-purple-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                    className="text-sm font-semibold text-purple-600 disabled:cursor-not-allowed disabled:opacity-50"
                                   >
                                     Download
                                   </button>
@@ -2916,8 +2902,8 @@ export const RSPDashboard = () => {
               <section className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
-                    <h2 className="!mb-1 text-2xl font-semibold">Deleted Job Archives</h2>
-                    <p className="text-lg text-[var(--text-secondary)]">Applicants and document references preserved when a job post is deleted</p>
+                    <h2 className="!mb-1 !text-lg font-semibold">Deleted Job Archives</h2>
+                    <p className="!text-sm text-[var(--text-secondary)]">Applicants and document references preserved when a job post is deleted</p>
                   </div>
                   <span className="rounded-full bg-slate-100 px-3 py-1 text-base text-[var(--text-secondary)]">{deletedJobReports.length} archive{deletedJobReports.length === 1 ? '' : 's'}</span>
                 </div>

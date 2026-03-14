@@ -145,7 +145,7 @@ export const mockDatabase = {
     const newApplicant: MockApplicant = {
       ...data,
       id: generateId(),
-        status: data.status || 'Pending',
+      status: 'Pending',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -235,7 +235,7 @@ export const mockDatabase = {
   // Mock Supabase query builder API
   from(table: string) {
     return {
-      select: (columns: string = '*', options?: { count?: string; head?: boolean }) => {
+      select: (_columns: string = '*', options?: { count?: string; head?: boolean }) => {
         // Handle count-only queries
         if (options?.count === 'exact' && options?.head) {
           return {
@@ -486,9 +486,9 @@ export const mockDatabase = {
   },
 
   storage: {
-    from: (bucket: string) => {
+    from: (_bucket: string) => {
       return {
-        createSignedUrl: async (path: string, expiresIn: number) => {
+        createSignedUrl: async (path: string, _expiresIn: number) => {
           // In mock mode, return the path as-is (data URL)
           return { data: { signedUrl: path }, error: null };
         }

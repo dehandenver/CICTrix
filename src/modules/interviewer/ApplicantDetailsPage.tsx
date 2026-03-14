@@ -2,12 +2,16 @@ import {
     ArrowLeft,
     BookOpen,
     Calendar,
+  CheckCircle2,
+  CircleX,
     Download,
     Eye,
     FileText,
     Mail,
     MessageSquare,
     Phone,
+  Send,
+  Star,
     User,
     X,
 } from 'lucide-react';
@@ -156,6 +160,9 @@ const normalizeText = (value: string) => String(value ?? '').trim().toLowerCase(
 
 const statusBadge = (status?: string) => {
   const normalized = normalizeText(status ?? '');
+  if (normalized.includes('not qualified') || normalized.includes('disqual') || normalized.includes('reject')) {
+    return { label: 'Disqualified', className: 'bg-rose-100 text-rose-700 border-rose-300' };
+  }
   if (normalized.includes('qualified') || normalized.includes('recommend') || normalized.includes('hired')) {
     return { label: 'Score Finalized', className: 'bg-emerald-100 text-emerald-700 border-emerald-300' };
   }
@@ -440,7 +447,6 @@ export function ApplicantDetailsPage() {
 
   const [applicant, setApplicant] = useState<ApplicantRecord | null>(null);
   const [recruitmentApplicant, setRecruitmentApplicant] = useState<Applicant | null>(routeState?.applicant ?? null);
-  const [jobPosting, setJobPosting] = useState<JobPosting | null>(null);
   const [attachments, setAttachments] = useState<AttachmentRecord[]>([]);
   const [evaluation, setEvaluation] = useState<EvaluationRecord | null>(null);
 
@@ -455,7 +461,6 @@ export function ApplicantDetailsPage() {
         : null;
 
       setRecruitmentApplicant(storedRecruitmentApplicant);
-      setJobPosting(storedJobPosting);
       setNotes(storedRecruitmentApplicant?.notes?.[0]?.content ?? '');
       setAppointmentType(getStoredAppointmentType(id));
       setEducationAttainment(getStoredEducationAttainment(id));
@@ -521,9 +526,11 @@ export function ApplicantDetailsPage() {
   }, [id, routeState]);
 
   const fullName = useMemo(() => (applicant ? getFullName(applicant) : ''), [applicant]);
-  const badge = statusBadge(applicant?.status);
+  const resolvedStatus = recruitmentApplicant?.status || applicant?.status;
+  const badge = statusBadge(resolvedStatus);
   const score = useMemo(() => computeScoreBreakdown(evaluation), [evaluation]);
   const backTo = routeState?.from || '/admin/rsp/qualified';
+  const isFromJobPosts = backTo.startsWith('/admin/rsp/jobs');
   const primaryEducation = recruitmentApplicant?.education?.[0] ?? null;
   const primaryExperience = recruitmentApplicant?.experience?.[0] ?? null;
   const selectedEducationOption = EDUCATION_ATTAINMENT_OPTIONS.find((option) => option.value === educationAttainment);
@@ -581,6 +588,39 @@ export function ApplicantDetailsPage() {
     window.location.href = `mailto:${applicant.email}?subject=${subject}`;
   };
 
+  const handleUpdateStatus = (nextStatus: Applicant['status']) => {
+    if (!recruitmentApplicant) return;
+
+    const now = new Date().toISOString();
+    const nextApplicants = getApplicants().map((entry) => {
+      if (entry.id !== recruitmentApplicant.id) return entry;
+      return {
+        ...entry,
+        status: nextStatus,
+        timeline: [
+          ...entry.timeline,
+          { event: `Status updated to ${nextStatus}`, date: now, actor: 'RSP Staff' },
+        ],
+      };
+    });
+
+    saveApplicants(nextApplicants);
+
+    const updated = nextApplicants.find((entry) => entry.id === recruitmentApplicant.id) ?? recruitmentApplicant;
+    setRecruitmentApplicant(updated);
+    setApplicant((current) => (current ? { ...current, status: nextStatus } : current));
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('cictrix:applicants-updated'));
+    }
+  };
+
+  const handleDisqualify = () => {
+    const confirmed = window.confirm(`Mark ${fullName || 'this applicant'} as Disqualified?`);
+    if (!confirmed) return;
+    handleUpdateStatus('Not Qualified');
+  };
+
   const handleSaveScoreSetup = () => {
     if (!applicant?.id) return;
     saveStoredAppointmentType(applicant.id, appointmentType);
@@ -605,20 +645,55 @@ export function ApplicantDetailsPage() {
       <Sidebar activeModule="RSP" userRole="rsp" />
 
       <main className="admin-content bg-slate-100 !p-0">
-        <header className="border-b border-slate-200 bg-white px-8 py-5">
+        <header className="border-b border-slate-200 bg-white px-6 py-4">
           <div className="mb-3 flex items-center justify-between gap-4">
             <div className="text-sm text-slate-500">
               <span className="text-blue-700">RSP</span> / <span className="text-blue-700 font-semibold">Qualified Applicants</span> /{' '}
               <span className="text-slate-800">{fullName}</span>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowScoresModal(true)}
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-6 py-2.5 text-base font-semibold text-slate-700 shadow-sm"
-            >
-              <Eye size={20} /> View Scores
-            </button>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {isFromJobPosts && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleSendMessage}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm"
+                  >
+                    <Send size={16} /> Send Message
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDisqualify}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700 shadow-sm"
+                  >
+                    <CircleX size={16} /> Disqualify
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateStatus('Shortlisted')}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm"
+                  >
+                    <Star size={16} /> Shortlist
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateStatus('For Interview')}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm"
+                  >
+                    <CheckCircle2 size={16} /> Qualify
+                  </button>
+                </>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setShowScoresModal(true)}
+                className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm"
+              >
+                <Eye size={18} /> View Scores
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center gap-4">
@@ -627,11 +702,11 @@ export function ApplicantDetailsPage() {
               onClick={() => navigate(backTo)}
               className="rounded-full p-2 text-slate-500 hover:bg-slate-100"
             >
-              <ArrowLeft size={24} />
+              <ArrowLeft size={20} />
             </button>
             <div>
-              <h1 className="text-4xl font-bold text-slate-900">{fullName}</h1>
-              <div className="mt-2 flex flex-wrap items-center gap-3 text-xl text-slate-600">
+              <h1 className="text-2xl font-bold text-slate-900">{fullName}</h1>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-base text-slate-600">
                 <span>{applicant.position || 'Position Unassigned'}</span>
                 <span className="text-slate-400">•</span>
                 <span>{applicant.office || 'Department Unassigned'}</span>
@@ -644,27 +719,27 @@ export function ApplicantDetailsPage() {
           </div>
         </header>
 
-        <section className="px-8 py-6">
-          <article className="mb-6 rounded-2xl bg-blue-700 px-6 py-5 text-white shadow">
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
+        <section className="px-6 py-5">
+          <article className="mb-6 rounded-2xl bg-blue-700 px-5 py-4 text-white shadow">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
               <div>
                 <p className="text-sm text-blue-100">Total Score</p>
-                <p className="text-4xl font-bold">{score.total}</p>
+                <p className="text-3xl font-bold">{score.total}</p>
                 <p className="text-sm text-blue-100">out of 100</p>
               </div>
               <div>
                 <p className="text-sm text-blue-100">Education</p>
-                <p className="text-4xl font-bold">{score.education}</p>
+                <p className="text-3xl font-bold">{score.education}</p>
                 <p className="text-sm text-blue-100">/ 20</p>
               </div>
               <div>
                 <p className="text-sm text-blue-100">Experience</p>
-                <p className="text-4xl font-bold">{score.experience}</p>
+                <p className="text-3xl font-bold">{score.experience}</p>
                 <p className="text-sm text-blue-100">/ 20</p>
               </div>
               <div>
                 <p className="text-sm text-blue-100">Performance</p>
-                <p className="text-4xl font-bold">{score.performance}</p>
+                <p className="text-3xl font-bold">{score.performance}</p>
                 <p className="text-sm text-blue-100">/ 20</p>
               </div>
             </div>
@@ -685,54 +760,54 @@ export function ApplicantDetailsPage() {
                     key={tab.key}
                     type="button"
                     onClick={() => setActiveTab(tab.key as TabKey)}
-                    className={`inline-flex items-center justify-center gap-2 px-4 py-4 text-lg font-semibold ${active ? 'border-b-4 border-blue-600 bg-slate-100 text-blue-700' : 'text-slate-600'}`}
+                    className={`inline-flex items-center justify-center gap-2 px-4 py-3 text-base font-semibold ${active ? 'border-b-4 border-blue-600 bg-slate-100 text-blue-700' : 'text-slate-600'}`}
                   >
-                    <Icon size={20} /> {tab.label}
+                    <Icon size={18} /> {tab.label}
                   </button>
                 );
               })}
             </div>
 
-            <div className="p-6">
+            <div className="p-5">
               {activeTab === 'overview' && (
                 <section>
-                  <h2 className="mb-5 text-3xl font-semibold text-slate-900">Personal Information</h2>
+                  <h2 className="mb-5 text-2xl font-semibold text-slate-900">Personal Information</h2>
                   <div className="grid grid-cols-1 gap-y-6 md:grid-cols-2 md:gap-x-10">
                     <div>
                       <p className="text-sm font-semibold uppercase text-slate-500">Full Name</p>
-                      <p className="text-2xl text-slate-900">{fullName}</p>
+                      <p className="text-xl text-slate-900">{fullName}</p>
                     </div>
                     <div>
                       <p className="text-sm font-semibold uppercase text-slate-500">Position Applied For</p>
-                      <p className="text-2xl text-slate-900">{applicant.position || '--'}</p>
+                      <p className="text-xl text-slate-900">{applicant.position || '--'}</p>
                     </div>
                     <div>
                       <p className="text-sm font-semibold uppercase text-slate-500">Email Address</p>
-                      <p className="inline-flex items-center gap-2 text-2xl text-slate-900"><Mail size={18} /> {applicant.email || '--'}</p>
+                      <p className="inline-flex items-center gap-2 text-xl text-slate-900"><Mail size={16} /> {applicant.email || '--'}</p>
                     </div>
                     <div>
                       <p className="text-sm font-semibold uppercase text-slate-500">Contact Number</p>
-                      <p className="inline-flex items-center gap-2 text-2xl text-slate-900"><Phone size={18} /> {applicant.contact_number || '--'}</p>
+                      <p className="inline-flex items-center gap-2 text-xl text-slate-900"><Phone size={16} /> {applicant.contact_number || '--'}</p>
                     </div>
                     <div>
                       <p className="text-sm font-semibold uppercase text-slate-500">Item Number</p>
-                      <p className="text-2xl text-slate-900">{applicant.item_number || '--'}</p>
+                      <p className="text-xl text-slate-900">{applicant.item_number || '--'}</p>
                     </div>
                     <div>
                       <p className="text-sm font-semibold uppercase text-slate-500">Address</p>
-                      <p className="text-2xl text-slate-900">{applicant.address || '--'}</p>
+                      <p className="text-xl text-slate-900">{applicant.address || '--'}</p>
                     </div>
                     <div>
                       <p className="text-sm font-semibold uppercase text-slate-500">Date Submitted</p>
-                      <p className="inline-flex items-center gap-2 text-2xl text-slate-900"><Calendar size={18} /> {formatDate(applicant.created_at)}</p>
+                      <p className="inline-flex items-center gap-2 text-xl text-slate-900"><Calendar size={16} /> {formatDate(applicant.created_at)}</p>
                     </div>
                     <div>
                       <p className="text-sm font-semibold uppercase text-slate-500">PWD Status</p>
-                      <p className="text-2xl text-slate-900">{applicant.is_pwd ? 'PWD' : 'Not PWD'}</p>
+                      <p className="text-xl text-slate-900">{applicant.is_pwd ? 'PWD' : 'Not PWD'}</p>
                     </div>
                     <div>
                       <p className="text-sm font-semibold uppercase text-slate-500">Date Qualified</p>
-                      <p className="inline-flex items-center gap-2 text-2xl text-slate-900"><Calendar size={18} /> {formatDate(evaluation?.updated_at || evaluation?.created_at)}</p>
+                      <p className="inline-flex items-center gap-2 text-xl text-slate-900"><Calendar size={16} /> {formatDate(evaluation?.updated_at || evaluation?.created_at)}</p>
                     </div>
                   </div>
                 </section>
@@ -740,20 +815,20 @@ export function ApplicantDetailsPage() {
 
               {activeTab === 'qualifications' && (
                 <section>
-                  <h2 className="mb-5 text-3xl font-semibold text-slate-900">Educational & Professional Background</h2>
+                  <h2 className="mb-5 text-2xl font-semibold text-slate-900">Educational & Professional Background</h2>
 
                   <div className="mb-6 space-y-5 border-b border-slate-200 pb-6">
                     <div className="border-l-4 border-blue-600 pl-4">
-                      <p className="text-lg font-semibold uppercase text-slate-600">Education</p>
-                      <p className="text-2xl text-slate-900">
+                      <p className="text-base font-semibold uppercase text-slate-600">Education</p>
+                      <p className="text-xl text-slate-900">
                         {primaryEducation
                           ? `${primaryEducation.degree}, ${primaryEducation.school}`
                           : 'No education details submitted yet.'}
                       </p>
                     </div>
                     <div className="border-l-4 border-green-600 pl-4">
-                      <p className="text-lg font-semibold uppercase text-slate-600">Work Experience</p>
-                      <p className="text-2xl text-slate-900">
+                      <p className="text-base font-semibold uppercase text-slate-600">Work Experience</p>
+                      <p className="text-xl text-slate-900">
                         {primaryExperience
                           ? `${primaryExperience.years} year${primaryExperience.years === 1 ? '' : 's'} as ${primaryExperience.title}${primaryExperience.company ? ` at ${primaryExperience.company}` : ''}`
                           : 'No work experience submitted yet.'}
@@ -761,7 +836,7 @@ export function ApplicantDetailsPage() {
                     </div>
                   </div>
 
-                  <h3 className="mb-4 text-2xl font-semibold text-slate-700">Evaluation Scores</h3>
+                  <h3 className="mb-4 text-xl font-semibold text-slate-700">Evaluation Scores</h3>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     {[
                       { label: 'Education', value: score.education, color: 'bg-blue-50 border-blue-200 text-blue-700' },
@@ -770,7 +845,7 @@ export function ApplicantDetailsPage() {
                       { label: 'PCPT Score', value: score.pcpt, color: 'bg-orange-50 border-orange-200 text-orange-700' },
                     ].map((item) => (
                       <div key={item.label} className={`rounded-2xl border p-4 ${item.color}`}>
-                        <div className="mb-3 flex items-center justify-between text-xl font-semibold">
+                        <div className="mb-3 flex items-center justify-between text-base font-semibold">
                           <p>{item.label}</p>
                           <p>{item.value}/20</p>
                         </div>
@@ -785,13 +860,13 @@ export function ApplicantDetailsPage() {
 
               {activeTab === 'documents' && (
                 <section>
-                  <h2 className="mb-5 text-3xl font-semibold text-slate-900">Submitted Documents</h2>
+                  <h2 className="mb-5 text-2xl font-semibold text-slate-900">Submitted Documents</h2>
                   <div className="space-y-3">
                     {attachments.length === 0 && <p className="text-base text-slate-500">No uploaded documents found.</p>}
                     {attachments.map((doc) => (
                       <div key={doc.id} className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
                         <div>
-                          <p className="text-xl font-semibold text-slate-900">{doc.file_name}</p>
+                          <p className="text-lg font-semibold text-slate-900">{doc.file_name}</p>
                           <p className="text-sm text-slate-500">Uploaded on {formatDate(doc.created_at || applicant.created_at)}</p>
                         </div>
                         <div className="flex items-center gap-4">
@@ -806,17 +881,17 @@ export function ApplicantDetailsPage() {
 
               {activeTab === 'interview' && (
                 <section>
-                  <h2 className="mb-5 text-3xl font-semibold text-slate-900">Interview Scheduling & Communication</h2>
+                  <h2 className="mb-5 text-2xl font-semibold text-slate-900">Interview Scheduling & Communication</h2>
 
                   <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-                    <p className="text-xl font-semibold text-emerald-800">Qualified for Interview</p>
+                    <p className="text-lg font-semibold text-emerald-800">Qualified for Interview</p>
                     <p className="mt-1 text-base text-emerald-700">
                       This applicant is qualified and ready for interview. You can schedule and send interview invitations directly.
                     </p>
                   </div>
 
-                  <h3 className="mb-3 text-2xl font-semibold text-slate-800">Send Interview Invitation</h3>
-                  <ul className="mb-4 list-disc space-y-2 pl-7 text-lg text-slate-700">
+                  <h3 className="mb-3 text-xl font-semibold text-slate-800">Send Interview Invitation</h3>
+                  <ul className="mb-4 list-disc space-y-2 pl-7 text-base text-slate-700">
                     <li>Interview date, time, and venue</li>
                     <li>Required documents to bring</li>
                     <li>Interview panel details and format</li>
@@ -824,12 +899,12 @@ export function ApplicantDetailsPage() {
                     <li>Application status updates</li>
                   </ul>
 
-                  <button type="button" onClick={handleSendMessage} className="mb-6 inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-6 py-3 text-lg font-semibold text-white">
-                    <Mail size={22} /> Send Message to Applicant
+                  <button type="button" onClick={handleSendMessage} className="mb-6 inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-2.5 text-base font-semibold text-white">
+                    <Mail size={18} /> Send Message to Applicant
                   </button>
 
                   <div className="border-t border-slate-200 pt-6">
-                    <h3 className="mb-2 text-2xl font-semibold text-slate-800">Internal Notes & Remarks</h3>
+                    <h3 className="mb-2 text-xl font-semibold text-slate-800">Internal Notes & Remarks</h3>
                     <p className="mb-3 text-base text-slate-600">
                       Add private notes about this applicant. These notes are only visible to RSP staff and will not be shared with the applicant.
                     </p>

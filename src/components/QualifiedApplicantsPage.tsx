@@ -56,6 +56,7 @@ type ApplicantAttachmentRow = {
 };
 
 type EmailTemplateKey = 'none' | 'missing_documents' | 'incorrect_file_format' | 'invalid_information' | 'schedule_interview' | 'custom_message';
+type JobPostsStatusFilter = 'all' | 'pending' | 'reviewed' | 'shortlisted' | 'qualified';
 
 const REQUIRED_DOCUMENTS = ['Resume', 'Application Letter', 'Transcript of Records', 'Certifications'];
 
@@ -262,16 +263,40 @@ const isAdminQualifiedStatus = (status: string) => {
   );
 };
 
+const toJobPostsStatusBucket = (status: ApplicantStatus): Exclude<JobPostsStatusFilter, 'all'> => {
+  const normalized = normalizeText(status);
+  if (normalized.includes('recommend') || normalized.includes('qualified') || normalized.includes('hired') || normalized.includes('accepted')) {
+    return 'qualified';
+  }
+  if (normalized.includes('shortlist')) {
+    return 'shortlisted';
+  }
+  if (normalized.includes('review') || normalized.includes('interview')) {
+    return 'reviewed';
+  }
+  return 'pending';
+};
+
+const toJobPostsStatusLabel = (status: ApplicantStatus) => {
+  const bucket = toJobPostsStatusBucket(status);
+  if (bucket === 'qualified') return 'qualified';
+  if (bucket === 'shortlisted') return 'shortlisted';
+  if (bucket === 'reviewed') return 'reviewed';
+  return 'pending';
+};
+
 export const QualifiedApplicantsPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { jobId } = useParams();
+  const isJobPostsView = location.pathname === '/admin/rsp/jobs';
 
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [jobs, setJobs] = useState<JobPosting[]>([]);
   const [search, setSearch] = useState('');
   const [jobFilter, setJobFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<ApplicantStatus[]>([]);
+  const [jobPostsStatusFilter, setJobPostsStatusFilter] = useState<JobPostsStatusFilter>('all');
   const [scoreMin, setScoreMin] = useState(0);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -547,8 +572,8 @@ export const QualifiedApplicantsPage = () => {
 
   const filteredRows = useMemo(() => {
     const rows = applicants.filter((applicant) => {
-      // Keep the main Qualified Applicants page strict, but allow job-specific View Applicants to show all rows.
-      if (!jobId) {
+      // Keep the main Qualified Applicants page strict, but allow job-specific and Job Posts views to show all rows.
+      if (!jobId && !isJobPostsView) {
         const isQualified = isAdminQualifiedStatus(applicant.status);
         if (!isQualified) return false;
       }
@@ -559,16 +584,21 @@ export const QualifiedApplicantsPage = () => {
           .toLowerCase()
           .includes(search.toLowerCase());
       const matchesJob = (jobId ? applicant.jobPostingId === jobId : jobFilter === 'all' || applicant.jobPostingId === jobFilter);
-      const matchesStatus = statusFilter.length === 0 || statusFilter.includes(applicant.status);
-      const matchesScore = applicant.qualificationScore >= scoreMin;
+      const matchesStatus = isJobPostsView
+        ? jobPostsStatusFilter === 'all' || toJobPostsStatusBucket(applicant.status) === jobPostsStatusFilter
+        : statusFilter.length === 0 || statusFilter.includes(applicant.status);
+      const matchesScore = isJobPostsView ? true : applicant.qualificationScore >= scoreMin;
       const applied = new Date(applicant.applicationDate).getTime();
-      const fromOkay = !dateFrom || applied >= new Date(dateFrom).getTime();
-      const toOkay = !dateTo || applied <= new Date(dateTo).getTime() + 86400000;
+      const fromOkay = isJobPostsView ? true : (!dateFrom || applied >= new Date(dateFrom).getTime());
+      const toOkay = isJobPostsView ? true : (!dateTo || applied <= new Date(dateTo).getTime() + 86400000);
       return matchesSearch && matchesJob && matchesStatus && matchesScore && fromOkay && toOkay;
     });
 
     const sorted = [...rows];
     sorted.sort((left, right) => {
+      if (isJobPostsView) {
+        return new Date(right.applicationDate).getTime() - new Date(left.applicationDate).getTime();
+      }
       if (sortBy === 'Qualification Score') return right.qualificationScore - left.qualificationScore;
       if (sortBy === 'Last Updated') {
         const leftTime = new Date(left.timeline[left.timeline.length - 1]?.date ?? left.applicationDate).getTime();
@@ -578,7 +608,7 @@ export const QualifiedApplicantsPage = () => {
       return new Date(right.applicationDate).getTime() - new Date(left.applicationDate).getTime();
     });
     return sorted;
-  }, [applicants, search, jobId, jobFilter, statusFilter, scoreMin, dateFrom, dateTo, sortBy]);
+  }, [applicants, search, jobId, jobFilter, statusFilter, jobPostsStatusFilter, scoreMin, dateFrom, dateTo, sortBy, isJobPostsView]);
 
   const counts = useMemo(() => {
     const total = filteredRows.length;
@@ -942,107 +972,160 @@ export const QualifiedApplicantsPage = () => {
             {jobId && selectedJobTitle ? (
               <p className="mb-2 text-sm text-slate-500">Job Postings &gt; {selectedJobTitle} &gt; Applicants</p>
             ) : null}
-            <h1 className="text-3xl font-bold text-slate-900">Qualified Applicants</h1>
+            <h1 className={`${isJobPostsView ? 'text-2xl' : 'text-3xl'} font-bold text-slate-900`}>{isJobPostsView ? 'Job Posts' : 'Qualified Applicants'}</h1>
           </div>
-          <button className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700" onClick={() => setShowGuide(true)}>
-            How to Navigate
-          </button>
+          {!isJobPostsView && (
+            <button className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700" onClick={() => setShowGuide(true)}>
+              How to Navigate
+            </button>
+          )}
         </header>
 
-        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {[{ label: 'Total Apps', value: counts.total }, { label: 'Shortlisted', value: counts.shortlisted }, { label: 'For Interview', value: counts.forInterview }, { label: 'Recommended', value: counts.recommended }].map((card) => (
-            <article key={card.label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-sm text-slate-500">{card.label}</p>
-              <p className="mt-2 text-2xl font-bold text-slate-900">{card.value}</p>
-            </article>
-          ))}
-        </section>
+        {!isJobPostsView && (
+          <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {[{ label: 'Total Apps', value: counts.total }, { label: 'Shortlisted', value: counts.shortlisted }, { label: 'For Interview', value: counts.forInterview }, { label: 'Recommended', value: counts.recommended }].map((card) => (
+              <article key={card.label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p className="text-sm text-slate-500">{card.label}</p>
+                <p className="mt-2 text-2xl font-bold text-slate-900">{card.value}</p>
+              </article>
+            ))}
+          </section>
+        )}
 
         <section className="mt-4 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-6">
-            {!jobId ? (
-              <select className="h-10 rounded-lg border border-slate-300 px-3 text-sm" value={jobFilter} onChange={(event) => setJobFilter(event.target.value)}>
-                <option value="all">All Job Postings</option>
-                {jobs.map((job) => <option key={job.id} value={job.id}>{job.title}</option>)}
-              </select>
-            ) : (
-              <div className="h-10 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600 flex items-center">Filtered to selected job posting</div>
-            )}
-
-            <div className="rounded-lg border border-slate-300 px-3 py-2 text-xs">
-              <p className="mb-1 font-semibold uppercase tracking-wide text-slate-500">Status</p>
-              <div className="max-h-20 space-y-1 overflow-y-auto">
-                {STATUS_OPTIONS.map((status) => (
-                  <label key={status} className="inline-flex items-center gap-2 text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={statusFilter.includes(status)}
-                      onChange={() =>
-                        setStatusFilter((current) =>
-                          current.includes(status)
-                            ? current.filter((entry) => entry !== status)
-                            : [...current, status]
-                        )
-                      }
-                    />
-                    <span>{status}</span>
-                  </label>
-                ))}
+          {isJobPostsView ? (
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+              <div className="relative lg:col-span-2">
+                <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                <input
+                  className="h-12 w-full rounded-xl border border-slate-300 pl-12 pr-4 text-base text-slate-700"
+                  placeholder="Search applicants by name or email..."
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
               </div>
+              <select
+                className="h-12 rounded-xl border border-slate-300 px-4 text-base text-slate-800"
+                value={jobPostsStatusFilter}
+                onChange={(event) => setJobPostsStatusFilter(event.target.value as JobPostsStatusFilter)}
+              >
+                <option value="all">All Status</option>
+                <option value="pending">Pending</option>
+                <option value="reviewed">Reviewed</option>
+                <option value="shortlisted">Shortlisted</option>
+                <option value="qualified">Qualified</option>
+              </select>
             </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-6">
+                {!jobId ? (
+                  <select className="h-10 rounded-lg border border-slate-300 px-3 text-sm" value={jobFilter} onChange={(event) => setJobFilter(event.target.value)}>
+                    <option value="all">All Job Postings</option>
+                    {jobs.map((job) => <option key={job.id} value={job.id}>{job.title}</option>)}
+                  </select>
+                ) : (
+                  <div className="h-10 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600 flex items-center">Filtered to selected job posting</div>
+                )}
 
-            <div className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-              <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Qualification Score {scoreMin}%+</label>
-              <input type="range" min={0} max={100} value={scoreMin} onChange={(event) => setScoreMin(Number(event.target.value))} className="mt-2 w-full" />
-            </div>
+                <div className="rounded-lg border border-slate-300 px-3 py-2 text-xs">
+                  <p className="mb-1 font-semibold uppercase tracking-wide text-slate-500">Status</p>
+                  <div className="max-h-20 space-y-1 overflow-y-auto">
+                    {STATUS_OPTIONS.map((status) => (
+                      <label key={status} className="inline-flex items-center gap-2 text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={statusFilter.includes(status)}
+                          onChange={() =>
+                            setStatusFilter((current) =>
+                              current.includes(status)
+                                ? current.filter((entry) => entry !== status)
+                                : [...current, status]
+                            )
+                          }
+                        />
+                        <span>{status}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
 
-            <input className="h-10 rounded-lg border border-slate-300 px-3 text-sm" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
-            <input className="h-10 rounded-lg border border-slate-300 px-3 text-sm" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
-              <input className="h-10 w-full rounded-lg border border-slate-300 pl-9 pr-3 text-sm" placeholder="Search name, email, ID" value={search} onChange={(event) => setSearch(event.target.value)} />
-            </div>
-          </div>
+                <div className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Qualification Score {scoreMin}%+</label>
+                  <input type="range" min={0} max={100} value={scoreMin} onChange={(event) => setScoreMin(Number(event.target.value))} className="mt-2 w-full" />
+                </div>
 
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-            <select className="h-10 rounded-lg border border-slate-300 px-3 text-sm" value={sortBy} onChange={(event) => setSortBy(event.target.value as 'Application Date' | 'Qualification Score' | 'Last Updated')}>
-              <option>Application Date</option>
-              <option>Qualification Score</option>
-              <option>Last Updated</option>
-            </select>
+                <input className="h-10 rounded-lg border border-slate-300 px-3 text-sm" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+                <input className="h-10 rounded-lg border border-slate-300 px-3 text-sm" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                  <input className="h-10 w-full rounded-lg border border-slate-300 pl-9 pr-3 text-sm" placeholder="Search name, email, ID" value={search} onChange={(event) => setSearch(event.target.value)} />
+                </div>
+              </div>
 
-            <div className="flex flex-wrap gap-2">
-              <button className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm" onClick={() => updateApplicantStatus(selectedIds.length ? selectedIds : filteredRows.map((item) => item.id), 'Under Review')}>
-                Update Status
-              </button>
-              <button className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm" onClick={exportSelected}>
-                <FileSpreadsheet className="mr-1 inline h-4 w-4" />Export
-              </button>
-            </div>
-          </div>
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                <select className="h-10 rounded-lg border border-slate-300 px-3 text-sm" value={sortBy} onChange={(event) => setSortBy(event.target.value as 'Application Date' | 'Qualification Score' | 'Last Updated')}>
+                  <option>Application Date</option>
+                  <option>Qualification Score</option>
+                  <option>Last Updated</option>
+                </select>
+
+                <div className="flex flex-wrap gap-2">
+                  <button className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm" onClick={() => updateApplicantStatus(selectedIds.length ? selectedIds : filteredRows.map((item) => item.id), 'Under Review')}>
+                    Update Status
+                  </button>
+                  <button className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm" onClick={exportSelected}>
+                    <FileSpreadsheet className="mr-1 inline h-4 w-4" />Export
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
         </section>
 
+        {isJobPostsView && (
+          <p className="mt-4 text-base text-slate-700">
+            Showing <span className="font-semibold text-slate-900">{filteredRows.length}</span> applicants
+          </p>
+        )}
+
         <section className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          {isJobPostsView && (
+            <div className="border-b border-slate-200 px-5 py-3 text-base text-slate-700">
+              Showing <span className="font-semibold text-slate-900">{filteredRows.length}</span> applicants
+            </div>
+          )}
           <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm">
-              <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
+            <table className={`min-w-full text-left ${isJobPostsView ? 'text-sm' : 'text-sm'}`}>
+              <thead className={isJobPostsView ? 'bg-slate-50 text-sm uppercase tracking-wide text-slate-700' : 'bg-slate-100 text-xs uppercase tracking-wide text-slate-500'}>
                 <tr>
-                  <th className="px-3 py-3">
-                    <input
-                      type="checkbox"
-                      checked={allSelected}
-                      onChange={(event) =>
-                        setSelectedIds(event.target.checked ? filteredRows.map((item) => item.id) : [])
-                      }
-                    />
-                  </th>
-                  <th className="px-3 py-3">Applicant</th>
-                  <th className="px-3 py-3">Item Number</th>
-                  <th className="px-3 py-3">Contact</th>
-                  <th className="px-3 py-3">Position Applied</th>
-                  <th className="px-3 py-3">Date Applied</th>
-                  <th className="px-3 py-3">Qualification Score</th>
-                  <th className="px-3 py-3">Status</th>
+                  {isJobPostsView ? (
+                    <>
+                      <th className="px-5 py-4">Applicant Name</th>
+                      <th className="px-5 py-4">Contact Info</th>
+                      <th className="px-5 py-4">Date Submitted</th>
+                      <th className="px-5 py-4">Status</th>
+                    </>
+                  ) : (
+                    <>
+                      <th className="px-3 py-3">
+                        <input
+                          type="checkbox"
+                          checked={allSelected}
+                          onChange={(event) =>
+                            setSelectedIds(event.target.checked ? filteredRows.map((item) => item.id) : [])
+                          }
+                        />
+                      </th>
+                      <th className="px-3 py-3">Applicant</th>
+                      <th className="px-3 py-3">Item Number</th>
+                      <th className="px-3 py-3">Contact</th>
+                      <th className="px-3 py-3">Position Applied</th>
+                      <th className="px-3 py-3">Date Applied</th>
+                      <th className="px-3 py-3">Qualification Score</th>
+                      <th className="px-3 py-3">Status</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -1052,59 +1135,79 @@ export const QualifiedApplicantsPage = () => {
                   return (
                     <tr
                       key={applicant.id}
-                      className="border-t border-slate-100 hover:bg-slate-50"
+                      className={isJobPostsView ? 'border-t border-slate-200 hover:bg-slate-50' : 'border-t border-slate-100 hover:bg-slate-50'}
                     >
-                      <td className="px-3 py-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(applicant.id)}
-                          onClick={(event) => event.stopPropagation()}
-                          onChange={() =>
-                            setSelectedIds((current) =>
-                              current.includes(applicant.id)
-                                ? current.filter((entry) => entry !== applicant.id)
-                                : [...current, applicant.id]
-                            )
-                          }
-                        />
-                      </td>
-                      <td className="px-3 py-3 font-medium text-blue-700 underline decoration-blue-200 underline-offset-2">
-                        <button
-                          type="button"
-                          className="text-left hover:text-blue-800"
-                          onClick={() =>
-                            navigate(`/admin/rsp/applicant/${applicant.id}`, {
-                              state: {
-                                from: `${location.pathname}${location.search}`,
-                                applicant,
-                              },
-                            })
-                          }
-                        >
-                          {fullName}
-                        </button>
-                      </td>
-                      <td className="px-3 py-3 text-slate-600">{applicant.personalInfo.itemNumber || 'N/A'}</td>
-                      <td className="px-3 py-3 text-slate-600">
-                        <p>{applicant.personalInfo.email}</p>
-                        <p className="text-xs text-slate-500">{applicant.personalInfo.phone}</p>
-                      </td>
-                      <td className="px-3 py-3 text-slate-600">
-                        <p>{job?.title ?? 'Unknown'}</p>
-                        <p className="text-xs text-slate-500">{job?.department ?? 'N/A'}</p>
-                      </td>
-                      <td className="px-3 py-3 text-slate-600">{formatPHDate(applicant.applicationDate)}</td>
-                      <td className="px-3 py-3">
-                        <div className="w-32">
-                          <div className="mb-1 h-2 rounded-full bg-slate-200">
-                            <div className="h-2 rounded-full bg-blue-600" style={{ width: `${applicant.qualificationScore}%` }} />
-                          </div>
-                          <span className="text-xs font-semibold text-slate-700">{applicant.qualificationScore}%</span>
-                        </div>
-                      </td>
-                      <td className="px-3 py-3">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_COLORS[applicant.status]}`}>{applicant.status}</span>
-                      </td>
+                      {isJobPostsView ? (
+                        <>
+                          <td className="px-5 py-4 font-medium text-slate-900">
+                            <button type="button" className="text-left hover:text-blue-700" onClick={() => void openApplicantDetails(applicant)}>
+                              {fullName}
+                            </button>
+                          </td>
+                          <td className="px-5 py-4 text-slate-700">
+                            <p>{applicant.personalInfo.email}</p>
+                            <p className="mt-1 text-slate-600">{applicant.personalInfo.phone || '--'}</p>
+                          </td>
+                          <td className="px-5 py-4 text-slate-800">{formatPHDate(applicant.applicationDate)}</td>
+                          <td className="px-5 py-4">
+                            <span className={`rounded-full px-3 py-1 text-sm font-semibold ${STATUS_COLORS[applicant.status]}`}>{toJobPostsStatusLabel(applicant.status)}</span>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-3 py-3">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.includes(applicant.id)}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={() =>
+                                setSelectedIds((current) =>
+                                  current.includes(applicant.id)
+                                    ? current.filter((entry) => entry !== applicant.id)
+                                    : [...current, applicant.id]
+                                )
+                              }
+                            />
+                          </td>
+                          <td className="px-3 py-3 font-medium text-blue-700 underline decoration-blue-200 underline-offset-2">
+                            <button
+                              type="button"
+                              className="text-left hover:text-blue-800"
+                              onClick={() =>
+                                navigate(`/admin/rsp/applicant/${applicant.id}`, {
+                                  state: {
+                                    from: `${location.pathname}${location.search}`,
+                                    applicant,
+                                  },
+                                })
+                              }
+                            >
+                              {fullName}
+                            </button>
+                          </td>
+                          <td className="px-3 py-3 text-slate-600">{applicant.personalInfo.itemNumber || 'N/A'}</td>
+                          <td className="px-3 py-3 text-slate-600">
+                            <p>{applicant.personalInfo.email}</p>
+                            <p className="text-xs text-slate-500">{applicant.personalInfo.phone}</p>
+                          </td>
+                          <td className="px-3 py-3 text-slate-600">
+                            <p>{job?.title ?? 'Unknown'}</p>
+                            <p className="text-xs text-slate-500">{job?.department ?? 'N/A'}</p>
+                          </td>
+                          <td className="px-3 py-3 text-slate-600">{formatPHDate(applicant.applicationDate)}</td>
+                          <td className="px-3 py-3">
+                            <div className="w-32">
+                              <div className="mb-1 h-2 rounded-full bg-slate-200">
+                                <div className="h-2 rounded-full bg-blue-600" style={{ width: `${applicant.qualificationScore}%` }} />
+                              </div>
+                              <span className="text-xs font-semibold text-slate-700">{applicant.qualificationScore}%</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-3">
+                            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_COLORS[applicant.status]}`}>{applicant.status}</span>
+                          </td>
+                        </>
+                      )}
                     </tr>
                   );
                 })}

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { User } from '@supabase/supabase-js';
+import { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 
 // Define available roles in the system
 export type UserRole = 'Admin' | 'RSP' | 'PM' | 'LND' | 'RATER' | 'INTERVIEWER' | 'APPLICANT';
@@ -87,7 +87,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Listen for auth state changes (login, logout, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      async (event: AuthChangeEvent, session: Session | null) => {
         console.log('Auth state changed:', event);
         
         if (session?.user) {
