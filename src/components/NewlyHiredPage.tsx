@@ -129,7 +129,9 @@ export const NewlyHiredPage = () => {
         });
       }
 
-      const rankLine = `Rank: #${Math.max(1, sequence - 1)} • Score: ${(row.onboardingProgress || 0).toFixed(2)}`;
+      const resolvedRank = Math.max(1, Number(row.rankingRank ?? sequence - 1));
+      const resolvedScore = Number(row.rankingScore ?? 0);
+      const rankLine = `Rank: #${resolvedRank} • Score: ${resolvedScore.toFixed(2)}`;
       setGeneratedCredentials((current) => [
         ...current,
         {
@@ -289,7 +291,7 @@ export const NewlyHiredPage = () => {
                         <div>
                           <p className="text-xl font-semibold text-slate-900">{fullName}</p>
                           <p className="text-base text-slate-600">{row.position}</p>
-                          <p className="text-sm text-slate-500">Rank: #{Math.max(1, row.onboardingProgress || 1)} • Score: {(row.onboardingProgress || 0).toFixed(2)} • Hired: {new Date(row.dateHired).toLocaleDateString()}</p>
+                          <p className="text-sm text-slate-500">Rank: #{Math.max(1, Number(row.rankingRank ?? 1))} • Score: {Number(row.rankingScore ?? 0).toFixed(2)} • Hired: {new Date(row.dateHired).toLocaleDateString()}</p>
                         </div>
                       </div>
 

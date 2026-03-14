@@ -673,15 +673,74 @@ export function ApplicantDetailsPage() {
     handleUpdateStatus('Not Qualified');
   };
 
-  const handleSaveScoreSetup = () => {
+  const handleSaveScoreSetup = async () => {
     if (!applicant?.id) return;
+
+    const normalizedStatus = String(resolvedStatus ?? '').toLowerCase();
+    const nextStatus: Applicant['status'] =
+      normalizedStatus.includes('recommend') ||
+      normalizedStatus.includes('qualified') ||
+      normalizedStatus.includes('hired')
+        ? 'Recommended for Hiring'
+        : 'Shortlisted';
+
     saveStoredAppointmentType(applicant.id, appointmentType);
     saveStoredEducationAttainment(applicant.id, educationAttainment);
     saveStoredExperienceYears(applicant.id, experienceYears);
     saveStoredWrittenScore(applicant.id, writtenScore);
     saveStoredFinalizedState(applicant.id, true);
+
+    // Persist score + status so Reports > Application Ranking can include this applicant.
+    const updatePayload = {
+      total_score: modalTotalScore,
+      status: nextStatus,
+    };
+
+    try {
+      const primaryUpdate = await supabase.from('applicants').update(updatePayload).eq('id', applicant.id);
+      if ((primaryUpdate as any)?.error && !isMockModeEnabled) {
+        await (mockDatabase as any).from('applicants').update(updatePayload).eq('id', applicant.id);
+      }
+    } catch {
+      try {
+        await (mockDatabase as any).from('applicants').update(updatePayload).eq('id', applicant.id);
+      } catch {
+        // Best effort persistence only.
+      }
+    }
+
+    // Keep recruitment store score in sync so Reports can resolve totals even
+    // when applicant IDs differ between sources.
+    const recruitmentRows = getApplicants();
+    const updatedRecruitmentRows = recruitmentRows.map((entry) => {
+      const idMatch = recruitmentApplicant ? entry.id === recruitmentApplicant.id : entry.id === applicant.id;
+      const emailMatch = Boolean(applicant.email) && entry.personalInfo.email === applicant.email;
+      if (!idMatch && !emailMatch) return entry;
+      return {
+        ...entry,
+        qualificationScore: modalTotalScore,
+      };
+    });
+    saveApplicants(updatedRecruitmentRows);
+
+    const updatedRecruitmentApplicant = updatedRecruitmentRows.find((entry) => {
+      if (recruitmentApplicant && entry.id === recruitmentApplicant.id) return true;
+      return Boolean(applicant.email) && entry.personalInfo.email === applicant.email;
+    }) ?? recruitmentApplicant;
+
+    if (updatedRecruitmentApplicant) {
+      setRecruitmentApplicant(updatedRecruitmentApplicant);
+    }
+
+    handleUpdateStatus(nextStatus);
+    setApplicant((current) => (current ? { ...current, status: nextStatus } : current));
+
     setIsScoreFinalized(true);
     setShowScoresModal(false);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('cictrix:applicants-updated'));
+    }
   };
 
   if (loading) {

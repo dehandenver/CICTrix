@@ -1,4 +1,5 @@
 import {
+  AlertCircle,
   Bell,
   Briefcase,
   Building2,
@@ -9,10 +10,13 @@ import {
   ChevronRight,
   Clock3,
   Download,
+  Eye,
   FileText,
   Filter,
   Lock,
   Mail,
+  MapPin,
+  Phone,
   Plus,
   Search,
   Settings,
@@ -22,6 +26,7 @@ import {
   UserCheck,
   UserPlus,
   Users,
+  X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -173,6 +178,30 @@ const SETTINGS_TABS = [
   { id: 'appearance', label: 'Appearance', icon: Briefcase },
   { id: 'localization', label: 'Localization', icon: Building2 },
 ] as const;
+
+const EMPLOYEE_DIRECTORY_DEPARTMENTS = [
+  'IT Department',
+  'HR Department',
+  'Finance Department',
+  'General Services',
+  'Legal Department',
+  'Operations',
+];
+
+const EMPLOYEE_DIRECTORY_POSITIONS_BY_DEPARTMENT: Record<string, string[]> = {
+  'IT Department': [
+    'Information Technology Officer I',
+    'Information Technology Officer II',
+    'Information Technology Officer III',
+    'Senior IT Officer',
+    'IT Manager',
+  ],
+  'HR Department': ['HR Officer I', 'HR Officer II', 'Senior HR Officer'],
+  'Finance Department': ['Accountant I', 'Accountant II', 'Finance Officer'],
+  'General Services': ['Administrative Assistant', 'Operations Assistant'],
+  'Legal Department': ['Legal Officer I', 'Legal Officer II'],
+  Operations: ['Operations Officer I', 'Operations Officer II'],
+};
 
 const resolveSection = (pathname: string, search: string): Section => {
   if (pathname === '/admin/rsp/jobs') return 'jobs';
@@ -385,6 +414,26 @@ const RATER_ASSIGNMENTS_KEY = 'cictrix_rater_assigned_positions';
 
 const normalizeEmailKey = (email: string) => email.trim().toLowerCase();
 
+const deriveEvaluationTotalScore = (row: any): number => {
+  if (typeof row?.overall_score === 'number' && row.overall_score > 0) {
+    return Number(row.overall_score);
+  }
+
+  const oralScores = [
+    row?.communication_skills_score,
+    row?.confidence_score,
+    row?.comprehension_score,
+    row?.personality_score,
+    row?.job_knowledge_score,
+    row?.overall_impression_score,
+  ];
+
+  const numeric = oralScores.filter((value) => typeof value === 'number') as number[];
+  if (numeric.length === 0) return 0;
+  const total = numeric.reduce((sum, value) => sum + value, 0);
+  return Number(Math.min(100, Math.max(0, Math.round((total / 30) * 100))));
+};
+
 const loadRaterAssignments = (): Record<string, string[]> => {
   try {
     const raw = localStorage.getItem(RATER_ASSIGNMENTS_KEY);
@@ -445,6 +494,15 @@ export const RSPDashboard = () => {
   const [employeeDirectorySearch, setEmployeeDirectorySearch] = useState('');
   const [selectedDirectoryCard, setSelectedDirectoryCard] = useState<{ position: string; office: string } | null>(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
+  const [employeeDetailsTab, setEmployeeDetailsTab] = useState<'personal' | 'documents'>('personal');
+  const [showPositionChangeModal, setShowPositionChangeModal] = useState(false);
+  const [positionChangeForm, setPositionChangeForm] = useState({
+    changeType: 'promotion' as 'promotion' | 'succession' | 'transfer',
+    newDepartment: 'IT Department',
+    newPosition: '',
+    effectiveDate: '',
+    notes: '',
+  });
 
   const [showJobDialog, setShowJobDialog] = useState(false);
   const [showRaterDialog, setShowRaterDialog] = useState(false);
@@ -540,8 +598,33 @@ export const RSPDashboard = () => {
       setJobs(canonicalJobs);
 
       if (applicantsRes.status === 'fulfilled' && !applicantsRes.value.error && Array.isArray(applicantsRes.value.data)) {
+        const recruitmentApplicants = getRecruitmentApplicants();
+        const recruitmentById = new Map(recruitmentApplicants.map((entry) => [String(entry.id), entry]));
+        const recruitmentByEmail = new Map(
+          recruitmentApplicants
+            .map((entry) => [normalizeEmailKey(entry.personalInfo.email || ''), entry] as const)
+            .filter(([email]) => Boolean(email))
+        );
+
+        const evaluationBestScore = new Map<string, number>();
+        if (evaluationsRes.status === 'fulfilled' && !evaluationsRes.value.error && Array.isArray(evaluationsRes.value.data)) {
+          evaluationsRes.value.data.forEach((item: any) => {
+            const applicantId = String(item?.applicant_id ?? '').trim();
+            if (!applicantId) return;
+            const score = deriveEvaluationTotalScore(item);
+            if (!(score > 0)) return;
+            const current = evaluationBestScore.get(applicantId) ?? 0;
+            if (score >= current) {
+              evaluationBestScore.set(applicantId, score);
+            }
+          });
+        }
+
         const normalized = applicantsRes.value.data.map((item: any) => ({
-          id: String(item?.id ?? crypto.randomUUID()),
+          id: (() => {
+            const id = String(item?.id ?? crypto.randomUUID());
+            return id;
+          })(),
           full_name: applicantNameFromRow(item),
           email: String(item?.email ?? ''),
           contact_number: String(item?.contact_number ?? ''),
@@ -549,7 +632,16 @@ export const RSPDashboard = () => {
           office: String(item?.office ?? item?.department ?? 'Unassigned'),
           status: String(item?.status ?? 'Pending'),
           created_at: String(item?.created_at ?? new Date().toISOString()),
-          total_score: typeof item?.total_score === 'number' ? item.total_score : null,
+          total_score: (() => {
+            const applicantId = String(item?.id ?? '');
+            const emailKey = normalizeEmailKey(String(item?.email ?? ''));
+            const rawDbScore = typeof item?.total_score === 'number' ? item.total_score : 0;
+            const evalScore = applicantId ? (evaluationBestScore.get(applicantId) ?? 0) : 0;
+            const recruitmentScoreById = applicantId ? Number(recruitmentById.get(applicantId)?.qualificationScore ?? 0) : 0;
+            const recruitmentScoreByEmail = emailKey ? Number(recruitmentByEmail.get(emailKey)?.qualificationScore ?? 0) : 0;
+            const resolved = Math.max(rawDbScore, evalScore, recruitmentScoreById, recruitmentScoreByEmail);
+            return resolved > 0 ? resolved : null;
+          })(),
         }));
         setApplicants(normalized);
       } else {
@@ -622,11 +714,13 @@ export const RSPDashboard = () => {
     void load();
     window.addEventListener('focus', syncJobs);
     window.addEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
+    window.addEventListener('cictrix:applicants-updated', syncJobs as EventListener);
     window.addEventListener('storage', onStorage);
 
     return () => {
       window.removeEventListener('focus', syncJobs);
       window.removeEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
+      window.removeEventListener('cictrix:applicants-updated', syncJobs as EventListener);
       window.removeEventListener('storage', onStorage);
     };
   }, []);
@@ -1108,6 +1202,78 @@ export const RSPDashboard = () => {
     () => directoryEmployeesSource.find((employee) => employee.id === selectedEmployeeId) ?? null,
     [directoryEmployeesSource, selectedEmployeeId]
   );
+
+  const selectedEmployeeProfile = useMemo(() => {
+    if (!selectedEmployeeDetails) return null;
+    return {
+      address: 'Lot 5 Blk 3, Sunrise Village, Mandurriao, Iloilo City',
+      dateOfBirth: 'March 15, 1994',
+      placeOfBirth: 'Iloilo City',
+      age: '32 years old',
+      sex: 'Female',
+      civilStatus: 'Married',
+      emergencyContactName: 'Carlos Reyes',
+      emergencyContactRelationship: 'Spouse',
+      emergencyContactPhone: '+63 917 234 5678',
+      dateHired: formatDate(selectedEmployeeDetails.created_at),
+    };
+  }, [selectedEmployeeDetails]);
+
+  const selectedEmployeeDocuments = useMemo(() => {
+    if (!selectedEmployeeDetails) return [] as Array<{
+      id: string;
+      name: string;
+      description: string;
+      status: 'awaiting_review' | 'rejected' | 'pending_submission';
+      requestedAt: string;
+      dueAt: string;
+      submittedAt?: string;
+      rejectionReason?: string;
+    }>;
+
+    return [
+      {
+        id: `nbi-${selectedEmployeeDetails.id}`,
+        name: 'NBI Clearance',
+        description: 'Updated NBI Clearance (must be valid for 2026)',
+        status: 'awaiting_review',
+        requestedAt: 'Feb 10, 2026',
+        dueAt: 'Feb 20, 2026',
+        submittedAt: 'Feb 15, 2026',
+      },
+      {
+        id: `medical-${selectedEmployeeDetails.id}`,
+        name: 'Medical Certificate',
+        description: 'Annual physical examination results',
+        status: 'rejected',
+        requestedAt: 'Feb 10, 2026',
+        dueAt: 'Feb 25, 2026',
+        submittedAt: 'Feb 14, 2026',
+        rejectionReason: 'Image is blurry and unreadable. Please submit a clearer copy.',
+      },
+      {
+        id: `saln-${selectedEmployeeDetails.id}`,
+        name: 'SALN (Statement of Assets, Liabilities and Net Worth)',
+        description: 'SALN for the year 2025',
+        status: 'pending_submission',
+        requestedAt: 'Feb 12, 2026',
+        dueAt: 'Feb 28, 2026',
+      },
+    ];
+  }, [selectedEmployeeDetails]);
+
+  useEffect(() => {
+    if (!selectedEmployeeDetails) return;
+    const currentDepartment = selectedEmployeeDetails.office || 'IT Department';
+    const currentPosition = selectedEmployeeDetails.position || '';
+    setPositionChangeForm((prev) => ({
+      ...prev,
+      newDepartment: EMPLOYEE_DIRECTORY_DEPARTMENTS.includes(currentDepartment)
+        ? currentDepartment
+        : 'IT Department',
+      newPosition: currentPosition,
+    }));
+  }, [selectedEmployeeDetails]);
 
   const bulkRequestEmployees = useMemo<BulkRequestEmployee[]>(() => {
     return directoryEmployeesSource.map((employee) => ({
@@ -1632,6 +1798,16 @@ export const RSPDashboard = () => {
     const selectedRows = activeRankingRows.filter((row) => selectedHireApplicantIds.includes(row.id));
     if (selectedRows.length === 0) return;
 
+    const rankingMetaByApplicantId = new Map(
+      activeRankingRows.map((row, index) => [
+        row.id,
+        {
+          rank: index + 1,
+          score: row.total,
+        },
+      ])
+    );
+
     const existing = getNewlyHired();
     const existingApplicantIds = new Set(existing.map((item) => item.applicantId));
     const now = new Date();
@@ -1648,6 +1824,8 @@ export const RSPDashboard = () => {
         return {
           id: `hire-${row.id}-${now.getTime()}`,
           applicantId: row.id,
+          rankingRank: rankingMetaByApplicantId.get(row.id)?.rank ?? 0,
+          rankingScore: rankingMetaByApplicantId.get(row.id)?.score ?? 0,
           employeeInfo: {
             firstName,
             lastName,
@@ -1750,6 +1928,8 @@ export const RSPDashboard = () => {
 
   const openEmployeeDetails = (employeeId: string) => {
     setSelectedEmployeeId(employeeId);
+    setEmployeeDetailsTab('personal');
+    setShowPositionChangeModal(false);
     setAccountsView('details');
   };
 
@@ -2552,58 +2732,302 @@ export const RSPDashboard = () => {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-                        <div className="space-y-5">
-                          <section className="rounded-2xl border border-[var(--border-color)] p-5">
-                            <h3 className="!mb-3 text-3xl font-semibold text-[var(--text-primary)]">Contact Information</h3>
-                            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                              <div>
-                                <p className="!mb-1 text-base text-[var(--text-secondary)]">Email Address</p>
-                                <p className="!mb-0 text-2xl text-[var(--text-primary)]">{selectedEmployeeDetails?.email || '--'}</p>
-                              </div>
-                              <div>
-                                <p className="!mb-1 text-base text-[var(--text-secondary)]">Contact Number</p>
-                                <p className="!mb-0 text-2xl text-[var(--text-primary)]">{selectedEmployeeDetails?.contact_number || '--'}</p>
-                              </div>
-                            </div>
-                          </section>
+                      <div className="mt-2 border-b border-[var(--border-color)]">
+                        <button
+                          type="button"
+                          onClick={() => setEmployeeDetailsTab('personal')}
+                          className={`mr-6 border-b-2 px-2 py-3 text-2xl font-semibold ${employeeDetailsTab === 'personal' ? 'border-blue-600 text-blue-600' : 'border-transparent text-[var(--text-secondary)]'}`}
+                        >
+                          Personal Details
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEmployeeDetailsTab('documents')}
+                          className={`border-b-2 px-2 py-3 text-2xl font-semibold ${employeeDetailsTab === 'documents' ? 'border-blue-600 text-blue-600' : 'border-transparent text-[var(--text-secondary)]'}`}
+                        >
+                          Documents & Requirements <span className="ml-1 rounded-full bg-blue-600 px-2 py-0.5 text-sm text-white">{selectedEmployeeDocuments.length}</span>
+                        </button>
+                      </div>
 
-                          <section className="rounded-2xl border border-[var(--border-color)] p-5">
-                            <h3 className="!mb-3 text-3xl font-semibold text-[var(--text-primary)]">Personal Details</h3>
-                            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                              <div>
-                                <p className="!mb-1 text-base text-[var(--text-secondary)]">Date Qualified / Hired</p>
-                                <p className="!mb-0 text-2xl text-[var(--text-primary)]">{selectedEmployeeDetails ? formatDate(selectedEmployeeDetails.created_at) : '--'}</p>
+                      {employeeDetailsTab === 'personal' ? (
+                        <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+                          <div className="space-y-5">
+                            <section className="rounded-2xl border border-[var(--border-color)] p-5">
+                              <h3 className="!mb-3 flex items-center gap-2 text-3xl font-semibold text-[var(--text-primary)]"><Mail size={22} className="text-blue-600" /> Contact Information</h3>
+                              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                                <div>
+                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Email Address</p>
+                                  <p className="!mb-0 text-2xl text-[var(--text-primary)]">{selectedEmployeeDetails?.email || '--'}</p>
+                                </div>
+                                <div>
+                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Contact Number</p>
+                                  <p className="!mb-0 flex items-center gap-2 text-2xl text-[var(--text-primary)]"><Phone size={18} className="text-[var(--text-muted)]" /> {selectedEmployeeDetails?.contact_number || '--'}</p>
+                                </div>
+                                <div className="xl:col-span-2">
+                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Address</p>
+                                  <p className="!mb-0 flex items-center gap-2 text-2xl text-[var(--text-primary)]"><MapPin size={18} className="text-[var(--text-muted)]" /> {selectedEmployeeProfile?.address || '--'}</p>
+                                </div>
                               </div>
-                              <div>
-                                <p className="!mb-1 text-base text-[var(--text-secondary)]">Department</p>
-                                <p className="!mb-0 text-2xl text-[var(--text-primary)]">{selectedEmployeeDetails?.office || '--'}</p>
+                            </section>
+
+                            <section className="rounded-2xl border border-[var(--border-color)] p-5">
+                              <h3 className="!mb-3 text-3xl font-semibold text-[var(--text-primary)]">Personal Details</h3>
+                              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                                <div>
+                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Date of Birth</p>
+                                  <p className="!mb-0 text-2xl text-[var(--text-primary)]">{selectedEmployeeProfile?.dateOfBirth || '--'}</p>
+                                </div>
+                                <div>
+                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Place of Birth</p>
+                                  <p className="!mb-0 text-2xl text-[var(--text-primary)]">{selectedEmployeeProfile?.placeOfBirth || '--'}</p>
+                                </div>
+                                <div>
+                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Age</p>
+                                  <p className="!mb-0 text-2xl text-[var(--text-primary)]">{selectedEmployeeProfile?.age || '--'}</p>
+                                </div>
+                                <div>
+                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Sex</p>
+                                  <p className="!mb-0 text-2xl text-[var(--text-primary)]">{selectedEmployeeProfile?.sex || '--'}</p>
+                                </div>
+                                <div>
+                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Civil Status</p>
+                                  <p className="!mb-0 text-2xl text-[var(--text-primary)]">{selectedEmployeeProfile?.civilStatus || '--'}</p>
+                                </div>
                               </div>
+                            </section>
+
+                            <section className="rounded-2xl border border-[var(--border-color)] p-5">
+                              <h3 className="!mb-3 flex items-center gap-2 text-3xl font-semibold text-[var(--text-primary)]"><AlertCircle size={22} className="text-red-500" /> Emergency Contact</h3>
+                              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                                <div>
+                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Contact Person</p>
+                                  <p className="!mb-0 text-2xl text-[var(--text-primary)]">{selectedEmployeeProfile?.emergencyContactName || '--'}</p>
+                                </div>
+                                <div>
+                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Relationship</p>
+                                  <p className="!mb-0 text-2xl text-[var(--text-primary)]">{selectedEmployeeProfile?.emergencyContactRelationship || '--'}</p>
+                                </div>
+                                <div>
+                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Phone Number</p>
+                                  <p className="!mb-0 text-2xl text-[var(--text-primary)]">{selectedEmployeeProfile?.emergencyContactPhone || '--'}</p>
+                                </div>
+                              </div>
+                            </section>
+                          </div>
+
+                          <div className="space-y-4">
+                            <section className="rounded-2xl border border-[var(--border-color)] p-5">
+                              <div className="mb-3 flex items-center justify-between">
+                                <h3 className="!mb-0 text-3xl font-semibold text-[var(--text-primary)]">Employment Details</h3>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowPositionChangeModal(true)}
+                                  className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white"
+                                >
+                                  Edit
+                                </button>
+                              </div>
+                              <p className="!mb-1 text-base text-[var(--text-secondary)]">Employee Number</p>
+                              <p className="!mb-3 text-2xl font-semibold text-[var(--text-primary)]">{selectedEmployeeDetails ? employeeNumberById.get(selectedEmployeeDetails.id) : '--'}</p>
+                              <p className="!mb-1 text-base text-[var(--text-secondary)]">Position</p>
+                              <p className="!mb-3 text-2xl text-[var(--text-primary)]">{selectedEmployeeDetails?.position || '--'}</p>
+                              <p className="!mb-1 text-base text-[var(--text-secondary)]">Department</p>
+                              <p className="!mb-3 text-2xl text-[var(--text-primary)]">{selectedEmployeeDetails?.office || '--'}</p>
+                              <p className="!mb-1 text-base text-[var(--text-secondary)]">Date Hired</p>
+                              <p className="!mb-3 text-2xl text-[var(--text-primary)]">{selectedEmployeeProfile?.dateHired || '--'}</p>
+                              <p className="!mb-1 text-base text-[var(--text-secondary)]">Employment Status</p>
+                              <p className="!mb-0 text-2xl text-green-700">{selectedEmployeeDetails?.status?.toLowerCase().includes('inactive') ? 'Inactive' : 'Active'}</p>
+                            </section>
+
+                            <section className="rounded-2xl border border-[var(--border-color)] p-5">
+                              <h3 className="!mb-3 text-3xl font-semibold text-[var(--text-primary)]">Reset Password</h3>
+                              <button type="button" className="w-full rounded-xl bg-red-600 px-4 py-3 text-xl font-semibold text-white">
+                                <Lock size={16} className="mr-2 inline" /> Reset Password
+                              </button>
+                            </section>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mt-5 space-y-5">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <h3 className="!mb-1 text-5xl font-bold text-[var(--text-primary)]">Document Requirements</h3>
+                              <p className="!mb-0 text-2xl text-[var(--text-secondary)]">Manage and review employee document submissions</p>
                             </div>
-                          </section>
+                            <button type="button" className="rounded-xl bg-blue-600 px-4 py-2 text-lg font-semibold text-white">
+                              <FileText size={16} className="mr-2 inline" /> Request Document
+                            </button>
+                          </div>
+
+                          {selectedEmployeeDocuments.map((doc) => (
+                            <article key={doc.id} className="rounded-2xl border border-[var(--border-color)] bg-white p-5">
+                              <div className="mb-2 flex items-center gap-3">
+                                <h4 className="!mb-0 text-3xl font-semibold text-[var(--text-primary)]">{doc.name}</h4>
+                                {doc.status === 'awaiting_review' && <span className="rounded-full bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-700">Awaiting Review</span>}
+                                {doc.status === 'rejected' && <span className="rounded-full bg-red-100 px-3 py-1 text-sm font-semibold text-red-700">Rejected</span>}
+                                {doc.status === 'pending_submission' && <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-700">Pending Submission</span>}
+                              </div>
+                              <p className="!mb-2 text-2xl text-[var(--text-secondary)]">{doc.description}</p>
+                              <p className="!mb-2 text-xl text-[var(--text-secondary)]">
+                                <Calendar size={16} className="mr-1 inline" /> Requested: {doc.requestedAt}
+                                {'  '}•{'  '}
+                                <Calendar size={16} className="mr-1 inline" /> Due: {doc.dueAt}
+                                {doc.submittedAt ? (
+                                  <>
+                                    {'  '}•{'  '}
+                                    <Download size={16} className="mr-1 inline" /> Submitted: {doc.submittedAt}
+                                  </>
+                                ) : null}
+                              </p>
+
+                              {doc.status === 'awaiting_review' && (
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  <button type="button" className="rounded-xl bg-blue-100 px-4 py-2 text-lg text-blue-700"><Eye size={16} className="mr-1 inline" /> View Document</button>
+                                  <button type="button" className="rounded-xl bg-green-600 px-4 py-2 text-lg text-white"><Check size={16} className="mr-1 inline" /> Approve</button>
+                                  <button type="button" className="rounded-xl bg-red-600 px-4 py-2 text-lg text-white"><X size={16} className="mr-1 inline" /> Request Resubmission</button>
+                                </div>
+                              )}
+
+                              {doc.status === 'rejected' && (
+                                <>
+                                  <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-lg text-red-700">
+                                    <strong>Rejection Reason:</strong> {doc.rejectionReason}
+                                  </div>
+                                  <p className="!mb-0 mt-3 text-xl font-semibold text-red-700">
+                                    <AlertCircle size={16} className="mr-1 inline" /> Awaiting resubmission from employee
+                                  </p>
+                                </>
+                              )}
+                            </article>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </section>
+
+                  {showPositionChangeModal && selectedEmployeeDetails && (
+                    <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/50 p-4" onClick={() => setShowPositionChangeModal(false)}>
+                      <div className="w-full max-w-4xl rounded-2xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+                        <div className="flex items-start justify-between border-b border-[var(--border-color)] px-6 py-5">
+                          <div>
+                            <h3 className="!mb-1 text-5xl font-bold text-[var(--text-primary)]">Change Position</h3>
+                            <p className="!mb-0 text-2xl text-[var(--text-secondary)]">Update position for {selectedEmployeeDetails.full_name}</p>
+                          </div>
+                          <button type="button" className="rounded-lg p-2 text-[var(--text-muted)] hover:bg-slate-100" onClick={() => setShowPositionChangeModal(false)}>
+                            <X size={26} />
+                          </button>
                         </div>
 
-                        <div className="space-y-4">
-                          <section className="rounded-2xl border border-[var(--border-color)] p-5">
-                            <h3 className="!mb-3 text-3xl font-semibold text-[var(--text-primary)]">Employment Details</h3>
-                            <p className="!mb-1 text-base text-[var(--text-secondary)]">Employee Number</p>
-                            <p className="!mb-3 text-2xl font-semibold text-[var(--text-primary)]">{selectedEmployeeDetails ? employeeNumberById.get(selectedEmployeeDetails.id) : '--'}</p>
-                            <p className="!mb-1 text-base text-[var(--text-secondary)]">Position</p>
-                            <p className="!mb-3 text-2xl text-[var(--text-primary)]">{selectedEmployeeDetails?.position || '--'}</p>
-                            <p className="!mb-1 text-base text-[var(--text-secondary)]">Employment Status</p>
-                            <p className="!mb-0 text-2xl text-[var(--text-primary)]">{selectedEmployeeDetails?.status || '--'}</p>
-                          </section>
+                        <div className="max-h-[65vh] space-y-4 overflow-y-auto px-6 py-5">
+                          <div className="grid grid-cols-1 gap-4 rounded-xl bg-slate-50 p-4 xl:grid-cols-2">
+                            <div>
+                              <p className="!mb-1 text-lg text-[var(--text-secondary)]">Current Position</p>
+                              <p className="!mb-0 text-2xl font-semibold text-[var(--text-primary)]">{selectedEmployeeDetails.position || '--'}</p>
+                            </div>
+                            <div>
+                              <p className="!mb-1 text-lg text-[var(--text-secondary)]">Current Department</p>
+                              <p className="!mb-0 text-2xl font-semibold text-[var(--text-primary)]">{selectedEmployeeDetails.office || '--'}</p>
+                            </div>
+                          </div>
 
-                          <section className="rounded-2xl border border-[var(--border-color)] p-5">
-                            <h3 className="!mb-3 text-3xl font-semibold text-[var(--text-primary)]">Reset Password</h3>
-                            <button type="button" className="w-full rounded-xl bg-red-600 px-4 py-3 text-xl font-semibold text-white">
-                              Reset Password
-                            </button>
-                          </section>
+                          <div>
+                            <p className="!mb-2 text-xl font-semibold text-[var(--text-primary)]">Change Type <span className="text-red-500">*</span></p>
+                            <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+                              {[
+                                { id: 'promotion', label: 'Promotion' },
+                                { id: 'succession', label: 'Succession' },
+                                { id: 'transfer', label: 'Transfer' },
+                              ].map((option) => (
+                                <button
+                                  key={option.id}
+                                  type="button"
+                                  onClick={() => setPositionChangeForm((prev) => ({ ...prev, changeType: option.id as 'promotion' | 'succession' | 'transfer' }))}
+                                  className={`rounded-xl border px-4 py-3 text-xl font-semibold ${positionChangeForm.changeType === option.id ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-[var(--border-color)] text-[var(--text-secondary)]'}`}
+                                >
+                                  {option.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                            <div>
+                              <label className="mb-1 block text-xl font-semibold text-[var(--text-primary)]">New Department <span className="text-red-500">*</span></label>
+                              <select
+                                value={positionChangeForm.newDepartment}
+                                onChange={(event) => {
+                                  const nextDepartment = event.target.value;
+                                  const firstPosition = EMPLOYEE_DIRECTORY_POSITIONS_BY_DEPARTMENT[nextDepartment]?.[0] || '';
+                                  setPositionChangeForm((prev) => ({
+                                    ...prev,
+                                    newDepartment: nextDepartment,
+                                    newPosition: firstPosition,
+                                  }));
+                                }}
+                                className="w-full rounded-xl border border-[var(--border-color)] px-4 py-3 text-2xl"
+                              >
+                                {EMPLOYEE_DIRECTORY_DEPARTMENTS.map((department) => (
+                                  <option key={department} value={department}>{department}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="mb-1 block text-xl font-semibold text-[var(--text-primary)]">New Position <span className="text-red-500">*</span></label>
+                              <select
+                                value={positionChangeForm.newPosition}
+                                onChange={(event) => setPositionChangeForm((prev) => ({ ...prev, newPosition: event.target.value }))}
+                                className="w-full rounded-xl border border-[var(--border-color)] px-4 py-3 text-2xl"
+                              >
+                                <option value="">Select a position</option>
+                                {(EMPLOYEE_DIRECTORY_POSITIONS_BY_DEPARTMENT[positionChangeForm.newDepartment] || []).map((position) => (
+                                  <option key={position} value={position}>{position}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="mb-1 block text-xl font-semibold text-[var(--text-primary)]">Effective Date <span className="text-red-500">*</span></label>
+                            <input
+                              type="date"
+                              value={positionChangeForm.effectiveDate}
+                              onChange={(event) => setPositionChangeForm((prev) => ({ ...prev, effectiveDate: event.target.value }))}
+                              className="w-full rounded-xl border border-[var(--border-color)] px-4 py-3 text-2xl"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="mb-1 block text-xl font-semibold text-[var(--text-primary)]">Notes / Justification</label>
+                            <textarea
+                              rows={4}
+                              value={positionChangeForm.notes}
+                              onChange={(event) => setPositionChangeForm((prev) => ({ ...prev, notes: event.target.value }))}
+                              placeholder="Enter any additional notes or justification for this position change..."
+                              className="w-full rounded-xl border border-[var(--border-color)] px-4 py-3 text-2xl"
+                            />
+                          </div>
+
+                          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-lg text-amber-800">
+                            <strong>Note:</strong> This action will update the employee's position and department. All related records will be updated accordingly.
+                          </div>
+                        </div>
+
+                        <div className="flex justify-end gap-3 border-t border-[var(--border-color)] px-6 py-4">
+                          <button type="button" className="rounded-xl border border-[var(--border-color)] px-5 py-2 text-xl" onClick={() => setShowPositionChangeModal(false)}>
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-xl bg-blue-600 px-6 py-2 text-xl font-semibold text-white"
+                            onClick={() => setShowPositionChangeModal(false)}
+                          >
+                            Apply Position Change
+                          </button>
                         </div>
                       </div>
                     </div>
-                  </section>
+                  )}
                 </>
               )}
             </>

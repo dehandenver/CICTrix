@@ -88,6 +88,8 @@ export type NewlyHiredStatus =
 export interface NewlyHired {
   id: string;
   applicantId?: string;
+  rankingRank?: number;
+  rankingScore?: number;
   employeeInfo: {
     firstName: string;
     lastName: string;
