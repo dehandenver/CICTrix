@@ -1,6 +1,6 @@
+import { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 
 // Define available roles in the system
 export type UserRole = 'Admin' | 'RSP' | 'PM' | 'LND' | 'RATER' | 'INTERVIEWER' | 'APPLICANT';

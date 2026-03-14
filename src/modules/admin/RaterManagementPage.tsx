@@ -1,11 +1,11 @@
+import { Building, Edit2, Mail, Plus, Trash2, UserCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { UserCheck, Plus, Edit2, Trash2, Mail, Building } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import { Sidebar } from '../../components/Sidebar';
 import { Button } from '../../components/Button';
-import { Input } from '../../components/Input';
 import { Dialog } from '../../components/Dialog';
+import { Input } from '../../components/Input';
 import { Select } from '../../components/Select';
+import { Sidebar } from '../../components/Sidebar';
+import { supabase } from '../../lib/supabase';
 import '../../styles/admin.css';
 
 interface Rater {

@@ -407,6 +407,18 @@ export const syncApplicantSubmissionToRecruitment = (
   }
 
   const linkedJob = findJobPostingForSubmission(input.position, input.department);
+  // Also skip if the same email is already linked to the same job posting
+  // (prevents duplicates when the form is submitted more than once).
+  if (input.email) {
+    const targetJobId = linkedJob?.id ?? 'unposted';
+    const duplicate = applicants.find(
+      (row) =>
+        row.personalInfo.email === input.email &&
+        (row.jobPostingId === targetJobId || targetJobId === 'unposted')
+    );
+    if (duplicate) return;
+  }
+
   const submittedAt = input.submittedAt ?? new Date().toISOString();
 
   const documents = (input.attachments ?? []).map((file) => ({

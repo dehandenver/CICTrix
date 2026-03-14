@@ -2,15 +2,16 @@ import {
     ArrowLeft,
     BookOpen,
     Calendar,
-  CheckCircle2,
-  CircleX,
+    CheckCircle2,
+    CircleX,
     Download,
+    Eye,
     FileText,
     Mail,
     MessageSquare,
     Phone,
-  Send,
-  Star,
+    Send,
+    Star,
     User,
     X,
 } from 'lucide-react';
@@ -444,6 +445,11 @@ export function ApplicantDetailsPage() {
   const [writtenScore, setWrittenScore] = useState('');
   const [isScoreFinalized, setIsScoreFinalized] = useState(false);
 
+  const [showSendEmailModal, setShowSendEmailModal] = useState(false);
+  const [emailTemplate, setEmailTemplate] = useState('');
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailBody, setEmailBody] = useState('');
+
   const [applicant, setApplicant] = useState<ApplicantRecord | null>(null);
   const [recruitmentApplicant, setRecruitmentApplicant] = useState<Applicant | null>(routeState?.applicant ?? null);
   const [attachments, setAttachments] = useState<AttachmentRecord[]>([]);
@@ -529,6 +535,10 @@ export function ApplicantDetailsPage() {
   const badge = statusBadge(resolvedStatus);
   const score = useMemo(() => computeScoreBreakdown(evaluation), [evaluation]);
   const backTo = routeState?.from || '/admin/rsp/qualified';
+  const sourcePath = routeState?.from || '';
+  const isFromJobPosts = sourcePath.startsWith('/admin/rsp/jobs');
+  const showViewScoresButton = !isFromJobPosts;
+  const showJobPostActionButtons = isFromJobPosts;
   const primaryEducation = recruitmentApplicant?.education?.[0] ?? null;
   const primaryExperience = recruitmentApplicant?.experience?.[0] ?? null;
   const selectedEducationOption = EDUCATION_ATTAINMENT_OPTIONS.find((option) => option.value === educationAttainment);
@@ -580,10 +590,54 @@ export function ApplicantDetailsPage() {
     window.dispatchEvent(new CustomEvent('cictrix:applicants-updated'));
   };
 
+  const EMAIL_TEMPLATES: Record<string, { subject: string; body: string }> = {
+    missing_documents: {
+      subject: 'Incomplete Requirements for Your Application',
+      body: `Dear ${fullName},\n\nWe have reviewed your application and noticed that some required documents are missing. Please submit the missing documents at your earliest convenience to continue with the recruitment process.\n\nThank you for your interest in joining our organization.\n\nBest regards,\nRecruitment Team`,
+    },
+    incorrect_format: {
+      subject: 'Document Format Issue – Action Required',
+      body: `Dear ${fullName},\n\nWe noticed that one or more of your submitted documents are in an incorrect file format. Please resubmit the affected documents in the accepted format (PDF or Word).\n\nThank you for your cooperation.\n\nBest regards,\nRecruitment Team`,
+    },
+    invalid_information: {
+      subject: 'Clarification Needed on Your Application',
+      body: `Dear ${fullName},\n\nWe have reviewed your application and found some information that requires clarification. Please contact us at your earliest convenience to address this matter.\n\nThank you.\n\nBest regards,\nRecruitment Team`,
+    },
+    schedule_interview: {
+      subject: 'Interview Schedule for Your Application',
+      body: `Dear ${fullName},\n\nCongratulations! We are pleased to inform you that you have been selected for an interview. Please expect a follow-up communication regarding the interview schedule.\n\nWe look forward to meeting you.\n\nBest regards,\nRecruitment Team`,
+    },
+    custom: {
+      subject: '',
+      body: '',
+    },
+  };
+
+  const handleEmailTemplateChange = (value: string) => {
+    setEmailTemplate(value);
+    if (value && value !== 'custom' && EMAIL_TEMPLATES[value]) {
+      setEmailSubject(EMAIL_TEMPLATES[value].subject);
+      setEmailBody(EMAIL_TEMPLATES[value].body);
+    } else if (value === 'custom') {
+      setEmailSubject('');
+      setEmailBody('');
+    }
+  };
+
   const handleSendMessage = () => {
-    if (!applicant?.email) return;
-    const subject = encodeURIComponent(`Interview update for ${fullName}`);
-    window.location.href = `mailto:${applicant.email}?subject=${subject}`;
+    setEmailTemplate('');
+    setEmailSubject('');
+    setEmailBody('');
+    setShowSendEmailModal(true);
+  };
+
+  const handleSendEmail = () => {
+    if (!emailSubject.trim() || !emailBody.trim()) return;
+    if (applicant?.email) {
+      const mailto = `mailto:${applicant.email}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
+      window.location.href = mailto;
+    }
+    setShowSendEmailModal(false);
   };
 
   const handleUpdateStatus = (nextStatus: Applicant['status']) => {
@@ -651,34 +705,48 @@ export function ApplicantDetailsPage() {
             </div>
 
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={handleSendMessage}
-                className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm"
-              >
-                <Send size={16} /> Send Message
-              </button>
-              <button
-                type="button"
-                onClick={handleDisqualify}
-                className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700 shadow-sm"
-              >
-                <CircleX size={16} /> Disqualify
-              </button>
-              <button
-                type="button"
-                onClick={() => handleUpdateStatus('Shortlisted')}
-                className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm"
-              >
-                <Star size={16} /> Shortlist
-              </button>
-              <button
-                type="button"
-                onClick={() => handleUpdateStatus('Recommended for Hiring')}
-                className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm"
-              >
-                <CheckCircle2 size={16} /> Qualify
-              </button>
+              {showViewScoresButton && (
+                <button
+                  type="button"
+                  onClick={() => setShowScoresModal(true)}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm"
+                >
+                  <Eye size={16} /> View Scores
+                </button>
+              )}
+
+              {showJobPostActionButtons && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleSendMessage}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm"
+                  >
+                    <Send size={16} /> Send Message
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDisqualify}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700 shadow-sm"
+                  >
+                    <CircleX size={16} /> Disqualify
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateStatus('Shortlisted')}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm"
+                  >
+                    <Star size={16} /> Shortlist
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateStatus('Recommended for Hiring')}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm"
+                  >
+                    <CheckCircle2 size={16} /> Qualify
+                  </button>
+                </>
+              )}
 
             </div>
           </div>
@@ -911,6 +979,150 @@ export function ApplicantDetailsPage() {
           </article>
         </section>
       </main>
+
+      {showSendEmailModal && (
+        <div className="fixed inset-0 z-[270] flex items-center justify-center bg-black/60 p-4" onClick={() => setShowSendEmailModal(false)}>
+          <div className="flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" style={{ maxHeight: '90vh' }} onClick={(e) => e.stopPropagation()}>
+            {/* Blue header */}
+            <div className="flex items-center gap-4 bg-blue-600 px-6 py-5">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/20">
+                <Mail size={24} className="text-white" />
+              </div>
+              <div className="flex-1">
+                <h2 className="text-lg font-bold text-white">Send Email to Applicant</h2>
+                <p className="text-sm text-blue-100">Notify applicant about their application</p>
+              </div>
+              <button type="button" onClick={() => setShowSendEmailModal(false)} className="rounded-lg p-2 text-white/80 hover:bg-white/10">
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Scrollable body */}
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+              {/* Recipient row */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-4 grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">TO:</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-800">{applicant?.email || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">APPLICANT NAME:</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-800">{fullName || '—'}</p>
+                </div>
+              </div>
+
+              {/* Template selector */}
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Message Template <span className="font-normal text-slate-400">(Optional)</span></label>
+                <select
+                  value={emailTemplate}
+                  onChange={(e) => handleEmailTemplateChange(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                >
+                  <option value="">Select a template...</option>
+                  <option value="missing_documents">Missing Documents</option>
+                  <option value="incorrect_format">Incorrect File Format</option>
+                  <option value="invalid_information">Invalid Information</option>
+                  <option value="schedule_interview">Schedule Interview</option>
+                  <option value="custom">Custom Message</option>
+                </select>
+                <p className="mt-1 text-xs text-slate-400">Choose a pre-written template or write a custom message</p>
+              </div>
+
+              {/* Subject line */}
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Subject Line <span className="text-rose-500">*</span></label>
+                <input
+                  type="text"
+                  value={emailSubject}
+                  onChange={(e) => setEmailSubject(e.target.value)}
+                  placeholder="e.g., Incomplete Requirements for Your Application"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                />
+              </div>
+
+              {/* Message body */}
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Message <span className="text-rose-500">*</span></label>
+                <textarea
+                  rows={7}
+                  value={emailBody}
+                  onChange={(e) => setEmailBody(e.target.value)}
+                  placeholder="Write your message here..."
+                  className="w-full resize-none rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                />
+                <p className="mt-1 text-xs text-slate-400">Be clear and professional in your communication</p>
+              </div>
+
+              {/* Applicant Documents Summary */}
+              <div>
+                <p className="mb-3 text-sm font-bold text-slate-700">Applicant Documents Summary</p>
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Submitted */}
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                    <div className="mb-2 flex items-center gap-2">
+                      <FileText size={16} className="text-emerald-600" />
+                      <span className="text-sm font-bold text-emerald-700">Submitted Documents</span>
+                    </div>
+                    {attachments.length > 0 ? (
+                      <ul className="space-y-1">
+                        {attachments.map((att) => (
+                          <li key={att.id} className="flex items-center gap-1.5 text-xs text-emerald-700">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                            {att.file_name}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-xs text-emerald-600">No documents submitted</p>
+                    )}
+                  </div>
+
+                  {/* Missing */}
+                  <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
+                    <div className="mb-2 flex items-center gap-2">
+                      <FileText size={16} className="text-rose-600" />
+                      <span className="text-sm font-bold text-rose-700">Missing Documents</span>
+                    </div>
+                    {(() => {
+                      const REQUIRED = ['Application Letter', 'Resume', 'Transcript of Records', 'Certifications', 'Personal Data Sheet'];
+                      const submitted = attachments.map((a) => a.file_name.toLowerCase());
+                      const missing = REQUIRED.filter((req) => !submitted.some((s) => s.includes(req.toLowerCase().split(' ')[0])));
+                      return missing.length === 0 ? (
+                        <p className="text-xs text-rose-600">All documents submitted</p>
+                      ) : (
+                        <ul className="space-y-1">
+                          {missing.map((doc) => (
+                            <li key={doc} className="flex items-center gap-1.5 text-xs text-rose-700">
+                              <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+                              {doc}
+                            </li>
+                          ))}
+                        </ul>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end gap-3 border-t border-slate-200 bg-white px-6 py-4">
+              <button type="button" onClick={() => setShowSendEmailModal(false)} className="rounded-2xl border border-slate-300 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSendEmail}
+                disabled={!emailSubject.trim() || !emailBody.trim()}
+                className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Send size={15} /> Send Email
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showScoresModal && (
         <div className="fixed inset-0 z-[260] bg-black/80 p-4" onClick={() => setShowScoresModal(false)}>

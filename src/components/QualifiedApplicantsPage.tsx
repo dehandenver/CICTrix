@@ -534,9 +534,36 @@ export const QualifiedApplicantsPage = () => {
     });
 
     const mergedApplicants = Array.from(mergedById.values());
-    setApplicants(mergedApplicants);
-    if (mergedApplicants.length > 0) {
-      saveApplicants(mergedApplicants);
+    // Deduplicate by email+jobPostingId to guard against cases where the same
+    // person submitted more than once or was synced from two different sources.
+    const seenEmailJob = new Map<string, Applicant>();
+    mergedApplicants.forEach((row) => {
+      const email = row.personalInfo?.email?.trim().toLowerCase() ?? '';
+      const key = email ? `${email}::${row.jobPostingId}` : row.id;
+      const existing = seenEmailJob.get(key);
+      if (!existing) {
+        seenEmailJob.set(key, row);
+      } else {
+        // Prefer the entry with a real status over "New Application", or
+        // whichever has the more recent applicationDate.
+        const existingIsGeneric = existing.status === 'New Application';
+        const rowIsGeneric = row.status === 'New Application';
+        if (existingIsGeneric && !rowIsGeneric) {
+          seenEmailJob.set(key, row);
+        } else if (!existingIsGeneric && rowIsGeneric) {
+          // keep existing
+        } else {
+          // Both same priority – keep the later one.
+          if (new Date(row.applicationDate) > new Date(existing.applicationDate)) {
+            seenEmailJob.set(key, row);
+          }
+        }
+      }
+    });
+    const dedupedApplicants = Array.from(seenEmailJob.values());
+    setApplicants(dedupedApplicants);
+    if (dedupedApplicants.length > 0) {
+      saveApplicants(dedupedApplicants);
     }
   };
 
