@@ -132,6 +132,16 @@ const buildEvaluationStatusMap = (evaluations: any[] = []) => {
   return evaluationMap;
 };
 
+const statusIndicatesEvaluated = (status: string): boolean => {
+  const value = String(status || '').toLowerCase();
+  return (
+    value.includes('review') ||
+    value.includes('interview completed') ||
+    value.includes('recommend') ||
+    value.includes('hired')
+  );
+};
+
 const getFullName = (applicant: Applicant): string => {
   const parts = [applicant.first_name];
   if (applicant.middle_name) {
@@ -246,15 +256,45 @@ const buildFallbackApplicantsFromRecruitmentStore = (jobTitle: string): any[] =>
       status: String(row?.status ?? 'Pending'),
       created_at: String(row?.applicationDate ?? new Date().toISOString()),
       evaluation_status:
-        String(row?.status ?? '').toLowerCase().includes('interview completed') ||
-        String(row?.status ?? '').toLowerCase().includes('recommended') ||
-        String(row?.status ?? '').toLowerCase().includes('hired')
+        statusIndicatesEvaluated(String(row?.status ?? ''))
           ? 'Completed'
           : 'Not Yet Rated',
     }));
 };
 
 const normalizeText = (value: string) => value.trim().toLowerCase();
+
+const dedupeApplicants = (rows: Applicant[]): Applicant[] => {
+  const unique = new Map<string, Applicant>();
+
+  rows.forEach((row) => {
+    const email = normalizeText(String(row.email || ''));
+    const itemNumber = normalizeText(String(row.item_number || ''));
+    const position = normalizeText(String(row.position || ''));
+    const fullName = normalizeText(`${row.first_name || ''} ${row.middle_name || ''} ${row.last_name || ''}`);
+
+    // Prefer explicit IDs/item numbers; otherwise fall back to email+position identity.
+    const identityKey = itemNumber
+      ? `item:${itemNumber}`
+      : email
+        ? `email:${email}|pos:${position}`
+        : `name:${fullName}|pos:${position}`;
+
+    const existing = unique.get(identityKey);
+    if (!existing) {
+      unique.set(identityKey, row);
+      return;
+    }
+
+    const existingTime = new Date(existing.created_at).getTime();
+    const incomingTime = new Date(row.created_at).getTime();
+    if (incomingTime >= existingTime) {
+      unique.set(identityKey, row);
+    }
+  });
+
+  return Array.from(unique.values());
+};
 
 export function InterviewerApplicantsList() {
   const navigate = useNavigate();
@@ -352,12 +392,16 @@ export function InterviewerApplicantsList() {
       }
 
       const evaluationMap = buildEvaluationStatusMap(allEvaluations);
-      const applicantsWithStatus = Array.from(applicantsByPosition || [])
+      const applicantsWithStatus = dedupeApplicants(
+        Array.from(applicantsByPosition || [])
         .filter((applicant: any) => !isDemoApplicant(applicant))
         .map((applicant: any) => ({
           ...applicant,
-          evaluation_status: evaluationMap.get(applicant.id) || 'Not Yet Rated'
+          evaluation_status:
+            evaluationMap.get(applicant.id) ||
+            (statusIndicatesEvaluated(String(applicant?.status ?? '')) ? 'Completed' : 'Not Yet Rated')
         }))
+      )
         .sort(
           (a: Applicant, b: Applicant) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()

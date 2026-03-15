@@ -23,10 +23,25 @@ interface MockEvaluation {
   id: string;
   applicant_id: string;
   interviewer_name: string;
-  technical_score: number;
-  communication_score: number;
-  overall_score: number;
-  comments: string;
+  // RSP-entered fields
+  technical_score?: number;
+  communication_score?: number;
+  overall_score?: number;
+  comments?: string;
+  // Interviewer-entered oral interview fields
+  communication_skills_score?: number;
+  confidence_score?: number;
+  comprehension_score?: number;
+  personality_score?: number;
+  job_knowledge_score?: number;
+  overall_impression_score?: number;
+  communication_skills_remarks?: string;
+  confidence_remarks?: string;
+  comprehension_remarks?: string;
+  personality_remarks?: string;
+  job_knowledge_remarks?: string;
+  overall_impression_remarks?: string;
+  interview_notes?: string;
   recommendation: string;
   created_at: string;
   updated_at: string;
@@ -199,16 +214,16 @@ export const mockDatabase = {
   },
 
   // Evaluations
-  async insertEvaluation(data: Omit<MockEvaluation, 'id' | 'created_at' | 'updated_at'>) {
+  async insertEvaluation(data: Record<string, any>) {
     const evaluations = getEvaluations();
-    const newEvaluation: MockEvaluation = {
+    const newEvaluation = {
       ...data,
       id: generateId(),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
     evaluations.push(newEvaluation);
-    saveEvaluations(evaluations);
+    saveEvaluations(evaluations as MockEvaluation[]);
     return { data: newEvaluation, error: null };
   },
 
@@ -297,6 +312,10 @@ export const mockDatabase = {
                   const applicants = getApplicants();
                   const filtered = applicants.filter(a => (a as any)[column] === value);
                   resolve({ data: filtered, error: null });
+                } else if (table === 'evaluations') {
+                  const evaluations = getEvaluations();
+                  const filtered = evaluations.filter(e => (e as any)[column] === value);
+                  resolve({ data: filtered, error: null });
                 } else if (table === 'applicant_attachments') {
                   const attachments = getAttachments();
                   const filtered = attachments.filter(a => (a as any)[column] === value);
@@ -312,7 +331,45 @@ export const mockDatabase = {
                 } else {
                   resolve({ data: [], error: null });
                 }
-              }
+                },
+                order: (orderColumn: string, orderOptions?: { ascending?: boolean }) => {
+                  const getFiltered = () => {
+                    if (table === 'evaluations') {
+                      return getEvaluations().filter(e => (e as any)[column] === value);
+                    }
+                    if (table === 'applicants') return getApplicants().filter(a => (a as any)[column] === value);
+                    if (table === 'applicant_attachments') return getAttachments().filter(a => (a as any)[column] === value);
+                    return [];
+                  };
+                  const getSorted = () => {
+                    const arr = getFiltered();
+                    return arr.sort((a, b) => {
+                      const av = (a as any)[orderColumn];
+                      const bv = (b as any)[orderColumn];
+                      return orderOptions?.ascending === false ? (bv > av ? 1 : -1) : (av > bv ? 1 : -1);
+                    });
+                  };
+                  return {
+                    limit: (n: number) => ({
+                      maybeSingle: async () => {
+                        const sorted = getSorted();
+                        return { data: sorted[0] ?? null, error: null };
+                      },
+                      single: async () => {
+                        const sorted = getSorted();
+                        return sorted[0]
+                          ? { data: sorted[0], error: null }
+                          : { data: null, error: new Error('Not found') };
+                      },
+                      then: async (resolve: any) => resolve({ data: getSorted().slice(0, n), error: null }),
+                    }),
+                    maybeSingle: async () => {
+                      const sorted = getSorted();
+                      return { data: sorted[0] ?? null, error: null };
+                    },
+                    then: async (resolve: any) => resolve({ data: getSorted(), error: null }),
+                  };
+                },
             };
           },
           order: (column: string, options?: { ascending?: boolean }) => {
@@ -320,6 +377,7 @@ export const mockDatabase = {
               then: async (resolve: any) => {
                 let data: any[] = [];
                 if (table === 'applicants') data = getApplicants();
+                else if (table === 'evaluations') data = getEvaluations();
                 else if (table === 'jobs') data = getJobs();
                 else if (table === 'raters') data = getRaters();
                 
@@ -335,6 +393,7 @@ export const mockDatabase = {
                   then: async (resolve: any) => {
                     let data: any[] = [];
                     if (table === 'applicants') data = getApplicants();
+                    else if (table === 'evaluations') data = getEvaluations();
                     else if (table === 'jobs') data = getJobs();
                     else if (table === 'raters') data = getRaters();
                     
@@ -353,6 +412,8 @@ export const mockDatabase = {
           then: async (resolve: any) => {
             if (table === 'applicants') {
               resolve({ data: getApplicants(), error: null });
+            } else if (table === 'evaluations') {
+              resolve({ data: getEvaluations(), error: null });
             } else if (table === 'applicant_attachments') {
               resolve({ data: getAttachments(), error: null });
             } else if (table === 'jobs') {

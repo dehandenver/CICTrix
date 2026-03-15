@@ -3,16 +3,17 @@ import {
     Calendar,
     ChevronLeft,
     ChevronRight,
+    FileText,
     Lock,
     MapPin,
     Plus,
     Search,
     Trash2,
-    Users,
-    X,
+    Users
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { DEPARTMENTS } from '../constants/positions';
 import {
     archiveDeletedJobPosting,
     ensureRecruitmentSeedData,
@@ -30,6 +31,12 @@ import { RecruitmentNavigationGuide } from './RecruitmentNavigationGuide';
 import { Sidebar } from './Sidebar';
 
 const ITEMS_PER_PAGE = 3;
+
+const normalizeRomanNumeralsInText = (value: string) =>
+  String(value ?? '')
+    .split(/(\s+)/)
+    .map((token) => (/^[ivxlcdm]+$/i.test(token) ? token.toUpperCase() : token))
+    .join('');
 
 const STATUS_COLORS: Record<JobPosting['status'], string> = {
   Draft: 'bg-slate-100 text-slate-700',
@@ -50,13 +57,17 @@ interface JobPostFormValues {
   jobCode: string;
   department: string;
   division: string;
+  positionLevel: string;
   positionType: JobPosting['positionType'];
   salaryGrade: string;
   salaryMin: number;
   salaryMax: number;
   numberOfPositions: number;
+  employmentType: 'Full-time' | 'Part-time' | 'Contractual' | 'Project-based';
   employmentStatus: JobPosting['employmentStatus'];
+  statusLabel: 'Open' | 'Reviewing' | 'Closed';
   summary: string;
+  qualifications: string;
   responsibilities: string[];
   education: string;
   yearsOfExperience: number;
@@ -77,13 +88,17 @@ const buildDefaultJobForm = (): JobPostFormValues => ({
   jobCode: `LGU-2026-${String(Math.floor(Math.random() * 999) + 1).padStart(3, '0')}`,
   department: '',
   division: '',
+  positionLevel: '',
   positionType: 'Civil Service',
   salaryGrade: 'SG-11',
   salaryMin: 28000,
   salaryMax: 36000,
   numberOfPositions: 1,
+  employmentType: 'Full-time',
   employmentStatus: 'Permanent',
+  statusLabel: 'Open',
   summary: '',
+  qualifications: '',
   responsibilities: [''],
   education: "Bachelor's Degree",
   yearsOfExperience: 1,
@@ -101,6 +116,7 @@ const buildDefaultJobForm = (): JobPostFormValues => ({
 
 export const JobPostingsPage = () => {
   const navigate = useNavigate();
+  const modalBodyRef = useRef<HTMLDivElement | null>(null);
   const [jobs, setJobs] = useState<JobPosting[]>([]);
   const [liveApplicants, setLiveApplicants] = useState<ReturnType<typeof getApplicants>>([]);
   const [search, setSearch] = useState('');
@@ -109,7 +125,6 @@ export const JobPostingsPage = () => {
   const [page, setPage] = useState(1);
   const [showGuide, setShowGuide] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [activeStep, setActiveStep] = useState(1);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<JobPostFormValues>(buildDefaultJobForm());
   const [toast, setToast] = useState('');
@@ -117,9 +132,13 @@ export const JobPostingsPage = () => {
   useEffect(() => {
     ensureRecruitmentSeedData();
     const loadedJobs = getJobPostings();
-    setJobs(loadedJobs);
+    const normalizedJobs = loadedJobs.map((job) => ({
+      ...job,
+      title: normalizeRomanNumeralsInText(job.title),
+    }));
+    setJobs(normalizedJobs);
     // Normalize derived stores (legacy jobs/options) from the current source-of-truth list.
-    saveJobPostings(loadedJobs);
+    saveJobPostings(normalizedJobs);
     setLiveApplicants(getApplicants());
   }, []);
 
@@ -165,6 +184,13 @@ export const JobPostingsPage = () => {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
+  useEffect(() => {
+    if (showModal) {
+      // Ensure modal always opens from the top section (Basic Information).
+      modalBodyRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+    }
+  }, [showModal]);
+
   const clearFilters = () => {
     setSearch('');
     setStatusFilter('all');
@@ -179,26 +205,31 @@ export const JobPostingsPage = () => {
 
   const openCreateModal = () => {
     setEditingId(null);
-    setActiveStep(1);
     setForm(buildDefaultJobForm());
     setShowModal(true);
+    requestAnimationFrame(() => {
+      modalBodyRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+    });
   };
 
   const openEditModal = (job: JobPosting) => {
     setEditingId(job.id);
-    setActiveStep(1);
     setForm({
       title: job.title,
       jobCode: job.jobCode,
       department: job.department,
       division: job.division ?? '',
+      positionLevel: '',
       positionType: job.positionType,
       salaryGrade: job.salaryGrade ?? '',
       salaryMin: job.salaryRange?.min ?? 20000,
       salaryMax: job.salaryRange?.max ?? 30000,
       numberOfPositions: job.numberOfPositions,
+      employmentType: job.employmentStatus === 'Contractual' ? 'Contractual' : job.employmentStatus === 'Permanent' ? 'Full-time' : 'Part-time',
       employmentStatus: job.employmentStatus,
+      statusLabel: job.status === 'Active' ? 'Open' : job.status === 'Draft' ? 'Reviewing' : 'Closed',
       summary: job.summary,
+      qualifications: job.qualifications.preferred ?? '',
       responsibilities: job.responsibilities.length ? job.responsibilities : [''],
       education: job.qualifications.education,
       yearsOfExperience: job.qualifications.experience.years,
@@ -214,12 +245,14 @@ export const JobPostingsPage = () => {
       expectedStartDate: job.expectedStartDate?.slice(0, 10) ?? '',
     });
     setShowModal(true);
+    requestAnimationFrame(() => {
+      modalBodyRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+    });
   };
 
   const submitForm = (status: JobPosting['status']) => {
     if (!form.title || !form.department || !form.summary || !form.applicationDeadline) {
-      setToast('Please complete required fields in Basic Information and Timeline.');
-      setActiveStep(1);
+      setToast('Please complete required fields in Basic Information and Job Description.');
       return;
     }
 
@@ -228,6 +261,8 @@ export const JobPostingsPage = () => {
     if (form.otherDocument.trim()) {
       requiredDocuments.push(form.otherDocument.trim());
     }
+
+    const normalizedQualifications = form.qualifications.trim();
 
     const payload: JobPosting = {
       id: editingId ?? crypto.randomUUID(),
@@ -239,15 +274,15 @@ export const JobPostingsPage = () => {
       salaryGrade: form.salaryGrade,
       salaryRange: { min: form.salaryMin, max: form.salaryMax },
       numberOfPositions: form.numberOfPositions,
-      employmentStatus: form.employmentStatus,
+      employmentStatus: form.employmentType === 'Contractual' ? 'Contractual' : form.employmentType === 'Full-time' ? 'Permanent' : 'Temporary',
       summary: form.summary,
       responsibilities: normalizedResponsibilities,
       qualifications: {
-        education: form.education,
+        education: normalizedQualifications || form.education,
         experience: { years: form.yearsOfExperience, field: form.experienceField },
         skills: form.skills.split(',').map((item) => item.trim()).filter(Boolean),
         certifications: form.certifications.split(',').map((item) => item.trim()).filter(Boolean),
-        preferred: form.preferred || undefined,
+        preferred: normalizedQualifications || form.preferred || undefined,
       },
       requiredDocuments,
       applicationDeadline: new Date(form.applicationDeadline).toISOString(),
@@ -404,7 +439,7 @@ export const JobPostingsPage = () => {
                 return (
                   <article key={job.id} className="rounded-xl border border-slate-200 bg-white p-4">
                     <div className="mb-3 flex items-start justify-between gap-3">
-                      <h3 className="!mb-0 text-2xl font-semibold text-slate-900">{job.title}</h3>
+                      <h3 className="!mb-0 text-2xl font-semibold text-slate-900">{normalizeRomanNumeralsInText(job.title)}</h3>
                       <span className={`rounded-full px-3 py-0.5 text-xs font-semibold ${STATUS_COLORS[job.status]}`}>{statusLabel}</span>
                     </div>
 
@@ -462,148 +497,209 @@ export const JobPostingsPage = () => {
 
       {showModal && (
         <div className="fixed inset-0 z-[110] bg-slate-900/60 p-4" onClick={() => setShowModal(false)}>
-          <div className="mx-auto h-[92vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <div className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
+          <div className="mx-auto flex h-[95vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between bg-blue-700 px-7 py-5 text-white">
               <div>
-                <h2 className="text-xl font-bold text-slate-900">{editingId ? 'Edit Job Post' : 'Create New Job Post'}</h2>
-                <p className="text-sm text-slate-500">Step {activeStep} of 4</p>
+                <h2 className="!mb-1 text-5xl font-bold">Create New Job Position</h2>
+                <p className="!mb-0 text-2xl text-blue-100">Fill in the details to create a new job posting</p>
               </div>
-              <button className="rounded-md p-1 text-slate-500 hover:bg-slate-100" onClick={() => setShowModal(false)}>
-                <X className="h-5 w-5" />
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="rounded-lg p-2 text-white/90 transition hover:bg-white/10 hover:text-white"
+                aria-label="Close"
+              >
+                <span className="text-5xl leading-none">×</span>
               </button>
             </div>
 
-            <div className="grid grid-cols-4 border-b border-slate-200 text-sm">
-              {['Basic Information', 'Job Description', 'Requirements & Timeline', 'Review & Publish'].map((label, index) => (
-                <button
-                  type="button"
-                  key={label}
-                  className={`px-3 py-2 text-left ${activeStep === index + 1 ? 'border-b-2 border-blue-600 font-semibold text-blue-700' : 'text-slate-500'}`}
-                  onClick={() => setActiveStep(index + 1)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            <div className="space-y-4 px-6 py-5">
-              {activeStep === 1 && (
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Job Title" value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} />
-                  <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Job Code" value={form.jobCode} onChange={(event) => setForm({ ...form, jobCode: event.target.value })} />
-                  <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form.department} onChange={(event) => setForm({ ...form, department: event.target.value })}>
-                    <option value="">Select Department</option>
-                    {DEPARTMENTS.map((dept) => <option key={dept} value={dept}>{dept}</option>)}
-                  </select>
-                  <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Division/Office" value={form.division} onChange={(event) => setForm({ ...form, division: event.target.value })} />
-                  <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form.positionType} onChange={(event) => setForm({ ...form, positionType: event.target.value as JobPosting['positionType'] })}>
-                    {POSITION_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
-                  </select>
-                  <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Salary Grade" value={form.salaryGrade} onChange={(event) => setForm({ ...form, salaryGrade: event.target.value })} />
-                  <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" type="number" min={1} value={form.numberOfPositions} onChange={(event) => setForm({ ...form, numberOfPositions: Number(event.target.value) || 1 })} />
-                  <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm" value={form.employmentStatus} onChange={(event) => setForm({ ...form, employmentStatus: event.target.value as JobPosting['employmentStatus'] })}>
-                    <option value="Permanent">Permanent</option>
-                    <option value="Temporary">Temporary</option>
-                    <option value="Contractual">Contractual</option>
-                  </select>
-                </div>
-              )}
-
-              {activeStep === 2 && (
+            <div ref={modalBodyRef} className="flex-1 space-y-7 overflow-y-auto px-7 py-6">
+              <section>
+                <h3 className="!mb-4 flex items-center gap-2 text-4xl font-bold text-slate-900">
+                  <FileText size={28} className="text-blue-600" /> Basic Information
+                </h3>
                 <div className="space-y-4">
-                  <textarea className="min-h-24 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" maxLength={500} placeholder="Position Summary" value={form.summary} onChange={(event) => setForm({ ...form, summary: event.target.value })} />
-                  <div className="rounded-lg border border-slate-200 p-3">
-                    <p className="mb-2 text-sm font-semibold text-slate-700">Key Responsibilities</p>
-                    <div className="space-y-2">
-                      {form.responsibilities.map((item, index) => (
-                        <div key={`${item}-${index}`} className="flex gap-2">
-                          <input className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" value={item} onChange={(event) => {
-                            const next = [...form.responsibilities];
-                            next[index] = event.target.value;
-                            setForm({ ...form, responsibilities: next });
-                          }} />
-                          <button className="rounded-lg border border-slate-300 px-2 text-sm" onClick={() => {
-                            const next = form.responsibilities.filter((_, idx) => idx !== index);
-                            setForm({ ...form, responsibilities: next.length ? next : [''] });
-                          }}>Remove</button>
-                        </div>
-                      ))}
+                  <div>
+                    <label className="mb-2 block text-base font-semibold text-slate-900">Position Title <span className="text-red-500">*</span></label>
+                    <input
+                      className="w-full rounded-xl border border-slate-300 p-3 text-base"
+                      placeholder="e.g., Administrative Officer III"
+                      value={form.title}
+                      onChange={(event) => setForm((prev) => ({ ...prev, title: event.target.value }))}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-slate-900">Item Number <span className="text-red-500">*</span></label>
+                      <input
+                        className="w-full rounded-xl border border-slate-300 p-3 text-base"
+                        placeholder="e.g., ITEM-2024-001"
+                        value={form.jobCode}
+                        onChange={(event) => setForm((prev) => ({ ...prev, jobCode: event.target.value }))}
+                      />
                     </div>
-                    <button className="mt-2 rounded-lg border border-blue-300 px-3 py-1 text-sm text-blue-700" onClick={() => setForm({ ...form, responsibilities: [...form.responsibilities, ''] })}>+ Add Responsibility</button>
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-slate-900">Salary Grade <span className="text-red-500">*</span></label>
+                      <input
+                        className="w-full rounded-xl border border-slate-300 p-3 text-base"
+                        placeholder="e.g., SG-11"
+                        value={form.salaryGrade}
+                        onChange={(event) => setForm((prev) => ({ ...prev, salaryGrade: event.target.value }))}
+                      />
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Education" value={form.education} onChange={(event) => setForm({ ...form, education: event.target.value })} />
-                    <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" type="number" min={0} placeholder="Required Experience (years)" value={form.yearsOfExperience} onChange={(event) => setForm({ ...form, yearsOfExperience: Number(event.target.value) || 0 })} />
-                    <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Experience Field" value={form.experienceField} onChange={(event) => setForm({ ...form, experienceField: event.target.value })} />
-                    <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Required Skills (comma-separated)" value={form.skills} onChange={(event) => setForm({ ...form, skills: event.target.value })} />
-                    <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Required Certifications" value={form.certifications} onChange={(event) => setForm({ ...form, certifications: event.target.value })} />
-                    <textarea className="min-h-20 rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Preferred Qualifications" value={form.preferred} onChange={(event) => setForm({ ...form, preferred: event.target.value })} />
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-slate-900">Office/Department <span className="text-red-500">*</span></label>
+                      <select
+                        className="w-full rounded-xl border border-slate-300 bg-white p-3 text-base"
+                        value={form.department}
+                        onChange={(event) => setForm((prev) => ({ ...prev, department: event.target.value }))}
+                      >
+                        <option value="">Select Office</option>
+                        {DEPARTMENTS.map((office) => (
+                          <option key={office} value={office}>{office}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-slate-900">Position Level</label>
+                      <select
+                        className="w-full rounded-xl border border-slate-300 bg-white p-3 text-base"
+                        value={form.positionLevel}
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          const mappedType: JobPosting['positionType'] =
+                            value === 'Supervisory' || value === 'Managerial'
+                              ? 'Civil Service'
+                              : value === 'Entry Level'
+                                ? 'JO'
+                                : value === 'Mid Level'
+                                  ? 'COS'
+                                  : value === 'Senior Level'
+                                    ? 'Contractual'
+                                    : form.positionType;
+                          setForm((prev) => ({ ...prev, positionLevel: value, positionType: mappedType }));
+                        }}
+                      >
+                        <option value="">Select Level</option>
+                        <option value="Entry Level">Entry Level</option>
+                        <option value="Mid Level">Mid Level</option>
+                        <option value="Senior Level">Senior Level</option>
+                        <option value="Supervisory">Supervisory</option>
+                        <option value="Managerial">Managerial</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-slate-900">Number of Slots</label>
+                      <input
+                        type="number"
+                        min={1}
+                        className="w-full rounded-xl border border-slate-300 p-3 text-base"
+                        value={form.numberOfPositions}
+                        onChange={(event) => setForm((prev) => ({ ...prev, numberOfPositions: Number(event.target.value) || 1 }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-slate-900">Employment Type</label>
+                      <select
+                        className="w-full rounded-xl border border-slate-300 bg-white p-3 text-base"
+                        value={form.employmentType}
+                        onChange={(event) => setForm((prev) => ({ ...prev, employmentType: event.target.value as JobPostFormValues['employmentType'] }))}
+                      >
+                        <option value="Full-time">Full-time</option>
+                        <option value="Part-time">Part-time</option>
+                        <option value="Contractual">Contractual</option>
+                        <option value="Project-based">Project-based</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-slate-900">Application Deadline</label>
+                      <input
+                        type="date"
+                        className="w-full rounded-xl border border-slate-300 p-3 text-base"
+                        value={form.applicationDeadline}
+                        onChange={(event) => setForm((prev) => ({ ...prev, applicationDeadline: event.target.value }))}
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-slate-900">Status</label>
+                      <select
+                        className="w-full rounded-xl border border-slate-300 bg-white p-3 text-base"
+                        value={form.statusLabel}
+                        onChange={(event) => setForm((prev) => ({ ...prev, statusLabel: event.target.value as JobPostFormValues['statusLabel'] }))}
+                      >
+                        <option value="Open">Open</option>
+                        <option value="Reviewing">Reviewing</option>
+                        <option value="Closed">Closed</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
-              )}
+              </section>
 
-              {activeStep === 3 && (
+              <section>
+                <h3 className="!mb-4 flex items-center gap-2 text-4xl font-bold text-slate-900">
+                  <FileText size={28} className="text-blue-600" /> Job Description
+                </h3>
                 <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
-                    {['Resume/CV', 'Application Letter', 'Transcript of Records', 'NBI Clearance', 'Birth Certificate', 'SALN'].map((doc) => (
-                      <label key={doc} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={form.requiredDocuments.includes(doc)}
-                          onChange={() =>
-                            setForm((current) => ({
-                              ...current,
-                              requiredDocuments: current.requiredDocuments.includes(doc)
-                                ? current.requiredDocuments.filter((entry) => entry !== doc)
-                                : [...current.requiredDocuments, doc],
-                            }))
-                          }
-                        />
-                        {doc}
-                      </label>
-                    ))}
+                  <div>
+                    <label className="mb-2 block text-base font-semibold text-slate-900">Description</label>
+                    <textarea
+                      rows={4}
+                      className="w-full rounded-xl border border-slate-300 p-3 text-base"
+                      placeholder="Provide a brief overview of the position..."
+                      value={form.summary}
+                      onChange={(event) => setForm((prev) => ({ ...prev, summary: event.target.value }))}
+                    />
                   </div>
-                  <input className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Other required document" value={form.otherDocument} onChange={(event) => setForm({ ...form, otherDocument: event.target.value })} />
-
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                    <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" type="date" value={form.applicationDeadline} onChange={(event) => setForm({ ...form, applicationDeadline: event.target.value })} />
-                    <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" type="date" value={form.interviewStart} onChange={(event) => setForm({ ...form, interviewStart: event.target.value })} />
-                    <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" type="date" value={form.interviewEnd} onChange={(event) => setForm({ ...form, interviewEnd: event.target.value })} />
-                    <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm md:col-span-3" type="date" value={form.expectedStartDate} onChange={(event) => setForm({ ...form, expectedStartDate: event.target.value })} />
+                  <div>
+                    <label className="mb-2 block text-base font-semibold text-slate-900">Key Responsibilities</label>
+                    <textarea
+                      rows={4}
+                      className="w-full rounded-xl border border-slate-300 p-3 text-base"
+                      placeholder="List the main duties and responsibilities (one per line)..."
+                      value={form.responsibilities.join('\n')}
+                      onChange={(event) => setForm((prev) => ({ ...prev, responsibilities: event.target.value.split('\n') }))}
+                    />
                   </div>
-                </div>
-              )}
-
-              {activeStep === 4 && (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Preview</p>
-                  <h3 className="mt-1 text-lg font-bold text-slate-900">{form.title || 'Untitled Position'}</h3>
-                  <p className="text-sm text-slate-600">{form.department || 'Department not set'} • {form.positionType} • {form.salaryGrade}</p>
-                  <p className="mt-3 text-sm text-slate-700">{form.summary || 'No summary provided yet.'}</p>
-                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-600">
-                    {form.responsibilities.filter(Boolean).map((item) => <li key={item}>{item}</li>)}
-                  </ul>
-                  <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-800">
-                    Notification settings are included in this MVP using in-app toast confirmation.
+                  <div>
+                    <label className="mb-2 block text-base font-semibold text-slate-900">Qualifications</label>
+                    <textarea
+                      rows={4}
+                      className="w-full rounded-xl border border-slate-300 p-3 text-base"
+                      placeholder="List required qualifications, education, and experience..."
+                      value={form.qualifications}
+                      onChange={(event) => setForm((prev) => ({ ...prev, qualifications: event.target.value }))}
+                    />
                   </div>
                 </div>
-              )}
+              </section>
             </div>
 
-            <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-6 py-4">
-              <div className="flex gap-2">
-                <button className="rounded-lg border border-slate-300 px-3 py-2 text-sm" onClick={() => setActiveStep((current) => Math.max(1, current - 1))}>
-                  Previous
-                </button>
-                <button className="rounded-lg border border-slate-300 px-3 py-2 text-sm" onClick={() => setActiveStep((current) => Math.min(4, current + 1))}>
-                  Next
-                </button>
-              </div>
-              <div className="flex gap-2">
-                <button className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium" onClick={() => submitForm('Draft')}>Save As Draft</button>
-                <button className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white" onClick={() => submitForm('Active')}>Publish Immediately</button>
-              </div>
+            <div className="flex justify-end gap-3 border-t border-slate-200 px-7 py-4">
+              <button
+                type="button"
+                onClick={() => setShowModal(false)}
+                className="rounded-2xl border border-slate-300 bg-white px-8 py-3 text-lg text-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => submitForm(form.statusLabel === 'Open' ? 'Active' : form.statusLabel === 'Reviewing' ? 'Draft' : 'Closed')}
+                className="rounded-2xl bg-blue-600 px-8 py-3 text-lg font-semibold text-white"
+              >
+                <Plus size={18} className="mr-2 inline" /> Create Position
+              </button>
             </div>
           </div>
         </div>

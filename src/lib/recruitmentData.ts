@@ -307,11 +307,18 @@ export const getEmployeeRecords = () =>
 export const saveEmployeeRecords = (rows: EmployeeRecord[]) =>
   localStorage.setItem(EMPLOYEE_DB_KEY, JSON.stringify(rows));
 
+const isRomanNumeralToken = (word: string) => /^[ivxlcdm]+$/i.test(word);
+
 export const toTitleCase = (value: string) =>
   value
     .split(' ')
     .filter(Boolean)
-    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1).toLowerCase()}`)
+    .map((word) => {
+      if (isRomanNumeralToken(word)) {
+        return word.toUpperCase();
+      }
+      return `${word.charAt(0).toUpperCase()}${word.slice(1).toLowerCase()}`;
+    })
     .join(' ');
 
 export const toCsv = (headers: string[], rows: Array<Array<string | number>>) => {

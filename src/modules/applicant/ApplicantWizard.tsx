@@ -2,6 +2,8 @@ import {
     BadgeCheck,
     CheckCircle2,
     CircleCheck,
+    Eye,
+    EyeOff,
     FileText,
     ShieldCheck,
     UserPlus,
@@ -11,6 +13,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import hrisLogo from '../../assets/hris-logo.svg';
 import { Button, Dialog } from '../../components';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
+import { findEmployeePortalAccount, getEmployeePortalAccounts } from '../../lib/employeePortalData';
 import { mockDatabase } from '../../lib/mockDatabase';
 import { syncApplicantSubmissionToRecruitment } from '../../lib/recruitmentData';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../../lib/supabase';
@@ -21,6 +24,7 @@ import { ApplicantAssessmentForm } from './ApplicantAssessmentForm';
 import { AttachmentsUploadForm, REQUIRED_DOCUMENTS } from './AttachmentsUploadForm';
 
 const ATTACHMENT_PREVIEW_CACHE_KEY = 'cictrix_attachment_previews';
+const APPOINTMENT_TYPE_STORAGE_KEY = 'cictrix_rsp_score_setup';
 const MAX_PREVIEWABLE_FILE_BYTES = 10 * 1024 * 1024;
 
 type CachedPreviewFile = {
@@ -59,6 +63,19 @@ const buildApplicantItemNumber = (sequence: number): string => {
   return `ITEM-${year}-${String(sequence).padStart(4, '0')}`;
 };
 
+const normalizeAuthValue = (value: string) => String(value ?? '').trim().toLowerCase();
+
+const saveApplicantAppointmentType = (applicantId: string, applicationType: 'job' | 'promotion') => {
+  try {
+    const raw = localStorage.getItem(APPOINTMENT_TYPE_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, 'original' | 'promotional'>) : {};
+    parsed[applicantId] = applicationType === 'promotion' ? 'promotional' : 'original';
+    localStorage.setItem(APPOINTMENT_TYPE_STORAGE_KEY, JSON.stringify(parsed));
+  } catch {
+    // Best effort cache only.
+  }
+};
+
 export const ApplicantWizard: React.FC = () => {
   const [entryMode, setEntryMode] = useState<'landing' | 'wizard'>('landing');
   const [applicationType, setApplicationType] = useState<'job' | 'promotion'>('job');
@@ -74,6 +91,7 @@ export const ApplicantWizard: React.FC = () => {
   const [showEmployeeAuth, setShowEmployeeAuth] = useState(false);
   const [employeeNumber, setEmployeeNumber] = useState('');
   const [employeePassword, setEmployeePassword] = useState('');
+  const [showEmployeePassword, setShowEmployeePassword] = useState(false);
   const [employeeAuthError, setEmployeeAuthError] = useState('');
   const isGeneratingItemNumberRef = useRef(false);
 
@@ -129,25 +147,34 @@ export const ApplicantWizard: React.FC = () => {
       const storageBucket = client?.storage?.from?.(ATTACHMENTS_BUCKET);
       const hasUpload = typeof storageBucket?.upload === 'function';
 
-      let filePath = generatedPath;
-
-      if (hasUpload) {
-        const uploadResult = await storageBucket.upload(generatedPath, uploadedFile.file);
-        const uploadError = (uploadResult as any).error;
-        if (uploadError) {
-          throw new Error(`Failed to upload ${uploadedFile.file.name}`);
-        }
-      } else {
+      const buildFallbackPath = async () => {
         const isPreviewFriendlyType =
           uploadedFile.file.type.startsWith('image/') ||
           uploadedFile.file.type === 'application/pdf' ||
           uploadedFile.file.type.startsWith('text/');
 
         if (isPreviewFriendlyType && uploadedFile.file.size <= MAX_PREVIEWABLE_FILE_BYTES) {
-          filePath = await toDataUrl(uploadedFile.file);
-        } else {
-          filePath = `mock://attachment/${applicantId}/${Date.now()}-${encodeURIComponent(uploadedFile.file.name)}`;
+          return toDataUrl(uploadedFile.file);
         }
+
+        return `mock://attachment/${applicantId}/${Date.now()}-${encodeURIComponent(uploadedFile.file.name)}`;
+      };
+
+      let filePath = generatedPath;
+
+      if (hasUpload) {
+        try {
+          const uploadResult = await storageBucket.upload(generatedPath, uploadedFile.file);
+          const uploadError = (uploadResult as any).error;
+          if (uploadError) {
+            filePath = await buildFallbackPath();
+          }
+        } catch {
+          // If remote upload fails (bucket/RLS/network), keep flow working via local fallback.
+          filePath = await buildFallbackPath();
+        }
+      } else {
+        filePath = await buildFallbackPath();
       }
 
       const attachmentPayload = {
@@ -255,6 +282,8 @@ export const ApplicantWizard: React.FC = () => {
       throw new Error(applicantError?.message || 'Failed to create applicant record');
     }
 
+    saveApplicantAppointmentType(applicantData.id, applicationType);
+
     const syncedAttachments = await uploadFiles(client, applicantData.id);
     await cachePreviewableFiles(applicantData.id);
 
@@ -285,15 +314,8 @@ export const ApplicantWizard: React.FC = () => {
     setApplicationType('job');
     setEmployeeNumber('');
     setEmployeePassword('');
+    setShowEmployeePassword(false);
     setEmployeeAuthError('');
-  };
-
-  const isNetworkFetchError = (error: unknown): boolean => {
-    if (!(error instanceof Error)) {
-      return false;
-    }
-
-    return error instanceof TypeError || /failed to fetch|networkerror/i.test(error.message);
   };
 
   const persistDataSourceMode = (mode: 'local' | 'supabase') => {
@@ -321,7 +343,7 @@ export const ApplicantWizard: React.FC = () => {
     } catch (error) {
       console.error('Submission error:', error);
 
-      if (!isMockModeEnabled && isNetworkFetchError(error)) {
+      if (!isMockModeEnabled) {
         try {
           await submitWithClient(mockDatabase as any);
           persistDataSourceMode('local');
@@ -368,19 +390,29 @@ export const ApplicantWizard: React.FC = () => {
     setShowEmployeeAuth(false);
     setEmployeeNumber('');
     setEmployeePassword('');
+    setShowEmployeePassword(false);
     setEmployeeAuthError('');
   };
 
   const handleEmployeeAuthSubmit = (event: React.FormEvent) => {
     event.preventDefault();
 
-    if (!employeeNumber.trim() || !employeePassword.trim()) {
+    const enteredIdentifier = employeeNumber.trim();
+    const enteredPassword = employeePassword;
+
+    if (!enteredIdentifier || !enteredPassword.trim()) {
       setEmployeeAuthError('Please enter your employee number and password.');
       return;
     }
 
-    if (employeeNumber.trim() !== 'EMP-2024-001' || employeePassword !== 'password123') {
-      setEmployeeAuthError('Invalid employee credentials. Please verify and try again.');
+    const matchedByUsername = findEmployeePortalAccount(enteredIdentifier, enteredPassword);
+    const matchedByEmployeeId = getEmployeePortalAccounts().find((account) => {
+      const accountEmployeeId = normalizeAuthValue(String(account?.employee?.employeeId ?? ''));
+      return accountEmployeeId === normalizeAuthValue(enteredIdentifier) && account.password === enteredPassword;
+    });
+
+    if (!matchedByUsername && !matchedByEmployeeId) {
+      setEmployeeAuthError('Invalid employee credentials. Use your Employee Portal account credentials.');
       return;
     }
 
@@ -757,20 +789,30 @@ export const ApplicantWizard: React.FC = () => {
             />
 
             <label htmlFor="employee-password">Password</label>
-            <input
-              id="employee-password"
-              type="password"
-              value={employeePassword}
-              onChange={(event) => setEmployeePassword(event.target.value)}
-              placeholder="Enter your employee password"
-            />
+            <div className="relative">
+              <input
+                id="employee-password"
+                type={showEmployeePassword ? 'text' : 'password'}
+                value={employeePassword}
+                onChange={(event) => setEmployeePassword(event.target.value)}
+                placeholder="Enter your employee password"
+                style={{ paddingRight: '2.5rem' }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowEmployeePassword((prev) => !prev)}
+                aria-label={showEmployeePassword ? 'Hide password' : 'Show password'}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                {showEmployeePassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
 
             <div className="employee-auth-hint">
               <p>
-                <strong>For testing purposes, use:</strong>
+                <strong>Use your Employee Portal credentials:</strong>
               </p>
-              <p>Employee Number: EMP-2024-001</p>
-              <p>Password: password123</p>
+              <p>Enter your Employee Number (or username) and your Employee Portal password.</p>
             </div>
 
             {employeeAuthError && <p className="employee-auth-error">{employeeAuthError}</p>}

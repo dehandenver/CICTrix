@@ -5,11 +5,13 @@ import {
     CircleX,
     Eye,
     FileText,
+    Lock,
     Mail,
     MessageSquare,
     Send,
     Star,
     User,
+    Users,
     X
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -440,6 +442,8 @@ export function ApplicantDetailsPage() {
   const [educationAttainment, setEducationAttainment] = useState<EducationAttainmentValue>('');
   const [experienceYears, setExperienceYears] = useState('');
   const [writtenScore, setWrittenScore] = useState('');
+  const [potentialScore, setPotentialScore] = useState('');
+  const [positionType, setPositionType] = useState<'rank-file' | 'executive'>('rank-file');
   const [isScoreFinalized, setIsScoreFinalized] = useState(false);
 
   const [showSendEmailModal, setShowSendEmailModal] = useState(false);
@@ -542,10 +546,9 @@ export function ApplicantDetailsPage() {
   const selectedEducationOption = EDUCATION_ATTAINMENT_OPTIONS.find((option) => option.value === educationAttainment);
   const modalEducationScore = selectedEducationOption?.points ?? (isScoreFinalized ? score.education : 0);
   const isPromotionalAppointment = appointmentType === 'promotional';
-  const thirdScoreLabel = isPromotionalAppointment ? 'III Performance (20%)' : 'III Written Examination (20%)';
+  const thirdScoreLabel = isPromotionalAppointment ? 'III Performance Rating (20%)' : 'III Written Examination (20%)';
   const thirdScoreValue = isPromotionalAppointment ? score.performance : score.written;
-  const thirdScorePlaceholder = isPromotionalAppointment ? 'Enter performance score (0-20)' : 'Enter score (0-30)';
-  const fourthScoreLabel = isPromotionalAppointment ? 'IV Potential (20%)' : 'IV Oral Examination (20%)';
+  const thirdScorePlaceholder = isPromotionalAppointment ? 'Select Performance Rating' : 'Enter score (0-30)';
   const fourthScoreValue = score.oral;
   const experienceYearsNum = parseInt(experienceYears, 10);
   const modalExperienceScore = experienceYears !== '' && !Number.isNaN(experienceYearsNum)
@@ -555,17 +558,31 @@ export function ApplicantDetailsPage() {
   const modalWrittenScore = writtenScore !== '' && !Number.isNaN(writtenScoreNum)
     ? Math.max(0, Math.min(30, writtenScoreNum))
     : (isScoreFinalized ? thirdScoreValue : 0);
+  const potentialRawNum = parseInt(potentialScore, 10);
+  const potentialToPoints = (raw: number) => {
+    if (Number.isNaN(raw) || raw < 51) return 0;
+    if (raw <= 60) return 12;
+    if (raw <= 70) return 14;
+    if (raw <= 80) return 16;
+    if (raw <= 90) return 18;
+    return 20;
+  };
+  const modalPotentialScore = potentialScore !== '' && !Number.isNaN(potentialRawNum)
+    ? potentialToPoints(potentialRawNum)
+    : (isScoreFinalized ? fourthScoreValue : 0);
+  const lastOriginalAppointmentScore = score.total > 0 ? score.total : 82;
   const modalTotalScore = Math.max(0, Math.min(100,
     score.total
     - score.education + modalEducationScore
     - score.experience + modalExperienceScore
     - thirdScoreValue + modalWrittenScore
+    - fourthScoreValue + modalPotentialScore
   ));
   const modalAdjective = adjectiveFromScore(modalTotalScore);
   const scoringResponsibilityText = isPromotionalAppointment
     ? {
-        rsp: 'Education, Experience, Performance',
-        interviewer: 'PCPT, Potential',
+        rsp: 'Education, Experience, Performance Rating, Potential',
+        interviewer: 'PCPT (Physical Characteristics & Personality Traits)',
       }
     : {
         rsp: 'Education, Experience, Written Examination',
@@ -1144,7 +1161,7 @@ export function ApplicantDetailsPage() {
                     } ${isScoreFinalized ? 'cursor-not-allowed opacity-80' : ''}`}
                   >
                     <p className={`text-xl font-semibold ${appointmentType === 'original' ? 'text-blue-700' : 'text-slate-500'}`}>Original Appointment</p>
-                    <p className="text-base text-slate-500">Education • Experience • Written Exam* • PCPT*</p>
+                    <p className="text-base text-slate-500">Education • Experience • Written Exam • Oral Exam* • PCPT*</p>
                     <p className="text-sm text-slate-500">*Interviewer-provided</p>
                   </button>
                   <button
@@ -1163,6 +1180,38 @@ export function ApplicantDetailsPage() {
                   </button>
                 </div>
               </section>
+
+              {!isPromotionalAppointment && (
+                <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
+                  <p className="mb-3 text-lg font-semibold text-slate-800">Position Type (for Written Exam scoring)</p>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => !isScoreFinalized && setPositionType('rank-file')}
+                      disabled={isScoreFinalized}
+                      className={`rounded-2xl border px-6 py-4 text-center text-base font-semibold transition ${
+                        positionType === 'rank-file'
+                          ? 'border-2 border-blue-500 bg-blue-600 text-white'
+                          : 'border border-slate-300 bg-white text-slate-700'
+                      } ${isScoreFinalized ? 'cursor-not-allowed opacity-70' : ''}`}
+                    >
+                      Rank and File
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => !isScoreFinalized && setPositionType('executive')}
+                      disabled={isScoreFinalized}
+                      className={`rounded-2xl border px-6 py-4 text-center text-base font-semibold transition ${
+                        positionType === 'executive'
+                          ? 'border-2 border-blue-500 bg-blue-600 text-white'
+                          : 'border border-slate-300 bg-white text-slate-700'
+                      } ${isScoreFinalized ? 'cursor-not-allowed opacity-70' : ''}`}
+                    >
+                      Executive / Managerial
+                    </button>
+                  </div>
+                </section>
+              )}
 
               <section className="rounded-2xl border border-emerald-300 bg-emerald-50 p-5">
                 <div className="flex items-end justify-between">
@@ -1212,64 +1261,144 @@ export function ApplicantDetailsPage() {
                     placeholder="Enter years of experience"
                     className="w-full rounded-xl border border-slate-300 p-3 text-base disabled:cursor-not-allowed disabled:bg-slate-100"
                   />
-                  <p className="mt-1 text-sm text-slate-400">1-5 yrs: 12 pts &nbsp;|&nbsp; 6-10: 14 pts &nbsp;|&nbsp; 11-15: 16 pts &nbsp;|&nbsp; 16-20: 18 pts &nbsp;|&nbsp; 21+: 20 pts</p>
+                  <p className="mt-1 text-sm text-slate-400">1-5 yrs = 12 pts | 6-10 yrs = 14 pts | 11-15 yrs = 16 pts</p>
+                  <p className="text-sm text-slate-400">16-20 yrs = 18 pts | 21+ yrs = 18 pts</p>
                   <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-blue-700">{modalExperienceScore}</span></p>
                 </div>
-                <div className="rounded-2xl border border-green-200 bg-green-50 p-4">
-                  <p className="mb-2 text-xl font-semibold text-slate-800">{thirdScoreLabel}</p>
-                  <input
-                    type="number"
-                    min={0}
-                    max={30}
-                    value={writtenScore}
-                    onChange={(event) => setWrittenScore(event.target.value)}
-                    disabled={isScoreFinalized}
-                    placeholder={thirdScorePlaceholder}
-                    className="w-full rounded-xl border border-slate-300 p-3 text-base disabled:cursor-not-allowed disabled:bg-slate-100"
-                  />
-                  <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-green-700">{modalWrittenScore}</span></p>
-                </div>
+                {isPromotionalAppointment ? (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                    <p className="mb-2 text-xl font-semibold text-slate-800">III Performance Rating (20%)</p>
+                    <select
+                      value={writtenScore}
+                      onChange={(event) => setWrittenScore(event.target.value)}
+                      disabled={isScoreFinalized}
+                      className="w-full rounded-xl border border-slate-300 p-3 text-base disabled:cursor-not-allowed disabled:bg-slate-100"
+                    >
+                      <option value="">Select Performance Rating</option>
+                      <option value="12">Needs Improvement (12)</option>
+                      <option value="14">Fair (14)</option>
+                      <option value="16">Good (16)</option>
+                      <option value="18">Very Good (18)</option>
+                      <option value="20">Excellent (20)</option>
+                    </select>
+                    <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-amber-700">{modalWrittenScore}</span></p>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-green-200 bg-green-50 p-4">
+                    <p className="mb-2 text-xl font-semibold text-slate-800">III Written Examination (20%)</p>
+                    <input
+                      type="number"
+                      min={0}
+                      max={30}
+                      value={writtenScore}
+                      onChange={(event) => setWrittenScore(event.target.value)}
+                      disabled={isScoreFinalized}
+                      placeholder="Enter score (0-30)"
+                      className="w-full rounded-xl border border-slate-300 p-3 text-base disabled:cursor-not-allowed disabled:bg-slate-100"
+                    />
+                    <p className="mt-1 text-sm text-slate-400">10↓ = 12 pts | 11-15 = 14 pts | 16-20 = 16 pts | 21-25 = 18 pts | 26-30 = 20 pts</p>
+                    <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-green-700">{modalWrittenScore}</span></p>
+                  </div>
+                )}
+                {isPromotionalAppointment && (
+                  <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4">
+                    <p className="mb-2 text-xl font-semibold text-slate-800">V Potential (20%)</p>
+                    <div className="mb-3 rounded-xl border border-blue-300 bg-blue-50 p-3">
+                      <p className="text-base font-semibold text-blue-700">Auto-Fill Available</p>
+                      <p className="text-base text-blue-700">Last Original Appointment Score: <span className="font-bold">{lastOriginalAppointmentScore}</span></p>
+                      <button
+                        type="button"
+                        onClick={() => setPotentialScore(String(lastOriginalAppointmentScore))}
+                        className="mt-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
+                      >
+                        Use This Score
+                      </button>
+                    </div>
+                    <input
+                      type="number"
+                      min={51}
+                      max={100}
+                      value={potentialScore}
+                      onChange={(event) => setPotentialScore(event.target.value)}
+                      disabled={isScoreFinalized}
+                      placeholder="Enter potential score (51-100)"
+                      className="w-full rounded-xl border border-slate-300 p-3 text-base disabled:cursor-not-allowed disabled:bg-slate-100"
+                    />
+                    <p className="mt-1 text-sm text-slate-500">51-60 = 12 pts | 61-70 = 14 pts | 71-80 = 16 pts</p>
+                    <p className="text-sm text-slate-500">81-90 = 18 pts | 91-100 = 20 pts</p>
+                    <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-orange-700">{modalPotentialScore}</span></p>
+                  </div>
+                )}
               </section>
 
               <section className="rounded-2xl border border-purple-300 bg-purple-50 p-5">
-                <p className="mb-3 text-xl font-semibold text-slate-800">Interviewer-Provided Scores (Auto-Generated by System)</p>
+                <div className="mb-3 flex items-center gap-2">
+                  <Users size={22} className="text-purple-600" />
+                  <p className="text-xl font-semibold text-slate-800">Interviewer-Provided Scores (Auto-Generated by System)</p>
+                </div>
                 <div className="mb-3 rounded-2xl border border-purple-200 bg-white p-4">
-                  <p className="text-base font-semibold text-purple-700">RSP Cannot Edit These Scores</p>
-                  <p className="text-base text-slate-700">
-                    The following scores are automatically provided by the interview panel and cannot be manually entered by RSP staff.
+                  <div className="flex items-center gap-2">
+                    <Lock size={16} className="text-purple-600" />
+                    <p className="text-base font-semibold text-purple-700">RSP Cannot Edit These Scores</p>
+                  </div>
+                  <p className="mt-1 text-base text-slate-700">
+                    The following scores are automatically provided by the interview panel and cannot be manually entered by RSP staff. These values are generated through the interview assessment module.
                   </p>
                 </div>
-
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                {isPromotionalAppointment ? (
                   <div className="rounded-2xl border border-purple-200 bg-white p-4">
-                    <p className="mb-2 text-xl font-semibold text-slate-800">V PCPT (20%)</p>
-                    <div className="rounded-xl border border-purple-300 bg-purple-50 p-3 text-base text-slate-700">
-                      <span className="font-semibold">Raw Score:</span>{' '}
-                      <span className="float-right text-purple-700">{score.pcpt > 0 ? `${score.pcpt}/20` : 'Pending Interview'}</span>
+                    <div className="mb-2 flex items-center gap-2">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-purple-600 text-sm font-bold text-white">IV</span>
+                      <p className="text-xl font-semibold text-slate-800">PCPT (20%)</p>
                     </div>
+                    <div className="rounded-xl border border-purple-300 bg-purple-50 p-3">
+                      <span className="text-base text-slate-600">Raw Score:</span>
+                      <span className="float-right text-2xl font-bold text-purple-700">{score.pcpt > 0 ? score.pcpt : 'Pending Interview'}</span>
+                    </div>
+                    <p className="mt-2 text-sm text-slate-500">20-25 = 10 pts | 23-25 = 12 pts | 26-28 = 14 pts</p>
+                    <p className="text-sm text-slate-500">29-31 = 16 pts | 32-34 = 18 pts | 35 = 20 pts</p>
                     <p className="mt-2 text-base font-semibold text-purple-700">Converted Score: {score.pcpt} / 20</p>
                   </div>
-
-                  <div className="rounded-2xl border border-blue-200 bg-white p-4">
-                    <p className="mb-2 text-xl font-semibold text-slate-800">{fourthScoreLabel}</p>
-                    <div className="rounded-xl border border-blue-300 bg-blue-50 p-3 text-base text-slate-700">
-                      <span className="font-semibold">Raw Score:</span>{' '}
-                      <span className="float-right text-blue-700">{fourthScoreValue > 0 ? `${fourthScoreValue}/20` : 'Pending Interview'}</span>
+                ) : (
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div className="rounded-2xl border border-purple-200 bg-white p-4">
+                      <div className="mb-2 flex items-center gap-2">
+                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-purple-600 text-sm font-bold text-white">V</span>
+                        <p className="text-xl font-semibold text-slate-800">PCPT (20%)</p>
+                      </div>
+                      <div className="rounded-xl border border-purple-300 bg-purple-50 p-3">
+                        <span className="text-base text-slate-600">Raw Score:</span>
+                        <span className="float-right text-2xl font-bold text-purple-700">{score.pcpt > 0 ? score.pcpt : 'Pending Interview'}</span>
+                      </div>
+                      <p className="mt-2 text-sm text-slate-500">20-25 = 10 pts | 23-25 = 12 pts | 26-28 = 14 pts</p>
+                      <p className="text-sm text-slate-500">29-31 = 16 pts | 32-34 = 18 pts | 35 = 20 pts</p>
+                      <p className="mt-2 text-base font-semibold text-purple-700">Converted Score: {score.pcpt} / 20</p>
                     </div>
-                    <p className="mt-2 text-base font-semibold text-blue-700">Converted Score: {fourthScoreValue} / 20</p>
+                    <div className="rounded-2xl border border-blue-200 bg-white p-4">
+                      <div className="mb-2 flex items-center gap-2">
+                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white">IV</span>
+                        <p className="text-xl font-semibold text-slate-800">Oral Examination (20%)</p>
+                      </div>
+                      <div className="rounded-xl border border-blue-300 bg-blue-50 p-3">
+                        <span className="text-base text-slate-600">Raw Score:</span>
+                        <span className="float-right text-2xl font-bold text-blue-700">{score.oral > 0 ? score.oral : 'Pending Interview'}</span>
+                      </div>
+                      <p className="mt-2 text-sm text-slate-500">75↓ = 10 | 76-80 = 12 | 81-85 = 14 | 86-90 = 16</p>
+                      <p className="text-sm text-slate-500">91-95 = 18 | 96-100 = 20</p>
+                      <p className="mt-2 text-base font-semibold text-blue-700">Converted Score: {score.oral} / 20</p>
+                    </div>
                   </div>
-                </div>
+                )}
               </section>
 
               <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <p className="mb-3 text-xl font-semibold text-slate-800">Adjectival Rating Reference</p>
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
                   {[
                     ['90 - 100', 'Excellent', 'text-green-700'],
                     ['77 - 89', 'Very Good', 'text-blue-700'],
                     ['64 - 76', 'Good', 'text-amber-700'],
                     ['51 - 63', 'Average', 'text-orange-700'],
-                    ['Below 50', 'Below Average', 'text-rose-700'],
                   ].map(([range, label, color]) => (
                     <div key={range} className="rounded-xl border border-slate-200 bg-white p-3">
                       <p className={`text-base font-semibold ${color}`}>{range}</p>

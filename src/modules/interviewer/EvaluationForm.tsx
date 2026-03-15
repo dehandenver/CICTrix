@@ -4,6 +4,7 @@ import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { Dialog } from '../../components/Dialog';
 import { mockDatabase } from '../../lib/mockDatabase';
+import { getApplicants as getRecruitmentApplicants, saveApplicants as saveRecruitmentApplicants } from '../../lib/recruitmentData';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
 
 interface Applicant {
@@ -58,6 +59,21 @@ interface EvaluationData {
   recommendation: 'Highly Recommended' | 'Recommended' | 'Not Recommended' | '';
 }
 
+type AppointmentType = 'original' | 'promotional';
+
+const SCORE_SETUP_STORAGE_KEY = 'cictrix_rsp_score_setup';
+
+const getStoredAppointmentType = (applicantId?: string): AppointmentType => {
+  if (!applicantId) return 'original';
+  try {
+    const raw = localStorage.getItem(SCORE_SETUP_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, AppointmentType>) : {};
+    return parsed[applicantId] === 'promotional' ? 'promotional' : 'original';
+  } catch {
+    return 'original';
+  }
+};
+
 const resolveInterviewerIdentity = (): { name: string; locked: boolean } => {
   try {
     const raw = localStorage.getItem('cictrix_interviewer_session');
@@ -94,6 +110,7 @@ export function EvaluationForm() {
   const [error, setError] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
   const [activeTab, setActiveTab] = useState<'pcpt' | 'oral'>('pcpt');
+  const [appointmentType, setAppointmentType] = useState<AppointmentType>('original');
   const [isInterviewerNameLocked, setIsInterviewerNameLocked] = useState(false);
   
   const [evaluation, setEvaluation] = useState<EvaluationData>({
@@ -195,9 +212,16 @@ export function EvaluationForm() {
 
   useEffect(() => {
     if (id) {
+      const type = getStoredAppointmentType(id);
+      setAppointmentType(type);
+      if (type === 'promotional') {
+        setActiveTab('pcpt');
+      }
       fetchApplicantData();
     }
   }, [id]);
+
+  const hasOralEvaluation = appointmentType === 'original';
 
   const fetchApplicantData = async () => {
     try {
@@ -261,12 +285,14 @@ export function EvaluationForm() {
 
   const validateForm = (): string | null => {
     if (!evaluation.interviewer_name.trim()) return 'Interviewer name is required';
-    if (evaluation.communication_skills_score < 1 || evaluation.communication_skills_score > 5) return 'Communication Skills score must be 1-5';
-    if (evaluation.confidence_score < 1 || evaluation.confidence_score > 5) return 'Confidence score must be 1-5';
-    if (evaluation.comprehension_score < 1 || evaluation.comprehension_score > 5) return 'Comprehension score must be 1-5';
-    if (evaluation.personality_score < 1 || evaluation.personality_score > 5) return 'Personality score must be 1-5';
-    if (evaluation.job_knowledge_score < 1 || evaluation.job_knowledge_score > 5) return 'Job Knowledge score must be 1-5';
-    if (evaluation.overall_impression_score < 1 || evaluation.overall_impression_score > 5) return 'Overall Impression score must be 1-5';
+    if (hasOralEvaluation) {
+      if (evaluation.communication_skills_score < 1 || evaluation.communication_skills_score > 5) return 'Communication Skills score must be 1-5';
+      if (evaluation.confidence_score < 1 || evaluation.confidence_score > 5) return 'Confidence score must be 1-5';
+      if (evaluation.comprehension_score < 1 || evaluation.comprehension_score > 5) return 'Comprehension score must be 1-5';
+      if (evaluation.personality_score < 1 || evaluation.personality_score > 5) return 'Personality score must be 1-5';
+      if (evaluation.job_knowledge_score < 1 || evaluation.job_knowledge_score > 5) return 'Job Knowledge score must be 1-5';
+      if (evaluation.overall_impression_score < 1 || evaluation.overall_impression_score > 5) return 'Overall Impression score must be 1-5';
+    }
     if (!evaluation.interview_notes.trim()) return 'Interview notes are required';
     return null;
   };
@@ -319,13 +345,14 @@ export function EvaluationForm() {
       const submitWithClient = async (client: any) => {
         const { error: evalError } = await client.from('evaluations').insert(insertData);
         if (evalError) throw evalError;
+      };
 
-        const { error: updateError } = await client
-          .from('applicants')
-          .update({ status: 'Reviewed' })
-          .eq('id', id);
-
-        if (updateError) throw updateError;
+      const updateApplicantStatus = async (client: any) => {
+        try {
+          await client.from('applicants').update({ status: 'Reviewed' }).eq('id', id);
+        } catch {
+          // Non-fatal: evaluation save succeeded regardless
+        }
       };
 
       try {
@@ -335,9 +362,28 @@ export function EvaluationForm() {
         if (isMockModeEnabled) {
           throw primaryErr;
         }
-
         await submitWithClient(mockDatabase as any);
         persistDataSourceMode('local');
+      }
+
+      const statusClient = isMockModeEnabled ? mockDatabase as any : supabase;
+      await updateApplicantStatus(statusClient);
+
+      // Keep recruitment fallback data in sync so InterviewerApplicantsList can show Reviewed/Evaluated.
+      try {
+        const recruitmentRows = getRecruitmentApplicants();
+        const updatedRows = recruitmentRows.map((row: any) => {
+          const idMatch = String(row?.id ?? '') === String(id ?? '');
+          const emailMatch = String(row?.personalInfo?.email ?? '').toLowerCase() === String(applicant?.email ?? '').toLowerCase();
+          if (!idMatch && !emailMatch) return row;
+          return {
+            ...row,
+            status: 'Reviewed',
+          };
+        });
+        saveRecruitmentApplicants(updatedRows);
+      } catch {
+        // Non-fatal: evaluation save already succeeded
       }
 
       setShowSuccess(true);
@@ -408,13 +454,15 @@ export function EvaluationForm() {
             >
               PCPT Evaluation
             </button>
-            <button
-              type="button"
-              className={`evaluation-tab ${activeTab === 'oral' ? 'active' : ''}`}
-              onClick={() => setActiveTab('oral')}
-            >
-              Oral Interview Form
-            </button>
+            {hasOralEvaluation && (
+              <button
+                type="button"
+                className={`evaluation-tab ${activeTab === 'oral' ? 'active' : ''}`}
+                onClick={() => setActiveTab('oral')}
+              >
+                Oral Interview Form
+              </button>
+            )}
           </div>
 
           {activeTab === 'pcpt' && (
@@ -625,10 +673,46 @@ export function EvaluationForm() {
                   </tbody>
                 </table>
               </div>
+
+              {!hasOralEvaluation && (
+                <form onSubmit={handleSubmit}>
+                  <div className="rating-scale-box" style={{ marginTop: '1rem' }}>
+                    <strong>Promotional Application:</strong>
+                    <span>Oral Interview Evaluation is not required for promotional applicants.</span>
+                  </div>
+
+                  <div className="form-group interview-notes-group">
+                    <label className="form-label">INTERVIEW NOTES:</label>
+                    <textarea
+                      className="form-textarea interview-notes-textarea"
+                      value={evaluation.interview_notes}
+                      onChange={(e) => handleInputChange('interview_notes', e.target.value)}
+                      rows={6}
+                      placeholder="Summarize key points, observations, and overall impressions from the interview..."
+                      required
+                    />
+                  </div>
+
+                  {error && (
+                    <div className="error-message">
+                      ❌ {error}
+                    </div>
+                  )}
+
+                  <div className="oral-form-actions">
+                    <Button type="button" variant="secondary" onClick={() => navigate(-1)}>
+                      Save Draft
+                    </Button>
+                    <Button type="submit" disabled={submitting} className="submit-btn">
+                      {submitting ? 'Submitting...' : 'Submit Final Evaluation'}
+                    </Button>
+                  </div>
+                </form>
+              )}
             </div>
           )}
 
-          {activeTab === 'oral' && (
+          {hasOralEvaluation && activeTab === 'oral' && (
             <>
               <div className="oral-form-header">
                 <h1 className="oral-title">ORAL INTERVIEW ASSESSMENT FORM</h1>
