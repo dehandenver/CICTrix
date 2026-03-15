@@ -1,425 +1,450 @@
-import { BookOpen, Calendar, Edit2, Plus, Search, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import { Button } from '../../components/Button';
-import { Dialog } from '../../components/Dialog';
-import { Input } from '../../components/Input';
-import { Sidebar } from '../../components/Sidebar';
-import { supabase } from '../../lib/supabase';
-import '../../styles/admin.css';
+import {
+  Award,
+  Bell,
+  BookOpen,
+  Calendar,
+  CheckCircle,
+  ClipboardCheck,
+  FileText,
+  HelpCircle,
+  LayoutDashboard,
+  LineChart as LineChartIcon,
+  LogOut,
+  Settings,
+  Target,
+  TrendingUp,
+  User,
+  Users,
+} from 'lucide-react';
+import { useMemo, useState } from 'react';
+import {
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart as RechartsLineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 
-interface Training {
-  id: number;
-  title: string;
-  date: string;
-  speaker: string;
-  venue: string;
-  status: 'Scheduled' | 'Completed' | 'Cancelled';
-  created_at: string;
-}
+type Priority = 'high' | 'medium' | 'low';
+type RequestStatus = 'approved' | 'pending' | 'rejected';
 
-interface TrainingStats {
-  upcomingTrainings: number;
-  totalCompleted: number;
-}
+type MenuId =
+  | 'dashboard'
+  | 'programs'
+  | 'analytics'
+  | 'compliance'
+  | 'participants'
+  | 'settings';
 
-const FALLBACK_TRAININGS: Training[] = [
+type MenuItem = {
+  id: MenuId;
+  label: string;
+  sublabel: string;
+  icon: React.ComponentType<{ className?: string }>;
+};
+
+type StatCardColor = 'blue' | 'green' | 'orange' | 'purple';
+
+type StatCardProps = {
+  label: string;
+  value: string;
+  icon: React.ComponentType<{ className?: string }>;
+  color: StatCardColor;
+  sublabel: string;
+};
+
+const competencyGaps = [
+  { skill: 'Strategic Planning', currentLevel: 62, targetLevel: 88, gap: 26, priority: 'high' as Priority },
+  { skill: 'Data Analytics', currentLevel: 54, targetLevel: 82, gap: 28, priority: 'high' as Priority },
+  { skill: 'Public Communication', currentLevel: 71, targetLevel: 85, gap: 14, priority: 'medium' as Priority },
+  { skill: 'Policy Compliance', currentLevel: 79, targetLevel: 90, gap: 11, priority: 'low' as Priority },
+];
+
+const upcomingSeminars = [
+  { id: 'SEM-001', title: 'Leadership for Public Service', date: 'Mar 21, 2026', participants: 42, instructor: 'Dr. Maria Santos' },
+  { id: 'SEM-002', title: 'Cybersecurity Awareness for Offices', date: 'Mar 25, 2026', participants: 58, instructor: 'Engr. Paul Rivera' },
+  { id: 'SEM-003', title: 'Records Management Modernization', date: 'Apr 02, 2026', participants: 33, instructor: 'Atty. Liza Cruz' },
+];
+
+const trainingRequests = [
   {
-    id: 1,
-    title: 'Leadership Development Program',
-    date: '2026-03-15',
-    speaker: 'Dr. Maria Santos',
-    venue: 'HRMO Conference Room',
-    status: 'Scheduled',
-    created_at: new Date().toISOString(),
+    id: 'TR-1001',
+    employee: 'Juan Dela Cruz',
+    position: 'Administrative Officer II',
+    requestedTraining: 'Advanced Project Monitoring',
+    department: 'Planning Office',
+    dateRequested: 'Mar 08, 2026',
+    status: 'approved' as RequestStatus,
   },
   {
-    id: 2,
-    title: 'Public Service Excellence Workshop',
-    date: '2026-02-10',
-    speaker: 'Atty. John Reyes',
-    venue: 'City Hall Training Hall',
-    status: 'Completed',
-    created_at: new Date().toISOString(),
+    id: 'TR-1002',
+    employee: 'Ana Reyes',
+    position: 'HR Assistant',
+    requestedTraining: 'Competency-Based Interviewing',
+    department: 'HRMO',
+    dateRequested: 'Mar 10, 2026',
+    status: 'pending' as RequestStatus,
+  },
+  {
+    id: 'TR-1003',
+    employee: 'Carlos Mendoza',
+    position: 'IT Officer II',
+    requestedTraining: 'Cloud Infrastructure Operations',
+    department: 'MIS Office',
+    dateRequested: 'Mar 11, 2026',
+    status: 'rejected' as RequestStatus,
+  },
+  {
+    id: 'TR-1004',
+    employee: 'Sofia Ramirez',
+    position: 'Municipal Budget Officer',
+    requestedTraining: 'Public Finance Analytics',
+    department: 'Budget Office',
+    dateRequested: 'Mar 12, 2026',
+    status: 'approved' as RequestStatus,
   },
 ];
 
-export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boolean }) => {
-  const [stats, setStats] = useState<TrainingStats>({
-    upcomingTrainings: 0,
-    totalCompleted: 0
-  });
-  const [trainings, setTrainings] = useState<Training[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [showTrainingDialog, setShowTrainingDialog] = useState(false);
-  const [editingTraining, setEditingTraining] = useState<Training | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [newTraining, setNewTraining] = useState<{
-    title: string;
-    date: string;
-    speaker: string;
-    venue: string;
-    status: 'Scheduled' | 'Completed' | 'Cancelled';
-  }>({
-    title: '',
-    date: '',
-    speaker: '',
-    venue: '',
-    status: 'Scheduled'
-  });
+const topPrograms = [
+  { id: 'TP-01', title: 'Leadership Essentials', rating: 4.9, completionRate: 93, participants: 210 },
+  { id: 'TP-02', title: 'Technical Skills Upskilling', rating: 4.8, completionRate: 89, participants: 178 },
+  { id: 'TP-03', title: 'Workplace Communication Mastery', rating: 4.7, completionRate: 91, participants: 165 },
+];
 
-  useEffect(() => {
-    fetchTrainings();
-  }, []);
+const monthlyTrainingData = [
+  { name: 'Week 1', Leadership: 10, Technical: 16, SoftSkills: 9, Compliance: 12 },
+  { name: 'Week 2', Leadership: 14, Technical: 18, SoftSkills: 11, Compliance: 13 },
+  { name: 'Week 3', Leadership: 12, Technical: 20, SoftSkills: 15, Compliance: 14 },
+  { name: 'Week 4', Leadership: 18, Technical: 22, SoftSkills: 17, Compliance: 16 },
+];
 
-  useEffect(() => {
-    calculateStats();
-  }, [trainings]);
+const LND_MENU: MenuItem[] = [
+  { id: 'dashboard', label: 'Dashboard', sublabel: 'Overview and KPIs', icon: LayoutDashboard },
+  { id: 'programs', label: 'Training Programs', sublabel: 'Courses and sessions', icon: BookOpen },
+  { id: 'analytics', label: 'Performance Trends', sublabel: 'Insights and growth', icon: TrendingUp },
+  { id: 'compliance', label: 'Compliance', sublabel: 'Completion tracking', icon: CheckCircle },
+  { id: 'participants', label: 'Participants', sublabel: 'Employees and ratings', icon: Users },
+  { id: 'settings', label: 'Settings', sublabel: 'Division preferences', icon: Settings },
+];
 
-  const fetchTrainings = async () => {
-    setLoading(true);
-    setErrorMessage(null);
-    try {
-      const { data, error } = await supabase
-        .from('trainings')
-        .select('*')
-        .order('date', { ascending: false });
+const priorityColor = (priority: Priority) => {
+  if (priority === 'high') return 'bg-red-100 text-red-700';
+  if (priority === 'medium') return 'bg-yellow-100 text-yellow-700';
+  return 'bg-green-100 text-green-700';
+};
 
-      if (error) throw error;
-      const safeTrainings = (Array.isArray(data) ? data : []).map((item: any, index: number) => ({
-        id: Number(item?.id ?? index + 1),
-        title: String(item?.title ?? ''),
-        date: String(item?.date ?? ''),
-        speaker: String(item?.speaker ?? ''),
-        venue: String(item?.venue ?? ''),
-        status: (item?.status === 'Completed' || item?.status === 'Cancelled' ? item.status : 'Scheduled') as 'Scheduled' | 'Completed' | 'Cancelled',
-        created_at: String(item?.created_at ?? new Date().toISOString()),
-      }));
-      setTrainings(safeTrainings);
-    } catch (error) {
-      console.error('Error fetching trainings:', error);
-      setTrainings(FALLBACK_TRAININGS);
-      setErrorMessage('Using local sample training data (live source unavailable).');
-    } finally {
-      setLoading(false);
-    }
-  };
+const statusColor = (status: RequestStatus) => {
+  if (status === 'approved') return 'bg-green-100 text-green-700';
+  if (status === 'pending') return 'bg-yellow-100 text-yellow-700';
+  return 'bg-red-100 text-red-700';
+};
 
-  const calculateStats = () => {
-    const today = new Date().toISOString().split('T')[0];
-    const upcoming = trainings.filter(t => t.date >= today && t.status !== 'Cancelled').length;
-    const completed = trainings.filter(t => t.status === 'Completed').length;
-    setStats({ upcomingTrainings: upcoming, totalCompleted: completed });
-  };
-
-  const handleAddTraining = async () => {
-    if (!newTraining.title || !newTraining.date || !newTraining.speaker || !newTraining.venue) {
-      alert('Please fill in all fields');
-      return;
-    }
-
-    try {
-      if (editingTraining) {
-        const { error } = await supabase
-          .from('trainings')
-          .update(newTraining)
-          .eq('id', editingTraining.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('trainings')
-          .insert([newTraining]);
-        if (error) throw error;
-      }
-      
-      await fetchTrainings();
-      setShowTrainingDialog(false);
-      setEditingTraining(null);
-      setNewTraining({ title: '', date: '', speaker: '', venue: '', status: 'Scheduled' });
-    } catch (error) {
-      console.error('Error saving training:', error);
-      alert('Failed to save training');
-    }
-  };
-
-  const handleDeleteTraining = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this training?')) return;
-
-    try {
-      const { error } = await supabase
-        .from('trainings')
-        .delete()
-        .eq('id', id);
-      if (error) throw error;
-      await fetchTrainings();
-    } catch (error) {
-      console.error('Error deleting training:', error);
-      alert('Failed to delete training');
-    }
-  };
-
-  const handleEditTraining = (training: Training) => {
-    setEditingTraining(training);
-    setNewTraining({
-      title: training.title,
-      date: training.date,
-      speaker: training.speaker,
-      venue: training.venue,
-      status: training.status as 'Scheduled' | 'Completed' | 'Cancelled'
-    });
-    setShowTrainingDialog(true);
-  };
-
-  const filteredTrainings = useMemo(() => {
-    const query = searchTerm.toLowerCase();
-    return trainings.filter(t =>
-      String(t.title ?? '').toLowerCase().includes(query) ||
-      String(t.speaker ?? '').toLowerCase().includes(query)
-    );
-  }, [trainings, searchTerm]);
-
-  if (isDashboardView) {
-    return (
-      <div className="flex h-screen bg-slate-50">
-        <Sidebar />
-        <main className="flex-1 overflow-auto">
-          <div className="p-8">
-            <h1 className="text-3xl font-bold text-slate-900 mb-8">Learning & Development</h1>
-
-            {errorMessage && (
-              <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                {errorMessage}
-              </div>
-            )}
-
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <p className="text-slate-600">Loading...</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Upcoming Trainings Card */}
-                <div className="bg-white rounded-lg shadow-md border border-slate-200 p-6 hover:shadow-lg transition">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-slate-600 mb-1">Upcoming Trainings</p>
-                      <p className="text-4xl font-bold bg-gradient-to-r from-blue-900 to-blue-700 bg-clip-text text-transparent">
-                        {stats.upcomingTrainings}
-                      </p>
-                    </div>
-                    <div className="p-3 bg-blue-900/10 rounded-lg">
-                      <Calendar className="w-8 h-8 text-blue-900" />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Total Completed Card */}
-                <div className="bg-white rounded-lg shadow-md border border-slate-200 p-6 hover:shadow-lg transition">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-slate-600 mb-1">Total Completed</p>
-                      <p className="text-4xl font-bold bg-gradient-to-r from-green-600 to-green-500 bg-clip-text text-transparent">
-                        {stats.totalCompleted}
-                      </p>
-                    </div>
-                    <div className="p-3 bg-green-600/10 rounded-lg">
-                      <BookOpen className="w-8 h-8 text-green-600" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </main>
-      </div>
-    );
-  }
-
+const TopNav = () => {
   return (
-    <div className="flex h-screen bg-slate-50">
-      <Sidebar />
-      <main className="flex-1 overflow-auto">
-        <div className="p-8">
-          <div className="flex items-center justify-between mb-8">
-            <h1 className="text-3xl font-bold text-slate-900">Learning & Development Management</h1>
-            <Button onClick={() => {
-              setEditingTraining(null);
-              setNewTraining({ title: '', date: '', speaker: '', venue: '', status: 'Scheduled' });
-              setShowTrainingDialog(true);
-            }} className="flex items-center gap-2">
-              <Plus className="w-4 h-4" />
-              Add Training
-            </Button>
+    <header className="fixed inset-x-0 top-0 z-50 h-16 border-b border-gray-200 bg-white shadow-sm">
+      <div className="flex h-full items-center justify-between px-5">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 text-sm font-bold text-white">
+            HR
           </div>
-
-          {errorMessage && (
-            <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              {errorMessage}
-            </div>
-          )}
-
-          {/* Search Bar */}
-          <div className="mb-6 flex items-center gap-2">
-            <Search className="w-5 h-5 text-slate-400" />
-            <Input
-              type="text"
-              placeholder="Search by title or speaker..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="flex-1"
-            />
-          </div>
-
-          {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <p className="text-slate-600">Loading trainings...</p>
-            </div>
-          ) : (
-            <div className="bg-white rounded-lg shadow-md border border-slate-200 overflow-hidden">
-              <table className="w-full">
-                <thead className="bg-slate-50 border-b border-slate-200">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-slate-900">Title</th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-slate-900">Date</th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-slate-900">Speaker</th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-slate-900">Venue</th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-slate-900">Status</th>
-                    <th className="px-6 py-3 text-right text-sm font-semibold text-slate-900">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredTrainings.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
-                        {searchTerm ? 'No trainings match your search.' : 'No trainings scheduled yet.'}
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredTrainings.map((training) => (
-                      <tr key={training.id} className="border-b border-slate-200 hover:bg-slate-50 transition">
-                        <td className="px-6 py-4 text-sm text-slate-900 font-medium">{training.title}</td>
-                        <td className="px-6 py-4 text-sm text-slate-600">{new Date(training.date).toLocaleDateString()}</td>
-                        <td className="px-6 py-4 text-sm text-slate-600">{training.speaker}</td>
-                        <td className="px-6 py-4 text-sm text-slate-600">{training.venue}</td>
-                        <td className="px-6 py-4 text-sm">
-                          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                            training.status === 'Scheduled' ? 'bg-blue-100 text-blue-800' :
-                            training.status === 'Completed' ? 'bg-green-100 text-green-800' :
-                            'bg-red-100 text-red-800'
-                          }`}>
-                            {training.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-right space-x-2">
-                          <button 
-                            onClick={() => handleEditTraining(training)}
-                            className="text-blue-900 hover:text-blue-700 transition"
-                            title="Edit"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button 
-                            onClick={() => handleDeleteTraining(training.id)}
-                            className="text-red-600 hover:text-red-800 transition"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </main>
-
-      {/* Add/Edit Training Dialog */}
-      <Dialog 
-        open={showTrainingDialog} 
-        onClose={() => {
-          setShowTrainingDialog(false);
-          setEditingTraining(null);
-          setNewTraining({ title: '', date: '', speaker: '', venue: '', status: 'Scheduled' });
-        }}
-        title={editingTraining ? 'Edit Training' : 'Add New Training'}
-      >
-        <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Training Title *</label>
-            <Input
-              type="text"
-              placeholder="e.g., Leadership Development Program"
-              value={newTraining.title}
-              onChange={(e) => setNewTraining({ ...newTraining, title: e.target.value })}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Date *</label>
-            <Input
-              type="date"
-              value={newTraining.date}
-              onChange={(e) => setNewTraining({ ...newTraining, date: e.target.value })}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Speaker Name *</label>
-            <Input
-              type="text"
-              placeholder="e.g., Dr. John Smith"
-              value={newTraining.speaker}
-              onChange={(e) => setNewTraining({ ...newTraining, speaker: e.target.value })}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Venue *</label>
-            <Input
-              type="text"
-              placeholder="e.g., Conference Room A"
-              value={newTraining.venue}
-              onChange={(e) => setNewTraining({ ...newTraining, venue: e.target.value })}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
-            <select
-              value={newTraining.status}
-              onChange={(e) => setNewTraining({ ...newTraining, status: e.target.value as 'Scheduled' | 'Completed' | 'Cancelled' })}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-900/30 focus:border-blue-900"
-            >
-              <option value="Scheduled">Scheduled</option>
-              <option value="Completed">Completed</option>
-              <option value="Cancelled">Cancelled</option>
-            </select>
-          </div>
-
-          <div className="flex gap-3 pt-4">
-            <Button 
-              onClick={handleAddTraining}
-              className="flex-1 bg-blue-900 text-white"
-            >
-              {editingTraining ? 'Update Training' : 'Add Training'}
-            </Button>
-            <Button 
-              onClick={() => {
-                setShowTrainingDialog(false);
-                setEditingTraining(null);
-                setNewTraining({ title: '', date: '', speaker: '', venue: '', status: 'Scheduled' });
-              }}
-              className="flex-1 bg-slate-300 text-slate-900"
-            >
-              Cancel
-            </Button>
+            <p className="text-sm font-bold text-gray-900">Government HRIS</p>
+            <p className="text-xs text-gray-500">Human Resource Information System</p>
           </div>
         </div>
-      </Dialog>
+
+        <div className="flex items-center gap-2">
+          <button className="rounded-lg p-2 text-gray-600 transition hover:bg-gray-100 hover:text-gray-900" type="button" aria-label="Help">
+            <HelpCircle className="h-5 w-5" />
+          </button>
+          <button className="relative rounded-lg p-2 text-gray-600 transition hover:bg-gray-100 hover:text-gray-900" type="button" aria-label="Notifications">
+            <Bell className="h-5 w-5" />
+            <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500" />
+          </button>
+          <span className="mx-2 h-6 w-px bg-gray-200" />
+          <div className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-gray-50">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 text-white">
+              <User className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Alex Gonzales</p>
+              <p className="text-xs text-gray-500">L&D Division</p>
+            </div>
+          </div>
+          <button className="ml-2 inline-flex items-center gap-1 rounded-lg px-2 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50" type="button">
+            <LogOut className="h-4 w-4" />
+            Logout
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+};
+
+const Sidebar = ({ activeModule, onSelect }: { activeModule: MenuId; onSelect: (id: MenuId) => void }) => {
+  return (
+    <aside className="fixed left-0 top-16 z-40 h-[calc(100vh-4rem)] w-64 overflow-y-auto border-r border-gray-200 bg-white">
+      <nav className="space-y-1 p-3">
+        {LND_MENU.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeModule === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onSelect(item.id)}
+              className={[
+                'flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition',
+                isActive
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'text-gray-700 hover:bg-gray-50',
+              ].join(' ')}
+            >
+              <Icon className={isActive ? 'mt-0.5 h-5 w-5 text-white' : 'mt-0.5 h-5 w-5 text-gray-500'} />
+              <span className="flex flex-col">
+                <span className="text-sm font-semibold">{item.label}</span>
+                <span className={isActive ? 'text-xs text-blue-100' : 'text-xs text-gray-500'}>{item.sublabel}</span>
+              </span>
+            </button>
+          );
+        })}
+      </nav>
+    </aside>
+  );
+};
+
+const PlaceholderPage = ({ label }: { label: string }) => {
+  return (
+    <div className="flex min-h-[70vh] items-center justify-center">
+      <div className="text-center">
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+          <FileText className="h-7 w-7" />
+        </div>
+        <h2 className="text-2xl font-bold text-gray-900">Under Construction / Implementation</h2>
+        <p className="mt-2 text-sm text-gray-500">The {label} module is currently being finalized.</p>
+      </div>
     </div>
   );
 };
 
+const StatCard = ({ label, value, icon: Icon, color, sublabel }: StatCardProps) => {
+  const colorStyles = {
+    blue: 'bg-blue-100 text-blue-600',
+    green: 'bg-green-100 text-green-600',
+    orange: 'bg-orange-100 text-orange-600',
+    purple: 'bg-purple-100 text-purple-600',
+  }[color];
+
+  return (
+    <article className="rounded-2xl border border-gray-200 bg-white p-5 transition hover:shadow-md">
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-sm font-medium text-gray-500">{label}</p>
+          <p className="mt-1 text-3xl font-bold text-gray-900">{value}</p>
+          <p className="mt-1 text-xs text-gray-500">{sublabel}</p>
+        </div>
+        <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${colorStyles}`}>
+          <Icon className="h-6 w-6" />
+        </div>
+      </div>
+    </article>
+  );
+};
+
+const LndDashboardContent = () => {
+  const approvedCount = useMemo(
+    () => trainingRequests.filter((request) => request.status === 'approved').length,
+    []
+  );
+
+  return (
+    <div className="space-y-6 p-8 pt-24">
+      <section>
+        <p className="text-sm font-medium text-gray-500">
+          <span className="text-blue-600">L&D</span> <span className="mx-1 text-gray-400">/</span> Dashboard
+        </p>
+        <h1 className="mt-1 text-3xl font-bold text-gray-900">Learning & Development</h1>
+        <p className="mt-1 text-sm text-gray-500">Monitor training programs, competency development, and completion performance.</p>
+      </section>
+
+      <section className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Total Employees" value="1,248" icon={Users} color="blue" sublabel="Workforce covered" />
+        <StatCard label="Training Programs" value="36" icon={BookOpen} color="green" sublabel="Active modules" />
+        <StatCard label="Active Participants" value="742" icon={Award} color="orange" sublabel="In current cycle" />
+        <StatCard label="Completed Trainings" value="584" icon={ClipboardCheck} color="purple" sublabel="This quarter" />
+      </section>
+
+      <section className="rounded-2xl border border-gray-200 bg-white p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">Trainings Conducted (This Month)</h2>
+          <p className="text-xs text-gray-500">Weekly trend by category</p>
+        </div>
+        <div className="h-[300px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <RechartsLineChart data={monthlyTrainingData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} />
+              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} />
+              <Tooltip />
+              <Legend />
+              <Line type="monotone" dataKey="Leadership" stroke="#2563eb" strokeWidth={2.5} dot={{ r: 4 }} />
+              <Line type="monotone" dataKey="Technical" stroke="#16a34a" strokeWidth={2.5} dot={{ r: 4 }} />
+              <Line type="monotone" dataKey="SoftSkills" stroke="#ea580c" strokeWidth={2.5} dot={{ r: 4 }} />
+              <Line type="monotone" dataKey="Compliance" stroke="#9333ea" strokeWidth={2.5} dot={{ r: 4 }} />
+            </RechartsLineChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-gray-200 bg-white p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="inline-flex items-center gap-2 text-lg font-semibold text-gray-900">
+            <Target className="h-5 w-5 text-blue-600" />
+            Competency Gaps Analysis
+          </h2>
+          <button type="button" className="text-sm font-semibold text-blue-600 hover:text-blue-700">View Details</button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {competencyGaps.map((item) => (
+            <article key={item.skill} className="rounded-xl border border-gray-200 p-4">
+              <div className="mb-4 flex items-start justify-between">
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900">{item.skill}</h3>
+                  <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${priorityColor(item.priority)}`}>
+                    {item.priority}
+                  </span>
+                </div>
+                <p className="text-sm font-semibold text-red-600">Gap {item.gap}%</p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div>
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Current Level</p>
+                  <div className="h-2.5 rounded-full bg-gray-200">
+                    <div className="h-2.5 rounded-full bg-orange-500" style={{ width: `${item.currentLevel}%` }} />
+                  </div>
+                  <p className="mt-1 text-xs text-gray-600">{item.currentLevel}%</p>
+                </div>
+                <div>
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Target Level</p>
+                  <div className="h-2.5 rounded-full bg-gray-200">
+                    <div className="h-2.5 rounded-full bg-blue-600" style={{ width: `${item.targetLevel}%` }} />
+                  </div>
+                  <p className="mt-1 text-xs text-gray-600">{item.targetLevel}%</p>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <article className="rounded-2xl border border-gray-200 bg-white p-5">
+          <h2 className="mb-4 inline-flex items-center gap-2 text-lg font-semibold text-gray-900">
+            <Calendar className="h-5 w-5 text-blue-600" />
+            Upcoming Seminars
+          </h2>
+          <div className="space-y-3">
+            {upcomingSeminars.map((seminar) => (
+              <div key={seminar.id} className="rounded-xl border border-gray-200 p-3 transition hover:bg-gray-50">
+                <p className="text-sm font-semibold text-gray-900">{seminar.title}</p>
+                <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-gray-500">
+                  <span>{seminar.date}</span>
+                  <span className="inline-flex items-center gap-1">
+                    <Users className="h-3.5 w-3.5" />
+                    {seminar.participants} participants
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-gray-600">Instructor: {seminar.instructor}</p>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="rounded-2xl border border-gray-200 bg-white p-5">
+          <h2 className="mb-4 inline-flex items-center gap-2 text-lg font-semibold text-gray-900">
+            <LineChartIcon className="h-5 w-5 text-blue-600" />
+            Top Performing Programs
+          </h2>
+          <div className="space-y-3">
+            {topPrograms.map((program, index) => (
+              <div key={program.id} className="rounded-xl border border-gray-200 p-3">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">
+                    {index + 1}
+                  </span>
+                  <p className="flex-1 text-sm font-semibold text-gray-900">{program.title}</p>
+                </div>
+                <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                  <p className="text-gray-600">Rating: <span className="font-semibold text-gray-900">{program.rating} <span className="text-yellow-500">★</span></span></p>
+                  <p className="text-gray-600">Completion: <span className="font-semibold text-gray-900">{program.completionRate}%</span></p>
+                  <p className="text-gray-600">Participants: <span className="font-semibold text-gray-900">{program.participants}</span></p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </article>
+      </section>
+
+      <section className="rounded-2xl border border-gray-200 bg-white p-5">
+        <h2 className="mb-4 text-lg font-semibold text-gray-900">Recent Training Requests</h2>
+        <div className="overflow-x-auto">
+          <table className="min-w-full border-collapse">
+            <thead>
+              <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                <th className="px-3 py-3">Employee</th>
+                <th className="px-3 py-3">Position</th>
+                <th className="px-3 py-3">Department</th>
+                <th className="px-3 py-3">Requested Training</th>
+                <th className="px-3 py-3">Date Requested</th>
+                <th className="px-3 py-3">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {trainingRequests.map((request) => (
+                <tr key={request.id} className="border-b border-gray-100 text-sm hover:bg-gray-50">
+                  <td className="px-3 py-3 font-medium text-gray-900">{request.employee}</td>
+                  <td className="px-3 py-3 text-gray-700">{request.position}</td>
+                  <td className="px-3 py-3 text-gray-700">{request.department}</td>
+                  <td className="px-3 py-3 text-gray-700">{request.requestedTraining}</td>
+                  <td className="px-3 py-3 text-gray-700">{request.dateRequested}</td>
+                  <td className="px-3 py-3">
+                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${statusColor(request.status)}`}>
+                      {request.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-3 text-xs text-gray-500">Approved requests this cycle: {approvedCount}</p>
+      </section>
+    </div>
+  );
+};
+
+export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boolean }) => {
+  const [activeModule, setActiveModule] = useState<MenuId>('dashboard');
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <TopNav />
+      <div className="flex pt-16">
+        <Sidebar activeModule={activeModule} onSelect={setActiveModule} />
+        <main className="ml-64 flex-1">
+          {activeModule === 'dashboard' ? (
+            <LndDashboardContent />
+          ) : (
+            <PlaceholderPage label={LND_MENU.find((item) => item.id === activeModule)?.label || 'Module'} />
+          )}
+        </main>
+      </div>
+      {!isDashboardView ? null : null}
+    </div>
+  );
+};
