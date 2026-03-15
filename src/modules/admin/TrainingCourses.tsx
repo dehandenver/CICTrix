@@ -1,5 +1,5 @@
-import { useState } from 'react';
 import { BookOpen, CheckCircle, Edit, FileText, Plus, Search, Trash2, Users } from 'lucide-react';
+import { useState } from 'react';
 
 type CourseCategory = 'Leadership' | 'Technical' | 'Soft Skills' | 'Compliance';
 type CourseStatus = 'Active' | 'Draft' | 'Archived';

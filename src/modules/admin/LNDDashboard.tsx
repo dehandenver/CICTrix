@@ -1,33 +1,34 @@
 import {
-  Award,
-  Bell,
-  BookOpen,
-  Calendar,
-  CheckCircle,
-  ClipboardCheck,
-  FileText,
-  HelpCircle,
-  LayoutDashboard,
-  LineChart as LineChartIcon,
-  LogOut,
-  Settings,
-  Target,
-  TrendingUp,
-  User,
-  Users,
+    Award,
+    Bell,
+    BookOpen,
+    Calendar,
+    CheckCircle,
+    ClipboardCheck,
+    FileText,
+    HelpCircle,
+    LayoutDashboard,
+    LineChart as LineChartIcon,
+    LogOut,
+    Settings,
+    Target,
+    TrendingUp,
+    User,
+    Users,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { TrainingCourses } from './TrainingCourses';
 import {
-  CartesianGrid,
-  Legend,
-  Line,
-  LineChart as RechartsLineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
+    CartesianGrid,
+    Legend,
+    Line,
+    LineChart as RechartsLineChart,
+    ResponsiveContainer,
+    Tooltip,
+    XAxis,
+    YAxis,
 } from 'recharts';
+import { SeminarEnrollment } from './SeminarEnrollment';
+import { TrainingCourses } from './TrainingCourses';
 
 type Priority = 'high' | 'medium' | 'low';
 type RequestStatus = 'approved' | 'pending' | 'rejected';
@@ -35,6 +36,7 @@ type RequestStatus = 'approved' | 'pending' | 'rejected';
 type MenuId =
   | 'dashboard'
   | 'training-courses'
+  | 'seminar-enrollment'
   | 'analytics'
   | 'compliance'
   | 'participants'
@@ -125,6 +127,7 @@ const monthlyTrainingData = [
 const LND_MENU: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', sublabel: 'Overview and KPIs', icon: LayoutDashboard },
   { id: 'training-courses', label: 'Training Programs', sublabel: 'Courses and sessions', icon: BookOpen },
+  { id: 'seminar-enrollment', label: 'Seminar Enrollment', sublabel: 'Registrations and slots', icon: ClipboardCheck },
   { id: 'analytics', label: 'Performance Trends', sublabel: 'Insights and growth', icon: TrendingUp },
   { id: 'compliance', label: 'Compliance', sublabel: 'Completion tracking', icon: CheckCircle },
   { id: 'participants', label: 'Participants', sublabel: 'Employees and ratings', icon: Users },
@@ -442,6 +445,8 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
             <LndDashboardContent />
           ) : activeModule === 'training-courses' ? (
             <TrainingCourses />
+          ) : activeModule === 'seminar-enrollment' ? (
+            <SeminarEnrollment />
           ) : (
             <PlaceholderPage label={LND_MENU.find((item) => item.id === activeModule)?.label || 'Module'} />
           )}
