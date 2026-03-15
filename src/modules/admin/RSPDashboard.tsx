@@ -38,6 +38,7 @@ import {
     ensureRecruitmentSeedData,
     getAuthoritativeJobPostings,
     getDeletedJobReports,
+    getEmployeeRecords,
     getNewlyHired,
     getApplicants as getRecruitmentApplicants,
     saveDeletedJobReports,
@@ -53,6 +54,9 @@ type JobStatus = 'Open' | 'Reviewing' | 'Closed';
 type Section = 'dashboard' | 'jobs' | 'qualified' | 'new-hired' | 'raters' | 'accounts' | 'reports' | 'settings';
 type BulkRecipientMode = 'all' | 'department' | 'selected';
 type EmployeeDocumentTemplateId = (typeof BULK_REQUEST_TEMPLATES)[number]['id'];
+type EmployeeDirectoryCardStatus = 'Active' | 'Inactive' | 'Mixed';
+
+const EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE = 6;
 
 interface JobRecord {
   id: number | string;
@@ -66,6 +70,7 @@ interface JobRecord {
 
 interface ApplicantRecord {
   id: string;
+  employeeId?: string;
   full_name: string;
   email: string;
   contact_number: string;
@@ -493,6 +498,9 @@ export const RSPDashboard = () => {
   const [raterAssignedPositionsByEmail, setRaterAssignedPositionsByEmail] = useState<Record<string, string[]>>({});
   const [accountsView, setAccountsView] = useState<'overview' | 'directory' | 'position' | 'details'>('overview');
   const [employeeDirectorySearch, setEmployeeDirectorySearch] = useState('');
+  const [employeeDirectoryStatusFilter, setEmployeeDirectoryStatusFilter] = useState<'all' | EmployeeDirectoryCardStatus>('all');
+  const [employeeDirectoryOfficeFilter, setEmployeeDirectoryOfficeFilter] = useState('all');
+  const [employeeDirectoryPage, setEmployeeDirectoryPage] = useState(0);
   const [selectedDirectoryCard, setSelectedDirectoryCard] = useState<{ position: string; office: string } | null>(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [employeeDetailsTab, setEmployeeDetailsTab] = useState<'personal' | 'documents'>('personal');
@@ -549,7 +557,7 @@ export const RSPDashboard = () => {
   });
 
   const [settingsTab, setSettingsTab] = useState<(typeof SETTINGS_TABS)[number]['id']>('profile');
-  const [profileForm, setProfileForm] = useState({
+  const [profileForm] = useState({
     firstName: 'Juan',
     lastName: 'Dela Cruz',
     email: 'juan.delacruz@iloilo.gov.ph',
@@ -1164,42 +1172,122 @@ export const RSPDashboard = () => {
     return map;
   }, [credentialedNewlyHiredRows]);
 
+  const portalAccounts = useMemo(() => getEmployeePortalAccounts(), [credentialedNewlyHiredRows, section]);
+
+  const portalAccountByEmployeeId = useMemo(
+    () => new Map(portalAccounts.map((account) => [String(account.employee.employeeId ?? '').trim(), account])),
+    [portalAccounts]
+  );
+
   const portalAccountByApplicantId = useMemo(() => {
-    const portalAccounts = getEmployeePortalAccounts();
-    const accountByEmployeeId = new Map(portalAccounts.map((a) => [String(a.employee.employeeId).trim(), a]));
     const map = new Map<string, (typeof portalAccounts)[number]>();
     credentialedNewlyHiredRows.forEach((row) => {
       if (!row.applicantId || !row.employeeId) return;
-      const account = accountByEmployeeId.get(String(row.employeeId).trim());
+      const account = portalAccountByEmployeeId.get(String(row.employeeId).trim());
       if (account) map.set(String(row.applicantId), account);
     });
     return map;
-  }, [credentialedNewlyHiredRows]);
+  }, [credentialedNewlyHiredRows, portalAccountByEmployeeId, portalAccounts]);
+
+  const credentialedApplicantDirectorySource = useMemo(
+    () =>
+      applicants
+        .filter((employee) => credentialedApplicantIds.has(employee.id))
+        .map((employee) => ({
+          ...employee,
+          employeeId: employeeNumberFromNewlyHired.get(employee.id),
+        })),
+    [applicants, credentialedApplicantIds, employeeNumberFromNewlyHired]
+  );
+
+  const fallbackEmployeeDirectorySource = useMemo(() => {
+    const employeeRecords = getEmployeeRecords();
+    return employeeRecords.reduce<ApplicantRecord[]>((records, record) => {
+        const employeeId = String(record.employeeId ?? '').trim();
+        if (!employeeId) return records;
+
+        const account = portalAccountByEmployeeId.get(employeeId);
+
+        records.push({
+          id: employeeId,
+          employeeId,
+          full_name: String(account?.employee.fullName ?? record.name ?? 'Employee'),
+          email: String(account?.employee.email ?? ''),
+          contact_number: String(account?.employee.mobileNumber ?? ''),
+          position: String(record.position ?? '').trim() || 'Unassigned Position',
+          office: String(record.department ?? record.division ?? '').trim() || 'Unassigned Office',
+          status: 'Active',
+          created_at: String(record.startDate ?? account?.createdAt ?? new Date().toISOString()),
+          total_score: null,
+        });
+
+        return records;
+      }, []);
+  }, [portalAccountByEmployeeId]);
 
   const directoryEmployeesSource = useMemo(
-    () => applicants.filter((employee) => credentialedApplicantIds.has(employee.id)),
-    [applicants, credentialedApplicantIds]
+    () => {
+      const merged = new Map<string, ApplicantRecord>();
+
+      credentialedApplicantDirectorySource.forEach((employee) => {
+        const key = String(employee.employeeId ?? employee.id).trim();
+        if (!key) return;
+        merged.set(key, employee);
+      });
+
+      fallbackEmployeeDirectorySource.forEach((employee) => {
+        const key = String(employee.employeeId ?? employee.id).trim();
+        if (!key || merged.has(key)) return;
+        merged.set(key, employee);
+      });
+
+      return Array.from(merged.values());
+    },
+    [credentialedApplicantDirectorySource, fallbackEmployeeDirectorySource]
   );
 
   const employeeDirectoryCards = useMemo(() => {
     const source = directoryEmployeesSource;
     const searchTerm = employeeDirectorySearch.trim().toLowerCase();
-    const grouped = new Map<string, { position: string; office: string; count: number }>();
+    const grouped = new Map<string, { position: string; office: string; count: number; activeCount: number; inactiveCount: number; status: EmployeeDirectoryCardStatus }>();
 
     source.forEach((employee) => {
       const position = employee.position || 'Unassigned Position';
       const office = employee.office || 'Unassigned Office';
+      const isInactive = employee.status.toLowerCase().includes('inactive');
       const key = `${position}__${office}`;
       const existing = grouped.get(key);
 
       if (existing) {
         existing.count += 1;
+        if (isInactive) {
+          existing.inactiveCount += 1;
+        } else {
+          existing.activeCount += 1;
+        }
       } else {
-        grouped.set(key, { position, office, count: 1 });
+        grouped.set(key, {
+          position,
+          office,
+          count: 1,
+          activeCount: isInactive ? 0 : 1,
+          inactiveCount: isInactive ? 1 : 0,
+          status: isInactive ? 'Inactive' : 'Active',
+        });
       }
     });
 
-    let cards = Array.from(grouped.values()).sort((a, b) => a.position.localeCompare(b.position));
+    let cards = Array.from(grouped.values())
+      .map((card) => ({
+        ...card,
+        status:
+          card.activeCount > 0 && card.inactiveCount > 0
+            ? 'Mixed'
+            : card.inactiveCount > 0
+              ? 'Inactive'
+              : 'Active',
+      }))
+      .sort((a, b) => a.position.localeCompare(b.position));
 
     if (searchTerm) {
       cards = cards.filter((card) =>
@@ -1207,11 +1295,45 @@ export const RSPDashboard = () => {
       );
     }
 
+    if (employeeDirectoryStatusFilter !== 'all') {
+      cards = cards.filter((card) => card.status === employeeDirectoryStatusFilter);
+    }
+
+    if (employeeDirectoryOfficeFilter !== 'all') {
+      cards = cards.filter((card) => card.office === employeeDirectoryOfficeFilter);
+    }
+
     return {
       cards,
       totalEmployees: source.length,
+      totalPositions: grouped.size,
     };
-  }, [directoryEmployeesSource, employeeDirectorySearch]);
+  }, [directoryEmployeesSource, employeeDirectoryOfficeFilter, employeeDirectorySearch, employeeDirectoryStatusFilter]);
+
+  const employeeDirectoryOfficeOptions = useMemo(
+    () =>
+      Array.from(new Set(directoryEmployeesSource.map((employee) => employee.office || 'Unassigned Office'))).sort((a, b) =>
+        a.localeCompare(b)
+      ),
+    [directoryEmployeesSource]
+  );
+
+  const employeeDirectoryPageCount = Math.max(1, Math.ceil(employeeDirectoryCards.cards.length / EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE));
+  const safeEmployeeDirectoryPage = Math.min(employeeDirectoryPage, employeeDirectoryPageCount - 1);
+  const paginatedEmployeeDirectoryCards = useMemo(
+    () =>
+      employeeDirectoryCards.cards.slice(
+        safeEmployeeDirectoryPage * EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE,
+        (safeEmployeeDirectoryPage + 1) * EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE
+      ),
+    [employeeDirectoryCards.cards, safeEmployeeDirectoryPage]
+  );
+
+  useEffect(() => {
+    if (employeeDirectoryPage > employeeDirectoryPageCount - 1) {
+      setEmployeeDirectoryPage(Math.max(0, employeeDirectoryPageCount - 1));
+    }
+  }, [employeeDirectoryPage, employeeDirectoryPageCount]);
 
   const employeeNumberById = useMemo(() => {
     const employeeNumberMap = new Map<string, string>();
@@ -1246,7 +1368,12 @@ export const RSPDashboard = () => {
 
   const selectedEmployeeProfile = useMemo(() => {
     if (!selectedEmployeeDetails) return null;
-    const portalAccount = portalAccountByApplicantId.get(selectedEmployeeDetails.id);
+    const resolvedEmployeeId = String(
+      selectedEmployeeDetails.employeeId ?? employeeNumberFromNewlyHired.get(selectedEmployeeDetails.id) ?? ''
+    ).trim();
+    const portalAccount =
+      (resolvedEmployeeId ? portalAccountByEmployeeId.get(resolvedEmployeeId) : null) ??
+      portalAccountByApplicantId.get(selectedEmployeeDetails.id);
     const emp = portalAccount?.employee;
     const computeAge = (dob: string | undefined) => {
       if (!dob) return null;
@@ -1273,7 +1400,7 @@ export const RSPDashboard = () => {
       emergencyContactPhone: emp?.emergencyContactNumber || '--',
       dateHired: formatDate(selectedEmployeeDetails.created_at),
     };
-  }, [selectedEmployeeDetails, portalAccountByApplicantId]);
+  }, [selectedEmployeeDetails, employeeNumberFromNewlyHired, portalAccountByApplicantId, portalAccountByEmployeeId]);
 
   const selectedEmployeeDocuments = useMemo(() => {
     if (!selectedEmployeeDetails) return [] as Array<{
@@ -1982,6 +2109,13 @@ export const RSPDashboard = () => {
     setAccountsView('position');
   };
 
+  const clearEmployeeDirectoryFilters = () => {
+    setEmployeeDirectorySearch('');
+    setEmployeeDirectoryStatusFilter('all');
+    setEmployeeDirectoryOfficeFilter('all');
+    setEmployeeDirectoryPage(0);
+  };
+
   const openEmployeeDetails = (employeeId: string) => {
     setSelectedEmployeeId(employeeId);
     setEmployeeDetailsTab('personal');
@@ -2653,43 +2787,139 @@ export const RSPDashboard = () => {
                     </Button>
                   </section>
 
-                  <section className="rounded-2xl border border-[var(--border-color)] bg-white p-4">
-                    <div className="relative max-w-2xl">
-                      <Search size={22} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-                      <input
-                        value={employeeDirectorySearch}
-                        onChange={(e) => setEmployeeDirectorySearch(e.target.value)}
-                        placeholder="Search positions..."
-                        className="w-full rounded-xl border border-[var(--border-color)] py-3 pl-12 pr-4 text-lg"
-                      />
+                  <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.3fr)_280px_280px]">
+                      <div className="relative">
+                        <Search size={20} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          value={employeeDirectorySearch}
+                          onChange={(e) => {
+                            setEmployeeDirectorySearch(e.target.value);
+                            setEmployeeDirectoryPage(0);
+                          }}
+                          placeholder="Search by position or office..."
+                          className="h-12 w-full rounded-lg border border-slate-300 pl-10 pr-3 text-base"
+                        />
+                      </div>
+
+                      <select
+                        className="h-12 rounded-lg border border-slate-300 px-3 text-base"
+                        value={employeeDirectoryStatusFilter}
+                        onChange={(e) => {
+                          setEmployeeDirectoryStatusFilter(e.target.value as 'all' | EmployeeDirectoryCardStatus);
+                          setEmployeeDirectoryPage(0);
+                        }}
+                      >
+                        <option value="all">All Status</option>
+                        <option value="Active">Active</option>
+                        <option value="Mixed">Mixed</option>
+                        <option value="Inactive">Inactive</option>
+                      </select>
+
+                      <select
+                        className="h-12 rounded-lg border border-slate-300 px-3 text-base"
+                        value={employeeDirectoryOfficeFilter}
+                        onChange={(e) => {
+                          setEmployeeDirectoryOfficeFilter(e.target.value);
+                          setEmployeeDirectoryPage(0);
+                        }}
+                      >
+                        <option value="all">All Offices</option>
+                        {employeeDirectoryOfficeOptions.map((office) => (
+                          <option key={office} value={office}>{office}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3 text-base text-slate-600">
+                      <p className="!mb-0">Showing {employeeDirectoryCards.cards.length} position{employeeDirectoryCards.cards.length === 1 ? '' : 's'}</p>
+                      <button type="button" className="text-sm font-medium text-blue-700" onClick={clearEmployeeDirectoryFilters}>
+                        Clear Filters
+                      </button>
                     </div>
                   </section>
 
-                  <section className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-                    {employeeDirectoryCards.cards.map((card) => (
-                      <button
-                        key={`${card.position}-${card.office}`}
-                        type="button"
-                        onClick={() => openPositionEmployees(card.position, card.office)}
-                        className="rounded-2xl border border-[var(--border-color)] bg-white p-6 text-left transition hover:border-[var(--primary-color)]"
-                      >
-                        <div className="mb-5 flex items-start justify-between">
-                          <div className="rounded-2xl bg-blue-100 p-4 text-blue-600"><Users size={28} /></div>
-                          <ChevronRight size={28} className="text-[var(--text-muted)]" />
+                  <div className="flex items-center justify-center text-lg font-semibold text-slate-700">
+                    {employeeDirectoryCards.cards.length === 0
+                      ? 'Position 0 to 0 of 0'
+                      : `Position ${safeEmployeeDirectoryPage * EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE + 1} to ${Math.min((safeEmployeeDirectoryPage + 1) * EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE, employeeDirectoryCards.cards.length)} of ${employeeDirectoryCards.cards.length}`}
+                  </div>
+
+                  <section className="grid grid-cols-[56px_minmax(0,1fr)_56px] items-start gap-4">
+                    <button
+                      type="button"
+                      onClick={() => setEmployeeDirectoryPage((current) => Math.max(0, current - 1))}
+                      disabled={safeEmployeeDirectoryPage === 0 || employeeDirectoryCards.cards.length === 0}
+                      className="flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 text-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <ChevronLeft size={24} />
+                    </button>
+
+                    <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+                      {paginatedEmployeeDirectoryCards.map((card) => (
+                        <button
+                          key={`${card.position}-${card.office}`}
+                          type="button"
+                          onClick={() => openPositionEmployees(card.position, card.office)}
+                          className="rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                        >
+                          <div className="mb-3 flex items-start justify-between gap-3">
+                            <span className={`rounded-full px-3 py-1 text-sm font-semibold ${card.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : card.status === 'Inactive' ? 'bg-slate-200 text-slate-700' : 'bg-blue-100 text-blue-700'}`}>
+                              {card.status}
+                            </span>
+                            <ChevronRight size={18} className="text-slate-400" />
+                          </div>
+                          <h3 className="!mb-2 text-2xl font-bold text-slate-900">{card.position}</h3>
+                          <div className="space-y-2 text-base text-slate-600">
+                            <p className="!mb-0 inline-flex items-center gap-2"><MapPin size={16} className="text-slate-400" /> {card.office}</p>
+                            <p className="!mb-0 inline-flex items-center gap-2"><Users size={16} className="text-slate-400" /> {card.count} employee{card.count === 1 ? '' : 's'}</p>
+                            <p className="!mb-0 inline-flex items-center gap-2"><UserCheck size={16} className="text-slate-400" /> {card.activeCount} active • {card.inactiveCount} inactive</p>
+                          </div>
+                          <div className="mt-5 rounded-xl bg-blue-600 px-4 py-3 text-center text-base font-semibold text-white">
+                            View Employees
+                          </div>
+                        </button>
+                      ))}
+                      {employeeDirectoryCards.cards.length === 0 && (
+                        <div className="col-span-full rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">
+                          <Briefcase className="mx-auto h-10 w-10 text-slate-400" />
+                          <p className="mt-2 font-medium">No positions found for the selected filters.</p>
                         </div>
-                        <p className="!mb-2 text-xl font-semibold text-[var(--text-primary)]">{card.position}</p>
-                        <p className="!mb-3 text-lg text-[var(--text-secondary)]">
-                          {card.count} employee{card.count === 1 ? '' : 's'}
-                        </p>
-                        <p className="!mb-0 border-t border-[var(--border-color)] pt-3 text-lg text-[var(--text-secondary)]">{card.office}</p>
-                      </button>
-                    ))}
-                    {employeeDirectoryCards.cards.length === 0 && (
-                      <p className="col-span-full rounded-2xl border border-[var(--border-color)] bg-white p-8 text-center text-lg text-[var(--text-secondary)]">
-                        No positions found.
-                      </p>
-                    )}
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setEmployeeDirectoryPage((current) => Math.min(employeeDirectoryPageCount - 1, current + 1))}
+                      disabled={safeEmployeeDirectoryPage >= employeeDirectoryPageCount - 1 || employeeDirectoryCards.cards.length === 0}
+                      className="flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 text-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <ChevronRight size={24} />
+                    </button>
                   </section>
+
+                  <footer className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                    <p className="!mb-0">
+                      Showing {employeeDirectoryCards.cards.length === 0 ? 0 : safeEmployeeDirectoryPage * EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE + 1}-{Math.min((safeEmployeeDirectoryPage + 1) * EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE, employeeDirectoryCards.cards.length)} of {employeeDirectoryCards.cards.length} positions
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="rounded border border-slate-300 p-1 disabled:opacity-40"
+                        onClick={() => setEmployeeDirectoryPage((current) => Math.max(0, current - 1))}
+                        disabled={safeEmployeeDirectoryPage === 0 || employeeDirectoryCards.cards.length === 0}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <span className="font-semibold text-slate-800">Page {safeEmployeeDirectoryPage + 1} / {employeeDirectoryPageCount}</span>
+                      <button
+                        className="rounded border border-slate-300 p-1 disabled:opacity-40"
+                        onClick={() => setEmployeeDirectoryPage((current) => Math.min(employeeDirectoryPageCount - 1, current + 1))}
+                        disabled={safeEmployeeDirectoryPage >= employeeDirectoryPageCount - 1 || employeeDirectoryCards.cards.length === 0}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </footer>
 
                   <div>
                     <Button variant="secondary" onClick={() => setAccountsView('overview')}>
@@ -3333,43 +3563,44 @@ export const RSPDashboard = () => {
                           </div>
 
                           {isExpanded && (
-                            <div className="divide-y divide-[var(--border-color)] border-t border-[var(--border-color)]">
-                              {group.submissions.map((entry) => (
-                                <div key={entry.id} className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
-                                  <div className="flex min-w-[440px] items-center gap-4">
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedDocumentSubmissionIds.includes(entry.id)}
-                                      onChange={() => toggleDocumentSubmission(entry.id)}
-                                      className="h-5 w-5"
-                                    />
-                                    <div className="rounded-full bg-purple-100 p-2 text-purple-600">
-                                      <User size={18} />
-                                    </div>
-                                    <div>
-                                      <p className="!mb-1 !text-base font-semibold text-[var(--text-primary)]">
-                                        {entry.fullName} <span className="!text-xs font-normal text-[var(--text-secondary)]">{entry.employeeCode} • {entry.position}</span>
-                                      </p>
-                                      <p className="!mb-0 !text-xs text-[var(--text-secondary)]">
-                                        Submitted: {entry.submittedDate}
-                                        {' '}
-                                        <span className={`ml-2 rounded-full px-2 py-1 text-xs font-semibold ${entry.status === 'Approved' ? 'bg-green-100 text-green-700' : entry.status === 'Pending' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'}`}>
+                            <div className="border-t border-[var(--border-color)] px-5 py-4">
+                              <div className="space-y-3">
+                                {group.submissions.map((entry) => {
+                                  const checked = selectedDocumentSubmissionIds.includes(entry.id);
+                                  return (
+                                    <div key={entry.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border-color)] bg-slate-50 px-4 py-3">
+                                      <label className="flex items-start gap-3">
+                                        <input
+                                          type="checkbox"
+                                          checked={checked}
+                                          onChange={() => toggleDocumentSubmission(entry.id)}
+                                          className="mt-1 h-4 w-4"
+                                        />
+                                        <div>
+                                          <p className="!mb-1 !text-base font-semibold text-[var(--text-primary)]">
+                                            {entry.fullName} <span className="!text-xs font-normal text-[var(--text-secondary)]">{entry.employeeCode} • {entry.position}</span>
+                                          </p>
+                                          <p className="!mb-0 !text-sm text-[var(--text-secondary)]">Submitted: {entry.submittedDate}</p>
+                                        </div>
+                                      </label>
+
+                                      <div className="flex items-center gap-3">
+                                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${entry.status === 'Approved' ? 'bg-green-100 text-green-700' : entry.status === 'Rejected' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
                                           {entry.status}
                                         </span>
-                                      </p>
+                                        <button
+                                          type="button"
+                                          onClick={() => triggerDocumentDownload([entry])}
+                                          disabled={!entry.documentUrl || entry.documentUrl === '#'}
+                                          className="text-sm font-semibold text-purple-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                          Download
+                                        </button>
+                                      </div>
                                     </div>
-                                  </div>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => triggerDocumentDownload([entry])}
-                                    disabled={!entry.documentUrl || entry.documentUrl === '#'}
-                                    className="text-sm font-semibold text-purple-600 disabled:cursor-not-allowed disabled:opacity-50"
-                                  >
-                                    Download
-                                  </button>
-                                </div>
-                              ))}
+                                  );
+                                })}
+                              </div>
                             </div>
                           )}
                         </article>
@@ -3504,7 +3735,7 @@ export const RSPDashboard = () => {
 
               <div className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
                 <h3 className="!mb-1 text-2xl font-semibold">Profile Settings</h3>
-                <p className="!mb-5 text-lg text-[var(--text-secondary)]">Manage your personal information and account details</p>
+                <p className="!mb-5 text-lg text-[var(--text-secondary)]">Personal information is view-only in this screen.</p>
 
                 <div className="mb-6 flex items-center gap-4">
                   <div className="rounded-full bg-blue-100 p-4 text-blue-600"><User size={42} /></div>
@@ -3517,17 +3748,17 @@ export const RSPDashboard = () => {
                 <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                   <div>
                     <label className="mb-2 block text-base font-semibold">First Name</label>
-                    <input className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base" value={profileForm.firstName} onChange={(e) => setProfileForm((prev) => ({ ...prev, firstName: e.target.value }))} />
+                    <input className="w-full rounded-xl border border-[var(--border-color)] bg-slate-50 p-3 text-base" value={profileForm.firstName} readOnly />
                   </div>
                   <div>
                     <label className="mb-2 block text-base font-semibold">Last Name</label>
-                    <input className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base" value={profileForm.lastName} onChange={(e) => setProfileForm((prev) => ({ ...prev, lastName: e.target.value }))} />
+                    <input className="w-full rounded-xl border border-[var(--border-color)] bg-slate-50 p-3 text-base" value={profileForm.lastName} readOnly />
                   </div>
                 </div>
 
                 <div className="mt-4">
                   <label className="mb-2 block text-base font-semibold">Email Address</label>
-                  <input className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base" value={profileForm.email} onChange={(e) => setProfileForm((prev) => ({ ...prev, email: e.target.value }))} />
+                  <input className="w-full rounded-xl border border-[var(--border-color)] bg-slate-50 p-3 text-base" value={profileForm.email} readOnly />
                 </div>
 
                 <div className="mt-4">
@@ -3537,7 +3768,7 @@ export const RSPDashboard = () => {
 
                 <div className="mt-4">
                   <label className="mb-2 block text-base font-semibold">Department</label>
-                  <select className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base" value={profileForm.department} onChange={(e) => setProfileForm((prev) => ({ ...prev, department: e.target.value }))}>
+                  <select className="w-full rounded-xl border border-[var(--border-color)] bg-slate-50 p-3 text-base" value={profileForm.department} disabled>
                     <option>Human Resource Management Office</option>
                     <option>Information Technology</option>
                     <option>Finance</option>
@@ -3547,7 +3778,7 @@ export const RSPDashboard = () => {
 
                 <div className="mt-4">
                   <label className="mb-2 block text-base font-semibold">Bio</label>
-                  <textarea className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base" rows={4} value={profileForm.bio} onChange={(e) => setProfileForm((prev) => ({ ...prev, bio: e.target.value }))} placeholder="Tell us about yourself..." />
+                  <textarea className="w-full rounded-xl border border-[var(--border-color)] bg-slate-50 p-3 text-base" rows={4} value={profileForm.bio} readOnly placeholder="Tell us about yourself..." />
                 </div>
               </div>
             </section>

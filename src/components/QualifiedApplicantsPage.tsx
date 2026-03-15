@@ -1,13 +1,17 @@
 import {
+    Activity as ActivityIcon,
     AlertCircle,
+    ArrowLeft,
     CheckCircle2,
     Download,
     FileSpreadsheet,
+    FileText,
     Mail,
     MessageSquare,
     Plane,
     Search,
     Star,
+    User,
     UserCheck,
     X
 } from 'lucide-react';
@@ -1256,11 +1260,16 @@ export const QualifiedApplicantsPage = () => {
       {activeApplicant && (
         <div className="fixed inset-0 z-[120] bg-slate-900/70 p-4" onClick={closeApplicantDetails}>
           <div className="mx-auto h-[94vh] w-full max-w-[1400px] overflow-hidden rounded-2xl bg-slate-100 shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <div className="border-b border-slate-200 bg-white px-6 py-4">
+            <div className="border-b border-slate-200 bg-slate-100 px-6 py-4">
               <div className="mb-2 flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-sm text-slate-500">Recruitment / Applicants / Details</p>
-                  <h2 className="text-2xl font-bold text-slate-900">{activeApplicant.personalInfo.firstName} {activeApplicant.personalInfo.lastName}</h2>
+                <div className="flex items-start gap-3">
+                  <button className="mt-1 rounded-full p-2 text-slate-500 hover:bg-slate-200" onClick={closeApplicantDetails} aria-label="Back to applicants">
+                    <ArrowLeft className="h-5 w-5" />
+                  </button>
+                  <div>
+                    <p className="text-sm text-slate-500">Recruitment <span className="px-1">/</span> Applicants <span className="px-1">/</span> <span className="font-semibold text-slate-700">Details</span></p>
+                    <h2 className="text-[38px] leading-tight font-semibold text-slate-900">{activeApplicant.personalInfo.firstName} {activeApplicant.personalInfo.lastName}</h2>
+                  </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-base font-medium text-slate-700" onClick={() => setShowMessageDialog(true)}>
@@ -1275,23 +1284,27 @@ export const QualifiedApplicantsPage = () => {
                   <button className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-base font-semibold text-white" onClick={() => updateApplicantStatus([activeApplicant.id], 'Recommended for Hiring')}>
                     <CheckCircle2 className="h-4 w-4" /> Qualify
                   </button>
-                  <button className="rounded-md p-2 text-slate-500 hover:bg-slate-100" onClick={closeApplicantDetails}>
-                    <X className="h-5 w-5" />
-                  </button>
                 </div>
               </div>
 
               <div className="flex items-center gap-6 border-t border-slate-200 pt-3 text-base">
-                {['Overview', 'Documents', 'Activity'].map((tab) => (
+                {[
+                  { key: 'Overview', icon: User },
+                  { key: 'Documents', icon: FileText },
+                  { key: 'Activity', icon: ActivityIcon },
+                ].map((tab) => {
+                  const TabIcon = tab.icon;
+                  return (
                   <button
-                    key={tab}
+                    key={tab.key}
                     type="button"
-                    className={`border-b-2 pb-2 font-semibold ${activeTab === tab ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-600'}`}
-                    onClick={() => setActiveTab(tab as 'Overview' | 'Documents' | 'Activity')}
+                    className={`border-b-2 pb-2 font-semibold ${activeTab === tab.key ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-600'}`}
+                    onClick={() => setActiveTab(tab.key as 'Overview' | 'Documents' | 'Activity')}
                   >
-                    {tab}
+                    <span className="inline-flex items-center gap-2"><TabIcon className="h-4 w-4" /> {tab.key}</span>
                   </button>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
@@ -1310,7 +1323,7 @@ export const QualifiedApplicantsPage = () => {
                   <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Date Applied</p><p className="font-semibold text-slate-800">{formatPHDate(activeApplicant.applicationDate)}</p></div>
                   <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Email</p><p className="font-semibold text-slate-800">{activeApplicant.personalInfo.email}</p></div>
                   <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Phone</p><p className="font-semibold text-slate-800">{activeApplicant.personalInfo.phone}</p></div>
-                  <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Location</p><p className="font-semibold text-slate-800">{jobMap.get(activeApplicant.jobPostingId)?.department ?? 'N/A'}</p></div>
+                  <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Location</p><p className="font-semibold text-slate-800">{activeApplicant.personalInfo.address || jobMap.get(activeApplicant.jobPostingId)?.department || 'N/A'}</p></div>
                 </div>
               </aside>
 

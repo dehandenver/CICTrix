@@ -32,6 +32,9 @@ type Role = 'super-admin' | 'rsp' | 'lnd' | 'pm';
 type InterviewerSession = { email: string; name: string };
 type AdminModule = 'dashboard' | 'rsp' | 'lnd' | 'pm' | 'settings';
 const RATER_ACCESS_STATE_KEY = 'cictrix_rater_access_state_map';
+const ADMIN_SESSION_KEY = 'cictrix_admin_session';
+const INTERVIEWER_SESSION_KEY = 'cictrix_interviewer_session';
+const EMPLOYEE_SESSION_KEY = 'cictrix_employee_session';
 
 const getAccessClient = () => {
   // Access enforcement should track the authoritative rater source.
@@ -78,6 +81,70 @@ const getRoleDefaultRoute = (role: Role): string => {
   if (role === 'rsp') return '/admin/rsp';
   if (role === 'lnd') return '/admin/lnd';
   return '/admin/pm';
+};
+
+const loadAdminSession = (): { email: string; role: Role } | null => {
+  try {
+    const stored = localStorage.getItem(ADMIN_SESSION_KEY);
+    if (!stored) return null;
+
+    const parsed = JSON.parse(stored) as { email: string; role: string };
+    const normalizedRole = normalizeAdminRole(parsed?.role);
+    if (parsed?.email && normalizedRole) {
+      return { email: parsed.email, role: normalizedRole };
+    }
+
+    localStorage.removeItem(ADMIN_SESSION_KEY);
+    return null;
+  } catch {
+    localStorage.removeItem(ADMIN_SESSION_KEY);
+    return null;
+  }
+};
+
+const loadInterviewerSession = (): InterviewerSession | null => {
+  try {
+    const stored = localStorage.getItem(INTERVIEWER_SESSION_KEY);
+    if (!stored) return null;
+
+    const parsed = JSON.parse(stored) as InterviewerSession;
+    if (parsed?.email) {
+      return parsed;
+    }
+
+    localStorage.removeItem(INTERVIEWER_SESSION_KEY);
+    return null;
+  } catch {
+    localStorage.removeItem(INTERVIEWER_SESSION_KEY);
+    return null;
+  }
+};
+
+const loadEmployeeSession = (): EmployeeSession | null => {
+  try {
+    const stored = localStorage.getItem(EMPLOYEE_SESSION_KEY);
+    if (!stored) return null;
+
+    const parsed = JSON.parse(stored) as EmployeeSession;
+    if (!parsed?.employeeId) {
+      localStorage.removeItem(EMPLOYEE_SESSION_KEY);
+      return null;
+    }
+
+    const account =
+      (parsed.loginUsername ? findEmployeePortalAccount(parsed.loginUsername) : null) ??
+      findEmployeeByEmployeeId(parsed.employeeId);
+
+    if (account) {
+      return parsed;
+    }
+
+    localStorage.removeItem(EMPLOYEE_SESSION_KEY);
+    return null;
+  } catch {
+    localStorage.removeItem(EMPLOYEE_SESSION_KEY);
+    return null;
+  }
 };
 
 const AdminRoute = ({
@@ -130,9 +197,9 @@ function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
   const isInterviewerRoute = location.pathname.startsWith('/interviewer');
-  const [adminSession, setAdminSession] = useState<{ email: string; role: Role } | null>(null);
-  const [interviewerSession, setInterviewerSession] = useState<InterviewerSession | null>(null);
-  const [employeeSession, setEmployeeSession] = useState<EmployeeSession | null>(null);
+  const [adminSession, setAdminSession] = useState<{ email: string; role: Role } | null>(() => loadAdminSession());
+  const [interviewerSession, setInterviewerSession] = useState<InterviewerSession | null>(() => loadInterviewerSession());
+  const [employeeSession, setEmployeeSession] = useState<EmployeeSession | null>(() => loadEmployeeSession());
   const [activeModule, setActiveModule] = useState<AdminModule>('dashboard');
   const [revokedInterviewerDialogOpen, setRevokedInterviewerDialogOpen] = useState(false);
 
@@ -156,55 +223,6 @@ function AppContent() {
 
     return findEmployeeByEmployeeId(session.employeeId)?.employee ?? null;
   };
-
-  useEffect(() => {
-    const stored = localStorage.getItem('cictrix_admin_session');
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as { email: string; role: string };
-        const normalizedRole = normalizeAdminRole(parsed?.role);
-        if (parsed?.email && normalizedRole) {
-          setAdminSession({ email: parsed.email, role: normalizedRole });
-        } else {
-          localStorage.removeItem('cictrix_admin_session');
-        }
-      } catch {
-        localStorage.removeItem('cictrix_admin_session');
-      }
-    }
-
-    const interviewerStored = localStorage.getItem('cictrix_interviewer_session');
-    if (interviewerStored) {
-      try {
-        const parsed = JSON.parse(interviewerStored) as InterviewerSession;
-        if (parsed?.email) {
-          setInterviewerSession(parsed);
-        }
-      } catch {
-        localStorage.removeItem('cictrix_interviewer_session');
-      }
-    }
-
-    const employeeStored = localStorage.getItem('cictrix_employee_session');
-    if (employeeStored) {
-      try {
-        const parsed = JSON.parse(employeeStored) as EmployeeSession;
-        if (parsed?.employeeId) {
-          const account =
-            (parsed.loginUsername ? findEmployeePortalAccount(parsed.loginUsername) : null) ??
-            findEmployeeByEmployeeId(parsed.employeeId);
-
-          if (account) {
-            setEmployeeSession(parsed);
-          } else {
-            localStorage.removeItem('cictrix_employee_session');
-          }
-        }
-      } catch {
-        localStorage.removeItem('cictrix_employee_session');
-      }
-    }
-  }, []);
 
   useEffect(() => {
     if (adminSession?.role !== 'super-admin' || !location.pathname.startsWith('/admin')) {
@@ -350,13 +368,13 @@ function AppContent() {
   const handleLogin = (email: string, role: Role) => {
     const session = { email, role };
     setAdminSession(session);
-    localStorage.setItem('cictrix_admin_session', JSON.stringify(session));
+    localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(session));
   };
 
   const handleInterviewerLogin = (email: string, name: string) => {
     const session = { email, name };
     setInterviewerSession(session);
-    localStorage.setItem('cictrix_interviewer_session', JSON.stringify(session));
+    localStorage.setItem(INTERVIEWER_SESSION_KEY, JSON.stringify(session));
   };
 
   const handleEmployeeLogin = (username: string, password: string) => {
@@ -370,21 +388,21 @@ function AppContent() {
       };
 
       setEmployeeSession(session);
-      localStorage.setItem('cictrix_employee_session', JSON.stringify(session));
+      localStorage.setItem(EMPLOYEE_SESSION_KEY, JSON.stringify(session));
       navigate('/employee/dashboard');
     }
   };
 
   const handleEmployeeLogout = () => {
     setEmployeeSession(null);
-    localStorage.removeItem('cictrix_employee_session');
+    localStorage.removeItem(EMPLOYEE_SESSION_KEY);
     navigate('/employee/login');
   };
 
   const handleRevokedInterviewerAcknowledge = async () => {
     setRevokedInterviewerDialogOpen(false);
     setInterviewerSession(null);
-    localStorage.removeItem('cictrix_interviewer_session');
+    localStorage.removeItem(INTERVIEWER_SESSION_KEY);
 
     try {
       await supabase.auth.signOut();

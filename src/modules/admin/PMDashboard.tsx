@@ -641,7 +641,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   <div className="xl:col-span-3">
                     <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
                       <h3 className="text-2xl font-bold text-slate-900">Profile Settings</h3>
-                      <p className="mt-1 text-sm text-slate-600">Manage your personal information and account details</p>
+                      <p className="mt-1 text-sm text-slate-600">Personal information is view-only in this screen.</p>
 
                       <div className="mt-6 flex items-center gap-4">
                         <div className="h-24 w-24 rounded-full bg-blue-100 grid place-content-center">
@@ -658,17 +658,17 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                       <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-2">First Name</label>
-                          <input type="text" className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm" placeholder="Enter first name" />
+                          <input type="text" className="w-full rounded-lg border border-slate-300 bg-slate-50 px-4 py-2 text-sm" placeholder="Enter first name" readOnly />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-slate-700 mb-2">Last Name</label>
-                          <input type="text" className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm" placeholder="Enter last name" />
+                          <input type="text" className="w-full rounded-lg border border-slate-300 bg-slate-50 px-4 py-2 text-sm" placeholder="Enter last name" readOnly />
                         </div>
                       </div>
 
                       <div className="mt-4">
                         <label className="block text-sm font-medium text-slate-700 mb-2">Email Address</label>
-                        <input type="email" className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm" placeholder="Enter email address" />
+                        <input type="email" className="w-full rounded-lg border border-slate-300 bg-slate-50 px-4 py-2 text-sm" placeholder="Enter email address" readOnly />
                       </div>
 
                       <div className="mt-4">
@@ -678,7 +678,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
                       <div className="mt-4">
                         <label className="block text-sm font-medium text-slate-700 mb-2">Department</label>
-                        <select className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm">
+                        <select className="w-full rounded-lg border border-slate-300 bg-slate-50 px-4 py-2 text-sm" disabled>
                           <option>Select department</option>
                           <option>Human Resource Management Office</option>
                           <option>Finance Department</option>
@@ -688,16 +688,11 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
                       <div className="mt-4">
                         <label className="block text-sm font-medium text-slate-700 mb-2">Bio</label>
-                        <textarea className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm" rows={4} placeholder="Tell us about yourself..."></textarea>
+                        <textarea className="w-full rounded-lg border border-slate-300 bg-slate-50 px-4 py-2 text-sm" rows={4} placeholder="Tell us about yourself..." readOnly></textarea>
                       </div>
 
-                      <div className="mt-6 flex justify-end gap-3">
-                        <button type="button" className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition">
-                          Cancel
-                        </button>
-                        <button type="button" className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition">
-                          Save Changes
-                        </button>
+                      <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                        Personal information updates must be handled outside this screen.
                       </div>
                     </section>
                   </div>

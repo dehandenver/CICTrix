@@ -49,14 +49,6 @@ interface SubmissionItem {
 
 type EditableSection = 'personal' | 'contact' | 'emergency' | 'government' | null;
 
-type PersonalDraft = {
-  fullName: string;
-  dateOfBirth: string;
-  placeOfBirth: string;
-  gender: string;
-  homeAddress: string;
-};
-
 type ContactDraft = {
   email: string;
   mobileNumber: string;
@@ -90,14 +82,6 @@ const getContactDraft = (employee: Employee): ContactDraft => ({
   homeAddress: employee.homeAddress || '',
 });
 
-const getPersonalDraft = (employee: Employee): PersonalDraft => ({
-  fullName: employee.fullName || '',
-  dateOfBirth: employee.dateOfBirth || '',
-  placeOfBirth: employee.placeOfBirth || '',
-  gender: employee.gender || '',
-  homeAddress: employee.homeAddress || '',
-});
-
 const getEmergencyDraft = (employee: Employee): EmergencyDraft => ({
   emergencyContactName: employee.emergencyContactName || '',
   emergencyRelationship: employee.emergencyRelationship || '',
@@ -110,29 +94,6 @@ const getGovernmentDraft = (employee: Employee): GovernmentDraft => ({
   pagibigNumber: employee.pagibigNumber || '',
   tinNumber: employee.tinNumber || '',
 });
-
-interface EditableSelectProps {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: { label: string; value: string }[];
-}
-
-const EditableSelect: React.FC<EditableSelectProps> = ({ label, value, onChange, options }) => (
-  <label className="block">
-    <span className="mb-2 block text-sm font-semibold text-slate-700">{label}</span>
-    <select
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700 focus:border-blue-500 focus:outline-none"
-    >
-      <option value="">-- Select --</option>
-      {options.map((opt) => (
-        <option key={opt.value} value={opt.value}>{opt.label}</option>
-      ))}
-    </select>
-  </label>
-);
 
 const EditableInput: React.FC<EditableInputProps> = ({ label, value, onChange, type = 'text', disabled = false }) => (
   <label className="block">
@@ -153,7 +114,6 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   const [selectedFile, setSelectedFile] = useState<Record<string, string>>({});
   const [profile, setProfile] = useState<Employee>(currentUser);
   const [editingSection, setEditingSection] = useState<EditableSection>(null);
-  const [personalDraft, setPersonalDraft] = useState<PersonalDraft>(getPersonalDraft(currentUser));
   const [contactDraft, setContactDraft] = useState<ContactDraft>(getContactDraft(currentUser));
   const [emergencyDraft, setEmergencyDraft] = useState<EmergencyDraft>(getEmergencyDraft(currentUser));
   const [governmentDraft, setGovernmentDraft] = useState<GovernmentDraft>(getGovernmentDraft(currentUser));
@@ -162,7 +122,6 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
 
   useEffect(() => {
     setProfile(currentUser);
-    setPersonalDraft(getPersonalDraft(currentUser));
     setContactDraft(getContactDraft(currentUser));
     setEmergencyDraft(getEmergencyDraft(currentUser));
     setGovernmentDraft(getGovernmentDraft(currentUser));
@@ -266,9 +225,6 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   };
 
   const startEditing = (section: Exclude<EditableSection, null>) => {
-    if (section === 'personal') {
-      setPersonalDraft(getPersonalDraft(profile));
-    }
     if (section === 'contact') {
       setContactDraft(getContactDraft(profile));
     }
@@ -282,35 +238,9 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   };
 
   const cancelEditing = () => {
-    setPersonalDraft(getPersonalDraft(profile));
     setContactDraft(getContactDraft(profile));
     setEmergencyDraft(getEmergencyDraft(profile));
     setGovernmentDraft(getGovernmentDraft(profile));
-    setEditingSection(null);
-  };
-
-  const savePersonalInfo = () => {
-    const dob = personalDraft.dateOfBirth.trim();
-    const computedAge = (() => {
-      if (!dob) return undefined;
-      const birth = new Date(dob);
-      if (Number.isNaN(birth.getTime())) return undefined;
-      const today = new Date();
-      let years = today.getFullYear() - birth.getFullYear();
-      const hasBirthdayPassed =
-        today.getMonth() > birth.getMonth() ||
-        (today.getMonth() === birth.getMonth() && today.getDate() >= birth.getDate());
-      if (!hasBirthdayPassed) years -= 1;
-      return years;
-    })();
-    persistProfilePatch({
-      fullName: personalDraft.fullName.trim(),
-      dateOfBirth: dob,
-      placeOfBirth: personalDraft.placeOfBirth.trim(),
-      ...(personalDraft.gender ? { gender: personalDraft.gender as Employee['gender'] } : {}),
-      homeAddress: personalDraft.homeAddress.trim(),
-      ...(computedAge != null ? { age: computedAge } : {}),
-    });
     setEditingSection(null);
   };
 
@@ -425,86 +355,21 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
               <div className="mb-4 flex items-center justify-between">
                 <div>
                   <h2 className="text-lg font-bold text-slate-900">Personal Information</h2>
-                  <p className="text-sm text-slate-500">Update your basic personal details.</p>
+                  <p className="text-sm text-slate-500">Your basic personal details are maintained by HR and cannot be edited here.</p>
                 </div>
-                {editingSection === 'personal' ? (
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={cancelEditing}
-                      className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={savePersonalInfo}
-                      className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700"
-                    >
-                      <Save className="h-3.5 w-3.5" />
-                      Save
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => startEditing('personal')}
-                    className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-200"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                    Edit
-                  </button>
-                )}
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                  View only
+                </span>
               </div>
-              {editingSection === 'personal' ? (
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <EditableInput
-                    label="Full Name"
-                    value={personalDraft.fullName}
-                    onChange={(value) => setPersonalDraft((prev) => ({ ...prev, fullName: value }))}
-                  />
-                  <EditableInput label="Employee ID" value={profile.employeeId} onChange={() => undefined} disabled />
-                  <EditableInput
-                    label="Date of Birth"
-                    type="date"
-                    value={personalDraft.dateOfBirth}
-                    onChange={(value) => setPersonalDraft((prev) => ({ ...prev, dateOfBirth: value }))}
-                  />
-                  <EditableInput
-                    label="Place of Birth"
-                    value={personalDraft.placeOfBirth}
-                    onChange={(value) => setPersonalDraft((prev) => ({ ...prev, placeOfBirth: value }))}
-                  />
-                  <EditableSelect
-                    label="Gender"
-                    value={personalDraft.gender}
-                    onChange={(value) => setPersonalDraft((prev) => ({ ...prev, gender: value }))}
-                    options={[
-                      { label: 'Male', value: 'Male' },
-                      { label: 'Female', value: 'Female' },
-                    ]}
-                  />
-                  <EditableInput label="Position" value="Employee" onChange={() => undefined} disabled />
-                  <div className="md:col-span-2">
-                    <EditableInput
-                      label="Address"
-                      value={personalDraft.homeAddress}
-                      onChange={(value) => setPersonalDraft((prev) => ({ ...prev, homeAddress: value }))}
-                    />
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <FieldRow label="Full Name" value={profile.fullName} />
-                  <FieldRow label="Employee ID" value={profile.employeeId} />
-                  <FieldRow label="Date of Birth" value={profile.dateOfBirth} />
-                  <FieldRow label="Place of Birth" value={profile.placeOfBirth || '--'} />
-                  <FieldRow label="Gender" value={profile.gender || '--'} />
-                  <FieldRow label="Address" value={profile.homeAddress} />
-                  <FieldRow label="Position" value="Employee" />
-                </>
-              )}
+              <>
+                <FieldRow label="Full Name" value={profile.fullName} />
+                <FieldRow label="Employee ID" value={profile.employeeId} />
+                <FieldRow label="Date of Birth" value={profile.dateOfBirth} />
+                <FieldRow label="Place of Birth" value={profile.placeOfBirth || '--'} />
+                <FieldRow label="Gender" value={profile.gender || '--'} />
+                <FieldRow label="Address" value={profile.homeAddress} />
+                <FieldRow label="Position" value="Employee" />
+              </>
             </section>
 
             <section className="rounded-xl border border-slate-200 bg-white p-5">

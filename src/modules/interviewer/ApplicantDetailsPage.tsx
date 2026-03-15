@@ -1,23 +1,19 @@
 import {
+    Activity as ActivityIcon,
     ArrowLeft,
-    BookOpen,
-    Calendar,
     CheckCircle2,
     CircleX,
-    Download,
     Eye,
     FileText,
     Mail,
     MessageSquare,
-    Phone,
     Send,
     Star,
     User,
-    X,
+    X
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { Sidebar } from '../../components/Sidebar';
 import { mockDatabase } from '../../lib/mockDatabase';
 import { getApplicants, getAuthoritativeJobPostings, saveApplicants } from '../../lib/recruitmentData';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../../lib/supabase';
@@ -439,6 +435,7 @@ export function ApplicantDetailsPage() {
   const [activeTab, setActiveTab] = useState<TabKey>('overview');
   const [showScoresModal, setShowScoresModal] = useState(false);
   const [notes, setNotes] = useState('');
+  const [showNoteEditor, setShowNoteEditor] = useState(false);
   const [appointmentType, setAppointmentType] = useState<AppointmentType>('original');
   const [educationAttainment, setEducationAttainment] = useState<EducationAttainmentValue>('');
   const [experienceYears, setExperienceYears] = useState('');
@@ -536,7 +533,8 @@ export function ApplicantDetailsPage() {
   const score = useMemo(() => computeScoreBreakdown(evaluation), [evaluation]);
   const backTo = routeState?.from || '/admin/rsp/qualified';
   const sourcePath = routeState?.from || '';
-  const isFromJobPosts = sourcePath.startsWith('/admin/rsp/jobs');
+  const isJobScopedQualifiedRoute = /^\/admin\/rsp\/qualified\/[^/?#]+/.test(sourcePath);
+  const isFromJobPosts = sourcePath.startsWith('/admin/rsp/jobs') || isJobScopedQualifiedRoute;
   const showViewScoresButton = !isFromJobPosts;
   const showJobPostActionButtons = isFromJobPosts;
   const primaryEducation = recruitmentApplicant?.education?.[0] ?? null;
@@ -752,15 +750,22 @@ export function ApplicantDetailsPage() {
   }
 
   return (
-    <div className="admin-layout">
-      <Sidebar activeModule="RSP" userRole="rsp" />
-
-      <main className="admin-content bg-slate-100 !p-0">
-        <header className="border-b border-slate-200 bg-white px-6 py-4">
-          <div className="mb-3 flex items-center justify-between gap-4">
-            <div className="text-sm text-slate-500">
-              <span className="text-blue-700">RSP</span> / <span className="text-blue-700 font-semibold">Qualified Applicants</span> /{' '}
-              <span className="text-slate-800">{fullName}</span>
+    <div className="min-h-screen bg-slate-100">
+      <main className="bg-slate-100 !p-0">
+        <header className="border-b border-slate-200 bg-white px-4 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <button
+                type="button"
+                onClick={() => navigate(backTo)}
+                className="mt-0.5 rounded-full p-1.5 text-slate-500 hover:bg-slate-100"
+              >
+                <ArrowLeft size={16} />
+              </button>
+              <div>
+                <p className="text-xs text-slate-500">Recruitment <span className="px-1">/</span> Applicants <span className="px-1">/</span> <span className="font-semibold text-slate-700">Details</span></p>
+                <h1 className="text-[27px] leading-tight font-semibold text-slate-900">{fullName}</h1>
+              </div>
             </div>
 
             <div className="flex flex-wrap items-center justify-end gap-2">
@@ -768,9 +773,9 @@ export function ApplicantDetailsPage() {
                 <button
                   type="button"
                   onClick={() => setShowScoresModal(true)}
-                  className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm"
                 >
-                  <Eye size={16} /> View Scores
+                  <Eye size={14} /> View Scores
                 </button>
               )}
 
@@ -779,263 +784,182 @@ export function ApplicantDetailsPage() {
                   <button
                     type="button"
                     onClick={handleSendMessage}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm"
                   >
-                    <Send size={16} /> Send Message
+                    <Send size={14} /> Send Message
                   </button>
                   <button
                     type="button"
                     onClick={handleDisqualify}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700 shadow-sm"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 shadow-sm"
                   >
-                    <CircleX size={16} /> Disqualify
+                    <CircleX size={14} /> Disqualify
                   </button>
                   <button
                     type="button"
                     onClick={() => handleUpdateStatus('Shortlisted')}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm"
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm"
                   >
-                    <Star size={16} /> Shortlist
+                    <Star size={14} /> Shortlist
                   </button>
                   <button
                     type="button"
                     onClick={() => handleUpdateStatus('Recommended for Hiring')}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm"
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm"
                   >
-                    <CheckCircle2 size={16} /> Qualify
+                    <CheckCircle2 size={14} /> Qualify
                   </button>
                 </>
               )}
-
             </div>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <button
-              type="button"
-              onClick={() => navigate(backTo)}
-              className="rounded-full p-2 text-slate-500 hover:bg-slate-100"
-            >
-              <ArrowLeft size={20} />
-            </button>
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">{fullName}</h1>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-base text-slate-600">
-                <span>{applicant.position || 'Position Unassigned'}</span>
-                <span className="text-slate-400">•</span>
-                <span>{applicant.office || 'Department Unassigned'}</span>
-                <span className="text-slate-400">•</span>
-                <span>{applicant.item_number || 'Item N/A'}</span>
-                <span className="rounded-full bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-700">{score.adjective}</span>
-              </div>
-            </div>
-            <span className={`rounded-full border px-4 py-1.5 text-sm font-semibold ${badge.className}`}>{badge.label}</span>
           </div>
         </header>
 
-        <section className="px-6 py-5">
-          <article className="mb-6 rounded-2xl bg-blue-700 px-5 py-4 text-white shadow">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-              <div>
-                <p className="text-sm text-blue-100">Total Score</p>
-                <p className="text-3xl font-bold">{score.total}</p>
-                <p className="text-sm text-blue-100">out of 100</p>
-              </div>
-              <div>
-                <p className="text-sm text-blue-100">Education</p>
-                <p className="text-3xl font-bold">{score.education}</p>
-                <p className="text-sm text-blue-100">/ 20</p>
-              </div>
-              <div>
-                <p className="text-sm text-blue-100">Experience</p>
-                <p className="text-3xl font-bold">{score.experience}</p>
-                <p className="text-sm text-blue-100">/ 20</p>
-              </div>
-              <div>
-                <p className="text-sm text-blue-100">Performance</p>
-                <p className="text-3xl font-bold">{score.performance}</p>
-                <p className="text-sm text-blue-100">/ 20</p>
-              </div>
-            </div>
-          </article>
+        <div className="border-b border-slate-200 bg-white px-4">
+          <div className="flex items-center gap-4 text-sm">
+            {[
+              { key: 'overview', label: 'Overview', icon: User },
+              { key: 'documents', label: 'Documents', icon: FileText },
+              { key: 'activity', label: 'Activity', icon: ActivityIcon },
+            ].map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  className={`inline-flex items-center gap-1.5 border-b-2 pb-2 pt-2.5 font-semibold ${activeTab === tab.key ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-600'}`}
+                  onClick={() => setActiveTab(tab.key as TabKey)}
+                >
+                  <Icon className="h-3.5 w-3.5" /> {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
-          <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-            <div className="grid grid-cols-2 border-b border-slate-200 md:grid-cols-4">
-              {[
-                { key: 'overview', label: 'Overview', icon: User },
-                { key: 'qualifications', label: 'Qualifications', icon: BookOpen },
-                { key: 'documents', label: 'Documents', icon: FileText },
-                { key: 'interview', label: 'Interview Process', icon: MessageSquare },
-              ].map((tab) => {
-                const Icon = tab.icon;
-                const active = activeTab === tab.key;
-                return (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setActiveTab(tab.key as TabKey)}
-                    className={`inline-flex items-center justify-center gap-2 px-4 py-3 text-base font-semibold ${active ? 'border-b-4 border-blue-600 bg-slate-100 text-blue-700' : 'text-slate-600'}`}
-                  >
-                    <Icon size={18} /> {tab.label}
-                  </button>
-                );
-              })}
-            </div>
+        <section className="p-3">
+          <div className="grid h-[calc(100vh-150px)] grid-cols-1 gap-3 overflow-hidden lg:grid-cols-[260px_1fr]">
+            <aside className="overflow-y-auto rounded-xl border border-slate-200 bg-white p-3">
+              <div className="mx-auto mb-3 flex h-24 w-24 items-center justify-center rounded-full bg-blue-600 text-white">
+                <User className="h-11 w-11" />
+              </div>
 
-            <div className="p-5">
+              <h2 className="text-center text-3xl font-semibold text-slate-900">{fullName}</h2>
+              <div className="mt-2 text-center">
+                <span className={`rounded-full border px-3 py-0.5 text-xs font-semibold ${normalizeText(resolvedStatus).includes('pending') || !resolvedStatus ? 'border-amber-300 bg-amber-100 text-amber-700' : badge.className}`}>
+                  {(normalizeText(resolvedStatus).includes('pending') || !resolvedStatus) ? 'PENDING' : badge.label.toUpperCase()}
+                </span>
+              </div>
+
+              <div className="mt-4 space-y-3 border-t border-slate-200 pt-3 text-sm">
+                <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Application ID</p><p className="font-semibold text-slate-800">{applicant.id}</p></div>
+                <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Date Applied</p><p className="font-semibold text-slate-800">{formatDate(applicant.created_at)}</p></div>
+                <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Email</p><p className="font-semibold text-slate-800">{applicant.email || '--'}</p></div>
+                <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Phone</p><p className="font-semibold text-slate-800">{applicant.contact_number || '--'}</p></div>
+                <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Location</p><p className="font-semibold text-slate-800">{applicant.address || applicant.office || '--'}</p></div>
+              </div>
+            </aside>
+
+            <section className="overflow-y-auto rounded-xl border border-slate-200 bg-white p-3">
               {activeTab === 'overview' && (
-                <section>
-                  <h2 className="mb-5 text-2xl font-semibold text-slate-900">Personal Information</h2>
-                  <div className="grid grid-cols-1 gap-y-6 md:grid-cols-2 md:gap-x-10">
-                    <div>
-                      <p className="text-sm font-semibold uppercase text-slate-500">Full Name</p>
-                      <p className="text-xl text-slate-900">{fullName}</p>
+                <div className="space-y-3">
+                  <article className="rounded-xl border border-slate-200">
+                    <h3 className="border-b border-slate-200 px-3 py-2 text-2xl font-semibold text-slate-900">Personal Information</h3>
+                    <div className="grid grid-cols-1 gap-0 px-3 py-1 md:grid-cols-2">
+                      <div className="border-b border-slate-100 py-2.5"><p className="font-semibold text-slate-500">Full Name</p><p className="text-sm text-slate-900">{fullName}</p></div>
+                      <div className="border-b border-slate-100 py-2.5"><p className="font-semibold text-slate-500">Email Address</p><p className="text-sm text-slate-900">{applicant.email || '--'}</p></div>
+                      <div className="border-b border-slate-100 py-2.5"><p className="font-semibold text-slate-500">Phone Number</p><p className="text-sm text-slate-900">{applicant.contact_number || '--'}</p></div>
+                      <div className="border-b border-slate-100 py-2.5"><p className="font-semibold text-slate-500">Address</p><p className="text-sm text-slate-900">{applicant.address || '--'}</p></div>
+                      <div className="py-2.5"><p className="font-semibold text-slate-500">PWD Status</p><p className="text-sm text-slate-900">{applicant.is_pwd ? 'PWD' : 'Not Applicable'}</p></div>
                     </div>
-                    <div>
-                      <p className="text-sm font-semibold uppercase text-slate-500">Position Applied For</p>
-                      <p className="text-xl text-slate-900">{applicant.position || '--'}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold uppercase text-slate-500">Email Address</p>
-                      <p className="inline-flex items-center gap-2 text-xl text-slate-900"><Mail size={16} /> {applicant.email || '--'}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold uppercase text-slate-500">Contact Number</p>
-                      <p className="inline-flex items-center gap-2 text-xl text-slate-900"><Phone size={16} /> {applicant.contact_number || '--'}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold uppercase text-slate-500">Item Number</p>
-                      <p className="text-xl text-slate-900">{applicant.item_number || '--'}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold uppercase text-slate-500">Address</p>
-                      <p className="text-xl text-slate-900">{applicant.address || '--'}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold uppercase text-slate-500">Date Submitted</p>
-                      <p className="inline-flex items-center gap-2 text-xl text-slate-900"><Calendar size={16} /> {formatDate(applicant.created_at)}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold uppercase text-slate-500">PWD Status</p>
-                      <p className="text-xl text-slate-900">{applicant.is_pwd ? 'PWD' : 'Not PWD'}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold uppercase text-slate-500">Date Qualified</p>
-                      <p className="inline-flex items-center gap-2 text-xl text-slate-900"><Calendar size={16} /> {formatDate(evaluation?.updated_at || evaluation?.created_at)}</p>
-                    </div>
-                  </div>
-                </section>
-              )}
+                  </article>
 
-              {activeTab === 'qualifications' && (
-                <section>
-                  <h2 className="mb-5 text-2xl font-semibold text-slate-900">Educational & Professional Background</h2>
-
-                  <div className="mb-6 space-y-5 border-b border-slate-200 pb-6">
-                    <div className="border-l-4 border-blue-600 pl-4">
-                      <p className="text-base font-semibold uppercase text-slate-600">Education</p>
-                      <p className="text-xl text-slate-900">
-                        {primaryEducation
-                          ? `${primaryEducation.degree}, ${primaryEducation.school}`
-                          : 'No education details submitted yet.'}
-                      </p>
+                  <article className="rounded-xl border border-slate-200">
+                    <h3 className="border-b border-slate-200 px-3 py-2 text-2xl font-semibold text-slate-900">Qualifications</h3>
+                    <div className="grid grid-cols-1 gap-0 px-3 py-1 md:grid-cols-2">
+                      <div className="border-b border-slate-100 py-2.5"><p className="font-semibold text-slate-500">Education</p><p className="text-sm text-slate-900">{primaryEducation ? `${primaryEducation.degree}, ${primaryEducation.school}` : 'BS Information Technology, University of the Philippines'}</p></div>
+                      <div className="border-b border-slate-100 py-2.5"><p className="font-semibold text-slate-500">Work Experience</p><p className="text-sm text-slate-900">{primaryExperience ? `${primaryExperience.years} year${primaryExperience.years === 1 ? '' : 's'} as ${primaryExperience.title}` : '3 years as Junior IT Officer'}</p></div>
+                      <div className="py-2.5"><p className="font-semibold text-slate-500">Application Date</p><p className="text-sm text-slate-900">{formatDate(applicant.created_at)}</p></div>
                     </div>
-                    <div className="border-l-4 border-green-600 pl-4">
-                      <p className="text-base font-semibold uppercase text-slate-600">Work Experience</p>
-                      <p className="text-xl text-slate-900">
-                        {primaryExperience
-                          ? `${primaryExperience.years} year${primaryExperience.years === 1 ? '' : 's'} as ${primaryExperience.title}${primaryExperience.company ? ` at ${primaryExperience.company}` : ''}`
-                          : 'No work experience submitted yet.'}
-                      </p>
-                    </div>
-                  </div>
+                  </article>
 
-                  <h3 className="mb-4 text-xl font-semibold text-slate-700">Evaluation Scores</h3>
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    {[
-                      { label: 'Education', value: score.education, color: 'bg-blue-50 border-blue-200 text-blue-700' },
-                      { label: 'Experience', value: score.experience, color: 'bg-green-50 border-green-200 text-green-700' },
-                      { label: 'Performance', value: score.performance, color: 'bg-purple-50 border-purple-200 text-purple-700' },
-                      { label: 'PCPT Score', value: score.pcpt, color: 'bg-orange-50 border-orange-200 text-orange-700' },
-                    ].map((item) => (
-                      <div key={item.label} className={`rounded-2xl border p-4 ${item.color}`}>
-                        <div className="mb-3 flex items-center justify-between text-base font-semibold">
-                          <p>{item.label}</p>
-                          <p>{item.value}/20</p>
-                        </div>
-                        <div className="h-3 rounded-full bg-white/70">
-                          <div className="h-3 rounded-full bg-current" style={{ width: `${(item.value / 20) * 100}%` }} />
+                  <article className="rounded-xl border border-slate-200">
+                    <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
+                      <h3 className="text-2xl font-semibold text-slate-900">Internal Notes</h3>
+                      <button
+                        type="button"
+                        className="text-sm font-medium text-blue-600"
+                        onClick={() => setShowNoteEditor(true)}
+                      >
+                        Add Note
+                      </button>
+                    </div>
+
+                    {!notes.trim() && !showNoteEditor ? (
+                      <div className="px-3 py-4 text-sm text-slate-500">
+                        <p className="inline-flex items-center gap-2"><MessageSquare className="h-4 w-4" /> No notes yet. Add notes to track internal comments and observations.</p>
+                      </div>
+                    ) : (
+                      <div className="px-3 py-3">
+                        <textarea
+                          value={notes}
+                          onChange={(event) => setNotes(event.target.value)}
+                          placeholder="Add internal comments and observations..."
+                          className="min-h-24 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                        />
+                        <div className="mt-2 flex gap-2">
+                          <button type="button" onClick={handleSaveNotes} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white">Save Note</button>
+                          <button type="button" onClick={() => setShowNoteEditor(false)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Cancel</button>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </section>
+                    )}
+                  </article>
+                </div>
               )}
 
               {activeTab === 'documents' && (
-                <section>
-                  <h2 className="mb-5 text-2xl font-semibold text-slate-900">Submitted Documents</h2>
-                  <div className="space-y-3">
-                    {attachments.length === 0 && <p className="text-base text-slate-500">No uploaded documents found.</p>}
-                    {attachments.map((doc) => (
-                      <div key={doc.id} className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
+                <article className="rounded-xl border border-slate-200">
+                  <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
+                    <h3 className="text-xl font-semibold text-slate-900">Submitted Documents</h3>
+                    <button className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600" onClick={handleSendMessage}>
+                      <Mail className="h-4 w-4" /> Send Message
+                    </button>
+                  </div>
+                  <div className="space-y-2 p-3">
+                    {attachments.length > 0 ? attachments.map((doc) => (
+                      <article key={doc.id} className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2.5">
                         <div>
-                          <p className="text-lg font-semibold text-slate-900">{doc.file_name}</p>
-                          <p className="text-sm text-slate-500">Uploaded on {formatDate(doc.created_at || applicant.created_at)}</p>
+                          <p className="text-base font-semibold text-slate-900">{doc.file_name}</p>
+                          <p className="text-sm text-slate-500">Uploaded {formatDate(doc.created_at || applicant.created_at)}</p>
                         </div>
-                        <div className="flex items-center gap-4">
-                          <button type="button" onClick={() => openDocument(doc.file_path)} className="text-base font-semibold text-blue-700">View</button>
-                          <button type="button" onClick={() => openDocument(doc.file_path)} className="text-slate-500"><Download size={20} /></button>
+                        <button className="text-sm font-semibold text-blue-600" onClick={() => openDocument(doc.file_path)}>View</button>
+                      </article>
+                    )) : <p className="text-slate-500">No uploaded documents found for this applicant yet.</p>}
+                  </div>
+                </article>
+              )}
+
+              {activeTab === 'activity' && (
+                <article className="rounded-xl border border-slate-200">
+                  <h3 className="border-b border-slate-200 px-3 py-2 text-xl font-semibold text-slate-900">Activity Timeline</h3>
+                  <div className="space-y-3 p-3">
+                    {(recruitmentApplicant?.timeline || []).map((entry, index) => (
+                      <div key={`${entry.event}-${index}`} className="flex gap-3">
+                        <span className="mt-2 h-3 w-3 rounded-full bg-blue-600" />
+                        <div>
+                          <p className="text-base font-semibold text-slate-900">{entry.event}</p>
+                          <p className="text-sm text-slate-500">{formatDate(entry.date)} • {entry.actor}</p>
                         </div>
                       </div>
                     ))}
+                    {(!recruitmentApplicant?.timeline || recruitmentApplicant.timeline.length === 0) && (
+                      <p className="text-slate-500">No activity yet.</p>
+                    )}
                   </div>
-                </section>
+                </article>
               )}
-
-              {activeTab === 'interview' && (
-                <section>
-                  <h2 className="mb-5 text-2xl font-semibold text-slate-900">Interview Scheduling & Communication</h2>
-
-                  <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-                    <p className="text-lg font-semibold text-emerald-800">Qualified for Interview</p>
-                    <p className="mt-1 text-base text-emerald-700">
-                      This applicant is qualified and ready for interview. You can schedule and send interview invitations directly.
-                    </p>
-                  </div>
-
-                  <h3 className="mb-3 text-xl font-semibold text-slate-800">Send Interview Invitation</h3>
-                  <ul className="mb-4 list-disc space-y-2 pl-7 text-base text-slate-700">
-                    <li>Interview date, time, and venue</li>
-                    <li>Required documents to bring</li>
-                    <li>Interview panel details and format</li>
-                    <li>Missing document requests</li>
-                    <li>Application status updates</li>
-                  </ul>
-
-                  <button type="button" onClick={handleSendMessage} className="mb-6 inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-2.5 text-base font-semibold text-white">
-                    <Mail size={18} /> Send Message to Applicant
-                  </button>
-
-                  <div className="border-t border-slate-200 pt-6">
-                    <h3 className="mb-2 text-xl font-semibold text-slate-800">Internal Notes & Remarks</h3>
-                    <p className="mb-3 text-base text-slate-600">
-                      Add private notes about this applicant. These notes are only visible to RSP staff and will not be shared with the applicant.
-                    </p>
-                    <textarea
-                      value={notes}
-                      onChange={(event) => setNotes(event.target.value)}
-                      placeholder="Add internal notes, observations, or interview feedback here..."
-                      className="min-h-40 w-full rounded-2xl border border-slate-300 p-4 text-base"
-                    />
-                    <button type="button" onClick={handleSaveNotes} className="mt-4 rounded-2xl bg-slate-900 px-6 py-3 text-base font-semibold text-white">
-                      Save Internal Notes
-                    </button>
-                  </div>
-                </section>
-              )}
-            </div>
-          </article>
+            </section>
+          </div>
         </section>
       </main>
 

@@ -1,41 +1,48 @@
 import {
-  Briefcase,
-  Calendar,
-  ChevronLeft,
-  ChevronRight,
-  MoreVertical,
-  Plus,
-  Search,
-  Users,
-  X,
+    Briefcase,
+    Calendar,
+    ChevronLeft,
+    ChevronRight,
+    Lock,
+    MapPin,
+    Plus,
+    Search,
+    Trash2,
+    Users,
+    X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { DEPARTMENTS } from '../constants/positions';
 import {
-  archiveDeletedJobPosting,
-  ensureRecruitmentSeedData,
-  excludeApplicantIdsFromBackfill,
-  formatPHDate,
-  getApplicants,
-  getJobPostings,
-  saveApplicants,
-  saveJobPostings,
-  toTitleCase,
+    archiveDeletedJobPosting,
+    ensureRecruitmentSeedData,
+    excludeApplicantIdsFromBackfill,
+    formatPHDate,
+    getApplicants,
+    getJobPostings,
+    saveApplicants,
+    saveJobPostings,
+    toTitleCase,
 } from '../lib/recruitmentData';
 import { supabase } from '../lib/supabase';
 import { JobPosting } from '../types/recruitment.types';
 import { RecruitmentNavigationGuide } from './RecruitmentNavigationGuide';
 import { Sidebar } from './Sidebar';
 
-const ITEMS_PER_PAGE = 12;
-const POSITION_TYPES = ['Civil Service', 'COS', 'JO', 'Contractual'];
+const ITEMS_PER_PAGE = 3;
 
 const STATUS_COLORS: Record<JobPosting['status'], string> = {
   Draft: 'bg-slate-100 text-slate-700',
   Active: 'bg-emerald-100 text-emerald-700',
   Closed: 'bg-rose-100 text-rose-700',
   Filled: 'bg-blue-100 text-blue-700',
+};
+
+const STATUS_LABELS: Record<JobPosting['status'], string> = {
+  Draft: 'Reviewing',
+  Active: 'Open',
+  Closed: 'Closed',
+  Filled: 'Filled',
 };
 
 interface JobPostFormValues {
@@ -97,17 +104,13 @@ export const JobPostingsPage = () => {
   const [jobs, setJobs] = useState<JobPosting[]>([]);
   const [liveApplicants, setLiveApplicants] = useState<ReturnType<typeof getApplicants>>([]);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'All Postings' | JobPosting['status']>('All Postings');
-  const [departmentFilter, setDepartmentFilter] = useState<string>('all');
-  const [positionTypeFilter, setPositionTypeFilter] = useState<string>('all');
-  const [postedFrom, setPostedFrom] = useState('');
-  const [postedTo, setPostedTo] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | JobPosting['status']>('all');
+  const [officeFilter, setOfficeFilter] = useState<string>('all');
   const [page, setPage] = useState(1);
   const [showGuide, setShowGuide] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [activeStep, setActiveStep] = useState(1);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [form, setForm] = useState<JobPostFormValues>(buildDefaultJobForm());
   const [toast, setToast] = useState('');
 
@@ -143,15 +146,17 @@ export const JobPostingsPage = () => {
     return jobs.filter((job) => {
       const query = `${job.title} ${job.jobCode} ${job.summary}`.toLowerCase();
       const matchesSearch = !search || query.includes(search.toLowerCase());
-      const matchesStatus = statusFilter === 'All Postings' || job.status === statusFilter;
-      const matchesDept = departmentFilter === 'all' || job.department === departmentFilter;
-      const matchesType = positionTypeFilter === 'all' || job.positionType === positionTypeFilter;
-      const posted = new Date(job.postedDate).getTime();
-      const fromOkay = !postedFrom || posted >= new Date(postedFrom).getTime();
-      const toOkay = !postedTo || posted <= new Date(postedTo).getTime() + 86400000;
-      return matchesSearch && matchesStatus && matchesDept && matchesType && fromOkay && toOkay;
+      const matchesStatus = statusFilter === 'all' || job.status === statusFilter;
+      const office = job.division || `${job.department} Department`;
+      const matchesOffice = officeFilter === 'all' || office === officeFilter;
+      return matchesSearch && matchesStatus && matchesOffice;
     });
-  }, [jobs, search, statusFilter, departmentFilter, positionTypeFilter, postedFrom, postedTo]);
+  }, [jobs, officeFilter, search, statusFilter]);
+
+  const officeOptions = useMemo(
+    () => Array.from(new Set(jobs.map((job) => job.division || `${job.department} Department`))).sort((a, b) => a.localeCompare(b)),
+    [jobs]
+  );
 
   const totalPages = Math.max(1, Math.ceil(filteredJobs.length / ITEMS_PER_PAGE));
   const currentPageJobs = filteredJobs.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
@@ -162,11 +167,8 @@ export const JobPostingsPage = () => {
 
   const clearFilters = () => {
     setSearch('');
-    setStatusFilter('All Postings');
-    setDepartmentFilter('all');
-    setPositionTypeFilter('all');
-    setPostedFrom('');
-    setPostedTo('');
+    setStatusFilter('all');
+    setOfficeFilter('all');
     setPage(1);
   };
 
@@ -273,7 +275,6 @@ export const JobPostingsPage = () => {
   const updateStatus = (id: string, nextStatus: JobPosting['status']) => {
     const nextJobs = jobs.map((job) => (job.id === id ? { ...job, status: nextStatus } : job));
     saveJobs(nextJobs);
-    setOpenMenuId(null);
     setToast(`Posting marked as ${nextStatus}.`);
   };
 
@@ -287,7 +288,6 @@ export const JobPostingsPage = () => {
       postedDate: new Date().toISOString(),
     };
     saveJobs([duplicated, ...jobs]);
-    setOpenMenuId(null);
     setToast('Posting duplicated as draft.');
   };
 
@@ -324,8 +324,13 @@ export const JobPostingsPage = () => {
       supabase.from('jobs').delete().eq('title', job.title).eq('item_number', job.jobCode),
     ]);
 
-    setOpenMenuId(null);
     setToast(linkedCount > 0 ? 'Job post deleted and applicant data archived to Reports.' : 'Job post deleted.');
+  };
+
+  const closeApplication = (job: JobPosting) => {
+    if (job.status === 'Active') {
+      updateStatus(job.id, 'Closed');
+    }
   };
 
   return (
@@ -334,133 +339,123 @@ export const JobPostingsPage = () => {
       <main className="admin-content bg-slate-50">
         <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-bold text-slate-900">Job Postings Management</h1>
-            <p className="text-slate-600">Manage and publish job opportunities ({jobs.length} total postings)</p>
+            <p className="mb-2 text-base font-semibold text-blue-600">RSP Dashboard <span className="mx-2 text-slate-400">&gt;</span> <span className="text-slate-900">Job Postings</span></p>
+            <h1 className="text-2xl font-bold text-slate-900">Job Postings Management</h1>
+            <p className="text-sm text-slate-600">Manage and monitor all job positions and their applicants</p>
           </div>
           <div className="flex gap-2">
-            <button className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700" onClick={() => setShowGuide(true)}>
-              How to Navigate
-            </button>
-            <button className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white" onClick={openCreateModal}>
+            <button className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white" onClick={openCreateModal}>
               <Plus className="h-4 w-4" />
-              New Job Post
+              Add New Position
             </button>
           </div>
         </header>
 
-        <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-6">
-            <select className="h-10 rounded-lg border border-slate-300 px-3 text-sm" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'All Postings' | JobPosting['status'])}>
-              <option value="All Postings">All Postings</option>
-              <option value="Draft">Draft</option>
-              <option value="Active">Active</option>
-              <option value="Closed">Closed</option>
-              <option value="Filled">Filled</option>
-            </select>
-
-            <select className="h-10 rounded-lg border border-slate-300 px-3 text-sm" value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)}>
-              <option value="all">All Departments</option>
-              {DEPARTMENTS.map((dept) => (
-                <option key={dept} value={dept}>{dept}</option>
-              ))}
-            </select>
-
-            <select className="h-10 rounded-lg border border-slate-300 px-3 text-sm" value={positionTypeFilter} onChange={(event) => setPositionTypeFilter(event.target.value)}>
-              <option value="all">All Position Types</option>
-              {POSITION_TYPES.map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </select>
-
-            <input className="h-10 rounded-lg border border-slate-300 px-3 text-sm" type="date" value={postedFrom} onChange={(event) => setPostedFrom(event.target.value)} />
-            <input className="h-10 rounded-lg border border-slate-300 px-3 text-sm" type="date" value={postedTo} onChange={(event) => setPostedTo(event.target.value)} />
-
+        <section className="rounded-xl border border-slate-200 bg-white p-0 shadow-sm">
+          <div className="grid grid-cols-1 gap-3 border-b border-slate-200 p-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,0.75fr)_minmax(0,0.75fr)]">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
               <input
-                className="h-10 w-full rounded-lg border border-slate-300 pl-9 pr-3 text-sm"
-                placeholder="Search title, code, keywords"
+                className="h-10 w-full rounded-xl border border-slate-300 pl-10 pr-3 text-sm"
+                placeholder="Search by job title or item number..."
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
               />
             </div>
+
+            <select className="h-10 rounded-xl border border-slate-300 px-3 text-sm" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as 'all' | JobPosting['status'])}>
+              <option value="all">All Status</option>
+              <option value="Active">Open</option>
+              <option value="Draft">Reviewing</option>
+              <option value="Closed">Closed</option>
+              <option value="Filled">Filled</option>
+            </select>
+
+            <select className="h-10 rounded-xl border border-slate-300 px-3 text-sm" value={officeFilter} onChange={(event) => setOfficeFilter(event.target.value)}>
+              <option value="all">All Offices</option>
+              {officeOptions.map((office) => (
+                <option key={office} value={office}>{office}</option>
+              ))}
+            </select>
           </div>
-          <button className="mt-2 text-sm font-medium text-blue-700" onClick={clearFilters}>Clear Filters</button>
+
+          <div className="flex items-center justify-between px-4 py-3 text-sm text-slate-700">
+            <p>Showing <span className="font-semibold text-slate-900">{filteredJobs.length}</span> job positions</p>
+            <button className="text-sm font-medium text-blue-700" onClick={clearFilters}>Clear Filters</button>
+          </div>
         </section>
 
-        <section className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-2">
-          {currentPageJobs.map((job) => (
-            // Keep card counts aligned with the actual applicants list for each posting.
-            (() => {
-              const liveCount = applicantCountsByJob.get(job.id) ?? { applicants: 0, qualified: 0 };
-              return (
-            <article key={job.id} className="relative rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-              <div className="mb-2 flex items-center justify-between">
-                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_COLORS[job.status]}`}>{job.status}</span>
-                <div className="relative">
-                  <button className="rounded-md p-1 text-slate-500 hover:bg-slate-100" onClick={() => setOpenMenuId(openMenuId === job.id ? null : job.id)}>
-                    <MoreVertical className="h-4 w-4" />
-                  </button>
-                  {openMenuId === job.id && (
-                    <div className="absolute right-0 z-10 mt-2 w-44 rounded-lg border border-slate-200 bg-white p-1 text-sm shadow-lg">
-                      <button className="block w-full rounded px-2 py-1 text-left hover:bg-slate-100" onClick={() => openEditModal(job)}>Edit Job Post</button>
-                      <button className="block w-full rounded px-2 py-1 text-left hover:bg-slate-100" onClick={() => duplicatePosting(job)}>Duplicate Posting</button>
-                      {job.status === 'Active' && <button className="block w-full rounded px-2 py-1 text-left hover:bg-slate-100" onClick={() => updateStatus(job.id, 'Closed')}>Close Posting</button>}
-                      {job.status === 'Closed' && <button className="block w-full rounded px-2 py-1 text-left hover:bg-slate-100" onClick={() => updateStatus(job.id, 'Active')}>Reopen Posting</button>}
-                      {job.status !== 'Filled' && <button className="block w-full rounded px-2 py-1 text-left hover:bg-slate-100" onClick={() => updateStatus(job.id, 'Filled')}>Mark As Filled</button>}
-                      <button className="block w-full rounded px-2 py-1 text-left text-rose-600 hover:bg-rose-50" onClick={() => void deleteJobPosting(job)}>Delete Job Post</button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <h3 className="text-lg font-bold text-slate-900">{job.title}</h3>
-              <p className="mt-1 text-sm text-slate-600">{job.department} • {job.positionType} • {job.salaryGrade}</p>
-
-              <div className="mt-3 space-y-1 text-sm text-slate-600">
-                <p className="inline-flex items-center gap-2"><Calendar className="h-4 w-4" /> Posted: {formatPHDate(job.postedDate)}</p>
-                <p className="inline-flex items-center gap-2"><Calendar className="h-4 w-4" /> Deadline: {formatPHDate(job.applicationDeadline)}</p>
-                <p className="inline-flex items-center gap-2"><Users className="h-4 w-4" /> Applicants: {liveCount.applicants} ({liveCount.qualified} qualified)</p>
-              </div>
-
-              <div className="mt-4 flex gap-2">
-                <button className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700" onClick={() => openEditModal(job)}>
-                  View Details
-                </button>
-                <button className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white" onClick={() => navigate(`/admin/rsp/qualified/${job.id}`)}>
-                  View Applicants ({liveCount.applicants})
-                </button>
-              </div>
-            </article>
-              );
-            })()
-          ))}
-
-          {currentPageJobs.length === 0 && (
-            <div className="col-span-full rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">
-              <Briefcase className="mx-auto h-10 w-10 text-slate-400" />
-              <p className="mt-2 font-medium">No job postings found for the selected filters.</p>
-              <button className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white" onClick={openCreateModal}>
-                Create New Job Post
-              </button>
-            </div>
-          )}
-        </section>
-
-        <footer className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-          <p>
-            Showing {filteredJobs.length === 0 ? 0 : (page - 1) * ITEMS_PER_PAGE + 1}-{Math.min(page * ITEMS_PER_PAGE, filteredJobs.length)} of {filteredJobs.length} postings
+        <section className="mt-5">
+          <p className="mb-2 text-center text-base font-semibold text-slate-700">
+            {filteredJobs.length === 0 ? 'Position 0 to 0 of 0' : `Position ${(page - 1) * ITEMS_PER_PAGE + 1} to ${Math.min(page * ITEMS_PER_PAGE, filteredJobs.length)} of ${filteredJobs.length}`}
           </p>
-          <div className="flex items-center gap-2">
-            <button className="rounded border border-slate-300 p-1 disabled:opacity-40" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
-              <ChevronLeft className="h-4 w-4" />
+
+          <div className="grid grid-cols-[48px_minmax(0,1fr)_48px] items-start gap-3">
+            <button className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-300 bg-slate-100 text-slate-500 disabled:opacity-40" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
+              <ChevronLeft className="h-5 w-5" />
             </button>
-            <span className="font-semibold text-slate-800">Page {page} / {totalPages}</span>
-            <button className="rounded border border-slate-300 p-1 disabled:opacity-40" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={page === totalPages}>
-              <ChevronRight className="h-4 w-4" />
+
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+              {currentPageJobs.map((job) => {
+                const liveCount = applicantCountsByJob.get(job.id) ?? { applicants: 0, qualified: 0 };
+                const officeLabel = job.division || `${job.department} Department`;
+                const statusLabel = STATUS_LABELS[job.status];
+
+                return (
+                  <article key={job.id} className="rounded-xl border border-slate-200 bg-white p-4">
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <h3 className="!mb-0 text-2xl font-semibold text-slate-900">{job.title}</h3>
+                      <span className={`rounded-full px-3 py-0.5 text-xs font-semibold ${STATUS_COLORS[job.status]}`}>{statusLabel}</span>
+                    </div>
+
+                    <p className="!mb-2 text-sm text-slate-500">Item No. {job.jobCode}</p>
+
+                    <div className="space-y-1.5 text-sm text-slate-700">
+                      <p className="!mb-0 flex items-center gap-2.5"><MapPin className="h-4 w-4 shrink-0 text-slate-400" /> <span>{officeLabel}</span></p>
+                      <p className="!mb-0 flex items-center gap-2.5"><Calendar className="h-4 w-4 shrink-0 text-slate-400" /> <span>Posted {formatPHDate(job.postedDate)}</span></p>
+                      <p className="!mb-0 flex items-center gap-2.5"><Users className="h-4 w-4 shrink-0 text-slate-400" /> <span><span className="font-bold text-slate-900">{liveCount.applicants}</span> Applicants</span></p>
+                    </div>
+
+                    <div className="mt-4 space-y-2">
+                      <button className="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-base font-semibold text-white" onClick={() => navigate(`/admin/rsp/qualified/${job.id}`)}>
+                        View Applicants <ChevronRight className="ml-2 inline h-4 w-4" />
+                      </button>
+
+                      {job.status === 'Active' && (
+                        <button
+                          type="button"
+                          onClick={() => closeApplication(job)}
+                          className="w-full rounded-xl border border-orange-300 bg-white px-4 py-2.5 text-base font-medium text-orange-600"
+                        >
+                          <Lock className="mr-2 inline h-4 w-4" /> Close Application
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => void deleteJobPosting(job)}
+                        className="w-full rounded-xl border border-rose-300 bg-white px-4 py-2.5 text-base font-medium text-rose-600"
+                      >
+                        <Trash2 className="mr-2 inline h-4 w-4" /> Delete
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+
+              {currentPageJobs.length === 0 && (
+                <div className="col-span-full rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">
+                  <Briefcase className="mx-auto h-10 w-10 text-slate-400" />
+                  <p className="mt-2 font-medium">No job postings found for the selected filters.</p>
+                </div>
+              )}
+            </div>
+
+            <button className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-300 bg-slate-100 text-slate-500 disabled:opacity-40" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={page === totalPages}>
+              <ChevronRight className="h-5 w-5" />
             </button>
           </div>
-        </footer>
+        </section>
       </main>
 
       <RecruitmentNavigationGuide open={showGuide} onClose={() => setShowGuide(false)} />
