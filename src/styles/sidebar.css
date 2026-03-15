@@ -68,8 +68,8 @@
 }
 
 .sidebar-nav-item.active {
-  background-color: #eaf2ff;
-  color: var(--primary-color);
+  background-color: #2563eb;
+  color: #ffffff;
   font-weight: 600;
 }
 
@@ -84,7 +84,11 @@
 }
 
 .sidebar-nav-item.active svg {
-  color: var(--primary-color);
+  color: #ffffff;
+}
+
+.sidebar-nav-item.active .sidebar-nav-subtitle {
+  color: rgba(255, 255, 255, 0.9);
 }
 
 .sidebar-nav-text {

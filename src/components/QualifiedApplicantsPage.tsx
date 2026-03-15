@@ -4,7 +4,6 @@ import {
     ArrowLeft,
     CheckCircle2,
     Download,
-    FileSpreadsheet,
     FileText,
     Mail,
     MessageSquare,
@@ -19,14 +18,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { mockDatabase } from '../lib/mockDatabase';
 import {
-    downloadTextFile,
     ensureRecruitmentSeedData,
     formatPHDate,
     formatPHDateTime,
     getApplicants,
     getAuthoritativeJobPostings,
     saveApplicants,
-    toCsv,
 } from '../lib/recruitmentData';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../lib/supabase';
 import { Applicant, ApplicantStatus, JobPosting } from '../types/recruitment.types';
@@ -173,18 +170,6 @@ const STATUS_COLORS: Record<ApplicantStatus, string> = {
   Rejected: 'bg-slate-200 text-slate-800',
 };
 
-const STATUS_OPTIONS: ApplicantStatus[] = [
-  'New Application',
-  'Under Review',
-  'Shortlisted',
-  'For Interview',
-  'Interview Scheduled',
-  'Interview Completed',
-  'Recommended for Hiring',
-  'Not Qualified',
-  'Rejected',
-];
-
 const normalizeText = (value: string) => String(value ?? '').trim().toLowerCase();
 
 const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
@@ -298,14 +283,16 @@ export const QualifiedApplicantsPage = () => {
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [jobs, setJobs] = useState<JobPosting[]>([]);
   const [search, setSearch] = useState('');
+  const [qualifiedTab, setQualifiedTab] = useState<'all' | 'completed' | 'pending'>('all');
+  const [qualifiedPosition, setQualifiedPosition] = useState('all');
+  const [qualifiedOffice, setQualifiedOffice] = useState('all');
   const [jobFilter, setJobFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState<ApplicantStatus[]>([]);
+  const [statusFilter] = useState<ApplicantStatus[]>([]);
   const [jobPostsStatusFilter, setJobPostsStatusFilter] = useState<JobPostsStatusFilter>('all');
-  const [scoreMin, setScoreMin] = useState(0);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [sortBy, setSortBy] = useState<'Application Date' | 'Qualification Score' | 'Last Updated'>('Application Date');
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [scoreMin] = useState(0);
+  const [dateFrom] = useState('');
+  const [dateTo] = useState('');
+  const [sortBy] = useState<'Application Date' | 'Qualification Score' | 'Last Updated'>('Application Date');
   const [activeApplicant, setActiveApplicant] = useState<Applicant | null>(null);
   const [activeTab, setActiveTab] = useState<'Overview' | 'Documents' | 'Activity'>('Overview');
   const [attachmentsByApplicant, setAttachmentsByApplicant] = useState<Record<string, ApplicantAttachmentRow[]>>({});
@@ -641,15 +628,91 @@ export const QualifiedApplicantsPage = () => {
     return sorted;
   }, [applicants, search, jobId, jobFilter, statusFilter, jobPostsStatusFilter, scoreMin, dateFrom, dateTo, sortBy, isJobPostsView]);
 
-  const counts = useMemo(() => {
-    const total = filteredRows.length;
+  const getQualifiedStatus = (status: ApplicantStatus): 'Completed' | 'Pending' => {
+    const normalized = normalizeText(status);
+    if (
+      normalized.includes('recommend') ||
+      normalized.includes('qualified') ||
+      normalized.includes('hired') ||
+      normalized.includes('accepted') ||
+      normalized.includes('completed')
+    ) {
+      return 'Completed';
+    }
+    return 'Pending';
+  };
+
+  const getAdjectivalRating = (score: number): 'Excellent' | 'Very Good' | 'Good' | 'Fair' | 'Needs Improvement' => {
+    if (score >= 90) return 'Excellent';
+    if (score >= 85) return 'Very Good';
+    if (score >= 80) return 'Good';
+    if (score >= 75) return 'Fair';
+    return 'Needs Improvement';
+  };
+
+  const qualifiedBaseRows = useMemo(() => {
+    return applicants.filter((applicant) => {
+      const matchesJob = jobId ? applicant.jobPostingId === jobId : true;
+      if (!matchesJob) return false;
+      const isQualified = isAdminQualifiedStatus(applicant.status) || getQualifiedStatus(applicant.status) === 'Completed';
+      return isQualified;
+    });
+  }, [applicants, jobId]);
+
+  const qualifiedPositionOptions = useMemo(() => {
+    const set = new Set<string>();
+    qualifiedBaseRows.forEach((applicant) => {
+      const job = jobMap.get(applicant.jobPostingId);
+      const value = String(job?.title ?? '').trim();
+      if (value) set.add(value);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [qualifiedBaseRows, jobMap]);
+
+  const qualifiedOfficeOptions = useMemo(() => {
+    const set = new Set<string>();
+    qualifiedBaseRows.forEach((applicant) => {
+      const job = jobMap.get(applicant.jobPostingId);
+      const value = String(job?.department ?? '').trim();
+      if (value) set.add(value);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [qualifiedBaseRows, jobMap]);
+
+  const qualifiedRows = useMemo(() => {
+    const rows = qualifiedBaseRows.filter((applicant) => {
+      const fullName = `${applicant.personalInfo.firstName} ${applicant.personalInfo.lastName}`.trim();
+      const job = jobMap.get(applicant.jobPostingId);
+      const position = String(job?.title ?? '').trim();
+      const office = String(job?.department ?? '').trim();
+      const matchesSearch =
+        !search ||
+        `${fullName} ${position} ${office}`.toLowerCase().includes(search.toLowerCase());
+      const matchesPosition = qualifiedPosition === 'all' || position === qualifiedPosition;
+      const matchesOffice = qualifiedOffice === 'all' || office === qualifiedOffice;
+      const status = getQualifiedStatus(applicant.status);
+      const matchesTab = qualifiedTab === 'all' || status.toLowerCase() === qualifiedTab;
+      return matchesSearch && matchesPosition && matchesOffice && matchesTab;
+    });
+
+    return rows.sort((a, b) => new Date(b.applicationDate).getTime() - new Date(a.applicationDate).getTime());
+  }, [qualifiedBaseRows, jobMap, qualifiedOffice, qualifiedPosition, qualifiedTab, search]);
+
+  const qualifiedTabCounts = useMemo(() => {
+    let completed = 0;
+    let pending = 0;
+
+    qualifiedBaseRows.forEach((applicant) => {
+      if (getQualifiedStatus(applicant.status) === 'Completed') completed += 1;
+      else pending += 1;
+    });
+
     return {
-      total,
-      shortlisted: filteredRows.filter((item) => item.status === 'Shortlisted').length,
-      forInterview: filteredRows.filter((item) => item.status === 'For Interview' || item.status === 'Interview Scheduled').length,
-      recommended: filteredRows.filter((item) => item.status === 'Recommended for Hiring').length,
+      all: qualifiedBaseRows.length,
+      completed,
+      pending,
     };
-  }, [filteredRows]);
+  }, [qualifiedBaseRows]);
 
   const updateApplicantStatus = (ids: string[], nextStatus: ApplicantStatus) => {
     const timestamp = new Date().toISOString();
@@ -668,34 +731,8 @@ export const QualifiedApplicantsPage = () => {
       const updated = nextApplicants.find((item) => item.id === activeApplicant.id) ?? null;
       setActiveApplicant(updated);
     }
-    setSelectedIds([]);
     setToast(`Status updated to ${nextStatus}.`);
   };
-
-  const exportSelected = () => {
-    const target = selectedIds.length ? filteredRows.filter((item) => selectedIds.includes(item.id)) : filteredRows;
-    const csv = toCsv(
-      ['Application ID', 'Item Number', 'Name', 'Email', 'Position', 'Department', 'Score', 'Status', 'Date Applied'],
-      target.map((item) => {
-        const job = jobMap.get(item.jobPostingId);
-        return [
-          item.id,
-          item.personalInfo.itemNumber ?? '',
-          `${item.personalInfo.firstName} ${item.personalInfo.lastName}`,
-          item.personalInfo.email,
-          job?.title ?? 'Unknown',
-          job?.department ?? 'Unknown',
-          item.qualificationScore,
-          item.status,
-          formatPHDate(item.applicationDate),
-        ];
-      })
-    );
-    downloadTextFile('qualified-applicants.csv', csv, 'text/csv;charset=utf-8');
-    setToast('Export completed (CSV).');
-  };
-
-  const allSelected = filteredRows.length > 0 && selectedIds.length === filteredRows.length;
 
   const fetchApplicantAttachments = async (applicantId: string): Promise<ApplicantAttachmentRow[]> => {
     const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
@@ -1012,17 +1049,6 @@ export const QualifiedApplicantsPage = () => {
           )}
         </header>
 
-        {!isJobPostsView && (
-          <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {[{ label: 'Total Apps', value: counts.total }, { label: 'Shortlisted', value: counts.shortlisted }, { label: 'For Interview', value: counts.forInterview }, { label: 'Recommended', value: counts.recommended }].map((card) => (
-              <article key={card.label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-sm text-slate-500">{card.label}</p>
-                <p className="mt-2 text-2xl font-bold text-slate-900">{card.value}</p>
-              </article>
-            ))}
-          </section>
-        )}
-
         <section className="mt-4 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
           {isJobPostsView ? (
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
@@ -1049,66 +1075,58 @@ export const QualifiedApplicantsPage = () => {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-6">
-                {!jobId ? (
-                  <select className="h-10 rounded-lg border border-slate-300 px-3 text-sm" value={jobFilter} onChange={(event) => setJobFilter(event.target.value)}>
-                    <option value="all">All Job Postings</option>
-                    {jobs.map((job) => <option key={job.id} value={job.id}>{job.title}</option>)}
-                  </select>
-                ) : (
-                  <div className="h-10 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600 flex items-center">Filtered to selected job posting</div>
-                )}
-
-                <div className="rounded-lg border border-slate-300 px-3 py-2 text-xs">
-                  <p className="mb-1 font-semibold uppercase tracking-wide text-slate-500">Status</p>
-                  <div className="max-h-20 space-y-1 overflow-y-auto">
-                    {STATUS_OPTIONS.map((status) => (
-                      <label key={status} className="inline-flex items-center gap-2 text-slate-700">
-                        <input
-                          type="checkbox"
-                          checked={statusFilter.includes(status)}
-                          onChange={() =>
-                            setStatusFilter((current) =>
-                              current.includes(status)
-                                ? current.filter((entry) => entry !== status)
-                                : [...current, status]
-                            )
-                          }
-                        />
-                        <span>{status}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Qualification Score {scoreMin}%+</label>
-                  <input type="range" min={0} max={100} value={scoreMin} onChange={(event) => setScoreMin(Number(event.target.value))} className="mt-2 w-full" />
-                </div>
-
-                <input className="h-10 rounded-lg border border-slate-300 px-3 text-sm" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
-                <input className="h-10 rounded-lg border border-slate-300 px-3 text-sm" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                  <input className="h-10 w-full rounded-lg border border-slate-300 pl-9 pr-3 text-sm" placeholder="Search name, email, ID" value={search} onChange={(event) => setSearch(event.target.value)} />
-                </div>
+              <div className="mb-5 flex flex-wrap gap-3 border-b border-slate-200 pb-4">
+                {[
+                  { key: 'all', label: 'All Applicants', count: qualifiedTabCounts.all },
+                  { key: 'completed', label: 'Completed', count: qualifiedTabCounts.completed },
+                  { key: 'pending', label: 'Pending', count: qualifiedTabCounts.pending },
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setQualifiedTab(tab.key as 'all' | 'completed' | 'pending')}
+                    className={`rounded-xl px-5 py-2 text-base font-semibold ${qualifiedTab === tab.key ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-800'}`}
+                  >
+                    {tab.label}{' '}
+                    <span className={`ml-2 rounded-full px-2 py-0.5 text-sm ${qualifiedTab === tab.key ? 'bg-white/90 text-slate-800' : 'bg-slate-200 text-slate-700'}`}>
+                      {tab.count}
+                    </span>
+                  </button>
+                ))}
               </div>
 
-              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                <select className="h-10 rounded-lg border border-slate-300 px-3 text-sm" value={sortBy} onChange={(event) => setSortBy(event.target.value as 'Application Date' | 'Qualification Score' | 'Last Updated')}>
-                  <option>Application Date</option>
-                  <option>Qualification Score</option>
-                  <option>Last Updated</option>
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                <div className="relative xl:col-span-1">
+                  <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                  <input
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Search by name, position, or office..."
+                    className="w-full rounded-xl border border-slate-300 py-3 pl-12 pr-4 text-base"
+                  />
+                </div>
+
+                <select
+                  value={qualifiedPosition}
+                  onChange={(event) => setQualifiedPosition(event.target.value)}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-base"
+                >
+                  <option value="all">All Positions</option>
+                  {qualifiedPositionOptions.map((position) => (
+                    <option key={position} value={position}>{position}</option>
+                  ))}
                 </select>
 
-                <div className="flex flex-wrap gap-2">
-                  <button className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm" onClick={() => updateApplicantStatus(selectedIds.length ? selectedIds : filteredRows.map((item) => item.id), 'Under Review')}>
-                    Update Status
-                  </button>
-                  <button className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm" onClick={exportSelected}>
-                    <FileSpreadsheet className="mr-1 inline h-4 w-4" />Export
-                  </button>
-                </div>
+                <select
+                  value={qualifiedOffice}
+                  onChange={(event) => setQualifiedOffice(event.target.value)}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 text-base"
+                >
+                  <option value="all">All Offices</option>
+                  {qualifiedOfficeOptions.map((office) => (
+                    <option key={office} value={office}>{office}</option>
+                  ))}
+                </select>
               </div>
             </>
           )}
@@ -1139,30 +1157,24 @@ export const QualifiedApplicantsPage = () => {
                     </>
                   ) : (
                     <>
-                      <th className="px-3 py-3">
-                        <input
-                          type="checkbox"
-                          checked={allSelected}
-                          onChange={(event) =>
-                            setSelectedIds(event.target.checked ? filteredRows.map((item) => item.id) : [])
-                          }
-                        />
-                      </th>
-                      <th className="px-3 py-3">Applicant</th>
-                      <th className="px-3 py-3">Item Number</th>
-                      <th className="px-3 py-3">Contact</th>
-                      <th className="px-3 py-3">Position Applied</th>
-                      <th className="px-3 py-3">Date Applied</th>
-                      <th className="px-3 py-3">Qualification Score</th>
-                      <th className="px-3 py-3">Status</th>
+                      <th className="px-5 py-4">APPLICANT NAME</th>
+                      <th className="px-5 py-4">POSITION APPLIED FOR</th>
+                      <th className="px-5 py-4">OFFICE / DEPARTMENT</th>
+                      <th className="px-5 py-4">TOTAL SCORE</th>
+                      <th className="px-5 py-4">ADJECTIVAL RATING</th>
+                      <th className="px-5 py-4">STATUS</th>
+                      <th className="px-5 py-4">DATE QUALIFIED</th>
                     </>
                   )}
                 </tr>
               </thead>
               <tbody>
-                {filteredRows.map((applicant) => {
+                {(isJobPostsView ? filteredRows : qualifiedRows).map((applicant) => {
                   const fullName = `${applicant.personalInfo.firstName} ${applicant.personalInfo.lastName}`;
                   const job = jobMap.get(applicant.jobPostingId);
+                  const totalScore = Math.round(applicant.qualificationScore || 0);
+                  const adjectival = getAdjectivalRating(totalScore);
+                  const qualifiedStatus = getQualifiedStatus(applicant.status);
                   return (
                     <tr
                       key={applicant.id}
@@ -1186,21 +1198,7 @@ export const QualifiedApplicantsPage = () => {
                         </>
                       ) : (
                         <>
-                          <td className="px-3 py-3">
-                            <input
-                              type="checkbox"
-                              checked={selectedIds.includes(applicant.id)}
-                              onClick={(event) => event.stopPropagation()}
-                              onChange={() =>
-                                setSelectedIds((current) =>
-                                  current.includes(applicant.id)
-                                    ? current.filter((entry) => entry !== applicant.id)
-                                    : [...current, applicant.id]
-                                )
-                              }
-                            />
-                          </td>
-                          <td className="px-3 py-3 font-medium text-blue-700 underline decoration-blue-200 underline-offset-2">
+                          <td className="px-5 py-4 font-semibold text-blue-600 underline decoration-blue-200 underline-offset-2">
                             <button
                               type="button"
                               className="text-left hover:text-blue-800"
@@ -1216,32 +1214,26 @@ export const QualifiedApplicantsPage = () => {
                               {fullName}
                             </button>
                           </td>
-                          <td className="px-3 py-3 text-slate-600">{applicant.personalInfo.itemNumber || 'N/A'}</td>
-                          <td className="px-3 py-3 text-slate-600">
-                            <p>{applicant.personalInfo.email}</p>
-                            <p className="text-xs text-slate-500">{applicant.personalInfo.phone}</p>
+                          <td className="px-5 py-4 text-slate-700">{job?.title ?? '--'}</td>
+                          <td className="px-5 py-4 text-slate-700">{job?.department ?? '--'}</td>
+                          <td className="px-5 py-4 font-semibold text-emerald-600">{totalScore} / 100</td>
+                          <td className={`px-5 py-4 font-semibold ${adjectival === 'Excellent' ? 'text-emerald-600' : adjectival === 'Very Good' ? 'text-blue-600' : 'text-slate-700'}`}>
+                            {adjectival}
                           </td>
-                          <td className="px-3 py-3 text-slate-600">
-                            <p>{job?.title ?? 'Unknown'}</p>
-                            <p className="text-xs text-slate-500">{job?.department ?? 'N/A'}</p>
+                          <td className={`px-5 py-4 font-semibold ${qualifiedStatus === 'Completed' ? 'text-emerald-600' : 'text-amber-500'}`}>
+                            {qualifiedStatus}
                           </td>
-                          <td className="px-3 py-3 text-slate-600">{formatPHDate(applicant.applicationDate)}</td>
-                          <td className="px-3 py-3">
-                            <div className="w-32">
-                              <div className="mb-1 h-2 rounded-full bg-slate-200">
-                                <div className="h-2 rounded-full bg-blue-600" style={{ width: `${applicant.qualificationScore}%` }} />
-                              </div>
-                              <span className="text-xs font-semibold text-slate-700">{applicant.qualificationScore}%</span>
-                            </div>
-                          </td>
-                          <td className="px-3 py-3">
-                            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_COLORS[applicant.status]}`}>{applicant.status}</span>
-                          </td>
+                          <td className="px-5 py-4 text-slate-700">{formatPHDate(applicant.applicationDate)}</td>
                         </>
                       )}
                     </tr>
                   );
                 })}
+                {!isJobPostsView && qualifiedRows.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-5 py-8 text-center text-base text-slate-500">No qualified applicants found.</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
