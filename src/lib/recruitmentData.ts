@@ -21,6 +21,7 @@ const LEGACY_PORTAL_APPLICANTS_KEY = 'cictrix_applicants';
 const LEGACY_PORTAL_ATTACHMENTS_KEY = 'cictrix_attachments';
 const BACKFILL_EXCLUDED_APPLICANT_IDS_KEY = 'cictrix_backfill_excluded_applicant_ids';
 const RECRUITMENT_DATA_VERSION_KEY = 'cictrix_recruitment_data_version';
+const APPLICANTS_UPDATED_EVENT = 'cictrix:applicants-updated';
 const RECRUITMENT_DATA_VERSION = '2026-03-08-no-demo-job-seed';
 
 export const PH_LOCALE = 'en-PH';
@@ -255,7 +256,13 @@ export const saveJobPostings = (rows: JobPosting[]) => {
 };
 
 export const getApplicants = () => safeJsonParse<Applicant[]>(localStorage.getItem(APPLICANTS_KEY), []);
-export const saveApplicants = (rows: Applicant[]) => localStorage.setItem(APPLICANTS_KEY, JSON.stringify(rows));
+export const saveApplicants = (rows: Applicant[]) => {
+  localStorage.setItem(APPLICANTS_KEY, JSON.stringify(rows));
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(APPLICANTS_UPDATED_EVENT));
+  }
+};
 
 export interface DeletedJobReport {
   id: string;
@@ -392,12 +399,24 @@ type LegacyPortalAttachment = {
 const findJobPostingForSubmission = (position: string, department: string): JobPosting | null => {
   const normalizedPosition = normalizeText(position);
   const normalizedDepartment = normalizeDepartment(department);
-  const jobs = getJobPostings();
+  const jobs = getAuthoritativeJobPostings();
 
-  const existing = jobs.find(
-    (job) => normalizeText(job.title) === normalizedPosition && normalizeText(job.department) === normalizeText(normalizedDepartment)
+  const sameTitleRows = jobs.filter((job) => normalizeText(job.title) === normalizedPosition);
+  if (sameTitleRows.length === 0) return null;
+
+  if (sameTitleRows.length === 1) {
+    return sameTitleRows[0];
+  }
+
+  const sameDepartmentRow = sameTitleRows.find(
+    (job) => normalizeText(job.department) === normalizeText(normalizedDepartment)
   );
-  return existing ?? null;
+  if (sameDepartmentRow) {
+    return sameDepartmentRow;
+  }
+
+  const activeRow = sameTitleRows.find((job) => normalizeText(job.status) === 'active');
+  return activeRow ?? sameTitleRows[0];
 };
 
 export const syncApplicantSubmissionToRecruitment = (

@@ -102,6 +102,7 @@ const SCORE_EDUCATION_STORAGE_KEY = 'cictrix_rsp_score_education';
 const SCORE_EXPERIENCE_STORAGE_KEY = 'cictrix_rsp_score_experience';
 const SCORE_WRITTEN_STORAGE_KEY = 'cictrix_rsp_score_written';
 const SCORE_FINALIZED_STORAGE_KEY = 'cictrix_rsp_score_finalized';
+const SCORE_DRAFT_STORAGE_KEY = 'cictrix_rsp_score_draft';
 
 const EDUCATION_ATTAINMENT_OPTIONS: Array<{
   value: EducationAttainmentValue;
@@ -427,6 +428,27 @@ const saveStoredFinalizedState = (applicantId: string, finalized: boolean) => {
   }
 };
 
+const getStoredDraftState = (applicantId: string): boolean => {
+  try {
+    const raw = localStorage.getItem(SCORE_DRAFT_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    return Boolean(parsed[applicantId]);
+  } catch {
+    return false;
+  }
+};
+
+const saveStoredDraftState = (applicantId: string, isDraft: boolean) => {
+  try {
+    const raw = localStorage.getItem(SCORE_DRAFT_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    parsed[applicantId] = isDraft;
+    localStorage.setItem(SCORE_DRAFT_STORAGE_KEY, JSON.stringify(parsed));
+  } catch {
+    // Best effort persistence only.
+  }
+};
+
 export function ApplicantDetailsPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -445,11 +467,15 @@ export function ApplicantDetailsPage() {
   const [potentialScore, setPotentialScore] = useState('');
   const [positionType, setPositionType] = useState<'rank-file' | 'executive'>('rank-file');
   const [isScoreFinalized, setIsScoreFinalized] = useState(false);
+  const [isScoreDraft, setIsScoreDraft] = useState(false);
 
   const [showSendEmailModal, setShowSendEmailModal] = useState(false);
   const [emailTemplate, setEmailTemplate] = useState('');
   const [emailSubject, setEmailSubject] = useState('');
   const [emailBody, setEmailBody] = useState('');
+
+  const [applicantStatus, setApplicantStatus] = useState<null | 'shortlist' | 'qualified' | 'disqualify'>(null);
+  const [disqualifyReason, setDisqualifyReason] = useState('');
 
   const [applicant, setApplicant] = useState<ApplicantRecord | null>(null);
   const [recruitmentApplicant, setRecruitmentApplicant] = useState<Applicant | null>(routeState?.applicant ?? null);
@@ -473,12 +499,15 @@ export function ApplicantDetailsPage() {
       setExperienceYears(getStoredExperienceYears(id));
       setWrittenScore(getStoredWrittenScore(id));
       setIsScoreFinalized(getStoredFinalizedState(id));
+      setIsScoreDraft(getStoredDraftState(id));
 
       const loadFromClient = async (client: any) => {
         const applicantRes = await client.from('applicants').select('*').eq('id', id).single();
         if (applicantRes.error || !applicantRes.data) {
           throw applicantRes.error || new Error('Applicant not found');
         }
+
+        const applicantRow = applicantRes.data as ApplicantRecord;
 
         const attachmentRes = await client
           .from('applicant_attachments')
@@ -494,10 +523,46 @@ export function ApplicantDetailsPage() {
           .limit(1)
           .maybeSingle();
 
+        let resolvedEvaluation = (evaluationRes.data || null) as EvaluationRecord | null;
+
+        // Fallback: resolve evaluation by email-linked applicant IDs in case
+        // interviewer/evaluator used a sibling applicant row ID.
+        if (!resolvedEvaluation && applicantRow.email) {
+          try {
+            const linkedApplicantsRes = await client
+              .from('applicants')
+              .select('id')
+              .eq('email', applicantRow.email);
+
+            const linkedIds = Array.from(
+              new Set(
+                [
+                  id,
+                  ...((linkedApplicantsRes.data || []) as Array<{ id?: string }>).map((row) => String(row.id || '').trim()),
+                ].filter(Boolean)
+              )
+            );
+
+            if (linkedIds.length > 0) {
+              const linkedEvaluationRes = await client
+                .from('evaluations')
+                .select('*')
+                .in('applicant_id', linkedIds)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+              resolvedEvaluation = (linkedEvaluationRes.data || null) as EvaluationRecord | null;
+            }
+          } catch {
+            // Best effort fallback only.
+          }
+        }
+
         return {
-          applicant: applicantRes.data as ApplicantRecord,
+          applicant: applicantRow,
           attachments: (attachmentRes.data || []) as AttachmentRecord[],
-          evaluation: (evaluationRes.data || null) as EvaluationRecord | null,
+          evaluation: resolvedEvaluation,
         };
       };
 
@@ -541,8 +606,26 @@ export function ApplicantDetailsPage() {
   const isFromJobPosts = sourcePath.startsWith('/admin/rsp/jobs') || isJobScopedQualifiedRoute;
   const showViewScoresButton = !isFromJobPosts;
   const showJobPostActionButtons = isFromJobPosts;
+  const scoreActionLabel = isScoreFinalized ? 'View Score' : 'Update Score';
+  const isApplicantDisqualified =
+    normalizeText(resolvedStatus ?? '').includes('not qualified') ||
+    normalizeText(resolvedStatus ?? '').includes('disqual');
   const primaryEducation = recruitmentApplicant?.education?.[0] ?? null;
   const primaryExperience = recruitmentApplicant?.experience?.[0] ?? null;
+
+  // Sync the mutually-exclusive status toggle from the persisted resolvedStatus
+  useEffect(() => {
+    const norm = normalizeText(resolvedStatus ?? '');
+    if (norm.includes('not qualified') || norm.includes('disqual')) {
+      setApplicantStatus('disqualify');
+    } else if (norm.includes('shortlist')) {
+      setApplicantStatus('shortlist');
+    } else if (norm.includes('qualified') || norm.includes('recommend') || norm.includes('hired')) {
+      setApplicantStatus('qualified');
+    } else {
+      setApplicantStatus(null);
+    }
+  }, [resolvedStatus]);
   const selectedEducationOption = EDUCATION_ATTAINMENT_OPTIONS.find((option) => option.value === educationAttainment);
   const modalEducationScore = selectedEducationOption?.points ?? (isScoreFinalized ? score.education : 0);
   const isPromotionalAppointment = appointmentType === 'promotional';
@@ -682,10 +765,71 @@ export function ApplicantDetailsPage() {
     }
   };
 
-  const handleDisqualify = () => {
-    const confirmed = window.confirm(`Mark ${fullName || 'this applicant'} as Disqualified?`);
-    if (!confirmed) return;
-    handleUpdateStatus('Not Qualified');
+  const handleSubmitStatusEvaluation = async () => {
+    if (!applicant || !applicantStatus || !recruitmentApplicant) return;
+
+    const statusMap: Record<'shortlist' | 'qualified' | 'disqualify', Applicant['status']> = {
+      shortlist: 'Shortlisted',
+      qualified: 'Recommended for Hiring',
+      disqualify: 'Not Qualified',
+    };
+    const nextStatus = statusMap[applicantStatus];
+    const reason = applicantStatus === 'disqualify' ? disqualifyReason.trim() : null;
+
+    // Structured JSON payload for the Python backend
+    const payload: {
+      applicant_id: string;
+      status: string;
+      disqualification_reason: string | null;
+    } = {
+      applicant_id: applicant.id,
+      status: applicantStatus === 'shortlist' ? 'shortlisted'
+        : applicantStatus === 'qualified' ? 'qualified'
+        : 'disqualified',
+      disqualification_reason: reason || null,
+    };
+
+    // POST to Python backend (best-effort; falls back to Supabase)
+    try {
+      await fetch(`/api/applicants/${applicant.id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      try {
+        const dbUpdate: Record<string, unknown> = { status: nextStatus };
+        if (reason) dbUpdate.disqualification_reason = reason;
+        await supabase.from('applicants').update(dbUpdate).eq('id', applicant.id);
+      } catch {
+        // Best effort persistence only
+      }
+    }
+
+    // Update local recruitment store
+    const now = new Date().toISOString();
+    const nextNotes = reason
+      ? [{ author: 'RSP Staff', content: `Disqualification reason: ${reason}`, date: now, pinned: false }, ...recruitmentApplicant.notes]
+      : recruitmentApplicant.notes;
+    const nextApplicants = getApplicants().map((entry) => {
+      if (entry.id !== recruitmentApplicant.id) return entry;
+      return {
+        ...entry,
+        status: nextStatus,
+        notes: nextNotes,
+        timeline: [
+          ...entry.timeline,
+          { event: `Status updated to ${nextStatus}${reason ? ` — ${reason}` : ''}`, date: now, actor: 'RSP Staff' },
+        ],
+      };
+    });
+    saveApplicants(nextApplicants);
+    const updated = nextApplicants.find((entry) => entry.id === recruitmentApplicant.id) ?? recruitmentApplicant;
+    setRecruitmentApplicant(updated);
+    setApplicant((current) => (current ? { ...current, status: nextStatus } : current));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('cictrix:applicants-updated'));
+    }
   };
 
   const handleSaveScoreSetup = async () => {
@@ -704,6 +848,7 @@ export function ApplicantDetailsPage() {
     saveStoredExperienceYears(applicant.id, experienceYears);
     saveStoredWrittenScore(applicant.id, writtenScore);
     saveStoredFinalizedState(applicant.id, true);
+    saveStoredDraftState(applicant.id, false);
 
     // Persist score + status so Reports > Application Ranking can include this applicant.
     const updatePayload = {
@@ -751,11 +896,26 @@ export function ApplicantDetailsPage() {
     setApplicant((current) => (current ? { ...current, status: nextStatus } : current));
 
     setIsScoreFinalized(true);
+    setIsScoreDraft(false);
     setShowScoresModal(false);
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('cictrix:applicants-updated'));
     }
+  };
+
+  const handleSaveScoreDraft = () => {
+    if (!applicant?.id || isScoreFinalized) return;
+
+    saveStoredAppointmentType(applicant.id, appointmentType);
+    saveStoredEducationAttainment(applicant.id, educationAttainment);
+    saveStoredExperienceYears(applicant.id, experienceYears);
+    saveStoredWrittenScore(applicant.id, writtenScore);
+    saveStoredFinalizedState(applicant.id, false);
+    saveStoredDraftState(applicant.id, true);
+
+    setIsScoreDraft(true);
+    setToast('Score draft saved. You can continue later.');
   };
 
   if (loading) {
@@ -792,7 +952,7 @@ export function ApplicantDetailsPage() {
                   onClick={() => setShowScoresModal(true)}
                   className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm"
                 >
-                  <Eye size={14} /> View Scores
+                  <Eye size={14} /> {scoreActionLabel}
                 </button>
               )}
 
@@ -807,22 +967,37 @@ export function ApplicantDetailsPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={handleDisqualify}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 shadow-sm"
+                    onClick={() => { setApplicantStatus('disqualify'); setActiveTab('overview'); }}
+                    disabled={applicantStatus === 'qualified'}
+                    className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold shadow-sm ${
+                      applicantStatus === 'disqualify'
+                        ? 'border-rose-500 bg-rose-600 text-white'
+                        : 'border-rose-200 bg-white text-rose-700'
+                    } disabled:cursor-not-allowed disabled:opacity-40`}
                   >
                     <CircleX size={14} /> Disqualify
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleUpdateStatus('Shortlisted')}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm"
+                    onClick={() => { setApplicantStatus('shortlist'); setActiveTab('overview'); }}
+                    disabled={isApplicantDisqualified}
+                    className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+                      applicantStatus === 'shortlist'
+                        ? 'bg-blue-700 text-white'
+                        : 'bg-blue-600 text-white'
+                    }`}
                   >
                     <Star size={14} /> Shortlist
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleUpdateStatus('Recommended for Hiring')}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm"
+                    onClick={() => { setApplicantStatus('qualified'); setActiveTab('overview'); }}
+                    disabled={isApplicantDisqualified || applicantStatus === 'disqualify'}
+                    className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+                      applicantStatus === 'qualified'
+                        ? 'bg-emerald-700 text-white'
+                        : 'bg-emerald-600 text-white'
+                    }`}
                   >
                     <CheckCircle2 size={14} /> Qualify
                   </button>
@@ -891,14 +1066,90 @@ export function ApplicantDetailsPage() {
                     </div>
                   </article>
 
-                  <article className="rounded-xl border border-slate-200">
-                    <h3 className="border-b border-slate-200 px-3 py-2 text-2xl font-semibold text-slate-900">Qualifications</h3>
-                    <div className="grid grid-cols-1 gap-0 px-3 py-1 md:grid-cols-2">
-                      <div className="border-b border-slate-100 py-2.5"><p className="font-semibold text-slate-500">Education</p><p className="text-sm text-slate-900">{primaryEducation ? `${primaryEducation.degree}, ${primaryEducation.school}` : 'BS Information Technology, University of the Philippines'}</p></div>
-                      <div className="border-b border-slate-100 py-2.5"><p className="font-semibold text-slate-500">Work Experience</p><p className="text-sm text-slate-900">{primaryExperience ? `${primaryExperience.years} year${primaryExperience.years === 1 ? '' : 's'} as ${primaryExperience.title}` : '3 years as Junior IT Officer'}</p></div>
-                      <div className="py-2.5"><p className="font-semibold text-slate-500">Application Date</p><p className="text-sm text-slate-900">{formatDate(applicant.created_at)}</p></div>
-                    </div>
-                  </article>
+                  {showJobPostActionButtons && (
+                    <article className="rounded-xl border border-slate-200">
+                      <h3 className="border-b border-slate-200 px-3 py-2 text-2xl font-semibold text-slate-900">Status Evaluation</h3>
+                      <div className="px-3 py-3 space-y-3">
+                        {/* Mutually exclusive toggle pills */}
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setApplicantStatus(applicantStatus === 'shortlist' ? null : 'shortlist')}
+                            disabled={isApplicantDisqualified}
+                            className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border px-4 py-2.5 text-sm font-semibold transition ${
+                              applicantStatus === 'shortlist'
+                                ? 'border-blue-500 bg-blue-600 text-white'
+                                : 'border-slate-300 bg-white text-slate-700 hover:border-blue-400 hover:text-blue-700'
+                            } disabled:cursor-not-allowed disabled:opacity-40`}
+                          >
+                            <Star size={14} /> Shortlist
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setApplicantStatus(applicantStatus === 'qualified' ? null : 'qualified')}
+                            disabled={isApplicantDisqualified}
+                            className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border px-4 py-2.5 text-sm font-semibold transition ${
+                              applicantStatus === 'qualified'
+                                ? 'border-emerald-500 bg-emerald-600 text-white'
+                                : 'border-slate-300 bg-white text-slate-700 hover:border-emerald-400 hover:text-emerald-700'
+                            } disabled:cursor-not-allowed disabled:opacity-40`}
+                          >
+                            <CheckCircle2 size={14} /> Qualify
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setApplicantStatus(applicantStatus === 'disqualify' ? null : 'disqualify'); if (applicantStatus === 'disqualify') setDisqualifyReason(''); }}
+                            className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border px-4 py-2.5 text-sm font-semibold transition ${
+                              applicantStatus === 'disqualify'
+                                ? 'border-rose-500 bg-rose-600 text-white'
+                                : 'border-rose-200 bg-white text-rose-700 hover:border-rose-400'
+                            }`}
+                          >
+                            <CircleX size={14} /> Disqualify
+                          </button>
+                        </div>
+
+                        {/* Conditional textarea — required when Disqualify is active */}
+                        {applicantStatus === 'disqualify' && (
+                          <div>
+                            <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                              Reason for Disqualification <span className="text-rose-500">*</span>
+                            </label>
+                            <textarea
+                              rows={3}
+                              value={disqualifyReason}
+                              onChange={(e) => setDisqualifyReason(e.target.value)}
+                              placeholder="Please provide a detailed reason for disqualification..."
+                              className="w-full resize-none rounded-xl border border-rose-300 bg-white px-4 py-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-100"
+                            />
+                            {disqualifyReason.trim().length === 0 && (
+                              <p className="mt-1 text-xs text-rose-500">A disqualification reason is required before saving.</p>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Save Status button — disabled when disqualify + no reason */}
+                        {applicantStatus !== null && !isApplicantDisqualified && (
+                          <div className="flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => void handleSubmitStatusEvaluation()}
+                              disabled={applicantStatus === 'disqualify' && disqualifyReason.trim().length === 0}
+                              className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Save Status
+                            </button>
+                          </div>
+                        )}
+
+                        {isApplicantDisqualified && (
+                          <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-700 font-medium">
+                            This applicant has been disqualified. Shortlist and Qualify are locked.
+                          </p>
+                        )}
+                      </div>
+                    </article>
+                  )}
 
                   <article className="rounded-xl border border-slate-200">
                     <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
@@ -1138,6 +1389,15 @@ export function ApplicantDetailsPage() {
             </div>
 
             <div className="space-y-6 p-8">
+              {isScoreDraft && !isScoreFinalized && (
+                <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5">
+                  <p className="text-xl font-semibold text-amber-800">Draft Saved</p>
+                  <p className="text-base text-amber-700">
+                    This evaluation is saved as draft. You can continue editing and finalize later.
+                  </p>
+                </div>
+              )}
+
               {isScoreFinalized && (
                 <div className="rounded-2xl border border-emerald-300 bg-emerald-50 p-5">
                   <p className="text-xl font-semibold text-emerald-800">Score Finalized - View Only Mode</p>
@@ -1412,8 +1672,21 @@ export function ApplicantDetailsPage() {
                 <button type="button" onClick={() => setShowScoresModal(false)} className="rounded-2xl border border-slate-300 bg-white px-8 py-3 text-base text-slate-700">
                   Cancel
                 </button>
-                <button type="button" onClick={handleSaveScoreSetup} className="rounded-2xl bg-blue-600 px-8 py-3 text-base font-semibold text-white">
-                  {isScoreFinalized ? 'Saved Evaluation' : 'Save Evaluation'}
+                <button
+                  type="button"
+                  onClick={handleSaveScoreDraft}
+                  disabled={isScoreFinalized}
+                  className="rounded-2xl border border-blue-300 bg-white px-8 py-3 text-base font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Save Draft
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveScoreSetup}
+                  disabled={isScoreFinalized}
+                  className="rounded-2xl bg-blue-600 px-8 py-3 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isScoreFinalized ? 'View Only' : 'Save Evaluation'}
                 </button>
               </div>
             </div>

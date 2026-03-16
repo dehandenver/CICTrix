@@ -25,12 +25,25 @@ import {
     saveJobPostings,
     toTitleCase,
 } from '../lib/recruitmentData';
-import { supabase } from '../lib/supabase';
+  import { mockDatabase } from '../lib/mockDatabase';
+  import { isMockModeEnabled, supabase } from '../lib/supabase';
 import { JobPosting } from '../types/recruitment.types';
 import { RecruitmentNavigationGuide } from './RecruitmentNavigationGuide';
 import { Sidebar } from './Sidebar';
 
 const ITEMS_PER_PAGE = 3;
+
+const normalizeText = (value: string) => String(value ?? '').trim().toLowerCase();
+
+const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
+  if (!isMockModeEnabled) return 'supabase';
+  try {
+    const mode = localStorage.getItem('cictrix_data_source_mode');
+    return mode === 'local' ? 'local' : 'supabase';
+  } catch {
+    return 'supabase';
+  }
+};
 
 const normalizeRomanNumeralsInText = (value: string) =>
   String(value ?? '')
@@ -129,6 +142,129 @@ export const JobPostingsPage = () => {
   const [form, setForm] = useState<JobPostFormValues>(buildDefaultJobForm());
   const [toast, setToast] = useState('');
 
+  const resolveLiveApplicants = async (jobRows: JobPosting[]) => {
+    const localApplicants = getApplicants();
+    const activeJobs = jobRows.filter((job) => normalizeText(job.status) === 'active');
+
+    const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
+    const primaryClient = preferredMode === 'local' ? (mockDatabase as any) : supabase;
+    const secondaryClient = preferredMode === 'local' ? supabase : (mockDatabase as any);
+
+    const fetchDbApplicants = async (client: any) => {
+      const result = await client
+        .from('applicants')
+        .select('id,position,office,status')
+        .order('created_at', { ascending: false });
+
+      if (result?.error) {
+        throw result.error;
+      }
+
+      return Array.isArray(result?.data) ? result.data : [];
+    };
+
+    let dbRows: any[] = [];
+    let dbFetchSucceeded = false;
+    try {
+      dbRows = await fetchDbApplicants(primaryClient);
+      dbFetchSucceeded = true;
+    } catch {
+      try {
+        dbRows = await fetchDbApplicants(secondaryClient);
+        dbFetchSucceeded = true;
+      } catch {
+        dbRows = [];
+        dbFetchSucceeded = false;
+      }
+    }
+
+    const toStatus = (rawStatus: string): ReturnType<typeof getApplicants>[number]['status'] => {
+      const normalized = normalizeText(rawStatus);
+      if (normalized.includes('recommend') || normalized.includes('qualified') || normalized.includes('hired') || normalized.includes('accepted')) {
+        return 'Recommended for Hiring';
+      }
+      if (normalized.includes('shortlist')) return 'Shortlisted';
+      if (normalized.includes('interview')) return 'For Interview';
+      if (normalized.includes('review') || normalized.includes('pending')) return 'Under Review';
+      if (normalized.includes('reject')) return 'Rejected';
+      if (normalized.includes('disqual')) return 'Not Qualified';
+      return 'New Application';
+    };
+
+    const findJobIdFromRow = (row: any) => {
+      const position = normalizeText(String(row?.position ?? ''));
+      const office = normalizeText(String(row?.office ?? ''));
+      const explicitJobId = String(row?.job_posting_id ?? '').trim();
+
+      if (explicitJobId) {
+        const byId = activeJobs.find((job) => String(job.id) === explicitJobId);
+        if (byId) return byId.id;
+      }
+
+      const sameTitleRows = activeJobs.filter((job) => normalizeText(job.title) === position);
+      if (sameTitleRows.length === 1) return sameTitleRows[0].id;
+      if (sameTitleRows.length > 1) {
+        const sameOffice = sameTitleRows.find((job) => normalizeText(job.department) === office || normalizeText(job.division ?? '') === office);
+        if (sameOffice) return sameOffice.id;
+        return sameTitleRows[0].id;
+      }
+
+      return null;
+    };
+
+    const mappedDbApplicants = dbRows
+      .map((row: any) => {
+        const linkedJobId = findJobIdFromRow(row);
+        if (!linkedJobId) return null;
+        return {
+          id: String(row?.id ?? crypto.randomUUID()),
+          jobPostingId: linkedJobId,
+          status: toStatus(String(row?.status ?? '')),
+        };
+      })
+      .filter((row: any): row is { id: string; jobPostingId: string; status: ReturnType<typeof getApplicants>[number]['status'] } => Boolean(row));
+
+    const mergedById = new Map<string, ReturnType<typeof getApplicants>[number]>();
+    const mappedIds = new Set(mappedDbApplicants.map((entry) => entry.id));
+
+    // Use local rows only when DB fetch failed, or to enrich rows that still exist in DB.
+    localApplicants.forEach((entry) => {
+      if (!dbFetchSucceeded || mappedIds.has(entry.id)) {
+        mergedById.set(entry.id, entry);
+      }
+    });
+
+    mappedDbApplicants.forEach((entry) => {
+      const existing = mergedById.get(entry.id);
+      if (!existing) {
+        mergedById.set(entry.id, {
+          id: entry.id,
+          jobPostingId: entry.jobPostingId,
+          personalInfo: {
+            firstName: '',
+            lastName: '',
+            email: '',
+            phone: '',
+            address: '',
+            dateOfBirth: new Date('1995-01-01T00:00:00+08:00').toISOString(),
+          },
+          qualificationScore: 0,
+          status: entry.status,
+          education: [],
+          experience: [],
+          skills: [],
+          certifications: [],
+          documents: [],
+          applicationDate: new Date().toISOString(),
+          notes: [],
+          timeline: [],
+        });
+      }
+    });
+
+    setLiveApplicants(Array.from(mergedById.values()));
+  };
+
   useEffect(() => {
     ensureRecruitmentSeedData();
     const loadedJobs = getJobPostings();
@@ -139,7 +275,32 @@ export const JobPostingsPage = () => {
     setJobs(normalizedJobs);
     // Normalize derived stores (legacy jobs/options) from the current source-of-truth list.
     saveJobPostings(normalizedJobs);
-    setLiveApplicants(getApplicants());
+    void resolveLiveApplicants(normalizedJobs);
+  }, []);
+
+  useEffect(() => {
+    const refreshApplicants = () => {
+      const currentJobs = getJobPostings();
+      void resolveLiveApplicants(currentJobs);
+    };
+
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === 'cictrix_qualified_applicants') {
+        refreshApplicants();
+      }
+    };
+
+    window.addEventListener('focus', refreshApplicants);
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('cictrix:applicants-updated', refreshApplicants as EventListener);
+    window.addEventListener('cictrix:job-postings-updated', refreshApplicants as EventListener);
+
+    return () => {
+      window.removeEventListener('focus', refreshApplicants);
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('cictrix:applicants-updated', refreshApplicants as EventListener);
+      window.removeEventListener('cictrix:job-postings-updated', refreshApplicants as EventListener);
+    };
   }, []);
 
   const applicantCountsByJob = useMemo(() => {

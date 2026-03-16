@@ -21,12 +21,21 @@ import {
     ensureRecruitmentSeedData,
     formatPHDate,
     formatPHDateTime,
+  generateEmployeeId,
     getApplicants,
     getAuthoritativeJobPostings,
+  getEmployeeRecords,
+  getNewlyHired,
     saveApplicants,
+  saveEmployeeRecords,
+  saveNewlyHired,
 } from '../lib/recruitmentData';
+import {
+  getEmployeePortalAccounts,
+  upsertEmployeePortalAccount,
+} from '../lib/employeePortalData';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../lib/supabase';
-import { Applicant, ApplicantStatus, JobPosting } from '../types/recruitment.types';
+import { Applicant, ApplicantStatus, JobPosting, NewlyHired } from '../types/recruitment.types';
 import { RecruitmentNavigationGuide } from './RecruitmentNavigationGuide';
 import { Sidebar } from './Sidebar';
 
@@ -172,7 +181,50 @@ const STATUS_COLORS: Record<ApplicantStatus, string> = {
 
 const normalizeText = (value: string) => String(value ?? '').trim().toLowerCase();
 
+const normalizeUsername = (value: string) => String(value ?? '').trim().toLowerCase();
+
+const createUniqueUsername = (
+  applicant: Applicant,
+  occupiedUsernames: Set<string>
+) => {
+  const emailBase = String(applicant.personalInfo.email ?? '').split('@')[0]?.trim();
+  const nameBase = `${normalizeText(applicant.personalInfo.firstName)}.${normalizeText(applicant.personalInfo.lastName)}`.replace(/\.+/g, '.');
+  const sanitizedBase = (emailBase || nameBase || 'employee').replace(/[^a-z0-9.]/g, '');
+
+  let candidate = sanitizeUsername(`${sanitizedBase}.emp`);
+  let counter = 1;
+
+  while (occupiedUsernames.has(candidate)) {
+    counter += 1;
+    candidate = sanitizeUsername(`${sanitizedBase}.emp${counter}`);
+  }
+
+  occupiedUsernames.add(candidate);
+  return candidate;
+};
+
+const sanitizeUsername = (value: string) => normalizeUsername(value).replace(/\.{2,}/g, '.').replace(/^\.|\.$/g, '');
+
+const createTemporaryPassword = () => {
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghijkmnopqrstuvwxyz';
+  const digits = '23456789';
+  const symbols = '!@#$%';
+  const pick = (chars: string) => chars[Math.floor(Math.random() * chars.length)];
+
+  return `${pick(upper)}${pick(lower)}${pick(lower)}${pick(digits)}${pick(digits)}${pick(symbols)}${pick(upper)}${pick(lower)}`;
+};
+
+const toStatusDisplayLabel = (status: ApplicantStatus | string) => {
+  const normalized = normalizeText(String(status ?? ''));
+  if (normalized === 'recommended for hiring' || normalized === 'qualified') {
+    return 'Qualified Applicants';
+  }
+  return String(status ?? '');
+};
+
 const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
+  if (!isMockModeEnabled) return 'supabase';
   try {
     const mode = localStorage.getItem('cictrix_data_source_mode');
     return mode === 'local' ? 'local' : 'supabase';
@@ -279,6 +331,7 @@ export const QualifiedApplicantsPage = () => {
   const navigate = useNavigate();
   const { jobId } = useParams();
   const isJobPostsView = location.pathname === '/admin/rsp/jobs';
+  const isApplicantListView = isJobPostsView || Boolean(jobId);
 
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [jobs, setJobs] = useState<JobPosting[]>([]);
@@ -305,17 +358,23 @@ export const QualifiedApplicantsPage = () => {
   const [toast, setToast] = useState('');
   const [noteDraft, setNoteDraft] = useState('');
   const [documentActionBusy, setDocumentActionBusy] = useState<string | null>(null);
+  const [statusDecisionLocked, setStatusDecisionLocked] = useState(false);
+  const [disqualifyReasonDraft, setDisqualifyReasonDraft] = useState('');
+  const [pendingStatusAction, setPendingStatusAction] = useState<null | {
+    applicantId: string;
+    action: 'qualify' | 'disqualify';
+    nextStatus: ApplicantStatus;
+  }>(null);
+  const [selectedHireApplicantIds, setSelectedHireApplicantIds] = useState<string[]>([]);
+  const [showHireConfirmModal, setShowHireConfirmModal] = useState(false);
 
   const loadQualifiedApplicantsData = async () => {
     ensureRecruitmentSeedData();
 
     const canonicalJobs = getAuthoritativeJobPostings();
-    const activeCanonicalJobs = canonicalJobs.filter(
-      (job) => normalizeText(String(job?.status ?? '')) === 'active'
-    );
 
-    if (activeCanonicalJobs.length > 0) {
-      setJobs(activeCanonicalJobs);
+    if (canonicalJobs.length > 0) {
+      setJobs(canonicalJobs);
     }
 
     const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
@@ -332,12 +391,12 @@ export const QualifiedApplicantsPage = () => {
 
     let [applicantsRes, evaluationsRes, attachmentsRes, jobPostingsRes] = await fetchBundle(primaryClient);
 
-    const primaryApplicants =
-      applicantsRes.status === 'fulfilled' && !applicantsRes.value.error && Array.isArray(applicantsRes.value.data)
-        ? applicantsRes.value.data
-        : [];
+    const primaryApplicantsFetchSucceeded =
+      applicantsRes.status === 'fulfilled' && !applicantsRes.value.error && Array.isArray(applicantsRes.value.data);
 
-    if (primaryApplicants.length === 0 && !isMockModeEnabled) {
+    // Fallback only on fetch failure, not on empty result sets.
+    // Empty DB result is valid and must be reflected in the UI (e.g., deleted applicants).
+    if (!primaryApplicantsFetchSucceeded && !isMockModeEnabled) {
       [applicantsRes, evaluationsRes, attachmentsRes, jobPostingsRes] = await fetchBundle(secondaryClient);
     }
 
@@ -361,7 +420,7 @@ export const QualifiedApplicantsPage = () => {
         ? jobPostingsRes.value.data
         : [];
 
-    if (activeCanonicalJobs.length === 0 && dbJobPostings.length > 0) {
+    if (canonicalJobs.length === 0 && dbJobPostings.length > 0) {
       const mappedJobs: JobPosting[] = dbJobPostings.map((row: any, index: number) => ({
         id: String(row?.id ?? `db-job-${index + 1}`),
         jobCode: String(row?.job_code ?? row?.item_number ?? `DB-${index + 1}`),
@@ -389,10 +448,7 @@ export const QualifiedApplicantsPage = () => {
         applicantCount: Number(row?.applicant_count ?? 0),
         qualifiedCount: Number(row?.qualified_count ?? 0),
       }));
-      const activeMappedJobs = mappedJobs.filter(
-        (job) => normalizeText(String(job?.status ?? '')) === 'active'
-      );
-      setJobs(activeMappedJobs);
+      setJobs(mappedJobs);
     }
 
     const evaluationMap = new Map<string, EvaluationSnapshot>();
@@ -421,8 +477,8 @@ export const QualifiedApplicantsPage = () => {
       attachmentMap.set(applicantId, current);
     });
 
-    const jobsSource: JobPosting[] = activeCanonicalJobs.length > 0
-      ? activeCanonicalJobs
+    const jobsSource: JobPosting[] = canonicalJobs.length > 0
+      ? canonicalJobs
       : dbJobPostings
           .map((row: any, index: number) => ({
             id: String(row?.id ?? `db-job-${index + 1}`),
@@ -450,24 +506,25 @@ export const QualifiedApplicantsPage = () => {
             postedBy: 'System',
             applicantCount: Number(row?.applicant_count ?? 0),
             qualifiedCount: Number(row?.qualified_count ?? 0),
-          }))
-          .filter((job: JobPosting) => normalizeText(String(job?.status ?? '')) === 'active');
+          }));
 
-    const activeTitleSet = new Set(
+    const knownTitleSet = new Set(
       jobsSource
         .map((job: JobPosting) => normalizeText(String(job?.title ?? '')))
         .filter(Boolean)
     );
 
     const mappedApplicants: Applicant[] = dbApplicants
-      .filter((row: any) => {
-        const position = normalizeText(String(row?.position ?? ''));
-        return Boolean(position) && activeTitleSet.has(position);
-      })
       .map((row: any) => {
       const applicantId = String(row?.id ?? crypto.randomUUID());
       const position = String(row?.position ?? '');
-      const matchedJob = jobsSource.find((job: JobPosting) => normalizeText(job.title) === normalizeText(position));
+      const rowJobId = String(row?.job_posting_id ?? '').trim();
+      const matchedJob =
+        jobsSource.find((job: JobPosting) => normalizeText(job.title) === normalizeText(position)) ||
+        jobsSource.find((job: JobPosting) => String(job.id) === rowJobId);
+      const resolvedJobPostingId =
+        matchedJob?.id ??
+        (rowJobId || (knownTitleSet.has(normalizeText(position)) ? normalizeText(position) : 'unposted'));
       const evalSnapshot = evaluationMap.get(applicantId);
       const persistedScore = typeof row?.total_score === 'number' ? row.total_score : 0;
       const qualificationScore = evalSnapshot ? Math.max(persistedScore, evalSnapshot.score) : persistedScore;
@@ -480,7 +537,7 @@ export const QualifiedApplicantsPage = () => {
 
       return {
         id: applicantId,
-        jobPostingId: matchedJob?.id ?? String(row?.job_posting_id ?? 'unposted'),
+        jobPostingId: resolvedJobPostingId,
         personalInfo: {
           firstName: String(row?.first_name ?? ''),
           lastName: String(row?.last_name ?? ''),
@@ -509,8 +566,7 @@ export const QualifiedApplicantsPage = () => {
       };
     });
 
-    const activeJobIdSet = new Set(jobsSource.map((job: JobPosting) => job.id));
-    const storedApplicants = getApplicants().filter((row) => activeJobIdSet.has(row.jobPostingId));
+    const storedApplicants = getApplicants();
 
     const mergedById = new Map<string, Applicant>();
 
@@ -519,9 +575,14 @@ export const QualifiedApplicantsPage = () => {
       mergedById.set(row.id, row);
     });
 
-    // Overlay with recruitment store values so UI stays aligned with job card counts/source-of-truth.
+    // Overlay only matching local rows when DB fetch is authoritative.
+    // This preserves local enrichments but prevents re-inserting deleted DB rows.
+    const allowLocalOnlyRows = !primaryApplicantsFetchSucceeded;
+    const mappedIds = new Set(mappedApplicants.map((row) => row.id));
     storedApplicants.forEach((row) => {
-      mergedById.set(row.id, row);
+      if (allowLocalOnlyRows || mappedIds.has(row.id)) {
+        mergedById.set(row.id, row);
+      }
     });
 
     const mergedApplicants = Array.from(mergedById.values());
@@ -553,7 +614,9 @@ export const QualifiedApplicantsPage = () => {
     });
     const dedupedApplicants = Array.from(seenEmailJob.values());
     setApplicants(dedupedApplicants);
-    if (dedupedApplicants.length > 0) {
+
+    // Keep local cache aligned to authoritative source to avoid stale rows reappearing.
+    if (primaryApplicantsFetchSucceeded) {
       saveApplicants(dedupedApplicants);
     }
   };
@@ -591,9 +654,14 @@ export const QualifiedApplicantsPage = () => {
   const filteredRows = useMemo(() => {
     const rows = applicants.filter((applicant) => {
       // Keep the main Qualified Applicants page strict, but allow job-specific and Job Posts views to show all rows.
-      if (!jobId && !isJobPostsView) {
+      if (!isApplicantListView) {
+        const normalizedStatus = normalizeText(applicant.status);
         const isQualified = isAdminQualifiedStatus(applicant.status);
-        if (!isQualified) return false;
+        const isReviewedOrCompleted =
+          normalizedStatus.includes('review') ||
+          normalizedStatus.includes('interview') ||
+          normalizedStatus.includes('completed');
+        if (!isQualified && !isReviewedOrCompleted) return false;
       }
 
       const matchesSearch =
@@ -602,19 +670,19 @@ export const QualifiedApplicantsPage = () => {
           .toLowerCase()
           .includes(search.toLowerCase());
       const matchesJob = (jobId ? applicant.jobPostingId === jobId : jobFilter === 'all' || applicant.jobPostingId === jobFilter);
-      const matchesStatus = isJobPostsView
+      const matchesStatus = isApplicantListView
         ? jobPostsStatusFilter === 'all' || toJobPostsStatusBucket(applicant.status) === jobPostsStatusFilter
         : statusFilter.length === 0 || statusFilter.includes(applicant.status);
-      const matchesScore = isJobPostsView ? true : applicant.qualificationScore >= scoreMin;
+      const matchesScore = isApplicantListView ? true : applicant.qualificationScore >= scoreMin;
       const applied = new Date(applicant.applicationDate).getTime();
-      const fromOkay = isJobPostsView ? true : (!dateFrom || applied >= new Date(dateFrom).getTime());
-      const toOkay = isJobPostsView ? true : (!dateTo || applied <= new Date(dateTo).getTime() + 86400000);
+      const fromOkay = isApplicantListView ? true : (!dateFrom || applied >= new Date(dateFrom).getTime());
+      const toOkay = isApplicantListView ? true : (!dateTo || applied <= new Date(dateTo).getTime() + 86400000);
       return matchesSearch && matchesJob && matchesStatus && matchesScore && fromOkay && toOkay;
     });
 
     const sorted = [...rows];
     sorted.sort((left, right) => {
-      if (isJobPostsView) {
+      if (isApplicantListView) {
         return new Date(right.applicationDate).getTime() - new Date(left.applicationDate).getTime();
       }
       if (sortBy === 'Qualification Score') return right.qualificationScore - left.qualificationScore;
@@ -626,7 +694,7 @@ export const QualifiedApplicantsPage = () => {
       return new Date(right.applicationDate).getTime() - new Date(left.applicationDate).getTime();
     });
     return sorted;
-  }, [applicants, search, jobId, jobFilter, statusFilter, jobPostsStatusFilter, scoreMin, dateFrom, dateTo, sortBy, isJobPostsView]);
+  }, [applicants, search, jobId, jobFilter, statusFilter, jobPostsStatusFilter, scoreMin, dateFrom, dateTo, sortBy, isApplicantListView]);
 
   const getQualifiedStatus = (status: ApplicantStatus): 'Completed' | 'Pending' => {
     const normalized = normalizeText(status);
@@ -654,8 +722,10 @@ export const QualifiedApplicantsPage = () => {
     return applicants.filter((applicant) => {
       const matchesJob = jobId ? applicant.jobPostingId === jobId : true;
       if (!matchesJob) return false;
+      const normalizedStatus = normalizeText(applicant.status);
       const isQualified = isAdminQualifiedStatus(applicant.status) || getQualifiedStatus(applicant.status) === 'Completed';
-      return isQualified;
+      const isReviewed = normalizedStatus.includes('review') || normalizedStatus.includes('interview');
+      return isQualified || isReviewed;
     });
   }, [applicants, jobId]);
 
@@ -698,6 +768,174 @@ export const QualifiedApplicantsPage = () => {
     return rows.sort((a, b) => new Date(b.applicationDate).getTime() - new Date(a.applicationDate).getTime());
   }, [qualifiedBaseRows, jobMap, qualifiedOffice, qualifiedPosition, qualifiedTab, search]);
 
+  const canManageHiring = location.pathname.startsWith('/admin/rsp');
+  const isCompletedHireMode = !isApplicantListView && qualifiedTab === 'completed';
+
+  useEffect(() => {
+    // Keep selection valid for the currently visible completed rows only.
+    if (!isCompletedHireMode) {
+      setSelectedHireApplicantIds([]);
+      return;
+    }
+    const visibleIds = new Set(qualifiedRows.map((row) => row.id));
+    setSelectedHireApplicantIds((prev) => prev.filter((id) => visibleIds.has(id)));
+  }, [isCompletedHireMode, qualifiedRows]);
+
+  const toggleHireSelection = (applicantId: string) => {
+    setSelectedHireApplicantIds((prev) =>
+      prev.includes(applicantId)
+        ? prev.filter((id) => id !== applicantId)
+        : [...prev, applicantId]
+    );
+  };
+
+  const handleConfirmHireApplicants = async () => {
+    if (!canManageHiring || selectedHireApplicantIds.length === 0) return;
+
+    const selectedRows = qualifiedRows.filter((row) => selectedHireApplicantIds.includes(row.id));
+    if (selectedRows.length === 0) {
+      setShowHireConfirmModal(false);
+      return;
+    }
+
+    const existingNewlyHired = getNewlyHired();
+    const existingApplicantIds = new Set(existingNewlyHired.map((item) => item.applicantId));
+    const employeeRecords = getEmployeeRecords();
+    const existingAccounts = getEmployeePortalAccounts();
+    const occupiedUsernames = new Set(existingAccounts.map((account) => normalizeUsername(account.username)));
+    let sequence = employeeRecords.length + 1;
+    const nowIso = new Date().toISOString();
+
+    const hiredIdSet = new Set(selectedRows.map((row) => row.id));
+    const toAddNewlyHired: NewlyHired[] = [];
+
+    selectedRows.forEach((row) => {
+      const fullName = `${row.personalInfo.firstName} ${row.personalInfo.lastName}`.trim();
+      const employeeNumber = generateEmployeeId(sequence++);
+      const username = createUniqueUsername(row, occupiedUsernames);
+      const temporaryPassword = createTemporaryPassword();
+
+      // Store employee credential account linked to employee profile.
+      upsertEmployeePortalAccount({
+        id: `employee-account-${employeeNumber}`,
+        username,
+        password: temporaryPassword,
+        employee: {
+          employeeId: employeeNumber,
+          fullName,
+          email: row.personalInfo.email || `${username}@employee.local`,
+          dateOfBirth: row.personalInfo.dateOfBirth || '',
+          age: 0,
+          gender: 'Prefer not to say',
+          civilStatus: 'Single',
+          nationality: 'Filipino',
+          mobileNumber: row.personalInfo.phone || '',
+          homeAddress: row.personalInfo.address || '',
+          emergencyContactName: '',
+          emergencyRelationship: '',
+          emergencyContactNumber: '',
+          sssNumber: '',
+          philhealthNumber: '',
+          pagibigNumber: '',
+          tinNumber: '',
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        },
+      });
+
+      if (!employeeRecords.some((record) => record.employeeId === employeeNumber)) {
+        employeeRecords.push({
+          id: crypto.randomUUID(),
+          employeeId: employeeNumber,
+          name: fullName,
+          position: jobMap.get(row.jobPostingId)?.title ?? 'Unassigned Position',
+          department: jobMap.get(row.jobPostingId)?.department ?? 'Unassigned Department',
+          division: jobMap.get(row.jobPostingId)?.division,
+          startDate: nowIso,
+        });
+      }
+
+      if (!existingApplicantIds.has(row.id)) {
+        toAddNewlyHired.push({
+          id: `hire-${row.id}-${Date.now()}`,
+          applicantId: row.id,
+          employeeInfo: {
+            firstName: row.personalInfo.firstName,
+            lastName: row.personalInfo.lastName,
+            email: row.personalInfo.email,
+            phone: row.personalInfo.phone,
+            emergencyContact: {
+              name: '',
+              relationship: '',
+              phone: '',
+            },
+            governmentIds: {},
+          },
+          position: jobMap.get(row.jobPostingId)?.title ?? 'Unassigned Position',
+          department: jobMap.get(row.jobPostingId)?.department ?? 'Unassigned Department',
+          division: jobMap.get(row.jobPostingId)?.division,
+          employmentType: 'Permanent',
+          dateHired: nowIso,
+          expectedStartDate: nowIso,
+          status: 'Pending Onboarding',
+          onboardingProgress: 0,
+          onboardingChecklist: [
+            {
+              category: 'Documentation',
+              item: 'Sign employment contract',
+              completed: false,
+            },
+            {
+              category: 'Orientation',
+              item: 'Attend orientation',
+              completed: false,
+            },
+          ],
+          documents: [],
+          notes: [
+            {
+              author: 'RSP Admin',
+              content: `Hired. Credentials generated (username: ${username}).`,
+              date: nowIso,
+            },
+          ],
+          timeline: [
+            {
+              event: 'Applicant marked as Hired and converted to Employee account',
+              date: nowIso,
+              actor: 'RSP Admin',
+            },
+          ],
+          employeeId: employeeNumber,
+        });
+      }
+    });
+
+    saveEmployeeRecords(employeeRecords);
+    if (toAddNewlyHired.length > 0) {
+      saveNewlyHired([...existingNewlyHired, ...toAddNewlyHired]);
+    }
+
+    // Best-effort server sync for status = Hired; local state source remains recruitment store.
+    try {
+      await supabase.from('applicants').update({ status: 'Hired' as any }).in('id', Array.from(hiredIdSet));
+    } catch {
+      // Non-fatal in local/mock mode.
+    }
+
+    const remainingApplicants = applicants.filter((row) => !hiredIdSet.has(row.id));
+    setApplicants(remainingApplicants);
+    saveApplicants(remainingApplicants);
+
+    setSelectedHireApplicantIds([]);
+    setShowHireConfirmModal(false);
+    setToast(
+      selectedRows.length === 1
+        ? 'Applicant successfully hired and credentials generated.'
+        : `${selectedRows.length} applicants successfully hired and credentials generated.`
+    );
+  };
+
   const qualifiedTabCounts = useMemo(() => {
     let completed = 0;
     let pending = 0;
@@ -714,24 +952,91 @@ export const QualifiedApplicantsPage = () => {
     };
   }, [qualifiedBaseRows]);
 
-  const updateApplicantStatus = (ids: string[], nextStatus: ApplicantStatus) => {
+  const updateApplicantStatus = (ids: string[], nextStatus: ApplicantStatus, reason?: string) => {
     const timestamp = new Date().toISOString();
+    const trimmedReason = (reason ?? '').trim();
+    const nextStatusLabel = toStatusDisplayLabel(nextStatus);
     const nextApplicants = applicants.map((applicant) => {
       if (!ids.includes(applicant.id)) return applicant;
+      const currentNotes = Array.isArray(applicant.notes) ? applicant.notes : [];
+      const currentTimeline = Array.isArray(applicant.timeline) ? applicant.timeline : [];
+      const eventLabel = trimmedReason
+        ? `Status Updated: ${nextStatusLabel} (Reason: ${trimmedReason})`
+        : `Status Updated: ${nextStatusLabel}`;
       return {
         ...applicant,
         status: nextStatus,
-        timeline: [...applicant.timeline, { event: `Status Updated: ${nextStatus}`, date: timestamp, actor: 'HR Admin' }],
+        notes: trimmedReason
+          ? [{ author: 'HR Admin', content: `Disqualification reason: ${trimmedReason}`, date: timestamp, pinned: false }, ...currentNotes]
+          : currentNotes,
+        timeline: [...currentTimeline, { event: eventLabel, date: timestamp, actor: 'HR Admin' }],
       };
     });
     setApplicants(nextApplicants);
     saveApplicants(nextApplicants);
-    window.dispatchEvent(new CustomEvent('cictrix:applicants-updated'));
     if (activeApplicant && ids.includes(activeApplicant.id)) {
       const updated = nextApplicants.find((item) => item.id === activeApplicant.id) ?? null;
       setActiveApplicant(updated);
     }
-    setToast(`Status updated to ${nextStatus}.`);
+    setToast(`Status updated to ${nextStatusLabel}.`);
+  };
+
+  useEffect(() => {
+    if (!activeApplicant) {
+      setStatusDecisionLocked(false);
+      return;
+    }
+
+    const normalizedStatus = activeApplicant.status.toLowerCase();
+    const shouldLock =
+      normalizedStatus.includes('not qualified') ||
+      normalizedStatus.includes('disqual') ||
+      normalizedStatus.includes('recommended for hiring') ||
+      normalizedStatus.includes('qualified') ||
+      normalizedStatus.includes('hired');
+
+    setStatusDecisionLocked(shouldLock);
+  }, [activeApplicant?.status]);
+
+  const handleDisqualifyAction = (applicantId: string) => {
+    setDisqualifyReasonDraft('');
+    setPendingStatusAction({
+      applicantId,
+      action: 'disqualify',
+      nextStatus: 'Not Qualified',
+    });
+  };
+
+  const handleQualifyAction = (applicantId: string) => {
+    setDisqualifyReasonDraft('');
+    setPendingStatusAction({
+      applicantId,
+      action: 'qualify',
+      nextStatus: 'Recommended for Hiring',
+    });
+  };
+
+  const handleShortlistAction = (applicantId: string) => {
+    // Shortlist should not lock decision buttons.
+    setStatusDecisionLocked(false);
+    updateApplicantStatus([applicantId], 'Shortlisted');
+  };
+
+  const confirmPendingStatusAction = () => {
+    if (!pendingStatusAction) return;
+    const isDisqualifyAction = pendingStatusAction.action === 'disqualify';
+    const trimmedReason = disqualifyReasonDraft.trim();
+    if (isDisqualifyAction && trimmedReason.length === 0) return;
+
+    setStatusDecisionLocked(true);
+    updateApplicantStatus([pendingStatusAction.applicantId], pendingStatusAction.nextStatus, isDisqualifyAction ? trimmedReason : undefined);
+    setDisqualifyReasonDraft('');
+    setPendingStatusAction(null);
+  };
+
+  const cancelPendingStatusAction = () => {
+    setDisqualifyReasonDraft('');
+    setPendingStatusAction(null);
   };
 
   const fetchApplicantAttachments = async (applicantId: string): Promise<ApplicantAttachmentRow[]> => {
@@ -797,8 +1102,14 @@ export const QualifiedApplicantsPage = () => {
       applicant.id === activeApplicant.id
         ? {
             ...applicant,
-            notes: [{ author: 'HR Admin', content: noteDraft.trim(), date: now, pinned: false }, ...applicant.notes],
-            timeline: [...applicant.timeline, { event: 'Note Added', date: now, actor: 'HR Admin' }],
+            notes: [
+              { author: 'HR Admin', content: noteDraft.trim(), date: now, pinned: false },
+              ...(Array.isArray(applicant.notes) ? applicant.notes : []),
+            ],
+            timeline: [
+              ...(Array.isArray(applicant.timeline) ? applicant.timeline : []),
+              { event: 'Note Added', date: now, actor: 'HR Admin' },
+            ],
           }
         : applicant
     );
@@ -1040,9 +1351,9 @@ export const QualifiedApplicantsPage = () => {
             {jobId && selectedJobTitle ? (
               <p className="mb-2 text-sm text-slate-500">Job Postings &gt; {selectedJobTitle} &gt; Applicants</p>
             ) : null}
-            <h1 className={`${isJobPostsView ? 'text-2xl' : 'text-3xl'} font-bold text-slate-900`}>{isJobPostsView ? 'Job Posts' : 'Qualified Applicants'}</h1>
+            <h1 className={`${isApplicantListView ? 'text-2xl' : 'text-3xl'} font-bold text-slate-900`}>{isApplicantListView ? 'Applicants' : 'Qualified Applicants'}</h1>
           </div>
-          {!isJobPostsView && (
+          {!isApplicantListView && (
             <button className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700" onClick={() => setShowGuide(true)}>
               How to Navigate
             </button>
@@ -1050,7 +1361,7 @@ export const QualifiedApplicantsPage = () => {
         </header>
 
         <section className="mt-4 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-          {isJobPostsView ? (
+          {isApplicantListView ? (
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
               <div className="relative lg:col-span-2">
                 <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
@@ -1128,27 +1439,43 @@ export const QualifiedApplicantsPage = () => {
                   ))}
                 </select>
               </div>
+
+              {isCompletedHireMode && (
+                <div className="mt-4 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-sm font-medium text-slate-700">
+                    Selected applicants: <span className="font-bold text-slate-900">{selectedHireApplicantIds.length}</span>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowHireConfirmModal(true)}
+                    disabled={!canManageHiring || selectedHireApplicantIds.length === 0}
+                    className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Save and Generate Credentials
+                  </button>
+                </div>
+              )}
             </>
           )}
         </section>
 
-        {isJobPostsView && (
+        {isApplicantListView && (
           <p className="mt-4 text-base text-slate-700">
             Showing <span className="font-semibold text-slate-900">{filteredRows.length}</span> applicants
           </p>
         )}
 
         <section className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          {isJobPostsView && (
+          {isApplicantListView && (
             <div className="border-b border-slate-200 px-5 py-3 text-base text-slate-700">
               Showing <span className="font-semibold text-slate-900">{filteredRows.length}</span> applicants
             </div>
           )}
           <div className="overflow-x-auto">
-            <table className={`min-w-full text-left ${isJobPostsView ? 'text-sm' : 'text-sm'}`}>
-              <thead className={isJobPostsView ? 'bg-slate-50 text-sm uppercase tracking-wide text-slate-700' : 'bg-slate-100 text-xs uppercase tracking-wide text-slate-500'}>
+            <table className={`min-w-full text-left ${isApplicantListView ? 'text-sm' : 'text-sm'}`}>
+              <thead className={isApplicantListView ? 'bg-slate-50 text-sm uppercase tracking-wide text-slate-700' : 'bg-slate-100 text-xs uppercase tracking-wide text-slate-500'}>
                 <tr>
-                  {isJobPostsView ? (
+                  {isApplicantListView ? (
                     <>
                       <th className="px-5 py-4">Applicant Name</th>
                       <th className="px-5 py-4">Contact Info</th>
@@ -1157,6 +1484,7 @@ export const QualifiedApplicantsPage = () => {
                     </>
                   ) : (
                     <>
+                      {isCompletedHireMode && <th className="px-5 py-4">SELECT</th>}
                       <th className="px-5 py-4">APPLICANT NAME</th>
                       <th className="px-5 py-4">POSITION APPLIED FOR</th>
                       <th className="px-5 py-4">OFFICE / DEPARTMENT</th>
@@ -1169,7 +1497,7 @@ export const QualifiedApplicantsPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {(isJobPostsView ? filteredRows : qualifiedRows).map((applicant) => {
+                {(isApplicantListView ? filteredRows : qualifiedRows).map((applicant) => {
                   const fullName = `${applicant.personalInfo.firstName} ${applicant.personalInfo.lastName}`;
                   const job = jobMap.get(applicant.jobPostingId);
                   const totalScore = Math.round(applicant.qualificationScore || 0);
@@ -1178,9 +1506,9 @@ export const QualifiedApplicantsPage = () => {
                   return (
                     <tr
                       key={applicant.id}
-                      className={isJobPostsView ? 'border-t border-slate-200 hover:bg-slate-50' : 'border-t border-slate-100 hover:bg-slate-50'}
+                      className={isApplicantListView ? 'border-t border-slate-200 hover:bg-slate-50' : 'border-t border-slate-100 hover:bg-slate-50'}
                     >
-                      {isJobPostsView ? (
+                      {isApplicantListView ? (
                         <>
                           <td className="px-5 py-4 font-medium text-slate-900">
                             <button type="button" className="text-left hover:text-blue-700" onClick={() => void openApplicantDetails(applicant)}>
@@ -1198,6 +1526,17 @@ export const QualifiedApplicantsPage = () => {
                         </>
                       ) : (
                         <>
+                          {isCompletedHireMode && (
+                            <td className="px-5 py-4">
+                              <input
+                                type="checkbox"
+                                checked={selectedHireApplicantIds.includes(applicant.id)}
+                                onChange={() => toggleHireSelection(applicant.id)}
+                                className="h-4 w-4 cursor-pointer rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                aria-label={`Select ${fullName} for hiring`}
+                              />
+                            </td>
+                          )}
                           <td className="px-5 py-4 font-semibold text-blue-600 underline decoration-blue-200 underline-offset-2">
                             <button
                               type="button"
@@ -1229,9 +1568,9 @@ export const QualifiedApplicantsPage = () => {
                     </tr>
                   );
                 })}
-                {!isJobPostsView && qualifiedRows.length === 0 && (
+                {!isApplicantListView && qualifiedRows.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-5 py-8 text-center text-base text-slate-500">No qualified applicants found.</td>
+                    <td colSpan={isCompletedHireMode ? 8 : 7} className="px-5 py-8 text-center text-base text-slate-500">No qualified applicants found.</td>
                   </tr>
                 )}
               </tbody>
@@ -1264,18 +1603,37 @@ export const QualifiedApplicantsPage = () => {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  {(() => {
+                    const lockDecisionButtons = statusDecisionLocked;
+                    return (
+                      <>
                   <button className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-base font-medium text-slate-700" onClick={() => setShowMessageDialog(true)}>
                     <Plane className="h-4 w-4" /> Send Message
                   </button>
-                  <button className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-white px-4 py-2 text-base font-medium text-rose-600" onClick={() => updateApplicantStatus([activeApplicant.id], 'Not Qualified')}>
+                  <button
+                    className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-white px-4 py-2 text-base font-medium text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={() => handleDisqualifyAction(activeApplicant.id)}
+                    disabled={lockDecisionButtons}
+                  >
                     <AlertCircle className="h-4 w-4" /> Disqualify
                   </button>
-                  <button className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-base font-semibold text-white" onClick={() => updateApplicantStatus([activeApplicant.id], 'Shortlisted')}>
+                  <button
+                    className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={() => handleShortlistAction(activeApplicant.id)}
+                    disabled={lockDecisionButtons}
+                  >
                     <Star className="h-4 w-4" /> Shortlist
                   </button>
-                  <button className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-base font-semibold text-white" onClick={() => updateApplicantStatus([activeApplicant.id], 'Recommended for Hiring')}>
+                  <button
+                    className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    onClick={() => handleQualifyAction(activeApplicant.id)}
+                    disabled={lockDecisionButtons}
+                  >
                     <CheckCircle2 className="h-4 w-4" /> Qualify
                   </button>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -1307,7 +1665,7 @@ export const QualifiedApplicantsPage = () => {
                 </div>
                 <h3 className="text-center text-2xl font-bold text-slate-900">{activeApplicant.personalInfo.firstName} {activeApplicant.personalInfo.lastName}</h3>
                 <div className="my-3 text-center">
-                  <span className={`rounded-full px-3 py-1 text-sm font-semibold ${STATUS_COLORS[activeApplicant.status]}`}>{activeApplicant.status}</span>
+                  <span className={`rounded-full px-3 py-1 text-sm font-semibold ${STATUS_COLORS[activeApplicant.status]}`}>{toStatusDisplayLabel(activeApplicant.status)}</span>
                 </div>
 
                 <div className="mt-5 space-y-4 border-t border-slate-200 pt-4 text-base">
@@ -1473,8 +1831,101 @@ export const QualifiedApplicantsPage = () => {
         </div>
       )}
 
+      {activeApplicant && pendingStatusAction && (
+        <div className="fixed inset-0 z-[140] bg-slate-900/70 p-4" onClick={cancelPendingStatusAction}>
+          <div
+            className="mx-auto mt-24 w-full max-w-lg rounded-2xl bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className={`rounded-t-2xl px-6 py-4 text-white ${pendingStatusAction.action === 'qualify' ? 'bg-green-600' : 'bg-rose-600'}`}>
+              <h3 className="text-xl font-semibold">Confirm Status Change</h3>
+            </div>
+            <div className="space-y-3 px-6 py-5 text-slate-700">
+              <p className="text-base">
+                {pendingStatusAction.action === 'qualify'
+                  ? 'Are you sure you want to qualify this applicant?'
+                  : 'Are you sure you want to disqualify this applicant?'}
+              </p>
+              <p className="text-sm text-slate-500">
+                This action will update the applicant status and lock the decision buttons.
+              </p>
+              {pendingStatusAction.action === 'disqualify' && (
+                <div>
+                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                    Reason for Disqualification <span className="text-rose-600">*</span>
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={disqualifyReasonDraft}
+                    onChange={(event) => setDisqualifyReasonDraft(event.target.value)}
+                    placeholder="Enter the reason for disqualifying this applicant..."
+                    className="w-full resize-none rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-100"
+                  />
+                  {disqualifyReasonDraft.trim().length === 0 && (
+                    <p className="mt-1 text-xs text-rose-600">Disqualification reason is required.</p>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
+              <button
+                type="button"
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
+                onClick={cancelPendingStatusAction}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={`rounded-xl px-4 py-2 text-sm font-semibold text-white ${pendingStatusAction.action === 'qualify' ? 'bg-green-600 hover:bg-green-700' : 'bg-rose-600 hover:bg-rose-700'}`}
+                onClick={confirmPendingStatusAction}
+                disabled={pendingStatusAction.action === 'disqualify' && disqualifyReasonDraft.trim().length === 0}
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {toast && (
         <div className="fixed bottom-6 right-6 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-lg">{toast}</div>
+      )}
+
+      {showHireConfirmModal && (
+        <div className="fixed inset-0 z-[145] bg-slate-900/70 p-4" onClick={() => setShowHireConfirmModal(false)}>
+          <div
+            className="mx-auto mt-24 w-full max-w-lg rounded-2xl bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="rounded-t-2xl bg-emerald-600 px-6 py-4 text-white">
+              <h3 className="text-xl font-semibold">Confirm Hiring</h3>
+            </div>
+            <div className="space-y-3 px-6 py-5 text-slate-700">
+              <p className="text-base">Are you sure you want to hire the selected applicant(s)?</p>
+              <p className="text-sm text-slate-500">
+                This will mark them as hired, generate temporary credentials, and move them to employee onboarding records.
+              </p>
+            </div>
+            <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
+              <button
+                type="button"
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700"
+                onClick={() => setShowHireConfirmModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => void handleConfirmHireApplicants()}
+                disabled={selectedHireApplicantIds.length === 0 || !canManageHiring}
+              >
+                Confirm and Hire
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <div className="fixed bottom-6 left-6 flex gap-2">

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Dialog } from '../../components/Dialog';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
+import { isPositionAssignedToInterviewer, resolveAssignedPositionsForInterviewer } from '../../lib/interviewerAccess';
 import { mockDatabase } from '../../lib/mockDatabase';
 import { ensureRecruitmentSeedData, getAuthoritativeJobPostings } from '../../lib/recruitmentData';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
@@ -72,6 +73,7 @@ const fetchEvaluationsFromClient = async (client: any): Promise<any[]> => {
 };
 
 const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
+  if (!isMockModeEnabled) return 'supabase';
   try {
     const mode = localStorage.getItem('cictrix_data_source_mode');
     return mode === 'local' ? 'local' : 'supabase';
@@ -123,6 +125,11 @@ const buildJobsFromPostings = (jobRows: RecruitmentJobPosting[], allApplicants: 
   };
 };
 
+const filterJobsByAssignments = (jobRows: RecruitmentJobPosting[], assignedPositions: string[]) => {
+  if (assignedPositions.length === 0) return [];
+  return jobRows.filter((job) => isPositionAssignedToInterviewer(String(job?.title ?? ''), assignedPositions));
+};
+
 export function InterviewerDashboard({ session }: { session?: InterviewerSessionInfo | null }) {
   const navigate = useNavigate();
   const [jobs, setJobs] = useState<JobPosting[]>([]);
@@ -138,6 +145,7 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [applicantToDelete, setApplicantToDelete] = useState<Applicant | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [assignedPositions, setAssignedPositions] = useState<string[]>([]);
 
   useEffect(() => {
     const syncJobs = () => {
@@ -147,6 +155,7 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
     const onStorage = (event: StorageEvent) => {
       if (
         !event.key ||
+        event.key === 'cictrix_rater_assigned_positions' ||
         event.key === 'cictrix_job_postings' ||
         event.key === 'cictrix_authoritative_job_postings'
       ) {
@@ -177,7 +186,9 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
       let allApplicants: any[] = [];
       let allEvaluations: any[] = [];
       ensureRecruitmentSeedData();
-      const canonicalJobRows = getAuthoritativeJobPostings();
+      const { positions } = await resolveAssignedPositionsForInterviewer(session?.email);
+      setAssignedPositions(positions);
+      const canonicalJobRows = filterJobsByAssignments(getAuthoritativeJobPostings(), positions);
 
       try {
         allApplicants = await fetchApplicantsFromClient(primaryClient);
@@ -199,12 +210,18 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
 
       // Single source of truth: use canonical RSP/Admin postings only.
       const { jobs: jobsFromPostings, visibleApplicants } = buildJobsFromPostings(canonicalJobRows, allApplicants);
+      const visibleApplicantIds = new Set(
+        visibleApplicants.map((applicant: any) => String(applicant?.id ?? '').trim()).filter(Boolean)
+      );
+      const visibleEvaluationCount = (allEvaluations || []).filter((evaluation: any) =>
+        visibleApplicantIds.has(String(evaluation?.applicant_id ?? '').trim())
+      ).length;
 
       setJobs(jobsFromPostings);
       setStats({
         totalJobs: jobsFromPostings.length,
         totalApplicants: visibleApplicants.length,
-        upcomingInterviews: allEvaluations.length,
+        upcomingInterviews: visibleEvaluationCount,
       });
     } catch (err) {
       console.error('Error initializing dashboard:', err);
@@ -321,7 +338,7 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
       ) : error ? (
         <div className="error-state">
           <p>❌ Error: {error}</p>
-          <button onClick={fetchJobsAndApplicants}>Retry</button>
+          <button onClick={() => void fetchJobsAndApplicants()}>Retry</button>
         </div>
       ) : (
         <>
@@ -369,7 +386,11 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
                 ) : (
                   <tr>
                     <td colSpan={5} className="empty-message">
-                      {searchTerm ? 'No job postings found matching your search.' : 'No active job postings available.'}
+                      {assignedPositions.length === 0
+                        ? 'No job positions are assigned to your interviewer account yet.'
+                        : searchTerm
+                          ? 'No job postings found matching your search.'
+                          : 'No active job postings available.'}
                     </td>
                   </tr>
                 )}

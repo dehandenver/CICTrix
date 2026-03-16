@@ -3,7 +3,6 @@ import {
     Bell,
     BookOpen,
     Calendar,
-    CheckCircle,
     ClipboardCheck,
     FileText,
     HelpCircle,
@@ -12,7 +11,6 @@ import {
     LogOut,
     Settings,
     Target,
-    TrendingUp,
     User,
     Users,
 } from 'lucide-react';
@@ -27,6 +25,7 @@ import {
     XAxis,
     YAxis,
 } from 'recharts';
+import { EmployeeDevelopment } from './EmployeeDevelopment';
 import { SeminarEnrollment } from './SeminarEnrollment';
 import { TrainingCourses } from './TrainingCourses';
 
@@ -37,9 +36,7 @@ type MenuId =
   | 'dashboard'
   | 'training-courses'
   | 'seminar-enrollment'
-  | 'analytics'
-  | 'compliance'
-  | 'participants'
+  | 'employee-progress'
   | 'settings';
 
 type MenuItem = {
@@ -126,11 +123,9 @@ const monthlyTrainingData = [
 
 const LND_MENU: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', sublabel: 'Overview and KPIs', icon: LayoutDashboard },
-  { id: 'training-courses', label: 'Training Programs', sublabel: 'Courses and sessions', icon: BookOpen },
+  { id: 'training-courses', label: 'Training Courses', sublabel: 'Courses and sessions', icon: BookOpen },
   { id: 'seminar-enrollment', label: 'Seminar Enrollment', sublabel: 'Registrations and slots', icon: ClipboardCheck },
-  { id: 'analytics', label: 'Performance Trends', sublabel: 'Insights and growth', icon: TrendingUp },
-  { id: 'compliance', label: 'Compliance', sublabel: 'Completion tracking', icon: CheckCircle },
-  { id: 'participants', label: 'Participants', sublabel: 'Employees and ratings', icon: Users },
+  { id: 'employee-progress', label: 'Employee Development', sublabel: 'Employees and ratings', icon: Users },
   { id: 'settings', label: 'Settings', sublabel: 'Division preferences', icon: Settings },
 ];
 
@@ -447,6 +442,8 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
             <TrainingCourses />
           ) : activeModule === 'seminar-enrollment' ? (
             <SeminarEnrollment />
+          ) : activeModule === 'employee-progress' ? (
+            <EmployeeDevelopment />
           ) : (
             <PlaceholderPage label={LND_MENU.find((item) => item.id === activeModule)?.label || 'Module'} />
           )}

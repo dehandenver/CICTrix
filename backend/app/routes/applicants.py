@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Query
 from typing import List
-from app.models.applicant import ApplicantResponse, ApplicantCreate, ApplicantUpdate
+from app.models.applicant import ApplicantResponse, ApplicantCreate, ApplicantUpdate, StatusUpdateRequest
 from app.models.user import UserRole
 from app.core.supabase_client import db
 from app.utils.dependencies import get_current_user, require_role
@@ -125,4 +125,65 @@ async def update_applicant(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update applicant: {str(e)}",
+        )
+
+
+@router.patch("/{applicant_id}/status", response_model=ApplicantResponse)
+async def update_applicant_status(
+    applicant_id: str,
+    body: StatusUpdateRequest,
+    current_user: UserRole = Depends(require_role("ADMIN", "PM", "RSP", "LND")),
+):
+    """
+    Update an applicant's evaluation status.
+    Payload:
+      - status: "shortlisted" | "qualified" | "disqualified"
+      - disqualification_reason: required (non-null) when status == "disqualified"
+
+    If status is "disqualified", the disqualification_reason is persisted.
+    For shortlisted/qualified the disqualification_reason is stored as null.
+    """
+    if body.status == "disqualified" and not (body.disqualification_reason or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="disqualification_reason is required when status is 'disqualified'.",
+        )
+
+    status_label_map = {
+        "shortlisted": "Shortlisted",
+        "qualified": "Recommended for Hiring",
+        "disqualified": "Not Qualified",
+    }
+
+    try:
+        client = db.get_client()
+
+        existing = client.table("applicants").select("*").eq("id", applicant_id).execute()
+        if not existing.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Applicant not found",
+            )
+
+        update_dict: dict = {"status": status_label_map[body.status]}
+        if body.status == "disqualified":
+            update_dict["disqualification_reason"] = (body.disqualification_reason or "").strip()
+        else:
+            update_dict["disqualification_reason"] = None
+
+        response = (
+            client.table("applicants")
+            .update(update_dict)
+            .eq("id", applicant_id)
+            .execute()
+        )
+
+        return response.data[0]
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update applicant status: {str(e)}",
         )

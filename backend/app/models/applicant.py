@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Literal
 from datetime import datetime
 
 
@@ -28,6 +28,13 @@ class ApplicantUpdate(BaseModel):
     office: Optional[str] = None
     is_pwd: Optional[bool] = None
     status: Optional[str] = None
+    disqualification_reason: Optional[str] = None
+
+
+class StatusUpdateRequest(BaseModel):
+    applicant_id: str
+    status: Literal["shortlisted", "qualified", "disqualified"]
+    disqualification_reason: Optional[str] = None
 
 
 class ApplicantResponse(ApplicantBase):

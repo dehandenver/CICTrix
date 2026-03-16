@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { Dialog } from '../../components/Dialog';
+import { isPositionAssignedToInterviewer, resolveAssignedPositionsForInterviewer } from '../../lib/interviewerAccess';
 import { mockDatabase } from '../../lib/mockDatabase';
 import { getApplicants as getRecruitmentApplicants, saveApplicants as saveRecruitmentApplicants } from '../../lib/recruitmentData';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
@@ -112,6 +113,7 @@ export function EvaluationForm() {
   const [activeTab, setActiveTab] = useState<'pcpt' | 'oral'>('pcpt');
   const [appointmentType, setAppointmentType] = useState<AppointmentType>('original');
   const [isInterviewerNameLocked, setIsInterviewerNameLocked] = useState(false);
+  const [, setAssignedPositions] = useState<string[]>([]);
   
   const [evaluation, setEvaluation] = useState<EvaluationData>({
     interviewer_name: '',
@@ -228,6 +230,9 @@ export function EvaluationForm() {
       setLoading(true);
       setError(null);
 
+      const { positions } = await resolveAssignedPositionsForInterviewer();
+      setAssignedPositions(positions);
+
       // Fetch applicant details
       const { data: applicantData, error: applicantError } = await supabase
         .from('applicants')
@@ -237,6 +242,13 @@ export function EvaluationForm() {
 
       if (applicantError) throw applicantError;
       if (!applicantData) throw new Error('Applicant not found');
+      if (!isPositionAssignedToInterviewer(String(applicantData.position ?? ''), positions)) {
+        throw new Error(
+          positions.length === 0
+            ? 'No job positions are assigned to your interviewer account yet.'
+            : 'You do not have access to evaluate this applicant.'
+        );
+      }
 
       setApplicant(applicantData);
 
@@ -260,6 +272,13 @@ export function EvaluationForm() {
 
         if (localApplicantError || !localApplicantData) {
           throw localApplicantError || new Error('Applicant not found');
+        }
+        if (!isPositionAssignedToInterviewer(String(localApplicantData.position ?? ''), positions)) {
+          throw new Error(
+            positions.length === 0
+              ? 'No job positions are assigned to your interviewer account yet.'
+              : 'You do not have access to evaluate this applicant.'
+          );
         }
 
         setApplicant(localApplicantData);
@@ -421,7 +440,7 @@ export function EvaluationForm() {
       <div className="evaluation-container">
         <Card className="error-card">
           <p className="error-message">❌ {error}</p>
-          <Button onClick={() => navigate('/dashboard')}>Back to Dashboard</Button>
+          <Button onClick={() => navigate('/interviewer/dashboard')}>Back to Dashboard</Button>
         </Card>
       </div>
     );
@@ -439,7 +458,7 @@ export function EvaluationForm() {
             </div>
           )}
         </div>
-        <Button onClick={() => navigate('/dashboard')} variant="secondary">
+        <Button onClick={() => navigate('/interviewer/dashboard')} variant="secondary">
           Back to Dashboard
         </Button>
       </div>

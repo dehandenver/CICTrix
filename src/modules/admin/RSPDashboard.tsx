@@ -327,6 +327,7 @@ const matchesDocumentTemplate = (templateId: EmployeeDocumentTemplateId, documen
 };
 
 const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
+  if (!isMockModeEnabled) return 'supabase';
   try {
     const mode = localStorage.getItem('cictrix_data_source_mode');
     return mode === 'local' ? 'local' : 'supabase';
@@ -594,12 +595,11 @@ export const RSPDashboard = () => {
           ? ratersRes.value.data
           : [];
 
-      const primaryApplicants =
-        applicantsRes.status === 'fulfilled' && !applicantsRes.value.error && Array.isArray(applicantsRes.value.data)
-          ? applicantsRes.value.data
-          : [];
+      const primaryApplicantsFetchSucceeded =
+        applicantsRes.status === 'fulfilled' && !applicantsRes.value.error && Array.isArray(applicantsRes.value.data);
 
-      if (primaryApplicants.length === 0 && !isMockModeEnabled) {
+      // Fallback only on fetch failure. Empty DB results are authoritative.
+      if (!primaryApplicantsFetchSucceeded && !isMockModeEnabled) {
         [, , applicantsRes, ratersRes, evaluationsRes] = await fetchBundle(secondaryClient);
       }
 
@@ -821,22 +821,14 @@ export const RSPDashboard = () => {
   }, [officeOptions]);
   const positionOptions = useMemo(() => Array.from(new Set(applicants.map((a) => a.position).filter(Boolean))), [applicants]);
   const assignableJobPositions = useMemo(() => {
-    const fromJobs = Array.from(new Set(jobs.map((job) => job.title).filter(Boolean)));
-    if (fromJobs.length > 0) return fromJobs;
-    return [
-      'IT Officer II',
-      'HR Assistant',
-      'Admin Aide II',
-      'Admin Aide III',
-      'Clerk I',
-      'Clerk II',
-      'Engineer II',
-      'HR Officer',
-      'Administrative Officer',
-      'IT Programmer',
-      'Accountant II',
-      'Legal Officer I',
-    ];
+    return Array.from(
+      new Set(
+        jobs
+          .filter((job) => String(job?.status ?? '').trim().toLowerCase() === 'active')
+          .map((job) => job.title)
+          .filter(Boolean)
+      )
+    ).sort((left, right) => left.localeCompare(right));
   }, [jobs]);
 
   const filteredJobs = useMemo(() => {
@@ -4315,22 +4307,26 @@ export const RSPDashboard = () => {
               <section>
                 <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Assign Job Positions <span className="text-red-500">*</span></label>
                 <div className="max-h-72 overflow-y-auto rounded-xl border border-[var(--border-color)] bg-white p-4">
-                  <div className="grid grid-cols-1 gap-x-10 gap-y-4 xl:grid-cols-2">
-                    {assignableJobPositions.map((position) => {
-                      const checked = raterAccessForm.assignedPositions.includes(position);
-                      return (
-                        <label key={position} className="flex cursor-pointer items-center gap-3 text-xl text-[var(--text-primary)]">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleAssignedPosition(position)}
-                            className="h-6 w-6 rounded border-[var(--border-color)]"
-                          />
-                          <span>{position}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
+                  {assignableJobPositions.length === 0 ? (
+                    <p className="text-sm text-[var(--text-secondary)]">No active job postings are available. Post or activate a job first.</p>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-x-10 gap-y-4 xl:grid-cols-2">
+                      {assignableJobPositions.map((position) => {
+                        const checked = raterAccessForm.assignedPositions.includes(position);
+                        return (
+                          <label key={position} className="flex cursor-pointer items-center gap-3 text-xl text-[var(--text-primary)]">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleAssignedPosition(position)}
+                              className="h-6 w-6 rounded border-[var(--border-color)]"
+                            />
+                            <span>{position}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
                 <p className="!mb-0 mt-2 text-base text-[var(--text-secondary)]">Selected: {raterAccessForm.assignedPositions.length} position{raterAccessForm.assignedPositions.length === 1 ? '' : 's'}</p>
               </section>

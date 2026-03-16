@@ -21,6 +21,8 @@ import {
     saveEmployeeRecords,
     saveNewlyHired,
 } from '../lib/recruitmentData';
+import { mockDatabase } from '../lib/mockDatabase';
+import { isMockModeEnabled, supabase } from '../lib/supabase';
 import type { NewlyHired, NewlyHiredStatus } from '../types/recruitment.types';
 import { Sidebar } from './Sidebar';
 
@@ -76,8 +78,64 @@ export const NewlyHiredPage = () => {
   const [generatedCredentials, setGeneratedCredentials] = useState<GeneratedCredential[]>([]);
 
   useEffect(() => {
-    ensureRecruitmentSeedData();
-    setRows(getNewlyHired());
+    const load = async () => {
+      ensureRecruitmentSeedData();
+
+      const localRows = getNewlyHired();
+      const preferredMode = isMockModeEnabled ? 'local' : 'supabase';
+      const primaryClient = preferredMode === 'local' ? (mockDatabase as any) : supabase;
+      const secondaryClient = preferredMode === 'local' ? supabase : (mockDatabase as any);
+
+      const fetchApplicantIds = async (client: any) => {
+        const result = await client.from('applicants').select('id');
+        if (result?.error) throw result.error;
+        return (result?.data || []) as Array<{ id?: string }>;
+      };
+
+      let applicantRows: Array<{ id?: string }> = [];
+      let dbFetchSucceeded = false;
+
+      try {
+        applicantRows = await fetchApplicantIds(primaryClient);
+        dbFetchSucceeded = true;
+      } catch {
+        try {
+          applicantRows = await fetchApplicantIds(secondaryClient);
+          dbFetchSucceeded = true;
+        } catch {
+          applicantRows = [];
+          dbFetchSucceeded = false;
+        }
+      }
+
+      if (!dbFetchSucceeded) {
+        // Fallback mode: keep local rows as-is when DB is unreachable.
+        setRows(localRows);
+        return;
+      }
+
+      const validApplicantIds = new Set(
+        applicantRows
+          .map((row) => String(row?.id ?? '').trim())
+          .filter(Boolean)
+      );
+
+      // Keep rows without applicantId (manual imports),
+      // but drop rows whose applicantId no longer exists in DB.
+      const reconciledRows = localRows.filter((row) => {
+        const applicantId = String(row?.applicantId ?? '').trim();
+        if (!applicantId) return true;
+        return validApplicantIds.has(applicantId);
+      });
+
+      if (reconciledRows.length !== localRows.length) {
+        saveNewlyHired(reconciledRows);
+      }
+
+      setRows(reconciledRows);
+    };
+
+    void load();
   }, []);
 
   const departmentCards = useMemo(() => {

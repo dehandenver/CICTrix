@@ -1,84 +1,118 @@
 import {
-    CalendarClock,
     CheckCircle2,
-    ChevronDown,
-    ChevronUp,
-    ClipboardCheck,
-    FileSpreadsheet,
-    MoreVertical,
+    Download,
+    PenLine,
+    Plus,
     Search,
-    Send,
+    Shield,
     UserPlus,
-    Users,
     X,
     XCircle,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { mockDatabase } from '../lib/mockDatabase';
-import {
-    downloadTextFile,
-    ensureRecruitmentSeedData,
-    formatPHDate,
-    getEvaluationPeriods,
-    getRaterAssignments,
-    saveEvaluationPeriods,
-    saveRaterAssignments,
-    toCsv,
-} from '../lib/recruitmentData';
+import { getAuthoritativeJobPostings } from '../lib/recruitmentData';
 import { isMockModeEnabled, supabase } from '../lib/supabase';
-import { EvaluationPeriod, RaterAssignment } from '../types/recruitment.types';
 import { RaterManagementNavigationGuide } from './RaterManagementNavigationGuide';
 import { Sidebar } from './Sidebar';
 
-const STATUS_COLORS: Record<RaterAssignment['status'], string> = {
-  Assigned: 'bg-emerald-100 text-emerald-700',
-  Pending: 'bg-amber-100 text-amber-700',
-  Unassigned: 'bg-rose-100 text-rose-700',
-};
+type RaterStatus = 'Active' | 'Inactive';
+type ClientSource = 'preferred' | 'fallback';
 
-interface AssignmentForm {
-  employeeName: string;
-  employeePosition: string;
-  department: string;
-  period: string;
-  immediateSupervisor: string;
-  departmentHead: string;
-  additionalRater: string;
-  effectiveDate: string;
-  expirationDate: string;
+interface ProfileAccountRow {
+  userId: string;
+  email: string;
+  name: string;
+  role: string;
 }
 
-interface RaterOption {
+interface RaterAccountOption {
+  email: string;
+  name: string;
+  designation: string;
+  department: string;
+  existingRaterId?: string;
+}
+
+interface RaterSourceRow {
   id: string;
   name: string;
   email: string;
-  department?: string;
-  is_active: boolean;
+  designation: string;
+  department: string;
+  assignedPositions: string[];
+  lastLogin: string;
+  status: RaterStatus;
+  source: ClientSource;
 }
 
-const normalizeValue = (value: unknown) => String(value ?? '').trim().toLowerCase();
+interface RaterFormState {
+  selectedEmail: string;
+  assignedPositions: string[];
+  startDate: string;
+  endDate: string;
+}
 
-const defaultAssignmentForm = (): AssignmentForm => ({
-  employeeName: '',
-  employeePosition: '',
-  department: '',
-  period: '',
-  immediateSupervisor: '',
-  departmentHead: '',
-  additionalRater: '',
-  effectiveDate: '',
-  expirationDate: '',
+const RATER_ASSIGNMENTS_KEY = 'cictrix_rater_assigned_positions';
+const RATER_ACCESS_STATE_KEY = 'cictrix_rater_access_state_map';
+
+const defaultFormState = (): RaterFormState => ({
+  selectedEmail: '',
+  assignedPositions: [],
+  startDate: '',
+  endDate: '',
 });
 
+const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
+  if (!isMockModeEnabled) return 'supabase';
+  try {
+    const mode = localStorage.getItem('cictrix_data_source_mode');
+    return mode === 'local' ? 'local' : 'supabase';
+  } catch {
+    return 'supabase';
+  }
+};
+
+const getPreferredClient = () => {
+  const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
+  return preferredMode === 'local' ? (mockDatabase as any) : supabase;
+};
+
+const getFallbackClient = () => {
+  const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
+  return preferredMode === 'local' ? supabase : (mockDatabase as any);
+};
+
 const getAccessClient = () => {
-  // Access control must use the real rater DB when Supabase is configured.
   return isMockModeEnabled ? (mockDatabase as any) : supabase;
 };
-const RATER_ACCESS_STATE_KEY = 'cictrix_rater_access_state_map';
+
+const normalizeEmailKey = (email: string) => String(email ?? '').trim().toLowerCase();
+
+const uniqueStrings = (values: string[]) => Array.from(new Set(values.filter(Boolean)));
+
+const loadRaterAssignments = (): Record<string, string[]> => {
+  try {
+    const raw = localStorage.getItem(RATER_ASSIGNMENTS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed as Record<string, string[]>;
+  } catch {
+    return {};
+  }
+};
+
+const saveRaterAssignments = (assignments: Record<string, string[]>) => {
+  try {
+    localStorage.setItem(RATER_ASSIGNMENTS_KEY, JSON.stringify(assignments));
+  } catch {
+  }
+};
 
 const saveRaterAccessState = (email: string, isActive: boolean) => {
   try {
-    const normalizedEmail = String(email ?? '').trim().toLowerCase();
+    const normalizedEmail = normalizeEmailKey(email);
     const raw = localStorage.getItem(RATER_ACCESS_STATE_KEY);
     const current = raw ? JSON.parse(raw) : {};
     const next = current && typeof current === 'object' ? { ...current } : {};
@@ -88,13 +122,57 @@ const saveRaterAccessState = (email: string, isActive: boolean) => {
   }
 };
 
+const toInitials = (name: string) => {
+  const parts = String(name ?? '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (parts.length === 0) return '--';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
+};
+
+const formatLastLogin = (value: unknown) => {
+  if (!value) return 'N/A';
+  const parsed = new Date(String(value));
+  if (Number.isNaN(parsed.getTime())) return 'N/A';
+  return parsed.toLocaleDateString('en-US', {
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+  });
+};
+
+const statusBadge = (status: RaterStatus) => {
+  if (status === 'Active') {
+    return (
+      <div className="inline-flex items-center rounded-full border border-green-200 bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
+        <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
+        Active
+      </div>
+    );
+  }
+
+  return (
+    <div className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700">
+      <XCircle className="mr-1 h-3.5 w-3.5" />
+      Inactive
+    </div>
+  );
+};
+
+const roleBadge = (role: string) => {
+  return <span className="rounded-md bg-purple-50 px-3 py-1 text-xs font-medium text-purple-600">{role}</span>;
+};
+
 const runRaterEmailUpdate = async (
   client: any,
   updates: Record<string, unknown>,
   email: string,
   anchorId?: string
 ) => {
-  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedEmail = normalizeEmailKey(email);
   const { data, error } = await client.from('raters').select('id,email');
   if (error) {
     throw error;
@@ -102,7 +180,7 @@ const runRaterEmailUpdate = async (
 
   const rows = Array.isArray(data) ? data : [];
   const matchedIds = rows
-    .filter((row: any) => String(row?.email ?? '').trim().toLowerCase() === normalizedEmail)
+    .filter((row: any) => normalizeEmailKey(String(row?.email ?? '')) === normalizedEmail)
     .map((row: any) => String(row?.id ?? '').trim())
     .filter(Boolean);
 
@@ -126,14 +204,14 @@ const runRaterEmailUpdate = async (
 };
 
 const verifyRaterAccessState = async (client: any, email: string, expectedIsActive: boolean) => {
-  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedEmail = normalizeEmailKey(email);
   const { data, error } = await client.from('raters').select('id,email,is_active');
   if (error) {
     throw error;
   }
 
   const rows = (Array.isArray(data) ? data : []).filter(
-    (row: any) => String(row?.email ?? '').trim().toLowerCase() === normalizedEmail
+    (row: any) => normalizeEmailKey(String(row?.email ?? '')) === normalizedEmail
   );
 
   if (rows.length === 0) {
@@ -146,811 +224,788 @@ const verifyRaterAccessState = async (client: any, email: string, expectedIsActi
   }
 };
 
+const getClientEntries = () => {
+  const preferredClient = getPreferredClient();
+  const fallbackClient = getFallbackClient();
+  const entries: Array<{ source: ClientSource; client: any }> = [{ source: 'preferred', client: preferredClient }];
+
+  if (fallbackClient !== preferredClient) {
+    entries.push({ source: 'fallback', client: fallbackClient });
+  }
+
+  return entries;
+};
+
 export const RaterManagementPage = () => {
-  const [assignments, setAssignments] = useState<RaterAssignment[]>([]);
-  const [periods, setPeriods] = useState<EvaluationPeriod[]>([]);
+  const [ratersData, setRatersData] = useState<RaterSourceRow[]>([]);
+  const [profileAccounts, setProfileAccounts] = useState<ProfileAccountRow[]>([]);
   const [search, setSearch] = useState('');
-  const [departmentFilter, setDepartmentFilter] = useState('all');
-  const [ratingLevelFilter, setRatingLevelFilter] = useState('all');
-  const [assignmentStatus, setAssignmentStatus] = useState<'all' | RaterAssignment['status']>('all');
-  const [periodFilter, setPeriodFilter] = useState('Current');
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [collapsedDepartments, setCollapsedDepartments] = useState<Record<string, boolean>>({});
+  const [statusFilter, setStatusFilter] = useState('All Status');
   const [showGuide, setShowGuide] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
-  const [showPeriodModal, setShowPeriodModal] = useState(false);
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const [form, setForm] = useState<AssignmentForm>(defaultAssignmentForm());
-  const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'Assignments' | 'Rating History'>('Assignments');
-  const [historyEmployeeFilter, setHistoryEmployeeFilter] = useState('all');
+  const [form, setForm] = useState<RaterFormState>(defaultFormState());
+  const [manualName, setManualName] = useState('');
+  const [manualEmail, setManualEmail] = useState('');
+  const [manualDepartment, setManualDepartment] = useState('Unassigned');
+  const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState('');
-  const [availableRaters, setAvailableRaters] = useState<RaterOption[]>([]);
-  const [assignedPositions, setAssignedPositions] = useState<string[]>([]);
 
-  const fetchAvailableRaters = async () => {
+  const loadRaters = async () => {
+    const localAssignments = loadRaterAssignments();
+
     try {
-      const client = getAccessClient();
-      const response = await client
-        .from('raters')
-        .select('id,name,email,department,is_active')
-        .order('name');
+      const responses = await Promise.all(
+        getClientEntries().map(async ({ source, client }) => {
+          const response = await client
+            .from('raters')
+            .select('*')
+            .order('created_at', { ascending: false });
 
-      const rows = (((response as any)?.data ?? []) as RaterOption[])
-        .filter((row) => row?.name && row?.email);
+          return {
+            source,
+            rows: Array.isArray((response as any)?.data) ? (response as any).data : [],
+          };
+        })
+      );
 
-      setAvailableRaters(rows);
+      if (!isMockModeEnabled) {
+        const { data: profilesData, error: profilesError } = await supabase
+          .from('profiles')
+          .select('user_id,email,role,name');
+
+        if (!profilesError) {
+          const normalizedProfiles = (Array.isArray(profilesData) ? profilesData : [])
+            .filter((row: any) => String(row?.email ?? '').trim())
+            .filter((row: any) => {
+              const normalizedRole = String(row?.role ?? '').trim().toLowerCase();
+              // Accept common role variants seen across schemas.
+              return (
+                normalizedRole.includes('interviewer') ||
+                normalizedRole.includes('rater') ||
+                normalizedRole === 'interview' ||
+                normalizedRole === 'rate'
+              );
+            })
+            .map((row: any) => ({
+              userId: String(row?.user_id ?? ''),
+              email: String(row?.email ?? '').trim(),
+              name: String(row?.name ?? row?.email ?? 'Interviewer').trim(),
+              role: String(row?.role ?? 'INTERVIEWER').trim(),
+            }));
+
+          setProfileAccounts(normalizedProfiles);
+        } else {
+          setProfileAccounts([]);
+        }
+      } else {
+        setProfileAccounts([]);
+      }
+
+      const merged = new Map<string, RaterSourceRow>();
+
+      responses.forEach(({ source, rows }) => {
+        rows.forEach((row: any) => {
+          const email = String(row?.email ?? '').trim();
+          const emailKey = normalizeEmailKey(email);
+          const mapKey = emailKey || `id:${String(row?.id ?? crypto.randomUUID())}`;
+          const positionsFromRow = Array.isArray(row?.assigned_positions)
+            ? row.assigned_positions.filter((value: unknown) => typeof value === 'string')
+            : [];
+          const positionsFromLocal = emailKey ? localAssignments[emailKey] ?? [] : [];
+          const positionsFromDepartment = row?.department ? [String(row.department)] : ['Unassigned'];
+          const assignedPositions = uniqueStrings(
+            positionsFromRow.length > 0
+              ? [...positionsFromRow, ...positionsFromLocal]
+              : [...positionsFromLocal, ...positionsFromDepartment]
+          );
+
+          const nextRow: RaterSourceRow = {
+            id: String(row?.id ?? crypto.randomUUID()),
+            name: String(row?.name ?? 'Unknown Rater'),
+            email,
+            designation: String(row?.designation ?? row?.department ?? 'Rater'),
+            department: String(row?.department ?? 'Unassigned'),
+            assignedPositions,
+            lastLogin: formatLastLogin(row?.last_login ?? row?.updated_at),
+            status: Boolean(row?.is_active) ? 'Active' : 'Inactive',
+            source,
+          };
+
+          const existing = merged.get(mapKey);
+          if (!existing) {
+            merged.set(mapKey, nextRow);
+            return;
+          }
+
+          merged.set(mapKey, {
+            ...existing,
+            ...(existing.source === 'preferred' ? {} : nextRow),
+            assignedPositions: uniqueStrings([...existing.assignedPositions, ...nextRow.assignedPositions]),
+          });
+        });
+      });
+
+      setRatersData(
+        Array.from(merged.values()).sort((left, right) => left.name.localeCompare(right.name))
+      );
     } catch {
-      setToast('Unable to load raters from database.');
+      setRatersData([]);
     }
   };
 
   useEffect(() => {
-    ensureRecruitmentSeedData();
-    const initialAssignments = getRaterAssignments();
-    const initialPeriods = getEvaluationPeriods();
-    setAssignments(initialAssignments);
-    setPeriods(initialPeriods);
+    void loadRaters();
 
-    const initialCollapsed: Record<string, boolean> = {};
-    Array.from(new Set(initialAssignments.map((item) => item.department))).forEach((dept) => {
-      initialCollapsed[dept] = false;
-    });
-    setCollapsedDepartments(initialCollapsed);
+    const syncRaters = () => {
+      void loadRaters();
+    };
 
-    void fetchAvailableRaters();
+    const onStorage = (event: StorageEvent) => {
+      if (
+        !event.key ||
+        event.key === RATER_ASSIGNMENTS_KEY ||
+        event.key === 'cictrix_raters' ||
+        event.key === 'cictrix_data_source_mode'
+      ) {
+        void loadRaters();
+      }
+    };
+
+    window.addEventListener('focus', syncRaters);
+    window.addEventListener('storage', onStorage);
+
+    return () => {
+      window.removeEventListener('focus', syncRaters);
+      window.removeEventListener('storage', onStorage);
+    };
   }, []);
 
   useEffect(() => {
     if (!toast) return;
-    const timer = setTimeout(() => setToast(''), 2200);
-    return () => clearTimeout(timer);
+    const timer = window.setTimeout(() => setToast(''), 2500);
+    return () => window.clearTimeout(timer);
   }, [toast]);
 
-  const departments = useMemo(() => Array.from(new Set(assignments.map((item) => item.department))), [assignments]);
+  const selectedRater = useMemo(
+    () => ratersData.find((rater) => normalizeEmailKey(rater.email) === normalizeEmailKey(form.selectedEmail)),
+    [ratersData, form.selectedEmail]
+  );
 
-  const filteredAssignments = useMemo(() => {
-    return assignments.filter((row) => {
+  const availableAccounts = useMemo(() => {
+    const accounts = new Map<string, RaterAccountOption>();
+
+    ratersData.forEach((rater) => {
+      const emailKey = normalizeEmailKey(rater.email);
+      if (!emailKey) return;
+      accounts.set(emailKey, {
+        email: rater.email,
+        name: rater.name,
+        designation: rater.designation,
+        department: rater.department,
+        existingRaterId: rater.id,
+      });
+    });
+
+    profileAccounts.forEach((account) => {
+      const emailKey = normalizeEmailKey(account.email);
+      if (!emailKey || accounts.has(emailKey)) return;
+      accounts.set(emailKey, {
+        email: account.email,
+        name: account.name,
+        designation: account.role === 'RATER' ? 'Rater' : 'Interviewer',
+        department: 'Unassigned',
+      });
+    });
+
+    return Array.from(accounts.values()).sort((left, right) => left.name.localeCompare(right.name));
+  }, [profileAccounts, ratersData]);
+
+  const selectedAccount = useMemo(
+    () => availableAccounts.find((account) => normalizeEmailKey(account.email) === normalizeEmailKey(form.selectedEmail)),
+    [availableAccounts, form.selectedEmail]
+  );
+
+  const assignableJobPositions = useMemo(() => {
+    return getAuthoritativeJobPostings()
+      .filter((posting) => String(posting?.status ?? '').trim().toLowerCase() === 'active')
+      .map((posting) => String(posting?.title ?? '').trim())
+      .filter(Boolean)
+      .filter((value, index, rows) => rows.indexOf(value) === index)
+      .sort((left, right) => left.localeCompare(right));
+  }, []);
+
+  const filteredRaters = useMemo(() => {
+    return ratersData.filter((rater) => {
       const matchesSearch =
         !search ||
-        `${row.employeeName} ${row.employeePosition} ${row.raters.immediateSupervisor.name} ${row.raters.departmentHead.name}`
+        `${rater.name} ${rater.email} ${rater.designation} ${rater.assignedPositions.join(' ')}`
           .toLowerCase()
           .includes(search.toLowerCase());
-      const matchesDepartment = departmentFilter === 'all' || row.department === departmentFilter;
-      const matchesStatus = assignmentStatus === 'all' || row.status === assignmentStatus;
-      const matchesPeriod =
-        periodFilter === 'All'
-          ? true
-          : periodFilter === 'Current'
-            ? row.evaluationPeriod.includes('2026')
-            : periodFilter === 'Previous'
-              ? row.evaluationPeriod.includes('2025')
-              : row.evaluationPeriod === periodFilter;
-      const matchesLevel =
-        ratingLevelFilter === 'all' ||
-        (ratingLevelFilter === 'Immediate Supervisor' && Boolean(row.raters.immediateSupervisor.name)) ||
-        (ratingLevelFilter === 'Department Head' && Boolean(row.raters.departmentHead.name)) ||
-        (ratingLevelFilter === 'Division Chief' && row.raters.immediateSupervisor.position.toLowerCase().includes('division')) ||
-        (ratingLevelFilter === 'PMD Head (final reviewer)' && Boolean(row.raters.pmdHead.name));
-      return matchesSearch && matchesDepartment && matchesStatus && matchesPeriod && matchesLevel;
+      const matchesStatus =
+        statusFilter === 'All Status' ||
+        (statusFilter === 'Active' && rater.status === 'Active') ||
+        (statusFilter === 'Inactive' && rater.status === 'Inactive');
+
+      return matchesSearch && matchesStatus;
     });
-  }, [assignments, search, departmentFilter, assignmentStatus, periodFilter, ratingLevelFilter]);
+  }, [ratersData, search, statusFilter]);
 
-  const groupedAssignments = useMemo(() => {
-    const groupMap = new Map<string, RaterAssignment[]>();
-    filteredAssignments.forEach((row) => {
-      if (!groupMap.has(row.department)) groupMap.set(row.department, []);
-      const departmentRows = groupMap.get(row.department);
-      if (departmentRows) departmentRows.push(row);
-    });
-    return Array.from(groupMap.entries());
-  }, [filteredAssignments]);
+  const totalRaters = ratersData.length;
+  const activeRaters = ratersData.filter((rater) => rater.status === 'Active').length;
+  const inactiveRaters = ratersData.filter((rater) => rater.status === 'Inactive').length;
 
-  const stats = useMemo(() => {
-    const totalEmployees = assignments.length;
-    return {
-      totalEmployees,
-      assigned: assignments.filter((item) => item.status === 'Assigned').length,
-      pending: assignments.filter((item) => item.status === 'Pending' || item.status === 'Unassigned').length,
-      multipleRaters: assignments.filter((item) => Boolean(item.raters.additionalRater)).length,
-    };
-  }, [assignments]);
-
-  const allSelected = filteredAssignments.length > 0 && selectedIds.length === filteredAssignments.length;
-
-  const persistAssignments = (nextRows: RaterAssignment[]) => {
-    setAssignments(nextRows);
-    saveRaterAssignments(nextRows);
-  };
-
-  const openAssignModal = (assignment?: RaterAssignment) => {
-    void fetchAvailableRaters();
-    if (assignment) {
-      setEditingAssignmentId(assignment.id);
-      setForm({
-        employeeName: assignment.employeeName,
-        employeePosition: assignment.employeePosition,
-        department: assignment.department,
-        period: assignment.evaluationPeriod,
-        immediateSupervisor: assignment.raters.immediateSupervisor.name,
-        departmentHead: assignment.raters.departmentHead.name,
-        additionalRater: assignment.raters.additionalRater?.name ?? '',
-        effectiveDate: assignment.effectiveDate.slice(0, 10),
-        expirationDate: assignment.expirationDate?.slice(0, 10) ?? '',
-      });
-      setAssignedPositions(
-        assignment.employeePosition
-          .split(',')
-          .map((entry) => entry.trim())
-          .filter(Boolean)
-      );
-    } else {
-      setEditingAssignmentId(null);
-      setForm(defaultAssignmentForm());
-      setAssignedPositions([]);
+  const openAssignModal = (rater?: RaterSourceRow) => {
+    if (!rater) {
+      setForm(defaultFormState());
+      setShowAssignModal(true);
+      return;
     }
+
+    setForm({
+      selectedEmail: rater.email,
+      assignedPositions: [...rater.assignedPositions],
+      startDate: '',
+      endDate: '',
+    });
     setShowAssignModal(true);
   };
 
-  const handleRaterSelection = (raterName: string) => {
-    const selected = availableRaters.find((entry) => entry.name === raterName);
+  const closeAssignModal = () => {
+    setShowAssignModal(false);
+    setForm(defaultFormState());
+    setManualName('');
+    setManualEmail('');
+    setManualDepartment('Unassigned');
+  };
+
+  const handleRaterSelection = (email: string) => {
+    const nextSelected = ratersData.find((rater) => normalizeEmailKey(rater.email) === normalizeEmailKey(email));
     setForm((current) => ({
       ...current,
-      employeeName: raterName,
-      department: selected?.department ?? current.department,
-      immediateSupervisor: raterName,
-      departmentHead: raterName,
-      additionalRater: '',
+      selectedEmail: email,
+      assignedPositions: nextSelected ? [...nextSelected.assignedPositions] : [],
     }));
   };
 
   const toggleAssignedPosition = (position: string) => {
-    setAssignedPositions((current) =>
-      current.includes(position)
-        ? current.filter((item) => item !== position)
-        : [...current, position]
-    );
+    setForm((current) => ({
+      ...current,
+      assignedPositions: current.assignedPositions.includes(position)
+        ? current.assignedPositions.filter((item) => item !== position)
+        : [...current.assignedPositions, position],
+    }));
   };
 
-  const saveAssignment = () => {
-    if (!form.employeeName || assignedPositions.length === 0) {
-      setToast('Please complete required assignment fields.');
-      return;
-    }
-
-    const selectedRater = availableRaters.find((entry) => entry.name === form.employeeName);
-    const effectiveDateIso = form.effectiveDate
-      ? new Date(form.effectiveDate).toISOString()
-      : new Date().toISOString();
-    const resolvedPeriod = form.period || activePeriod?.name || 'Current Period';
-
-    const payload: RaterAssignment = {
-      id: editingAssignmentId ?? crypto.randomUUID(),
-      employeeId: editingAssignmentId ?? `EMP-PENDING-${Math.floor(Math.random() * 9999)}`,
-      employeeName: form.employeeName,
-      employeePosition: assignedPositions.join(', '),
-      department: form.department || selectedRater?.department || 'Unassigned',
-      evaluationPeriod: resolvedPeriod,
-      raters: {
-        immediateSupervisor: {
-          id: selectedRater?.id ?? crypto.randomUUID(),
-          name: form.immediateSupervisor,
-          position: 'Immediate Supervisor',
-        },
-        departmentHead: {
-          id: selectedRater?.id ?? crypto.randomUUID(),
-          name: form.departmentHead,
-          position: 'Department Head',
-        },
-        additionalRater: form.additionalRater
-          ? {
-              id: crypto.randomUUID(),
-              name: form.additionalRater,
-              position: 'Additional Rater',
-            }
-          : undefined,
-        pmdHead: {
-          id: 'pmd-001',
-          name: 'Liza Manalo',
-          position: 'PMD Head',
-        },
-      },
-      effectiveDate: effectiveDateIso,
-      expirationDate: form.expirationDate ? new Date(form.expirationDate).toISOString() : undefined,
-      status: 'Assigned',
-      createdBy: 'HR Admin',
-      createdDate: new Date().toISOString(),
+  const persistAssignmentsLocally = (email: string, positions: string[]) => {
+    const assignmentKey = normalizeEmailKey(email);
+    const currentAssignments = loadRaterAssignments();
+    const nextAssignments = {
+      ...currentAssignments,
+      [assignmentKey]: uniqueStrings(positions),
     };
-
-    const nextRows = editingAssignmentId
-      ? assignments.map((row) => (row.id === editingAssignmentId ? payload : row))
-      : [payload, ...assignments];
-
-    persistAssignments(nextRows);
-    setShowAssignModal(false);
-    setAssignedPositions([]);
-    setToast(editingAssignmentId ? 'Assignment updated.' : 'Rater assigned successfully.');
+    saveRaterAssignments(nextAssignments);
   };
 
-  const removeAssignment = (assignmentId: string) => {
-    persistAssignments(assignments.filter((row) => row.id !== assignmentId));
-    setToast('Assignment removed.');
-  };
+  const handleSaveRaterAccess = async () => {
+    const fallbackEmail = normalizeEmailKey(manualEmail);
+    const fallbackName = String(manualName || manualEmail).trim();
+    const fallbackDepartment = String(manualDepartment || 'Unassigned').trim() || 'Unassigned';
+    const accountToUse: RaterAccountOption | null = selectedAccount
+      ? selectedAccount
+      : fallbackEmail
+        ? {
+            email: manualEmail.trim(),
+            name: fallbackName || manualEmail.trim(),
+            designation: 'Interviewer',
+            department: fallbackDepartment,
+          }
+        : null;
 
-  const findRaterByName = (name: string) => {
-    const normalized = normalizeValue(name);
-    return availableRaters.find((rater) => normalizeValue(rater.name) === normalized);
-  };
-
-  const findRaterById = (id: string) => {
-    const normalizedId = String(id ?? '').trim();
-    if (!normalizedId) return undefined;
-    return availableRaters.find((rater) => String(rater.id ?? '').trim() === normalizedId);
-  };
-
-  const resolveRaterAccount = (raterId: string | undefined, raterName: string) => {
-    const byId = raterId ? findRaterById(raterId) : undefined;
-    if (byId) return byId;
-    return findRaterByName(raterName);
-  };
-
-  const toggleRaterAccess = async (raterId: string | undefined, raterName: string) => {
-    const client = getAccessClient();
-    let existing = resolveRaterAccount(raterId, raterName);
-
-    // Pull latest raters from DB before failing a toggle, so newly-created accounts work immediately.
-    if (!existing) {
-      try {
-        const latestResponse = await client
-          .from('raters')
-          .select('id,name,email,department,is_active')
-          .order('name');
-        const latestRows = (((latestResponse as any)?.data ?? []) as RaterOption[]).filter(
-          (row) => row?.name && row?.email
-        );
-        if (latestRows.length > 0) {
-          setAvailableRaters(latestRows);
-          const normalizedTargetId = String(raterId ?? '').trim();
-          const normalizedTargetName = normalizeValue(raterName);
-          existing =
-            latestRows.find((row) => String(row.id ?? '').trim() === normalizedTargetId) ||
-            latestRows.find((row) => normalizeValue(row.name) === normalizedTargetName);
-        }
-      } catch {
-        // Keep existing local state and show actionable toast below if still unresolved.
-      }
-    }
-
-    if (!existing) {
-      setToast('No matching rater account in database. Use Assign Rater and select a rater account first.');
+    if (!accountToUse || form.assignedPositions.length === 0) {
+      setToast('Select a rater and assign at least one job position.');
       return;
     }
 
-    const nextIsActive = !existing.is_active;
-    const normalizedEmail = existing.email.trim().toLowerCase();
-    setAvailableRaters((current) =>
-      current.map((rater) =>
-        rater.email.trim().toLowerCase() === normalizedEmail ? { ...rater, is_active: nextIsActive } : rater
+    const previousRows = ratersData;
+    const nextAssignedPositions = uniqueStrings(form.assignedPositions);
+
+    persistAssignmentsLocally(accountToUse.email, nextAssignedPositions);
+    setRatersData((current) =>
+      selectedRater
+        ? current.map((rater) =>
+            normalizeEmailKey(rater.email) === normalizeEmailKey(accountToUse.email)
+              ? { ...rater, assignedPositions: nextAssignedPositions, status: 'Active' }
+              : rater
+          )
+        : [
+            {
+              id: `pending-${normalizeEmailKey(accountToUse.email)}`,
+              name: accountToUse.name,
+              email: accountToUse.email,
+              designation: accountToUse.designation,
+              department: accountToUse.department,
+              assignedPositions: nextAssignedPositions,
+              lastLogin: 'N/A',
+              status: 'Active',
+              source: 'preferred',
+            },
+            ...current,
+          ]
+    );
+
+    setSaving(true);
+
+    try {
+      const accessClient = getAccessClient();
+
+      if (selectedRater) {
+        await runRaterEmailUpdate(
+          accessClient,
+          {
+            assigned_positions: nextAssignedPositions,
+            is_active: true,
+            designation: accountToUse.designation,
+            department: accountToUse.department,
+          },
+          accountToUse.email,
+          selectedRater.id
+        );
+      } else {
+        const insertResult = await accessClient.from('raters').insert({
+          name: accountToUse.name,
+          email: accountToUse.email,
+          designation: accountToUse.designation,
+          department: accountToUse.department,
+          assigned_positions: nextAssignedPositions,
+          is_active: true,
+          last_login: null,
+        });
+
+        if ((insertResult as any)?.error) {
+          throw (insertResult as any).error;
+        }
+      }
+
+      await verifyRaterAccessState(accessClient, accountToUse.email, true);
+      saveRaterAccessState(accountToUse.email, true);
+      closeAssignModal();
+      setToast('Rater access updated.');
+      await loadRaters();
+    } catch {
+      setRatersData(previousRows);
+      setToast('Failed to save rater access.');
+      await loadRaters();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleRaterAccess = async (rater: RaterSourceRow) => {
+    const nextIsActive = rater.status !== 'Active';
+    const previousRows = ratersData;
+    setRatersData((current) =>
+      current.map((item) =>
+        normalizeEmailKey(item.email) === normalizeEmailKey(rater.email)
+          ? { ...item, status: nextIsActive ? 'Active' : 'Inactive' }
+          : item
       )
     );
 
     try {
-      await runRaterEmailUpdate(client, { is_active: nextIsActive }, normalizedEmail, String(existing.id));
-      await verifyRaterAccessState(client, normalizedEmail, nextIsActive);
-      saveRaterAccessState(normalizedEmail, nextIsActive);
-      await fetchAvailableRaters();
+      const accessClient = getAccessClient();
+      await runRaterEmailUpdate(accessClient, { is_active: nextIsActive }, rater.email, rater.id);
+      await verifyRaterAccessState(accessClient, rater.email, nextIsActive);
+      saveRaterAccessState(rater.email, nextIsActive);
       setToast(nextIsActive ? 'Interviewer access granted.' : 'Interviewer access revoked.');
+      await loadRaters();
     } catch {
-      setAvailableRaters((current) =>
-        current.map((rater) =>
-          rater.email.trim().toLowerCase() === normalizedEmail ? { ...rater, is_active: existing.is_active } : rater
-        )
-      );
+      setRatersData(previousRows);
       setToast('Failed to update interviewer access.');
+      await loadRaters();
     }
   };
 
-  const toggleCollapse = (department: string) => {
-    setCollapsedDepartments((current) => ({ ...current, [department]: !current[department] }));
-  };
-
-  const sendNotification = (ids: string[]) => {
-    if (!ids.length) {
-      setToast('Select at least one row for notification.');
-      return;
-    }
-    setToast(`Notification sent to ${ids.length} assignment(s).`);
-  };
-
-  const exportAssignments = () => {
-    const rowsForExport = selectedIds.length
-      ? filteredAssignments.filter((item) => selectedIds.includes(item.id))
-      : filteredAssignments;
-
-    const csv = toCsv(
-      ['Employee', 'Position', 'Department', 'Immediate Supervisor', 'Department Head', 'Additional Rater', 'Status', 'Period'],
-      rowsForExport.map((row) => [
-        row.employeeName,
-        row.employeePosition,
-        row.department,
-        row.raters.immediateSupervisor.name,
-        row.raters.departmentHead.name,
-        row.raters.additionalRater?.name ?? '-',
-        row.status,
-        row.evaluationPeriod,
-      ])
-    );
-    downloadTextFile('rater-assignments.csv', csv, 'text/csv;charset=utf-8');
-    setToast('Assignments exported (CSV).');
-  };
-
-  const savePeriods = (nextPeriods: EvaluationPeriod[]) => {
-    setPeriods(nextPeriods);
-    saveEvaluationPeriods(nextPeriods);
-  };
-
-  const activePeriod = periods.find((period) => period.status === 'Active');
-
-  const historyRows = useMemo(() => {
-    return assignments
-      .filter((row) => historyEmployeeFilter === 'all' || row.employeeId === historyEmployeeFilter)
-      .map((row) => [
-        row.evaluationPeriod,
-        row.employeeName,
-        `${row.raters.immediateSupervisor.name} (Supervisor)`,
-        row.status === 'Assigned' ? '4.52 - Very Satisfactory' : '--',
-        row.status === 'Assigned' ? formatPHDate(row.createdDate) : '--',
-        row.status === 'Assigned' ? 'Submitted' : 'Pending',
-      ]);
-  }, [assignments, historyEmployeeFilter]);
-
-  const assignableJobPositions = useMemo(() => {
-    const fromAssignments = assignments
-      .flatMap((item) => item.employeePosition.split(','))
-      .map((entry) => entry.trim())
-      .filter(Boolean);
-
-    const defaults = [
-      'IT Officer II',
-      'HR Assistant',
-      'Admin Aide II',
-      'Admin Aide III',
-      'Clerk I',
-      'Clerk II',
-      'Engineer II',
-      'HR Officer',
-      'Administrative Officer',
-      'IT Programmer',
-      'Accountant II',
-      'Legal Officer I',
+  const handleDownloadRaters = () => {
+    const csvRows = [
+      ['Name', 'Email', 'Designation', 'Assigned Positions', 'Last Login', 'Status'],
+      ...filteredRaters.map((rater) => [
+        rater.name,
+        rater.email,
+        rater.designation,
+        rater.assignedPositions.join('; '),
+        rater.lastLogin,
+        rater.status,
+      ]),
     ];
-
-    return Array.from(new Set([...fromAssignments, ...defaults]));
-  }, [assignments]);
+    const csv = csvRows
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'rater-list.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="admin-layout">
       <Sidebar activeModule="RSP" userRole="rsp" />
-      <main className="admin-content bg-slate-50">
-        <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">Rater Management</h1>
-            <p className="text-slate-600">Configure rater assignments and evaluation hierarchies</p>
-          </div>
-          <div className="flex gap-2">
-            <button className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700" onClick={() => setShowPeriodModal(true)}>
-              <CalendarClock className="mr-1 inline h-4 w-4" /> Evaluation Period Settings
-            </button>
-            <button className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700" onClick={() => setShowGuide(true)}>
+      <main className="admin-content bg-gray-50">
+        <div className="min-h-screen bg-gray-50 p-6 md:p-8">
+          <div className="mb-6 flex items-center justify-between gap-4 text-sm text-gray-500">
+            <div className="flex space-x-2">
+              <span className="cursor-pointer text-blue-600">RSP</span>
+              <span>/</span>
+              <span className="cursor-pointer text-blue-600">Settings</span>
+              <span>/</span>
+              <span>Rater Management</span>
+            </div>
+            <button
+              type="button"
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              onClick={() => setShowGuide(true)}
+            >
               How to Navigate
             </button>
-            <button className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white" onClick={() => openAssignModal()}>
-              <UserPlus className="mr-1 inline h-4 w-4" /> Assign Rater
-            </button>
-          </div>
-        </header>
-
-        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {[{ label: 'Total Employees', value: stats.totalEmployees }, { label: 'Assigned Raters', value: stats.assigned }, { label: 'Pending', value: stats.pending }, { label: 'Multiple Raters', value: stats.multipleRaters }].map((card) => (
-            <article key={card.label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-sm text-slate-500">{card.label}</p>
-              <p className="mt-2 text-2xl font-bold text-slate-900">{card.value}</p>
-            </article>
-          ))}
-        </section>
-
-        <section className="mt-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex flex-wrap gap-2">
-            {(['Assignments', 'Rating History'] as const).map((tab) => (
-              <button key={tab} className={`rounded-full px-3 py-1 text-sm ${activeTab === tab ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-700'}`} onClick={() => setActiveTab(tab)}>
-                {tab}
-              </button>
-            ))}
           </div>
 
-          {activeTab === 'Assignments' ? (
-            <>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
-                <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm" value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)}>
-                  <option value="all">All Departments</option>
-                  {departments.map((dept) => <option key={dept} value={dept}>{dept}</option>)}
-                </select>
-                <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm" value={ratingLevelFilter} onChange={(event) => setRatingLevelFilter(event.target.value)}>
-                  <option value="all">All Rating Levels</option>
-                  <option value="Immediate Supervisor">Immediate Supervisor</option>
-                  <option value="Department Head">Department Head</option>
-                  <option value="Division Chief">Division Chief</option>
-                  <option value="PMD Head (final reviewer)">PMD Head (final reviewer)</option>
-                </select>
-                <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm" value={assignmentStatus} onChange={(event) => setAssignmentStatus(event.target.value as 'all' | RaterAssignment['status'])}>
-                  <option value="all">All Status</option>
-                  <option value="Assigned">Assigned</option>
-                  <option value="Pending">Pending Assignment</option>
-                  <option value="Unassigned">Unassigned</option>
-                </select>
-                <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm" value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)}>
-                  <option>Current</option>
-                  <option>Previous</option>
-                  <option>All</option>
-                  {periods.map((period) => <option key={period.id}>{period.name}</option>)}
-                </select>
-                <div className="relative xl:col-span-2">
-                  <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                  <input className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm" placeholder="Search employee, position, or rater" value={search} onChange={(event) => setSearch(event.target.value)} />
-                </div>
+          <div className="mb-8">
+            <div className="mb-2 flex items-center space-x-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                <Shield className="h-5 w-5" />
               </div>
+              <h1 className="text-2xl font-semibold text-gray-900">Rater Management &amp; Access Control</h1>
+            </div>
+            <p className="text-sm text-gray-500">
+              Assign raters and define their evaluation access for specific job positions.
+            </p>
+          </div>
 
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" onClick={() => openAssignModal()}>Assign Rater</button>
-                <button className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" onClick={() => sendNotification(selectedIds.length ? selectedIds : filteredAssignments.map((item) => item.id))}>
-                  <Send className="mr-1 inline h-4 w-4" />Send Notification
-                </button>
-                <button className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" onClick={exportAssignments}>
-                  <FileSpreadsheet className="mr-1 inline h-4 w-4" />Export Assignments
-                </button>
+          <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-3">
+            <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-6">
+              <div>
+                <p className="text-sm text-gray-500">Total Raters</p>
+                <p className="text-3xl font-bold text-gray-900">{totalRaters}</p>
               </div>
-
-              <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-left text-sm">
-                    <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
-                      <tr>
-                        <th className="px-3 py-3">
-                          <input
-                            type="checkbox"
-                            checked={allSelected}
-                            onChange={(event) => setSelectedIds(event.target.checked ? filteredAssignments.map((row) => row.id) : [])}
-                          />
-                        </th>
-                        <th className="px-3 py-3">Employee</th>
-                        <th className="px-3 py-3">Position</th>
-                        <th className="px-3 py-3">Immediate Supervisor</th>
-                        <th className="px-3 py-3">Department Head</th>
-                        <th className="px-3 py-3">Additional Rater</th>
-                        <th className="px-3 py-3">Status</th>
-                        <th className="px-3 py-3">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {groupedAssignments.map(([department, departmentRows]) => (
-                        <>
-                          <tr key={`${department}-header`} className="border-t border-slate-200 bg-slate-50">
-                            <td className="px-3 py-2">
-                              <button className="rounded border border-slate-300 p-1" onClick={() => toggleCollapse(department)}>
-                                {collapsedDepartments[department] ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-                              </button>
-                            </td>
-                            <td className="px-3 py-2 font-semibold text-slate-900" colSpan={7}>
-                              {department} • {departmentRows.length} employees • {departmentRows.filter((row) => row.status === 'Assigned').length} assigned, {departmentRows.filter((row) => row.status !== 'Assigned').length} pending
-                            </td>
-                          </tr>
-
-                          {!collapsedDepartments[department] &&
-                            departmentRows.map((row) => (
-                              <tr key={row.id} className="border-t border-slate-100 bg-white">
-                                <td className="px-3 py-3">
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedIds.includes(row.id)}
-                                    onChange={() =>
-                                      setSelectedIds((current) =>
-                                        current.includes(row.id)
-                                          ? current.filter((entry) => entry !== row.id)
-                                          : [...current, row.id]
-                                      )
-                                    }
-                                  />
-                                </td>
-                                <td className="px-3 py-3 font-medium text-slate-900">{row.employeeName}</td>
-                                <td className="px-3 py-3 text-slate-600">{row.employeePosition}</td>
-                                <td className="px-3 py-3 text-slate-600">{row.raters.immediateSupervisor.name}</td>
-                                <td className="px-3 py-3 text-slate-600">{row.raters.departmentHead.name}</td>
-                                <td className="px-3 py-3 text-slate-600">{row.raters.additionalRater?.name ?? '+'}</td>
-                                <td className="px-3 py-3">
-                                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_COLORS[row.status]}`}>{row.status}</span>
-                                </td>
-                                <td className="px-3 py-3">
-                                  <div className="flex items-center gap-2">
-                                    {(() => {
-                                      const linkedRater = resolveRaterAccount(
-                                        row.raters.immediateSupervisor.id,
-                                        row.raters.immediateSupervisor.name
-                                      );
-                                      const isActive = Boolean(linkedRater?.is_active);
-                                      return (
-                                        <button
-                                          type="button"
-                                          className={`inline-flex items-center rounded-lg border px-2 py-1 text-xs font-semibold transition ${isActive ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
-                                          onClick={() =>
-                                            toggleRaterAccess(
-                                              row.raters.immediateSupervisor.id,
-                                              row.raters.immediateSupervisor.name
-                                            )
-                                          }
-                                          title={linkedRater ? '' : 'No linked rater account found. Click to see how to fix.'}
-                                        >
-                                          {isActive ? <XCircle className="mr-1 h-3.5 w-3.5" /> : <CheckCircle2 className="mr-1 h-3.5 w-3.5" />}
-                                          {isActive ? 'Revoke Access' : 'Grant Access'}
-                                        </button>
-                                      );
-                                    })()}
-
-                                  <div className="relative">
-                                    <button className="rounded-md p-1 text-slate-500 hover:bg-slate-100" onClick={() => setOpenMenuId(openMenuId === row.id ? null : row.id)}>
-                                      <MoreVertical className="h-4 w-4" />
-                                    </button>
-                                    {openMenuId === row.id && (
-                                      <div className="absolute right-0 z-10 mt-1 w-48 rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
-                                        <button className="block w-full rounded px-2 py-1 text-left hover:bg-slate-100" onClick={() => { openAssignModal(row); setOpenMenuId(null); }}>Edit Rater Assignment</button>
-                                        <button className="block w-full rounded px-2 py-1 text-left hover:bg-slate-100" onClick={() => { setActiveTab('Rating History'); setHistoryEmployeeFilter(row.employeeId); setOpenMenuId(null); }}>View Rating History</button>
-                                        <button className="block w-full rounded px-2 py-1 text-left hover:bg-slate-100" onClick={() => { sendNotification([row.id]); setOpenMenuId(null); }}>Send Notification</button>
-                                        <button className="block w-full rounded px-2 py-1 text-left text-rose-700 hover:bg-rose-50" onClick={() => { removeAssignment(row.id); setOpenMenuId(null); }}>Remove Assignment</button>
-                                      </div>
-                                    )}
-                                  </div>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                        </>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div className="mb-3 flex flex-wrap items-center gap-2">
-                <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm" value={historyEmployeeFilter} onChange={(event) => setHistoryEmployeeFilter(event.target.value)}>
-                  <option value="all">All Employees</option>
-                  {assignments.map((item) => (
-                    <option key={item.employeeId} value={item.employeeId}>{item.employeeName}</option>
-                  ))}
-                </select>
-                <button className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" onClick={() => setHistoryEmployeeFilter('all')}>Reset</button>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-left text-sm">
-                  <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-3 py-2">Evaluation Period</th>
-                      <th className="px-3 py-2">Employee</th>
-                      <th className="px-3 py-2">Rater Name & Level</th>
-                      <th className="px-3 py-2">Rating Given</th>
-                      <th className="px-3 py-2">Date Submitted</th>
-                      <th className="px-3 py-2">Status</th>
-                      <th className="px-3 py-2">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {historyRows.map((row) => (
-                      <tr key={`${row[0]}-${row[1]}-${row[2]}`} className="border-t border-slate-100">
-                        {row.map((cell) => (
-                          <td key={`${cell}`} className="px-3 py-2 text-slate-700">{cell}</td>
-                        ))}
-                        <td className="px-3 py-2">
-                          <button className="rounded-lg border border-slate-300 px-2 py-1 text-xs font-medium">View IPCR</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                <UserPlus className="h-5 w-5" />
               </div>
             </div>
-          )}
-        </section>
+
+            <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-6">
+              <div>
+                <p className="text-sm text-gray-500">Active Raters</p>
+                <p className="text-3xl font-bold text-gray-900">{activeRaters}</p>
+              </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-green-50 text-green-500">
+                <CheckCircle2 className="h-5 w-5" />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-6">
+              <div>
+                <p className="text-sm text-gray-500">Inactive Raters</p>
+                <p className="text-3xl font-bold text-gray-900">{inactiveRaters}</p>
+              </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-gray-100 text-gray-500">
+                <XCircle className="h-5 w-5" />
+              </div>
+            </div>
+          </div>
+
+          <div className="mb-6 flex flex-col items-center justify-between gap-4 md:flex-row">
+            <div className="flex items-center space-x-3">
+              <button
+                type="button"
+                className="flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+                onClick={() => openAssignModal()}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Add New Rater
+              </button>
+              <button
+                type="button"
+                className="flex items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+                onClick={handleDownloadRaters}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Download Rater List
+              </button>
+            </div>
+
+            <div className="flex items-center space-x-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  className="w-64 rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-4 text-sm focus:border-blue-500 focus:outline-none"
+                  placeholder="Search raters..."
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </div>
+              <select
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700"
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+              >
+                <option>All Status</option>
+                <option>Active</option>
+                <option>Inactive</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+            <table className="w-full border-collapse text-left">
+              <thead className="border-b border-gray-200 bg-white">
+                <tr>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Rater Name</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Designation / Position</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Access Role</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Assigned Job Position(s)</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Last Login</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Status</th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-gray-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredRaters.map((rater) => (
+                  <tr key={`${rater.source}-${rater.id}-${rater.email}`} className="transition-colors hover:bg-gray-50">
+                    <td className="whitespace-nowrap px-6 py-4">
+                      <div className="flex items-center">
+                        <div className="mr-3 flex h-9 w-9 items-center justify-center rounded-full border border-blue-100 bg-blue-50 text-sm font-bold text-blue-600">
+                          {toInitials(rater.name)}
+                        </div>
+                        <div>
+                          <span className="block text-sm font-semibold text-gray-900">{rater.name}</span>
+                          <span className="block text-xs text-gray-500">{rater.email || 'No email'}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600">{rater.designation}</td>
+                    <td className="whitespace-nowrap px-6 py-4">{roleBadge('Interviewer')}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col">
+                        {rater.assignedPositions.map((position) => (
+                          <span key={`${rater.email}-${position}`} className="mb-1 block text-sm text-blue-600 last:mb-0">
+                            {position}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">{rater.lastLogin}</td>
+                    <td className="whitespace-nowrap px-6 py-4">{statusBadge(rater.status)}</td>
+                    <td className="whitespace-nowrap px-6 py-4">
+                      <div className="flex items-center space-x-3">
+                        <button
+                          type="button"
+                          className="text-blue-500 hover:text-blue-700"
+                          aria-label={`Edit ${rater.name}`}
+                          onClick={() => openAssignModal(rater)}
+                        >
+                          <PenLine className="h-4 w-4" />
+                        </button>
+                        {rater.status === 'Active' ? (
+                          <button
+                            type="button"
+                            className="text-red-500 hover:text-red-700"
+                            aria-label={`Deactivate ${rater.name}`}
+                            onClick={() => void handleToggleRaterAccess(rater)}
+                          >
+                            <XCircle className="h-4 w-4" />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="text-green-500 hover:text-green-700"
+                            aria-label={`Activate ${rater.name}`}
+                            onClick={() => void handleToggleRaterAccess(rater)}
+                          >
+                            <CheckCircle2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+
+                {filteredRaters.length === 0 && (
+                  <tr>
+                    <td className="px-6 py-8 text-sm text-gray-500" colSpan={7}>
+                      No raters found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </main>
 
       <RaterManagementNavigationGuide open={showGuide} onClose={() => setShowGuide(false)} />
 
       {showAssignModal && (
-        <div className="fixed inset-0 z-[120] bg-slate-900/70 p-4" onClick={() => setShowAssignModal(false)}>
-          <div className="mx-auto mt-6 flex h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <div className="fixed inset-0 z-[120] bg-slate-900/70 p-4" onClick={closeAssignModal}>
+          <div
+            className="mx-auto mt-6 flex h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="flex items-start justify-between bg-blue-700 px-6 py-4 text-white">
               <div>
                 <h2 className="text-3xl font-bold">Assign Rater Access</h2>
                 <p className="text-base text-blue-100">Grant access to interviewer portal</p>
               </div>
-              <button className="rounded-md p-1 text-white/90 hover:bg-white/10" onClick={() => setShowAssignModal(false)}>
+              <button
+                type="button"
+                className="rounded-md p-1 text-white/90 hover:bg-white/10"
+                onClick={closeAssignModal}
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
               <section>
-                <label className="mb-2 block text-base font-semibold text-slate-700">Select Rater <span className="text-red-500">*</span></label>
+                <label className="mb-2 block text-base font-semibold text-slate-700">
+                  Select Rater <span className="text-red-500">*</span>
+                </label>
                 <select
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg"
-                  value={form.employeeName}
+                  value={form.selectedEmail}
                   onChange={(event) => handleRaterSelection(event.target.value)}
                 >
                   <option value="">Choose a rater...</option>
-                  {availableRaters.map((rater) => (
-                    <option key={rater.id} value={rater.name}>{rater.name}</option>
+                  {availableAccounts.map((account) => (
+                    <option key={account.email} value={account.email}>
+                      {account.name} ({account.email})
+                    </option>
                   ))}
                 </select>
               </section>
 
               <section>
+                <p className="mb-2 text-sm font-semibold text-slate-700">Cannot find the account above?</p>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <input
+                    className="rounded-xl border border-slate-300 px-4 py-3 text-sm"
+                    placeholder="Interviewer name"
+                    value={manualName}
+                    onChange={(event) => setManualName(event.target.value)}
+                  />
+                  <input
+                    className="rounded-xl border border-slate-300 px-4 py-3 text-sm"
+                    placeholder="Interviewer email"
+                    value={manualEmail}
+                    onChange={(event) => setManualEmail(event.target.value)}
+                  />
+                  <input
+                    className="rounded-xl border border-slate-300 px-4 py-3 text-sm"
+                    placeholder="Department"
+                    value={manualDepartment}
+                    onChange={(event) => setManualDepartment(event.target.value)}
+                  />
+                </div>
+                <p className="mt-2 text-xs text-slate-500">
+                  Use this when database visibility rules hide `profiles` rows from this page.
+                </p>
+              </section>
+
+              <section>
                 <label className="mb-2 block text-base font-semibold text-slate-700">Designation / Role</label>
-                <input className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-lg" value={form.department} readOnly />
+                <input
+                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-lg"
+                  value={selectedAccount?.designation ?? ''}
+                  placeholder="Auto-filled based on selected rater"
+                  readOnly
+                />
                 <p className="mt-2 text-sm text-slate-500">Auto-filled based on selected rater</p>
               </section>
 
               <section>
-                <label className="mb-2 block text-base font-semibold text-slate-700">Access Level <span className="text-red-500">*</span></label>
+                <label className="mb-2 block text-base font-semibold text-slate-700">
+                  Access Level <span className="text-red-500">*</span>
+                </label>
                 <select className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-lg" value="Interviewer" disabled>
                   <option value="Interviewer">Interviewer</option>
                 </select>
               </section>
 
               <section>
-                <label className="mb-2 block text-base font-semibold text-slate-700">Assign Job Positions <span className="text-red-500">*</span></label>
+                <label className="mb-2 block text-base font-semibold text-slate-700">
+                  Assign Job Positions <span className="text-red-500">*</span>
+                </label>
                 <div className="max-h-72 overflow-y-auto rounded-xl border border-slate-300 p-4">
-                  <div className="grid grid-cols-1 gap-x-10 gap-y-4 md:grid-cols-2">
-                    {assignableJobPositions.map((position) => {
-                      const checked = assignedPositions.includes(position);
-                      return (
-                        <label key={position} className="flex items-center gap-3 text-xl text-slate-700">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleAssignedPosition(position)}
-                            className="h-5 w-5 rounded"
-                          />
-                          <span>{position}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
+                  {assignableJobPositions.length === 0 ? (
+                    <p className="text-sm text-slate-500">No active job postings are available. Post or activate a job first.</p>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-x-10 gap-y-4 md:grid-cols-2">
+                      {assignableJobPositions.map((position) => {
+                        const checked = form.assignedPositions.includes(position);
+                        return (
+                          <label key={position} className="flex items-center gap-3 text-lg text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleAssignedPosition(position)}
+                              className="h-5 w-5 rounded"
+                            />
+                            <span>{position}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-                <p className="mt-2 text-sm text-slate-500">Selected: {assignedPositions.length} position{assignedPositions.length === 1 ? '' : 's'}</p>
+                <p className="mt-2 text-sm text-slate-500">
+                  Selected: {form.assignedPositions.length} position{form.assignedPositions.length === 1 ? '' : 's'}
+                </p>
               </section>
 
-              {availableRaters.length === 0 && (
-                <p className="text-xs text-amber-700">No active raters found in database. Add raters first, then reopen this form.</p>
-              )}
-
               <section>
-                <h3 className="mb-3 text-3xl font-bold text-slate-800">Access Duration (Optional)</h3>
+                <h3 className="mb-3 text-2xl font-bold text-slate-800">Access Duration (Optional)</h3>
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
                     <label className="mb-2 block text-base font-semibold text-slate-600">Start Date</label>
-                    <input className="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg" type="date" value={form.effectiveDate} onChange={(event) => setForm({ ...form, effectiveDate: event.target.value })} />
+                    <input
+                      className="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg"
+                      type="date"
+                      value={form.startDate}
+                      onChange={(event) => setForm((current) => ({ ...current, startDate: event.target.value }))}
+                    />
                   </div>
                   <div>
                     <label className="mb-2 block text-base font-semibold text-slate-600">End Date</label>
-                    <input className="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg" type="date" value={form.expirationDate} onChange={(event) => setForm({ ...form, expirationDate: event.target.value })} />
+                    <input
+                      className="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg"
+                      type="date"
+                      value={form.endDate}
+                      onChange={(event) => setForm((current) => ({ ...current, endDate: event.target.value }))}
+                    />
                   </div>
                 </div>
               </section>
-
-              <select className="hidden" value={form.period} onChange={(event) => setForm({ ...form, period: event.target.value })}>
-                <option value="">Select Evaluation Period</option>
-                {periods.map((period) => <option key={period.id} value={period.name}>{period.name}</option>)}
-              </select>
-
-              <div className="hidden">
-                <input value={form.immediateSupervisor} onChange={(event) => setForm({ ...form, immediateSupervisor: event.target.value })} />
-                <input value={form.departmentHead} onChange={(event) => setForm({ ...form, departmentHead: event.target.value })} />
-                <input value={form.additionalRater} onChange={(event) => setForm({ ...form, additionalRater: event.target.value })} />
-              </div>
             </div>
 
             <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
-              <button className="rounded-lg border border-slate-300 px-4 py-2 text-lg" onClick={() => setShowAssignModal(false)}>Cancel</button>
-              <button className="rounded-lg bg-blue-600 px-4 py-2 text-lg font-semibold text-white" onClick={saveAssignment}>Save & Generate Access</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showPeriodModal && (
-        <div className="fixed inset-0 z-[121] bg-slate-900/70 p-4" onClick={() => setShowPeriodModal(false)}>
-          <div className="mx-auto mt-10 w-full max-w-4xl rounded-2xl bg-white p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <div className="mb-4 flex items-start justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">Evaluation Period Settings</h2>
-                <p className="text-sm text-slate-500">Define evaluation cycles, deadlines, and rating periods.</p>
-              </div>
-              <button className="rounded-md p-1 text-slate-500 hover:bg-slate-100" onClick={() => setShowPeriodModal(false)}>
-                <X className="h-5 w-5" />
+              <button
+                type="button"
+                className="rounded-lg border border-slate-300 px-4 py-2 text-lg"
+                onClick={closeAssignModal}
+                disabled={saving}
+              >
+                Cancel
               </button>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <h3 className="font-semibold text-slate-900">Current Period Configuration</h3>
-              {activePeriod ? (
-                <div className="mt-2 space-y-1 text-sm text-slate-700">
-                  <p>Name: {activePeriod.name}</p>
-                  <p>Type: {activePeriod.type}</p>
-                  <p>Range: {formatPHDate(activePeriod.startDate)} - {formatPHDate(activePeriod.endDate)}</p>
-                  <p>Submission Deadline: {formatPHDate(activePeriod.submissionDeadline)}</p>
-                  <p>Status: {activePeriod.status}</p>
-                </div>
-              ) : (
-                <p className="mt-2 text-sm text-slate-500">No active period configured.</p>
-              )}
-            </div>
-
-            <div className="mt-4 overflow-x-auto">
-              <table className="min-w-full text-left text-sm">
-                <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-3 py-2">Period Name</th>
-                    <th className="px-3 py-2">Date Range</th>
-                    <th className="px-3 py-2">Status</th>
-                    <th className="px-3 py-2">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {periods.map((period) => (
-                    <tr key={period.id} className="border-t border-slate-100">
-                      <td className="px-3 py-2 text-slate-700">{period.name}</td>
-                      <td className="px-3 py-2 text-slate-700">{formatPHDate(period.startDate)} - {formatPHDate(period.endDate)}</td>
-                      <td className="px-3 py-2 text-slate-700">{period.status}</td>
-                      <td className="px-3 py-2">
-                        <button className="mr-2 rounded-lg border border-slate-300 px-2 py-1 text-xs" onClick={() => setToast(`Viewing ${period.name}`)}>View</button>
-                        <button className="rounded-lg border border-slate-300 px-2 py-1 text-xs" onClick={() => {
-                          const next: EvaluationPeriod[] = periods.map((item) => ({
-                            ...item,
-                            status: item.id === period.id
-                              ? 'Active'
-                              : item.status === 'Active'
-                                ? 'Completed'
-                                : item.status,
-                          }));
-                          savePeriods(next);
-                          setToast(`${period.name} set as active period.`);
-                        }}>Set Active</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="mt-5 flex justify-between gap-2">
-              <button className="rounded-lg border border-slate-300 px-3 py-2 text-sm" onClick={() => {
-                const nowYear = new Date().getFullYear() + 1;
-                const nextPeriod: EvaluationPeriod = {
-                  id: crypto.randomUUID(),
-                  name: `${nowYear} Annual IPCR`,
-                  type: 'Annual',
-                  startDate: `${nowYear}-01-01T00:00:00+08:00`,
-                  endDate: `${nowYear}-12-31T23:59:00+08:00`,
-                  submissionDeadline: `${nowYear}-12-15T23:59:00+08:00`,
-                  status: 'Upcoming',
-                };
-                savePeriods([...periods, nextPeriod]);
-                setToast('New period created.');
-              }}>
-                <ClipboardCheck className="mr-1 inline h-4 w-4" />Create New Period
-              </button>
-              <button className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white" onClick={() => setShowPeriodModal(false)}>
-                Save Changes
+              <button
+                type="button"
+                className="rounded-lg bg-blue-600 px-4 py-2 text-lg font-semibold text-white disabled:cursor-not-allowed disabled:bg-blue-300"
+                onClick={() => void handleSaveRaterAccess()}
+                disabled={saving || (!form.selectedEmail && !manualEmail.trim()) || form.assignedPositions.length === 0}
+              >
+                Save &amp; Generate Access
               </button>
             </div>
           </div>
@@ -958,20 +1013,10 @@ export const RaterManagementPage = () => {
       )}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-lg">{toast}</div>
+        <div className="fixed bottom-6 right-6 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-lg">
+          {toast}
+        </div>
       )}
-
-      <div className="fixed bottom-6 left-6 flex gap-2">
-        <button className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold" onClick={() => sendNotification(selectedIds.length ? selectedIds : filteredAssignments.map((item) => item.id))}>
-          <Send className="mr-1 inline h-4 w-4" />Notify Raters
-        </button>
-        <button className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold" onClick={exportAssignments}>
-          <FileSpreadsheet className="mr-1 inline h-4 w-4" />Export
-        </button>
-        <button className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold" onClick={() => setToast('IPCR viewer opens from PM module routing.') }>
-          <Users className="mr-1 inline h-4 w-4" />Open IPCR
-        </button>
-      </div>
     </div>
   );
 };

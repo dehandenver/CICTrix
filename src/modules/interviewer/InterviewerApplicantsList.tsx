@@ -13,6 +13,7 @@ import {
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
+import { isPositionAssignedToInterviewer, resolveAssignedPositionsForInterviewer } from '../../lib/interviewerAccess';
 import { mockDatabase } from '../../lib/mockDatabase';
 import { ensureRecruitmentSeedData, getAuthoritativeJobPostings, getApplicants as getRecruitmentApplicants } from '../../lib/recruitmentData';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../../lib/supabase';
@@ -205,6 +206,7 @@ const toDocumentUrl = async (filePath: string): Promise<string | null> => {
 };
 
 const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
+  if (!isMockModeEnabled) return 'supabase';
   try {
     const mode = localStorage.getItem('cictrix_data_source_mode');
     return mode === 'local' ? 'local' : 'supabase';
@@ -316,6 +318,7 @@ export function InterviewerApplicantsList() {
   const [emailSubject, setEmailSubject] = useState('');
   const [emailMessage, setEmailMessage] = useState('');
   const [internalNotesByApplicant, setInternalNotesByApplicant] = useState<Record<string, string>>({});
+  const [assignedPositions, setAssignedPositions] = useState<string[]>([]);
 
   useEffect(() => {
     const syncJobs = () => {
@@ -329,6 +332,7 @@ export function InterviewerApplicantsList() {
     const onStorage = (event: StorageEvent) => {
       if (
         !event.key ||
+        event.key === 'cictrix_rater_assigned_positions' ||
         event.key === 'cictrix_job_postings' ||
         event.key === 'cictrix_authoritative_job_postings'
       ) {
@@ -352,6 +356,20 @@ export function InterviewerApplicantsList() {
     try {
       setLoading(true);
       setError(null);
+
+      const { positions } = await resolveAssignedPositionsForInterviewer();
+      setAssignedPositions(positions);
+
+      if (!isPositionAssignedToInterviewer(jobTitle, positions)) {
+        setApplicants([]);
+        setJobDetails(null);
+        setError(
+          positions.length === 0
+            ? 'No job positions are assigned to your interviewer account yet.'
+            : 'You do not have access to this job position.'
+        );
+        return;
+      }
 
       ensureRecruitmentSeedData();
       const matchingPosting = getAuthoritativeJobPostings().find((row) =>
@@ -635,7 +653,7 @@ export function InterviewerApplicantsList() {
         ) : error ? (
           <div className="error-state">
             <p>❌ Error: {error}</p>
-            <button onClick={fetchApplicantsAndJob}>Retry</button>
+            <button onClick={() => void fetchApplicantsAndJob()}>Retry</button>
           </div>
         ) : filteredApplicants.length > 0 ? (
           <div className="applicants-table-container">
