@@ -10,6 +10,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { getPreferredDataSourceMode } from '../lib/dataSourceMode';
 import { mockDatabase } from '../lib/mockDatabase';
 import { getAuthoritativeJobPostings } from '../lib/recruitmentData';
 import { isMockModeEnabled, supabase } from '../lib/supabase';
@@ -62,16 +63,6 @@ const defaultFormState = (): RaterFormState => ({
   startDate: '',
   endDate: '',
 });
-
-const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
-  if (!isMockModeEnabled) return 'supabase';
-  try {
-    const mode = localStorage.getItem('cictrix_data_source_mode');
-    return mode === 'local' ? 'local' : 'supabase';
-  } catch {
-    return 'supabase';
-  }
-};
 
 const getPreferredClient = () => {
   const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();

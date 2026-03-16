@@ -13,6 +13,7 @@ import {
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
+import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import { isPositionAssignedToInterviewer, resolveAssignedPositionsForInterviewer } from '../../lib/interviewerAccess';
 import { mockDatabase } from '../../lib/mockDatabase';
 import { ensureRecruitmentSeedData, getAuthoritativeJobPostings, getApplicants as getRecruitmentApplicants } from '../../lib/recruitmentData';
@@ -108,9 +109,20 @@ const isDemoApplicant = (applicant: any): boolean => {
 };
 
 const buildEvaluationStatusMap = (evaluations: any[] = []) => {
-  const evaluationMap = new Map();
+  const evaluationMap = new Map<string, 'Completed' | 'In Progress'>();
 
   evaluations.forEach((e: any) => {
+    const applicantId = String(e?.applicant_id ?? '').trim();
+    if (!applicantId) return;
+
+    const hasSubmittedEvaluation =
+      String(e?.interview_notes ?? '').trim().length > 0 ||
+      String(e?.recommendation ?? '').trim().length > 0 ||
+      typeof e?.overall_impression_score === 'number' ||
+      typeof e?.overall_score === 'number' ||
+      typeof e?.technical_score === 'number' ||
+      typeof e?.communication_score === 'number';
+
     const hasOralScores = [
       e.communication_skills_score,
       e.confidence_score,
@@ -126,8 +138,12 @@ const buildEvaluationStatusMap = (evaluations: any[] = []) => {
       e.overall_score
     ].every((value) => typeof value === 'number' && value > 0);
 
-    const isComplete = hasOralScores || hasLegacyScores;
-    evaluationMap.set(e.applicant_id, isComplete ? 'Completed' : 'In Progress');
+    const isComplete = hasSubmittedEvaluation || hasOralScores || hasLegacyScores;
+    const current = evaluationMap.get(applicantId);
+
+    if (isComplete || !current) {
+      evaluationMap.set(applicantId, isComplete ? 'Completed' : 'In Progress');
+    }
   });
 
   return evaluationMap;
@@ -203,16 +219,6 @@ const toDocumentUrl = async (filePath: string): Promise<string | null> => {
 
   const signed = await supabase.storage.from(ATTACHMENTS_BUCKET).createSignedUrl(filePath, 300);
   return signed.data?.signedUrl ?? null;
-};
-
-const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
-  if (!isMockModeEnabled) return 'supabase';
-  try {
-    const mode = localStorage.getItem('cictrix_data_source_mode');
-    return mode === 'local' ? 'local' : 'supabase';
-  } catch {
-    return 'supabase';
-  }
 };
 
 const fetchApplicantsByPosition = async (client: any, position: string): Promise<any[]> => {
@@ -692,13 +698,14 @@ export function InterviewerApplicantsList() {
                       </span>
                     </td>
                     <td>
-                      {applicant.evaluation_status === 'Completed' ? (
+                      {(applicant.evaluation_status === 'Completed' || statusIndicatesEvaluated(applicant.status)) ? (
                         <button className="action-btn evaluated" disabled>
                           Evaluated
                         </button>
                       ) : (
                         <button
                           className="action-btn evaluate"
+                          type="button"
                           onClick={() => navigate(`/interviewer/evaluate/${applicant.id}`)}
                         >
                           Evaluate

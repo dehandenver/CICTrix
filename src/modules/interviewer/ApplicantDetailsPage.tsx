@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import { mockDatabase } from '../../lib/mockDatabase';
 import { getApplicants, getAuthoritativeJobPostings, saveApplicants } from '../../lib/recruitmentData';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../../lib/supabase';
@@ -49,14 +50,16 @@ type AttachmentRecord = {
 type EvaluationRecord = {
   created_at?: string;
   updated_at?: string;
-  technical_score?: number;
-  overall_score?: number;
-  communication_skills_score?: number;
-  confidence_score?: number;
-  comprehension_score?: number;
-  personality_score?: number;
-  job_knowledge_score?: number;
-  overall_impression_score?: number;
+  technical_score?: number | string;
+  overall_score?: number | string;
+  score?: number | string;
+  communication_score?: number | string;
+  communication_skills_score?: number | string;
+  confidence_score?: number | string;
+  comprehension_score?: number | string;
+  personality_score?: number | string;
+  job_knowledge_score?: number | string;
+  overall_impression_score?: number | string;
 };
 
 type CachedPreviewFile = {
@@ -94,6 +97,7 @@ type ScoreBreakdown = {
   performance: number;
   written: number;
   pcpt: number;
+  rawPcpt: number;
   oral: number;
   adjective: string;
 };
@@ -105,6 +109,13 @@ const SCORE_EXPERIENCE_STORAGE_KEY = 'cictrix_rsp_score_experience';
 const SCORE_WRITTEN_STORAGE_KEY = 'cictrix_rsp_score_written';
 const SCORE_FINALIZED_STORAGE_KEY = 'cictrix_rsp_score_finalized';
 const SCORE_DRAFT_STORAGE_KEY = 'cictrix_rsp_score_draft';
+const INTERVIEWER_SCORE_SNAPSHOT_STORAGE_KEY = 'cictrix_interviewer_score_snapshot';
+
+type StoredInterviewerScoreSnapshot = {
+  pcptAverage?: number;
+  oralAverage?: number;
+  updatedAt?: string;
+};
 
 const EDUCATION_ATTAINMENT_OPTIONS: Array<{
   value: EducationAttainmentValue;
@@ -188,8 +199,88 @@ const to20FromFivePoint = (value?: number) => {
   return clamp20((value / 5) * 20);
 };
 
-const computeScoreBreakdown = (evaluation: EvaluationRecord | null): ScoreBreakdown => {
-  if (!evaluation) {
+const to20FromPcpt = (value?: number) => {
+  if (typeof value !== 'number' || Number.isNaN(value) || value <= 0) return 0;
+  // Support both legacy average scale (1-5) and current raw sum scale (6-30).
+  if (value <= 5) return clamp20((value / 5) * 20);
+  return clamp20((value / 30) * 20);
+};
+
+const parseScore = (value: unknown): number => {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+};
+
+const evaluationScoreSignal = (evaluation: EvaluationRecord | null | undefined) => {
+  if (!evaluation) return 0;
+
+  const numericSignals = [
+    parseScore(evaluation.technical_score),
+    parseScore(evaluation.overall_score),
+    parseScore(evaluation.score),
+    parseScore(evaluation.communication_skills_score) || parseScore(evaluation.communication_score),
+    parseScore(evaluation.confidence_score),
+    parseScore(evaluation.comprehension_score),
+    parseScore(evaluation.personality_score),
+    parseScore(evaluation.job_knowledge_score),
+    parseScore(evaluation.overall_impression_score),
+  ].filter((value) => value > 0).length;
+
+  return numericSignals;
+};
+
+const evaluationTimestamp = (evaluation: EvaluationRecord | null | undefined) => {
+  if (!evaluation) return 0;
+  const primary = new Date(String(evaluation.updated_at ?? '')).getTime();
+  if (Number.isFinite(primary) && primary > 0) return primary;
+  const fallback = new Date(String(evaluation.created_at ?? '')).getTime();
+  return Number.isFinite(fallback) && fallback > 0 ? fallback : 0;
+};
+
+const hasInterviewScores = (evaluation: EvaluationRecord | null | undefined): boolean => {
+  if (!evaluation) return false;
+
+  const pcpt = parseScore(evaluation.personality_score) || parseScore(evaluation.overall_impression_score);
+  const oral = [
+    evaluation.communication_skills_score,
+    evaluation.confidence_score,
+    evaluation.comprehension_score,
+  ].some((value) => parseScore(value) > 0);
+
+  return pcpt > 0 || oral;
+};
+
+const selectBestEvaluation = (rows: EvaluationRecord[] | null | undefined): EvaluationRecord | null => {
+  const candidates = Array.isArray(rows) ? rows.filter(Boolean) : [];
+  if (candidates.length === 0) return null;
+
+  // Prefer the most recent evaluation that includes PCPT / oral scores (if available).
+  const withInterviewScores = candidates.filter(hasInterviewScores);
+  if (withInterviewScores.length > 0) {
+    return withInterviewScores
+      .sort((left, right) => evaluationTimestamp(right) - evaluationTimestamp(left))[0] ?? null;
+  }
+
+  // Otherwise, fall back to the previous heuristic (highest numeric signal + latest timestamp).
+  const sorted = [...candidates].sort((left, right) => {
+    const scoreDelta = evaluationScoreSignal(right) - evaluationScoreSignal(left);
+    if (scoreDelta !== 0) return scoreDelta;
+
+    return evaluationTimestamp(right) - evaluationTimestamp(left);
+  });
+
+  return sorted[0] ?? null;
+};
+
+const computeScoreBreakdown = (
+  evaluation: EvaluationRecord | null,
+  fallback?: StoredInterviewerScoreSnapshot | null,
+): ScoreBreakdown => {
+  if (!evaluation && !fallback) {
     return {
       total: 0,
       education: 0,
@@ -197,28 +288,72 @@ const computeScoreBreakdown = (evaluation: EvaluationRecord | null): ScoreBreakd
       performance: 0,
       written: 0,
       pcpt: 0,
+      rawPcpt: 0,
       oral: 0,
       adjective: 'Below Average',
     };
   }
 
-  const education = clamp20((typeof evaluation.technical_score === 'number' ? evaluation.technical_score : 0) / 1.5);
-  const experience = to20FromFivePoint(evaluation.job_knowledge_score);
-  const performance = to20FromFivePoint(evaluation.overall_impression_score);
-  const written = clamp20((typeof evaluation.technical_score === 'number' ? evaluation.technical_score : 0) / 1.5);
-  const pcpt = to20FromFivePoint(evaluation.personality_score);
+  const fallbackOralAverage =
+    typeof fallback?.oralAverage === 'number' && fallback.oralAverage > 0
+      ? fallback.oralAverage
+      : 0;
+  const fallbackPcptAverage =
+    typeof fallback?.pcptAverage === 'number' && fallback.pcptAverage > 0
+      ? fallback.pcptAverage
+      : 0;
+
+  if (!evaluation) {
+    const oralFromFallback = to20FromFivePoint(fallbackOralAverage);
+    const rawPcptFromFallback = fallbackPcptAverage || fallbackOralAverage;
+    const pcptFromFallback = to20FromPcpt(rawPcptFromFallback);
+    const totalFromFallback = Math.max(0, Math.min(100, oralFromFallback + pcptFromFallback));
+
+    return {
+      total: totalFromFallback,
+      education: 0,
+      experience: 0,
+      performance: 0,
+      written: 0,
+      pcpt: pcptFromFallback,
+      rawPcpt: rawPcptFromFallback,
+      oral: oralFromFallback,
+      adjective: adjectiveFromScore(totalFromFallback),
+    };
+  }
+
+  const technicalScore = parseScore(evaluation.technical_score);
+  const overallScore = parseScore(evaluation.overall_score) || parseScore(evaluation.score);
+  const communicationSkillsScore = parseScore(evaluation.communication_skills_score) || parseScore(evaluation.communication_score);
+  const confidenceScore = parseScore(evaluation.confidence_score);
+  const comprehensionScore = parseScore(evaluation.comprehension_score);
+  const personalityScore = parseScore(evaluation.personality_score);
+  const jobKnowledgeScore = parseScore(evaluation.job_knowledge_score);
+  const overallImpressionScore = parseScore(evaluation.overall_impression_score);
+
+  const education = clamp20((technicalScore > 0 ? technicalScore : 0) / 1.5);
+  const experience = to20FromFivePoint(jobKnowledgeScore);
+  const performance = to20FromFivePoint(overallImpressionScore);
+  const written = clamp20((technicalScore > 0 ? technicalScore : 0) / 1.5);
 
   const oralRaw = [
-    evaluation.communication_skills_score,
-    evaluation.confidence_score,
-    evaluation.comprehension_score,
-  ].filter((v) => typeof v === 'number') as number[];
-  const oralAverage = oralRaw.length > 0 ? oralRaw.reduce((sum, v) => sum + v, 0) / oralRaw.length : 0;
+    communicationSkillsScore,
+    confidenceScore,
+    comprehensionScore,
+  ].filter((v) => v > 0) as number[];
+  const oralAverage = oralRaw.length > 0 ? oralRaw.reduce((sum, v) => sum + v, 0) / oralRaw.length : fallbackOralAverage;
   const oral = to20FromFivePoint(oralAverage);
 
+  const pcptSource =
+    (personalityScore > 0 ? personalityScore : undefined) ??
+    (overallImpressionScore > 0 ? overallImpressionScore : undefined) ??
+    (fallbackPcptAverage > 0 ? fallbackPcptAverage : undefined) ??
+    (oralAverage > 0 ? oralAverage : 0);
+  const pcpt = to20FromPcpt(pcptSource);
+
   let total = 0;
-  if (typeof evaluation.overall_score === 'number' && evaluation.overall_score > 0) {
-    total = Math.max(0, Math.min(100, Math.round(evaluation.overall_score)));
+  if (overallScore > 0) {
+    total = Math.max(0, Math.min(100, Math.round(overallScore)));
   } else {
     total = Math.max(0, Math.min(100, education + experience + performance + written + pcpt));
   }
@@ -230,6 +365,7 @@ const computeScoreBreakdown = (evaluation: EvaluationRecord | null): ScoreBreakd
     performance,
     written,
     pcpt,
+    rawPcpt: pcptSource,
     oral,
     adjective: adjectiveFromScore(total),
   };
@@ -462,6 +598,34 @@ const saveStoredDraftState = (applicantId: string, isDraft: boolean) => {
   }
 };
 
+const getStoredInterviewerScoreSnapshot = (
+  applicantId?: string,
+  applicantEmail?: string,
+): StoredInterviewerScoreSnapshot | null => {
+  try {
+    const raw = localStorage.getItem(INTERVIEWER_SCORE_SNAPSHOT_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, StoredInterviewerScoreSnapshot>) : {};
+
+    const byId = applicantId ? parsed[`id:${String(applicantId).trim()}`] : undefined;
+    const normalizedEmail = String(applicantEmail ?? '').trim().toLowerCase();
+    const byEmail = normalizedEmail ? parsed[`email:${normalizedEmail}`] : undefined;
+
+    const validValue = (value?: number) =>
+      typeof value === 'number' && Number.isFinite(value) && value > 0 ? Number(value) : undefined;
+
+    const merged: StoredInterviewerScoreSnapshot = {
+      pcptAverage: validValue(byId?.pcptAverage) ?? validValue(byEmail?.pcptAverage),
+      oralAverage: validValue(byId?.oralAverage) ?? validValue(byEmail?.oralAverage),
+      updatedAt: byId?.updatedAt ?? byEmail?.updatedAt,
+    };
+
+    if (!merged.pcptAverage && !merged.oralAverage) return null;
+    return merged;
+  } catch {
+    return null;
+  }
+};
+
 export function ApplicantDetailsPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -533,10 +697,9 @@ export function ApplicantDetailsPage() {
           .select('*')
           .eq('applicant_id', id)
           .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+          .limit(10);
 
-        let resolvedEvaluation = (evaluationRes.data || null) as EvaluationRecord | null;
+        let resolvedEvaluation = selectBestEvaluation((evaluationRes.data || []) as EvaluationRecord[]);
 
         // Fallback: resolve evaluation by email-linked applicant IDs in case
         // interviewer/evaluator used a sibling applicant row ID.
@@ -562,10 +725,9 @@ export function ApplicantDetailsPage() {
                 .select('*')
                 .in('applicant_id', linkedIds)
                 .order('created_at', { ascending: false })
-                .limit(1)
-                .maybeSingle();
+                .limit(10);
 
-              resolvedEvaluation = (linkedEvaluationRes.data || null) as EvaluationRecord | null;
+              resolvedEvaluation = selectBestEvaluation((linkedEvaluationRes.data || []) as EvaluationRecord[]);
             }
           } catch {
             // Best effort fallback only.
@@ -579,26 +741,136 @@ export function ApplicantDetailsPage() {
         };
       };
 
+      const resolveEvaluationOnly = async (
+        client: any,
+        applicantId: string,
+        applicantEmail?: string,
+      ): Promise<EvaluationRecord | null> => {
+        try {
+          const directEval = await client
+            .from('evaluations')
+            .select('*')
+            .eq('applicant_id', applicantId)
+            .order('created_at', { ascending: false })
+            .limit(10);
+
+          const bestDirect = selectBestEvaluation((directEval?.data || []) as EvaluationRecord[]);
+          if (bestDirect) {
+            return bestDirect;
+          }
+        } catch {
+          // Continue to linked-id fallback.
+        }
+
+        if (!applicantEmail) return null;
+
+        try {
+          const linkedApplicantsRes = await client
+            .from('applicants')
+            .select('id')
+            .eq('email', applicantEmail);
+
+          const linkedIds = Array.from(
+            new Set(
+              [
+                applicantId,
+                ...((linkedApplicantsRes.data || []) as Array<{ id?: string }>).map((row) => String(row.id || '').trim()),
+              ].filter(Boolean)
+            )
+          );
+
+          if (linkedIds.length === 0) return null;
+
+          const linkedEval = await client
+            .from('evaluations')
+            .select('*')
+            .in('applicant_id', linkedIds)
+            .order('created_at', { ascending: false })
+            .limit(10);
+
+          return selectBestEvaluation((linkedEval.data || []) as EvaluationRecord[]);
+        } catch {
+          return null;
+        }
+      };
+
+      const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
+      const primaryClient = preferredMode === 'local' ? (mockDatabase as any) : supabase;
+      const secondaryClient = preferredMode === 'local' ? supabase : (mockDatabase as any);
+
       try {
-        const primary = await loadFromClient(supabase);
-        setApplicant(primary.applicant);
-        setAttachments(mergeAttachmentRows(primary.attachments, buildAttachmentRowsFromRecruitment(storedRecruitmentApplicant)));
-        setEvaluation(primary.evaluation ?? buildFallbackEvaluation(storedRecruitmentApplicant));
+        const primary = await loadFromClient(primaryClient);
+        let resolved = primary;
+
+        // If the primary source has the applicant row but no evaluation yet,
+        // try pulling only the evaluation from the secondary source.
+        if (!primary.evaluation) {
+          try {
+            const crossSourceEvaluation = await resolveEvaluationOnly(
+              secondaryClient,
+              id,
+              String(primary.applicant?.email ?? '').trim() || undefined,
+            );
+
+            const secondary = await loadFromClient(secondaryClient);
+            resolved = {
+              ...primary,
+              evaluation: crossSourceEvaluation ?? secondary.evaluation ?? primary.evaluation,
+              attachments:
+                primary.attachments.length > 0
+                  ? primary.attachments
+                  : secondary.attachments,
+            };
+          } catch {
+            const crossSourceEvaluation = await resolveEvaluationOnly(
+              secondaryClient,
+              id,
+              String(primary.applicant?.email ?? '').trim() || undefined,
+            );
+            if (crossSourceEvaluation) {
+              resolved = {
+                ...primary,
+                evaluation: crossSourceEvaluation,
+              };
+            }
+          }
+        }
+
+        setApplicant(resolved.applicant);
+        setAttachments(mergeAttachmentRows(resolved.attachments, buildAttachmentRowsFromRecruitment(storedRecruitmentApplicant)));
+        setEvaluation(resolved.evaluation ?? buildFallbackEvaluation(storedRecruitmentApplicant));
       } catch {
         try {
-          const fallback = await loadFromClient(mockDatabase as any);
+          const fallback = await loadFromClient(secondaryClient);
           setApplicant(fallback.applicant);
           setAttachments(mergeAttachmentRows(fallback.attachments, buildAttachmentRowsFromRecruitment(storedRecruitmentApplicant)));
           setEvaluation(fallback.evaluation ?? buildFallbackEvaluation(storedRecruitmentApplicant));
         } catch {
+          // If we couldn't load the applicant row from either source, try to recover
+          // any evaluation by searching by email (useful when the ID used in the route
+          // doesn't match the backend applicant record).
+          let resolvedEvaluation: EvaluationRecord | null = null;
+          const fallbackEmail = String(storedRecruitmentApplicant?.personalInfo?.email ?? '').trim() || undefined;
+
+          if (fallbackEmail) {
+            try {
+              resolvedEvaluation = await resolveEvaluationOnly(primaryClient, id, fallbackEmail);
+              if (!resolvedEvaluation) {
+                resolvedEvaluation = await resolveEvaluationOnly(secondaryClient, id, fallbackEmail);
+              }
+            } catch {
+              // Best-effort only.
+            }
+          }
+
           if (storedRecruitmentApplicant) {
             setApplicant(buildApplicantRecordFromRecruitment(storedRecruitmentApplicant, storedJobPosting));
             setAttachments(buildAttachmentRowsFromRecruitment(storedRecruitmentApplicant));
-            setEvaluation(buildFallbackEvaluation(storedRecruitmentApplicant));
+            setEvaluation(resolvedEvaluation ?? buildFallbackEvaluation(storedRecruitmentApplicant));
           } else {
             setApplicant(null);
             setAttachments([]);
-            setEvaluation(null);
+            setEvaluation(resolvedEvaluation);
           }
         }
       } finally {
@@ -612,7 +884,14 @@ export function ApplicantDetailsPage() {
   const fullName = useMemo(() => (applicant ? getFullName(applicant) : ''), [applicant]);
   const resolvedStatus = recruitmentApplicant?.status || applicant?.status;
   const badge = statusBadge(resolvedStatus);
-  const score = useMemo(() => computeScoreBreakdown(evaluation), [evaluation]);
+  const interviewerScoreSnapshot = useMemo(
+    () => getStoredInterviewerScoreSnapshot(id, applicant?.email),
+    [applicant?.email, id]
+  );
+  const score = useMemo(() => computeScoreBreakdown(evaluation, interviewerScoreSnapshot), [evaluation, interviewerScoreSnapshot]);
+  const hasSavedEvaluation = Boolean(
+    hasInterviewScores(evaluation) || interviewerScoreSnapshot?.pcptAverage || interviewerScoreSnapshot?.oralAverage
+  );
   const backTo = routeState?.from || '/admin/rsp/qualified';
   const sourcePath = routeState?.from || '';
   const isJobScopedQualifiedRoute = /^\/admin\/rsp\/qualified\/[^/?#]+/.test(sourcePath);
@@ -1644,7 +1923,7 @@ export function ApplicantDetailsPage() {
                     </div>
                     <div className="rounded-xl border border-purple-300 bg-purple-50 p-3">
                       <span className="text-base text-slate-600">Raw Score:</span>
-                      <span className="float-right text-2xl font-bold text-purple-700">{score.pcpt > 0 ? score.pcpt : 'Pending Interview'}</span>
+                      <span className="float-right text-2xl font-bold text-purple-700">{score.rawPcpt > 0 ? score.rawPcpt : (hasSavedEvaluation ? 0 : 'Pending Interview')}</span>
                     </div>
                     <p className="mt-2 text-sm text-slate-500">20-25 = 10 pts | 23-25 = 12 pts | 26-28 = 14 pts</p>
                     <p className="text-sm text-slate-500">29-31 = 16 pts | 32-34 = 18 pts | 35 = 20 pts</p>
@@ -1659,7 +1938,7 @@ export function ApplicantDetailsPage() {
                       </div>
                       <div className="rounded-xl border border-purple-300 bg-purple-50 p-3">
                         <span className="text-base text-slate-600">Raw Score:</span>
-                        <span className="float-right text-2xl font-bold text-purple-700">{score.pcpt > 0 ? score.pcpt : 'Pending Interview'}</span>
+                        <span className="float-right text-2xl font-bold text-purple-700">{score.rawPcpt > 0 ? score.rawPcpt : (hasSavedEvaluation ? 0 : 'Pending Interview')}</span>
                       </div>
                       <p className="mt-2 text-sm text-slate-500">20-25 = 10 pts | 23-25 = 12 pts | 26-28 = 14 pts</p>
                       <p className="text-sm text-slate-500">29-31 = 16 pts | 32-34 = 18 pts | 35 = 20 pts</p>
@@ -1672,7 +1951,7 @@ export function ApplicantDetailsPage() {
                       </div>
                       <div className="rounded-xl border border-blue-300 bg-blue-50 p-3">
                         <span className="text-base text-slate-600">Raw Score:</span>
-                        <span className="float-right text-2xl font-bold text-blue-700">{score.oral > 0 ? score.oral : 'Pending Interview'}</span>
+                        <span className="float-right text-2xl font-bold text-blue-700">{score.oral > 0 ? score.oral : (hasSavedEvaluation ? 0 : 'Pending Interview')}</span>
                       </div>
                       <p className="mt-2 text-sm text-slate-500">75↓ = 10 | 76-80 = 12 | 81-85 = 14 | 86-90 = 16</p>
                       <p className="text-sm text-slate-500">91-95 = 18 | 96-100 = 20</p>

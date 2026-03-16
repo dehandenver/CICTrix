@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Dialog } from '../../components/Dialog';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
+import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import { isPositionAssignedToInterviewer, resolveAssignedPositionsForInterviewer } from '../../lib/interviewerAccess';
 import { mockDatabase } from '../../lib/mockDatabase';
 import { ensureRecruitmentSeedData, getAuthoritativeJobPostings } from '../../lib/recruitmentData';
@@ -70,16 +71,6 @@ const fetchApplicantsFromClient = async (client: any): Promise<any[]> => {
 const fetchEvaluationsFromClient = async (client: any): Promise<any[]> => {
   const { data } = await client.from('evaluations').select('*');
   return data || [];
-};
-
-const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
-  if (!isMockModeEnabled) return 'supabase';
-  try {
-    const mode = localStorage.getItem('cictrix_data_source_mode');
-    return mode === 'local' ? 'local' : 'supabase';
-  } catch {
-    return 'supabase';
-  }
 };
 
 const normalizeText = (value: string) => value.trim().toLowerCase();

@@ -256,10 +256,10 @@ export const saveJobPostings = (rows: JobPosting[]) => {
 };
 
 export const getApplicants = () => safeJsonParse<Applicant[]>(localStorage.getItem(APPLICANTS_KEY), []);
-export const saveApplicants = (rows: Applicant[]) => {
+export const saveApplicants = (rows: Applicant[], options?: { broadcast?: boolean }) => {
   localStorage.setItem(APPLICANTS_KEY, JSON.stringify(rows));
 
-  if (typeof window !== 'undefined') {
+  if (options?.broadcast !== false && typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(APPLICANTS_UPDATED_EVENT));
   }
 };

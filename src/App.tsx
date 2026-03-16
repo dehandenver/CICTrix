@@ -7,8 +7,8 @@ import { QualifiedApplicantsPage } from './components/QualifiedApplicantsPage';
 import { RaterManagementPage } from './components/RaterManagementPage';
 import SuccessionReadinessEngine from './components/SuccessionReadinessEngine';
 import {
-    findEmployeeByEmployeeId,
-    findEmployeePortalAccount,
+  findEmployeeByEmployeeId,
+  findEmployeePortalAccount,
 } from './lib/employeePortalData';
 import { mockDatabase } from './lib/mockDatabase';
 import { isMockModeEnabled, supabase } from './lib/supabase';
@@ -26,7 +26,7 @@ import { InterviewerApplicantsList } from './modules/interviewer/InterviewerAppl
 import { InterviewerDashboard } from './modules/interviewer/InterviewerDashboard';
 import { InterviewerLogin } from './modules/interviewer/InterviewerLogin';
 import './styles/globals.css';
-import { EmployeeSession } from './types/employee.types';
+import type { Employee, EmployeeSession } from './types/employee.types';
 import { scheduleTransientUiReset } from './utils/uiReset';
 
 type Role = 'super-admin' | 'rsp' | 'lnd' | 'pm';

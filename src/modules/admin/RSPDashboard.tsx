@@ -32,6 +32,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/Button';
 import { Sidebar } from '../../components/Sidebar';
+import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import { getEmployeePortalAccounts } from '../../lib/employeePortalData';
 import { mockDatabase } from '../../lib/mockDatabase';
 import {
@@ -46,6 +47,7 @@ import {
   saveNewlyHired,
   type DeletedJobReport,
 } from '../../lib/recruitmentData';
+import { runSingleFlight } from '../../lib/singleFlight';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
 import '../../styles/admin.css';
 import type { JobPosting, NewlyHired } from '../../types/recruitment.types';
@@ -326,16 +328,6 @@ const matchesDocumentTemplate = (templateId: EmployeeDocumentTemplateId, documen
   return keywords.some((keyword) => normalizedType.includes(keyword));
 };
 
-const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
-  if (!isMockModeEnabled) return 'supabase';
-  try {
-    const mode = localStorage.getItem('cictrix_data_source_mode');
-    return mode === 'local' ? 'local' : 'supabase';
-  } catch {
-    return 'supabase';
-  }
-};
-
 const getPreferredClient = () => {
   const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
   return preferredMode === 'local' ? (mockDatabase as any) : supabase;
@@ -568,6 +560,10 @@ export const RSPDashboard = () => {
   });
 
   useEffect(() => {
+    let inFlight = false;
+    let pending = false;
+    let disposed = false;
+
     const load = async () => {
       ensureRecruitmentSeedData();
       setDeletedJobReports(getDeletedJobReports());
@@ -579,16 +575,24 @@ export const RSPDashboard = () => {
       const primaryClient = preferredMode === 'local' ? (mockDatabase as any) : supabase;
       const secondaryClient = preferredMode === 'local' ? supabase : (mockDatabase as any);
 
-      const fetchBundle = async (client: any) =>
-        Promise.allSettled([
-          client.from('job_postings').select('*').order('created_at', { ascending: false }),
-          client.from('jobs').select('*').order('created_at', { ascending: false }),
-          client.from('applicants').select('*').order('created_at', { ascending: false }),
-          client.from('raters').select('*').order('created_at', { ascending: false }),
-          client.from('evaluations').select('*'),
-        ]);
+      const fetchBundle = async (client: any, cacheKey: string) =>
+        runSingleFlight(
+          cacheKey,
+          () =>
+            Promise.allSettled([
+              client.from('job_postings').select('*').order('created_at', { ascending: false }),
+              client.from('jobs').select('*').order('created_at', { ascending: false }),
+              client.from('applicants').select('*').order('created_at', { ascending: false }),
+              client.from('raters').select('*').order('created_at', { ascending: false }),
+              client.from('evaluations').select('*'),
+            ]),
+          1200,
+        );
 
-      let [, , applicantsRes, ratersRes, evaluationsRes] = await fetchBundle(primaryClient);
+      let [, , applicantsRes, ratersRes, evaluationsRes] = await fetchBundle(
+        primaryClient,
+        `rsp-bundle:${preferredMode}:primary`
+      );
 
       const primaryRaters =
         ratersRes.status === 'fulfilled' && !ratersRes.value.error && Array.isArray(ratersRes.value.data)
@@ -600,7 +604,10 @@ export const RSPDashboard = () => {
 
       // Fallback only on fetch failure. Empty DB results are authoritative.
       if (!primaryApplicantsFetchSucceeded && !isMockModeEnabled) {
-        [, , applicantsRes, ratersRes, evaluationsRes] = await fetchBundle(secondaryClient);
+        [, , applicantsRes, ratersRes, evaluationsRes] = await fetchBundle(
+          secondaryClient,
+          `rsp-bundle:${preferredMode}:secondary`
+        );
       }
 
       const canonicalJobs = mapRecruitmentPostingsToDashboardJobs(getAuthoritativeJobPostings());
@@ -615,17 +622,46 @@ export const RSPDashboard = () => {
             .filter(([email]) => Boolean(email))
         );
 
+        const applicantEmailById = new Map<string, string>();
+        const applicantIdsByEmail = new Map<string, string[]>();
+        applicantsRes.value.data.forEach((item: any) => {
+          const applicantId = String(item?.id ?? '').trim();
+          const emailKey = normalizeEmailKey(String(item?.email ?? ''));
+          if (!applicantId || !emailKey) return;
+          applicantEmailById.set(applicantId, emailKey);
+          const current = applicantIdsByEmail.get(emailKey) ?? [];
+          if (!current.includes(applicantId)) {
+            applicantIdsByEmail.set(emailKey, [...current, applicantId]);
+          }
+        });
+
         const evaluationBestScore = new Map<string, number>();
         if (evaluationsRes.status === 'fulfilled' && !evaluationsRes.value.error && Array.isArray(evaluationsRes.value.data)) {
           evaluationsRes.value.data.forEach((item: any) => {
             const applicantId = String(item?.applicant_id ?? '').trim();
             if (!applicantId) return;
             const score = deriveEvaluationTotalScore(item);
-            if (!(score > 0)) return;
-            const current = evaluationBestScore.get(applicantId) ?? 0;
-            if (score >= current) {
-              evaluationBestScore.set(applicantId, score);
+
+            const hasScore =
+              score > 0 ||
+              (typeof item?.overall_score === 'number' && item.overall_score > 0) ||
+              (typeof item?.overall_impression_score === 'number' && item.overall_impression_score > 0) ||
+              (typeof item?.personality_score === 'number' && item.personality_score > 0);
+
+            const linkedEmail = applicantEmailById.get(applicantId);
+            const linkedIds = linkedEmail ? applicantIdsByEmail.get(linkedEmail) ?? [] : [];
+            const targetIds = Array.from(new Set([applicantId, ...linkedIds]));
+
+            if (score > 0) {
+              targetIds.forEach((targetId) => {
+                const current = evaluationBestScore.get(targetId) ?? 0;
+                if (score >= current) {
+                  evaluationBestScore.set(targetId, score);
+                }
+              });
             }
+
+            if (!hasScore) return;
           });
         }
 
@@ -692,14 +728,43 @@ export const RSPDashboard = () => {
 
       if (evaluationsRes.status === 'fulfilled' && !evaluationsRes.value.error && Array.isArray(evaluationsRes.value.data)) {
         const completed = new Set<string>();
-        evaluationsRes.value.data.forEach((item: any) => {
-          const hasScore =
-            (typeof item?.overall_score === 'number' && item.overall_score > 0) ||
-            (typeof item?.overall_impression_score === 'number' && item.overall_impression_score > 0);
-          if (hasScore && item?.applicant_id) {
-            completed.add(String(item.applicant_id));
+        const applicantRows =
+          applicantsRes.status === 'fulfilled' && !applicantsRes.value.error && Array.isArray(applicantsRes.value.data)
+            ? applicantsRes.value.data
+            : [];
+
+        const applicantEmailById = new Map<string, string>();
+        const applicantIdsByEmail = new Map<string, string[]>();
+        applicantRows.forEach((item: any) => {
+          const applicantId = String(item?.id ?? '').trim();
+          const emailKey = normalizeEmailKey(String(item?.email ?? ''));
+          if (!applicantId || !emailKey) return;
+          applicantEmailById.set(applicantId, emailKey);
+          if (!emailKey) return;
+          const current = applicantIdsByEmail.get(emailKey) ?? [];
+          if (!current.includes(applicantId)) {
+            applicantIdsByEmail.set(emailKey, [...current, applicantId]);
           }
         });
+
+        evaluationsRes.value.data.forEach((item: any) => {
+          const applicantId = String(item?.applicant_id ?? '').trim();
+          if (!applicantId) return;
+
+          const hasScore =
+            deriveEvaluationTotalScore(item) > 0 ||
+            (typeof item?.overall_score === 'number' && item.overall_score > 0) ||
+            (typeof item?.overall_impression_score === 'number' && item.overall_impression_score > 0) ||
+            (typeof item?.personality_score === 'number' && item.personality_score > 0);
+          if (!hasScore) return;
+
+          const linkedEmail = applicantEmailById.get(applicantId);
+          const linkedIds = linkedEmail ? applicantIdsByEmail.get(linkedEmail) ?? [] : [];
+          Array.from(new Set([applicantId, ...linkedIds])).forEach((targetId) => {
+            completed.add(targetId);
+          });
+        });
+
         setCompletedEvaluationIds(completed);
       } else {
         setCompletedEvaluationIds(new Set());
@@ -707,7 +772,21 @@ export const RSPDashboard = () => {
     };
 
     const syncJobs = () => {
-      void load();
+      if (disposed) return;
+
+      if (inFlight) {
+        pending = true;
+        return;
+      }
+
+      inFlight = true;
+      void load().finally(() => {
+        inFlight = false;
+        if (pending && !disposed) {
+          pending = false;
+          syncJobs();
+        }
+      });
     };
 
     const onStorage = (event: StorageEvent) => {
@@ -720,13 +799,14 @@ export const RSPDashboard = () => {
       }
     };
 
-    void load();
+    syncJobs();
     window.addEventListener('focus', syncJobs);
     window.addEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
     window.addEventListener('cictrix:applicants-updated', syncJobs as EventListener);
     window.addEventListener('storage', onStorage);
 
     return () => {
+      disposed = true;
       window.removeEventListener('focus', syncJobs);
       window.removeEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
       window.removeEventListener('cictrix:applicants-updated', syncJobs as EventListener);

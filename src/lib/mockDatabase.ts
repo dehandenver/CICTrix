@@ -372,6 +372,39 @@ export const mockDatabase = {
                 },
             };
           },
+          in: (column: string, values: any[]) => {
+            const valuesSet = new Set(Array.isArray(values) ? values : []);
+            const getFiltered = () => {
+              let data: any[] = [];
+              if (table === 'applicants') data = getApplicants();
+              else if (table === 'evaluations') data = getEvaluations();
+              else if (table === 'applicant_attachments') data = getAttachments();
+              else if (table === 'jobs') data = getJobs();
+              else if (table === 'raters') data = getRaters();
+              return data.filter((item) => valuesSet.has((item as any)[column]));
+            };
+
+            return {
+              order: (orderColumn: string, orderOptions?: { ascending?: boolean }) => {
+                const getSorted = () => {
+                  const arr = getFiltered();
+                  return arr.sort((a, b) => {
+                    const av = (a as any)[orderColumn];
+                    const bv = (b as any)[orderColumn];
+                    return orderOptions?.ascending === false ? (bv > av ? 1 : -1) : (av > bv ? 1 : -1);
+                  });
+                };
+
+                return {
+                  limit: (n: number) => ({
+                    then: async (resolve: any) => resolve({ data: getSorted().slice(0, n), error: null }),
+                  }),
+                  then: async (resolve: any) => resolve({ data: getSorted(), error: null }),
+                };
+              },
+              then: async (resolve: any) => resolve({ data: getFiltered(), error: null }),
+            };
+          },
           order: (column: string, options?: { ascending?: boolean }) => {
             return {
               then: async (resolve: any) => {

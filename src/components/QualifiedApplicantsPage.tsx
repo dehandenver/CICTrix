@@ -16,9 +16,10 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { getPreferredDataSourceMode } from '../lib/dataSourceMode';
 import {
     getEmployeePortalAccounts,
-  updateEmployeePortalEmployee,
+    updateEmployeePortalEmployee,
     upsertEmployeePortalAccount,
 } from '../lib/employeePortalData';
 import { mockDatabase } from '../lib/mockDatabase';
@@ -35,6 +36,7 @@ import {
     saveEmployeeRecords,
     saveNewlyHired,
 } from '../lib/recruitmentData';
+import { runSingleFlight } from '../lib/singleFlight';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../lib/supabase';
 import { Applicant, ApplicantStatus, JobPosting, NewlyHired } from '../types/recruitment.types';
 import { RecruitmentNavigationGuide } from './RecruitmentNavigationGuide';
@@ -224,16 +226,6 @@ const toStatusDisplayLabel = (status: ApplicantStatus | string) => {
   return String(status ?? '');
 };
 
-const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
-  if (!isMockModeEnabled) return 'supabase';
-  try {
-    const mode = localStorage.getItem('cictrix_data_source_mode');
-    return mode === 'local' ? 'local' : 'supabase';
-  } catch {
-    return 'supabase';
-  }
-};
-
 type EvaluationSnapshot = {
   score: number;
   completed: boolean;
@@ -252,7 +244,10 @@ const hasCompletedEvaluation = (row: any) => {
 
   const oralComplete = oralScores.every((value) => typeof value === 'number' && value > 0);
   const legacyComplete = typeof row?.overall_score === 'number' && row.overall_score > 0;
-  return oralComplete || legacyComplete;
+  const scoredByComponent = oralScores.some((value) => typeof value === 'number' && value > 0);
+  const hasOverallImpression = typeof row?.overall_impression_score === 'number' && row.overall_impression_score > 0;
+  const hasPersonality = typeof row?.personality_score === 'number' && row.personality_score > 0;
+  return oralComplete || legacyComplete || scoredByComponent || hasOverallImpression || hasPersonality;
 };
 
 const deriveEvaluationPercentage = (row: any): number => {
@@ -382,15 +377,23 @@ export const QualifiedApplicantsPage = () => {
     const primaryClient = preferredMode === 'local' ? (mockDatabase as any) : supabase;
     const secondaryClient = preferredMode === 'local' ? supabase : (mockDatabase as any);
 
-    const fetchBundle = async (client: any) =>
-      Promise.allSettled([
-        client.from('applicants').select('*').order('created_at', { ascending: false }),
-        client.from('evaluations').select('*'),
-        client.from('applicant_attachments').select('*'),
-        client.from('job_postings').select('*').order('created_at', { ascending: false }),
-      ]);
+    const fetchBundle = async (client: any, cacheKey: string) =>
+      runSingleFlight(
+        cacheKey,
+        () =>
+          Promise.allSettled([
+            client.from('applicants').select('*').order('created_at', { ascending: false }),
+            client.from('evaluations').select('*'),
+            client.from('applicant_attachments').select('*'),
+            client.from('job_postings').select('*').order('created_at', { ascending: false }),
+          ]),
+        1200,
+      );
 
-    let [applicantsRes, evaluationsRes, attachmentsRes, jobPostingsRes] = await fetchBundle(primaryClient);
+    let [applicantsRes, evaluationsRes, attachmentsRes, jobPostingsRes] = await fetchBundle(
+      primaryClient,
+      `qualified-bundle:${preferredMode}:primary`
+    );
 
     const primaryApplicantsFetchSucceeded =
       applicantsRes.status === 'fulfilled' && !applicantsRes.value.error && Array.isArray(applicantsRes.value.data);
@@ -398,7 +401,10 @@ export const QualifiedApplicantsPage = () => {
     // Fallback only on fetch failure, not on empty result sets.
     // Empty DB result is valid and must be reflected in the UI (e.g., deleted applicants).
     if (!primaryApplicantsFetchSucceeded && !isMockModeEnabled) {
-      [applicantsRes, evaluationsRes, attachmentsRes, jobPostingsRes] = await fetchBundle(secondaryClient);
+      [applicantsRes, evaluationsRes, attachmentsRes, jobPostingsRes] = await fetchBundle(
+        secondaryClient,
+        `qualified-bundle:${preferredMode}:secondary`
+      );
     }
 
     const dbApplicants =
@@ -452,6 +458,19 @@ export const QualifiedApplicantsPage = () => {
       setJobs(mappedJobs);
     }
 
+    const applicantEmailById = new Map<string, string>();
+    const applicantIdsByEmail = new Map<string, string[]>();
+    dbApplicants.forEach((row: any) => {
+      const applicantId = String(row?.id ?? '').trim();
+      const emailKey = normalizeText(String(row?.email ?? ''));
+      if (!applicantId || !emailKey) return;
+      applicantEmailById.set(applicantId, emailKey);
+      const current = applicantIdsByEmail.get(emailKey) ?? [];
+      if (!current.includes(applicantId)) {
+        applicantIdsByEmail.set(emailKey, [...current, applicantId]);
+      }
+    });
+
     const evaluationMap = new Map<string, EvaluationSnapshot>();
     dbEvaluations.forEach((row: any) => {
       const applicantId = String(row?.applicant_id ?? '').trim();
@@ -463,10 +482,16 @@ export const QualifiedApplicantsPage = () => {
         updatedAt: String(row?.created_at ?? row?.updated_at ?? new Date().toISOString()),
       };
 
-      const current = evaluationMap.get(applicantId);
-      if (!current || new Date(snapshot.updatedAt).getTime() >= new Date(current.updatedAt).getTime()) {
-        evaluationMap.set(applicantId, snapshot);
-      }
+      const linkedEmail = applicantEmailById.get(applicantId);
+      const linkedIds = linkedEmail ? applicantIdsByEmail.get(linkedEmail) ?? [] : [];
+      const targetIds = Array.from(new Set([applicantId, ...linkedIds]));
+
+      targetIds.forEach((targetId) => {
+        const current = evaluationMap.get(targetId);
+        if (!current || new Date(snapshot.updatedAt).getTime() >= new Date(current.updatedAt).getTime()) {
+          evaluationMap.set(targetId, snapshot);
+        }
+      });
     });
 
     const attachmentMap = new Map<string, any[]>();
@@ -618,38 +643,50 @@ export const QualifiedApplicantsPage = () => {
 
     // Keep local cache aligned to authoritative source to avoid stale rows reappearing.
     if (primaryApplicantsFetchSucceeded) {
-      saveApplicants(dedupedApplicants);
+      saveApplicants(dedupedApplicants, { broadcast: false });
     }
   };
 
   useEffect(() => {
-    const run = () => {
-      loadQualifiedApplicantsData();
-    };
+    let inFlight = false;
+    let pending = false;
+    let disposed = false;
 
-    run();
+    const run = async () => {
+      if (disposed) return;
 
-    const onUpdated = () => run();
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        run();
+      if (inFlight) {
+        pending = true;
+        return;
+      }
+
+      inFlight = true;
+      try {
+        await loadQualifiedApplicantsData();
+      } finally {
+        inFlight = false;
+        if (pending && !disposed) {
+          pending = false;
+          void run();
+        }
       }
     };
 
+    void run();
+
+    const onUpdated = () => run();
+
     window.addEventListener('focus', onUpdated);
-    window.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('cictrix:applicants-updated', onUpdated as EventListener);
     window.addEventListener('cictrix:job-postings-updated', onUpdated as EventListener);
-    window.addEventListener('cictrix:route-activated', onUpdated as EventListener);
 
     if (jobId) setJobFilter(jobId);
 
     return () => {
+      disposed = true;
       window.removeEventListener('focus', onUpdated);
-      window.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('cictrix:applicants-updated', onUpdated as EventListener);
       window.removeEventListener('cictrix:job-postings-updated', onUpdated as EventListener);
-      window.removeEventListener('cictrix:route-activated', onUpdated as EventListener);
     };
   }, [jobId]);
 

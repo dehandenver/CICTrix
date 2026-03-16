@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { Dialog } from '../../components/Dialog';
+import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import { isPositionAssignedToInterviewer, resolveAssignedPositionsForInterviewer } from '../../lib/interviewerAccess';
 import { mockDatabase } from '../../lib/mockDatabase';
 import { getApplicants as getRecruitmentApplicants, saveApplicants as saveRecruitmentApplicants } from '../../lib/recruitmentData';
@@ -63,6 +64,46 @@ interface EvaluationData {
 type AppointmentType = 'original' | 'promotional';
 
 const SCORE_SETUP_STORAGE_KEY = 'cictrix_rsp_score_setup';
+const INTERVIEWER_SCORE_SNAPSHOT_STORAGE_KEY = 'cictrix_interviewer_score_snapshot';
+
+const saveInterviewerScoreSnapshot = (
+  applicantId: string | undefined,
+  applicantEmail: string | undefined,
+  snapshot: { pcptAverage?: number; oralAverage?: number }
+) => {
+  if (!applicantId && !applicantEmail) return;
+
+  const cleanScore = (value?: number) => {
+    if (typeof value !== 'number' || Number.isNaN(value) || value <= 0) return undefined;
+    return Number(Math.max(1, Math.min(5, value)).toFixed(2));
+  };
+
+  const payload = {
+    pcptAverage: cleanScore(snapshot.pcptAverage),
+    oralAverage: cleanScore(snapshot.oralAverage),
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (!payload.pcptAverage && !payload.oralAverage) return;
+
+  try {
+    const raw = localStorage.getItem(INTERVIEWER_SCORE_SNAPSHOT_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, typeof payload>) : {};
+
+    if (applicantId) {
+      parsed[`id:${String(applicantId).trim()}`] = payload;
+    }
+
+    const normalizedEmail = String(applicantEmail ?? '').trim().toLowerCase();
+    if (normalizedEmail) {
+      parsed[`email:${normalizedEmail}`] = payload;
+    }
+
+    localStorage.setItem(INTERVIEWER_SCORE_SNAPSHOT_STORAGE_KEY, JSON.stringify(parsed));
+  } catch {
+    // Best effort persistence only.
+  }
+};
 
 const getStoredAppointmentType = (applicantId?: string): AppointmentType => {
   if (!applicantId) return 'original';
@@ -233,28 +274,62 @@ export function EvaluationForm() {
   const hasOralEvaluation = appointmentType === 'original';
 
   const fetchApplicantData = async () => {
+    let positions: string[] = [];
+
     try {
       setLoading(true);
       setError(null);
 
-      const { positions } = await resolveAssignedPositionsForInterviewer();
+      const assigned = await resolveAssignedPositionsForInterviewer();
+      positions = assigned.positions;
       setAssignedPositions(positions);
 
-      // Fetch applicant details
-      const { data: applicantData, error: applicantError } = await supabase
-        .from('applicants')
-        .select('*')
-        .eq('id', id)
-        .single();
+      const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
+      const primaryClient = preferredMode === 'local' ? (mockDatabase as any) : supabase;
+      const fallbackClient = preferredMode === 'local' ? supabase : (mockDatabase as any);
 
-      if (applicantError) throw applicantError;
-      if (!applicantData) throw new Error('Applicant not found');
-      if (!isPositionAssignedToInterviewer(String(applicantData.position ?? ''), positions)) {
-        throw new Error(
-          positions.length === 0
-            ? 'No job positions are assigned to your interviewer account yet.'
-            : 'You do not have access to evaluate this applicant.'
-        );
+      const loadFromClient = async (client: any) => {
+        const { data: applicantData, error: applicantError } = await client
+          .from('applicants')
+          .select('*')
+          .eq('id', id)
+          .single();
+
+        if (applicantError) throw applicantError;
+        if (!applicantData) throw new Error('Applicant not found');
+
+        if (!isPositionAssignedToInterviewer(String(applicantData.position ?? ''), positions)) {
+          throw new Error(
+            positions.length === 0
+              ? 'No job positions are assigned to your interviewer account yet.'
+              : 'You do not have access to evaluate this applicant.'
+          );
+        }
+
+        const { data: attachmentsData, error: attachmentsError } = await client
+          .from('applicant_attachments')
+          .select('*')
+          .eq('applicant_id', id);
+
+        if (attachmentsError) throw attachmentsError;
+
+        return {
+          applicantData,
+          attachmentsData: attachmentsData || [],
+        };
+      };
+
+      let applicantData: any;
+      let attachmentsData: any[] = [];
+
+      try {
+        const result = await loadFromClient(primaryClient);
+        applicantData = result.applicantData;
+        attachmentsData = result.attachmentsData;
+      } catch {
+        const result = await loadFromClient(fallbackClient);
+        applicantData = result.applicantData;
+        attachmentsData = result.attachmentsData;
       }
 
       setApplicant(applicantData);
@@ -269,59 +344,12 @@ export function EvaluationForm() {
           // Best effort persistence only.
         }
       }
-
-      // Fetch attachments
-      const { data: attachmentsData, error: attachmentsError } = await supabase
-        .from('applicant_attachments')
-        .select('*')
-        .eq('applicant_id', id);
-
-      if (attachmentsError) throw attachmentsError;
       setAttachments(attachmentsData || []);
 
+      setError(null);
     } catch (err) {
       console.error('Error fetching applicant:', err);
-      try {
-        const { data: localApplicantData, error: localApplicantError } = await (mockDatabase as any)
-          .from('applicants')
-          .select('*')
-          .eq('id', id)
-          .single();
-
-        if (localApplicantError || !localApplicantData) {
-          throw localApplicantError || new Error('Applicant not found');
-        }
-        if (!isPositionAssignedToInterviewer(String(localApplicantData.position ?? ''), positions)) {
-          throw new Error(
-            positions.length === 0
-              ? 'No job positions are assigned to your interviewer account yet.'
-              : 'You do not have access to evaluate this applicant.'
-          );
-        }
-
-        setApplicant(localApplicantData);
-        if (id && isPromotionalSource(localApplicantData)) {
-          setAppointmentType('promotional');
-          try {
-            const raw = localStorage.getItem(SCORE_SETUP_STORAGE_KEY);
-            const parsed = raw ? (JSON.parse(raw) as Record<string, AppointmentType>) : {};
-            parsed[id] = 'promotional';
-            localStorage.setItem(SCORE_SETUP_STORAGE_KEY, JSON.stringify(parsed));
-          } catch {
-            // Best effort persistence only.
-          }
-        }
-
-        const { data: localAttachmentsData } = await (mockDatabase as any)
-          .from('applicant_attachments')
-          .select('*')
-          .eq('applicant_id', id);
-
-        setAttachments(localAttachmentsData || []);
-        setError(null);
-      } catch {
-        setError(err instanceof Error ? err.message : 'Failed to load applicant data');
-      }
+      setError(err instanceof Error ? err.message : 'Failed to load applicant data');
     } finally {
       setLoading(false);
     }
@@ -371,6 +399,36 @@ export function EvaluationForm() {
         recommendation: evaluation.recommendation || null
       };
 
+      const oralValues = [
+        evaluation.communication_skills_score,
+        evaluation.confidence_score,
+        evaluation.comprehension_score,
+      ].filter((value) => typeof value === 'number' && value > 0) as number[];
+      const oralAverage =
+        oralValues.length > 0
+          ? Number((oralValues.reduce((sum, value) => sum + value, 0) / oralValues.length).toFixed(2))
+          : undefined;
+
+      const pcptValues = Object.values(pcptScores).filter((value) => typeof value === 'number' && value > 0) as number[];
+      let averagePcpt: number | undefined;
+      if (pcptValues.length > 0) {
+        averagePcpt = Number(
+          Math.max(1, Math.min(5, pcptValues.reduce((sum, value) => sum + value, 0) / pcptValues.length)).toFixed(2)
+        );
+        // Prefer explicit PCPT table ratings when provided so downstream
+        // score dashboards reflect interviewer-entered PCPT values.
+        // Store the raw sum (6-30) instead of average for proper raw score display
+        const pcptSum = pcptValues.reduce((sum, value) => sum + value, 0);
+        insertData.personality_score = pcptSum;
+
+
+        // Promotional flows have no oral scoring section, so mirror PCPT into
+        // overall impression for compatibility with existing scoring logic.
+        if (!hasOralEvaluation) {
+          insertData.overall_impression_score = averagePcpt;
+        }
+      }
+
       if (evaluation.communication_skills_remarks.trim()) {
         insertData.communication_skills_remarks = evaluation.communication_skills_remarks;
       }
@@ -403,19 +461,26 @@ export function EvaluationForm() {
         }
       };
 
+      let successfulClient: any = supabase;
       try {
         await submitWithClient(supabase);
+        successfulClient = supabase;
         persistDataSourceMode('supabase');
       } catch (primaryErr) {
         if (isMockModeEnabled) {
           throw primaryErr;
         }
         await submitWithClient(mockDatabase as any);
+        successfulClient = mockDatabase as any;
         persistDataSourceMode('local');
       }
 
-      const statusClient = isMockModeEnabled ? mockDatabase as any : supabase;
-      await updateApplicantStatus(statusClient);
+      await updateApplicantStatus(successfulClient);
+
+      saveInterviewerScoreSnapshot(id, applicant?.email, {
+        pcptAverage: averagePcpt,
+        oralAverage,
+      });
 
       // Keep recruitment fallback data in sync so InterviewerApplicantsList can show Reviewed/Evaluated.
       try {

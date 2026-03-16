@@ -14,6 +14,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DEPARTMENTS } from '../constants/positions';
+import { getPreferredDataSourceMode } from '../lib/dataSourceMode';
 import { mockDatabase } from '../lib/mockDatabase';
 import {
     archiveDeletedJobPosting,
@@ -34,16 +35,6 @@ import { Sidebar } from './Sidebar';
 const ITEMS_PER_PAGE = 3;
 
 const normalizeText = (value: string) => String(value ?? '').trim().toLowerCase();
-
-const getPreferredDataSourceMode = (): 'local' | 'supabase' => {
-  if (!isMockModeEnabled) return 'supabase';
-  try {
-    const mode = localStorage.getItem('cictrix_data_source_mode');
-    return mode === 'local' ? 'local' : 'supabase';
-  } catch {
-    return 'supabase';
-  }
-};
 
 const normalizeRomanNumeralsInText = (value: string) =>
   String(value ?? '')
