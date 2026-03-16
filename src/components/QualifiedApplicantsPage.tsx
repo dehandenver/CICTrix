@@ -16,24 +16,25 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import {
+    getEmployeePortalAccounts,
+  updateEmployeePortalEmployee,
+    upsertEmployeePortalAccount,
+} from '../lib/employeePortalData';
 import { mockDatabase } from '../lib/mockDatabase';
 import {
     ensureRecruitmentSeedData,
     formatPHDate,
     formatPHDateTime,
-  generateEmployeeId,
+    generateEmployeeId,
     getApplicants,
     getAuthoritativeJobPostings,
-  getEmployeeRecords,
-  getNewlyHired,
+    getEmployeeRecords,
+    getNewlyHired,
     saveApplicants,
-  saveEmployeeRecords,
-  saveNewlyHired,
+    saveEmployeeRecords,
+    saveNewlyHired,
 } from '../lib/recruitmentData';
-import {
-  getEmployeePortalAccounts,
-  upsertEmployeePortalAccount,
-} from '../lib/employeePortalData';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../lib/supabase';
 import { Applicant, ApplicantStatus, JobPosting, NewlyHired } from '../types/recruitment.types';
 import { RecruitmentNavigationGuide } from './RecruitmentNavigationGuide';
@@ -629,16 +630,26 @@ export const QualifiedApplicantsPage = () => {
     run();
 
     const onUpdated = () => run();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        run();
+      }
+    };
+
     window.addEventListener('focus', onUpdated);
+    window.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('cictrix:applicants-updated', onUpdated as EventListener);
     window.addEventListener('cictrix:job-postings-updated', onUpdated as EventListener);
+    window.addEventListener('cictrix:route-activated', onUpdated as EventListener);
 
     if (jobId) setJobFilter(jobId);
 
     return () => {
       window.removeEventListener('focus', onUpdated);
+      window.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('cictrix:applicants-updated', onUpdated as EventListener);
       window.removeEventListener('cictrix:job-postings-updated', onUpdated as EventListener);
+      window.removeEventListener('cictrix:route-activated', onUpdated as EventListener);
     };
   }, [jobId]);
 
@@ -811,47 +822,98 @@ export const QualifiedApplicantsPage = () => {
 
     selectedRows.forEach((row) => {
       const fullName = `${row.personalInfo.firstName} ${row.personalInfo.lastName}`.trim();
-      const employeeNumber = generateEmployeeId(sequence++);
-      const username = createUniqueUsername(row, occupiedUsernames);
+      const targetPosition = jobMap.get(row.jobPostingId)?.title ?? 'Unassigned Position';
+      const targetDepartment = jobMap.get(row.jobPostingId)?.department ?? 'Unassigned Department';
+      const targetDivision = jobMap.get(row.jobPostingId)?.division;
+      const isInternalPromotion = row.applicationType === 'promotion' && Boolean(row.internalApplication?.employeeId);
+      const employeeNumber = isInternalPromotion
+        ? String(row.internalApplication?.employeeId ?? '')
+        : generateEmployeeId(sequence++);
+      const existingAccount = existingAccounts.find(
+        (account) => String(account.employee.employeeId ?? '').trim() === employeeNumber
+      );
+      const username = existingAccount?.username ?? createUniqueUsername(row, occupiedUsernames);
       const temporaryPassword = createTemporaryPassword();
+      const positionHistoryEntry = {
+        position: targetPosition,
+        department: targetDepartment,
+        division: targetDivision,
+        effectiveDate: nowIso,
+        changeType: isInternalPromotion ? 'promotion' as const : 'hire' as const,
+        sourceApplicantId: row.id,
+        notes: isInternalPromotion
+          ? `Promoted from ${row.internalApplication?.currentPosition || 'current assignment'}`
+          : 'Initial hiring record created from recruitment conversion.',
+      };
 
-      // Store employee credential account linked to employee profile.
-      upsertEmployeePortalAccount({
-        id: `employee-account-${employeeNumber}`,
-        username,
-        password: temporaryPassword,
-        employee: {
-          employeeId: employeeNumber,
+      if (isInternalPromotion && existingAccount) {
+        updateEmployeePortalEmployee(employeeNumber, {
           fullName,
-          email: row.personalInfo.email || `${username}@employee.local`,
-          dateOfBirth: row.personalInfo.dateOfBirth || '',
-          age: 0,
-          gender: 'Prefer not to say',
-          civilStatus: 'Single',
-          nationality: 'Filipino',
-          mobileNumber: row.personalInfo.phone || '',
-          homeAddress: row.personalInfo.address || '',
-          emergencyContactName: '',
-          emergencyRelationship: '',
-          emergencyContactNumber: '',
-          sssNumber: '',
-          philhealthNumber: '',
-          pagibigNumber: '',
-          tinNumber: '',
-          createdAt: nowIso,
-          updatedAt: nowIso,
-        },
-      });
+          email: row.personalInfo.email || existingAccount.employee.email,
+          mobileNumber: row.personalInfo.phone || existingAccount.employee.mobileNumber,
+          homeAddress: row.personalInfo.address || existingAccount.employee.homeAddress,
+          currentPosition: targetPosition,
+          currentDepartment: targetDepartment,
+          currentDivision: targetDivision,
+          positionHistory: [
+            ...(existingAccount.employee.positionHistory ?? []),
+            positionHistoryEntry,
+          ],
+        });
+      } else {
+        upsertEmployeePortalAccount({
+          id: `employee-account-${employeeNumber}`,
+          username,
+          password: temporaryPassword,
+          employee: {
+            employeeId: employeeNumber,
+            fullName,
+            email: row.personalInfo.email || `${username}@employee.local`,
+            dateOfBirth: row.personalInfo.dateOfBirth || '',
+            age: 0,
+            gender: 'Prefer not to say',
+            civilStatus: 'Single',
+            nationality: 'Filipino',
+            mobileNumber: row.personalInfo.phone || '',
+            homeAddress: row.personalInfo.address || '',
+            emergencyContactName: '',
+            emergencyRelationship: '',
+            emergencyContactNumber: '',
+            sssNumber: '',
+            philhealthNumber: '',
+            pagibigNumber: '',
+            tinNumber: '',
+            currentPosition: targetPosition,
+            currentDepartment: targetDepartment,
+            currentDivision: targetDivision,
+            positionHistory: [positionHistoryEntry],
+            createdAt: nowIso,
+            updatedAt: nowIso,
+          },
+        });
+      }
 
-      if (!employeeRecords.some((record) => record.employeeId === employeeNumber)) {
+      const employeeRecordIndex = employeeRecords.findIndex((record) => record.employeeId === employeeNumber);
+      if (employeeRecordIndex >= 0) {
+        const currentRecord = employeeRecords[employeeRecordIndex];
+        employeeRecords[employeeRecordIndex] = {
+          ...currentRecord,
+          name: fullName,
+          position: targetPosition,
+          department: targetDepartment,
+          division: targetDivision,
+          positionHistory: [...(currentRecord.positionHistory ?? []), positionHistoryEntry],
+        };
+      } else {
         employeeRecords.push({
           id: crypto.randomUUID(),
           employeeId: employeeNumber,
           name: fullName,
-          position: jobMap.get(row.jobPostingId)?.title ?? 'Unassigned Position',
-          department: jobMap.get(row.jobPostingId)?.department ?? 'Unassigned Department',
-          division: jobMap.get(row.jobPostingId)?.division,
+          position: targetPosition,
+          department: targetDepartment,
+          division: targetDivision,
           startDate: nowIso,
+          positionHistory: [positionHistoryEntry],
         });
       }
 
@@ -871,9 +933,19 @@ export const QualifiedApplicantsPage = () => {
             },
             governmentIds: {},
           },
-          position: jobMap.get(row.jobPostingId)?.title ?? 'Unassigned Position',
-          department: jobMap.get(row.jobPostingId)?.department ?? 'Unassigned Department',
-          division: jobMap.get(row.jobPostingId)?.division,
+          applicationType: row.applicationType,
+          internalApplication: row.internalApplication
+            ? {
+                employeeId: employeeNumber,
+                previousPosition: row.internalApplication.currentPosition,
+                previousDepartment: row.internalApplication.currentDepartment,
+                previousDivision: row.internalApplication.currentDivision,
+                employeeUsername: username,
+              }
+            : undefined,
+          position: targetPosition,
+          department: targetDepartment,
+          division: targetDivision,
           employmentType: 'Permanent',
           dateHired: nowIso,
           expectedStartDate: nowIso,
@@ -895,13 +967,17 @@ export const QualifiedApplicantsPage = () => {
           notes: [
             {
               author: 'RSP Admin',
-              content: `Hired. Credentials generated (username: ${username}).`,
+              content: isInternalPromotion
+                ? `Promoted into ${targetPosition}. Existing employee portal account retained (${username}).`
+                : `Hired. Credentials generated (username: ${username}).`,
               date: nowIso,
             },
           ],
           timeline: [
             {
-              event: 'Applicant marked as Hired and converted to Employee account',
+              event: isInternalPromotion
+                ? 'Applicant marked as Hired and linked to existing employee account'
+                : 'Applicant marked as Hired and converted to Employee account',
               date: nowIso,
               actor: 'RSP Admin',
             },
@@ -931,8 +1007,8 @@ export const QualifiedApplicantsPage = () => {
     setShowHireConfirmModal(false);
     setToast(
       selectedRows.length === 1
-        ? 'Applicant successfully hired and credentials generated.'
-        : `${selectedRows.length} applicants successfully hired and credentials generated.`
+        ? 'Applicant successfully processed for hiring.'
+        : `${selectedRows.length} applicants successfully processed for hiring.`
     );
   };
 

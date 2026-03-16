@@ -38,6 +38,19 @@
   gap: var(--spacing-lg);
 }
 
+.promotion-upload-callout {
+  border: 1px solid #cbd5e1;
+  border-radius: var(--radius-lg);
+  background: #f8fafc;
+  padding: var(--spacing-lg);
+}
+
+.promotion-upload-callout p {
+  margin: 0;
+  color: var(--color-text-secondary);
+  line-height: var(--line-height-relaxed);
+}
+
 .upload-instructions {
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);

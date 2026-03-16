@@ -96,6 +96,8 @@ html {
   font-size: 16px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+  text-rendering: optimizeLegibility;
 }
 
 body {
@@ -105,6 +107,7 @@ body {
   color: var(--color-text-primary);
   background: linear-gradient(135deg, #fff7e0 0%, #f1f5ff 100%);
   min-height: 100vh;
+  text-rendering: optimizeLegibility;
 }
 
 /* Typography */

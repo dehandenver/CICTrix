@@ -27,6 +27,7 @@ import { InterviewerDashboard } from './modules/interviewer/InterviewerDashboard
 import { InterviewerLogin } from './modules/interviewer/InterviewerLogin';
 import './styles/globals.css';
 import { EmployeeSession } from './types/employee.types';
+import { scheduleTransientUiReset } from './utils/uiReset';
 
 type Role = 'super-admin' | 'rsp' | 'lnd' | 'pm';
 type InterviewerSession = { email: string; name: string };
@@ -304,64 +305,18 @@ function AppContent() {
   }, [isInterviewerRoute, interviewerSession, revokedInterviewerDialogOpen]);
 
   useEffect(() => {
-    // Route changes should always clear transient overlays opened on previous pages.
-    window.dispatchEvent(new Event('cictrix:force-close-overlays'));
+    // Notify data-driven pages that a route has been activated so they can refresh
+    // without requiring a full browser reload.
+    window.dispatchEvent(new CustomEvent('cictrix:route-activated'));
+    const routeActivationTimer = window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('cictrix:route-activated'));
+    }, 120);
 
-    // Failsafe: scrub any leaked full-screen overlay nodes that can block clicks.
-    const scrubOrphanOverlays = () => {
-      const candidates = Array.from(document.querySelectorAll<HTMLElement>('body *'));
-      candidates.forEach((node) => {
-        if (node.classList.contains('admin-login-page')) {
-          return;
-        }
-
-        const className = node.className || '';
-        const style = window.getComputedStyle(node);
-        const rect = node.getBoundingClientRect();
-        const isFullscreen = rect.width >= window.innerWidth - 2 && rect.height >= window.innerHeight - 2;
-        const isDarkBackdrop =
-          className.includes('bg-black/') ||
-          className.includes('bg-slate-900/') ||
-          className.includes('dialog-overlay') ||
-          className.includes('assessment-print-overlay');
-
-        const isOverlayLike =
-          (style.position === 'fixed' || style.position === 'absolute') &&
-          isFullscreen;
-
-        if (isDarkBackdrop && isOverlayLike) {
-          if (node.parentElement) {
-            node.parentElement.removeChild(node);
-            return;
-          }
-
-          node.style.display = 'none';
-          node.style.pointerEvents = 'none';
-          node.style.opacity = '0';
-        }
-      });
-
-      // Also reset global interaction styles in case a dialog left them behind.
-      document.body.style.overflow = '';
-      document.body.style.pointerEvents = '';
-      document.documentElement.style.overflow = '';
-      document.documentElement.style.pointerEvents = '';
-    };
-
-    const frame = window.requestAnimationFrame(scrubOrphanOverlays);
-    const timer = window.setTimeout(scrubOrphanOverlays, 120);
-    const interval = window.setInterval(scrubOrphanOverlays, 350);
-
-    const observer = new MutationObserver(() => {
-      scrubOrphanOverlays();
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
+    const cleanupUiReset = scheduleTransientUiReset({ dispatchOverlayClose: true });
 
     return () => {
-      window.cancelAnimationFrame(frame);
-      window.clearTimeout(timer);
-      window.clearInterval(interval);
-      observer.disconnect();
+      window.clearTimeout(routeActivationTimer);
+      cleanupUiReset();
     };
   }, [location.pathname, location.search]);
 

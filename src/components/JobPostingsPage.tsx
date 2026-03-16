@@ -14,6 +14,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DEPARTMENTS } from '../constants/positions';
+import { mockDatabase } from '../lib/mockDatabase';
 import {
     archiveDeletedJobPosting,
     ensureRecruitmentSeedData,
@@ -25,8 +26,7 @@ import {
     saveJobPostings,
     toTitleCase,
 } from '../lib/recruitmentData';
-  import { mockDatabase } from '../lib/mockDatabase';
-  import { isMockModeEnabled, supabase } from '../lib/supabase';
+import { isMockModeEnabled, supabase } from '../lib/supabase';
 import { JobPosting } from '../types/recruitment.types';
 import { RecruitmentNavigationGuide } from './RecruitmentNavigationGuide';
 import { Sidebar } from './Sidebar';
@@ -284,6 +284,12 @@ export const JobPostingsPage = () => {
       void resolveLiveApplicants(currentJobs);
     };
 
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshApplicants();
+      }
+    };
+
     const onStorage = (event: StorageEvent) => {
       if (event.key === 'cictrix_qualified_applicants') {
         refreshApplicants();
@@ -291,15 +297,19 @@ export const JobPostingsPage = () => {
     };
 
     window.addEventListener('focus', refreshApplicants);
+    window.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('storage', onStorage);
     window.addEventListener('cictrix:applicants-updated', refreshApplicants as EventListener);
     window.addEventListener('cictrix:job-postings-updated', refreshApplicants as EventListener);
+    window.addEventListener('cictrix:route-activated', refreshApplicants as EventListener);
 
     return () => {
       window.removeEventListener('focus', refreshApplicants);
+      window.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('storage', onStorage);
       window.removeEventListener('cictrix:applicants-updated', refreshApplicants as EventListener);
       window.removeEventListener('cictrix:job-postings-updated', refreshApplicants as EventListener);
+      window.removeEventListener('cictrix:route-activated', refreshApplicants as EventListener);
     };
   }, []);
 

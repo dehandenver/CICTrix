@@ -34,6 +34,8 @@ type ApplicantRecord = {
   address?: string;
   is_pwd?: boolean;
   status?: string;
+  application_type?: 'job' | 'promotion' | string;
+  employee_id?: string | null;
   created_at?: string;
 };
 
@@ -388,6 +390,17 @@ const saveStoredExperienceYears = (applicantId: string, years: string) => {
   } catch {}
 };
 
+const isPromotionalSource = (
+  recruitmentApplicant?: Applicant | null,
+  applicantRow?: ApplicantRecord | null
+) => {
+  const recruitmentType = String(recruitmentApplicant?.applicationType ?? '').trim().toLowerCase();
+  const dbType = String(applicantRow?.application_type ?? '').trim().toLowerCase();
+  const hasInternalLink = Boolean(recruitmentApplicant?.internalApplication?.employeeId || applicantRow?.employee_id);
+
+  return recruitmentType === 'promotion' || dbType === 'promotion' || hasInternalLink;
+};
+
 const getStoredWrittenScore = (applicantId: string): string => {
   try {
     const raw = localStorage.getItem(SCORE_WRITTEN_STORAGE_KEY);
@@ -607,6 +620,7 @@ export function ApplicantDetailsPage() {
   const showViewScoresButton = !isFromJobPosts;
   const showJobPostActionButtons = isFromJobPosts;
   const scoreActionLabel = isScoreFinalized ? 'View Score' : 'Update Score';
+  const isForcedPromotionalAppointment = isPromotionalSource(recruitmentApplicant, applicant);
   const isApplicantDisqualified =
     normalizeText(resolvedStatus ?? '').includes('not qualified') ||
     normalizeText(resolvedStatus ?? '').includes('disqual');
@@ -671,6 +685,16 @@ export function ApplicantDetailsPage() {
         rsp: 'Education, Experience, Written Examination',
         interviewer: 'PCPT, Oral Examination',
       };
+
+  useEffect(() => {
+    if (!id) return;
+    if (!isForcedPromotionalAppointment) return;
+
+    if (appointmentType !== 'promotional') {
+      setAppointmentType('promotional');
+    }
+    saveStoredAppointmentType(id, 'promotional');
+  }, [appointmentType, id, isForcedPromotionalAppointment]);
 
   const handleSaveNotes = () => {
     if (!recruitmentApplicant || !notes.trim()) return;
@@ -843,7 +867,8 @@ export function ApplicantDetailsPage() {
         ? 'Recommended for Hiring'
         : 'Shortlisted';
 
-    saveStoredAppointmentType(applicant.id, appointmentType);
+    const effectiveAppointmentType: AppointmentType = isForcedPromotionalAppointment ? 'promotional' : appointmentType;
+    saveStoredAppointmentType(applicant.id, effectiveAppointmentType);
     saveStoredEducationAttainment(applicant.id, educationAttainment);
     saveStoredExperienceYears(applicant.id, experienceYears);
     saveStoredWrittenScore(applicant.id, writtenScore);
@@ -907,7 +932,8 @@ export function ApplicantDetailsPage() {
   const handleSaveScoreDraft = () => {
     if (!applicant?.id || isScoreFinalized) return;
 
-    saveStoredAppointmentType(applicant.id, appointmentType);
+    const effectiveAppointmentType: AppointmentType = isForcedPromotionalAppointment ? 'promotional' : appointmentType;
+    saveStoredAppointmentType(applicant.id, effectiveAppointmentType);
     saveStoredEducationAttainment(applicant.id, educationAttainment);
     saveStoredExperienceYears(applicant.id, experienceYears);
     saveStoredWrittenScore(applicant.id, writtenScore);
@@ -1409,16 +1435,21 @@ export function ApplicantDetailsPage() {
 
               <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
                 <p className="mb-3 text-xl font-semibold text-slate-800">Select Appointment Type</p>
+                {isForcedPromotionalAppointment && (
+                  <p className="mb-3 rounded-xl border border-blue-300 bg-blue-100 px-4 py-3 text-sm font-semibold text-blue-800">
+                    Promotional Appointment is auto-selected for internal promotional applicants.
+                  </p>
+                )}
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <button
                     type="button"
-                    onClick={() => !isScoreFinalized && setAppointmentType('original')}
-                    disabled={isScoreFinalized}
+                    onClick={() => !isScoreFinalized && !isForcedPromotionalAppointment && setAppointmentType('original')}
+                    disabled={isScoreFinalized || isForcedPromotionalAppointment}
                     className={`rounded-2xl border p-4 text-center transition ${
                       appointmentType === 'original'
                         ? 'border-2 border-blue-400 bg-white shadow-sm'
                         : 'border border-slate-300 bg-slate-100'
-                    } ${isScoreFinalized ? 'cursor-not-allowed opacity-80' : ''}`}
+                    } ${(isScoreFinalized || isForcedPromotionalAppointment) ? 'cursor-not-allowed opacity-80' : ''}`}
                   >
                     <p className={`text-xl font-semibold ${appointmentType === 'original' ? 'text-blue-700' : 'text-slate-500'}`}>Original Appointment</p>
                     <p className="text-base text-slate-500">Education • Experience • Written Exam • Oral Exam* • PCPT*</p>
@@ -1427,12 +1458,12 @@ export function ApplicantDetailsPage() {
                   <button
                     type="button"
                     onClick={() => !isScoreFinalized && setAppointmentType('promotional')}
-                    disabled={isScoreFinalized}
+                    disabled={isScoreFinalized || isForcedPromotionalAppointment}
                     className={`rounded-2xl border p-4 text-center transition ${
                       appointmentType === 'promotional'
                         ? 'border-2 border-blue-400 bg-white shadow-sm'
                         : 'border border-slate-300 bg-slate-100'
-                    } ${isScoreFinalized ? 'cursor-not-allowed opacity-80' : ''}`}
+                    } ${(isScoreFinalized || isForcedPromotionalAppointment) ? 'cursor-not-allowed opacity-80' : ''}`}
                   >
                     <p className={`text-xl font-semibold ${appointmentType === 'promotional' ? 'text-blue-700' : 'text-slate-500'}`}>Promotional Appointment</p>
                     <p className="text-base text-slate-500">Education • Experience • Performance • PCPT* • Potential</p>

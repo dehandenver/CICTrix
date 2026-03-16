@@ -372,6 +372,14 @@ type ApplicantSubmissionSyncInput = {
   position: string;
   department: string;
   isPwd?: boolean;
+  applicationType?: 'job' | 'promotion';
+  internalApplication?: {
+    employeeId: string;
+    currentPosition?: string;
+    currentDepartment?: string;
+    currentDivision?: string;
+    employeeUsername?: string;
+  };
   submittedAt?: string;
   attachments?: SyncAttachment[];
 };
@@ -433,16 +441,91 @@ export const syncApplicantSubmissionToRecruitment = (
   }
 
   const linkedJob = findJobPostingForSubmission(input.position, input.department);
+  const isPromotionalSubmission =
+    input.applicationType === 'promotion' || Boolean(input.internalApplication?.employeeId);
+
   // Also skip if the same email is already linked to the same job posting
   // (prevents duplicates when the form is submitted more than once).
   if (input.email) {
     const targetJobId = linkedJob?.id ?? 'unposted';
+    const normalizedIncomingEmail = String(input.email ?? '').trim().toLowerCase();
+    const incomingEmployeeId = String(input.internalApplication?.employeeId ?? '').trim();
+
     const duplicate = applicants.find(
-      (row) =>
-        row.personalInfo.email === input.email &&
-        (row.jobPostingId === targetJobId || targetJobId === 'unposted')
+      (row) => {
+        const rowEmail = String(row.personalInfo.email ?? '').trim().toLowerCase();
+        if (!rowEmail || rowEmail !== normalizedIncomingEmail) return false;
+
+        if (isPromotionalSubmission) {
+          // Promotional submissions should not collide with external applications.
+          const rowEmployeeId = String(row.internalApplication?.employeeId ?? '').trim();
+          const sameEmployee = incomingEmployeeId && rowEmployeeId && incomingEmployeeId === rowEmployeeId;
+          const samePromotionTrack = row.applicationType === 'promotion' && sameEmployee;
+          return samePromotionTrack && row.jobPostingId === targetJobId;
+        }
+
+        if (targetJobId === 'unposted') {
+          return row.jobPostingId === 'unposted';
+        }
+
+        return row.jobPostingId === targetJobId;
+      }
     );
-    if (duplicate) return;
+    if (duplicate) {
+      if (isPromotionalSubmission) {
+        const submittedAt = input.submittedAt ?? new Date().toISOString();
+        const targetDepartment = normalizeDepartment(input.department);
+        const updatedApplicants = applicants.map((row) => {
+          if (row.id !== duplicate.id) return row;
+
+          const notes = Array.isArray(row.notes) ? row.notes : [];
+          const timeline = Array.isArray(row.timeline) ? row.timeline : [];
+
+          return {
+            ...row,
+            jobPostingId: targetJobId,
+            applicationType: 'promotion',
+            internalApplication: {
+              ...(row.internalApplication ?? {}),
+              ...(input.internalApplication ?? {}),
+            } as Applicant['internalApplication'],
+            status: 'New Application',
+            applicationDate: submittedAt,
+            personalInfo: {
+              ...row.personalInfo,
+              firstName: input.firstName,
+              lastName: input.lastName,
+              email: input.email,
+              phone: input.phone,
+              address: input.address,
+              itemNumber: row.personalInfo.itemNumber,
+              dateOfBirth: row.personalInfo.dateOfBirth,
+            },
+            notes: [
+              {
+                author: 'System',
+                content: 'Promotional application was re-submitted and synced to recruitment.',
+                date: submittedAt,
+                pinned: false,
+              },
+              ...notes,
+            ],
+            timeline: [
+              ...timeline,
+              {
+                event: `Promotional application re-submitted for ${input.position} (${targetDepartment})`,
+                date: submittedAt,
+                actor: 'System',
+              },
+            ],
+          };
+        });
+
+        saveApplicants(updatedApplicants);
+      }
+
+      return;
+    }
   }
 
   const submittedAt = input.submittedAt ?? new Date().toISOString();
@@ -456,6 +539,8 @@ export const syncApplicantSubmissionToRecruitment = (
   const nextApplicant: Applicant = {
     id: input.applicantId,
     jobPostingId: linkedJob?.id ?? 'unposted',
+    applicationType: input.applicationType ?? 'job',
+    internalApplication: input.internalApplication,
     personalInfo: {
       firstName: input.firstName,
       lastName: input.lastName,
@@ -476,13 +561,27 @@ export const syncApplicantSubmissionToRecruitment = (
     notes: [
       {
         author: 'System',
-        content: input.isPwd ? 'Applicant tagged as PWD during submission.' : 'Applicant submitted through applicant portal.',
+        content:
+          input.applicationType === 'promotion'
+            ? 'Promotional application submitted by an existing employee account.'
+            : input.isPwd
+              ? 'Applicant tagged as PWD during submission.'
+              : 'Applicant submitted through applicant portal.',
         date: submittedAt,
         pinned: false,
       },
     ],
     timeline: [
       { event: 'Application Submitted', date: submittedAt, actor: 'Applicant' },
+      ...(input.applicationType === 'promotion' && input.internalApplication
+        ? [
+            {
+              event: `Internal applicant linked to employee record ${input.internalApplication.employeeId}`,
+              date: submittedAt,
+              actor: 'System',
+            },
+          ]
+        : []),
       { event: 'Synced to Recruitment Admin', date: submittedAt, actor: 'System' },
     ],
   };

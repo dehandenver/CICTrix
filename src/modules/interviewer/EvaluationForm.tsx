@@ -75,6 +75,13 @@ const getStoredAppointmentType = (applicantId?: string): AppointmentType => {
   }
 };
 
+const isPromotionalSource = (applicantRow: Record<string, any> | null | undefined) => {
+  const camelType = String(applicantRow?.applicationType ?? '').trim().toLowerCase();
+  const snakeType = String(applicantRow?.application_type ?? '').trim().toLowerCase();
+  const hasInternalLink = Boolean(applicantRow?.internalApplication?.employeeId || applicantRow?.employee_id);
+  return camelType === 'promotion' || snakeType === 'promotion' || hasInternalLink;
+};
+
 const resolveInterviewerIdentity = (): { name: string; locked: boolean } => {
   try {
     const raw = localStorage.getItem('cictrix_interviewer_session');
@@ -251,6 +258,17 @@ export function EvaluationForm() {
       }
 
       setApplicant(applicantData);
+      if (id && isPromotionalSource(applicantData)) {
+        setAppointmentType('promotional');
+        try {
+          const raw = localStorage.getItem(SCORE_SETUP_STORAGE_KEY);
+          const parsed = raw ? (JSON.parse(raw) as Record<string, AppointmentType>) : {};
+          parsed[id] = 'promotional';
+          localStorage.setItem(SCORE_SETUP_STORAGE_KEY, JSON.stringify(parsed));
+        } catch {
+          // Best effort persistence only.
+        }
+      }
 
       // Fetch attachments
       const { data: attachmentsData, error: attachmentsError } = await supabase
@@ -282,6 +300,17 @@ export function EvaluationForm() {
         }
 
         setApplicant(localApplicantData);
+        if (id && isPromotionalSource(localApplicantData)) {
+          setAppointmentType('promotional');
+          try {
+            const raw = localStorage.getItem(SCORE_SETUP_STORAGE_KEY);
+            const parsed = raw ? (JSON.parse(raw) as Record<string, AppointmentType>) : {};
+            parsed[id] = 'promotional';
+            localStorage.setItem(SCORE_SETUP_STORAGE_KEY, JSON.stringify(parsed));
+          } catch {
+            // Best effort persistence only.
+          }
+        }
 
         const { data: localAttachmentsData } = await (mockDatabase as any)
           .from('applicant_attachments')

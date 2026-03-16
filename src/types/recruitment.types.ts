@@ -46,6 +46,14 @@ export type ApplicantStatus =
 export interface Applicant {
   id: string;
   jobPostingId: string;
+  applicationType?: 'job' | 'promotion';
+  internalApplication?: {
+    employeeId: string;
+    currentPosition?: string;
+    currentDepartment?: string;
+    currentDivision?: string;
+    employeeUsername?: string;
+  };
   personalInfo: {
     firstName: string;
     lastName: string;
@@ -88,6 +96,14 @@ export type NewlyHiredStatus =
 export interface NewlyHired {
   id: string;
   applicantId?: string;
+  applicationType?: 'job' | 'promotion';
+  internalApplication?: {
+    employeeId: string;
+    previousPosition?: string;
+    previousDepartment?: string;
+    previousDivision?: string;
+    employeeUsername?: string;
+  };
   rankingRank?: number;
   rankingScore?: number;
   employeeInfo: {
@@ -165,4 +181,14 @@ export interface EmployeeRecord {
   department: string;
   division?: string;
   startDate: string;
+  positionHistory?: Array<{
+    position: string;
+    department: string;
+    division?: string;
+    effectiveDate: string;
+    endDate?: string;
+    changeType?: 'hire' | 'promotion' | 'transfer' | 'update';
+    sourceApplicantId?: string;
+    notes?: string;
+  }>;
 }

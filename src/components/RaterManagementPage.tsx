@@ -1,13 +1,13 @@
 import {
-    CheckCircle2,
-    Download,
-    PenLine,
-    Plus,
-    Search,
-    Shield,
-    UserPlus,
-    X,
-    XCircle,
+  CheckCircle2,
+  Download,
+  PenLine,
+  Plus,
+  Search,
+  Shield,
+  UserPlus,
+  X,
+  XCircle,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { mockDatabase } from '../lib/mockDatabase';
@@ -360,6 +360,12 @@ export const RaterManagementPage = () => {
       void loadRaters();
     };
 
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void loadRaters();
+      }
+    };
+
     const onStorage = (event: StorageEvent) => {
       if (
         !event.key ||
@@ -372,11 +378,15 @@ export const RaterManagementPage = () => {
     };
 
     window.addEventListener('focus', syncRaters);
+    window.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('storage', onStorage);
+    window.addEventListener('cictrix:route-activated', syncRaters as EventListener);
 
     return () => {
       window.removeEventListener('focus', syncRaters);
+      window.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('storage', onStorage);
+      window.removeEventListener('cictrix:route-activated', syncRaters as EventListener);
     };
   }, []);
 

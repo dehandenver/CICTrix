@@ -11,8 +11,10 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import {
     getEmployeePortalAccounts,
+  updateEmployeePortalEmployee,
     upsertEmployeePortalAccount,
 } from '../lib/employeePortalData';
+import { mockDatabase } from '../lib/mockDatabase';
 import {
     ensureRecruitmentSeedData,
     generateEmployeeId,
@@ -21,7 +23,6 @@ import {
     saveEmployeeRecords,
     saveNewlyHired,
 } from '../lib/recruitmentData';
-import { mockDatabase } from '../lib/mockDatabase';
 import { isMockModeEnabled, supabase } from '../lib/supabase';
 import type { NewlyHired, NewlyHiredStatus } from '../types/recruitment.types';
 import { Sidebar } from './Sidebar';
@@ -135,7 +136,28 @@ export const NewlyHiredPage = () => {
       setRows(reconciledRows);
     };
 
+    const syncRows = () => {
+      void load();
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void load();
+      }
+    };
+
     void load();
+    window.addEventListener('focus', syncRows);
+    window.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('cictrix:applicants-updated', syncRows as EventListener);
+    window.addEventListener('cictrix:route-activated', syncRows as EventListener);
+
+    return () => {
+      window.removeEventListener('focus', syncRows);
+      window.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('cictrix:applicants-updated', syncRows as EventListener);
+      window.removeEventListener('cictrix:route-activated', syncRows as EventListener);
+    };
   }, []);
 
   const departmentCards = useMemo(() => {
@@ -196,16 +218,38 @@ export const NewlyHiredPage = () => {
     const nextRows = rows.map((row) => {
       if (!selectedIds.includes(row.id)) return row;
 
-      const existingEmployeeNumber = row.employeeId;
+      const isInternalPromotion = row.applicationType === 'promotion' && Boolean(row.internalApplication?.employeeId);
+      const existingEmployeeNumber = row.employeeId || row.internalApplication?.employeeId;
       const employeeNumber = existingEmployeeNumber || generateEmployeeId(sequence++);
       const existingAccount = accountByEmployeeId.get(employeeNumber);
       const username = existingAccount
         ? existingAccount.username
         : createUniqueUsername(row.employeeInfo.firstName, row.employeeInfo.lastName, occupiedUsernames);
       const password = createPassword();
+      const positionHistoryEntry = {
+        position: row.position,
+        department: row.department,
+        division: row.division,
+        effectiveDate: nowIso,
+        changeType: isInternalPromotion ? 'promotion' as const : 'hire' as const,
+        sourceApplicantId: row.applicantId,
+        notes: isInternalPromotion
+          ? `Promoted from ${row.internalApplication?.previousPosition || 'current assignment'}`
+          : 'Employee portal account generated from newly hired queue.',
+      };
 
-      const alreadyTracked = employeeRecords.some((record) => record.employeeId === employeeNumber);
-      if (!alreadyTracked) {
+      const employeeRecordIndex = employeeRecords.findIndex((record) => record.employeeId === employeeNumber);
+      if (employeeRecordIndex >= 0) {
+        const existingRecord = employeeRecords[employeeRecordIndex];
+        employeeRecords[employeeRecordIndex] = {
+          ...existingRecord,
+          name: `${row.employeeInfo.firstName} ${row.employeeInfo.lastName}`,
+          position: row.position,
+          department: row.department,
+          division: row.division,
+          positionHistory: [...(existingRecord.positionHistory ?? []), positionHistoryEntry],
+        };
+      } else {
         employeeRecords.push({
           id: crypto.randomUUID(),
           employeeId: employeeNumber,
@@ -214,6 +258,7 @@ export const NewlyHiredPage = () => {
           department: row.department,
           division: row.division,
           startDate: row.expectedStartDate || nowIso,
+          positionHistory: [positionHistoryEntry],
         });
       }
 
@@ -221,45 +266,63 @@ export const NewlyHiredPage = () => {
       const resolvedScore = Number(row.rankingScore ?? 0);
       const rankLine = `Rank: #${resolvedRank} • Score: ${resolvedScore.toFixed(2)}`;
 
-      upsertEmployeePortalAccount({
-        id: `employee-account-${employeeNumber}`,
-        username,
-        password,
-        employee: {
-          employeeId: employeeNumber,
+      if (isInternalPromotion && existingAccount) {
+        updateEmployeePortalEmployee(employeeNumber, {
           fullName: `${row.employeeInfo.firstName} ${row.employeeInfo.lastName}`,
-          email: row.employeeInfo.email || `${username}@employee.local`,
-          dateOfBirth: '',
-          age: 0,
-          gender: 'Prefer not to say',
-          civilStatus: 'Single',
-          nationality: 'Filipino',
-          mobileNumber: row.employeeInfo.phone || '',
-          homeAddress: '',
-          emergencyContactName: row.employeeInfo.emergencyContact?.name || '',
-          emergencyRelationship: row.employeeInfo.emergencyContact?.relationship || '',
-          emergencyContactNumber: row.employeeInfo.emergencyContact?.phone || '',
-          sssNumber: row.employeeInfo.governmentIds?.sss || '',
-          philhealthNumber: row.employeeInfo.governmentIds?.philhealth || '',
-          pagibigNumber: row.employeeInfo.governmentIds?.pagibig || '',
-          tinNumber: row.employeeInfo.governmentIds?.tin || '',
-          createdAt: nowIso,
-          updatedAt: nowIso,
-        },
-      });
-
-      setGeneratedCredentials((current) => [
-        ...current,
-        {
-          id: row.id,
-          fullName: `${row.employeeInfo.firstName} ${row.employeeInfo.lastName}`,
-          position: row.position,
-          rankLine,
-          employeeNumber,
+          email: row.employeeInfo.email || existingAccount.employee.email,
+          mobileNumber: row.employeeInfo.phone || existingAccount.employee.mobileNumber,
+          currentPosition: row.position,
+          currentDepartment: row.department,
+          currentDivision: row.division,
+          positionHistory: [...(existingAccount.employee.positionHistory ?? []), positionHistoryEntry],
+        });
+      } else {
+        upsertEmployeePortalAccount({
+          id: `employee-account-${employeeNumber}`,
           username,
           password,
-        },
-      ]);
+          employee: {
+            employeeId: employeeNumber,
+            fullName: `${row.employeeInfo.firstName} ${row.employeeInfo.lastName}`,
+            email: row.employeeInfo.email || `${username}@employee.local`,
+            dateOfBirth: '',
+            age: 0,
+            gender: 'Prefer not to say',
+            civilStatus: 'Single',
+            nationality: 'Filipino',
+            mobileNumber: row.employeeInfo.phone || '',
+            homeAddress: '',
+            emergencyContactName: row.employeeInfo.emergencyContact?.name || '',
+            emergencyRelationship: row.employeeInfo.emergencyContact?.relationship || '',
+            emergencyContactNumber: row.employeeInfo.emergencyContact?.phone || '',
+            sssNumber: row.employeeInfo.governmentIds?.sss || '',
+            philhealthNumber: row.employeeInfo.governmentIds?.philhealth || '',
+            pagibigNumber: row.employeeInfo.governmentIds?.pagibig || '',
+            tinNumber: row.employeeInfo.governmentIds?.tin || '',
+            currentPosition: row.position,
+            currentDepartment: row.department,
+            currentDivision: row.division,
+            positionHistory: [positionHistoryEntry],
+            createdAt: nowIso,
+            updatedAt: nowIso,
+          },
+        });
+      }
+
+      if (!isInternalPromotion) {
+        setGeneratedCredentials((current) => [
+          ...current,
+          {
+            id: row.id,
+            fullName: `${row.employeeInfo.firstName} ${row.employeeInfo.lastName}`,
+            position: row.position,
+            rankLine,
+            employeeNumber,
+            username,
+            password,
+          },
+        ]);
+      }
 
       return {
         ...row,
@@ -267,7 +330,13 @@ export const NewlyHiredPage = () => {
         status: 'In Onboarding' as NewlyHiredStatus,
         timeline: [
           ...row.timeline,
-          { event: 'Employee number and account generated', date: nowIso, actor: 'RSP Admin' },
+          {
+            event: isInternalPromotion
+              ? 'Existing employee account updated for promotional movement'
+              : 'Employee number and account generated',
+            date: nowIso,
+            actor: 'RSP Admin',
+          },
         ],
       };
     });
@@ -421,7 +490,7 @@ export const NewlyHiredPage = () => {
               </div>
 
               <div className="rounded-2xl border border-blue-200 bg-blue-50 px-5 py-4 text-sm text-blue-700">
-                {selectedIds.length} employee selected. Click "Generate Employee Number & Account" to create credentials.
+                {selectedIds.length} employee selected. Process the selected rows to generate credentials for external hires and update existing accounts for internal promotions.
               </div>
             </section>
           </>
@@ -438,7 +507,7 @@ export const NewlyHiredPage = () => {
                 </div>
                 <div>
                   <h2 className="text-4xl font-bold text-slate-900">Generated Employee Credentials</h2>
-                  <p className="text-lg text-slate-500">{selectedDepartment} • {generatedCredentials.length} employee</p>
+                  <p className="text-lg text-slate-500">{selectedDepartment} • {generatedCredentials.length} credential set</p>
                 </div>
               </div>
 
@@ -456,6 +525,16 @@ export const NewlyHiredPage = () => {
             </header>
 
             <div className="max-h-[72vh] space-y-4 overflow-y-auto p-8">
+              {generatedCredentials.length === 0 && (
+                <article className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
+                  <p className="text-lg font-semibold text-slate-900">No new credentials were generated.</p>
+                  <p className="mt-2 text-base text-slate-600">
+                    The selected employees were processed as internal promotions, so their existing Employee Portal
+                    accounts were updated instead of creating duplicate credentials.
+                  </p>
+                </article>
+              )}
+
               {generatedCredentials.map((credential) => (
                 <article key={credential.id} className="rounded-2xl border border-slate-200 p-6">
                   <div className="mb-4 flex items-start justify-between">

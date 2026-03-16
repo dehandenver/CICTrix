@@ -13,9 +13,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import hrisLogo from '../../assets/hris-logo.svg';
 import { Button, Dialog } from '../../components';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
-import { findEmployeePortalAccount, getEmployeePortalAccounts } from '../../lib/employeePortalData';
+import {
+  type EmployeePortalAccount,
+  findEmployeePortalAccount,
+  getEmployeePortalAccounts,
+} from '../../lib/employeePortalData';
 import { mockDatabase } from '../../lib/mockDatabase';
-import { syncApplicantSubmissionToRecruitment } from '../../lib/recruitmentData';
+import { getEmployeeRecords, syncApplicantSubmissionToRecruitment } from '../../lib/recruitmentData';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../../lib/supabase';
 import '../../styles/wizard.css';
 import type { ApplicantFormData, UploadedFile, ValidationErrors } from '../../types/applicant.types';
@@ -56,6 +60,12 @@ const INITIAL_FORM_DATA: ApplicantFormData = {
   item_number: '',
   office: '',
   is_pwd: false,
+  application_type: 'job',
+  employee_id: '',
+  current_position: '',
+  current_department: '',
+  current_division: '',
+  employee_username: '',
 };
 
 const buildApplicantItemNumber = (sequence: number): string => {
@@ -93,6 +103,7 @@ export const ApplicantWizard: React.FC = () => {
   const [employeePassword, setEmployeePassword] = useState('');
   const [showEmployeePassword, setShowEmployeePassword] = useState(false);
   const [employeeAuthError, setEmployeeAuthError] = useState('');
+  const [authenticatedEmployeeAccount, setAuthenticatedEmployeeAccount] = useState<EmployeePortalAccount | null>(null);
   const isGeneratingItemNumberRef = useRef(false);
 
   const handleFormChange = (field: keyof ApplicantFormData, value: string | boolean) => {
@@ -120,7 +131,7 @@ export const ApplicantWizard: React.FC = () => {
   };
 
   const handleNextToReview = () => {
-    const fileValidationError = validateFiles(files.map((f) => f.file), files);
+    const fileValidationError = validateFiles(files.map((f) => f.file), files, applicationType);
     if (fileValidationError) {
       setFileError(fileValidationError);
       return;
@@ -265,6 +276,12 @@ export const ApplicantWizard: React.FC = () => {
       item_number: itemNumber,
       office: POSITION_TO_DEPARTMENT_MAP[formData.position] || formData.office,
       is_pwd: formData.is_pwd,
+      application_type: applicationType,
+      employee_id: formData.employee_id || null,
+      current_position: formData.current_position || null,
+      current_department: formData.current_department || null,
+      current_division: formData.current_division || null,
+      employee_username: formData.employee_username || null,
     };
 
     const applicantResult = typeof client?.insertApplicant === 'function'
@@ -298,6 +315,16 @@ export const ApplicantWizard: React.FC = () => {
       position: formData.position,
       department: POSITION_TO_DEPARTMENT_MAP[formData.position] || formData.office,
       isPwd: formData.is_pwd,
+      applicationType,
+      internalApplication: applicationType === 'promotion' && formData.employee_id
+        ? {
+            employeeId: formData.employee_id,
+            currentPosition: formData.current_position,
+            currentDepartment: formData.current_department,
+            currentDivision: formData.current_division,
+            employeeUsername: formData.employee_username,
+          }
+        : undefined,
       submittedAt: new Date().toISOString(),
       attachments: syncedAttachments,
     });
@@ -312,6 +339,7 @@ export const ApplicantWizard: React.FC = () => {
     setCurrentStep(1);
     setEntryMode('landing');
     setApplicationType('job');
+    setAuthenticatedEmployeeAccount(null);
     setEmployeeNumber('');
     setEmployeePassword('');
     setShowEmployeePassword(false);
@@ -327,7 +355,7 @@ export const ApplicantWizard: React.FC = () => {
   };
 
   const handleSubmit = async () => {
-    const fileValidationError = validateFiles(files.map((f) => f.file), files);
+    const fileValidationError = validateFiles(files.map((f) => f.file), files, applicationType);
     if (fileValidationError) {
       setFileError(fileValidationError);
       return;
@@ -376,6 +404,9 @@ export const ApplicantWizard: React.FC = () => {
 
   const handleStartJobApplication = () => {
     setApplicationType('job');
+    setAuthenticatedEmployeeAccount(null);
+    setFormData({ ...INITIAL_FORM_DATA, application_type: 'job' });
+    setFiles([]);
     setEntryMode('wizard');
     setCurrentStep(1);
     setSubmitError('');
@@ -416,15 +447,58 @@ export const ApplicantWizard: React.FC = () => {
       return;
     }
 
+    const matchedAccount = matchedByUsername || matchedByEmployeeId;
+    if (!matchedAccount) {
+      setEmployeeAuthError('Unable to resolve the employee account for this promotional application.');
+      return;
+    }
+
+    const employeeRecord = getEmployeeRecords().find(
+      (record) => String(record.employeeId ?? '').trim() === String(matchedAccount?.employee?.employeeId ?? '').trim()
+    );
+    const [firstName, ...remainingParts] = String(matchedAccount?.employee?.fullName ?? '').trim().split(/\s+/);
+    const lastName = remainingParts.length > 0 ? remainingParts[remainingParts.length - 1] : '';
+    const middleName = remainingParts.length > 1 ? remainingParts.slice(0, -1).join(' ') : '';
+    const currentDepartment = employeeRecord?.department || matchedAccount?.employee?.currentDepartment || '';
+    const currentDivision = employeeRecord?.division || matchedAccount?.employee?.currentDivision || '';
+    const currentPosition = employeeRecord?.position || matchedAccount?.employee?.currentPosition || '';
+
+    setAuthenticatedEmployeeAccount(matchedAccount);
     setApplicationType('promotion');
     setEntryMode('wizard');
     setCurrentStep(1);
+    setFiles([]);
+    setFormData({
+      ...INITIAL_FORM_DATA,
+      application_type: 'promotion',
+      first_name: firstName || '',
+      middle_name: middleName,
+      last_name: lastName,
+      gender: matchedAccount?.employee?.gender === 'Prefer not to say' ? '' : String(matchedAccount?.employee?.gender ?? ''),
+      address: matchedAccount?.employee?.homeAddress || '',
+      contact_number: matchedAccount?.employee?.mobileNumber || '',
+      email: matchedAccount?.employee?.email || '',
+      employee_id: matchedAccount?.employee?.employeeId || '',
+      current_position: currentPosition,
+      current_department: currentDepartment,
+      current_division: currentDivision,
+      employee_username: matchedAccount?.username || '',
+      office: currentDepartment,
+    });
     setSubmitError('');
     setShowEmployeeAuth(false);
     setEmployeeAuthError('');
   };
 
   const reviewedFiles = useMemo(() => {
+    if (applicationType === 'promotion') {
+      return files.map((entry) => ({
+        key: entry.id,
+        fileName: entry.file.name,
+        fileSize: entry.file.size,
+      }));
+    }
+
     return REQUIRED_DOCUMENTS.map((doc) => {
       const uploaded = (files as Array<UploadedFile & { documentType?: string }>).find(
         (entry) => entry.documentType === doc.type
@@ -436,7 +510,7 @@ export const ApplicantWizard: React.FC = () => {
         fileSize: uploaded?.file.size,
       };
     }).filter((entry) => Boolean(entry.fileName));
-  }, [files]);
+  }, [applicationType, files]);
 
   const formatFileSize = (bytes?: number) => {
     if (!bytes) return '';
@@ -623,7 +697,12 @@ export const ApplicantWizard: React.FC = () => {
                   <p>Please provide your complete details for evaluation.</p>
                 </div>
                 <div className="wizard-content">
-                  <ApplicantAssessmentForm formData={formData} errors={errors} onChange={handleFormChange} />
+                  <ApplicantAssessmentForm
+                    formData={formData}
+                    errors={errors}
+                    onChange={handleFormChange}
+                    applicationType={applicationType}
+                  />
                 </div>
               </>
             )}
@@ -640,6 +719,7 @@ export const ApplicantWizard: React.FC = () => {
                     onFilesChange={handleFilesChange}
                     error={fileError}
                     itemNumber={formData.item_number}
+                    applicationType={applicationType}
                   />
                 </div>
               </>
@@ -657,6 +737,26 @@ export const ApplicantWizard: React.FC = () => {
                     <BadgeCheck size={20} /> Personal &amp; Application Information
                   </h4>
                   <div className="review-grid">
+                    {applicationType === 'promotion' && (
+                      <>
+                        <div>
+                          <label>Employee ID</label>
+                          <p>{formData.employee_id || '-'}</p>
+                        </div>
+                        <div>
+                          <label>Current Position</label>
+                          <p>{formData.current_position || '-'}</p>
+                        </div>
+                        <div>
+                          <label>Current Department</label>
+                          <p>{formData.current_department || '-'}</p>
+                        </div>
+                        <div>
+                          <label>Current Division</label>
+                          <p>{formData.current_division || '-'}</p>
+                        </div>
+                      </>
+                    )}
                     <div>
                       <label>First Name</label>
                       <p>{formData.first_name || '-'}</p>
@@ -733,6 +833,24 @@ export const ApplicantWizard: React.FC = () => {
                     application or termination of employment if discovered after hiring.
                   </p>
                 </div>
+
+                {applicationType === 'promotion' && authenticatedEmployeeAccount && (
+                  <div className="review-panel">
+                    <h4>
+                      <ShieldCheck size={20} /> Internal Employee Link
+                    </h4>
+                    <div className="review-grid">
+                      <div>
+                        <label>Employee Portal Username</label>
+                        <p>{authenticatedEmployeeAccount.username}</p>
+                      </div>
+                      <div>
+                        <label>Linked Account</label>
+                        <p>{authenticatedEmployeeAccount.employee.fullName}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </>
             )}
 

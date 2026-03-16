@@ -31,6 +31,21 @@ export interface Employee {
   pagibigNumber: string;
   tinNumber: string;
 
+  // Work Information
+  currentPosition?: string;
+  currentDepartment?: string;
+  currentDivision?: string;
+  positionHistory?: Array<{
+    position: string;
+    department: string;
+    division?: string;
+    effectiveDate: string;
+    endDate?: string;
+    changeType?: 'hire' | 'promotion' | 'transfer' | 'update';
+    sourceApplicantId?: string;
+    notes?: string;
+  }>;
+
   // Metadata
   createdAt?: string;
   updatedAt?: string;

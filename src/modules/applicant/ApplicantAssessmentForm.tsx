@@ -8,12 +8,14 @@ interface ApplicantAssessmentFormProps {
   formData: ApplicantFormData;
   errors: ValidationErrors;
   onChange: (field: keyof ApplicantFormData, value: string | boolean) => void;
+  applicationType?: 'job' | 'promotion';
 }
 
 export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = ({
   formData,
   errors,
   onChange,
+  applicationType = 'job',
 }) => {
   const [dynamicPositionOptions, setDynamicPositionOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [positionDepartmentMap, setPositionDepartmentMap] = useState<Record<string, string>>({});
@@ -101,9 +103,49 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
       onChange('office', assignedDepartment);
     }
   };
+
+  const isPromotion = applicationType === 'promotion';
+
   return (
     <Card title="Applicant Assessment Form">
       <div className="grid gap-md md:grid-cols-2">
+        {isPromotion && (
+          <>
+            <Input
+              label="Employee ID"
+              value={formData.employee_id}
+              error={errors.employee_id}
+              readOnly
+            />
+
+            <Input
+              label="Employee Portal Username"
+              value={formData.employee_username}
+              readOnly
+            />
+
+            <Input
+              label="Current Position"
+              value={formData.current_position}
+              error={errors.current_position}
+              readOnly
+            />
+
+            <Input
+              label="Current Department"
+              value={formData.current_department}
+              error={errors.current_department}
+              readOnly
+            />
+
+            <Input
+              label="Current Division"
+              value={formData.current_division || 'Not specified'}
+              readOnly
+            />
+          </>
+        )}
+
         <Input
           label="First Name"
           placeholder="Enter your first name"

@@ -8,6 +8,7 @@ interface AttachmentsUploadFormProps {
   onFilesChange: (files: UploadedFile[]) => void;
   error?: string;
   itemNumber?: string;
+  applicationType?: 'job' | 'promotion';
 }
 
 export type DocumentType = 
@@ -80,9 +81,11 @@ export const AttachmentsUploadForm: React.FC<AttachmentsUploadFormProps> = ({
   onFilesChange,
   error,
   itemNumber,
+  applicationType = 'job',
 }) => {
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const categorizedFiles = files as CategorizedFile[];
+  const isPromotion = applicationType === 'promotion';
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, documentType: DocumentType) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -114,6 +117,91 @@ export const AttachmentsUploadForm: React.FC<AttachmentsUploadFormProps> = ({
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
   };
+
+  const handlePromotionFilesUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+
+    const incoming = Array.from(e.target.files).map((file) => ({
+      file,
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+      documentType: file.name,
+    })) as CategorizedFile[];
+
+    onFilesChange([...categorizedFiles, ...incoming]);
+    e.target.value = '';
+  };
+
+  if (isPromotion) {
+    return (
+      <Card title="Upload Supporting Documents">
+        <div className="info-notice">
+          <p className="notice-title">Internal Promotional Application</p>
+          <p className="notice-number">{itemNumber || 'ITEM-0000-0000'}</p>
+          <p className="notice-subtitle">Upload all files that support your promotional application in one batch.</p>
+        </div>
+
+        <div className="upload-section">
+          <div className="promotion-upload-callout">
+            <p>
+              Upload certificates, performance records, updated PDS, training proofs, and any other supporting files.
+              If possible, name files clearly, for example: <strong>Training-Certificate-Leadership.pdf</strong>.
+            </p>
+          </div>
+
+          <div className="drop-zone">
+            <input
+              type="file"
+              id="promotion-files"
+              ref={(el) => {
+                inputRefs.current.promotion = el;
+              }}
+              className="file-input"
+              accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+              multiple
+              onChange={handlePromotionFilesUpload}
+            />
+            <label htmlFor="promotion-files" className="file-label">
+              <div className="upload-icon" aria-hidden="true">📁</div>
+              <div className="upload-text">
+                <p className="upload-text-primary">Select one or more supporting documents</p>
+                <p className="upload-text-secondary">Accepted formats: PDF, DOC, DOCX, JPG, PNG. Maximum 10MB per file.</p>
+              </div>
+            </label>
+          </div>
+
+          {categorizedFiles.length > 0 && (
+            <div className="files-list">
+              <p className="files-list-title">Uploaded Files</p>
+              {categorizedFiles.map((uploadedFile) => (
+                <div key={uploadedFile.id} className="file-item">
+                  <div className="file-info">
+                    <div className="file-icon" aria-hidden="true">
+                      {uploadedFile.file.type.includes('pdf') ? '📄' : uploadedFile.file.type.includes('image') ? '🖼️' : '📝'}
+                    </div>
+                    <div className="file-details">
+                      <p className="file-name">{uploadedFile.file.name}</p>
+                      <p className="file-size">{formatFileSize(uploadedFile.file.size)}</p>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeFile(uploadedFile.id)}
+                    className="file-remove"
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {error && <p className="upload-error">{error}</p>}
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <Card title="Upload Required Documents">

@@ -10,6 +10,12 @@ export interface ApplicantFormData {
   item_number: string;
   office: string;
   is_pwd: boolean;
+  application_type: 'job' | 'promotion';
+  employee_id: string;
+  current_position: string;
+  current_department: string;
+  current_division: string;
+  employee_username: string;
 }
 
 export interface ValidationErrors {
@@ -23,6 +29,9 @@ export interface ValidationErrors {
   position?: string;
   item_number?: string;
   office?: string;
+  employee_id?: string;
+  current_position?: string;
+  current_department?: string;
 }
 
 export interface UploadedFile {

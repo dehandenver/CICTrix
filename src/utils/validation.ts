@@ -63,9 +63,19 @@ export const validateApplicantForm = (data: ApplicantFormData): ValidationErrors
   return errors;
 };
 
-export const validateFiles = (files: File[], categorizedFiles?: any[]): string | null => {
+export const validateFiles = (
+  files: File[],
+  categorizedFiles?: any[],
+  applicationType: 'job' | 'promotion' = 'job'
+): string | null => {
+  if (applicationType === 'promotion') {
+    if (files.length === 0) {
+      return 'Upload at least one supporting document for your promotional application';
+    }
+  }
+
   // Check if required documents are uploaded
-  if (categorizedFiles) {
+  if (applicationType !== 'promotion' && categorizedFiles) {
     const requiredDocTypes = [
       'application_letter',
       'pds_with_photo',
