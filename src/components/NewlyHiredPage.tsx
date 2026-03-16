@@ -1,27 +1,27 @@
 import {
-    ArrowLeft,
-    CheckCircle2,
-    ChevronRight,
-    KeyRound,
-    Printer,
-    Save,
-    UserPlus,
-    X,
+  ArrowLeft,
+  CheckCircle2,
+  ChevronRight,
+  KeyRound,
+  Printer,
+  Save,
+  UserPlus,
+  X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import {
-    getEmployeePortalAccounts,
-    upsertEmployeePortalAccount,
+  getEmployeePortalAccounts,
+  upsertEmployeePortalAccount,
 } from '../lib/employeePortalData';
-import {
-    ensureRecruitmentSeedData,
-    generateEmployeeId,
-    getEmployeeRecords,
-    getNewlyHired,
-    saveEmployeeRecords,
-    saveNewlyHired,
-} from '../lib/recruitmentData';
 import { mockDatabase } from '../lib/mockDatabase';
+import {
+  ensureRecruitmentSeedData,
+  generateEmployeeId,
+  getEmployeeRecords,
+  getNewlyHired,
+  saveEmployeeRecords,
+  saveNewlyHired,
+} from '../lib/recruitmentData';
 import { isMockModeEnabled, supabase } from '../lib/supabase';
 import type { NewlyHired, NewlyHiredStatus } from '../types/recruitment.types';
 import { Sidebar } from './Sidebar';
@@ -390,7 +390,7 @@ export const NewlyHiredPage = () => {
 
             <section className="space-y-4 p-8">
               <div className="rounded-2xl border border-blue-200 bg-blue-50 px-5 py-4 text-base text-blue-700">
-                <strong>Instructions:</strong> Select employees to generate their employee numbers and account credentials. Credentials will be auto-generated and can be printed for distribution.
+                <strong>Instructions:</strong> Select employees to generate their employee numbers and account details. Details will be auto-generated and can be printed for distribution.
               </div>
 
               <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
@@ -447,7 +447,7 @@ export const NewlyHiredPage = () => {
                   <Printer className="mr-2 inline h-4 w-4" /> Print
                 </button>
                 <button type="button" className="rounded-2xl bg-green-600 px-5 py-2.5 text-base font-semibold text-white">
-                  <Save className="mr-2 inline h-4 w-4" /> Save Credentials
+                  <Save className="mr-2 inline h-4 w-4" /> Save Account Details
                 </button>
                 <button type="button" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" onClick={() => { setShowCredentialsModal(false); clearGeneratedCache(); }}>
                   <X size={20} />
