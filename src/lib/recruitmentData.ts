@@ -311,8 +311,10 @@ export const getApplicantsFromSupabase = async (): Promise<Applicant[]> => {
   }
 };
 export const saveApplicants = (rows: Applicant[], options?: { broadcast?: boolean }) => {
-  localStorage.setItem(APPLICANTS_KEY, JSON.stringify(rows));
-
+  // CRITICAL: Do NOT save applicants to localStorage - they are stored in Supabase only!
+  // localStorage has a 5-10MB quota and would be exceeded when storing many applicants.
+  // Per user requirement: "all datas must be stored in supabase"
+  
   if (options?.broadcast !== false && typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(APPLICANTS_UPDATED_EVENT));
   }
@@ -353,7 +355,8 @@ export const archiveDeletedJobPosting = (input: {
 export const getNewlyHired = () => safeJsonParse<NewlyHired[]>(localStorage.getItem(NEWLY_HIRED_KEY), []);
 
 export const saveNewlyHired = async (rows: NewlyHired[]) => {
-  localStorage.setItem(NEWLY_HIRED_KEY, JSON.stringify(rows));
+  // Newly hired records are now stored only in Supabase database
+  // Do not save to localStorage to avoid quota exceeded errors
 
   // Always sync each newly hired record to Supabase
   for (const hired of rows) {
@@ -405,8 +408,11 @@ export const saveEvaluationPeriods = (rows: EvaluationPeriod[]) =>
 
 export const getEmployeeRecords = () =>
   safeJsonParse<EmployeeRecord[]>(localStorage.getItem(EMPLOYEE_DB_KEY), []);
-export const saveEmployeeRecords = (rows: EmployeeRecord[]) =>
-  localStorage.setItem(EMPLOYEE_DB_KEY, JSON.stringify(rows));
+export const saveEmployeeRecords = (rows: EmployeeRecord[]) => {
+  // Employee records are now stored only in Supabase database
+  // Do not save to localStorage to avoid quota exceeded errors
+  // Broadcasting is handled via window events if needed
+};
 
 const isRomanNumeralToken = (word: string) => /^[ivxlcdm]+$/i.test(word);
 

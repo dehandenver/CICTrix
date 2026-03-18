@@ -1,39 +1,39 @@
 import {
-  Activity as ActivityIcon,
-  AlertCircle,
-  ArrowLeft,
-  CheckCircle2,
-  Download,
-  FileText,
-  Mail,
-  MessageSquare,
-  Plane,
-  Search,
-  Star,
-  User,
-  UserCheck,
-  X
+    Activity as ActivityIcon,
+    AlertCircle,
+    ArrowLeft,
+    CheckCircle2,
+    Download,
+    FileText,
+    Mail,
+    MessageSquare,
+    Plane,
+    Search,
+    Star,
+    User,
+    UserCheck,
+    X
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getPreferredDataSourceMode } from '../lib/dataSourceMode';
 import {
-  getEmployeePortalAccounts,
-  updateEmployeePortalEmployee,
+    getEmployeePortalAccounts,
+    updateEmployeePortalEmployee,
 } from '../lib/employeePortalData';
 import { mockDatabase } from '../lib/mockDatabase';
 import {
-  ensureRecruitmentSeedData,
-  formatPHDate,
-  formatPHDateTime,
-  generateEmployeeId,
-  getApplicants,
-  getAuthoritativeJobPostings,
-  getEmployeeRecords,
-  getNewlyHired,
-  saveApplicants,
-  saveEmployeeRecords,
-  saveNewlyHired,
+    ensureRecruitmentSeedData,
+    formatPHDate,
+    formatPHDateTime,
+    generateEmployeeId,
+    getApplicants,
+    getAuthoritativeJobPostings,
+    getEmployeeRecords,
+    getNewlyHired,
+    saveApplicants,
+    saveEmployeeRecords,
+    saveNewlyHired,
 } from '../lib/recruitmentData';
 import { runSingleFlight } from '../lib/singleFlight';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../lib/supabase';
@@ -937,7 +937,8 @@ export const QualifiedApplicantsPage = () => {
   };
 
   const handleConfirmHireApplicants = async () => {
-    if (!canManageHiring || selectedHireApplicantIds.length === 0) return;
+    try {
+      if (!canManageHiring || selectedHireApplicantIds.length === 0) return;
 
     const selectedRows = qualifiedRows.filter((row) => selectedHireApplicantIds.includes(row.id));
     if (selectedRows.length === 0) {
@@ -946,6 +947,7 @@ export const QualifiedApplicantsPage = () => {
     }
 
     const existingNewlyHired = getNewlyHired();
+    // existingApplicantIds is used for deduplication in toAddNewlyHired
     const existingApplicantIds = new Set(existingNewlyHired.map((item) => item.applicantId));
     const employeeRecords = getEmployeeRecords();
     const existingAccounts = getEmployeePortalAccounts();
@@ -1155,7 +1157,7 @@ export const QualifiedApplicantsPage = () => {
     // Always update status in Supabase for hired applicants
     if (hiredIdSet.size > 0) {
       try {
-        await supabase.from('applicants').update({ status: 'Hired' }).in('id', Array.from(hiredIdSet));
+        await (supabase.from('applicants').update({ status: 'Hired' } as any)).in('id', Array.from(hiredIdSet));
       } catch {
         // Log error, but do not block
       }
@@ -1200,6 +1202,13 @@ export const QualifiedApplicantsPage = () => {
       // Dispatch event to notify other pages (NewlyHiredPage) to refresh their data
       window.dispatchEvent(new CustomEvent('cictrix:applicants-updated'));
       navigate('/admin/rsp/new-hired');
+    }
+    } catch (error) {
+      console.error('Error during hiring process:', error);
+      const errorMessage = error instanceof Error ? error.message : 'An error occurred during the hiring process.';
+      setToast(`Failed to process hiring: ${errorMessage}`);
+    } finally {
+      setShowHireConfirmModal(false);
     }
   };
 

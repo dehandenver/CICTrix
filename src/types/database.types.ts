@@ -14,6 +14,7 @@ export interface Database {
           item_number: string;
           office: string;
           is_pwd: boolean;
+          status: string;
           created_at: string;
           updated_at: string;
         };
@@ -29,6 +30,7 @@ export interface Database {
           item_number: string;
           office: string;
           is_pwd?: boolean;
+          status?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -44,6 +46,7 @@ export interface Database {
           item_number?: string;
           office?: string;
           is_pwd?: boolean;
+          status?: string;
           created_at?: string;
           updated_at?: string;
         };

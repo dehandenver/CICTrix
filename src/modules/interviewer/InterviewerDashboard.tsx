@@ -3,11 +3,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Dialog } from '../../components/Dialog';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
-import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import { isPositionAssignedToInterviewer, resolveAssignedPositionsForInterviewer } from '../../lib/interviewerAccess';
 import { mockDatabase } from '../../lib/mockDatabase';
 import { ensureRecruitmentSeedData, getAuthoritativeJobPostings } from '../../lib/recruitmentData';
-import { isMockModeEnabled, supabase } from '../../lib/supabase';
+import { supabase } from '../../lib/supabase';
 import '../../styles/interviewer.css';
 import type { JobPosting as RecruitmentJobPosting } from '../../types/recruitment.types';
 

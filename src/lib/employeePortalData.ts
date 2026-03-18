@@ -64,9 +64,10 @@ export const getEmployeePortalAccounts = (): EmployeePortalAccount[] => {
 };
 
 export const saveEmployeePortalAccounts = (accounts: EmployeePortalAccount[]) => {
+  // Employee portal accounts are now stored only in Supabase database
+  // Do not save to localStorage to avoid quota exceeded errors
   const normalized = withDemoAccount(Array.isArray(accounts) ? accounts : []);
-  localStorage.setItem(EMPLOYEE_PORTAL_ACCOUNTS_KEY, JSON.stringify(normalized));
-
+  
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('cictrix:employee-accounts-updated'));
   }

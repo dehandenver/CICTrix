@@ -1,30 +1,30 @@
 import {
-  ArrowLeft,
-  CheckCircle2,
-  ChevronRight,
-  KeyRound,
-  Printer,
-  Save,
-  UserPlus,
-  X,
+    ArrowLeft,
+    CheckCircle2,
+    ChevronRight,
+    KeyRound,
+    Printer,
+    Save,
+    UserPlus,
+    X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
+import {
+    createPassword,
+    createUniqueUsername,
+    getEmployeePortalAccounts,
+    updateEmployeePortalEmployee,
+    upsertEmployeePortalAccount,
+} from '../lib/employeePortalData';
+import {
+    generateEmployeeId,
+    getEmployeeRecords,
+    saveEmployeeRecords,
+    saveNewlyHired,
+} from '../lib/recruitmentData';
 import { supabase } from '../lib/supabase';
 import type { NewlyHired, NewlyHiredStatus } from '../types/recruitment.types';
-import {
-  getEmployeeRecords,
-  saveNewlyHired,
-  saveEmployeeRecords,
-  generateEmployeeId,
-} from '../lib/recruitmentData';
-import {
-  getEmployeePortalAccounts,
-  upsertEmployeePortalAccount,
-  updateEmployeePortalEmployee,
-  createUniqueUsername,
-  createPassword,
-} from '../lib/employeePortalData';
 import { Sidebar } from './Sidebar';
 // Fallbacks for missing types/utilities
 type ViewMode = 'overview' | 'department';
@@ -46,14 +46,14 @@ export const NewlyHiredPage = () => {
       // Only use hiredFromDb from Supabase
       const { data: applicantRows = [] } = await supabase
         .from('applicants')
-        .select('id, first_name, last_name, email, contact_number, position, office, status, created_at');
+        .select('id, first_name, last_name, email, contact_number, position, office, status, created_at') as any;
 
       const hiredFromDb = (applicantRows || [])
-        .filter((row) => {
+        .filter((row: any) => {
           const normalized = normalizeText(String(row?.status ?? ''));
           return normalized === 'hired' || normalized === 'accept';
         })
-        .map((row) => {
+        .map((row: any) => {
           const applicantId = String(row?.id ?? '').trim();
           return {
             id: `hire-${applicantId || crypto.randomUUID()}`,
