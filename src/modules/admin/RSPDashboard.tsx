@@ -571,9 +571,9 @@ export const RSPDashboard = () => {
       const localAssignments = loadRaterAssignments();
       setRaterAssignedPositionsByEmail(localAssignments);
 
-      const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
-      const primaryClient = preferredMode === 'local' ? (mockDatabase as any) : supabase;
-      const secondaryClient = preferredMode === 'local' ? supabase : (mockDatabase as any);
+      // CRITICAL: Always fetch applicants from Supabase (as per user requirement: "all datas must be stored in supabase")
+      const primaryClient = supabase; // Always use Supabase for applicants
+      const secondaryClient = (mockDatabase as any); // Fallback only if Supabase fails
 
       const fetchBundle = async (client: any, cacheKey: string) =>
         runSingleFlight(
@@ -591,7 +591,7 @@ export const RSPDashboard = () => {
 
       let [, , applicantsRes, ratersRes, evaluationsRes] = await fetchBundle(
         primaryClient,
-        `rsp-bundle:${preferredMode}:primary`
+        `rsp-bundle:supabase:primary` // Always use supabase cache key
       );
 
       const primaryRaters =
@@ -603,10 +603,10 @@ export const RSPDashboard = () => {
         applicantsRes.status === 'fulfilled' && !applicantsRes.value.error && Array.isArray(applicantsRes.value.data);
 
       // Fallback only on fetch failure. Empty DB results are authoritative.
-      if (!primaryApplicantsFetchSucceeded && !isMockModeEnabled) {
+      if (!primaryApplicantsFetchSucceeded) {
         [, , applicantsRes, ratersRes, evaluationsRes] = await fetchBundle(
           secondaryClient,
-          `rsp-bundle:${preferredMode}:secondary`
+          `rsp-bundle:supabase:secondary`
         );
       }
 
@@ -665,30 +665,63 @@ export const RSPDashboard = () => {
           });
         }
 
-        const normalized = applicantsRes.value.data.map((item: any) => ({
-          id: (() => {
-            const id = String(item?.id ?? crypto.randomUUID());
-            return id;
-          })(),
-          full_name: applicantNameFromRow(item),
-          email: String(item?.email ?? ''),
-          contact_number: String(item?.contact_number ?? ''),
-          position: String(item?.position ?? ''),
-          office: String(item?.office ?? item?.department ?? 'Unassigned'),
-          status: String(item?.status ?? 'Pending'),
-          created_at: String(item?.created_at ?? new Date().toISOString()),
-          total_score: (() => {
-            const applicantId = String(item?.id ?? '');
-            const emailKey = normalizeEmailKey(String(item?.email ?? ''));
-            const rawDbScore = typeof item?.total_score === 'number' ? item.total_score : 0;
-            const evalScore = applicantId ? (evaluationBestScore.get(applicantId) ?? 0) : 0;
-            const recruitmentScoreById = applicantId ? Number(recruitmentById.get(applicantId)?.qualificationScore ?? 0) : 0;
-            const recruitmentScoreByEmail = emailKey ? Number(recruitmentByEmail.get(emailKey)?.qualificationScore ?? 0) : 0;
-            const resolved = Math.max(rawDbScore, evalScore, recruitmentScoreById, recruitmentScoreByEmail);
-            return resolved > 0 ? resolved : null;
-          })(),
-        }));
-        setApplicants(normalized);
+        const normalized = applicantsRes.value.data.map((item: any) => {
+          const applicantId = String(item?.id ?? crypto.randomUUID());
+          const emailKey = normalizeEmailKey(String(item?.email ?? ''));
+          const recruitmentMatchById = applicantId ? recruitmentById.get(applicantId) : undefined;
+          const recruitmentMatchByEmail = emailKey ? recruitmentByEmail.get(emailKey) : undefined;
+          const recruitmentMatch = recruitmentMatchById ?? recruitmentMatchByEmail;
+
+          const rawDbScore = typeof item?.total_score === 'number' ? item.total_score : 0;
+          const evalScore = applicantId ? (evaluationBestScore.get(applicantId) ?? 0) : 0;
+          const recruitmentScoreById = applicantId ? Number(recruitmentById.get(applicantId)?.qualificationScore ?? 0) : 0;
+          const recruitmentScoreByEmail = emailKey ? Number(recruitmentByEmail.get(emailKey)?.qualificationScore ?? 0) : 0;
+          const resolvedScore = Math.max(rawDbScore, evalScore, recruitmentScoreById, recruitmentScoreByEmail);
+
+          const dbStatus = String(item?.status ?? 'Pending');
+          const recruitmentStatus = String(recruitmentMatch?.status ?? '').trim();
+          const resolvedStatus =
+            recruitmentStatus.length > 0
+              ? recruitmentStatus
+              : dbStatus;
+
+          return {
+            id: applicantId,
+            full_name: applicantNameFromRow(item),
+            email: String(item?.email ?? ''),
+            contact_number: String(item?.contact_number ?? ''),
+            position: String(item?.position ?? ''),
+            office: String(item?.office ?? item?.department ?? 'Unassigned'),
+            status: resolvedStatus,
+            created_at: String(item?.created_at ?? new Date().toISOString()),
+            total_score: resolvedScore > 0 ? resolvedScore : null,
+          };
+        });
+
+        // Include local-only recruitment rows (common in mock mode) so hires
+        // appear in Newly Hired immediately after status change.
+        const mergedById = new Map<string, ApplicantRecord>(
+          normalized.map((row: ApplicantRecord) => [String(row.id), row])
+        );
+
+        recruitmentApplicants.forEach((entry) => {
+          const entryId = String(entry.id ?? '').trim();
+          if (!entryId || mergedById.has(entryId)) return;
+
+          mergedById.set(entryId, {
+            id: entryId,
+            full_name: `${entry.personalInfo.firstName} ${entry.personalInfo.lastName}`.replace(/\s+/g, ' ').trim() || 'Unnamed Applicant',
+            email: String(entry.personalInfo.email ?? ''),
+            contact_number: String(entry.personalInfo.phone ?? ''),
+            position: String(canonicalJobs.find((job) => job.id === entry.jobPostingId)?.title ?? ''),
+            office: String(canonicalJobs.find((job) => job.id === entry.jobPostingId)?.department ?? 'Unassigned'),
+            status: String(entry.status ?? 'Pending'),
+            created_at: String(entry.applicationDate ?? new Date().toISOString()),
+            total_score: Number(entry.qualificationScore ?? 0) > 0 ? Number(entry.qualificationScore) : null,
+          });
+        });
+
+        setApplicants(Array.from(mergedById.values()));
       } else {
         setApplicants([]);
       }
@@ -1217,17 +1250,54 @@ export const RSPDashboard = () => {
     }
   }, [activeAssessmentPosition, assessmentPositionCards]);
 
-  const newlyHiredApplicants = useMemo(
-    () => applicants.filter((applicant) => ['accepted', 'hired', 'qualified'].includes(applicant.status.toLowerCase())),
-    [applicants]
-  );
+  const newlyHiredRows = useMemo(() => getNewlyHired(), [section, applicants]);
+
+  const newlyHiredApplicants = useMemo(() => {
+    const applicantsById = new Map(applicants.map((applicant) => [String(applicant.id), applicant] as const));
+
+    if (newlyHiredRows.length > 0) {
+      const mapped = newlyHiredRows.map((row) => {
+        const applicantId = String(row.applicantId ?? '').trim();
+        const linked = applicantId ? applicantsById.get(applicantId) : undefined;
+
+        if (linked) {
+          return {
+            ...linked,
+            status: 'Hired',
+          };
+        }
+
+        const fullName = `${row.employeeInfo.firstName ?? ''} ${row.employeeInfo.lastName ?? ''}`.replace(/\s+/g, ' ').trim();
+        return {
+          id: applicantId || String(row.id),
+          employeeId: row.employeeId,
+          full_name: fullName || 'Newly Hired Applicant',
+          email: String(row.employeeInfo.email ?? ''),
+          contact_number: String(row.employeeInfo.phone ?? ''),
+          position: String(row.position ?? ''),
+          office: String(row.department ?? ''),
+          status: 'Hired',
+          created_at: String(row.dateHired ?? new Date().toISOString()),
+          total_score: typeof row.rankingScore === 'number' ? row.rankingScore : null,
+        } as ApplicantRecord;
+      });
+
+      const uniqueById = new Map<string, ApplicantRecord>();
+      mapped.forEach((entry) => {
+        uniqueById.set(String(entry.id), entry as ApplicantRecord);
+      });
+      return Array.from(uniqueById.values());
+    }
+
+    return applicants.filter((applicant) => ['accepted', 'hired'].includes(applicant.status.toLowerCase()));
+  }, [applicants, newlyHiredRows]);
 
   const credentialedNewlyHiredRows = useMemo(
     () =>
-      getNewlyHired().filter(
+      newlyHiredRows.filter(
         (row) => Boolean(row.employeeId) && Boolean(row.applicantId)
       ),
-    [section, applicants]
+    [newlyHiredRows]
   );
 
   const credentialedApplicantIds = useMemo(
@@ -2047,7 +2117,7 @@ export const RSPDashboard = () => {
     );
   };
 
-  const handleConfirmHireApplicants = () => {
+  const handleConfirmHireApplicants = async () => {
     if (!activeRankingPosition || selectedHireApplicantIds.length === 0) return;
 
     const selectedRows = activeRankingRows.filter((row) => selectedHireApplicantIds.includes(row.id));
@@ -2132,6 +2202,26 @@ export const RSPDashboard = () => {
 
     if (toAdd.length > 0) {
       saveNewlyHired([...existing, ...toAdd]);
+    }
+
+    // Backend PATCH call for each applicant
+    try {
+      await Promise.all(
+        selectedRows.map(async (row) => {
+          await fetch(`/api/applicants/${row.id}/status`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              applicant_id: row.id,
+              status: 'hired',
+            }),
+          });
+        })
+      );
+    } catch (error) {
+      console.error('Failed to update applicant status to hired:', error);
+      alert('Failed to update applicant status. Please try again.');
+      return;
     }
 
     const selectedIdSet = new Set(selectedRows.map((row) => row.id));

@@ -10,8 +10,7 @@ import {
   findEmployeeByEmployeeId,
   findEmployeePortalAccount,
 } from './lib/employeePortalData';
-import { mockDatabase } from './lib/mockDatabase';
-import { isMockModeEnabled, supabase } from './lib/supabase';
+import { supabase } from './lib/supabase';
 import { LNDDashboard } from './modules/admin/LNDDashboard';
 import { LoginPage } from './modules/admin/LoginPage';
 import { PMDashboard } from './modules/admin/PMDashboard';
@@ -38,8 +37,8 @@ const INTERVIEWER_SESSION_KEY = 'cictrix_interviewer_session';
 const EMPLOYEE_SESSION_KEY = 'cictrix_employee_session';
 
 const getAccessClient = () => {
-  // Access enforcement should track the authoritative rater source.
-  return isMockModeEnabled ? (mockDatabase as any) : supabase;
+  // All data access is exclusively through Supabase
+  return supabase;
 };
 
 const loadRaterAccessState = (): Record<string, boolean> => {

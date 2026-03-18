@@ -6,6 +6,7 @@ import {
     NewlyHired,
     RaterAssignment,
 } from '../types/recruitment.types';
+import { supabase } from './supabase';
 
 const JOB_POSTINGS_KEY = 'cictrix_job_postings';
 const AUTHORITATIVE_JOB_POSTINGS_KEY = 'cictrix_authoritative_job_postings';
@@ -256,6 +257,59 @@ export const saveJobPostings = (rows: JobPosting[]) => {
 };
 
 export const getApplicants = () => safeJsonParse<Applicant[]>(localStorage.getItem(APPLICANTS_KEY), []);
+
+// NEW: Fetch applicants from Supabase (the source of truth for all submitted applicants)
+export const getApplicantsFromSupabase = async (): Promise<Applicant[]> => {
+  try {
+    const { data, error } = await supabase.from('applicants').select('*');
+    
+    if (error) {
+      console.error('[recruitmentData] Error fetching applicants from Supabase:', error);
+      return getApplicants(); // Fallback to localStorage
+    }
+    
+    // Transform Supabase data to match Applicant type
+    if (!data || !Array.isArray(data)) {
+      return getApplicants(); // Fallback to localStorage
+    }
+    
+    const transformedApplicants: Applicant[] = data.map((row: any) => ({
+      id: row.id,
+      personalInfo: {
+        firstName: row.first_name || '',
+        lastName: row.last_name || '',
+        middleName: row.middle_name || '',
+        email: row.email || '',
+        phone: row.contact_number || '',
+        address: row.address || '',
+        gender: row.gender || '',
+        dateOfBirth: row.dob || '',
+        itemNumber: row.item_number || '',
+      },
+      position: row.position || '',
+      jobPostingId: row.job_posting_id || 'unposted',
+      applicationType: row.application_type || 'job',
+      status: row.status || 'Pending',
+      applicationDate: row.created_at || new Date().toISOString(),
+      notes: row.notes || [],
+      timeline: row.timeline || [],
+      internalApplication: row.employee_id ? {
+        employeeId: row.employee_id,
+        currentPosition: row.current_position,
+        currentDepartment: row.current_department,
+        currentDivision: row.current_division,
+        employeeUsername: row.employee_username,
+      } : undefined,
+      isPwd: row.is_pwd || false,
+      createdAt: row.created_at || new Date().toISOString(),
+    }));
+    
+    return transformedApplicants;
+  } catch (err) {
+    console.error('[recruitmentData] Exception fetching applicants from Supabase:', err);
+    return getApplicants(); // Fallback to localStorage
+  }
+};
 export const saveApplicants = (rows: Applicant[], options?: { broadcast?: boolean }) => {
   localStorage.setItem(APPLICANTS_KEY, JSON.stringify(rows));
 
@@ -297,7 +351,47 @@ export const archiveDeletedJobPosting = (input: {
 };
 
 export const getNewlyHired = () => safeJsonParse<NewlyHired[]>(localStorage.getItem(NEWLY_HIRED_KEY), []);
-export const saveNewlyHired = (rows: NewlyHired[]) => localStorage.setItem(NEWLY_HIRED_KEY, JSON.stringify(rows));
+
+export const saveNewlyHired = async (rows: NewlyHired[]) => {
+  localStorage.setItem(NEWLY_HIRED_KEY, JSON.stringify(rows));
+
+  // Always sync each newly hired record to Supabase
+  for (const hired of rows) {
+    const { id, applicantId, employeeInfo, position, department, division, employmentType, salaryGrade, dateHired, expectedStartDate, supervisor, status, onboardingProgress, deployedDate, employeeId } = hired;
+    try {
+      const result = await supabase.from('newly_hired').upsert([
+        {
+          id,
+          applicant_id: applicantId,
+          first_name: employeeInfo.firstName,
+          last_name: employeeInfo.lastName,
+          email: employeeInfo.email,
+          phone: employeeInfo.phone,
+          position,
+          department,
+          division,
+          employment_type: employmentType,
+          salary_grade: salaryGrade,
+          date_hired: dateHired,
+          expected_start_date: expectedStartDate,
+          supervisor,
+          status,
+          onboarding_progress: onboardingProgress,
+          deployed_date: deployedDate,
+          employee_id: employeeId,
+          // Add other fields as needed
+        }
+      ], { onConflict: ['id'] });
+      if (result.error) {
+        // eslint-disable-next-line no-console
+        console.error('Supabase upsert newly_hired failed:', result.error);
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Supabase upsert newly_hired exception:', err);
+    }
+  }
+};
 
 export const getRaterAssignments = () =>
   safeJsonParse<RaterAssignment[]>(localStorage.getItem(RATER_ASSIGNMENTS_KEY), []);

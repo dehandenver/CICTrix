@@ -1,15 +1,15 @@
 import {
-    Briefcase,
-    Calendar,
-    ChevronLeft,
-    ChevronRight,
-    FileText,
-    Lock,
-    MapPin,
-    Plus,
-    Search,
-    Trash2,
-    Users
+  Briefcase,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  Lock,
+  MapPin,
+  Plus,
+  Search,
+  Trash2,
+  Users
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -17,15 +17,15 @@ import { DEPARTMENTS } from '../constants/positions';
 import { getPreferredDataSourceMode } from '../lib/dataSourceMode';
 import { mockDatabase } from '../lib/mockDatabase';
 import {
-    archiveDeletedJobPosting,
-    ensureRecruitmentSeedData,
-    excludeApplicantIdsFromBackfill,
-    formatPHDate,
-    getApplicants,
-    getJobPostings,
-    saveApplicants,
-    saveJobPostings,
-    toTitleCase,
+  archiveDeletedJobPosting,
+  ensureRecruitmentSeedData,
+  excludeApplicantIdsFromBackfill,
+  formatPHDate,
+  getApplicants,
+  getJobPostings,
+  saveApplicants,
+  saveJobPostings,
+  toTitleCase,
 } from '../lib/recruitmentData';
 import { isMockModeEnabled, supabase } from '../lib/supabase';
 import { JobPosting } from '../types/recruitment.types';
@@ -473,6 +473,10 @@ export const JobPostingsPage = () => {
     const nextJobs = jobs.map((job) => (job.id === id ? { ...job, status: nextStatus } : job));
     saveJobs(nextJobs);
     setToast(`Posting marked as ${nextStatus}.`);
+    // If status is 'Filled' or 'Hired', navigate to Newly Hired page
+    if (nextStatus === 'Filled' || nextStatus === 'Hired') {
+      navigate('/admin/rsp/new-hired');
+    }
   };
 
   const duplicatePosting = (job: JobPosting) => {

@@ -153,4 +153,51 @@ export const updateEmployeePortalEmployee = (employeeId: string, patch: Partial<
   return true;
 };
 
+export const createUniqueUsername = (
+  firstName: string,
+  lastName: string,
+  occupiedUsernames: Set<string>
+): string => {
+  const sanitize = (str: string) => str.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const base = `${sanitize(firstName)}${sanitize(lastName)}`;
+
+  if (!occupiedUsernames.has(base)) {
+    return base;
+  }
+
+  // Try adding numbers
+  for (let i = 1; i <= 999; i++) {
+    const candidate = `${base}${i}`;
+    if (!occupiedUsernames.has(candidate)) {
+      return candidate;
+    }
+  }
+
+  // Fallback: use timestamp
+  return `${base}${Date.now()}`;
+};
+
+export const createPassword = (): string => {
+  const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+  const numbers = '0123456789';
+  const symbols = '!@#$%^&*';
+  
+  const all = uppercase + lowercase + numbers + symbols;
+  
+  let password = '';
+  password += uppercase[Math.floor(Math.random() * uppercase.length)];
+  password += lowercase[Math.floor(Math.random() * lowercase.length)];
+  password += numbers[Math.floor(Math.random() * numbers.length)];
+  password += symbols[Math.floor(Math.random() * symbols.length)];
+  
+  // Add 8 more random characters
+  for (let i = 0; i < 8; i++) {
+    password += all[Math.floor(Math.random() * all.length)];
+  }
+  
+  // Shuffle
+  return password.split('').sort(() => Math.random() - 0.5).join('');
+};
+
 export const getEmployeePortalAccountsKey = () => EMPLOYEE_PORTAL_ACCOUNTS_KEY;

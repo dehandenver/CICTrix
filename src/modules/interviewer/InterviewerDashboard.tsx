@@ -170,9 +170,9 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
     try {
       setLoading(true);
       setError(null);
-      const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
-      const primaryClient = preferredMode === 'local' ? (mockDatabase as any) : supabase;
-      const secondaryClient = preferredMode === 'local' ? supabase : (mockDatabase as any);
+      // CRITICAL: Always fetch applicants from Supabase (as per user requirement: "all datas must be stored in supabase")
+      const primaryClient = supabase; // Always use Supabase for applicants
+      const secondaryClient = (mockDatabase as any); // Fallback only if Supabase fails
 
       let allApplicants: any[] = [];
       let allEvaluations: any[] = [];
@@ -188,7 +188,7 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
         console.warn('Primary interviewer data source failed:', primaryErr);
       }
 
-      if ((!allApplicants || allApplicants.length === 0) && !isMockModeEnabled) {
+      if ((!allApplicants || allApplicants.length === 0)) {
         try {
           allApplicants = await fetchApplicantsFromClient(secondaryClient);
           allEvaluations = await fetchEvaluationsFromClient(secondaryClient);
