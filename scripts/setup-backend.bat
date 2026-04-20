@@ -1,5 +1,8 @@
 @echo off
 REM CICTrix Backend Setup Script for Windows
+setlocal
+
+cd /d "%~dp0.."
 
 echo.
 echo ====================================
@@ -76,7 +79,7 @@ echo Next steps:
 echo 1. Get your Supabase Service Role Key from: https://supabase.com
 echo    (Settings ^> API ^> service_role)
 echo 2. Update backend\.env with the Service Role Key
-echo 3. Run: docker-compose restart backend
+echo 3. Run: %COMPOSE_CMD% restart backend
 echo.
 echo View logs:
 echo   %COMPOSE_CMD% logs -f backend
@@ -86,3 +89,4 @@ echo   %COMPOSE_CMD% down
 echo.
 
 pause
+endlocal

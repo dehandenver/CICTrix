@@ -39,7 +39,7 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "healthy"}
+    return {"status": "healthy", "service": "CICTrix HRIS API", "ready": True}
 
 
 if __name__ == "__main__":

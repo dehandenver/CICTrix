@@ -353,6 +353,24 @@ const hasCompletedInterview = (applicant: Applicant) => {
   });
 };
 
+const toBackendStatusFormat = (status: ApplicantStatus): 'shortlisted' | 'qualified' | 'disqualified' | 'hired' => {
+  const normalized = normalizeText(status);
+  if (normalized.includes('recommend') || normalized === 'qualified' || normalized.includes('accepted')) {
+    return 'qualified';
+  }
+  if (normalized.includes('shortlist')) {
+    return 'shortlisted';
+  }
+  if (normalized.includes('not qualified') || normalized.includes('disqualif')) {
+    return 'disqualified';
+  }
+  if (normalized === 'hired') {
+    return 'hired';
+  }
+  // Fallback for edge cases
+  return 'disqualified';
+};
+
 const toJobPostsStatusBucket = (status: ApplicantStatus): Exclude<JobPostsStatusFilter, 'all'> => {
   const normalized = normalizeText(status);
   if (normalized.includes('recommend') || normalized.includes('qualified') || normalized.includes('hired') || normalized.includes('accepted')) {
@@ -1229,6 +1247,7 @@ export const QualifiedApplicantsPage = () => {
   }, [qualifiedBaseRows]);
 
   const updateApplicantStatus = (ids: string[], nextStatus: ApplicantStatus, reason?: string) => {
+    console.log(`[QUALIFY] updateApplicantStatus called with:`, { ids, nextStatus, reason });
     const timestamp = new Date().toISOString();
     const trimmedReason = (reason ?? '').trim();
     const nextStatusLabel = toStatusDisplayLabel(nextStatus);
@@ -1249,9 +1268,15 @@ export const QualifiedApplicantsPage = () => {
       };
     });
     setApplicants(nextApplicants);
-    saveApplicants(nextApplicants);
+    
+    // CRITICAL: Persist status updates to Supabase DIRECTLY
+    // (Skip backend API since it requires Docker - go straight to DB per golden rule)
+    const persistPromises: Promise<any>[] = [];
+    
     ids.forEach((applicantId) => {
       const target = nextApplicants.find((entry) => entry.id === applicantId);
+      
+      // Audit log
       appendRecruitmentAuditLog({
         action: 'QUALIFICATION_STATUS_UPDATED',
         applicantId,
@@ -1259,12 +1284,108 @@ export const QualifiedApplicantsPage = () => {
         details: trimmedReason ? `${nextStatusLabel} (${trimmedReason})` : nextStatusLabel,
         actor: 'HR Admin',
       });
+
+      // Build database update payload
+      // Note: Convert UI status to backend status format for database storage
+      let dbStatusValue = nextStatus;
+      if (nextStatus === 'Recommended for Hiring') {
+        dbStatusValue = 'qualified';
+      } else if (nextStatus === 'Not Qualified') {
+        dbStatusValue = 'disqualified';
+      } else if (nextStatus === 'Shortlisted') {
+        dbStatusValue = 'shortlisted';
+      } else if (nextStatus === 'Hired') {
+        dbStatusValue = 'hired';
+      }
+      
+      const dbUpdate: Record<string, any> = { 
+        status: dbStatusValue  // Use backend format, not UI format
+      };
+      
+      // Add disqualification reason if needed
+      if (trimmedReason && dbStatusValue === 'disqualified') {
+        dbUpdate.disqualification_reason = trimmedReason;
+      }
+      
+      console.log(`[QUALIFY] Updating ${applicantId} with DB status "${dbStatusValue}":`, dbUpdate);
+      console.log(`[QUALIFY] Full update object:`, JSON.stringify(dbUpdate, null, 2));
+      
+      const persistPromise = supabase
+        .from('applicants')
+        .update(dbUpdate)
+        .eq('id', applicantId)
+        .then((result) => {
+          console.log(`[QUALIFY] Supabase returned:`, {
+            error: result.error,
+            data: result.data,
+            count: result.count,
+            status: result.status,
+            statusText: result.statusText,
+          });
+          
+          if (result.error) {
+            console.error(`✗ Supabase error for ${applicantId}:`, {
+              code: result.error.code,
+              message: result.error.message,
+              details: result.error.details,
+              hint: result.error.hint,
+              full: JSON.stringify(result.error, null, 2),
+            });
+            throw new Error(`[${result.error.code}] ${result.error.message}: ${result.error.details || result.error.hint || ''}`);
+          }
+          console.log(`✓ Supabase persisted status for ${applicantId}:`, result.data);
+          return result;
+        })
+        .catch((error) => {
+          console.error(`✗ FAILED to persist ${applicantId}:`, {
+            message: error?.message,
+            code: error?.code,
+            details: error?.details,
+            fullError: JSON.stringify(error, null, 2),
+          });
+          throw error;
+        });
+      
+      persistPromises.push(persistPromise);
     });
+
+    // Update local state immediately to show the change
+    setApplicants(nextApplicants);
+    
+    // Update active applicant immediately so buttons disable right away
     if (activeApplicant && ids.includes(activeApplicant.id)) {
       const updated = nextApplicants.find((item) => item.id === activeApplicant.id) ?? null;
       setActiveApplicant(updated);
     }
+
+    // Broadcast event AFTER all persist operations complete so reload gets updated data
+    console.log(`[QUALIFY] Waiting for ${persistPromises.length} persist promise(s)...`);
+    Promise.all(persistPromises)
+      .then(() => {
+        console.log(`[QUALIFY] ✓ All persist operations completed, broadcasting event...`);
+        saveApplicants(nextApplicants);
+      })
+      .catch((failedError) => {
+        // Even on error, broadcast event so reload attempts to fetch
+        console.error(`[QUALIFY] ✗ Some persist operations failed:`, failedError);
+        saveApplicants(nextApplicants);
+      });
+
     setToast(`Status updated to ${nextStatusLabel}.`);
+    
+    // FORCE button lock immediately (don't wait for useEffect)
+    const normalizedStatus = nextStatus.toLowerCase();
+    const shouldLockButtons =
+      normalizedStatus.includes('not qualified') ||
+      normalizedStatus.includes('disqual') ||
+      normalizedStatus.includes('recommended for hiring') ||
+      normalizedStatus.includes('qualified') ||
+      normalizedStatus.includes('hired');
+    
+    if (shouldLockButtons) {
+      setStatusDecisionLocked(true);
+      console.log(`[QUALIFY] Status locked buttons for status: ${nextStatus}`);
+    }
   };
 
   useEffect(() => {
@@ -1285,15 +1406,35 @@ export const QualifiedApplicantsPage = () => {
   }, [activeApplicant?.status]);
 
   const handleDisqualifyAction = (applicantId: string) => {
+    // Prevent disqualifying if already disqualified
+    if (!activeApplicant) return;
+    const normalizedStatus = normalizeText(activeApplicant.status);
+    if (normalizedStatus.includes('not qualified') || normalizedStatus.includes('disqual')) {
+      setToast('Applicant is already marked as not qualified.');
+      return;
+    }
+    
     setDisqualifyReasonDraft('');
     setPendingStatusAction({
       applicantId,
       action: 'disqualify',
       nextStatus: 'Not Qualified',
-    });
+    })
   };
 
   const handleQualifyAction = (applicantId: string) => {
+    // Prevent qualifying if already qualified/hired
+    if (!activeApplicant) return;
+    const normalizedStatus = normalizeText(activeApplicant.status);
+    if (
+      normalizedStatus.includes('recommended for hiring') ||
+      normalizedStatus.includes('qualified') ||
+      normalizedStatus.includes('hired')
+    ) {
+      setToast('Applicant is already qualified or hired.');
+      return;
+    }
+    
     setDisqualifyReasonDraft('');
     setPendingStatusAction({
       applicantId,
@@ -1352,7 +1493,22 @@ export const QualifiedApplicantsPage = () => {
   };
 
   const openApplicantDetails = async (applicant: Applicant) => {
-    setActiveApplicant(applicant);
+    // CRITICAL FIX: Always use the current applicant from state, not the stale copy passed in
+    // This ensures status updates are reflected when re-opening an applicant
+    const currentApplicant = applicants.find((a) => a.id === applicant.id) ?? applicant;
+    
+    setActiveApplicant(currentApplicant);
+    
+    // FORCE re-evaluate lock state when opening
+    const normalizedStatus = currentApplicant.status.toLowerCase();
+    const shouldLock =
+      normalizedStatus.includes('not qualified') ||
+      normalizedStatus.includes('disqual') ||
+      normalizedStatus.includes('recommended for hiring') ||
+      normalizedStatus.includes('qualified') ||
+      normalizedStatus.includes('hired');
+    setStatusDecisionLocked(shouldLock);
+    
     setActiveTab('Overview');
     setShowMessageDialog(false);
     setEmailTemplate('none');

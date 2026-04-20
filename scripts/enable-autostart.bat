@@ -1,7 +1,7 @@
 @echo off
 setlocal
 
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
 set "STARTUP_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup"
 set "AUTOSTART_FILE=%STARTUP_DIR%\CICTrix-AutoStart.bat"
@@ -16,7 +16,7 @@ if %ERRORLEVEL%==0 (
 	schtasks /Delete /TN "%TASK_NAME%" /F >nul 2>nul
 )
 
-schtasks /Create /TN "%TASK_NAME%" /SC ONLOGON /DELAY 0000:05 /F /TR "cmd /c cd /d \"%~dp0\" && call start-dev.bat --autostart" >nul 2>nul
+schtasks /Create /TN "%TASK_NAME%" /SC ONLOGON /DELAY 0000:05 /F /TR "cmd /c cd /d \"%~dp0..\" && call scripts\start-dev.bat --autostart" >nul 2>nul
 
 if %ERRORLEVEL%==0 (
 	echo.
@@ -25,16 +25,15 @@ if %ERRORLEVEL%==0 (
 	echo %TASK_NAME%
 	echo.
 	echo Behavior:
-	echo - Runs at Windows logon with a 30-second delay
+	echo - Runs at Windows logon with a 5-second delay
 	echo - Starts CICTrix services in autostart mode
-	echo - Avoids opening unreachable browser tabs
 	echo.
 	goto :end
 )
 
 echo @echo off> "%AUTOSTART_FILE%"
 echo timeout /t 5 /nobreak ^>nul>> "%AUTOSTART_FILE%"
-echo cd /d "%~dp0">> "%AUTOSTART_FILE%"
+echo cd /d "%~dp0..">> "%AUTOSTART_FILE%"
 echo call "%~dp0start-dev.bat" --autostart>> "%AUTOSTART_FILE%"
 
 echo.
