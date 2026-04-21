@@ -40,6 +40,7 @@ import {
     getAuthoritativeJobPostings,
     getDeletedJobReports,
     getEmployeeRecords,
+    getJobPostingsFromSupabase,
     getNewlyHired,
     getApplicants as getRecruitmentApplicants,
     saveDeletedJobReports,
@@ -610,7 +611,16 @@ export const RSPDashboard = () => {
         );
       }
 
-      const canonicalJobs = mapRecruitmentPostingsToDashboardJobs(getAuthoritativeJobPostings());
+      // CRITICAL: Fetch job postings from Supabase first (source of truth), fallback to localStorage
+      let canonicalJobPostings = await getJobPostingsFromSupabase();
+      if (canonicalJobPostings.length === 0) {
+        console.log('[RSP] No jobs from Supabase, falling back to localStorage');
+        canonicalJobPostings = getAuthoritativeJobPostings();
+      } else {
+        console.log('[RSP] ✓ Loaded', canonicalJobPostings.length, 'jobs from Supabase');
+      }
+      
+      const canonicalJobs = mapRecruitmentPostingsToDashboardJobs(canonicalJobPostings);
       setJobs(canonicalJobs);
 
       if (applicantsRes.status === 'fulfilled' && !applicantsRes.value.error && Array.isArray(applicantsRes.value.data)) {
@@ -1709,14 +1719,6 @@ export const RSPDashboard = () => {
     setJobs(nextJobs);
     persistDashboardJobsToRecruitment(nextJobs);
 
-    try {
-      await Promise.allSettled([
-        supabase.from('job_postings').insert([payload]),
-        supabase.from('jobs').insert([payload]),
-      ]);
-    } catch {
-    }
-
     setShowJobDialog(false);
     setNewJob({
       title: '',
@@ -2208,7 +2210,7 @@ export const RSPDashboard = () => {
     try {
       await Promise.all(
         selectedRows.map(async (row) => {
-          await fetch(`/api/applicants/${row.id}/status`, {
+          await fetch(`http://localhost:8000/api/applicants/${row.id}/status`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

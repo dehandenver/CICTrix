@@ -1094,7 +1094,7 @@ export function ApplicantDetailsPage() {
 
     // POST to Python backend (best-effort; falls back to Supabase)
     try {
-      await fetch(`/api/applicants/${applicant.id}/status`, {
+      await fetch(`http://localhost:8000/api/applicants/${applicant.id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

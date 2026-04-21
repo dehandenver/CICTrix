@@ -176,6 +176,59 @@ export const ensureRecruitmentSeedData = () => {
   backfillPortalApplicantsToRecruitment();
 };
 
+// Fetch job postings from Supabase and map raw DB rows to the JobPosting type.
+// The DB stores UI-domain status values ('Open', 'Reviewing', 'Closed') and
+// snake_case columns (item_number, created_at), so we remap here.
+export const getJobPostingsFromSupabase = async (): Promise<JobPosting[]> => {
+  try {
+    const { data, error } = await supabase.from('job_postings').select('*');
+    if (error) {
+      console.warn('[RECRUITMENT] Supabase job fetch failed:', error);
+      return [];
+    }
+    if (!data || !Array.isArray(data)) return [];
+
+    return data.map((row: any): JobPosting => {
+      const dbStatus = String(row.status || '').toLowerCase();
+      const status: JobPosting['status'] =
+        dbStatus === 'closed' || dbStatus === 'filled' ? 'Closed'
+        : dbStatus === 'reviewing' || dbStatus === 'draft' ? 'Draft'
+        : 'Active'; // 'open' and any unknown value → 'Active'
+
+      return {
+        id: String(row.id ?? ''),
+        jobCode: row.item_number || row.jobCode || '',
+        title: row.title || '',
+        department: row.department || '',
+        division: 'Operations',
+        positionType: 'Civil Service',
+        salaryGrade: row.salary_grade || 'SG-10',
+        salaryRange: { min: 20000, max: 30000 },
+        numberOfPositions: 1,
+        employmentStatus: 'Permanent',
+        summary: row.summary || `${row.title || ''} recruitment posting.`,
+        responsibilities: [],
+        qualifications: {
+          education: "Bachelor's Degree",
+          experience: { years: 0, field: 'General' },
+          skills: [],
+          certifications: [],
+        },
+        requiredDocuments: [],
+        applicationDeadline: new Date(Date.now() + 30 * 86400000).toISOString(),
+        status,
+        postedDate: row.created_at || row.postedDate || new Date().toISOString(),
+        postedBy: 'HR Admin',
+        applicantCount: 0,
+        qualifiedCount: 0,
+      };
+    });
+  } catch (err) {
+    console.warn('[RECRUITMENT] Error fetching job postings from Supabase:', err);
+    return [];
+  }
+};
+
 export const getJobPostings = () => safeJsonParse<JobPosting[]>(localStorage.getItem(JOB_POSTINGS_KEY), []);
 
 export const getAuthoritativeJobPostings = () => {
@@ -249,6 +302,37 @@ export const saveJobPostings = (rows: JobPosting[]) => {
   const applicantOptions = buildApplicantPositionOptions(normalizedRows);
 
   localStorage.setItem(APPLICANT_POSITION_OPTIONS_KEY, JSON.stringify(applicantOptions));
+
+  // CRITICAL: Also persist to Supabase (source of truth) so interviewer side sees updates across tabs/sessions
+  void (async () => {
+    try {
+      // Upsert job postings to Supabase - this ensures interviewer side always sees latest data
+      // Map JobPosting fields to the actual DB column names (item_number, not jobCode; created_at handled by DB default).
+      // Map recruitment-domain status back to the UI-domain values the table stores.
+      const supabaseRows = normalizedRows.map((job) => ({
+        title: job.title,
+        item_number: job.jobCode || '',
+        department: job.department || '',
+        office: job.department || '',
+        status: job.status === 'Active' ? 'Open'
+               : job.status === 'Draft' ? 'Reviewing'
+               : job.status || 'Open',
+      }));
+      
+      // Delete existing rows and insert new ones to ensure clean state
+      await supabase.from('job_postings').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      if (supabaseRows.length > 0) {
+        const { error } = await supabase.from('job_postings').insert(supabaseRows);
+        if (error) {
+          console.warn('[RECRUITMENT] Failed to save job postings to Supabase:', error);
+        } else {
+          console.log('[RECRUITMENT] ✓ Job postings saved to Supabase');
+        }
+      }
+    } catch (err) {
+      console.warn('[RECRUITMENT] Error saving job postings to Supabase:', err);
+    }
+  })();
 
   // Broadcast changes so ApplicantAssessmentForm re-syncs immediately.
   if (typeof window !== 'undefined') {

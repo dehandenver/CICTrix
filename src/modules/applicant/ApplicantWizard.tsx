@@ -276,7 +276,7 @@ const handleNextToReview = () => {
     let applicantData;
     let applicantError: Error | null = null;
     try {
-      const response = await fetch('/api/applicants', {
+      const response = await fetch('http://localhost:8000/api/applicants', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(applicantPayload),

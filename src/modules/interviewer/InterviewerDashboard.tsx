@@ -5,7 +5,7 @@ import { Dialog } from '../../components/Dialog';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import { isPositionAssignedToInterviewer, resolveAssignedPositionsForInterviewer } from '../../lib/interviewerAccess';
 import { mockDatabase } from '../../lib/mockDatabase';
-import { ensureRecruitmentSeedData, getAuthoritativeJobPostings } from '../../lib/recruitmentData';
+import { ensureRecruitmentSeedData, getAuthoritativeJobPostings, getJobPostingsFromSupabase } from '../../lib/recruitmentData';
 import { supabase } from '../../lib/supabase';
 import '../../styles/interviewer.css';
 import type { JobPosting as RecruitmentJobPosting } from '../../types/recruitment.types';
@@ -116,7 +116,7 @@ const buildJobsFromPostings = (jobRows: RecruitmentJobPosting[], allApplicants: 
 };
 
 const filterJobsByAssignments = (jobRows: RecruitmentJobPosting[], assignedPositions: string[]) => {
-  if (assignedPositions.length === 0) return [];
+  if (assignedPositions.length === 0) return jobRows;
   return jobRows.filter((job) => isPositionAssignedToInterviewer(String(job?.title ?? ''), assignedPositions));
 };
 
@@ -135,7 +135,6 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [applicantToDelete, setApplicantToDelete] = useState<Applicant | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [assignedPositions, setAssignedPositions] = useState<string[]>([]);
 
   useEffect(() => {
     const syncJobs = () => {
@@ -177,8 +176,23 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
       let allEvaluations: any[] = [];
       ensureRecruitmentSeedData();
       const { positions } = await resolveAssignedPositionsForInterviewer(session?.email);
-      setAssignedPositions(positions);
-      const canonicalJobRows = filterJobsByAssignments(getAuthoritativeJobPostings(), positions);
+      
+      // CRITICAL: Fetch job postings from Supabase first (source of truth), fallback to localStorage
+      let canonicalJobPostings: RecruitmentJobPosting[] = [];
+      try {
+        canonicalJobPostings = await getJobPostingsFromSupabase();
+        if (canonicalJobPostings.length === 0) {
+          console.log('[INTERVIEWER] No jobs from Supabase, falling back to localStorage');
+          canonicalJobPostings = getAuthoritativeJobPostings();
+        } else {
+          console.log('[INTERVIEWER] ✓ Loaded', canonicalJobPostings.length, 'jobs from Supabase');
+        }
+      } catch (err) {
+        console.warn('[INTERVIEWER] Failed to fetch jobs from Supabase, using localStorage:', err);
+        canonicalJobPostings = getAuthoritativeJobPostings();
+      }
+      
+      const canonicalJobRows = filterJobsByAssignments(canonicalJobPostings, positions);
 
       try {
         allApplicants = await fetchApplicantsFromClient(primaryClient);
@@ -376,11 +390,9 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
                 ) : (
                   <tr>
                     <td colSpan={5} className="empty-message">
-                      {assignedPositions.length === 0
-                        ? 'No job positions are assigned to your interviewer account yet.'
-                        : searchTerm
-                          ? 'No job postings found matching your search.'
-                          : 'No active job postings available.'}
+                      {searchTerm
+                        ? 'No job postings found matching your search.'
+                        : 'No active job postings available.'}
                     </td>
                   </tr>
                 )}
