@@ -245,73 +245,47 @@ const handleNextToReview = () => {
     }
   };
 
-  const submitWithClient = async (client: any): Promise<void> => {
+  const submitWithClient = async (): Promise<string> => {
     const itemNumber = formData.item_number || buildApplicantItemNumber(Date.now() % 10000);
+    const safe = (val: string | null | undefined) => (val == null ? '' : String(val));
 
-    // Helper to ensure empty string for all optional fields
-    const safe = (val: string | null | undefined) => (val == null ? '' : val);
-
-    const applicantPayload = {
-      first_name: formData.first_name,
-      middle_name: safe(formData.middle_name),
-      last_name: formData.last_name,
-      gender: safe(formData.gender),
-      address: safe(formData.address),
-      contact_number: safe(formData.contact_number),
-      email: formData.email,
-      position: safe(formData.position),
+    const applicantPayload: Record<string, any> = {
+      first_name: formData.first_name.trim(),
+      middle_name: safe(formData.middle_name).trim() || null,
+      last_name: formData.last_name.trim(),
+      gender: safe(formData.gender) || null,
+      address: safe(formData.address).trim(),
+      contact_number: safe(formData.contact_number).trim(),
+      email: formData.email.trim().toLowerCase(),
+      position: safe(formData.position).trim(),
       item_number: itemNumber,
-      office: safe(POSITION_TO_DEPARTMENT_MAP[formData.position] || formData.office),
+      office: safe(POSITION_TO_DEPARTMENT_MAP[formData.position] || formData.office).trim(),
       is_pwd: formData.is_pwd,
       application_type: applicationType,
-      employee_id: safe(formData.employee_id),
-      current_position: safe(formData.current_position),
-      current_department: safe(formData.current_department),
-      current_division: safe(formData.current_division),
-      employee_username: safe(formData.employee_username),
+      status: 'New Application',
     };
 
-
-    // Use backend API instead of direct Supabase insert
-    let applicantData;
-    let applicantError: Error | null = null;
-    try {
-      const response = await fetch('http://localhost:8000/api/applicants', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(applicantPayload),
-      });
-      
-      if (!response.ok) {
-        let errorDetail = `HTTP ${response.status}: Failed to create applicant record`;
-        try {
-          const errorData = await response.json();
-          if (errorData.detail) {
-            errorDetail = errorData.detail;
-          }
-        } catch (jsonErr) {
-          // Could not parse error response, use default
-        }
-        throw new Error(errorDetail);
-      }
-      
-      applicantData = await response.json();
-      
-      if (!applicantData || !applicantData.id) {
-        throw new Error('Server returned invalid applicant data - missing ID');
-      }
-    } catch (err) {
-      applicantError = err instanceof Error ? err : new Error('Failed to create applicant record');
-      applicantData = null;
+    if (applicationType === 'promotion') {
+      if (formData.employee_id) applicantPayload.employee_id = formData.employee_id;
+      if (formData.current_position) applicantPayload.current_position = formData.current_position;
+      if (formData.current_department) applicantPayload.current_department = formData.current_department;
+      if (formData.current_division) applicantPayload.current_division = formData.current_division;
+      if (formData.employee_username) applicantPayload.employee_username = formData.employee_username;
     }
 
-    if (applicantError || !applicantData) {
-      throw new Error(applicantError ? applicantError.message : 'Failed to create applicant record');
+    const { data: applicantData, error: applicantError } = await (supabase as any)
+      .from('applicants')
+      .insert(applicantPayload)
+      .select('id, item_number')
+      .single();
+
+    if (applicantError || !applicantData?.id) {
+      throw new Error(applicantError?.message || 'Failed to create applicant record. Please try again.');
     }
 
     saveApplicantAppointmentType(applicantData.id, applicationType);
 
-    const syncedAttachments = await uploadFiles(client, applicantData.id);
+    const syncedAttachments = await uploadFiles(supabase, applicantData.id);
     await cachePreviewableFiles(applicantData.id);
 
     syncApplicantSubmissionToRecruitment({
@@ -338,11 +312,12 @@ const handleNextToReview = () => {
       submittedAt: new Date().toISOString(),
       attachments: syncedAttachments,
     });
+
+    return applicantData.item_number || itemNumber;
   };
 
-  const completeSuccess = () => {
-    const generatedReference = `#YEOGW${Math.random().toString(36).slice(2, 7).toUpperCase()}XX`;
-    setSubmissionReference(generatedReference);
+  const completeSuccess = (itemNumber: string) => {
+    setSubmissionReference(itemNumber);
     setShowSuccessDialog(true);
     setFormData(INITIAL_FORM_DATA);
     setFiles([]);
@@ -367,9 +342,8 @@ const handleNextToReview = () => {
     setSubmitError('');
 
     try {
-      // All data is stored exclusively in Supabase
-      await submitWithClient(supabase);
-      completeSuccess();
+      const itemNumber = await submitWithClient();
+      completeSuccess(itemNumber);
     } catch (error) {
       console.error('Submission error:', error);
 
@@ -616,6 +590,11 @@ const handleNextToReview = () => {
               for promotional positions.
             </p>
           </div>
+
+          <a href="/track" className="track-application-link">
+            <FileText size={16} />
+            <span>Track your existing application</span>
+          </a>
 
 
         </main>
@@ -925,10 +904,15 @@ const handleNextToReview = () => {
           </div>
           <h3>Application Submitted Successfully</h3>
           <p>
-            Your application has been received. You will be notified via email regarding the status of your
-            application.
+            Your application has been received and is now under review.
           </p>
-          <p className="submission-reference">Application Reference: {submissionReference}</p>
+          <div className="submission-reference-box">
+            <p className="submission-reference-label">Your Application Item Number</p>
+            <p className="submission-reference">{submissionReference}</p>
+            <p className="submission-reference-hint">
+              Save this number. You can use it at <strong>/track</strong> to check your application status anytime.
+            </p>
+          </div>
         </div>
       </Dialog>
     </div>

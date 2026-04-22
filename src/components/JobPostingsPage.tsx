@@ -123,6 +123,11 @@ export const JobPostingsPage = () => {
   const modalBodyRef = useRef<HTMLDivElement | null>(null);
   const [jobs, setJobs] = useState<JobPosting[]>([]);
   const [liveApplicants, setLiveApplicants] = useState<ReturnType<typeof getApplicants>>([]);
+  const [viewingApplicantsFor, setViewingApplicantsFor] = useState<JobPosting | null>(null);
+  const [jobApplicantsRows, setJobApplicantsRows] = useState<Array<{ id: string; full_name: string; email: string; contact_number: string; status: string; created_at: string; total_score: number | null; position: string; office: string; matched: boolean }>>([]);
+  const [jobApplicantsLoading, setJobApplicantsLoading] = useState(false);
+  const [jobApplicantsSearch, setJobApplicantsSearch] = useState('');
+  const [showAllApplicants, setShowAllApplicants] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | JobPosting['status']>('all');
   const [officeFilter, setOfficeFilter] = useState<string>('all');
@@ -304,24 +309,182 @@ export const JobPostingsPage = () => {
     };
   }, []);
 
+  // Fuzzy applicant count: match by job title/office, not just jobPostingId
   const applicantCountsByJob = useMemo(() => {
     const counts = new Map<string, { applicants: number; qualified: number }>();
-    for (const applicant of liveApplicants) {
-      const current = counts.get(applicant.jobPostingId) ?? { applicants: 0, qualified: 0 };
-      current.applicants += 1;
-      if (applicant.status === 'Recommended for Hiring') {
-        current.qualified += 1;
+    const normalize = (value: string) =>
+      String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const expandAbbrev = (value: string) =>
+      normalize(value)
+        .replace(/\badmin\b/g, 'administrative')
+        .replace(/\bit\b/g, 'information technology')
+        .replace(/\bhr\b/g, 'human resource');
+    const tokens = (value: string) =>
+      new Set(expandAbbrev(value).split(/\s+/).filter((t) => t.length >= 3));
+
+    jobs.forEach((job) => {
+      const jobTitleKey = normalize(job.title);
+      const jobTitleExpanded = expandAbbrev(job.title);
+      const jobItemKey = normalize(job.jobCode);
+      const jobOfficeKey = normalize(job.division || job.department || '');
+      const jobTitleTokens = tokens(job.title);
+
+      let applicants = 0;
+      let qualified = 0;
+      for (const row of liveApplicants) {
+        // Fuzzy match logic (same as applicant list)
+        const rowItem = normalize(row.item_number || row.jobCode || '');
+        if (jobItemKey && rowItem && rowItem === jobItemKey) {
+          applicants++;
+          if (row.status === 'Recommended for Hiring') qualified++;
+          continue;
+        }
+        const rowPositionNormalized = normalize(row.position);
+        const rowPositionExpanded = expandAbbrev(row.position);
+        if (!jobTitleKey || !rowPositionNormalized) continue;
+        if (rowPositionNormalized === jobTitleKey || rowPositionExpanded === jobTitleExpanded || rowPositionExpanded.includes(jobTitleExpanded) || jobTitleExpanded.includes(rowPositionExpanded)) {
+          applicants++;
+          if (row.status === 'Recommended for Hiring') qualified++;
+          continue;
+        }
+        const rowTokens = tokens(row.position);
+        const overlap = [...jobTitleTokens].filter((t) => rowTokens.has(t)).length;
+        if (jobTitleTokens.size > 0 && overlap / jobTitleTokens.size >= 0.75) {
+          const rowOffice = normalize(row.office);
+          if (!jobOfficeKey || !rowOffice || rowOffice === jobOfficeKey) {
+            applicants++;
+            if (row.status === 'Recommended for Hiring') qualified++;
+          }
+        }
       }
-      counts.set(applicant.jobPostingId, current);
-    }
+      counts.set(job.id, { applicants, qualified });
+    });
     return counts;
-  }, [liveApplicants]);
+  }, [jobs, liveApplicants]);
 
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(''), 2000);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    if (!viewingApplicantsFor) {
+      setJobApplicantsRows([]);
+      return;
+    }
+
+    let cancelled = false;
+    const job = viewingApplicantsFor;
+
+    const fetchRows = async () => {
+      setJobApplicantsLoading(true);
+      try {
+        // Use backend API to bypass RLS on Supabase
+        const data = await fetch('/api/applicants/?skip=0&limit=1000').then(r => r.json());
+        
+        if (cancelled) return;
+        if (!Array.isArray(data)) {
+          setJobApplicantsRows([]);
+          return;
+        }
+
+        const normalize = (value: string) =>
+          normalizeRomanNumeralsInText(String(value ?? ''))
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, ' ');
+
+        const expandAbbrev = (value: string) =>
+          normalize(value)
+            .replace(/\badmin\b/g, 'administrative')
+            .replace(/\bit\b/g, 'information technology')
+            .replace(/\bhr\b/g, 'human resource');
+
+        const tokens = (value: string) =>
+          new Set(expandAbbrev(value).split(/\s+/).filter((t) => t.length >= 3));
+
+        const jobTitleKey = normalize(job.title);
+        const jobTitleExpanded = expandAbbrev(job.title);
+        const jobItemKey = normalize(job.jobCode);
+        const jobOfficeKey = normalize(job.division || job.department || '');
+        const jobTitleTokens = tokens(job.title);
+
+        // IDs that the page's existing loader already matched to this job via
+        // findJobIdFromRow (handles position+office fallback resolution).
+        const preMatchedIds = new Set(
+          liveApplicants
+            .filter((entry) => entry.jobPostingId === job.id)
+            .map((entry) => String(entry.id)),
+        );
+
+        const isMatch = (row: any) => {
+          const rowId = String(row?.id ?? '');
+          if (preMatchedIds.has(rowId)) return true;
+
+          const rowItem = normalize(row?.item_number);
+          if (jobItemKey && rowItem && rowItem === jobItemKey) return true;
+
+          const rowPositionNormalized = normalize(row?.position);
+          const rowPositionExpanded = expandAbbrev(row?.position);
+          if (!jobTitleKey || !rowPositionNormalized) return false;
+
+          if (rowPositionNormalized === jobTitleKey) return true;
+          if (rowPositionExpanded === jobTitleExpanded) return true;
+          if (rowPositionExpanded.includes(jobTitleExpanded) || jobTitleExpanded.includes(rowPositionExpanded)) return true;
+
+          const rowTokens = tokens(row?.position);
+          const overlap = [...jobTitleTokens].filter((t) => rowTokens.has(t)).length;
+          if (jobTitleTokens.size > 0 && overlap / jobTitleTokens.size >= 0.75) {
+            const rowOffice = normalize(row?.office);
+            if (!jobOfficeKey || !rowOffice || rowOffice === jobOfficeKey) return true;
+          }
+
+          return false;
+        };
+
+        const mapped = data.map((row: any) => {
+          const firstName = String(row.first_name ?? '').trim();
+          const middleName = String(row.middle_name ?? '').trim();
+          const lastName = String(row.last_name ?? '').trim();
+          const middleInitial = middleName ? `${middleName.charAt(0).toUpperCase()}.` : '';
+          const fullName = [firstName, middleInitial, lastName].filter(Boolean).join(' ');
+          return {
+            id: String(row.id),
+            full_name: fullName,
+            email: String(row.email ?? ''),
+            contact_number: String(row.contact_number ?? ''),
+            status: String(row.status ?? 'New Application'),
+            created_at: String(row.created_at ?? ''),
+            total_score: typeof row.total_score === 'number' ? row.total_score : null,
+            position: String(row.position ?? ''),
+            office: String(row.office ?? ''),
+            matched: isMatch(row),
+          };
+        });
+
+        console.info('[JobPostingsPage] applicants fetch result', {
+          jobTitle: job.title,
+          jobCode: job.jobCode,
+          jobOffice: job.division || job.department,
+          totalRows: data.length,
+          preMatchedByLiveApplicants: preMatchedIds.size,
+          matchedAfterFuzzy: mapped.filter((r) => r.matched).length,
+          samplePositions: Array.from(new Set(data.map((r: any) => r?.position))).slice(0, 10),
+        });
+
+        setJobApplicantsRows(mapped);
+      } catch (err) {
+        console.error('[JobPostingsPage] fetch applicants exception:', err);
+        if (!cancelled) setJobApplicantsRows([]);
+      } finally {
+        if (!cancelled) setJobApplicantsLoading(false);
+      }
+    };
+
+    void fetchRows();
+    return () => { cancelled = true; };
+  }, [viewingApplicantsFor, liveApplicants]);
 
   const filteredJobs = useMemo(() => {
     return jobs.filter((job) => {
@@ -474,7 +637,7 @@ export const JobPostingsPage = () => {
     saveJobs(nextJobs);
     setToast(`Posting marked as ${nextStatus}.`);
     // If status is 'Filled' or 'Hired', navigate to Newly Hired page
-    if (nextStatus === 'Filled' || nextStatus === 'Hired') {
+    if (nextStatus === 'Filled') {
       navigate('/admin/rsp/new-hired');
     }
   };
@@ -552,6 +715,181 @@ export const JobPostingsPage = () => {
           </div>
         </header>
 
+        {viewingApplicantsFor && (() => {
+          const job = viewingApplicantsFor;
+          const term = jobApplicantsSearch.trim().toLowerCase();
+          const searched = term
+            ? jobApplicantsRows.filter((r) =>
+                r.full_name.toLowerCase().includes(term) ||
+                r.email.toLowerCase().includes(term) ||
+                r.status.toLowerCase().includes(term) ||
+                r.position.toLowerCase().includes(term),
+              )
+            : jobApplicantsRows;
+
+          const matchedRows = searched.filter((r) => r.matched);
+          const otherRows = searched.filter((r) => !r.matched);
+          const totalMatched = jobApplicantsRows.filter((r) => r.matched).length;
+          const totalInDb = jobApplicantsRows.length;
+
+          const statusClass = (status: string) => {
+            const s = status.toLowerCase();
+            if (s.includes('qualified') || s.includes('shortlist') || s.includes('recommend') || s.includes('hired')) return 'bg-emerald-100 text-emerald-700';
+            if (s.includes('reject') || s.includes('not qualified') || s.includes('disqual')) return 'bg-rose-100 text-rose-700';
+            if (s.includes('interview')) return 'bg-purple-100 text-purple-700';
+            if (s.includes('review') || s.includes('pending')) return 'bg-blue-100 text-blue-700';
+            return 'bg-amber-100 text-amber-700';
+          };
+
+          const renderCard = (a: typeof jobApplicantsRows[number], i: number) => (
+            <article
+              key={a.id}
+              className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => navigate(`/admin/rsp/applicant/${a.id}`)}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-blue-700">
+                    #{i + 1}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="!mb-0 text-base font-bold text-slate-900">
+                        {a.full_name || <span className="italic text-slate-400">Unnamed applicant</span>}
+                      </p>
+                      {a.matched && (
+                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+                          Matched
+                        </span>
+                      )}
+                    </div>
+                    <p className="!mb-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-slate-600">
+                      {a.email && <span>{a.email}</span>}
+                      {a.contact_number && <span>· {a.contact_number}</span>}
+                    </p>
+                    <p className="!mb-0 text-xs text-slate-400">
+                      Applied for <span className="font-semibold text-slate-600">{a.position || '—'}</span>
+                      {a.office && <> · {a.office}</>}
+                      {a.created_at && <> · {formatPHDate(a.created_at)}</>}
+                    </p>
+                  </div>
+                </div>
+                <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${statusClass(a.status)}`}>
+                  {a.status}
+                </span>
+              </div>
+            </article>
+          );
+
+          return (
+            <>
+              <section className="flex items-center gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => { setViewingApplicantsFor(null); setShowAllApplicants(false); }}
+                  className="rounded-xl border border-slate-300 bg-slate-50 p-2.5 text-slate-600 hover:bg-slate-100"
+                  aria-label="Back to job postings"
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                <div className="flex-1 min-w-0">
+                  <p className="!mb-1 text-xs font-semibold uppercase tracking-widest text-blue-600">
+                    Job Postings &gt; Applicants
+                  </p>
+                  <h2 className="!mb-0.5 text-xl font-bold text-slate-900">{job.title}</h2>
+                  <p className="!mb-0 text-sm text-slate-600">
+                    {job.division || `${job.department} Department`} · Item No. {job.jobCode} · {totalMatched} matched · {totalInDb} in database
+                  </p>
+                </div>
+                <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${STATUS_COLORS[job.status]}`}>
+                  {STATUS_LABELS[job.status]}
+                </span>
+              </section>
+
+              <section className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="relative flex-1 min-w-[220px]">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                  <input
+                    className="h-10 w-full rounded-xl border border-slate-300 pl-10 pr-3 text-sm"
+                    placeholder="Search applicants by name, email, position, or status…"
+                    value={jobApplicantsSearch}
+                    onChange={(event) => setJobApplicantsSearch(event.target.value)}
+                  />
+                </div>
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={showAllApplicants}
+                    onChange={(e) => setShowAllApplicants(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300"
+                  />
+                  Show all applicants in database ({totalInDb - totalMatched} unmatched)
+                </label>
+              </section>
+
+              <section className="mt-4 flex flex-col gap-3">
+                {jobApplicantsLoading ? (
+                  <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">
+                    Loading applicants…
+                  </div>
+                ) : totalInDb === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+                    <Users className="mx-auto mb-3 h-10 w-10 text-slate-300" />
+                    <p className="!mb-1 font-semibold text-slate-600">No applicants in database</p>
+                    <p className="!mb-0 text-sm text-slate-400">
+                      The applicants table is empty, or row-level security is blocking reads for this account.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {matchedRows.length > 0 && (
+                      <>
+                        <p className="!mb-0 text-xs font-semibold uppercase tracking-widest text-slate-500">
+                          Matched to this job ({matchedRows.length})
+                        </p>
+                        {matchedRows.map((a, i) => renderCard(a, i))}
+                      </>
+                    )}
+
+                    {matchedRows.length === 0 && !showAllApplicants && (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800">
+                        <p className="!mb-1 font-semibold">No applicants matched this job posting directly.</p>
+                        <p className="!mb-2">
+                          {totalInDb} applicant{totalInDb !== 1 ? 's are' : ' is'} in the database, but none were linked to <span className="font-semibold">{job.title}</span> by position or item number.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setShowAllApplicants(true)}
+                          className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
+                        >
+                          Show all applicants in database
+                        </button>
+                      </div>
+                    )}
+
+                    {showAllApplicants && otherRows.length > 0 && (
+                      <>
+                        <p className="!mb-0 mt-2 text-xs font-semibold uppercase tracking-widest text-slate-500">
+                          Other applicants in database ({otherRows.length})
+                        </p>
+                        {otherRows.map((a, i) => renderCard(a, matchedRows.length + i))}
+                      </>
+                    )}
+
+                    {searched.length === 0 && term && (
+                      <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center">
+                        <p className="!mb-0 text-sm text-slate-500">No applicants match your search.</p>
+                      </div>
+                    )}
+                  </>
+                )}
+              </section>
+            </>
+          );
+        })()}
+
+        {!viewingApplicantsFor && (
+        <>
         <section className="rounded-xl border border-slate-200 bg-white p-0 shadow-sm">
           <div className="grid grid-cols-1 gap-3 border-b border-slate-200 p-4 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,0.75fr)_minmax(0,0.75fr)]">
             <div className="relative">
@@ -618,7 +956,14 @@ export const JobPostingsPage = () => {
                     </div>
 
                     <div className="mt-4 space-y-2">
-                      <button className="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-base font-semibold text-white" onClick={() => navigate(`/admin/rsp/qualified/${job.id}`)}>
+                      <button
+                        type="button"
+                        className="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-base font-semibold text-white"
+                        onClick={() => {
+                          setViewingApplicantsFor(job);
+                          setJobApplicantsSearch('');
+                        }}
+                      >
                         View Applicants <ChevronRight className="ml-2 inline h-4 w-4" />
                       </button>
 
@@ -657,6 +1002,8 @@ export const JobPostingsPage = () => {
             </button>
           </div>
         </section>
+        </>
+        )}
       </main>
 
       <RecruitmentNavigationGuide open={showGuide} onClose={() => setShowGuide(false)} />

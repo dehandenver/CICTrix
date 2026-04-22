@@ -17,7 +17,7 @@ class ApplicantBase(BaseModel):
     item_number: Optional[str] = None
     office: Optional[str] = None
     is_pwd: bool = False
-    application_type: str = 'job'
+    application_type: Optional[str] = 'job'  # Allow NULL from database
     employee_id: Optional[str] = None
     current_position: Optional[str] = None
     current_department: Optional[str] = None

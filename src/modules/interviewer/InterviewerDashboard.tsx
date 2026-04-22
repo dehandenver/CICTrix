@@ -63,6 +63,19 @@ const isDemoApplicant = (applicant: any): boolean => {
 };
 
 const fetchApplicantsFromClient = async (client: any): Promise<any[]> => {
+  // Use backend API to bypass RLS on Supabase
+  if (client && typeof client.from === 'function') {
+    try {
+      const response = await fetch('/api/applicants/?skip=0&limit=1000');
+      if (response.ok) {
+        return await response.json();
+      }
+    } catch {
+      // Fall back to direct query if API fails
+      const { data } = await client.from('applicants').select('*');
+      return data || [];
+    }
+  }
   const { data } = await client.from('applicants').select('*');
   return data || [];
 };

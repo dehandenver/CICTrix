@@ -123,11 +123,141 @@ const isLikelySeededDemoJob = (job: JobPosting) => {
 
 const buildInitialData = () => {
   const jobs: JobPosting[] = [];
-  const applicants: Applicant[] = [];
-  const newlyHired: NewlyHired[] = [];
-  const assignments: RaterAssignment[] = [];
   const periods = createMockEvaluationPeriods();
+  const assignments: RaterAssignment[] = [];
+  const newlyHired: NewlyHired[] = [];
   const employees: EmployeeRecord[] = [];
+
+  // Create test applicants with "Shortlisted" and "Recommended for Hiring" status for QualifiedApplicantsSection demo
+  const applicants: Applicant[] = [
+    {
+      id: 'test-app-001',
+      jobPostingId: 'job-001',
+      applicationType: 'job',
+      personalInfo: {
+        firstName: 'Maria',
+        lastName: 'Garcia',
+        itemNumber: 'IT-2026-001',
+        email: 'maria.garcia@test.com',
+        phone: '09171234567',
+        address: '123 Main St, Manila',
+        dateOfBirth: '1992-05-15',
+      },
+      qualificationScore: 87.5,
+      status: 'Recommended for Hiring',
+      education: [{ degree: 'Bachelor of Science', school: 'University of Manila', year: 2014 }],
+      experience: [{ title: 'Software Developer', company: 'Tech Corp', years: 8 }],
+      skills: ['JavaScript', 'React', 'Node.js', 'Python'],
+      certifications: ['AWS Solutions Architect'],
+      documents: [{ type: 'Resume', url: '/resume.pdf', verified: true }],
+      applicationDate: '2026-03-15T10:30:00+08:00',
+      notes: [],
+      timeline: [{ event: 'Application Submitted', date: '2026-03-15T10:30:00+08:00', actor: 'System' }],
+    },
+    {
+      id: 'test-app-002',
+      jobPostingId: 'job-001',
+      applicationType: 'job',
+      personalInfo: {
+        firstName: 'Juan',
+        lastName: 'Cruz',
+        itemNumber: 'IT-2026-002',
+        email: 'juan.cruz@test.com',
+        phone: '09189876543',
+        address: '456 Second Ave, Quezon City',
+        dateOfBirth: '1990-08-22',
+      },
+      qualificationScore: 92.0,
+      status: 'Recommended for Hiring',
+      education: [{ degree: 'Master of Science in Computer Science', school: 'De La Salle University', year: 2016 }],
+      experience: [{ title: 'Senior Developer', company: 'Global Tech Solutions', years: 10 }],
+      skills: ['Java', 'Microservices', 'Docker', 'Kubernetes', 'AWS'],
+      certifications: ['Google Cloud Certified', 'AWS Solutions Architect Pro'],
+      documents: [{ type: 'Resume', url: '/resume.pdf', verified: true }],
+      applicationDate: '2026-03-18T11:45:00+08:00',
+      notes: [],
+      timeline: [{ event: 'Application Submitted', date: '2026-03-18T11:45:00+08:00', actor: 'System' }],
+    },
+    {
+      id: 'test-app-003',
+      jobPostingId: 'job-002',
+      applicationType: 'job',
+      personalInfo: {
+        firstName: 'Ana',
+        lastName: 'Reyes',
+        itemNumber: 'IT-2026-003',
+        email: 'ana.reyes@test.com',
+        phone: '09165550123',
+        address: '789 Third Blvd, Cebu',
+        dateOfBirth: '1995-12-03',
+      },
+      qualificationScore: 78.5,
+      status: 'Shortlisted',
+      education: [{ degree: 'Bachelor of Science in Information Technology', school: 'Cebu Institute of Technology', year: 2017 }],
+      experience: [{ title: 'Junior Developer', company: 'StartUp Hub', years: 4 }],
+      skills: ['JavaScript', 'React', 'Node.js', 'MongoDB'],
+      certifications: [],
+      documents: [{ type: 'Resume', url: '/resume.pdf', verified: true }],
+      applicationDate: '2026-03-20T09:15:00+08:00',
+      notes: [],
+      timeline: [{ event: 'Application Submitted', date: '2026-03-20T09:15:00+08:00', actor: 'System' }],
+    },
+    {
+      id: 'test-app-004',
+      jobPostingId: 'job-002',
+      applicationType: 'job',
+      personalInfo: {
+        firstName: 'Pedro',
+        lastName: 'Lopez',
+        itemNumber: 'IT-2026-004',
+        email: 'pedro.lopez@test.com',
+        phone: '09173334444',
+        address: '321 Fourth Street, Davao',
+        dateOfBirth: '1988-11-10',
+      },
+      qualificationScore: 85.0,
+      status: 'Recommended for Hiring',
+      education: [{ degree: 'Bachelor of Science', school: 'Mindanao State University', year: 2010 }],
+      experience: [{ title: 'Senior Systems Administrator', company: 'Enterprise Solutions', years: 12 }],
+      skills: ['Linux', 'AWS', 'Docker', 'Networking', 'Security'],
+      certifications: ['CompTIA Security+', 'AWS Certified'],
+      documents: [{ type: 'Resume', url: '/resume.pdf', verified: true }],
+      applicationDate: '2026-03-22T13:20:00+08:00',
+      notes: [],
+      timeline: [{ event: 'Application Submitted', date: '2026-03-22T13:20:00+08:00', actor: 'System' }],
+    },
+    {
+      id: 'test-app-005',
+      jobPostingId: 'job-003',
+      applicationType: 'promotion',
+      internalApplication: {
+        employeeId: 'EMP-001',
+        currentPosition: 'HR Officer',
+        currentDepartment: 'Human Resources',
+        currentDivision: 'Recruitment',
+        employeeUsername: 'rosa.santos',
+      },
+      personalInfo: {
+        firstName: 'Rosa',
+        lastName: 'Santos',
+        itemNumber: 'HR-2026-001',
+        email: 'rosa.santos@test.com',
+        phone: '09166667777',
+        address: '654 Fifth Lane, Iloilo',
+        dateOfBirth: '1991-07-18',
+      },
+      qualificationScore: 88.5,
+      status: 'Recommended for Hiring',
+      education: [{ degree: 'Bachelor of Science in Psychology', school: 'University of the Philippines', year: 2013 }],
+      experience: [{ title: 'HR Officer', company: 'Government Agency', years: 8 }],
+      skills: ['Recruitment', 'Employee Relations', 'Payroll', 'Training'],
+      certifications: ['HR Certification'],
+      documents: [],
+      applicationDate: '2026-03-25T10:00:00+08:00',
+      notes: [],
+      timeline: [{ event: 'Application Submitted', date: '2026-03-25T10:00:00+08:00', actor: 'System' }],
+    },
+  ];
 
   return { jobs, applicants, newlyHired, assignments, periods, employees };
 };
@@ -322,7 +452,7 @@ export const saveJobPostings = (rows: JobPosting[]) => {
       // Delete existing rows and insert new ones to ensure clean state
       await supabase.from('job_postings').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       if (supabaseRows.length > 0) {
-        const { error } = await supabase.from('job_postings').insert(supabaseRows);
+        const { error } = await (supabase as any).from('job_postings').insert(supabaseRows);
         if (error) {
           console.warn('[RECRUITMENT] Failed to save job postings to Supabase:', error);
         } else {
@@ -345,14 +475,16 @@ export const getApplicants = () => safeJsonParse<Applicant[]>(localStorage.getIt
 // NEW: Fetch applicants from Supabase (the source of truth for all submitted applicants)
 export const getApplicantsFromSupabase = async (): Promise<Applicant[]> => {
   try {
-    const { data, error } = await supabase.from('applicants').select('*');
-    
-    if (error) {
-      console.error('[recruitmentData] Error fetching applicants from Supabase:', error);
+    // Use backend API to bypass RLS on Supabase
+    const response = await fetch('/api/applicants/?skip=0&limit=1000');
+    if (!response.ok) {
+      console.error('[recruitmentData] Failed to fetch applicants from API');
       return getApplicants(); // Fallback to localStorage
     }
     
-    // Transform Supabase data to match Applicant type
+    const data = await response.json();
+    
+    // Transform data to match Applicant type
     if (!data || !Array.isArray(data)) {
       return getApplicants(); // Fallback to localStorage
     }
@@ -372,11 +504,17 @@ export const getApplicantsFromSupabase = async (): Promise<Applicant[]> => {
       },
       position: row.position || '',
       jobPostingId: row.job_posting_id || 'unposted',
-      applicationType: row.application_type || 'job',
+      applicationType: (row.application_type || 'job') as 'job' | 'promotion',
       status: row.status || 'Pending',
       applicationDate: row.created_at || new Date().toISOString(),
       notes: row.notes || [],
       timeline: row.timeline || [],
+      qualificationScore: 0,
+      education: [],
+      experience: [],
+      skills: [],
+      certifications: [],
+      documents: [],
       internalApplication: row.employee_id ? {
         employeeId: row.employee_id,
         currentPosition: row.current_position,
@@ -446,7 +584,7 @@ export const saveNewlyHired = async (rows: NewlyHired[]) => {
   for (const hired of rows) {
     const { id, applicantId, employeeInfo, position, department, division, employmentType, salaryGrade, dateHired, expectedStartDate, supervisor, status, onboardingProgress, deployedDate, employeeId } = hired;
     try {
-      const result = await supabase.from('newly_hired').upsert([
+      const result = await (supabase as any).from('newly_hired').upsert([
         {
           id,
           applicant_id: applicantId,
@@ -468,7 +606,7 @@ export const saveNewlyHired = async (rows: NewlyHired[]) => {
           employee_id: employeeId,
           // Add other fields as needed
         }
-      ], { onConflict: ['id'] });
+      ], { onConflict: 'id' });
       if (result.error) {
         // eslint-disable-next-line no-console
         console.error('Supabase upsert newly_hired failed:', result.error);
@@ -705,7 +843,7 @@ export const syncApplicantSubmissionToRecruitment = (
           };
         });
 
-        saveApplicants(updatedApplicants);
+        saveApplicants(updatedApplicants as Applicant[]);
       }
 
       return;

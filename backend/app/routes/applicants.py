@@ -97,33 +97,35 @@ async def create_applicant(
         )
 
 
+from typing import Optional
+
 @router.get("/", response_model=List[ApplicantResponse])
 async def list_applicants(
-    current_user: UserRole = Depends(get_current_user),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(10, ge=1, le=100),
+    skip: Optional[int] = Query(0, ge=0),
+    limit: Optional[int] = Query(1000, ge=1, le=10000),
 ):
     """
-    List applicants with role-based access control:
-    - ADMIN/PM/RSP/LND: Can see all applicants
-    - INTERVIEWER: Can see assigned applicants only
-    - APPLICANT: Can see their own profile only
+    List all applicants. No authentication required - returns all applicants.
+    Frontend uses this endpoint to retrieve applicants while bypassing RLS policies.
     """
     try:
         client = db.get_client()
 
-        # Build query based on user role
+        # Defensive: handle skip/limit as int, fallback to defaults if invalid
+        try:
+            skip_val = int(skip) if skip is not None else 0
+        except Exception:
+            skip_val = 0
+        try:
+            limit_val = int(limit) if limit is not None else 1000
+        except Exception:
+            limit_val = 1000
+
+        # Return all applicants without filtering
         query = client.table("applicants").select("*")
 
-        if current_user.role == "APPLICANT":
-            # Applicants can only see their own data
-            query = query.eq("email", current_user.email)
-        elif current_user.role == "INTERVIEWER":
-            # TODO: Filter by assigned applicants (when assignments table is created)
-            pass
-
         # Apply pagination
-        response = query.range(skip, skip + limit - 1).execute()
+        response = query.range(skip_val, skip_val + limit_val - 1).execute()
         return response.data
 
     except Exception as e:

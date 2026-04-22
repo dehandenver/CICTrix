@@ -1175,7 +1175,7 @@ export const QualifiedApplicantsPage = () => {
     // Always update status in Supabase for hired applicants
     if (hiredIdSet.size > 0) {
       try {
-        await (supabase.from('applicants').update({ status: 'Hired' } as any)).in('id', Array.from(hiredIdSet));
+        await (supabase as any).from('applicants').update({ status: 'Hired' }).in('id', Array.from(hiredIdSet));
       } catch {
         // Log error, but do not block
       }
@@ -1287,14 +1287,14 @@ export const QualifiedApplicantsPage = () => {
 
       // Build database update payload
       // Note: Convert UI status to backend status format for database storage
-      let dbStatusValue = nextStatus;
+      let dbStatusValue: string = nextStatus;
       if (nextStatus === 'Recommended for Hiring') {
         dbStatusValue = 'qualified';
       } else if (nextStatus === 'Not Qualified') {
         dbStatusValue = 'disqualified';
       } else if (nextStatus === 'Shortlisted') {
         dbStatusValue = 'shortlisted';
-      } else if (nextStatus === 'Hired') {
+      } else if ((nextStatus as string) === 'Hired') {
         dbStatusValue = 'hired';
       }
       
@@ -1310,11 +1310,12 @@ export const QualifiedApplicantsPage = () => {
       console.log(`[QUALIFY] Updating ${applicantId} with DB status "${dbStatusValue}":`, dbUpdate);
       console.log(`[QUALIFY] Full update object:`, JSON.stringify(dbUpdate, null, 2));
       
-      const persistPromise = supabase
-        .from('applicants')
-        .update(dbUpdate)
-        .eq('id', applicantId)
-        .then((result) => {
+      const persistPromise = Promise.resolve(
+        (supabase as any)
+          .from('applicants')
+          .update(dbUpdate)
+          .eq('id', applicantId)
+      ).then((result: any) => {
           console.log(`[QUALIFY] Supabase returned:`, {
             error: result.error,
             data: result.data,

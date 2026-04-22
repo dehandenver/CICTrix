@@ -40,13 +40,13 @@ export const SuperAdminDashboard = () => {
         activeCycleRes
       ] = await Promise.all([
         supabase.from('applicants').select('id', { count: 'exact', head: true }),
-        supabase.from('jobs').select('id', { count: 'exact', head: true }),
-        supabase.from('raters').select('id', { count: 'exact', head: true }),
+        (supabase as any).from('jobs').select('id', { count: 'exact', head: true }),
+        (supabase as any).from('raters').select('id', { count: 'exact', head: true }),
         supabase.from('applicants').select('id', { count: 'exact', head: true }).eq('status', 'Pending'),
-        supabase.from('trainings').select('id', { count: 'exact', head: true }),
-        supabase.from('trainings').select('id', { count: 'exact', head: true }).gte('date', today).neq('status', 'Cancelled'),
-        supabase.from('performance_cycles').select('id', { count: 'exact', head: true }).eq('status', 'Active'),
-        supabase.from('performance_cycles').select('title').eq('status', 'Active').limit(1)
+        (supabase as any).from('trainings').select('id', { count: 'exact', head: true }),
+        (supabase as any).from('trainings').select('id', { count: 'exact', head: true }).gte('date', today).neq('status', 'Cancelled'),
+        (supabase as any).from('performance_cycles').select('id', { count: 'exact', head: true }).eq('status', 'Active'),
+        (supabase as any).from('performance_cycles').select('title').eq('status', 'Active').limit(1)
       ]);
 
       setRspStats({
@@ -63,7 +63,7 @@ export const SuperAdminDashboard = () => {
 
       setPmStats({
         evaluationStatus: cyclesRes.count || 0,
-        activeCycle: activeCycleRes.data?.[0]?.title || 'None',
+        activeCycle: (activeCycleRes as any).data?.[0]?.title || 'None',
         pendingReviews: pendingRes.count || 0
       });
     } catch (error) {

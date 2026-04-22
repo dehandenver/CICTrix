@@ -28,6 +28,7 @@ import {
     Users,
     X,
 } from 'lucide-react';
+import { QualifiedApplicantsSection } from '../../components/QualifiedApplicantsSection';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/Button';
@@ -1818,10 +1819,10 @@ export const RSPDashboard = () => {
 
     try {
       await Promise.allSettled([
-        supabase.from('job_postings').update({ status: updatedStatus }).eq('id', job.id),
-        supabase.from('jobs').update({ status: updatedStatus }).eq('id', job.id),
-        supabase.from('job_postings').update({ status: updatedStatus }).eq('title', job.title).eq('item_number', job.item_number),
-        supabase.from('jobs').update({ status: updatedStatus }).eq('title', job.title).eq('item_number', job.item_number),
+        (supabase as any).from('job_postings').update({ status: updatedStatus }).eq('id', job.id),
+        (supabase as any).from('jobs').update({ status: updatedStatus }).eq('id', job.id),
+        (supabase as any).from('job_postings').update({ status: updatedStatus }).eq('title', job.title).eq('item_number', job.item_number),
+        (supabase as any).from('jobs').update({ status: updatedStatus }).eq('title', job.title).eq('item_number', job.item_number),
       ]);
     } catch {
     }
@@ -2605,119 +2606,10 @@ export const RSPDashboard = () => {
           )}
 
           {section === 'qualified' && (
-            <>
-              <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-                <article className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="!mb-2 text-base text-[var(--text-secondary)]">Total Qualified</p>
-                      <p className="!mb-0 text-3xl font-bold">{qualifiedApplicants.length}</p>
-                    </div>
-                    <div className="rounded-2xl bg-blue-100 p-4 text-blue-600"><UserCheck size={28} /></div>
-                  </div>
-                </article>
-                <article className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="!mb-2 text-base text-[var(--text-secondary)]">Average Score</p>
-                      <p className="!mb-0 text-3xl font-bold">{avgQualifiedScore.toFixed(1)}</p>
-                    </div>
-                    <div className="rounded-2xl bg-purple-100 p-4 text-purple-600"><Calculator size={28} /></div>
-                  </div>
-                </article>
-              </section>
-
-              <section className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
-                <div className="mb-5 flex flex-wrap gap-3 border-b border-[var(--border-color)] pb-4">
-                  {[
-                    { key: 'all', label: 'All Applicants', count: qualifiedApplicants.length },
-                    { key: 'completed', label: 'Completed', count: qualifiedApplicants.filter((a) => completedEvaluationIds.has(a.id)).length },
-                    { key: 'pending', label: 'Pending', count: qualifiedApplicants.filter((a) => !completedEvaluationIds.has(a.id)).length },
-                  ].map((tab) => (
-                    <button
-                      key={tab.key}
-                      type="button"
-                      onClick={() => setQualifiedTab(tab.key as 'all' | 'completed' | 'pending')}
-                      className={`rounded-xl px-5 py-2 text-base font-semibold ${qualifiedTab === tab.key ? 'bg-blue-600 text-white' : 'bg-slate-100 text-[var(--text-primary)]'}`}
-                    >
-                      {tab.label} <span className="ml-2 rounded-full bg-white/80 px-2 py-0.5 text-base text-[var(--text-primary)]">{tab.count}</span>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-                  <div className="relative xl:col-span-1">
-                    <Search size={20} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-                    <input
-                      value={qualifiedSearch}
-                      onChange={(e) => setQualifiedSearch(e.target.value)}
-                      placeholder="Search by name, position, or office..."
-                      className="w-full rounded-xl border border-[var(--border-color)] py-3 pl-11 pr-4 text-lg"
-                    />
-                  </div>
-                  <div>
-                    <select value={qualifiedPosition} onChange={(e) => setQualifiedPosition(e.target.value)} className="w-full rounded-xl border border-[var(--border-color)] p-3 text-lg">
-                      <option value="all">All Positions</option>
-                      {positionOptions.map((position) => (
-                        <option key={position} value={position}>{position}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <select value={qualifiedOffice} onChange={(e) => setQualifiedOffice(e.target.value)} className="w-full rounded-xl border border-[var(--border-color)] p-3 text-lg">
-                      <option value="all">All Offices</option>
-                      {officeOptions.map((office) => (
-                        <option key={office} value={office}>{office}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </section>
-
-              <p className="text-base text-[var(--text-secondary)]">Showing <span className="font-semibold text-[var(--text-primary)]">{qualifiedApplicants.length}</span> qualified applicants</p>
-
-              <section className="overflow-hidden rounded-2xl border border-[var(--border-color)] bg-white">
-                <table className="w-full border-collapse">
-                  <thead className="bg-slate-50 text-left text-sm uppercase tracking-wide text-[var(--text-secondary)]">
-                    <tr>
-                      <th className="px-5 py-4">Applicant Name</th>
-                      <th className="px-5 py-4">Position Applied For</th>
-                      <th className="px-5 py-4">Office / Department</th>
-                      <th className="px-5 py-4">Total Score</th>
-                      <th className="px-5 py-4">Status</th>
-                      <th className="px-5 py-4">Date Qualified</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {qualifiedApplicants.map((applicant) => (
-                      <tr key={applicant.id} className="border-t border-[var(--border-color)] text-lg">
-                        <td className="px-5 py-4 font-semibold text-blue-600">
-                          <button type="button" className="hover:underline" onClick={() => navigate(`/admin/rsp/applicant/${applicant.id}`)}>
-                            {applicant.full_name}
-                          </button>
-                        </td>
-                        <td className="px-5 py-4">{applicant.position || '--'}</td>
-                        <td className="px-5 py-4">{applicant.office || '--'}</td>
-                        <td className="px-5 py-4 font-semibold text-emerald-600">
-                          {typeof applicant.total_score === 'number' ? `${applicant.total_score.toFixed(1)} / 100` : '--'}
-                        </td>
-                        <td className="px-5 py-4">
-                          <span className={`rounded-full px-3 py-1 text-sm font-semibold ${completedEvaluationIds.has(applicant.id) ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                            {completedEvaluationIds.has(applicant.id) ? 'Completed' : 'Pending'}
-                          </span>
-                        </td>
-                        <td className="px-5 py-4">{formatDate(applicant.created_at)}</td>
-                      </tr>
-                    ))}
-                    {qualifiedApplicants.length === 0 && (
-                      <tr>
-                        <td colSpan={6} className="px-5 py-8 text-center text-base text-[var(--text-secondary)]">No qualified applicants found.</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </section>
-            </>
+            <QualifiedApplicantsSection
+              applicants={applicants}
+              completedEvaluationIds={completedEvaluationIds}
+            />
           )}
 
           {section === 'new-hired' && (

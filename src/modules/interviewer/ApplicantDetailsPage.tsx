@@ -88,7 +88,7 @@ type EducationAttainmentValue =
   | 'masteral_units'
   | 'graduate_school';
 
-type TabKey = 'overview' | 'qualifications' | 'documents' | 'interview';
+type TabKey = 'overview' | 'qualifications' | 'documents' | 'interview' | 'activity';
 
 type ScoreBreakdown = {
   total: number;
@@ -658,6 +658,7 @@ export function ApplicantDetailsPage() {
   const [recruitmentApplicant, setRecruitmentApplicant] = useState<Applicant | null>(routeState?.applicant ?? null);
   const [attachments, setAttachments] = useState<AttachmentRecord[]>([]);
   const [evaluation, setEvaluation] = useState<EvaluationRecord | null>(null);
+  const [, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -1103,7 +1104,7 @@ export function ApplicantDetailsPage() {
       try {
         const dbUpdate: Record<string, unknown> = { status: nextStatus };
         if (reason) dbUpdate.disqualification_reason = reason;
-        await supabase.from('applicants').update(dbUpdate).eq('id', applicant.id);
+        await (supabase as any).from('applicants').update(dbUpdate).eq('id', applicant.id);
       } catch {
         // Best effort persistence only
       }
@@ -1161,7 +1162,7 @@ export function ApplicantDetailsPage() {
     };
 
     try {
-      const primaryUpdate = await supabase.from('applicants').update(updatePayload).eq('id', applicant.id);
+      const primaryUpdate = await (supabase as any).from('applicants').update(updatePayload).eq('id', applicant.id);
       if ((primaryUpdate as any)?.error && !isMockModeEnabled) {
         await (mockDatabase as any).from('applicants').update(updatePayload).eq('id', applicant.id);
       }
