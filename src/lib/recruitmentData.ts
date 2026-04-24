@@ -533,10 +533,45 @@ export const getApplicantsFromSupabase = async (): Promise<Applicant[]> => {
   }
 };
 export const saveApplicants = (rows: Applicant[], options?: { broadcast?: boolean }) => {
-  // CRITICAL: Do NOT save applicants to localStorage - they are stored in Supabase only!
-  // localStorage has a 5-10MB quota and would be exceeded when storing many applicants.
-  // Per user requirement: "all datas must be stored in supabase"
-  
+  // Persist to localStorage for immediate access by QualifiedApplicantsPage and other UI components
+  localStorage.setItem(APPLICANTS_KEY, JSON.stringify(rows));
+
+  // Also persist to Supabase (source of truth) so changes are visible across tabs/sessions
+  void (async () => {
+    try {
+      const supabaseRows = rows.map((applicant) => ({
+        id: applicant.id,
+        first_name: applicant.personalInfo?.firstName || '',
+        last_name: applicant.personalInfo?.lastName || '',
+        email: applicant.personalInfo?.email || '',
+        contact_number: applicant.personalInfo?.phone || '',
+        address: applicant.personalInfo?.address || '',
+        dob: applicant.personalInfo?.dateOfBirth || '',
+        item_number: applicant.personalInfo?.itemNumber || '',
+        job_posting_id: applicant.jobPostingId || 'unposted',
+        application_type: applicant.applicationType || 'job',
+        status: applicant.status || 'New Application',
+        created_at: applicant.applicationDate || new Date().toISOString(),
+        notes: applicant.notes || [],
+        timeline: applicant.timeline || [],
+      }));
+
+      // Upsert (update if exists, insert if new) to Supabase
+      const { error } = await (supabase as any).from('applicants').upsert(supabaseRows, { 
+        onConflict: 'id' 
+      });
+
+      if (error) {
+        console.warn('[RECRUITMENT] Failed to save applicants to Supabase:', error);
+      } else {
+        console.log('[RECRUITMENT] ✓ Applicants saved to Supabase');
+      }
+    } catch (err) {
+      console.warn('[RECRUITMENT] Error saving applicants to Supabase:', err);
+    }
+  })();
+
+  // Broadcast changes so Sidebar, QualifiedApplicantsPage, and other components can re-sync
   if (options?.broadcast !== false && typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(APPLICANTS_UPDATED_EVENT));
   }

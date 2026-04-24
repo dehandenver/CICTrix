@@ -123,6 +123,10 @@ export const JobPostingsPage = () => {
   const modalBodyRef = useRef<HTMLDivElement | null>(null);
   const [jobs, setJobs] = useState<JobPosting[]>([]);
   const [liveApplicants, setLiveApplicants] = useState<ReturnType<typeof getApplicants>>([]);
+  // Raw applicant rows straight from Supabase — the single source of truth for
+  // both card counts and the View Applicants list. Skips findJobIdFromRow so no rows
+  // are silently dropped before counting.
+  const [allApplicantsRaw, setAllApplicantsRaw] = useState<any[]>([]);
   const [viewingApplicantsFor, setViewingApplicantsFor] = useState<JobPosting | null>(null);
   const [jobApplicantsRows, setJobApplicantsRows] = useState<Array<{ id: string; full_name: string; email: string; contact_number: string; status: string; created_at: string; total_score: number | null; position: string; office: string; matched: boolean }>>([]);
   const [jobApplicantsLoading, setJobApplicantsLoading] = useState(false);
@@ -147,10 +151,11 @@ export const JobPostingsPage = () => {
     const secondaryClient = preferredMode === 'local' ? supabase : (mockDatabase as any);
 
     const fetchDbApplicants = async (client: any) => {
+      // select('*') protects against column drift; no order clause so a missing
+      // created_at (the previous 400 cause) won't blow up the query.
       const result = await client
         .from('applicants')
-        .select('id,position,office,status')
-        .order('created_at', { ascending: false });
+        .select('*');
 
       if (result?.error) {
         throw result.error;
@@ -164,15 +169,21 @@ export const JobPostingsPage = () => {
     try {
       dbRows = await fetchDbApplicants(primaryClient);
       dbFetchSucceeded = true;
-    } catch {
+    } catch (primaryErr) {
+      console.error('[JobPostingsPage] primary applicants fetch failed:', primaryErr);
       try {
         dbRows = await fetchDbApplicants(secondaryClient);
         dbFetchSucceeded = true;
-      } catch {
+      } catch (secondaryErr) {
+        console.error('[JobPostingsPage] secondary applicants fetch failed:', secondaryErr);
         dbRows = [];
         dbFetchSucceeded = false;
       }
     }
+    console.info('[JobPostingsPage] resolveLiveApplicants fetched', {
+      dbFetchSucceeded,
+      dbRows: dbRows.length,
+    });
 
     const toStatus = (rawStatus: string): ReturnType<typeof getApplicants>[number]['status'] => {
       const normalized = normalizeText(rawStatus);
@@ -187,9 +198,25 @@ export const JobPostingsPage = () => {
       return 'New Application';
     };
 
+    const normalizeFuzzy = (value: string) =>
+      normalizeRomanNumeralsInText(String(value ?? ''))
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
+
+    const expandAbbrev = (value: string) =>
+      normalizeFuzzy(value)
+        .replace(/\badmin\b/g, 'administrative')
+        .replace(/\bit\b/g, 'information technology')
+        .replace(/\bhr\b/g, 'human resource');
+
+    const tokensOf = (value: string) =>
+      new Set(expandAbbrev(value).split(/\s+/).filter((t) => t.length >= 3));
+
     const findJobIdFromRow = (row: any) => {
       const position = normalizeText(String(row?.position ?? ''));
       const office = normalizeText(String(row?.office ?? ''));
+      const itemKey = normalizeFuzzy(String(row?.item_number ?? ''));
       const explicitJobId = String(row?.job_posting_id ?? '').trim();
 
       if (explicitJobId) {
@@ -197,12 +224,46 @@ export const JobPostingsPage = () => {
         if (byId) return byId.id;
       }
 
+      // 1) Strict title match
       const sameTitleRows = activeJobs.filter((job) => normalizeText(job.title) === position);
       if (sameTitleRows.length === 1) return sameTitleRows[0].id;
       if (sameTitleRows.length > 1) {
         const sameOffice = sameTitleRows.find((job) => normalizeText(job.department) === office || normalizeText(job.division ?? '') === office);
         if (sameOffice) return sameOffice.id;
         return sameTitleRows[0].id;
+      }
+
+      // 2) Item number match
+      if (itemKey) {
+        const byItem = activeJobs.find((job) => normalizeFuzzy(job.jobCode) === itemKey);
+        if (byItem) return byItem.id;
+      }
+
+      // 3) Fuzzy title match (abbreviation expansion + substring + token overlap)
+      const rowExpanded = expandAbbrev(String(row?.position ?? ''));
+      if (rowExpanded) {
+        const byExpanded = activeJobs.find((job) => {
+          const jobExpanded = expandAbbrev(job.title);
+          if (!jobExpanded) return false;
+          if (rowExpanded === jobExpanded) return true;
+          if (rowExpanded.includes(jobExpanded) || jobExpanded.includes(rowExpanded)) return true;
+          return false;
+        });
+        if (byExpanded) return byExpanded.id;
+
+        const rowTokens = tokensOf(String(row?.position ?? ''));
+        if (rowTokens.size > 0) {
+          const byTokens = activeJobs.find((job) => {
+            const jobTokens = tokensOf(job.title);
+            if (jobTokens.size === 0) return false;
+            const overlap = [...jobTokens].filter((t) => rowTokens.has(t)).length;
+            if (overlap / jobTokens.size < 0.75) return false;
+            const jobOffice = normalizeFuzzy(job.division || job.department || '');
+            const rowOfficeFuzzy = normalizeFuzzy(String(row?.office ?? ''));
+            return !jobOffice || !rowOfficeFuzzy || jobOffice === rowOfficeFuzzy;
+          });
+          if (byTokens) return byTokens.id;
+        }
       }
 
       return null;
@@ -271,7 +332,46 @@ export const JobPostingsPage = () => {
     setJobs(normalizedJobs);
     // Normalize derived stores (legacy jobs/options) from the current source-of-truth list.
     saveJobPostings(normalizedJobs);
+    // Keep the legacy liveApplicants pipeline (other flows like delete depend on it).
     void resolveLiveApplicants(normalizedJobs);
+  }, []);
+
+  // Dedicated fetch for raw applicant rows. This is the source the card counts and
+  // the View Applicants list both consume. Using .select('*') avoids column-drift 400s,
+  // and skipping .order avoids the created_at error seen previously.
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAllApplicants = async () => {
+      try {
+        const { data, error } = await (supabase as any).from('applicants').select('*');
+        if (cancelled) return;
+        if (error) {
+          console.error('[JobPostingsPage] allApplicantsRaw supabase error:', error);
+          setAllApplicantsRaw([]);
+          return;
+        }
+        const rows = Array.isArray(data) ? data : [];
+        console.info('[JobPostingsPage] allApplicantsRaw loaded', { count: rows.length });
+        setAllApplicantsRaw(rows);
+      } catch (err) {
+        if (cancelled) return;
+        console.error('[JobPostingsPage] allApplicantsRaw fetch exception:', err);
+        setAllApplicantsRaw([]);
+      }
+    };
+
+    void loadAllApplicants();
+
+    const refresh = () => { void loadAllApplicants(); };
+    window.addEventListener('focus', refresh);
+    window.addEventListener('cictrix:applicants-updated', refresh as EventListener);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('cictrix:applicants-updated', refresh as EventListener);
+    };
   }, []);
 
   useEffect(() => {
@@ -331,36 +431,40 @@ export const JobPostingsPage = () => {
 
       let applicants = 0;
       let qualified = 0;
-      for (const row of liveApplicants) {
-        // Fuzzy match logic (same as applicant list)
-        const rowItem = normalize(row.item_number || row.jobCode || '');
+      const isQualifiedStatus = (status: string) => {
+        const s = normalize(status);
+        return s.includes('recommend') || s.includes('hired') || s === 'qualified';
+      };
+
+      for (const row of allApplicantsRaw) {
+        const rowItem = normalize(row?.item_number ?? '');
         if (jobItemKey && rowItem && rowItem === jobItemKey) {
           applicants++;
-          if (row.status === 'Recommended for Hiring') qualified++;
+          if (isQualifiedStatus(row?.status)) qualified++;
           continue;
         }
-        const rowPositionNormalized = normalize(row.position);
-        const rowPositionExpanded = expandAbbrev(row.position);
+        const rowPositionNormalized = normalize(row?.position);
+        const rowPositionExpanded = expandAbbrev(row?.position);
         if (!jobTitleKey || !rowPositionNormalized) continue;
         if (rowPositionNormalized === jobTitleKey || rowPositionExpanded === jobTitleExpanded || rowPositionExpanded.includes(jobTitleExpanded) || jobTitleExpanded.includes(rowPositionExpanded)) {
           applicants++;
-          if (row.status === 'Recommended for Hiring') qualified++;
+          if (isQualifiedStatus(row?.status)) qualified++;
           continue;
         }
-        const rowTokens = tokens(row.position);
+        const rowTokens = tokens(row?.position);
         const overlap = [...jobTitleTokens].filter((t) => rowTokens.has(t)).length;
         if (jobTitleTokens.size > 0 && overlap / jobTitleTokens.size >= 0.75) {
-          const rowOffice = normalize(row.office);
+          const rowOffice = normalize(row?.office);
           if (!jobOfficeKey || !rowOffice || rowOffice === jobOfficeKey) {
             applicants++;
-            if (row.status === 'Recommended for Hiring') qualified++;
+            if (isQualifiedStatus(row?.status)) qualified++;
           }
         }
       }
       counts.set(job.id, { applicants, qualified });
     });
     return counts;
-  }, [jobs, liveApplicants]);
+  }, [jobs, allApplicantsRaw]);
 
   useEffect(() => {
     if (!toast) return;
@@ -379,15 +483,66 @@ export const JobPostingsPage = () => {
 
     const fetchRows = async () => {
       setJobApplicantsLoading(true);
+
+      // Supabase is the source of truth. Query it directly. If RLS blocks the select,
+      // surface the error (so we see it in console) rather than silently falling back.
+      const fetchFromSupabase = async (): Promise<{ rows: any[] | null; error: any }> => {
+        // Use select('*') so the query can't fail due to a column name drift between
+        // the TypeScript schema and the actual Supabase table. We read fields defensively.
+        try {
+          const { data, error } = await (supabase as any)
+            .from('applicants')
+            .select('*')
+            .order('created_at', { ascending: false });
+          if (error) return { rows: null, error };
+          return { rows: Array.isArray(data) ? data : [], error: null };
+        } catch (err) {
+          return { rows: null, error: err };
+        }
+      };
+
+      const fetchFromBackend = async (): Promise<any[] | null> => {
+        try {
+          const res = await fetch('/api/applicants/?skip=0&limit=1000');
+          if (!res.ok) return null;
+          const contentType = res.headers.get('content-type') ?? '';
+          if (!contentType.includes('application/json')) return null;
+          const payload = await res.json();
+          return Array.isArray(payload) ? payload : null;
+        } catch {
+          return null;
+        }
+      };
+
       try {
-        // Use backend API to bypass RLS on Supabase
-        const data = await fetch('/api/applicants/?skip=0&limit=1000').then(r => r.json());
-        
+        // Primary: Supabase
+        const supabaseResult = await fetchFromSupabase();
+        let data: any[] | null = supabaseResult.rows;
+        let source = 'supabase';
+
+        if (supabaseResult.error) {
+          console.error('[JobPostingsPage] supabase select error:', supabaseResult.error);
+        }
+
+        // Only fall through to the backend when Supabase truly failed (not when it
+        // succeeded but returned zero rows). An RLS policy that returns zero rows is
+        // indistinguishable here from "there are none", so we try backend as a second
+        // chance when rows is null OR when rows is empty and backend might have more.
+        if (!data || data.length === 0) {
+          const backendData = await fetchFromBackend();
+          if (backendData && backendData.length > 0) {
+            data = backendData;
+            source = 'backend';
+          }
+        }
+
         if (cancelled) return;
-        if (!Array.isArray(data)) {
+        if (!data) {
+          console.warn('[JobPostingsPage] no applicants source reachable. Check Supabase RLS or backend on :8000.');
           setJobApplicantsRows([]);
           return;
         }
+        console.info(`[JobPostingsPage] applicants loaded from ${source} (${data.length} rows)`);
 
         const normalize = (value: string) =>
           normalizeRomanNumeralsInText(String(value ?? ''))
@@ -745,7 +900,9 @@ export const JobPostingsPage = () => {
             <article
               key={a.id}
               className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
-              onClick={() => navigate(`/admin/rsp/applicant/${a.id}`)}
+              onClick={() => navigate(`/admin/rsp/applicant/${a.id}`, {
+                state: { from: '/admin/rsp/jobs', job: { id: job.id, title: job.title, jobCode: job.jobCode } },
+              })}
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-start gap-3 min-w-0">

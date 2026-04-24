@@ -724,7 +724,13 @@ export function InterviewerApplicantsList() {
         )}
       </div>
 
-      {activeApplicant && (
+      {activeApplicant && (() => {
+        const normStatus = (activeApplicant.status || '').toLowerCase();
+        const isDisqualified = normStatus.includes('not qualified') || normStatus.includes('disqual');
+        const isQualified = normStatus.includes('qualified') || normStatus.includes('recommend') || normStatus.includes('hired');
+        const isFinalStatus = isDisqualified || isQualified;
+
+        return (
         <div className="applicant-details-overlay" onClick={closeApplicantDetails}>
           <div className="applicant-details-modal" onClick={(event) => event.stopPropagation()}>
             <div className="applicant-details-header">
@@ -736,13 +742,13 @@ export function InterviewerApplicantsList() {
                 <button type="button" className="details-btn details-btn-neutral" onClick={() => setShowMessageDialog(true)}>
                   <Plane size={16} /> Send Message
                 </button>
-                <button type="button" className="details-btn details-btn-danger" onClick={() => void updateApplicantStatus(activeApplicant.id, 'Not Qualified')}>
+                <button type="button" className="details-btn details-btn-danger" disabled={isFinalStatus} onClick={() => void updateApplicantStatus(activeApplicant.id, 'Not Qualified')}>
                   <AlertCircle size={16} /> Disqualify
                 </button>
-                <button type="button" className="details-btn details-btn-primary" onClick={() => void updateApplicantStatus(activeApplicant.id, 'Shortlisted')}>
+                <button type="button" className="details-btn details-btn-primary" disabled={isFinalStatus} onClick={() => void updateApplicantStatus(activeApplicant.id, 'Shortlisted')}>
                   <Star size={16} /> Shortlist
                 </button>
-                <button type="button" className="details-btn details-btn-success" onClick={() => void updateApplicantStatus(activeApplicant.id, 'Recommended for Hiring')}>
+                <button type="button" className="details-btn details-btn-success" disabled={isFinalStatus} onClick={() => void updateApplicantStatus(activeApplicant.id, 'Recommended for Hiring')}>
                   <CheckCircle2 size={16} /> Qualify
                 </button>
                 <button type="button" className="details-close-btn" onClick={closeApplicantDetails}>
@@ -763,10 +769,10 @@ export function InterviewerApplicantsList() {
                   className={`details-tab ${activeTab === tab.key ? 'active' : ''}`}
                   onClick={() => setActiveTab(tab.key as ApplicantDetailsTab)}
                 >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
             <div className="details-content-grid">
               <aside className="applicant-summary-card">
@@ -897,7 +903,7 @@ export function InterviewerApplicantsList() {
             </div>
           </div>
         </div>
-      )}
+      );})()}
 
       {activeApplicant && showMessageDialog && (
         <div className="message-dialog-overlay" onClick={() => setShowMessageDialog(false)}>

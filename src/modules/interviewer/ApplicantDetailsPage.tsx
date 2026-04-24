@@ -652,6 +652,9 @@ export function ApplicantDetailsPage() {
   const [emailBody, setEmailBody] = useState('');
 
   const [applicantStatus, setApplicantStatus] = useState<null | 'shortlist' | 'qualified' | 'disqualify'>(null);
+  const [confirmAction, setConfirmAction] = useState<null | 'qualified' | 'disqualify'>(null);
+  const [confirmReason, setConfirmReason] = useState('');
+  const [confirmSubmitting, setConfirmSubmitting] = useState(false);
   const [disqualifyReason, setDisqualifyReason] = useState('');
 
   const [applicant, setApplicant] = useState<ApplicantRecord | null>(null);
@@ -896,7 +899,11 @@ export function ApplicantDetailsPage() {
   const backTo = routeState?.from || '/admin/rsp/qualified';
   const sourcePath = routeState?.from || '';
   const isJobScopedQualifiedRoute = /^\/admin\/rsp\/qualified\/[^/?#]+/.test(sourcePath);
-  const isFromJobPosts = sourcePath.startsWith('/admin/rsp/jobs') || isJobScopedQualifiedRoute;
+  // Admin-RSP applicant detail route is the one at /admin/rsp/applicant/:id.
+  // Show Qualify/Shortlist/Disqualify/Send Message buttons whenever we're on that path,
+  // independent of routeState (which is lost on hard refresh or direct navigation).
+  const isOnRspApplicantRoute = location.pathname.startsWith('/admin/rsp/applicant/');
+  const isFromJobPosts = isOnRspApplicantRoute || sourcePath.startsWith('/admin/rsp/jobs') || isJobScopedQualifiedRoute;
   const showViewScoresButton = !isFromJobPosts;
   const showJobPostActionButtons = isFromJobPosts;
   const scoreActionLabel = isScoreFinalized ? 'View Score' : 'Update Score';
@@ -904,6 +911,13 @@ export function ApplicantDetailsPage() {
   const isApplicantDisqualified =
     normalizeText(resolvedStatus ?? '').includes('not qualified') ||
     normalizeText(resolvedStatus ?? '').includes('disqual');
+  const isApplicantQualified =
+    normalizeText(resolvedStatus ?? '').includes('recommend') ||
+    normalizeText(resolvedStatus ?? '') === 'qualified';
+  const isApplicantShortlisted = normalizeText(resolvedStatus ?? '').includes('shortlist');
+  // Once any decision (shortlist, qualify, or disqualify) is saved, all three header buttons lock.
+  // Only lock buttons for terminal states (qualified or disqualified)
+  const hasFinalDecision = isApplicantQualified || isApplicantDisqualified;
   const primaryEducation = recruitmentApplicant?.education?.[0] ?? null;
   const primaryExperience = recruitmentApplicant?.experience?.[0] ?? null;
 
@@ -1069,71 +1083,125 @@ export function ApplicantDetailsPage() {
     }
   };
 
-  const handleSubmitStatusEvaluation = async () => {
-    if (!applicant || !applicantStatus || !recruitmentApplicant) return;
+  const persistStatus = async (
+    action: 'shortlist' | 'qualified' | 'disqualify',
+    reasonInput?: string,
+  ) => {
+    // Only `applicant` (the ApplicantRecord from DB) is required. The richer
+    // `recruitmentApplicant` (Applicant with notes/timeline/etc) may be null for
+    // Supabase-only rows that were never mirrored to the recruitment local store.
+    if (!applicant) {
+      console.warn('[ApplicantDetailsPage] persistStatus called before applicant loaded');
+      return;
+    }
+
+    // Immediately update local status for instant UI feedback
+    setApplicantStatus(action);
 
     const statusMap: Record<'shortlist' | 'qualified' | 'disqualify', Applicant['status']> = {
       shortlist: 'Shortlisted',
       qualified: 'Recommended for Hiring',
       disqualify: 'Not Qualified',
     };
-    const nextStatus = statusMap[applicantStatus];
-    const reason = applicantStatus === 'disqualify' ? disqualifyReason.trim() : null;
+    const nextStatus = statusMap[action];
+    const reason = action === 'disqualify' ? (reasonInput ?? '').trim() : null;
 
-    // Structured JSON payload for the Python backend
-    const payload: {
-      applicant_id: string;
-      status: string;
-      disqualification_reason: string | null;
-    } = {
+    const payload = {
       applicant_id: applicant.id,
-      status: applicantStatus === 'shortlist' ? 'shortlisted'
-        : applicantStatus === 'qualified' ? 'qualified'
-        : 'disqualified',
+      status: nextStatus,
       disqualification_reason: reason || null,
     };
 
-    // POST to Python backend (best-effort; falls back to Supabase)
+    // Persist to backend (best-effort) with Supabase fallback. Errors are logged so
+    // silent failures don't mask RLS / network issues.
+    let backendOk = false;
     try {
-      await fetch(`http://localhost:8000/api/applicants/${applicant.id}/status`, {
+      const res = await fetch(`http://localhost:8000/api/applicants/${applicant.id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-    } catch {
+      backendOk = res.ok;
+      if (!res.ok) {
+        console.warn('[ApplicantDetailsPage] backend PATCH failed', res.status);
+      }
+    } catch (err) {
+      console.warn('[ApplicantDetailsPage] backend PATCH threw', err);
+    }
+    if (!backendOk) {
       try {
         const dbUpdate: Record<string, unknown> = { status: nextStatus };
         if (reason) dbUpdate.disqualification_reason = reason;
-        await (supabase as any).from('applicants').update(dbUpdate).eq('id', applicant.id);
-      } catch {
-        // Best effort persistence only
+        const { error } = await (supabase as any).from('applicants').update(dbUpdate).eq('id', applicant.id);
+        if (error) console.warn('[ApplicantDetailsPage] supabase update error', error);
+      } catch (err) {
+        console.warn('[ApplicantDetailsPage] supabase update threw', err);
       }
     }
 
-    // Update local recruitment store
+    // Build an updated recruitment applicant (for the richer local store), using the
+    // existing recruitmentApplicant as a base when available, or synthesizing a minimal
+    // record from `applicant` fields otherwise.
     const now = new Date().toISOString();
+    const baseNotes = recruitmentApplicant?.notes ?? [];
+    const baseTimeline = recruitmentApplicant?.timeline ?? [];
     const nextNotes = reason
-      ? [{ author: 'RSP Staff', content: `Disqualification reason: ${reason}`, date: now, pinned: false }, ...recruitmentApplicant.notes]
-      : recruitmentApplicant.notes;
-    const nextApplicants = getApplicants().map((entry) => {
-      if (entry.id !== recruitmentApplicant.id) return entry;
-      return {
-        ...entry,
-        status: nextStatus,
-        notes: nextNotes,
-        timeline: [
-          ...entry.timeline,
-          { event: `Status updated to ${nextStatus}${reason ? ` — ${reason}` : ''}`, date: now, actor: 'RSP Staff' },
-        ],
-      };
-    });
+      ? [{ author: 'RSP Staff', content: `Disqualification reason: ${reason}`, date: now, pinned: false }, ...baseNotes]
+      : baseNotes;
+    const nextTimeline = [
+      ...baseTimeline,
+      { event: `Status updated to ${nextStatus}${reason ? ` — ${reason}` : ''}`, date: now, actor: 'RSP Staff' },
+    ];
+
+    const updated: Applicant = recruitmentApplicant
+      ? { ...recruitmentApplicant, status: nextStatus, notes: nextNotes, timeline: nextTimeline }
+      : {
+          id: applicant.id,
+          jobPostingId: '',
+          personalInfo: {
+            firstName: '',
+            lastName: '',
+            email: applicant.email ?? '',
+            phone: applicant.contact_number ?? '',
+            address: applicant.address ?? '',
+            dateOfBirth: new Date('1995-01-01T00:00:00+08:00').toISOString(),
+          },
+          qualificationScore: 0,
+          status: nextStatus,
+          education: [],
+          experience: [],
+          skills: [],
+          certifications: [],
+          documents: [],
+          applicationDate: applicant.created_at ?? now,
+          notes: nextNotes,
+          timeline: nextTimeline,
+        };
+
+    // Mirror to localStorage.
+    const currentLocal = getApplicants();
+    const localIndex = currentLocal.findIndex((entry) => entry.id === applicant.id);
+    const nextApplicants = localIndex >= 0
+      ? currentLocal.map((entry, i) => (i === localIndex ? updated : entry))
+      : [...currentLocal, updated];
     saveApplicants(nextApplicants);
-    const updated = nextApplicants.find((entry) => entry.id === recruitmentApplicant.id) ?? recruitmentApplicant;
+
     setRecruitmentApplicant(updated);
     setApplicant((current) => (current ? { ...current, status: nextStatus } : current));
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('cictrix:applicants-updated'));
     }
+    // If qualified, navigate away (remove from current list)
+    if (action === 'qualified') {
+      setTimeout(() => {
+        navigate(-1); // Go back to previous page/list
+      }, 500);
+    }
+  };
+
+  const handleSubmitStatusEvaluation = async () => {
+    if (!applicantStatus) return;
+    await persistStatus(applicantStatus, applicantStatus === 'disqualify' ? disqualifyReason : undefined);
   };
 
   const handleSaveScoreSetup = async () => {
@@ -1273,22 +1341,22 @@ export function ApplicantDetailsPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setApplicantStatus('disqualify'); setActiveTab('overview'); }}
-                    disabled={applicantStatus === 'qualified'}
-                    className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold shadow-sm ${
-                      applicantStatus === 'disqualify'
+                    onClick={() => { setConfirmAction('disqualify'); setConfirmReason(''); }}
+                    disabled={hasFinalDecision}
+                    className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+                      isApplicantDisqualified
                         ? 'border-rose-500 bg-rose-600 text-white'
                         : 'border-rose-200 bg-white text-rose-700'
-                    } disabled:cursor-not-allowed disabled:opacity-40`}
+                    }`}
                   >
                     <CircleX size={14} /> Disqualify
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setApplicantStatus('shortlist'); setActiveTab('overview'); }}
-                    disabled={isApplicantDisqualified}
+                    onClick={() => { void persistStatus('shortlist'); }}
+                    disabled={hasFinalDecision}
                     className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
-                      applicantStatus === 'shortlist'
+                      isApplicantShortlisted
                         ? 'bg-blue-700 text-white'
                         : 'bg-blue-600 text-white'
                     }`}
@@ -1297,10 +1365,10 @@ export function ApplicantDetailsPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setApplicantStatus('qualified'); setActiveTab('overview'); }}
-                    disabled={isApplicantDisqualified || applicantStatus === 'disqualify'}
+                    onClick={() => { setConfirmAction('qualified'); }}
+                    disabled={hasFinalDecision}
                     className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
-                      applicantStatus === 'qualified'
+                      isApplicantQualified
                         ? 'bg-emerald-700 text-white'
                         : 'bg-emerald-600 text-white'
                     }`}
@@ -1372,90 +1440,33 @@ export function ApplicantDetailsPage() {
                     </div>
                   </article>
 
-                  {showJobPostActionButtons && (
-                    <article className="rounded-xl border border-slate-200">
-                      <h3 className="border-b border-slate-200 px-3 py-2 text-2xl font-semibold text-slate-900">Status Evaluation</h3>
-                      <div className="px-3 py-3 space-y-3">
-                        {/* Mutually exclusive toggle pills */}
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setApplicantStatus(applicantStatus === 'shortlist' ? null : 'shortlist')}
-                            disabled={isApplicantDisqualified}
-                            className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border px-4 py-2.5 text-sm font-semibold transition ${
-                              applicantStatus === 'shortlist'
-                                ? 'border-blue-500 bg-blue-600 text-white'
-                                : 'border-slate-300 bg-white text-slate-700 hover:border-blue-400 hover:text-blue-700'
-                            } disabled:cursor-not-allowed disabled:opacity-40`}
-                          >
-                            <Star size={14} /> Shortlist
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setApplicantStatus(applicantStatus === 'qualified' ? null : 'qualified')}
-                            disabled={isApplicantDisqualified}
-                            className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border px-4 py-2.5 text-sm font-semibold transition ${
-                              applicantStatus === 'qualified'
-                                ? 'border-emerald-500 bg-emerald-600 text-white'
-                                : 'border-slate-300 bg-white text-slate-700 hover:border-emerald-400 hover:text-emerald-700'
-                            } disabled:cursor-not-allowed disabled:opacity-40`}
-                          >
-                            <CheckCircle2 size={14} /> Qualify
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => { setApplicantStatus(applicantStatus === 'disqualify' ? null : 'disqualify'); if (applicantStatus === 'disqualify') setDisqualifyReason(''); }}
-                            className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border px-4 py-2.5 text-sm font-semibold transition ${
-                              applicantStatus === 'disqualify'
-                                ? 'border-rose-500 bg-rose-600 text-white'
-                                : 'border-rose-200 bg-white text-rose-700 hover:border-rose-400'
-                            }`}
-                          >
-                            <CircleX size={14} /> Disqualify
-                          </button>
-                        </div>
-
-                        {/* Conditional textarea — required when Disqualify is active */}
-                        {applicantStatus === 'disqualify' && (
-                          <div>
-                            <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                              Reason for Disqualification <span className="text-rose-500">*</span>
-                            </label>
-                            <textarea
-                              rows={3}
-                              value={disqualifyReason}
-                              onChange={(e) => setDisqualifyReason(e.target.value)}
-                              placeholder="Please provide a detailed reason for disqualification..."
-                              className="w-full resize-none rounded-xl border border-rose-300 bg-white px-4 py-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-100"
-                            />
-                            {disqualifyReason.trim().length === 0 && (
-                              <p className="mt-1 text-xs text-rose-500">A disqualification reason is required before saving.</p>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Save Status button — disabled when disqualify + no reason */}
-                        {applicantStatus !== null && !isApplicantDisqualified && (
-                          <div className="flex justify-end">
-                            <button
-                              type="button"
-                              onClick={() => void handleSubmitStatusEvaluation()}
-                              disabled={applicantStatus === 'disqualify' && disqualifyReason.trim().length === 0}
-                              className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              Save Status
-                            </button>
-                          </div>
-                        )}
-
-                        {isApplicantDisqualified && (
-                          <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-700 font-medium">
-                            This applicant has been disqualified. Shortlist and Qualify are locked.
-                          </p>
-                        )}
+                  <article className="rounded-xl border border-slate-200">
+                    <h3 className="border-b border-slate-200 px-3 py-2 text-2xl font-semibold text-slate-900">Qualifications</h3>
+                    <div className="grid grid-cols-1 gap-0 px-3 py-1 md:grid-cols-2">
+                      <div className="border-b border-slate-100 py-2.5">
+                        <p className="font-semibold text-slate-500">Education</p>
+                        <p className="text-sm text-slate-900">
+                          {primaryEducation
+                            ? [primaryEducation.degree, primaryEducation.school].filter(Boolean).join(', ') || '--'
+                            : '--'}
+                        </p>
                       </div>
-                    </article>
-                  )}
+                      <div className="border-b border-slate-100 py-2.5">
+                        <p className="font-semibold text-slate-500">Work Experience</p>
+                        <p className="text-sm text-slate-900">
+                          {primaryExperience
+                            ? `${primaryExperience.years} year${primaryExperience.years === 1 ? '' : 's'} as ${primaryExperience.title}`
+                            : '--'}
+                        </p>
+                      </div>
+                      <div className="py-2.5 md:col-span-2">
+                        <p className="font-semibold text-slate-500">Application Date</p>
+                        <p className="text-sm text-slate-900">{formatDate(applicant.created_at)}</p>
+                      </div>
+                    </div>
+                  </article>
+
+                  {/* Status Evaluation section removed as requested */}
 
                   <article className="rounded-xl border border-slate-200">
                     <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
@@ -2004,6 +2015,88 @@ export function ApplicantDetailsPage() {
           </div>
         </div>
       )}
+
+      {confirmAction && (() => {
+        const isDisqualify = confirmAction === 'disqualify';
+        const canConfirm = !confirmSubmitting && (!isDisqualify || confirmReason.trim().length > 0);
+        return (
+          <div
+            className="fixed inset-0 z-[250] flex items-center justify-center bg-black/50 p-4"
+            onClick={() => !confirmSubmitting && setConfirmAction(null)}
+          >
+            <div
+              className="w-full max-w-md rounded-2xl bg-white shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start gap-3 px-6 pt-6">
+                <div
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${
+                    isDisqualify ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'
+                  }`}
+                >
+                  {isDisqualify ? <CircleX size={22} /> : <CheckCircle2 size={22} />}
+                </div>
+                <div className="flex-1">
+                  <h3 className="!mb-1 text-lg font-bold text-slate-900">
+                    {isDisqualify ? 'Disqualify this applicant?' : 'Qualify this applicant?'}
+                  </h3>
+                  <p className="!mb-0 text-sm text-slate-600">
+                    {isDisqualify
+                      ? `This will mark ${fullName} as not qualified. This action cannot be undone from this screen.`
+                      : `This will recommend ${fullName} for hiring. This action cannot be undone from this screen.`}
+                  </p>
+                </div>
+              </div>
+
+              {isDisqualify && (
+                <div className="px-6 pt-4">
+                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                    Reason for disqualification <span className="text-rose-500">*</span>
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={confirmReason}
+                    onChange={(event) => setConfirmReason(event.target.value)}
+                    placeholder="Please provide a clear reason…"
+                    className="w-full resize-none rounded-xl border border-rose-300 bg-white px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-100"
+                  />
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 px-6 pb-6 pt-5">
+                <button
+                  type="button"
+                  onClick={() => setConfirmAction(null)}
+                  disabled={confirmSubmitting}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!canConfirm) return;
+                    setConfirmSubmitting(true);
+                    try {
+                      await persistStatus(confirmAction, isDisqualify ? confirmReason : undefined);
+                      setConfirmAction(null);
+                      setConfirmReason('');
+                    } finally {
+                      setConfirmSubmitting(false);
+                    }
+                  }}
+                  disabled={!canConfirm}
+                  className={`rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50 ${
+                    isDisqualify ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                  }`}
+                >
+                  {confirmSubmitting ? 'Saving…' : 'OK'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
