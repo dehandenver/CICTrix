@@ -88,7 +88,23 @@ const fetchEvaluationsFromClient = async (client: any): Promise<any[]> => {
 const normalizeText = (value: string) => value.trim().toLowerCase();
 
 const buildJobsFromPostings = (jobRows: RecruitmentJobPosting[], allApplicants: any[]) => {
-  const activeJobs = (jobRows || []).filter((job) => String(job?.status || '').toLowerCase() === 'active');
+  // Dedup defensively: same posting may exist twice in Supabase (e.g. created via
+  // both job_postings and jobs tables, or a duplicate row was inserted). Keep the
+  // first occurrence by jobCode → falls back to normalized title when jobCode is
+  // empty. This is a display-layer guard and does not modify the DB.
+  const seenKeys = new Set<string>();
+  const dedupedRows: RecruitmentJobPosting[] = [];
+  for (const job of jobRows || []) {
+    const code = String(job?.jobCode || '').trim();
+    const title = normalizeText(String(job?.title || ''));
+    const key = code || title;
+    if (!key) continue;
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    dedupedRows.push(job);
+  }
+
+  const activeJobs = dedupedRows.filter((job) => String(job?.status || '').toLowerCase() === 'active');
   const activeTitleSet = new Set(activeJobs.map((job) => normalizeText(String(job?.title || ''))).filter(Boolean));
 
   const visibleApplicants = (allApplicants || []).filter((applicant) => {

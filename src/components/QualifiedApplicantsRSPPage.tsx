@@ -3,6 +3,10 @@ import { QualifiedApplicantsSection } from './QualifiedApplicantsSection';
 import { Sidebar } from './Sidebar';
 import { ATTACHMENTS_BUCKET, supabase } from '../lib/supabase';
 import { runSingleFlight } from '../lib/singleFlight';
+import { buildEvaluationSnapshotMap, subscribeToEvaluationChanges, type EvaluationSnapshot } from '../lib/evaluationScores';
+import { mockDatabase } from '../lib/mockDatabase';
+import { getPreferredDataSourceMode } from '../lib/dataSourceMode';
+import { isMockModeEnabled } from '../lib/supabase';
 
 export interface ApplicantRecord {
   id: string;
@@ -14,11 +18,15 @@ export interface ApplicantRecord {
   status: string;
   created_at: string;
   total_score: number | null;
+  application_type?: string | null;
 }
+
+export type InterviewerEvaluation = EvaluationSnapshot;
 
 export const QualifiedApplicantsRSPPage = () => {
   const [applicants, setApplicants] = useState<ApplicantRecord[]>([]);
   const [completedEvaluationIds, setCompletedEvaluationIds] = useState<Set<string>>(new Set());
+  const [evaluationsByApplicant, setEvaluationsByApplicant] = useState<Record<string, InterviewerEvaluation>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -56,12 +64,31 @@ export const QualifiedApplicantsRSPPage = () => {
           }
         };
 
+        const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
+        const primaryClient = preferredMode === 'local' ? (mockDatabase as any) : supabase;
+        const secondaryClient = preferredMode === 'local' ? supabase : (mockDatabase as any);
+
         const [dbApplicants, evaluationsRes] = await Promise.all([
           fetchApplicants(),
-          (supabase as any).from('evaluations').select('*'),
+          Promise.allSettled([
+            (primaryClient as any).from('evaluations').select('*'),
+            (secondaryClient as any).from('evaluations').select('*'),
+          ]),
         ]);
-        const dbEvaluations = (evaluationsRes as any)?.data || [];
-        console.info('[QualifiedApplicantsRSPPage] loaded', { applicants: dbApplicants.length });
+        const [primaryEval, secondaryEval] = evaluationsRes;
+        const primaryEvalRows = primaryEval.status === 'fulfilled' && !(primaryEval.value as any)?.error
+          ? (((primaryEval.value as any)?.data || []) as any[])
+          : [];
+        const secondaryEvalRows = secondaryEval.status === 'fulfilled' && !(secondaryEval.value as any)?.error
+          ? (((secondaryEval.value as any)?.data || []) as any[])
+          : [];
+        const dbEvaluations = [...primaryEvalRows, ...secondaryEvalRows];
+        console.info('[QualifiedApplicantsRSPPage] loaded', {
+          applicants: dbApplicants.length,
+          evaluations: dbEvaluations.length,
+          sampleEvaluationKeys: dbEvaluations[0] ? Object.keys(dbEvaluations[0]) : null,
+          sampleEvaluation: dbEvaluations[0] ?? null,
+        });
 
         const mappedApplicants: ApplicantRecord[] = dbApplicants.map((row: any) => {
           // Concatenate separate name fields into full_name
@@ -80,19 +107,24 @@ export const QualifiedApplicantsRSPPage = () => {
             status: String(row?.status || ''),
             created_at: String(row?.created_at || ''),
             total_score: row?.total_score ? Number(row.total_score) : null,
+            application_type: row?.application_type ?? null,
           };
         });
 
         setApplicants(mappedApplicants);
 
-        // Track which evaluations are completed
+        const evaluationMap = buildEvaluationSnapshotMap(dbEvaluations);
         const completedIds = new Set<string>();
-        dbEvaluations.forEach((evaluation: any) => {
-          if (evaluation?.applicant_id && evaluation?.status === 'completed') {
-            completedIds.add(String(evaluation.applicant_id));
+        const byApplicant: Record<string, InterviewerEvaluation> = {};
+
+        evaluationMap.forEach((snapshot) => {
+          if (snapshot.completed) {
+            completedIds.add(snapshot.applicantId);
           }
+          byApplicant[snapshot.applicantId] = snapshot;
         });
         setCompletedEvaluationIds(completedIds);
+        setEvaluationsByApplicant(byApplicant);
       } catch (error) {
         console.error('Error loading qualified applicants:', error);
       } finally {
@@ -101,8 +133,12 @@ export const QualifiedApplicantsRSPPage = () => {
     };
 
     loadData();
+    const unsubscribeEvaluations = subscribeToEvaluationChanges(() => {
+      void loadData();
+    });
     window.addEventListener('cictrix:applicants-updated', loadData);
     return () => {
+      unsubscribeEvaluations();
       window.removeEventListener('cictrix:applicants-updated', loadData);
     };
   }, []);
@@ -122,7 +158,11 @@ export const QualifiedApplicantsRSPPage = () => {
     <div className="admin-layout">
       <Sidebar activeModule="RSP" userRole="rsp" />
       <main className="admin-content bg-slate-50">
-        <QualifiedApplicantsSection applicants={applicants} completedEvaluationIds={completedEvaluationIds} />
+        <QualifiedApplicantsSection
+          applicants={applicants}
+          completedEvaluationIds={completedEvaluationIds}
+          evaluationsByApplicant={evaluationsByApplicant}
+        />
       </main>
     </div>
   );

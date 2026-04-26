@@ -1112,31 +1112,54 @@ export function ApplicantDetailsPage() {
       disqualification_reason: reason || null,
     };
 
-    // Persist to backend (best-effort) with Supabase fallback. Errors are logged so
-    // silent failures don't mask RLS / network issues.
-    let backendOk = false;
+    // Persist to backend (best-effort) with Supabase fallback. Uses relative /api/
+    // so Vite's proxy handles routing. Verifies Supabase update actually affected
+    // a row (RLS can cause a zero-row silent update with error:null).
+    let persisted = false;
     try {
-      const res = await fetch(`http://localhost:8000/api/applicants/${applicant.id}/status`, {
+      const res = await fetch(`/api/applicants/${applicant.id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      backendOk = res.ok;
-      if (!res.ok) {
+      if (res.ok) {
+        persisted = true;
+        console.info('[ApplicantDetailsPage] backend PATCH ok');
+      } else {
         console.warn('[ApplicantDetailsPage] backend PATCH failed', res.status);
       }
     } catch (err) {
       console.warn('[ApplicantDetailsPage] backend PATCH threw', err);
     }
-    if (!backendOk) {
+
+    if (!persisted) {
       try {
         const dbUpdate: Record<string, unknown> = { status: nextStatus };
         if (reason) dbUpdate.disqualification_reason = reason;
-        const { error } = await (supabase as any).from('applicants').update(dbUpdate).eq('id', applicant.id);
-        if (error) console.warn('[ApplicantDetailsPage] supabase update error', error);
+        const { data: updatedRows, error } = await (supabase as any)
+          .from('applicants')
+          .update(dbUpdate)
+          .eq('id', applicant.id)
+          .select('id, status');
+        if (error) {
+          console.error('[ApplicantDetailsPage] supabase update error', error);
+        } else if (!Array.isArray(updatedRows) || updatedRows.length === 0) {
+          console.error(
+            '[ApplicantDetailsPage] supabase update returned 0 rows — likely RLS blocking UPDATE on applicants for this role',
+          );
+        } else {
+          persisted = true;
+          console.info('[ApplicantDetailsPage] supabase update ok', updatedRows[0]);
+        }
       } catch (err) {
-        console.warn('[ApplicantDetailsPage] supabase update threw', err);
+        console.error('[ApplicantDetailsPage] supabase update threw', err);
       }
+    }
+
+    if (!persisted) {
+      console.error(
+        '[ApplicantDetailsPage] status NOT persisted to DB. Local UI updated only. Backend + Supabase both failed.',
+      );
     }
 
     // Build an updated recruitment applicant (for the richer local store), using the

@@ -598,18 +598,30 @@ export const JobPostingsPage = () => {
           return false;
         };
 
+        // Local status overrides: persistStatus writes status changes to the
+        // recruitment store in localStorage. When RLS blocks the DB update, the UI
+        // would otherwise show stale status. Overlay localStorage status on the DB
+        // row so the user sees their own actions immediately.
+        const localApplicants = getApplicants();
+        const localStatusById = new Map<string, string>();
+        for (const entry of localApplicants) {
+          if (entry?.id && entry?.status) localStatusById.set(String(entry.id), String(entry.status));
+        }
+
         const mapped = data.map((row: any) => {
           const firstName = String(row.first_name ?? '').trim();
           const middleName = String(row.middle_name ?? '').trim();
           const lastName = String(row.last_name ?? '').trim();
           const middleInitial = middleName ? `${middleName.charAt(0).toUpperCase()}.` : '';
           const fullName = [firstName, middleInitial, lastName].filter(Boolean).join(' ');
+          const rowId = String(row.id);
+          const localStatus = localStatusById.get(rowId);
           return {
-            id: String(row.id),
+            id: rowId,
             full_name: fullName,
             email: String(row.email ?? ''),
             contact_number: String(row.contact_number ?? ''),
-            status: String(row.status ?? 'New Application'),
+            status: localStatus ?? String(row.status ?? 'New Application'),
             created_at: String(row.created_at ?? ''),
             total_score: typeof row.total_score === 'number' ? row.total_score : null,
             position: String(row.position ?? ''),

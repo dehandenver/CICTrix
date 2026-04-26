@@ -20,6 +20,11 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ATTACHMENTS_BUCKET, supabase } from '../lib/supabase';
+import {
+  fetchLatestEvaluationForApplicantOrEmailAnySource,
+  subscribeToEvaluationChanges,
+  type EvaluationSnapshot,
+} from '../lib/evaluationScores';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -33,6 +38,9 @@ export interface ApplicantRecord {
   status: string;
   created_at: string;
   total_score: number | null;
+  /** 'promotion' = applicant is a current employee (verified via wizard auth);
+      'job' / null = new applicant. Drives appointment-type lock in scoring modal. */
+  application_type?: string | null;
 }
 
 interface ScoringCat {
@@ -190,6 +198,18 @@ const calcModalScore = (
          (scores.writtenExam.finalScore ?? 0) * 0.30 +
          (scores.pcpt.finalScore       ?? 0);
 };
+
+const pcptRawToConvertedScore = (raw: number) => {
+  if (raw >= 35) return 20;
+  if (raw >= 32) return 18;
+  if (raw >= 29) return 16;
+  if (raw >= 26) return 14;
+  if (raw >= 23) return 12;
+  if (raw >= 20) return 10;
+  return +Math.max(0, Math.min(20, (raw / 30) * 20)).toFixed(1);
+};
+
+const writtenExamRawToConvertedScore = (raw: number) => +((raw || 0) * 0.30).toFixed(2);
 
 const getAdjectival = (score: number) =>
   ADJECTIVAL_RANGES.find(r => score >= r.min && score <= r.max) ?? ADJECTIVAL_RANGES[4];
@@ -401,19 +421,104 @@ interface ApplicantScoringModalProps {
   applicant:    ApplicantRecord;
   savedScores:  Record<string, ApplicantCategoryScores>;
   allApplicants: ApplicantRecord[];
+  evaluation?:  EvaluationSnapshot | null;
   onClose:      () => void;
   onSave:       (applicantId: string, scores: ApplicantCategoryScores) => void;
 }
 
-const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, onClose, onSave }: ApplicantScoringModalProps) => {
-  const [scores, setScores] = useState<ApplicantCategoryScores>(() => deriveInitial(applicant, savedScores));
-  const [apptType,  setApptType]  = useState<AppointmentType>(savedScores[applicant.id]?.appointmentType ?? 'original');
+const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluation, onClose, onSave }: ApplicantScoringModalProps) => {
+  // Current employees (verified at wizard time via employee auth) submit with
+  // application_type === 'promotion'. Their evaluation must be locked to a
+  // Promotional Appointment — Original is invalid for an existing employee.
+  const isCurrentEmployee = String(applicant.application_type ?? '').toLowerCase() === 'promotion';
+
+  const hasPersistedScores = Boolean(savedScores[applicant.id]);
+  // Build initial scores from saved/derived values, then overlay the interviewer's
+  // saved evaluation so PCPT (and any other interviewer-owned fields) reflect what
+  // they actually entered in the interviewer portal — not the rough percentage guess.
+  const [scores, setScores] = useState<ApplicantCategoryScores>(() => {
+    const base = deriveInitial(applicant, savedScores);
+    const pcptRaw = typeof evaluation?.pcptRawScore === 'number'
+      ? evaluation.pcptRawScore
+        : null;
+    const writtenRaw = typeof evaluation?.writtenExamRawScore === 'number'
+      ? evaluation.writtenExamRawScore
+      : null;
+    return {
+      ...base,
+      pcpt: { ...base.pcpt, initialScore: pcptRaw ?? base.pcpt.initialScore, finalScore: pcptRaw === null ? base.pcpt.finalScore : pcptRawToConvertedScore(pcptRaw) },
+      writtenExam: { ...base.writtenExam, initialScore: writtenRaw ?? base.writtenExam.initialScore, finalScore: writtenRaw ?? base.writtenExam.finalScore },
+    };
+  });
+  const [apptType,  setApptType]  = useState<AppointmentType>(
+    isCurrentEmployee ? 'promotional' : (savedScores[applicant.id]?.appointmentType ?? 'original'),
+  );
   const [posType,   setPosType]   = useState<PositionType>(savedScores[applicant.id]?.positionType ?? 'rank-and-file');
-  const [isFinalized, setIsFinalized] = useState(false);
+  const [isFinalized, setIsFinalized] = useState(hasPersistedScores);
   const [saving,    setSaving]    = useState(false);
   const [filesModal, setFilesModal] = useState<{ catKey: CatKey; files: AttachmentRow[] } | null>(null);
   const [attachments, setAttachments] = useState<AttachmentRow[]>([]);
   const [loadingFiles, setLoadingFiles] = useState(false);
+  const [liveEvaluation, setLiveEvaluation] = useState<EvaluationSnapshot | null>(evaluation ?? null);
+
+  useEffect(() => {
+    setLiveEvaluation(evaluation ?? null);
+  }, [evaluation]);
+
+  useEffect(() => {
+    setIsFinalized(Boolean(savedScores[applicant.id]));
+  }, [applicant.id, savedScores]);
+
+  useEffect(() => {
+    let disposed = false;
+
+    const refresh = async () => {
+      const latest = await fetchLatestEvaluationForApplicantOrEmailAnySource(applicant.id, applicant.email, supabase);
+      if (!disposed && latest) {
+        setLiveEvaluation(latest);
+      }
+    };
+
+    void refresh();
+    const unsubscribe = subscribeToEvaluationChanges(() => {
+      void refresh();
+    });
+    const onApplicantsUpdated = () => {
+      void refresh();
+    };
+    window.addEventListener('cictrix:applicants-updated', onApplicantsUpdated as EventListener);
+
+    return () => {
+      disposed = true;
+      unsubscribe();
+      window.removeEventListener('cictrix:applicants-updated', onApplicantsUpdated as EventListener);
+    };
+  }, [applicant.id, applicant.email]);
+
+  useEffect(() => {
+    const base = deriveInitial(applicant, savedScores);
+    const pcptRaw = typeof liveEvaluation?.pcptRawScore === 'number'
+      ? liveEvaluation.pcptRawScore
+        : null;
+    const writtenRaw = typeof liveEvaluation?.writtenExamRawScore === 'number'
+      ? liveEvaluation.writtenExamRawScore
+      : null;
+
+    setScores((current) => ({
+      ...current,
+      ...base,
+      pcpt: {
+        ...base.pcpt,
+        initialScore: pcptRaw ?? current.pcpt.initialScore,
+        finalScore: pcptRaw === null ? current.pcpt.finalScore : pcptRawToConvertedScore(pcptRaw),
+      },
+      writtenExam: {
+        ...base.writtenExam,
+        initialScore: writtenRaw ?? current.writtenExam.initialScore,
+        finalScore: writtenRaw ?? current.writtenExam.finalScore,
+      },
+    }));
+  }, [applicant.id, liveEvaluation?.applicantId, liveEvaluation?.pcptRawScore, liveEvaluation?.writtenExamRawScore, savedScores]);
 
   // Load attachments for this applicant
   useEffect(() => {
@@ -508,23 +613,47 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, onClose,
                 <RefreshCw size={15} style={{ color: '#2563eb' }} /> Select Appointment Type
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                {(['original', 'promotional'] as AppointmentType[]).map(t => (
-                  <button
-                    key={t} type="button" disabled={isFinalized}
-                    onClick={() => setApptType(t)}
-                    style={{ border: `2px solid ${apptType === t ? '#2563eb' : '#e2e8f0'}`, borderRadius: 10, padding: '0.9rem 1rem', cursor: isFinalized ? 'default' : 'pointer', background: apptType === t ? '#eff6ff' : '#fff', textAlign: 'left' }}
-                  >
-                    <p style={{ margin: 0, fontWeight: 700, color: '#0f172a', fontSize: '0.9rem' }}>
-                      {t === 'original' ? 'Original Appointment' : 'Promotional Appointment'}
-                    </p>
-                    <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem', color: '#64748b' }}>
-                      {t === 'original'
-                        ? 'Education • Experience • Written Exam • Oral Exam* • PCPT*'
-                        : 'Education • Experience • Performance • PCPT* • Potential'}
-                    </p>
-                    <p style={{ margin: '0.15rem 0 0', fontSize: '0.73rem', color: '#94a3b8' }}>*Interviewer-provided</p>
-                  </button>
-                ))}
+                {(['original', 'promotional'] as AppointmentType[]).map(t => {
+                  // Lock the Original button when applicant is a current employee.
+                  const isLockedOriginal = isCurrentEmployee && t === 'original';
+                  const buttonDisabled = isFinalized || isLockedOriginal;
+                  return (
+                    <button
+                      key={t} type="button" disabled={buttonDisabled}
+                      onClick={() => { if (!buttonDisabled) setApptType(t); }}
+                      title={isLockedOriginal ? 'Locked: applicant is a current employee' : undefined}
+                      style={{
+                        border: `2px solid ${apptType === t ? '#2563eb' : '#e2e8f0'}`,
+                        borderRadius: 10,
+                        padding: '0.9rem 1rem',
+                        cursor: buttonDisabled ? 'not-allowed' : 'pointer',
+                        background: apptType === t ? '#eff6ff' : '#fff',
+                        textAlign: 'left',
+                        opacity: isLockedOriginal ? 0.45 : 1,
+                      }}
+                    >
+                      <p style={{ margin: 0, fontWeight: 700, color: '#0f172a', fontSize: '0.9rem' }}>
+                        {t === 'original' ? 'Original Appointment' : 'Promotional Appointment'}
+                      </p>
+                      <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem', color: '#64748b' }}>
+                        {t === 'original'
+                          ? 'Education • Experience • Written Exam • Oral Exam* • PCPT*'
+                          : 'Education • Experience • Performance • PCPT* • Potential'}
+                      </p>
+                      <p style={{ margin: '0.15rem 0 0', fontSize: '0.73rem', color: '#94a3b8' }}>*Interviewer-provided</p>
+                      {isLockedOriginal && (
+                        <p style={{ margin: '0.35rem 0 0', fontSize: '0.72rem', color: '#dc2626', fontWeight: 600 }}>
+                          Locked — applicant is a current employee
+                        </p>
+                      )}
+                      {isCurrentEmployee && t === 'promotional' && (
+                        <p style={{ margin: '0.35rem 0 0', fontSize: '0.72rem', color: '#1d4ed8', fontWeight: 600 }}>
+                          Auto-set: applicant is a current employee
+                        </p>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Position type toggle (Original only) */}
@@ -755,8 +884,17 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, onClose,
                   const meta = CAT_META[catKey];
                   const cat  = scores[catKey];
                   const max  = apptType === 'promotional' ? meta.maxPromotional : meta.maxOriginal;
+                  const convertedMax = catKey === 'writtenExam' ? 30 : max;
                   const catFiles = getFilesForCat(catKey);
-                  const rawVal = cat.finalScore === null ? '' : String(cat.finalScore);
+                  const interviewerRaw = catKey === 'pcpt'
+                    ? (typeof liveEvaluation?.pcptRawScore === 'number' ? liveEvaluation.pcptRawScore : null)
+                    : (typeof liveEvaluation?.writtenExamRawScore === 'number' ? liveEvaluation.writtenExamRawScore : null);
+                  const rawVal = interviewerRaw !== null
+                    ? String(interviewerRaw)
+                    : (cat.initialScore === 0 ? '' : String(cat.initialScore));
+                  const convertedScore = catKey === 'pcpt'
+                    ? (typeof cat.finalScore === 'number' ? cat.finalScore : 0)
+                    : writtenExamRawToConvertedScore(typeof cat.finalScore === 'number' ? cat.finalScore : 0);
                   return (
                     <div key={catKey} style={{ background: '#fff', border: `1px solid ${meta.border}`, borderRadius: 10, padding: '0.85rem' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', marginBottom: '0.65rem' }}>
@@ -787,7 +925,7 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, onClose,
 
                       <p style={{ margin: '0 0 0.4rem', fontSize: '0.72rem', color: '#64748b', lineHeight: 1.5 }}>{meta.guide}</p>
                       <p style={{ margin: '0 0 0.4rem', fontSize: '0.8rem', color: '#7c3aed', fontWeight: 600 }}>
-                        Converted Score: {cat.finalScore ?? 0}/{max}
+                        Converted Score: {convertedScore}/{convertedMax}
                       </p>
 
                       <button
@@ -1021,9 +1159,13 @@ const EXAM_STYLES: Record<ExamStatus, { bg: string; text: string; dot: string; l
 interface QualifiedApplicantsSectionProps {
   applicants:             ApplicantRecord[];
   completedEvaluationIds: Set<string>;
+  /** Interviewer-saved evaluation rows keyed by applicant id. Optional for backwards
+      compatibility — when absent, the modal falls back to the previous percentage
+      derivation, but the PCPT raw score will read 0 (which is what users were seeing). */
+  evaluationsByApplicant?: Record<string, EvaluationSnapshot>;
 }
 
-export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds }: QualifiedApplicantsSectionProps) => {
+export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds, evaluationsByApplicant }: QualifiedApplicantsSectionProps) => {
   const [search,      setSearch]      = useState('');
   const [posFilter,   setPosFilter]   = useState('all');
   const [offFilter,   setOffFilter]   = useState('all');
@@ -1104,6 +1246,7 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds 
     const updated = { ...catScores, [applicantId]: scores };
     setCatScores(updated);
     localStorage.setItem(CAT_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent('cictrix:category-scores-updated'));
   }, [catScores]);
 
   // Keep openFolder in sync if folders list changes
@@ -1288,6 +1431,7 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds 
           applicant={scoresCtx.applicant}
           allApplicants={scoresCtx.folder.applicants}
           savedScores={catScores}
+          evaluation={evaluationsByApplicant?.[scoresCtx.applicant.id]}
           onClose={() => setScoresCtx(null)}
           onSave={handleSaveCatScores}
         />

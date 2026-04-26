@@ -121,6 +121,24 @@ interface RankingApplicantRow {
   interview: number;
 }
 
+interface StoredScoringCategory {
+  initialScore?: number | null;
+  finalScore?: number | null;
+}
+
+interface StoredApplicantCategoryScores {
+  education?: StoredScoringCategory;
+  experience?: StoredScoringCategory;
+  performance?: StoredScoringCategory;
+  pcpt?: StoredScoringCategory;
+  potential?: StoredScoringCategory;
+  writtenExam?: StoredScoringCategory;
+  appointmentType?: 'original' | 'promotional';
+  positionType?: 'rank-and-file' | 'executive';
+}
+
+const RSP_CATEGORY_SCORES_KEY = 'cictrix_category_scores';
+
 interface AssessmentPositionCard {
   position: string;
   department: string;
@@ -435,6 +453,67 @@ const deriveEvaluationTotalScore = (row: any): number => {
   return Number(Math.min(100, Math.max(0, Math.round((total / 30) * 100))));
 };
 
+const loadStoredCategoryScores = (): Record<string, StoredApplicantCategoryScores> => {
+  try {
+    const raw = localStorage.getItem(RSP_CATEGORY_SCORES_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const hasFinalizedCategoryScores = (entry?: StoredApplicantCategoryScores): boolean => {
+  if (!entry) return false;
+
+  const categories: Array<StoredScoringCategory | undefined> = [
+    entry.education,
+    entry.experience,
+    entry.performance,
+    entry.pcpt,
+    entry.potential,
+    entry.writtenExam,
+  ];
+
+  const hasAnyFinalScore = categories.some((category) => typeof category?.finalScore === 'number');
+  if (hasAnyFinalScore) return true;
+
+  // Backward compatibility: older saves may rely on metadata without explicit final scores.
+  return Boolean(entry.appointmentType || entry.positionType);
+};
+
+const getSavedScoredApplicantIdSet = (): Set<string> => {
+  const scores = loadStoredCategoryScores();
+  return new Set(
+    Object.entries(scores)
+      .filter(([, value]) => hasFinalizedCategoryScores(value))
+      .map(([applicantId]) => applicantId)
+  );
+};
+
+const resolveScoreValue = (category?: StoredScoringCategory): number => {
+  const finalValue = typeof category?.finalScore === 'number' ? category.finalScore : null;
+  if (finalValue !== null) return finalValue;
+  return typeof category?.initialScore === 'number' ? category.initialScore : 0;
+};
+
+const pcptRawToConverted = (raw: number): number => {
+  if (raw >= 35) return 20;
+  if (raw >= 32) return 18;
+  if (raw >= 29) return 16;
+  if (raw >= 26) return 14;
+  if (raw >= 23) return 12;
+  if (raw >= 20) return 10;
+  return Number(Math.max(0, Math.min(20, (raw / 30) * 20)).toFixed(2));
+};
+
+const normalizeWrittenScore = (value: number): number => {
+  // New flow stores written raw score (0-100). Legacy flow may store already-converted <= 30.
+  if (value <= 30) return Number(value.toFixed(2));
+  return Number((value * 0.3).toFixed(2));
+};
+
 const loadRaterAssignments = (): Record<string, string[]> => {
   try {
     const raw = localStorage.getItem(RATER_ASSIGNMENTS_KEY);
@@ -500,6 +579,7 @@ export const RSPDashboard = () => {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [employeeDetailsTab, setEmployeeDetailsTab] = useState<'personal' | 'documents'>('personal');
   const [showPositionChangeModal, setShowPositionChangeModal] = useState(false);
+  const [savedScoredApplicantIds, setSavedScoredApplicantIds] = useState<Set<string>>(getSavedScoredApplicantIdSet);
   const [positionChangeForm, setPositionChangeForm] = useState({
     changeType: 'promotion' as 'promotion' | 'succession' | 'transfer',
     newDepartment: 'IT Department',
@@ -1015,6 +1095,7 @@ export const RSPDashboard = () => {
     const qualifiedByPosition = new Map<string, number>();
 
     applicants.forEach((applicant) => {
+      if (!savedScoredApplicantIds.has(applicant.id)) return;
       const normalizedStatus = (applicant.status || '').toLowerCase();
       const hasQualifiedStatus =
         normalizedStatus.includes('qualified') || normalizedStatus.includes('shortlist') || completedEvaluationIds.has(applicant.id);
@@ -1037,7 +1118,7 @@ export const RSPDashboard = () => {
     });
 
     return Array.from(unique.values()).sort((a, b) => b.qualifiedCount - a.qualifiedCount || a.position.localeCompare(b.position));
-  }, [applicants, completedEvaluationIds, jobs]);
+  }, [applicants, completedEvaluationIds, jobs, savedScoredApplicantIds]);
 
   const activeRankingCard = useMemo(
     () => rankingPositionCards.find((card) => card.position === activeRankingPosition) || null,
@@ -1051,6 +1132,7 @@ export const RSPDashboard = () => {
     if (!eligibleTitles.has(activeRankingPosition)) return [];
 
     const candidates = applicants.filter((applicant) => {
+      if (!savedScoredApplicantIds.has(applicant.id)) return false;
       if (applicant.position !== activeRankingPosition) return false;
       const normalizedStatus = (applicant.status || '').toLowerCase();
       return (
@@ -1061,10 +1143,26 @@ export const RSPDashboard = () => {
       );
     });
 
+    const categoryScores = loadStoredCategoryScores();
+
     const rows = candidates
       .map((applicant) => {
-        const total = Number((applicant.total_score || 0).toFixed(2));
-        const share = Number((total / 5).toFixed(2));
+        const stored = categoryScores[applicant.id];
+        const experience = Number(resolveScoreValue(stored?.experience).toFixed(2));
+        const performance = Number(resolveScoreValue(stored?.performance).toFixed(2));
+        const potential = Number(resolveScoreValue(stored?.potential).toFixed(2));
+
+        const writtenRawOrConverted = resolveScoreValue(stored?.writtenExam);
+        const written = Number(normalizeWrittenScore(writtenRawOrConverted).toFixed(2));
+
+        const pcptRawOrConverted = resolveScoreValue(stored?.pcpt);
+        const interview = Number((pcptRawOrConverted > 20 ? pcptRawToConverted(pcptRawOrConverted) : pcptRawOrConverted).toFixed(2));
+
+        const education = Number(resolveScoreValue(stored?.education).toFixed(2));
+        const computedTotal = Number((education + experience + performance + potential + written + interview).toFixed(2));
+        const fallbackTotal = Number((applicant.total_score || 0).toFixed(2));
+        const total = computedTotal > 0 ? computedTotal : fallbackTotal;
+
         return {
           id: applicant.id,
           fullName: applicant.full_name,
@@ -1072,17 +1170,38 @@ export const RSPDashboard = () => {
           position: applicant.position,
           department: applicant.office || activeRankingCard?.department || 'Unassigned Department',
           total,
-          experience: share,
-          performance: share,
-          potential: share,
-          written: share,
-          interview: Number((total - share * 4).toFixed(2)),
+          experience,
+          performance,
+          potential,
+          written,
+          interview,
         };
       })
       .sort((a, b) => b.total - a.total || a.fullName.localeCompare(b.fullName));
 
     return rows;
-  }, [activeRankingPosition, applicants, completedEvaluationIds, activeRankingCard, jobs]);
+  }, [activeRankingPosition, applicants, completedEvaluationIds, activeRankingCard, jobs, savedScoredApplicantIds]);
+
+  useEffect(() => {
+    const syncSavedScores = () => setSavedScoredApplicantIds(getSavedScoredApplicantIdSet());
+
+    const onStorage = (event: StorageEvent) => {
+      if (!event.key || event.key === RSP_CATEGORY_SCORES_KEY) {
+        syncSavedScores();
+      }
+    };
+
+    syncSavedScores();
+    window.addEventListener('focus', syncSavedScores);
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('cictrix:category-scores-updated', syncSavedScores as EventListener);
+
+    return () => {
+      window.removeEventListener('focus', syncSavedScores);
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('cictrix:category-scores-updated', syncSavedScores as EventListener);
+    };
+  }, []);
 
   const rankingSummary = useMemo(() => {
     if (activeRankingRows.length === 0) {
