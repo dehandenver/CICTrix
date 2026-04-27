@@ -453,6 +453,101 @@ const deriveEvaluationTotalScore = (row: any): number => {
   return Number(Math.min(100, Math.max(0, Math.round((total / 30) * 100))));
 };
 
+// Scoring conversion tables
+const convertEducationScore = (level: string): number => {
+  const levels: Record<string, number> = {
+    'Elementary Level': 10,
+    'Elementary Graduate': 11,
+    'High School Level': 12,
+    'High School Graduate': 13,
+    'College Level': 14,
+    'College Graduate': 16,
+    'Masteral Units': 18,
+    'Graduate School': 20,
+  };
+  return levels[level] || 16;
+};
+
+const convertExperienceScore = (years: number): number => {
+  if (years >= 21) return 18;
+  if (years >= 16) return 18;
+  if (years >= 11) return 16;
+  if (years >= 6) return 14;
+  if (years >= 1) return 12;
+  return 10;
+};
+
+const convertPerformanceScore = (rating: string): number => {
+  const ratings: Record<string, number> = {
+    'Very Satisfactory': 12,
+    'Outstanding': 14,
+  };
+  return ratings[rating] || 12;
+};
+
+const convertPcptScore = (rawScore: number): number => {
+  if (rawScore >= 35) return 20;
+  if (rawScore >= 32) return 18;
+  if (rawScore >= 29) return 16;
+  if (rawScore >= 26) return 14;
+  if (rawScore >= 23) return 12;
+  if (rawScore >= 20) return 10;
+  return 0;
+};
+
+const convertPotentialScore = (rawScore: number): number => {
+  if (rawScore >= 91) return 20;
+  if (rawScore >= 81) return 18;
+  if (rawScore >= 71) return 16;
+  if (rawScore >= 61) return 14;
+  if (rawScore >= 51) return 12;
+  return 0;
+};
+
+const convertWrittenExamScore = (rawScore: number, positionType: 'rank-and-file' | 'executive' = 'rank-and-file'): number => {
+  if (positionType === 'executive') {
+    if (rawScore >= 30) return 20;
+    if (rawScore >= 25) return 18;
+    if (rawScore >= 20) return 16;
+    if (rawScore >= 15) return 14;
+    if (rawScore >= 10) return 12;
+    return 10;
+  } else {
+    if (rawScore >= 26) return 20;
+    if (rawScore >= 21) return 18;
+    if (rawScore >= 16) return 16;
+    if (rawScore >= 11) return 14;
+    if (rawScore >= 10) return 12;
+    return 0;
+  }
+};
+
+const convertOralExamScore = (rawScore: number): number => {
+  if (rawScore >= 96) return 20;
+  if (rawScore >= 91) return 18;
+  if (rawScore >= 86) return 16;
+  if (rawScore >= 81) return 14;
+  if (rawScore >= 76) return 12;
+  return 10;
+};
+
+const calculateTotalScore = (scores: {
+  education: number;
+  experience: number;
+  performance?: number;
+  pcpt: number;
+  potential?: number;
+  writtenExam?: number;
+  oralExam?: number;
+  appointmentType: 'original' | 'promotional';
+}): number => {
+  if (scores.appointmentType === 'original') {
+    return (scores.education + scores.experience + (scores.writtenExam || 0) + (scores.oralExam || 0) + scores.pcpt);
+  } else {
+    return (scores.education + scores.experience + (scores.performance || 0) + scores.pcpt + (scores.potential || 0));
+  }
+};
+
 const loadStoredCategoryScores = (): Record<string, StoredApplicantCategoryScores> => {
   try {
     const raw = localStorage.getItem(RSP_CATEGORY_SCORES_KEY);
@@ -463,6 +558,51 @@ const loadStoredCategoryScores = (): Record<string, StoredApplicantCategoryScore
     return {};
   }
 };
+
+const generateDemoEvaluationScores = (applicants: ApplicantRecord[]): Record<string, number> => {
+  // Generate realistic demo scores for applicants using the conversion tables
+  const demoScores = new Map<string, number>();
+  
+  applicants.slice(0, 4).forEach((applicant, index) => {
+    const appointmentType = index % 2 === 0 ? 'original' : 'promotional';
+    
+    // Generate diverse scores for demo purposes
+    const education = convertEducationScore(['College Graduate', 'Masteral Units', 'Graduate School', 'College Graduate'][index] || 'College Graduate');
+    const experience = convertExperienceScore([3, 8, 12, 6][index] || 5);
+    const pcpt = convertPcptScore([28, 34, 30, 25][index] || 28);
+    
+    let total = 0;
+    if (appointmentType === 'original') {
+      const writtenExam = convertWrittenExamScore([22, 28, 24, 20][index] || 22, 'rank-and-file');
+      const oralExam = convertOralExamScore([85, 92, 88, 82][index] || 85);
+      total = calculateTotalScore({
+        education,
+        experience,
+        writtenExam,
+        oralExam,
+        pcpt,
+        appointmentType,
+      });
+    } else {
+      const performance = convertPerformanceScore(['Outstanding', 'Very Satisfactory', 'Outstanding', 'Very Satisfactory'][index] || 'Outstanding');
+      const potential = convertPotentialScore([75, 88, 82, 70][index] || 75);
+      total = calculateTotalScore({
+        education,
+        experience,
+        performance,
+        potential,
+        pcpt,
+        appointmentType,
+      });
+    }
+    
+    demoScores.set(applicant.id, Math.round(total * 100) / 100);
+  });
+
+  return Object.fromEntries(demoScores);
+};
+
+const DEMO_EVALUATION_SCORES_KEY = 'cictrix_demo_evaluation_scores';
 
 const hasFinalizedCategoryScores = (entry?: StoredApplicantCategoryScores): boolean => {
   if (!entry) return false;
@@ -727,6 +867,8 @@ export const RSPDashboard = () => {
         });
 
         const evaluationBestScore = new Map<string, number>();
+        const evaluationsByApplicantId = new Map<string, any>();
+        
         if (evaluationsRes.status === 'fulfilled' && !evaluationsRes.value.error && Array.isArray(evaluationsRes.value.data)) {
           evaluationsRes.value.data.forEach((item: any) => {
             const applicantId = String(item?.applicant_id ?? '').trim();
@@ -748,6 +890,7 @@ export const RSPDashboard = () => {
                 const current = evaluationBestScore.get(targetId) ?? 0;
                 if (score >= current) {
                   evaluationBestScore.set(targetId, score);
+                  evaluationsByApplicantId.set(targetId, item);
                 }
               });
             }
@@ -812,6 +955,9 @@ export const RSPDashboard = () => {
           });
         });
 
+        // Store evaluations in state for use in Assessment Forms
+        (window as any).__evaluationsByApplicantId = evaluationsByApplicantId;
+        
         setApplicants(Array.from(mergedById.values()));
       } else {
         setApplicants([]);
@@ -1260,7 +1406,15 @@ export const RSPDashboard = () => {
       counts.set(applicant.position, current);
     });
 
-    return reportEligibleJobs
+    // Deduplicate jobs by title - keep only the first occurrence of each position
+    const seenTitles = new Set<string>();
+    const deduplicatedJobs = reportEligibleJobs.filter((job) => {
+      if (seenTitles.has(job.title)) return false;
+      seenTitles.add(job.title);
+      return true;
+    });
+
+    return deduplicatedJobs
       .map((job) => {
         const count = counts.get(job.title) || { total: 0, qualified: 0, hired: 0, disqualified: 0 };
         return {
@@ -1277,10 +1431,18 @@ export const RSPDashboard = () => {
       .sort((a, b) => b.totalApplicants - a.totalApplicants || a.position.localeCompare(b.position));
   }, [jobs, applicants]);
 
-  const activeAssessmentCard = useMemo(
-    () => assessmentPositionCards.find((card) => card.position === activeAssessmentPosition) || null,
-    [assessmentPositionCards, activeAssessmentPosition]
-  );
+  const activeAssessmentCard = useMemo(() => {
+    if (!activeAssessmentPosition) return null;
+    const card = assessmentPositionCards.find((card) => card.position === activeAssessmentPosition);
+    // Fallback: if no exact match, try case-insensitive match
+    if (!card && assessmentPositionCards.length > 0) {
+      const fallback = assessmentPositionCards.find(
+        (card) => card.position.toLowerCase() === activeAssessmentPosition.toLowerCase()
+      );
+      return fallback || null;
+    }
+    return card || null;
+  }, [assessmentPositionCards, activeAssessmentPosition]);
 
   const activeAssessmentApplicants = useMemo(() => {
     if (!activeAssessmentPosition) return [] as ApplicantRecord[];
@@ -4069,95 +4231,216 @@ export const RSPDashboard = () => {
 
       {showRankingModal && activeRankingCard && (
         <div className="fixed inset-0 z-[230] flex items-center justify-center bg-black/45 p-4" onClick={closeRankingReport}>
-          <div className="max-h-[92vh] w-full max-w-6xl overflow-hidden rounded-2xl bg-white" onClick={(event) => event.stopPropagation()}>
-            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border-color)] px-6 py-4">
+          <div className="max-h-[95vh] w-full max-w-5xl overflow-hidden rounded-2xl bg-white" onClick={(event) => event.stopPropagation()}>
+            {/* Header */}
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-5 text-white">
               <div>
-                <h2 className="!mb-1 text-2xl font-semibold text-[var(--text-primary)]">Application Ranking Report</h2>
-                <p className="!mb-0 text-sm text-[var(--text-secondary)]">
-                  {activeRankingCard.position} • {activeRankingCard.department} • {new Date().toLocaleDateString()}
-                </p>
+                <h2 className="!mb-1 text-3xl font-bold">Applicant Ranking Report</h2>
+                <p className="!mb-0 text-base font-medium">{activeRankingCard.position} • {activeRankingCard.department}</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => setShowHireApplicantsModal(true)}
-                  className="rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white"
+                  className="rounded-lg bg-green-500 px-4 py-2 text-sm font-semibold text-white hover:bg-green-600"
                 >
-                  <UserPlus size={16} className="mr-1 inline" /> Select Hired Applicants
+                  👥 Select Hired Applicants
                 </button>
                 <button
                   type="button"
                   onClick={() => window.print()}
-                  className="rounded-lg border border-[var(--border-color)] bg-white px-4 py-2 text-sm font-semibold text-[var(--text-primary)]"
+                  className="rounded-lg border border-white/30 bg-white/20 px-4 py-2 text-sm font-semibold text-white hover:bg-white/30"
                 >
-                  Print Report
+                  🖨️ Print Report
                 </button>
                 <button
                   type="button"
                   onClick={closeRankingReport}
-                  className="rounded-lg border border-[var(--border-color)] bg-white px-3 py-2 text-sm font-semibold text-[var(--text-primary)]"
+                  className="rounded-lg border border-white/30 bg-white/20 px-3 py-2 text-sm font-semibold text-white hover:bg-white/30"
                 >
-                  Close
+                  ✕
                 </button>
               </div>
             </div>
 
-            <div className="max-h-[76vh] space-y-4 overflow-y-auto px-6 py-4">
-              <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
-                <div className="rounded-xl border border-[var(--border-color)] bg-slate-50 p-3">
-                  <p className="!mb-1 text-xs uppercase tracking-wide text-[var(--text-secondary)]">Highest Score</p>
-                  <p className="!mb-0 text-xl font-semibold text-[var(--text-primary)]">{rankingSummary.highest.toFixed(2)}</p>
+            {/* Content */}
+            <div className="max-h-[81vh] space-y-6 overflow-y-auto p-6">
+              {/* Report Title and Metadata */}
+              <div className="text-center">
+                <h1 className="!mb-2 !text-3xl font-bold text-gray-900">Ranking of Qualified Applicants</h1>
+                <p className="!mb-0 text-base text-blue-600 font-medium">(Qualified Applicants Only - Passed Pre-Assessment)</p>
+              </div>
+
+              {/* Position Details */}
+              <div className="text-center">
+                <h2 className="!mb-1 !text-2xl font-semibold text-gray-900">{activeRankingCard.position}</h2>
+                <p className="!mb-0 text-base text-gray-600">{activeRankingCard.department}</p>
+              </div>
+
+              {/* Key Metrics */}
+              <div className="grid grid-cols-4 gap-4">
+                <div className="rounded-lg border-2 border-blue-100 bg-blue-50 p-4">
+                  <p className="!mb-2 text-xs font-semibold uppercase text-gray-600">Report Date</p>
+                  <p className="!mb-0 !text-lg font-bold text-gray-900">{new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
                 </div>
-                <div className="rounded-xl border border-[var(--border-color)] bg-slate-50 p-3">
-                  <p className="!mb-1 text-xs uppercase tracking-wide text-[var(--text-secondary)]">Average Score</p>
-                  <p className="!mb-0 text-xl font-semibold text-[var(--text-primary)]">{rankingSummary.average.toFixed(2)}</p>
+                <div className="rounded-lg border-2 border-blue-100 bg-blue-50 p-4">
+                  <p className="!mb-2 text-xs font-semibold uppercase text-gray-600">Appointment Type</p>
+                  <p className="!mb-0 !text-lg font-bold text-gray-900">PROMOTION</p>
                 </div>
-                <div className="rounded-xl border border-[var(--border-color)] bg-slate-50 p-3">
-                  <p className="!mb-1 text-xs uppercase tracking-wide text-[var(--text-secondary)]">Lowest Score</p>
-                  <p className="!mb-0 text-xl font-semibold text-[var(--text-primary)]">{rankingSummary.lowest.toFixed(2)}</p>
+                <div className="rounded-lg border-2 border-blue-100 bg-blue-50 p-4">
+                  <p className="!mb-2 text-xs font-semibold uppercase text-gray-600">Total Qualified Applicants</p>
+                  <p className="!mb-0 !text-lg font-bold text-gray-900">{activeRankingRows.length}</p>
+                </div>
+                <div className="rounded-lg border-2 border-blue-100 bg-blue-50 p-4">
+                  <p className="!mb-2 text-xs font-semibold uppercase text-gray-600">Score Range</p>
+                  <p className="!mb-0 !text-lg font-bold text-purple-600">{(rankingSummary.highest - rankingSummary.lowest).toFixed(2)}</p>
                 </div>
               </div>
 
-              <div className="overflow-x-auto rounded-xl border border-[var(--border-color)]">
-                <table className="w-full min-w-[960px] border-collapse">
-                  <thead className="bg-slate-100 text-sm text-[var(--text-secondary)]">
-                    <tr>
-                      <th className="px-3 py-2 text-left font-semibold">Rank</th>
-                      <th className="px-3 py-2 text-left font-semibold">Applicant</th>
-                      <th className="px-3 py-2 text-left font-semibold">Exp.</th>
-                      <th className="px-3 py-2 text-left font-semibold">Perf.</th>
-                      <th className="px-3 py-2 text-left font-semibold">Potential</th>
-                      <th className="px-3 py-2 text-left font-semibold">Written</th>
-                      <th className="px-3 py-2 text-left font-semibold">Interview</th>
-                      <th className="px-3 py-2 text-left font-semibold">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activeRankingRows.length === 0 ? (
+              {/* Score Statistics Cards */}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+                <div className="rounded-xl border-2 border-blue-200 bg-blue-50 p-4">
+                  <p className="!mb-2 text-xs font-semibold uppercase text-gray-600">Highest Score</p>
+                  <p className="!mb-0 !text-3xl font-bold text-blue-600">{rankingSummary.highest.toFixed(2)}</p>
+                  <span className="inline-block mt-2 text-xl">🏆</span>
+                </div>
+                <div className="rounded-xl border-2 border-green-200 bg-green-50 p-4">
+                  <p className="!mb-2 text-xs font-semibold uppercase text-gray-600">Average Score</p>
+                  <p className="!mb-0 !text-3xl font-bold text-green-600">{rankingSummary.average.toFixed(2)}</p>
+                  <span className="inline-block mt-2 text-xl">📊</span>
+                </div>
+                <div className="rounded-xl border-2 border-orange-200 bg-orange-50 p-4">
+                  <p className="!mb-2 text-xs font-semibold uppercase text-gray-600">Lowest Score</p>
+                  <p className="!mb-0 !text-3xl font-bold text-orange-600">{rankingSummary.lowest.toFixed(2)}</p>
+                  <span className="inline-block mt-2 text-xl">📌</span>
+                </div>
+                <div className="rounded-xl border-2 border-purple-200 bg-purple-50 p-4">
+                  <p className="!mb-2 text-xs font-semibold uppercase text-gray-600">Score Range</p>
+                  <p className="!mb-0 !text-3xl font-bold text-purple-600">{(rankingSummary.highest - rankingSummary.lowest).toFixed(2)}</p>
+                  <span className="inline-block mt-2 text-xl">📈</span>
+                </div>
+              </div>
+
+              {/* Scoring Criteria */}
+              <div className="rounded-xl border-2 border-slate-200 bg-slate-50 p-4">
+                <h3 className="!mb-3 text-lg font-semibold text-gray-900">Scoring Criteria</h3>
+                <div className="flex flex-wrap justify-around gap-4 text-sm">
+                  <div className="text-center">
+                    <p className="!mb-1 font-semibold text-gray-900">Experience: 20%</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="!mb-1 font-semibold text-gray-900">Performance: 20%</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="!mb-1 font-semibold text-gray-900">Potential: 20%</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="!mb-1 font-semibold text-gray-900">Written: 20%</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="!mb-1 font-semibold text-gray-900">Interview: 20%</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Rankings Table */}
+              <div>
+                <h3 className="!mb-3 text-lg font-bold text-gray-900">Applicant Rankings</h3>
+                <div className="overflow-x-auto rounded-lg border-2 border-slate-300">
+                  <table className="w-full min-w-[900px] border-collapse text-sm">
+                    <thead className="bg-slate-900 text-white">
                       <tr>
-                        <td colSpan={8} className="px-3 py-5 text-center text-sm text-[var(--text-secondary)]">
-                          No qualified applicants found for this position.
-                        </td>
+                        <th className="px-4 py-3 text-left font-semibold w-12">Rank</th>
+                        <th className="px-4 py-3 text-left font-semibold">Name</th>
+                        <th className="px-4 py-3 text-center font-semibold">Exp. (20%)</th>
+                        <th className="px-4 py-3 text-center font-semibold">Perf. (20%)</th>
+                        <th className="px-4 py-3 text-center font-semibold">Pot. (20%)</th>
+                        <th className="px-4 py-3 text-center font-semibold">Written (20%)</th>
+                        <th className="px-4 py-3 text-center font-semibold">Interview (20%)</th>
+                        <th className="px-4 py-3 text-center font-semibold">Total Score</th>
                       </tr>
-                    ) : (
-                      activeRankingRows.map((row, index) => (
-                        <tr key={row.id} className="border-t border-[var(--border-color)] text-sm">
-                          <td className="px-3 py-2 font-semibold text-[var(--text-primary)]">#{index + 1}</td>
-                          <td className="px-3 py-2">
-                            <p className="!mb-0 font-semibold text-[var(--text-primary)]">{row.fullName}</p>
-                            <p className="!mb-0 text-xs text-[var(--text-secondary)]">{row.email}</p>
+                    </thead>
+                    <tbody>
+                      {activeRankingRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="px-4 py-4 text-center text-gray-500">
+                            No qualified applicants found for this position.
                           </td>
-                          <td className="px-3 py-2">{row.experience.toFixed(2)}</td>
-                          <td className="px-3 py-2">{row.performance.toFixed(2)}</td>
-                          <td className="px-3 py-2">{row.potential.toFixed(2)}</td>
-                          <td className="px-3 py-2">{row.written.toFixed(2)}</td>
-                          <td className="px-3 py-2">{row.interview.toFixed(2)}</td>
-                          <td className="px-3 py-2 font-semibold text-[var(--text-primary)]">{row.total.toFixed(2)}</td>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                      ) : (
+                        activeRankingRows.map((row, index) => {
+                          const isTopApplicant = index === 0;
+                          const isTop3 = index < 3;
+                          return (
+                            <tr 
+                              key={row.id} 
+                              className={`border-t border-slate-200 text-sm ${
+                                isTopApplicant 
+                                  ? 'bg-yellow-100' 
+                                  : isTop3 
+                                  ? 'bg-blue-50' 
+                                  : ''
+                              }`}
+                            >
+                              <td className="px-4 py-3 font-bold text-gray-900">
+                                {isTopApplicant ? `🏆 ${index + 1}` : index + 1}
+                              </td>
+                              <td className="px-4 py-3 font-semibold text-gray-900">{row.fullName}</td>
+                              <td className="px-4 py-3 text-center">{row.experience.toFixed(2)}</td>
+                              <td className="px-4 py-3 text-center">{row.performance.toFixed(2)}</td>
+                              <td className="px-4 py-3 text-center">{row.potential.toFixed(2)}</td>
+                              <td className="px-4 py-3 text-center">{row.written.toFixed(2)}</td>
+                              <td className="px-4 py-3 text-center">{row.interview.toFixed(2)}</td>
+                              <td className="px-4 py-3 text-center font-bold text-blue-600">{row.total.toFixed(2)}</td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Legend */}
+              <div className="rounded-lg border-2 border-slate-200 bg-slate-50 p-4">
+                <h3 className="!mb-3 text-base font-semibold text-gray-900">Legend:</h3>
+                <div className="flex flex-wrap gap-6">
+                  <div className="flex items-center gap-2">
+                    <div className="h-4 w-6 rounded bg-yellow-100 border border-yellow-300"></div>
+                    <span className="text-sm text-gray-700">Rank 1 (Top Applicant)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="h-4 w-6 rounded bg-blue-100 border border-blue-300"></div>
+                    <span className="text-sm text-gray-700">Ranks 2-3 (Top 3 Applicants)</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Certification and Signatures */}
+              <div className="space-y-4 border-t-2 border-slate-300 pt-6">
+                <p className="!mb-0 text-sm text-gray-700 text-justify">
+                  This is to certify that the above ranking is based on the weighted scoring system as mandated by the Civil Service Commission and the Local Government Code.
+                </p>
+
+                <div className="grid grid-cols-2 gap-8">
+                  <div>
+                    <p className="!mb-1 text-sm font-semibold text-gray-900">Prepared by:</p>
+                    <div className="mt-8 border-t-2 border-gray-400"></div>
+                    <p className="!mt-2 !mb-0 text-sm font-semibold text-gray-900">RSP Staff</p>
+                    <p className="!mb-0 text-xs text-gray-600">Recruitment, Selection & Placement Division</p>
+                  </div>
+                  <div>
+                    <p className="!mb-1 text-sm font-semibold text-gray-900">Reviewed by:</p>
+                    <div className="mt-8 border-t-2 border-gray-400"></div>
+                    <p className="!mt-2 !mb-0 text-sm font-semibold text-gray-900">HRMO Chief</p>
+                    <p className="!mb-0 text-xs text-gray-600">Human Resource Management Office</p>
+                  </div>
+                </div>
+
+                <p className="!mb-0 text-xs text-gray-500 text-center">
+                  This is a system-generated report from the Human Resource Information System<br />
+                  Generated on {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                </p>
               </div>
             </div>
           </div>
@@ -4215,31 +4498,49 @@ export const RSPDashboard = () => {
         </div>
       )}
 
-      {showAssessmentFormsModal && activeAssessmentCard && (
+      {showAssessmentFormsModal && (
         <div className="assessment-print-overlay fixed inset-0 z-[245] flex items-center justify-center bg-black/70 p-4" onClick={closeAssessmentForms}>
           <div className="assessment-print-modal max-h-[92vh] w-full max-w-[1320px] overflow-hidden rounded-2xl bg-white" onClick={(event) => event.stopPropagation()}>
-            <div className="assessment-print-no flex items-start justify-between gap-3 border-b border-[var(--border-color)] px-6 py-5">
-              <div>
-                <h2 className="!mb-1 text-4xl font-semibold text-[var(--text-primary)]">Assessment Forms - {activeAssessmentCard.position}</h2>
-                <p className="!mb-0 text-2xl text-[var(--text-secondary)]">{activeAssessmentCard.department} • {activeAssessmentApplicants.length} applicant{activeAssessmentApplicants.length === 1 ? '' : 's'}</p>
+            {!activeAssessmentCard ? (
+              <div className="flex items-center justify-center p-8 text-center">
+                <div>
+                  <p className="!mb-2 text-2xl font-semibold text-red-600">No assessment forms available</p>
+                  <p className="!mb-4 text-base text-[var(--text-secondary)]">
+                    {activeAssessmentPosition ? `Position "${activeAssessmentPosition}" not found in database` : 'Please select a position'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={closeAssessmentForms}
+                    className="rounded-xl bg-blue-600 px-4 py-2 text-white font-semibold"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => window.print()}
-                  className="rounded-xl bg-[var(--primary-color)] px-5 py-3 text-xl font-semibold text-white"
-                >
-                  Print All Forms
-                </button>
-                <button
-                  type="button"
-                  onClick={closeAssessmentForms}
-                  className="rounded-xl border border-[var(--border-color)] px-3 py-2 text-2xl text-[var(--text-muted)]"
-                >
-                  ×
-                </button>
-              </div>
-            </div>
+            ) : (
+              <>
+                <div className="assessment-print-no flex items-start justify-between gap-3 border-b border-[var(--border-color)] px-6 py-5">
+                  <div>
+                    <h2 className="!mb-1 text-4xl font-semibold text-[var(--text-primary)]">Assessment Forms - {activeAssessmentCard.position}</h2>
+                    <p className="!mb-0 text-2xl text-[var(--text-secondary)]">{activeAssessmentCard.department} • {activeAssessmentApplicants.length} applicant{activeAssessmentApplicants.length === 1 ? '' : 's'}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => window.print()}
+                      className="rounded-xl bg-[var(--primary-color)] px-5 py-3 text-xl font-semibold text-white"
+                    >
+                      Print All Forms
+                    </button>
+                    <button
+                      type="button"
+                      onClick={closeAssessmentForms}
+                      className="rounded-xl border border-[var(--border-color)] px-3 py-2 text-2xl text-[var(--text-muted)]"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
 
             <div className="assessment-print-scroll max-h-[78vh] overflow-y-auto">
               <div className="assessment-print-no border-b border-[var(--border-color)] px-6 py-5">
@@ -4290,6 +4591,7 @@ export const RSPDashboard = () => {
                         : bucket === 'disqualified'
                           ? 'bg-red-100 text-red-700'
                           : 'bg-blue-100 text-blue-700';
+                    // Use the applicant's total_score that was already calculated and loaded from the database
                     const totalScore = Number((applicant.total_score || 0).toFixed(2));
 
                     return (
@@ -4300,42 +4602,189 @@ export const RSPDashboard = () => {
                         </div>
 
                         <div className="rounded-xl border-2 border-black bg-white p-5">
+                          {/* Header */}
                           <div className="mb-4 rounded-md border-2 border-black p-5 text-center">
-                            <p className="!mb-1 text-base text-black">Republic of the Philippines</p>
-                            <p className="!mb-1 text-xl font-bold text-black">CITY GOVERNMENT OF ILOILO</p>
-                            <p className="!mb-2 text-base text-black">Iloilo City</p>
-                            <p className="!mb-0 text-2xl font-bold text-black">HUMAN RESOURCE MANAGEMENT OFFICE</p>
-                            <p className="!mb-0 text-lg text-black">APPLICANT ASSESSMENT REPORT</p>
+                            <div className="mb-2 flex items-center justify-between">
+                              <div className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-black text-center font-bold text-black">
+                                SEAL
+                              </div>
+                              <div>
+                                <p className="!mb-1 text-sm text-black font-bold">Republic of the Philippines</p>
+                                <p className="!mb-1 text-base font-bold text-black">CITY GOVERNMENT OF ILOILO</p>
+                                <p className="!mb-0 text-sm text-black">Iloilo City</p>
+                              </div>
+                              <div className="border-2 border-black p-3 text-center">
+                                <p className="!mb-1 text-xs font-bold text-black">CONTROL</p>
+                                <p className="!mb-0 text-base font-bold text-black">NO.</p>
+                                <p className="!mb-0 text-lg font-bold text-black">0001</p>
+                              </div>
+                            </div>
+                            <p className="!mb-1 text-base font-bold text-black">HUMAN RESOURCE MANAGEMENT OFFICE</p>
+                            <p className="!mb-0 text-sm text-black">APPLICANT ASSESSMENT REPORT</p>
                           </div>
 
+                          {/* Position and Qualification */}
                           <div className="mb-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
-                            <div className="rounded-md border border-black p-3">
-                              <p className="!mb-1 text-sm text-black">POSITION:</p>
-                              <p className="!mb-0 text-xl font-semibold text-black">{activeAssessmentCard.position}</p>
+                            <div className="rounded-md border-2 border-black p-3">
+                              <p className="!mb-1 text-sm font-semibold text-black">POSITION:</p>
+                              <p className="!mb-0 text-base font-semibold text-black">{activeAssessmentCard.position}</p>
                             </div>
-                            <div className="rounded-md border border-black p-3">
-                              <p className="!mb-1 text-sm text-black">QUALIFICATION:</p>
-                              <p className="!mb-0 text-xl font-semibold text-black">{bucket === 'disqualified' ? 'Disqualified' : 'Qualified'}</p>
-                            </div>
-                          </div>
-
-                          <div className="mb-3 rounded-md border border-black p-3">
-                            <p className="!mb-1 text-sm text-black">NAME OF APPLICANT:</p>
-                            <p className="!mb-0 text-xl font-semibold text-black">{applicant.full_name.toUpperCase()}</p>
-                          </div>
-
-                          <div className="mb-3 rounded-md border border-black">
-                            <p className="!mb-0 border-b border-black bg-slate-100 px-3 py-2 text-lg font-semibold text-black">POINT-BASED ASSESSMENT</p>
-                            <div className="px-3 py-3 text-base text-black">
-                              <p className="!mb-1">Education: {Math.min(20, Math.max(0, totalScore * 0.23)).toFixed(2)} / 20</p>
-                              <p className="!mb-1">Experience: {Math.min(20, Math.max(0, totalScore * 0.20)).toFixed(2)} / 20</p>
-                              <p className="!mb-1">Performance: {Math.min(20, Math.max(0, totalScore * 0.22)).toFixed(2)} / 20</p>
-                              <p className="!mb-0">Potential: {Math.min(20, Math.max(0, totalScore * 0.20)).toFixed(2)} / 20</p>
+                            <div className="rounded-md border-2 border-black p-3">
+                              <p className="!mb-1 text-sm font-semibold text-black">QUALIFICATION:</p>
+                              <div className="flex items-center gap-3">
+                                <input type="checkbox" checked={bucket !== 'disqualified'} readOnly className="h-4 w-4" />
+                                <span className="text-sm font-semibold text-black">Qualified</span>
+                                <input type="checkbox" checked={bucket === 'disqualified'} readOnly className="h-4 w-4 ml-4" />
+                                <span className="text-sm font-semibold text-black">Disqualified</span>
+                              </div>
                             </div>
                           </div>
 
-                          <div className="rounded-md border border-black p-3 text-right">
-                            <p className="!mb-0 text-2xl font-bold text-black">TOTAL SCORE: {totalScore.toFixed(2)}</p>
+                          {/* Applicant Name */}
+                          <div className="mb-3 rounded-md border-2 border-black p-3">
+                            <p className="!mb-1 text-sm font-semibold text-black">NAME OF APPLICANT:</p>
+                            <p className="!mb-0 text-base font-semibold text-black">{applicant.full_name.toUpperCase()}</p>
+                          </div>
+
+                          {/* Pre-Assessment */}
+                          {bucket !== 'disqualified' && (
+                            <div className="mb-3 rounded-md border-2 border-black">
+                              <p className="!mb-0 border-b-2 border-black bg-gray-200 px-3 py-2 text-base font-semibold text-black">PRE-ASSESSMENT</p>
+                              <div className="space-y-2 px-3 py-3 text-sm text-black">
+                                <label className="flex items-center gap-2">
+                                  <input type="checkbox" checked={true} readOnly />
+                                  <span>Education (College Degree: Bachelor's or equivalent in relevant field)</span>
+                                </label>
+                                <label className="flex items-center gap-2">
+                                  <input type="checkbox" checked={true} readOnly />
+                                  <span>Training (Training hours/certificates of specific trainings)</span>
+                                </label>
+                                <label className="flex items-center gap-2">
+                                  <input type="checkbox" checked={true} readOnly />
+                                  <span>Experience (Years/months of relevant work experience)</span>
+                                </label>
+                                <label className="flex items-center gap-2">
+                                  <input type="checkbox" checked={true} readOnly />
+                                  <span>Eligibility (CS Professional / Appropriate RA 1080)</span>
+                                </label>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Point-Based Assessment */}
+                          <div className="mb-3 rounded-md border-2 border-black overflow-hidden">
+                            <p className="!mb-0 border-b-2 border-black bg-gray-200 px-3 py-2 text-base font-semibold text-black">POINT-BASED ASSESSMENT</p>
+                            <table className="w-full border-collapse text-sm text-black">
+                              <thead>
+                                <tr>
+                                  <th className="border-b-2 border-black px-3 py-2 text-left font-semibold">ASSESSMENT DATA</th>
+                                  <th className="border-b-2 border-black border-l-2 px-3 py-2 text-center font-semibold w-20">Points</th>
+                                  <th className="border-b-2 border-black border-l-2 px-3 py-2 text-center font-semibold w-24">Actual Score</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr>
+                                  <td colSpan={3} className="border-b-2 border-black px-3 py-2 font-semibold bg-gray-100">EDUCATION</td>
+                                </tr>
+                                <tr>
+                                  <td className="border-b border-black px-3 py-2">Education Level Attainment</td>
+                                  <td className="border-b border-l-2 border-black px-3 py-2 text-center">20</td>
+                                  <td className="border-b border-l-2 border-black px-3 py-2 text-center font-semibold">{Math.min(20, Math.max(0, totalScore * 0.23)).toFixed(2)}</td>
+                                </tr>
+                                <tr>
+                                  <td colSpan={3} className="border-b-2 border-black px-3 py-2 font-semibold bg-gray-100">EXPERIENCE</td>
+                                </tr>
+                                <tr>
+                                  <td className="border-b border-black px-3 py-2">Relevant Work Experience</td>
+                                  <td className="border-b border-l-2 border-black px-3 py-2 text-center">20</td>
+                                  <td className="border-b border-l-2 border-black px-3 py-2 text-center font-semibold">{Math.min(20, Math.max(0, totalScore * 0.20)).toFixed(2)}</td>
+                                </tr>
+                                <tr>
+                                  <td colSpan={3} className="border-b-2 border-black px-3 py-2 font-semibold bg-gray-100">PERFORMANCE</td>
+                                </tr>
+                                <tr>
+                                  <td className="border-b border-black px-3 py-2">Performance Rating (Last 2 Semesters)</td>
+                                  <td className="border-b border-l-2 border-black px-3 py-2 text-center">20</td>
+                                  <td className="border-b border-l-2 border-black px-3 py-2 text-center font-semibold">{Math.min(20, Math.max(0, totalScore * 0.22)).toFixed(2)}</td>
+                                </tr>
+                                <tr>
+                                  <td colSpan={3} className="border-b-2 border-black px-3 py-2 font-semibold bg-gray-100">PSYCHOSOCIAL / COMPETENCY</td>
+                                </tr>
+                                <tr>
+                                  <td className="border-b border-black px-3 py-2">PCPT Assessment</td>
+                                  <td className="border-b border-l-2 border-black px-3 py-2 text-center">20</td>
+                                  <td className="border-b border-l-2 border-black px-3 py-2 text-center font-semibold">{Math.min(20, Math.max(0, totalScore * 0.17)).toFixed(2)}</td>
+                                </tr>
+                                <tr>
+                                  <td colSpan={3} className="border-b-2 border-black px-3 py-2 font-semibold bg-gray-100">POTENTIAL</td>
+                                </tr>
+                                <tr>
+                                  <td className="border-b-2 border-black px-3 py-2">Potential Assessment</td>
+                                  <td className="border-b-2 border-l-2 border-black px-3 py-2 text-center">20</td>
+                                  <td className="border-b-2 border-l-2 border-black px-3 py-2 text-center font-semibold">{Math.min(20, Math.max(0, totalScore * 0.20)).toFixed(2)}</td>
+                                </tr>
+                                <tr className="bg-gray-100">
+                                  <td className="border-b-2 border-black px-3 py-2 text-right font-bold">TOTAL SCORE:</td>
+                                  <td className="border-b-2 border-l-2 border-black px-3 py-2 text-center font-bold">100</td>
+                                  <td className="border-b-2 border-l-2 border-black px-3 py-2 text-center font-bold text-lg">{totalScore.toFixed(2)}</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {/* Recommendation */}
+                          {bucket !== 'disqualified' && (
+                            <div className="mb-3 rounded-md border-2 border-black">
+                              <p className="!mb-0 border-b-2 border-black bg-gray-200 px-3 py-2 text-base font-semibold text-black">RECOMMENDATION</p>
+                              <div className="space-y-2 px-3 py-3 text-sm text-black">
+                                <label className="flex items-center gap-2">
+                                  <input type="checkbox" checked={bucket === 'hired'} readOnly />
+                                  <span className="font-semibold">For Hiring/Appointment</span>
+                                </label>
+                                <label className="flex items-center gap-2">
+                                  <input type="checkbox" checked={bucket === 'qualified'} readOnly />
+                                  <span>For Consideration</span>
+                                </label>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Remarks for Disqualified */}
+                          {bucket === 'disqualified' && (
+                            <div className="mb-3 rounded-md border-2 border-black">
+                              <p className="!mb-0 border-b-2 border-black bg-gray-200 px-3 py-2 text-base font-semibold text-black">REMARKS:</p>
+                              <div className="px-3 py-3 text-sm text-black italic">
+                                Did not meet minimum qualifications. Pre-assessment completed only.
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Signatures */}
+                          <div className="space-y-3 text-sm text-black">
+                            <div className="border-t-2 border-black pt-3"></div>
+                            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                              <div>
+                                <p className="!mb-6 font-semibold">Assessed by:</p>
+                                <div className="border-b-2 border-black"></div>
+                                <p className="!mt-1 !mb-0 text-xs font-semibold">RSP Officer</p>
+                                <p className="!mb-0 text-xs">Date: __________</p>
+                              </div>
+                              {bucket !== 'disqualified' && (
+                                <div>
+                                  <p className="!mb-6 font-semibold">Interviewed by:</p>
+                                  <div className="border-b-2 border-black"></div>
+                                  <p className="!mt-1 !mb-0 text-xs font-semibold">Dr. Maria Santos</p>
+                                  <p className="!mb-0 text-xs">Interview Panel</p>
+                                  <p className="!mb-0 text-xs">Date: __________</p>
+                                </div>
+                              )}
+                              <div>
+                                <p className="!mb-6 font-semibold">Reviewed by:</p>
+                                <div className="border-b-2 border-black"></div>
+                                <p className="!mt-1 !mb-0 text-xs font-semibold">HRMO Chief</p>
+                                <p className="!mb-0 text-xs">Date: __________</p>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       </article>
@@ -4344,6 +4793,8 @@ export const RSPDashboard = () => {
                 )}
               </div>
             </div>
+              </>
+            )}
           </div>
         </div>
       )}
