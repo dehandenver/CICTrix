@@ -1097,9 +1097,24 @@ export const RSPDashboard = () => {
     applicants.forEach((applicant) => {
       if (!savedScoredApplicantIds.has(applicant.id)) return;
       const normalizedStatus = (applicant.status || '').toLowerCase();
-      const hasQualifiedStatus =
-        normalizedStatus.includes('qualified') || normalizedStatus.includes('shortlist') || completedEvaluationIds.has(applicant.id);
-      if (!hasQualifiedStatus || !applicant.position || !reportEligibleTitleSet.has(applicant.position)) return;
+      // Negative outcomes always exclude.
+      const isExplicitlyExcluded =
+        normalizedStatus.includes('disqual') ||
+        normalizedStatus.includes('not qualified') ||
+        normalizedStatus.includes('reject') ||
+        normalizedStatus.includes('withdrawn');
+      if (isExplicitlyExcluded) return;
+      // RSP-saved scores OR an explicit qualified status OR completed evaluation
+      // all count as eligible for ranking. The first condition is the new path so
+      // applicants whose status is still "New Application" surface here once the
+      // RSP saves their category scores.
+      const hasQualifyingSignal =
+        savedScoredApplicantIds.has(applicant.id) ||
+        normalizedStatus.includes('qualified') ||
+        normalizedStatus.includes('shortlist') ||
+        normalizedStatus.includes('recommended') ||
+        completedEvaluationIds.has(applicant.id);
+      if (!hasQualifyingSignal || !applicant.position || !reportEligibleTitleSet.has(applicant.position)) return;
       qualifiedByPosition.set(applicant.position, (qualifiedByPosition.get(applicant.position) || 0) + 1);
     });
 
@@ -1135,7 +1150,16 @@ export const RSPDashboard = () => {
       if (!savedScoredApplicantIds.has(applicant.id)) return false;
       if (applicant.position !== activeRankingPosition) return false;
       const normalizedStatus = (applicant.status || '').toLowerCase();
+      // Match the qualification gate used by rankingPositionCards: scored + not
+      // explicitly excluded ⇒ rankable. Keeps negative-status applicants out.
+      const isExplicitlyExcluded =
+        normalizedStatus.includes('disqual') ||
+        normalizedStatus.includes('not qualified') ||
+        normalizedStatus.includes('reject') ||
+        normalizedStatus.includes('withdrawn');
+      if (isExplicitlyExcluded) return false;
       return (
+        savedScoredApplicantIds.has(applicant.id) ||
         normalizedStatus.includes('qualified') ||
         normalizedStatus.includes('shortlist') ||
         normalizedStatus.includes('recommended') ||
@@ -2322,35 +2346,72 @@ export const RSPDashboard = () => {
         };
       });
 
+    // Local Newly Hired store is the source of truth for the sidebar; write it
+    // first so the user sees immediate feedback even if DB persistence fails.
     if (toAdd.length > 0) {
       saveNewlyHired([...existing, ...toAdd]);
     }
 
-    // Backend PATCH call for each applicant
-    try {
-      await Promise.all(
-        selectedRows.map(async (row) => {
-          await fetch(`http://localhost:8000/api/applicants/${row.id}/status`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              applicant_id: row.id,
-              status: 'hired',
-            }),
-          });
-        })
+    // Persist the status flip to the backend (relative /api → Vite proxy on :8000).
+    // If the backend is unavailable, fall back to Supabase. We verify Supabase
+    // succeeded by reading back the row(s); RLS can return error:null with 0 rows.
+    const persistOne = async (id: string): Promise<boolean> => {
+      try {
+        const res = await fetch(`/api/applicants/${id}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ applicant_id: id, status: 'hired' }),
+        });
+        if (res.ok) return true;
+        console.warn('[RSPDashboard] hire backend PATCH failed', id, res.status);
+      } catch (err) {
+        console.warn('[RSPDashboard] hire backend PATCH threw', id, err);
+      }
+      try {
+        const { data: updated, error } = await (supabase as any)
+          .from('applicants')
+          .update({ status: 'Hired' })
+          .eq('id', id)
+          .select('id, status');
+        if (error) {
+          console.error('[RSPDashboard] hire supabase update error', id, error);
+          return false;
+        }
+        if (!Array.isArray(updated) || updated.length === 0) {
+          console.error('[RSPDashboard] hire supabase update returned 0 rows for', id, '— likely RLS blocking UPDATE');
+          return false;
+        }
+        return true;
+      } catch (err) {
+        console.error('[RSPDashboard] hire supabase update threw', id, err);
+        return false;
+      }
+    };
+
+    const persistResults = await Promise.all(selectedRows.map((row) => persistOne(row.id)));
+    const allPersisted = persistResults.every(Boolean);
+    if (!allPersisted) {
+      console.warn(
+        '[RSPDashboard] not all hire status updates persisted to DB — local Newly Hired entries were saved regardless.',
       );
-    } catch (error) {
-      console.error('Failed to update applicant status to hired:', error);
-      alert('Failed to update applicant status. Please try again.');
-      return;
     }
 
+    // Always update the in-memory applicants list and close the modals so the user
+    // gets visual confirmation. Newly Hired sidebar reads from the local store
+    // (already written above), so the entries appear immediately.
     const selectedIdSet = new Set(selectedRows.map((row) => row.id));
     setApplicants((prev) => prev.map((applicant) => (selectedIdSet.has(applicant.id) ? { ...applicant, status: 'Hired' } : applicant)));
     setShowHireApplicantsModal(false);
     setShowRankingModal(false);
     setSelectedHireApplicantIds([]);
+    setActiveRankingPosition(null);
+
+    // Notify other listeners so dependent views (Newly Hired stats, sidebar count)
+    // refresh without requiring a navigation.
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('cictrix:applicants-updated'));
+      window.dispatchEvent(new CustomEvent('cictrix:newly-hired-updated'));
+    }
   };
 
   const handleBulkEmployeeToggle = (employeeId: string) => {

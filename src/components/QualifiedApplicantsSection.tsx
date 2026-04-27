@@ -432,7 +432,24 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
   // Promotional Appointment — Original is invalid for an existing employee.
   const isCurrentEmployee = String(applicant.application_type ?? '').toLowerCase() === 'promotion';
 
-  const hasPersistedScores = Boolean(savedScores[applicant.id]);
+  // hasPersistedScores must mean *complete* prior save — otherwise a partial entry
+  // (or stale localStorage from earlier testing) would put the modal in view-only
+  // mode before the RSP has filled in the required RSP-owned categories.
+  const previouslySaved = savedScores[applicant.id];
+  const previouslySavedApptType: AppointmentType =
+    previouslySaved?.appointmentType ?? (isCurrentEmployee ? 'promotional' : 'original');
+  const requiredRspKeysForApptType = (t: AppointmentType): CatKey[] =>
+    t === 'promotional'
+      ? ['education', 'experience', 'performance', 'potential']
+      : ['education', 'experience'];
+  const isFullySaved = (saved: ApplicantCategoryScores | undefined, t: AppointmentType): boolean => {
+    if (!saved) return false;
+    return requiredRspKeysForApptType(t).every((k) => {
+      const v = saved[k]?.finalScore;
+      return typeof v === 'number';
+    });
+  };
+  const hasPersistedScores = isFullySaved(previouslySaved, previouslySavedApptType);
   // Build initial scores from saved/derived values, then overlay the interviewer's
   // saved evaluation so PCPT (and any other interviewer-owned fields) reflect what
   // they actually entered in the interviewer portal — not the rough percentage guess.
@@ -466,8 +483,13 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
   }, [evaluation]);
 
   useEffect(() => {
-    setIsFinalized(Boolean(savedScores[applicant.id]));
-  }, [applicant.id, savedScores]);
+    const saved = savedScores[applicant.id];
+    const t: AppointmentType = saved?.appointmentType ?? (isCurrentEmployee ? 'promotional' : 'original');
+    setIsFinalized(isFullySaved(saved, t));
+    // isFullySaved is referentially stable per render; including it in deps would
+    // cause needless re-runs without changing behavior.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applicant.id, savedScores, isCurrentEmployee]);
 
   useEffect(() => {
     let disposed = false;
@@ -965,15 +987,38 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
             <button type="button" onClick={onClose} style={{ padding: '0.6rem 1.25rem', background: 'none', border: '1px solid #e2e8f0', borderRadius: 8, fontWeight: 600, fontSize: '0.9rem', color: '#475569', cursor: 'pointer' }}>
               Cancel
             </button>
-            {!isFinalized && (
-              <button
-                type="button" onClick={handleSave} disabled={saving}
-                style={{ padding: '0.6rem 1.5rem', background: '#2563eb', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: '0.9rem', color: '#fff', cursor: saving ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', opacity: saving ? 0.7 : 1 }}
-              >
-                <Save size={15} />
-                {saving ? 'Saving…' : 'Save Scores'}
-              </button>
-            )}
+            {!isFinalized && (() => {
+              // RSP must fill every category they own for the chosen appointment
+              // type before saving. Save stays disabled until each has a numeric
+              // finalScore. (PCPT is interviewer-owned; not gated here.)
+              const requiredKeys = requiredRspKeysForApptType(apptType);
+              const missing = requiredKeys.filter((k) => typeof scores[k]?.finalScore !== 'number');
+              const allRspCategoriesFilled = missing.length === 0;
+              const disabled = saving || !allRspCategoriesFilled;
+              return (
+                <button
+                  type="button" onClick={handleSave} disabled={disabled}
+                  title={!allRspCategoriesFilled ? `Fill required fields: ${missing.join(', ')}` : undefined}
+                  style={{
+                    padding: '0.6rem 1.5rem',
+                    background: '#2563eb',
+                    border: 'none',
+                    borderRadius: 8,
+                    fontWeight: 700,
+                    fontSize: '0.9rem',
+                    color: '#fff',
+                    cursor: disabled ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    opacity: disabled ? 0.5 : 1,
+                  }}
+                >
+                  <Save size={15} />
+                  {saving ? 'Saving…' : allRspCategoriesFilled ? 'Save Scores' : 'Fill Required Fields'}
+                </button>
+              );
+            })()}
           </div>
         </div>
       </div>

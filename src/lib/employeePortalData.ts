@@ -64,10 +64,20 @@ export const getEmployeePortalAccounts = (): EmployeePortalAccount[] => {
 };
 
 export const saveEmployeePortalAccounts = (accounts: EmployeePortalAccount[]) => {
-  // Employee portal accounts are now stored only in Supabase database
-  // Do not save to localStorage to avoid quota exceeded errors
+  // Persist to localStorage so generated credentials survive page navigation and
+  // are reachable by the Employee Portal login + the Applicant Wizard's
+  // promotional auth path. Both consumers call getEmployeePortalAccounts(), which
+  // reads this same key — so without the write here, generated credentials would
+  // immediately disappear and login would fail. (The previous comment about
+  // "Supabase only" was a regression: nothing actually wrote to Supabase, and the
+  // localStorage write was removed without replacement.)
   const normalized = withDemoAccount(Array.isArray(accounts) ? accounts : []);
-  
+  try {
+    localStorage.setItem(EMPLOYEE_PORTAL_ACCOUNTS_KEY, JSON.stringify(normalized));
+  } catch (err) {
+    console.error('[employeePortalData] failed to persist accounts to localStorage:', err);
+  }
+
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('cictrix:employee-accounts-updated'));
   }
