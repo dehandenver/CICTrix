@@ -9,6 +9,10 @@ interface ApplicantAssessmentFormProps {
   errors: ValidationErrors;
   onChange: (field: keyof ApplicantFormData, value: string | boolean) => void;
   applicationType?: 'job' | 'promotion';
+  /** True when the user is verified as a current employee (active session or employee_id). */
+  isEmployee?: boolean;
+  /** Called when a non-employee toggles the application type radio group. Ignored when isEmployee. */
+  onApplicationTypeChange?: (next: 'job' | 'promotion') => void;
 }
 
 export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = ({
@@ -16,6 +20,8 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
   errors,
   onChange,
   applicationType = 'job',
+  isEmployee = false,
+  onApplicationTypeChange,
 }) => {
   const [dynamicPositionOptions, setDynamicPositionOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [positionDepartmentMap, setPositionDepartmentMap] = useState<Record<string, string>>({});
@@ -108,6 +114,64 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
 
   return (
     <Card title="Applicant Assessment Form">
+      {/* Application Type — conditional per HRIS workflow:
+            - Verified employee: locked Promotional with explanatory sub-text.
+            - New applicant: required radio group (Original / Promotional).
+          Backend enforces that an employee record cannot submit an Original type. */}
+      <fieldset className="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <legend className="px-2 text-sm font-semibold uppercase tracking-wide text-slate-700">
+          Application Type
+        </legend>
+
+        {isEmployee ? (
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="10" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="!mb-0 text-base font-semibold text-slate-900">Promotional</p>
+              <p className="!mb-0 mt-0.5 text-sm text-slate-600">
+                As a current employee, your application is automatically categorized as Promotional.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div role="radiogroup" aria-required className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {([
+              { value: 'job' as const, label: 'Original', description: 'Initial entry into the service.' },
+              { value: 'promotion' as const, label: 'Promotional', description: 'Higher position or specific eligibility.' },
+            ]).map((opt) => {
+              const checked = applicationType === opt.value;
+              return (
+                <label
+                  key={opt.value}
+                  className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
+                    checked
+                      ? 'border-blue-600 bg-blue-50'
+                      : 'border-slate-200 bg-white hover:border-slate-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="application_type"
+                    value={opt.value}
+                    checked={checked}
+                    onChange={() => onApplicationTypeChange?.(opt.value)}
+                    className="mt-1 h-4 w-4 shrink-0 accent-blue-600"
+                  />
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-semibold text-slate-900">{opt.label}</span>
+                    <span className="block text-xs text-slate-600">{opt.description}</span>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </fieldset>
+
       <div className="grid gap-md md:grid-cols-2">
         {isPromotion && (
           <>

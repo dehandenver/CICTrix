@@ -51,6 +51,7 @@ interface JobPosting {
 
 type ApplicantDetailsTab = 'overview' | 'documents' | 'activity';
 type EmailTemplate = 'none' | 'missing_documents' | 'incorrect_format' | 'invalid_information' | 'schedule_interview' | 'custom';
+const INTERVIEWER_SCORE_SNAPSHOT_STORAGE_KEY = 'cictrix_interviewer_score_snapshot';
 
 const REQUIRED_DOCUMENTS = ['Resume', 'Application Letter', 'Transcript of Records', 'Certifications'];
 
@@ -238,6 +239,53 @@ const fetchEvaluations = async (client: any): Promise<any[]> => {
   return data || [];
 };
 
+const mergeEvaluations = (sources: any[][]): any[] => {
+  const byKey = new Map<string, any>();
+
+  sources.forEach((rows) => {
+    rows.forEach((row: any) => {
+      const key = String(row?.id ?? row?.applicant_id ?? '').trim();
+      if (!key) return;
+
+      const current = byKey.get(key);
+      if (!current) {
+        byKey.set(key, row);
+        return;
+      }
+
+      const currentUpdated = new Date(current?.updated_at ?? current?.created_at ?? 0).getTime();
+      const incomingUpdated = new Date(row?.updated_at ?? row?.created_at ?? 0).getTime();
+      if (Number.isNaN(currentUpdated) || incomingUpdated >= currentUpdated) {
+        byKey.set(key, row);
+      }
+    });
+  });
+
+  return Array.from(byKey.values());
+};
+
+const readInterviewerScoreSnapshot = () => {
+  try {
+    const raw = localStorage.getItem(INTERVIEWER_SCORE_SNAPSHOT_STORAGE_KEY);
+    if (!raw) return {} as Record<string, { pcptAverage?: number; oralAverage?: number }>;
+    const parsed = JSON.parse(raw) as Record<string, { pcptAverage?: number; oralAverage?: number }>;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {} as Record<string, { pcptAverage?: number; oralAverage?: number }>;
+  }
+};
+
+const hasSnapshotEvaluation = (snapshotMap: Record<string, { pcptAverage?: number; oralAverage?: number }>, applicant: any) => {
+  const idKey = `id:${String(applicant?.id ?? '').trim()}`;
+  const emailKey = `email:${String(applicant?.email ?? '').trim().toLowerCase()}`;
+  const scoreSnapshot = snapshotMap[idKey] || snapshotMap[emailKey];
+  if (!scoreSnapshot) return false;
+
+  const hasPcpt = typeof scoreSnapshot.pcptAverage === 'number' && scoreSnapshot.pcptAverage > 0;
+  const hasOral = typeof scoreSnapshot.oralAverage === 'number' && scoreSnapshot.oralAverage > 0;
+  return hasPcpt || hasOral;
+};
+
 const buildFallbackApplicantsFromRecruitmentStore = (jobTitle: string): any[] => {
   const postingById = new Map(
     getAuthoritativeJobPostings().map((posting) => [String(posting.id), String(posting.title || '')])
@@ -263,10 +311,7 @@ const buildFallbackApplicantsFromRecruitmentStore = (jobTitle: string): any[] =>
       contact_number: String(row?.personalInfo?.phone ?? ''),
       status: String(row?.status ?? 'Pending'),
       created_at: String(row?.applicationDate ?? new Date().toISOString()),
-      evaluation_status:
-        statusIndicatesEvaluated(String(row?.status ?? ''))
-          ? 'Completed'
-          : 'Not Yet Rated',
+      evaluation_status: 'Not Yet Rated',
     }));
 };
 
@@ -397,15 +442,23 @@ export function InterviewerApplicantsList() {
 
       try {
         applicantsByPosition = await fetchApplicantsByPosition(primaryClient, jobTitle);
-        allEvaluations = await fetchEvaluations(primaryClient);
       } catch (primaryErr) {
         console.warn('Primary applicants source failed:', primaryErr);
       }
 
+      const [primaryEvaluationsResult, secondaryEvaluationsResult] = await Promise.allSettled([
+        fetchEvaluations(primaryClient),
+        fetchEvaluations(secondaryClient),
+      ]);
+
+      allEvaluations = mergeEvaluations([
+        primaryEvaluationsResult.status === 'fulfilled' ? primaryEvaluationsResult.value : [],
+        secondaryEvaluationsResult.status === 'fulfilled' ? secondaryEvaluationsResult.value : [],
+      ]);
+
       if ((!applicantsByPosition || applicantsByPosition.length === 0) && !isMockModeEnabled) {
         try {
           applicantsByPosition = await fetchApplicantsByPosition(secondaryClient, jobTitle);
-          allEvaluations = await fetchEvaluations(secondaryClient);
         } catch (secondaryErr) {
           console.warn('Secondary applicants source failed:', secondaryErr);
         }
@@ -416,6 +469,7 @@ export function InterviewerApplicantsList() {
       }
 
       const evaluationMap = buildEvaluationStatusMap(allEvaluations);
+      const interviewerScoreSnapshot = readInterviewerScoreSnapshot();
       const applicantsWithStatus = dedupeApplicants(
         Array.from(applicantsByPosition || [])
         .filter((applicant: any) => !isDemoApplicant(applicant))
@@ -423,7 +477,9 @@ export function InterviewerApplicantsList() {
           ...applicant,
           evaluation_status:
             evaluationMap.get(applicant.id) ||
-            (statusIndicatesEvaluated(String(applicant?.status ?? '')) ? 'Completed' : 'Not Yet Rated')
+            (hasSnapshotEvaluation(interviewerScoreSnapshot, applicant)
+              ? 'Completed'
+              : 'Not Yet Rated')
         }))
       )
         .sort(
@@ -698,7 +754,7 @@ export function InterviewerApplicantsList() {
                       </span>
                     </td>
                     <td>
-                      {(applicant.evaluation_status === 'Completed' || statusIndicatesEvaluated(applicant.status)) ? (
+                      {applicant.evaluation_status === 'Completed' ? (
                         <button className="action-btn evaluated" disabled>
                           Evaluated
                         </button>

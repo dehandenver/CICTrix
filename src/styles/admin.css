@@ -36,6 +36,8 @@
   display: grid;
   grid-template-columns: 1.05fr 1fr;
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
+  min-height: 600px;
+  grid-auto-rows: minmax(0, 1fr);
 }
 
 .admin-login-illustration {
@@ -47,6 +49,7 @@
   flex-direction: column;
   justify-content: center;
   gap: 1rem;
+  min-height: 100%;
 }
 
 .admin-login-orb {
@@ -83,6 +86,9 @@
   border-radius: 18px;
   background: white;
   box-shadow: 0 12px 24px rgba(15, 23, 42, 0.2);
+  visibility: visible;
+  opacity: 1;
+  display: block;
 }
 
 .admin-login-header-logo {
@@ -99,12 +105,15 @@
   font-size: 2.4rem;
   margin: 0.5rem 0 0;
   font-weight: 700;
+  visibility: visible;
+  opacity: 1;
 }
 
 .admin-login-illustration p {
   margin: 0;
   font-size: 1rem;
   opacity: 0.9;
+  visibility: visible;
 }
 
 .admin-login-illustration ul {
@@ -113,6 +122,8 @@
   list-style: none;
   display: grid;
   gap: 0.65rem;
+  visibility: visible;
+  opacity: 1;
 }
 
 .admin-login-illustration li {
@@ -136,34 +147,44 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
+  min-height: 100%;
 }
 
 .admin-login-form-header h1 {
   margin: 0 0 0.35rem;
   font-size: 2rem;
   color: #0f172a;
+  visibility: visible;
+  opacity: 1;
 }
 
 .admin-login-form-header p {
   margin: 0;
   color: #64748b;
+  visibility: visible;
+  opacity: 1;
 }
 
 .admin-login-form {
   margin-top: 2rem;
   display: grid;
   gap: 1.25rem;
+  width: 100%;
+  max-width: 100%;
 }
 
 .admin-login-form .field {
   display: grid;
   gap: 0.5rem;
+  width: 100%;
 }
 
 .admin-login-form label {
   font-weight: 600;
   color: #1e293b;
   font-size: 0.92rem;
+  visibility: visible;
+  opacity: 1;
 }
 
 .input-with-icon {
@@ -180,6 +201,9 @@
   background: #f8fafc;
   font-size: 0.95rem;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  visibility: visible;
+  opacity: 1;
+  display: block;
 }
 
 .input-with-icon input:focus {
@@ -196,6 +220,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  visibility: visible;
+  opacity: 1;
+  z-index: 1;
 }
 
 .input-icon svg {
@@ -207,12 +234,15 @@
   margin: 0 0 0.75rem;
   font-weight: 600;
   color: #1e293b;
+  visibility: visible;
+  opacity: 1;
 }
 
 .role-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem;
+  width: 100%;
 }
 
 .role-card {
@@ -224,6 +254,8 @@
   display: grid;
   gap: 0.2rem;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  visibility: visible;
+  opacity: 1;
 }
 
 .role-card span {
@@ -282,6 +314,9 @@
   box-shadow: 0 12px 18px rgba(29, 91, 244, 0.25);
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  visibility: visible;
+  opacity: 1;
+  display: block;
 }
 
 .primary-login-button:hover:not(:disabled) {

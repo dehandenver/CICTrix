@@ -1,33 +1,34 @@
 import {
-  AlertCircle,
-  Bell,
-  Briefcase,
-  Building2,
-  Calculator,
-  Calendar,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Clock3,
-  Download,
-  Eye,
-  FileText,
-  Filter,
-  Lock,
-  Mail,
-  MapPin,
-  Phone,
-  Plus,
-  Search,
-  Settings,
-  Shield,
-  Trash2,
-  User,
-  UserCheck,
-  UserPlus,
-  Users,
-  X,
+    AlertCircle,
+    Bell,
+    Briefcase,
+    Building2,
+    Calculator,
+    Calendar,
+    Check,
+    ChevronLeft,
+    ChevronRight,
+    Clock3,
+    Download,
+    Eye,
+    FileText,
+    Filter,
+    Lock,
+    Mail,
+    MapPin,
+    Phone,
+    Plus,
+    Search,
+    Settings,
+    Shield,
+    Trash2,
+    User,
+    UserCheck,
+    UserPlus,
+    Users,
+    X,
 } from 'lucide-react';
+import { QualifiedApplicantsSection } from '../../components/QualifiedApplicantsSection';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/Button';
@@ -36,16 +37,17 @@ import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import { getEmployeePortalAccounts } from '../../lib/employeePortalData';
 import { mockDatabase } from '../../lib/mockDatabase';
 import {
-  ensureRecruitmentSeedData,
-  getAuthoritativeJobPostings,
-  getDeletedJobReports,
-  getEmployeeRecords,
-  getNewlyHired,
-  getApplicants as getRecruitmentApplicants,
-  saveDeletedJobReports,
-  saveJobPostings,
-  saveNewlyHired,
-  type DeletedJobReport,
+    ensureRecruitmentSeedData,
+    getAuthoritativeJobPostings,
+    getDeletedJobReports,
+    getEmployeeRecords,
+    getJobPostingsFromSupabase,
+    getNewlyHired,
+    getApplicants as getRecruitmentApplicants,
+    saveDeletedJobReports,
+    saveJobPostings,
+    saveNewlyHired,
+    type DeletedJobReport,
 } from '../../lib/recruitmentData';
 import { runSingleFlight } from '../../lib/singleFlight';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
@@ -118,6 +120,24 @@ interface RankingApplicantRow {
   written: number;
   interview: number;
 }
+
+interface StoredScoringCategory {
+  initialScore?: number | null;
+  finalScore?: number | null;
+}
+
+interface StoredApplicantCategoryScores {
+  education?: StoredScoringCategory;
+  experience?: StoredScoringCategory;
+  performance?: StoredScoringCategory;
+  pcpt?: StoredScoringCategory;
+  potential?: StoredScoringCategory;
+  writtenExam?: StoredScoringCategory;
+  appointmentType?: 'original' | 'promotional';
+  positionType?: 'rank-and-file' | 'executive';
+}
+
+const RSP_CATEGORY_SCORES_KEY = 'cictrix_category_scores';
 
 interface AssessmentPositionCard {
   position: string;
@@ -433,6 +453,67 @@ const deriveEvaluationTotalScore = (row: any): number => {
   return Number(Math.min(100, Math.max(0, Math.round((total / 30) * 100))));
 };
 
+const loadStoredCategoryScores = (): Record<string, StoredApplicantCategoryScores> => {
+  try {
+    const raw = localStorage.getItem(RSP_CATEGORY_SCORES_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const hasFinalizedCategoryScores = (entry?: StoredApplicantCategoryScores): boolean => {
+  if (!entry) return false;
+
+  const categories: Array<StoredScoringCategory | undefined> = [
+    entry.education,
+    entry.experience,
+    entry.performance,
+    entry.pcpt,
+    entry.potential,
+    entry.writtenExam,
+  ];
+
+  const hasAnyFinalScore = categories.some((category) => typeof category?.finalScore === 'number');
+  if (hasAnyFinalScore) return true;
+
+  // Backward compatibility: older saves may rely on metadata without explicit final scores.
+  return Boolean(entry.appointmentType || entry.positionType);
+};
+
+const getSavedScoredApplicantIdSet = (): Set<string> => {
+  const scores = loadStoredCategoryScores();
+  return new Set(
+    Object.entries(scores)
+      .filter(([, value]) => hasFinalizedCategoryScores(value))
+      .map(([applicantId]) => applicantId)
+  );
+};
+
+const resolveScoreValue = (category?: StoredScoringCategory): number => {
+  const finalValue = typeof category?.finalScore === 'number' ? category.finalScore : null;
+  if (finalValue !== null) return finalValue;
+  return typeof category?.initialScore === 'number' ? category.initialScore : 0;
+};
+
+const pcptRawToConverted = (raw: number): number => {
+  if (raw >= 35) return 20;
+  if (raw >= 32) return 18;
+  if (raw >= 29) return 16;
+  if (raw >= 26) return 14;
+  if (raw >= 23) return 12;
+  if (raw >= 20) return 10;
+  return Number(Math.max(0, Math.min(20, (raw / 30) * 20)).toFixed(2));
+};
+
+const normalizeWrittenScore = (value: number): number => {
+  // New flow stores written raw score (0-100). Legacy flow may store already-converted <= 30.
+  if (value <= 30) return Number(value.toFixed(2));
+  return Number((value * 0.3).toFixed(2));
+};
+
 const loadRaterAssignments = (): Record<string, string[]> => {
   try {
     const raw = localStorage.getItem(RATER_ASSIGNMENTS_KEY);
@@ -498,6 +579,7 @@ export const RSPDashboard = () => {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [employeeDetailsTab, setEmployeeDetailsTab] = useState<'personal' | 'documents'>('personal');
   const [showPositionChangeModal, setShowPositionChangeModal] = useState(false);
+  const [savedScoredApplicantIds, setSavedScoredApplicantIds] = useState<Set<string>>(getSavedScoredApplicantIdSet);
   const [positionChangeForm, setPositionChangeForm] = useState({
     changeType: 'promotion' as 'promotion' | 'succession' | 'transfer',
     newDepartment: 'IT Department',
@@ -571,9 +653,9 @@ export const RSPDashboard = () => {
       const localAssignments = loadRaterAssignments();
       setRaterAssignedPositionsByEmail(localAssignments);
 
-      const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
-      const primaryClient = preferredMode === 'local' ? (mockDatabase as any) : supabase;
-      const secondaryClient = preferredMode === 'local' ? supabase : (mockDatabase as any);
+      // CRITICAL: Always fetch applicants from Supabase (as per user requirement: "all datas must be stored in supabase")
+      const primaryClient = supabase; // Always use Supabase for applicants
+      const secondaryClient = (mockDatabase as any); // Fallback only if Supabase fails
 
       const fetchBundle = async (client: any, cacheKey: string) =>
         runSingleFlight(
@@ -591,7 +673,7 @@ export const RSPDashboard = () => {
 
       let [, , applicantsRes, ratersRes, evaluationsRes] = await fetchBundle(
         primaryClient,
-        `rsp-bundle:${preferredMode}:primary`
+        `rsp-bundle:supabase:primary` // Always use supabase cache key
       );
 
       const primaryRaters =
@@ -603,14 +685,23 @@ export const RSPDashboard = () => {
         applicantsRes.status === 'fulfilled' && !applicantsRes.value.error && Array.isArray(applicantsRes.value.data);
 
       // Fallback only on fetch failure. Empty DB results are authoritative.
-      if (!primaryApplicantsFetchSucceeded && !isMockModeEnabled) {
+      if (!primaryApplicantsFetchSucceeded) {
         [, , applicantsRes, ratersRes, evaluationsRes] = await fetchBundle(
           secondaryClient,
-          `rsp-bundle:${preferredMode}:secondary`
+          `rsp-bundle:supabase:secondary`
         );
       }
 
-      const canonicalJobs = mapRecruitmentPostingsToDashboardJobs(getAuthoritativeJobPostings());
+      // CRITICAL: Fetch job postings from Supabase first (source of truth), fallback to localStorage
+      let canonicalJobPostings = await getJobPostingsFromSupabase();
+      if (canonicalJobPostings.length === 0) {
+        console.log('[RSP] No jobs from Supabase, falling back to localStorage');
+        canonicalJobPostings = getAuthoritativeJobPostings();
+      } else {
+        console.log('[RSP] ✓ Loaded', canonicalJobPostings.length, 'jobs from Supabase');
+      }
+      
+      const canonicalJobs = mapRecruitmentPostingsToDashboardJobs(canonicalJobPostings);
       setJobs(canonicalJobs);
 
       if (applicantsRes.status === 'fulfilled' && !applicantsRes.value.error && Array.isArray(applicantsRes.value.data)) {
@@ -665,30 +756,63 @@ export const RSPDashboard = () => {
           });
         }
 
-        const normalized = applicantsRes.value.data.map((item: any) => ({
-          id: (() => {
-            const id = String(item?.id ?? crypto.randomUUID());
-            return id;
-          })(),
-          full_name: applicantNameFromRow(item),
-          email: String(item?.email ?? ''),
-          contact_number: String(item?.contact_number ?? ''),
-          position: String(item?.position ?? ''),
-          office: String(item?.office ?? item?.department ?? 'Unassigned'),
-          status: String(item?.status ?? 'Pending'),
-          created_at: String(item?.created_at ?? new Date().toISOString()),
-          total_score: (() => {
-            const applicantId = String(item?.id ?? '');
-            const emailKey = normalizeEmailKey(String(item?.email ?? ''));
-            const rawDbScore = typeof item?.total_score === 'number' ? item.total_score : 0;
-            const evalScore = applicantId ? (evaluationBestScore.get(applicantId) ?? 0) : 0;
-            const recruitmentScoreById = applicantId ? Number(recruitmentById.get(applicantId)?.qualificationScore ?? 0) : 0;
-            const recruitmentScoreByEmail = emailKey ? Number(recruitmentByEmail.get(emailKey)?.qualificationScore ?? 0) : 0;
-            const resolved = Math.max(rawDbScore, evalScore, recruitmentScoreById, recruitmentScoreByEmail);
-            return resolved > 0 ? resolved : null;
-          })(),
-        }));
-        setApplicants(normalized);
+        const normalized = applicantsRes.value.data.map((item: any) => {
+          const applicantId = String(item?.id ?? crypto.randomUUID());
+          const emailKey = normalizeEmailKey(String(item?.email ?? ''));
+          const recruitmentMatchById = applicantId ? recruitmentById.get(applicantId) : undefined;
+          const recruitmentMatchByEmail = emailKey ? recruitmentByEmail.get(emailKey) : undefined;
+          const recruitmentMatch = recruitmentMatchById ?? recruitmentMatchByEmail;
+
+          const rawDbScore = typeof item?.total_score === 'number' ? item.total_score : 0;
+          const evalScore = applicantId ? (evaluationBestScore.get(applicantId) ?? 0) : 0;
+          const recruitmentScoreById = applicantId ? Number(recruitmentById.get(applicantId)?.qualificationScore ?? 0) : 0;
+          const recruitmentScoreByEmail = emailKey ? Number(recruitmentByEmail.get(emailKey)?.qualificationScore ?? 0) : 0;
+          const resolvedScore = Math.max(rawDbScore, evalScore, recruitmentScoreById, recruitmentScoreByEmail);
+
+          const dbStatus = String(item?.status ?? 'Pending');
+          const recruitmentStatus = String(recruitmentMatch?.status ?? '').trim();
+          const resolvedStatus =
+            recruitmentStatus.length > 0
+              ? recruitmentStatus
+              : dbStatus;
+
+          return {
+            id: applicantId,
+            full_name: applicantNameFromRow(item),
+            email: String(item?.email ?? ''),
+            contact_number: String(item?.contact_number ?? ''),
+            position: String(item?.position ?? ''),
+            office: String(item?.office ?? item?.department ?? 'Unassigned'),
+            status: resolvedStatus,
+            created_at: String(item?.created_at ?? new Date().toISOString()),
+            total_score: resolvedScore > 0 ? resolvedScore : null,
+          };
+        });
+
+        // Include local-only recruitment rows (common in mock mode) so hires
+        // appear in Newly Hired immediately after status change.
+        const mergedById = new Map<string, ApplicantRecord>(
+          normalized.map((row: ApplicantRecord) => [String(row.id), row])
+        );
+
+        recruitmentApplicants.forEach((entry) => {
+          const entryId = String(entry.id ?? '').trim();
+          if (!entryId || mergedById.has(entryId)) return;
+
+          mergedById.set(entryId, {
+            id: entryId,
+            full_name: `${entry.personalInfo.firstName} ${entry.personalInfo.lastName}`.replace(/\s+/g, ' ').trim() || 'Unnamed Applicant',
+            email: String(entry.personalInfo.email ?? ''),
+            contact_number: String(entry.personalInfo.phone ?? ''),
+            position: String(canonicalJobs.find((job) => job.id === entry.jobPostingId)?.title ?? ''),
+            office: String(canonicalJobs.find((job) => job.id === entry.jobPostingId)?.department ?? 'Unassigned'),
+            status: String(entry.status ?? 'Pending'),
+            created_at: String(entry.applicationDate ?? new Date().toISOString()),
+            total_score: Number(entry.qualificationScore ?? 0) > 0 ? Number(entry.qualificationScore) : null,
+          });
+        });
+
+        setApplicants(Array.from(mergedById.values()));
       } else {
         setApplicants([]);
       }
@@ -971,10 +1095,26 @@ export const RSPDashboard = () => {
     const qualifiedByPosition = new Map<string, number>();
 
     applicants.forEach((applicant) => {
+      if (!savedScoredApplicantIds.has(applicant.id)) return;
       const normalizedStatus = (applicant.status || '').toLowerCase();
-      const hasQualifiedStatus =
-        normalizedStatus.includes('qualified') || normalizedStatus.includes('shortlist') || completedEvaluationIds.has(applicant.id);
-      if (!hasQualifiedStatus || !applicant.position || !reportEligibleTitleSet.has(applicant.position)) return;
+      // Negative outcomes always exclude.
+      const isExplicitlyExcluded =
+        normalizedStatus.includes('disqual') ||
+        normalizedStatus.includes('not qualified') ||
+        normalizedStatus.includes('reject') ||
+        normalizedStatus.includes('withdrawn');
+      if (isExplicitlyExcluded) return;
+      // RSP-saved scores OR an explicit qualified status OR completed evaluation
+      // all count as eligible for ranking. The first condition is the new path so
+      // applicants whose status is still "New Application" surface here once the
+      // RSP saves their category scores.
+      const hasQualifyingSignal =
+        savedScoredApplicantIds.has(applicant.id) ||
+        normalizedStatus.includes('qualified') ||
+        normalizedStatus.includes('shortlist') ||
+        normalizedStatus.includes('recommended') ||
+        completedEvaluationIds.has(applicant.id);
+      if (!hasQualifyingSignal || !applicant.position || !reportEligibleTitleSet.has(applicant.position)) return;
       qualifiedByPosition.set(applicant.position, (qualifiedByPosition.get(applicant.position) || 0) + 1);
     });
 
@@ -993,7 +1133,7 @@ export const RSPDashboard = () => {
     });
 
     return Array.from(unique.values()).sort((a, b) => b.qualifiedCount - a.qualifiedCount || a.position.localeCompare(b.position));
-  }, [applicants, completedEvaluationIds, jobs]);
+  }, [applicants, completedEvaluationIds, jobs, savedScoredApplicantIds]);
 
   const activeRankingCard = useMemo(
     () => rankingPositionCards.find((card) => card.position === activeRankingPosition) || null,
@@ -1007,9 +1147,19 @@ export const RSPDashboard = () => {
     if (!eligibleTitles.has(activeRankingPosition)) return [];
 
     const candidates = applicants.filter((applicant) => {
+      if (!savedScoredApplicantIds.has(applicant.id)) return false;
       if (applicant.position !== activeRankingPosition) return false;
       const normalizedStatus = (applicant.status || '').toLowerCase();
+      // Match the qualification gate used by rankingPositionCards: scored + not
+      // explicitly excluded ⇒ rankable. Keeps negative-status applicants out.
+      const isExplicitlyExcluded =
+        normalizedStatus.includes('disqual') ||
+        normalizedStatus.includes('not qualified') ||
+        normalizedStatus.includes('reject') ||
+        normalizedStatus.includes('withdrawn');
+      if (isExplicitlyExcluded) return false;
       return (
+        savedScoredApplicantIds.has(applicant.id) ||
         normalizedStatus.includes('qualified') ||
         normalizedStatus.includes('shortlist') ||
         normalizedStatus.includes('recommended') ||
@@ -1017,10 +1167,26 @@ export const RSPDashboard = () => {
       );
     });
 
+    const categoryScores = loadStoredCategoryScores();
+
     const rows = candidates
       .map((applicant) => {
-        const total = Number((applicant.total_score || 0).toFixed(2));
-        const share = Number((total / 5).toFixed(2));
+        const stored = categoryScores[applicant.id];
+        const experience = Number(resolveScoreValue(stored?.experience).toFixed(2));
+        const performance = Number(resolveScoreValue(stored?.performance).toFixed(2));
+        const potential = Number(resolveScoreValue(stored?.potential).toFixed(2));
+
+        const writtenRawOrConverted = resolveScoreValue(stored?.writtenExam);
+        const written = Number(normalizeWrittenScore(writtenRawOrConverted).toFixed(2));
+
+        const pcptRawOrConverted = resolveScoreValue(stored?.pcpt);
+        const interview = Number((pcptRawOrConverted > 20 ? pcptRawToConverted(pcptRawOrConverted) : pcptRawOrConverted).toFixed(2));
+
+        const education = Number(resolveScoreValue(stored?.education).toFixed(2));
+        const computedTotal = Number((education + experience + performance + potential + written + interview).toFixed(2));
+        const fallbackTotal = Number((applicant.total_score || 0).toFixed(2));
+        const total = computedTotal > 0 ? computedTotal : fallbackTotal;
+
         return {
           id: applicant.id,
           fullName: applicant.full_name,
@@ -1028,17 +1194,38 @@ export const RSPDashboard = () => {
           position: applicant.position,
           department: applicant.office || activeRankingCard?.department || 'Unassigned Department',
           total,
-          experience: share,
-          performance: share,
-          potential: share,
-          written: share,
-          interview: Number((total - share * 4).toFixed(2)),
+          experience,
+          performance,
+          potential,
+          written,
+          interview,
         };
       })
       .sort((a, b) => b.total - a.total || a.fullName.localeCompare(b.fullName));
 
     return rows;
-  }, [activeRankingPosition, applicants, completedEvaluationIds, activeRankingCard, jobs]);
+  }, [activeRankingPosition, applicants, completedEvaluationIds, activeRankingCard, jobs, savedScoredApplicantIds]);
+
+  useEffect(() => {
+    const syncSavedScores = () => setSavedScoredApplicantIds(getSavedScoredApplicantIdSet());
+
+    const onStorage = (event: StorageEvent) => {
+      if (!event.key || event.key === RSP_CATEGORY_SCORES_KEY) {
+        syncSavedScores();
+      }
+    };
+
+    syncSavedScores();
+    window.addEventListener('focus', syncSavedScores);
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('cictrix:category-scores-updated', syncSavedScores as EventListener);
+
+    return () => {
+      window.removeEventListener('focus', syncSavedScores);
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('cictrix:category-scores-updated', syncSavedScores as EventListener);
+    };
+  }, []);
 
   const rankingSummary = useMemo(() => {
     if (activeRankingRows.length === 0) {
@@ -1217,17 +1404,54 @@ export const RSPDashboard = () => {
     }
   }, [activeAssessmentPosition, assessmentPositionCards]);
 
-  const newlyHiredApplicants = useMemo(
-    () => applicants.filter((applicant) => ['accepted', 'hired', 'qualified'].includes(applicant.status.toLowerCase())),
-    [applicants]
-  );
+  const newlyHiredRows = useMemo(() => getNewlyHired(), [section, applicants]);
+
+  const newlyHiredApplicants = useMemo(() => {
+    const applicantsById = new Map(applicants.map((applicant) => [String(applicant.id), applicant] as const));
+
+    if (newlyHiredRows.length > 0) {
+      const mapped = newlyHiredRows.map((row) => {
+        const applicantId = String(row.applicantId ?? '').trim();
+        const linked = applicantId ? applicantsById.get(applicantId) : undefined;
+
+        if (linked) {
+          return {
+            ...linked,
+            status: 'Hired',
+          };
+        }
+
+        const fullName = `${row.employeeInfo.firstName ?? ''} ${row.employeeInfo.lastName ?? ''}`.replace(/\s+/g, ' ').trim();
+        return {
+          id: applicantId || String(row.id),
+          employeeId: row.employeeId,
+          full_name: fullName || 'Newly Hired Applicant',
+          email: String(row.employeeInfo.email ?? ''),
+          contact_number: String(row.employeeInfo.phone ?? ''),
+          position: String(row.position ?? ''),
+          office: String(row.department ?? ''),
+          status: 'Hired',
+          created_at: String(row.dateHired ?? new Date().toISOString()),
+          total_score: typeof row.rankingScore === 'number' ? row.rankingScore : null,
+        } as ApplicantRecord;
+      });
+
+      const uniqueById = new Map<string, ApplicantRecord>();
+      mapped.forEach((entry) => {
+        uniqueById.set(String(entry.id), entry as ApplicantRecord);
+      });
+      return Array.from(uniqueById.values());
+    }
+
+    return applicants.filter((applicant) => ['accepted', 'hired'].includes(applicant.status.toLowerCase()));
+  }, [applicants, newlyHiredRows]);
 
   const credentialedNewlyHiredRows = useMemo(
     () =>
-      getNewlyHired().filter(
+      newlyHiredRows.filter(
         (row) => Boolean(row.employeeId) && Boolean(row.applicantId)
       ),
-    [section, applicants]
+    [newlyHiredRows]
   );
 
   const credentialedApplicantIds = useMemo(
@@ -1639,14 +1863,6 @@ export const RSPDashboard = () => {
     setJobs(nextJobs);
     persistDashboardJobsToRecruitment(nextJobs);
 
-    try {
-      await Promise.allSettled([
-        supabase.from('job_postings').insert([payload]),
-        supabase.from('jobs').insert([payload]),
-      ]);
-    } catch {
-    }
-
     setShowJobDialog(false);
     setNewJob({
       title: '',
@@ -1746,10 +1962,10 @@ export const RSPDashboard = () => {
 
     try {
       await Promise.allSettled([
-        supabase.from('job_postings').update({ status: updatedStatus }).eq('id', job.id),
-        supabase.from('jobs').update({ status: updatedStatus }).eq('id', job.id),
-        supabase.from('job_postings').update({ status: updatedStatus }).eq('title', job.title).eq('item_number', job.item_number),
-        supabase.from('jobs').update({ status: updatedStatus }).eq('title', job.title).eq('item_number', job.item_number),
+        (supabase as any).from('job_postings').update({ status: updatedStatus }).eq('id', job.id),
+        (supabase as any).from('jobs').update({ status: updatedStatus }).eq('id', job.id),
+        (supabase as any).from('job_postings').update({ status: updatedStatus }).eq('title', job.title).eq('item_number', job.item_number),
+        (supabase as any).from('jobs').update({ status: updatedStatus }).eq('title', job.title).eq('item_number', job.item_number),
       ]);
     } catch {
     }
@@ -2047,7 +2263,7 @@ export const RSPDashboard = () => {
     );
   };
 
-  const handleConfirmHireApplicants = () => {
+  const handleConfirmHireApplicants = async () => {
     if (!activeRankingPosition || selectedHireApplicantIds.length === 0) return;
 
     const selectedRows = activeRankingRows.filter((row) => selectedHireApplicantIds.includes(row.id));
@@ -2130,15 +2346,72 @@ export const RSPDashboard = () => {
         };
       });
 
+    // Local Newly Hired store is the source of truth for the sidebar; write it
+    // first so the user sees immediate feedback even if DB persistence fails.
     if (toAdd.length > 0) {
       saveNewlyHired([...existing, ...toAdd]);
     }
 
+    // Persist the status flip to the backend (relative /api → Vite proxy on :8000).
+    // If the backend is unavailable, fall back to Supabase. We verify Supabase
+    // succeeded by reading back the row(s); RLS can return error:null with 0 rows.
+    const persistOne = async (id: string): Promise<boolean> => {
+      try {
+        const res = await fetch(`/api/applicants/${id}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ applicant_id: id, status: 'hired' }),
+        });
+        if (res.ok) return true;
+        console.warn('[RSPDashboard] hire backend PATCH failed', id, res.status);
+      } catch (err) {
+        console.warn('[RSPDashboard] hire backend PATCH threw', id, err);
+      }
+      try {
+        const { data: updated, error } = await (supabase as any)
+          .from('applicants')
+          .update({ status: 'Hired' })
+          .eq('id', id)
+          .select('id, status');
+        if (error) {
+          console.error('[RSPDashboard] hire supabase update error', id, error);
+          return false;
+        }
+        if (!Array.isArray(updated) || updated.length === 0) {
+          console.error('[RSPDashboard] hire supabase update returned 0 rows for', id, '— likely RLS blocking UPDATE');
+          return false;
+        }
+        return true;
+      } catch (err) {
+        console.error('[RSPDashboard] hire supabase update threw', id, err);
+        return false;
+      }
+    };
+
+    const persistResults = await Promise.all(selectedRows.map((row) => persistOne(row.id)));
+    const allPersisted = persistResults.every(Boolean);
+    if (!allPersisted) {
+      console.warn(
+        '[RSPDashboard] not all hire status updates persisted to DB — local Newly Hired entries were saved regardless.',
+      );
+    }
+
+    // Always update the in-memory applicants list and close the modals so the user
+    // gets visual confirmation. Newly Hired sidebar reads from the local store
+    // (already written above), so the entries appear immediately.
     const selectedIdSet = new Set(selectedRows.map((row) => row.id));
     setApplicants((prev) => prev.map((applicant) => (selectedIdSet.has(applicant.id) ? { ...applicant, status: 'Hired' } : applicant)));
     setShowHireApplicantsModal(false);
     setShowRankingModal(false);
     setSelectedHireApplicantIds([]);
+    setActiveRankingPosition(null);
+
+    // Notify other listeners so dependent views (Newly Hired stats, sidebar count)
+    // refresh without requiring a navigation.
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('cictrix:applicants-updated'));
+      window.dispatchEvent(new CustomEvent('cictrix:newly-hired-updated'));
+    }
   };
 
   const handleBulkEmployeeToggle = (employeeId: string) => {
@@ -2513,119 +2786,10 @@ export const RSPDashboard = () => {
           )}
 
           {section === 'qualified' && (
-            <>
-              <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-                <article className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="!mb-2 text-base text-[var(--text-secondary)]">Total Qualified</p>
-                      <p className="!mb-0 text-3xl font-bold">{qualifiedApplicants.length}</p>
-                    </div>
-                    <div className="rounded-2xl bg-blue-100 p-4 text-blue-600"><UserCheck size={28} /></div>
-                  </div>
-                </article>
-                <article className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="!mb-2 text-base text-[var(--text-secondary)]">Average Score</p>
-                      <p className="!mb-0 text-3xl font-bold">{avgQualifiedScore.toFixed(1)}</p>
-                    </div>
-                    <div className="rounded-2xl bg-purple-100 p-4 text-purple-600"><Calculator size={28} /></div>
-                  </div>
-                </article>
-              </section>
-
-              <section className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
-                <div className="mb-5 flex flex-wrap gap-3 border-b border-[var(--border-color)] pb-4">
-                  {[
-                    { key: 'all', label: 'All Applicants', count: qualifiedApplicants.length },
-                    { key: 'completed', label: 'Completed', count: qualifiedApplicants.filter((a) => completedEvaluationIds.has(a.id)).length },
-                    { key: 'pending', label: 'Pending', count: qualifiedApplicants.filter((a) => !completedEvaluationIds.has(a.id)).length },
-                  ].map((tab) => (
-                    <button
-                      key={tab.key}
-                      type="button"
-                      onClick={() => setQualifiedTab(tab.key as 'all' | 'completed' | 'pending')}
-                      className={`rounded-xl px-5 py-2 text-base font-semibold ${qualifiedTab === tab.key ? 'bg-blue-600 text-white' : 'bg-slate-100 text-[var(--text-primary)]'}`}
-                    >
-                      {tab.label} <span className="ml-2 rounded-full bg-white/80 px-2 py-0.5 text-base text-[var(--text-primary)]">{tab.count}</span>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-                  <div className="relative xl:col-span-1">
-                    <Search size={20} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-                    <input
-                      value={qualifiedSearch}
-                      onChange={(e) => setQualifiedSearch(e.target.value)}
-                      placeholder="Search by name, position, or office..."
-                      className="w-full rounded-xl border border-[var(--border-color)] py-3 pl-11 pr-4 text-lg"
-                    />
-                  </div>
-                  <div>
-                    <select value={qualifiedPosition} onChange={(e) => setQualifiedPosition(e.target.value)} className="w-full rounded-xl border border-[var(--border-color)] p-3 text-lg">
-                      <option value="all">All Positions</option>
-                      {positionOptions.map((position) => (
-                        <option key={position} value={position}>{position}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <select value={qualifiedOffice} onChange={(e) => setQualifiedOffice(e.target.value)} className="w-full rounded-xl border border-[var(--border-color)] p-3 text-lg">
-                      <option value="all">All Offices</option>
-                      {officeOptions.map((office) => (
-                        <option key={office} value={office}>{office}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </section>
-
-              <p className="text-base text-[var(--text-secondary)]">Showing <span className="font-semibold text-[var(--text-primary)]">{qualifiedApplicants.length}</span> qualified applicants</p>
-
-              <section className="overflow-hidden rounded-2xl border border-[var(--border-color)] bg-white">
-                <table className="w-full border-collapse">
-                  <thead className="bg-slate-50 text-left text-sm uppercase tracking-wide text-[var(--text-secondary)]">
-                    <tr>
-                      <th className="px-5 py-4">Applicant Name</th>
-                      <th className="px-5 py-4">Position Applied For</th>
-                      <th className="px-5 py-4">Office / Department</th>
-                      <th className="px-5 py-4">Total Score</th>
-                      <th className="px-5 py-4">Status</th>
-                      <th className="px-5 py-4">Date Qualified</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {qualifiedApplicants.map((applicant) => (
-                      <tr key={applicant.id} className="border-t border-[var(--border-color)] text-lg">
-                        <td className="px-5 py-4 font-semibold text-blue-600">
-                          <button type="button" className="hover:underline" onClick={() => navigate(`/admin/rsp/applicant/${applicant.id}`)}>
-                            {applicant.full_name}
-                          </button>
-                        </td>
-                        <td className="px-5 py-4">{applicant.position || '--'}</td>
-                        <td className="px-5 py-4">{applicant.office || '--'}</td>
-                        <td className="px-5 py-4 font-semibold text-emerald-600">
-                          {typeof applicant.total_score === 'number' ? `${applicant.total_score.toFixed(1)} / 100` : '--'}
-                        </td>
-                        <td className="px-5 py-4">
-                          <span className={`rounded-full px-3 py-1 text-sm font-semibold ${completedEvaluationIds.has(applicant.id) ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                            {completedEvaluationIds.has(applicant.id) ? 'Completed' : 'Pending'}
-                          </span>
-                        </td>
-                        <td className="px-5 py-4">{formatDate(applicant.created_at)}</td>
-                      </tr>
-                    ))}
-                    {qualifiedApplicants.length === 0 && (
-                      <tr>
-                        <td colSpan={6} className="px-5 py-8 text-center text-base text-[var(--text-secondary)]">No qualified applicants found.</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </section>
-            </>
+            <QualifiedApplicantsSection
+              applicants={applicants}
+              completedEvaluationIds={completedEvaluationIds}
+            />
           )}
 
           {section === 'new-hired' && (

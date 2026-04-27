@@ -1,6 +1,7 @@
 #!/bin/bash
-
 # CICTrix Backend Setup Script for Linux/Mac
+
+cd "$(dirname "$0")/.."
 
 echo ""
 echo "===================================="

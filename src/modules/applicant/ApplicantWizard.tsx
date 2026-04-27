@@ -14,13 +14,12 @@ import hrisLogo from '../../assets/hris-logo.svg';
 import { Button, Dialog } from '../../components';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import {
-  type EmployeePortalAccount,
-  findEmployeePortalAccount,
-  getEmployeePortalAccounts,
+    type EmployeePortalAccount,
+    findEmployeePortalAccount,
+    getEmployeePortalAccounts,
 } from '../../lib/employeePortalData';
-import { mockDatabase } from '../../lib/mockDatabase';
 import { getEmployeeRecords, syncApplicantSubmissionToRecruitment } from '../../lib/recruitmentData';
-import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../../lib/supabase';
+import { ATTACHMENTS_BUCKET, supabase } from '../../lib/supabase';
 import '../../styles/wizard.css';
 import type { ApplicantFormData, UploadedFile, ValidationErrors } from '../../types/applicant.types';
 import { validateApplicantForm, validateFiles } from '../../utils/validation';
@@ -130,16 +129,15 @@ export const ApplicantWizard: React.FC = () => {
     setCurrentStep(2);
   };
 
-  const handleNextToReview = () => {
-    const fileValidationError = validateFiles(files.map((f) => f.file), files, applicationType);
-    if (fileValidationError) {
-      setFileError(fileValidationError);
-      return;
-    }
-
-    setFileError('');
-    setCurrentStep(3);
-  };
+const handleNextToReview = () => {
+    const fileValidationError = validateFiles(files.map((f) => f.file), files, applicationType);
+    if (fileValidationError) {
+      setFileError(fileValidationError);
+      return;
+    }
+    setFileError('');
+    setCurrentStep(3);
+  };
 
   const handleBack = () => {
     if (currentStep === 3) {
@@ -158,34 +156,20 @@ export const ApplicantWizard: React.FC = () => {
       const storageBucket = client?.storage?.from?.(ATTACHMENTS_BUCKET);
       const hasUpload = typeof storageBucket?.upload === 'function';
 
-      const buildFallbackPath = async () => {
-        const isPreviewFriendlyType =
-          uploadedFile.file.type.startsWith('image/') ||
-          uploadedFile.file.type === 'application/pdf' ||
-          uploadedFile.file.type.startsWith('text/');
-
-        if (isPreviewFriendlyType && uploadedFile.file.size <= MAX_PREVIEWABLE_FILE_BYTES) {
-          return toDataUrl(uploadedFile.file);
-        }
-
-        return `mock://attachment/${applicantId}/${Date.now()}-${encodeURIComponent(uploadedFile.file.name)}`;
-      };
+      // Supabase is required for file storage
+      if (!hasUpload) {
+        throw new Error('Supabase storage is not available. Please check your configuration.');
+      }
 
       let filePath = generatedPath;
-
-      if (hasUpload) {
-        try {
-          const uploadResult = await storageBucket.upload(generatedPath, uploadedFile.file);
-          const uploadError = (uploadResult as any).error;
-          if (uploadError) {
-            filePath = await buildFallbackPath();
-          }
-        } catch {
-          // If remote upload fails (bucket/RLS/network), keep flow working via local fallback.
-          filePath = await buildFallbackPath();
+      try {
+        const uploadResult = await storageBucket.upload(generatedPath, uploadedFile.file);
+        const uploadError = (uploadResult as any).error;
+        if (uploadError) {
+          throw new Error(`Failed to upload ${uploadedFile.file.name}: ${uploadError}`);
         }
-      } else {
-        filePath = await buildFallbackPath();
+      } catch (error) {
+        throw new Error(`Failed to upload ${uploadedFile.file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
 
       const attachmentPayload = {
@@ -261,47 +245,47 @@ export const ApplicantWizard: React.FC = () => {
     }
   };
 
-  const submitWithClient = async (client: any): Promise<void> => {
+  const submitWithClient = async (): Promise<string> => {
     const itemNumber = formData.item_number || buildApplicantItemNumber(Date.now() % 10000);
+    const safe = (val: string | null | undefined) => (val == null ? '' : String(val));
 
-    const applicantPayload = {
-      first_name: formData.first_name,
-      middle_name: formData.middle_name,
-      last_name: formData.last_name,
-      gender: formData.gender,
-      address: formData.address,
-      contact_number: formData.contact_number,
-      email: formData.email,
-      position: formData.position,
+    const applicantPayload: Record<string, any> = {
+      first_name: formData.first_name.trim(),
+      middle_name: safe(formData.middle_name).trim() || null,
+      last_name: formData.last_name.trim(),
+      gender: safe(formData.gender) || null,
+      address: safe(formData.address).trim(),
+      contact_number: safe(formData.contact_number).trim(),
+      email: formData.email.trim().toLowerCase(),
+      position: safe(formData.position).trim(),
       item_number: itemNumber,
-      office: POSITION_TO_DEPARTMENT_MAP[formData.position] || formData.office,
+      office: safe(POSITION_TO_DEPARTMENT_MAP[formData.position] || formData.office).trim(),
       is_pwd: formData.is_pwd,
       application_type: applicationType,
-      employee_id: formData.employee_id || null,
-      current_position: formData.current_position || null,
-      current_department: formData.current_department || null,
-      current_division: formData.current_division || null,
-      employee_username: formData.employee_username || null,
+      status: 'New Application',
     };
 
-    const applicantResult = typeof client?.insertApplicant === 'function'
-      ? await client.insertApplicant(applicantPayload)
-      : await client
-          .from('applicants')
-          .insert(applicantPayload)
-          .select()
-          .single();
+    if (applicationType === 'promotion') {
+      if (formData.employee_id) applicantPayload.employee_id = formData.employee_id;
+      if (formData.current_position) applicantPayload.current_position = formData.current_position;
+      if (formData.current_department) applicantPayload.current_department = formData.current_department;
+      if (formData.current_division) applicantPayload.current_division = formData.current_division;
+      if (formData.employee_username) applicantPayload.employee_username = formData.employee_username;
+    }
 
-    const applicantError = (applicantResult as any).error;
-    const applicantData = (applicantResult as any).data;
+    const { data: applicantData, error: applicantError } = await (supabase as any)
+      .from('applicants')
+      .insert(applicantPayload)
+      .select('id, item_number')
+      .single();
 
-    if (applicantError || !applicantData) {
-      throw new Error(applicantError?.message || 'Failed to create applicant record');
+    if (applicantError || !applicantData?.id) {
+      throw new Error(applicantError?.message || 'Failed to create applicant record. Please try again.');
     }
 
     saveApplicantAppointmentType(applicantData.id, applicationType);
 
-    const syncedAttachments = await uploadFiles(client, applicantData.id);
+    const syncedAttachments = await uploadFiles(supabase, applicantData.id);
     await cachePreviewableFiles(applicantData.id);
 
     syncApplicantSubmissionToRecruitment({
@@ -328,11 +312,12 @@ export const ApplicantWizard: React.FC = () => {
       submittedAt: new Date().toISOString(),
       attachments: syncedAttachments,
     });
+
+    return applicantData.item_number || itemNumber;
   };
 
-  const completeSuccess = () => {
-    const generatedReference = `#YEOGW${Math.random().toString(36).slice(2, 7).toUpperCase()}XX`;
-    setSubmissionReference(generatedReference);
+  const completeSuccess = (itemNumber: string) => {
+    setSubmissionReference(itemNumber);
     setShowSuccessDialog(true);
     setFormData(INITIAL_FORM_DATA);
     setFiles([]);
@@ -346,14 +331,6 @@ export const ApplicantWizard: React.FC = () => {
     setEmployeeAuthError('');
   };
 
-  const persistDataSourceMode = (mode: 'local' | 'supabase') => {
-    try {
-      localStorage.setItem('cictrix_data_source_mode', mode);
-    } catch {
-      // Ignore localStorage write issues
-    }
-  };
-
   const handleSubmit = async () => {
     const fileValidationError = validateFiles(files.map((f) => f.file), files, applicationType);
     if (fileValidationError) {
@@ -365,28 +342,10 @@ export const ApplicantWizard: React.FC = () => {
     setSubmitError('');
 
     try {
-      await submitWithClient(supabase);
-      persistDataSourceMode('supabase');
-      completeSuccess();
+      const itemNumber = await submitWithClient();
+      completeSuccess(itemNumber);
     } catch (error) {
       console.error('Submission error:', error);
-
-      if (!isMockModeEnabled) {
-        try {
-          await submitWithClient(mockDatabase as any);
-          persistDataSourceMode('local');
-          completeSuccess();
-          return;
-        } catch (fallbackError) {
-          console.error('Fallback submission error:', fallbackError);
-          setSubmitError(
-            fallbackError instanceof Error
-              ? fallbackError.message
-              : 'An error occurred while submitting your application. Please try again.'
-          );
-          return;
-        }
-      }
 
       setSubmitError(
         error instanceof Error
@@ -555,24 +514,16 @@ export const ApplicantWizard: React.FC = () => {
           .select('id', { count: 'exact', head: true });
         const supabaseCount = Number((supabaseCountResult as any).count ?? 0);
 
-        let nextSequence = supabaseCount + 1;
-        const supabaseCountError = (supabaseCountResult as any).error;
-        if (supabaseCountError || Number.isNaN(supabaseCount)) {
-          const localApplicantsResult = await mockDatabase.getApplicants();
-          const localCount = Array.isArray((localApplicantsResult as any).data)
-            ? (localApplicantsResult as any).data.length
-            : 0;
-          nextSequence = localCount + 1;
-        }
-
         if (!cancelled) {
           setFormData((prev) => {
             if (prev.item_number) return prev;
-            return { ...prev, item_number: buildApplicantItemNumber(nextSequence) };
+            return { ...prev, item_number: buildApplicantItemNumber(supabaseCount + 1) };
           });
         }
-      } catch {
+      } catch (error) {
+        console.error('Failed to generate item number from Supabase:', error);
         if (!cancelled) {
+          // Generate a unique sequence based on timestamp as last resort
           const fallbackSequence = Date.now() % 10000;
           setFormData((prev) => {
             if (prev.item_number) return prev;
@@ -640,11 +591,12 @@ export const ApplicantWizard: React.FC = () => {
             </p>
           </div>
 
-          {isMockModeEnabled && (
-            <div className="mock-mode-banner">
-              <p>Running in demo mode (localStorage). Add Supabase credentials to `.env` to use a live backend.</p>
-            </div>
-          )}
+          <a href="/track" className="track-application-link">
+            <FileText size={16} />
+            <span>Track your existing application</span>
+          </a>
+
+
         </main>
       ) : (
         <main className="wizard-layout">
@@ -702,6 +654,14 @@ export const ApplicantWizard: React.FC = () => {
                     errors={errors}
                     onChange={handleFormChange}
                     applicationType={applicationType}
+                    isEmployee={Boolean(authenticatedEmployeeAccount?.employee?.employeeId)}
+                    onApplicationTypeChange={(next) => {
+                      // Guard: an authenticated employee may never switch to Original.
+                      // (UI also hides the radio group in that case, but defense-in-depth.)
+                      if (authenticatedEmployeeAccount?.employee?.employeeId && next === 'job') return;
+                      setApplicationType(next);
+                      handleFormChange('application_type', next);
+                    }}
                   />
                 </div>
               </>
@@ -952,10 +912,15 @@ export const ApplicantWizard: React.FC = () => {
           </div>
           <h3>Application Submitted Successfully</h3>
           <p>
-            Your application has been received. You will be notified via email regarding the status of your
-            application.
+            Your application has been received and is now under review.
           </p>
-          <p className="submission-reference">Application Reference: {submissionReference}</p>
+          <div className="submission-reference-box">
+            <p className="submission-reference-label">Your Application Item Number</p>
+            <p className="submission-reference">{submissionReference}</p>
+            <p className="submission-reference-hint">
+              Save this number. You can use it at <strong>/track</strong> to check your application status anytime.
+            </p>
+          </div>
         </div>
       </Dialog>
     </div>

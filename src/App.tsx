@@ -4,14 +4,14 @@ import { Dialog } from './components/Dialog';
 import { JobPostingsPage } from './components/JobPostingsPage';
 import { NewlyHiredPage } from './components/NewlyHiredPage';
 import { QualifiedApplicantsPage } from './components/QualifiedApplicantsPage';
+import { QualifiedApplicantsRSPPage } from './components/QualifiedApplicantsRSPPage';
 import { RaterManagementPage } from './components/RaterManagementPage';
 import SuccessionReadinessEngine from './components/SuccessionReadinessEngine';
 import {
   findEmployeeByEmployeeId,
   findEmployeePortalAccount,
 } from './lib/employeePortalData';
-import { mockDatabase } from './lib/mockDatabase';
-import { isMockModeEnabled, supabase } from './lib/supabase';
+import { supabase } from './lib/supabase';
 import { LNDDashboard } from './modules/admin/LNDDashboard';
 import { LoginPage } from './modules/admin/LoginPage';
 import { PMDashboard } from './modules/admin/PMDashboard';
@@ -19,6 +19,7 @@ import { RSPDashboard } from './modules/admin/RSPDashboard.tsx';
 import { SettingsPage } from './modules/admin/SettingsPage';
 import { SuperAdminDashboard } from './modules/admin/SuperAdminDashboard';
 import { ApplicantWizard } from './modules/applicant/ApplicantWizard';
+import { ApplicationStatusPage } from './modules/applicant/ApplicationStatusPage';
 import { EmployeeLoginPage, EmployeePage } from './modules/employee';
 import { ApplicantDetailsPage } from './modules/interviewer/ApplicantDetailsPage.tsx';
 import { EvaluationForm } from './modules/interviewer/EvaluationForm';
@@ -38,8 +39,8 @@ const INTERVIEWER_SESSION_KEY = 'cictrix_interviewer_session';
 const EMPLOYEE_SESSION_KEY = 'cictrix_employee_session';
 
 const getAccessClient = () => {
-  // Access enforcement should track the authoritative rater source.
-  return isMockModeEnabled ? (mockDatabase as any) : supabase;
+  // All data access is exclusively through Supabase
+  return supabase;
 };
 
 const loadRaterAccessState = (): Record<string, boolean> => {
@@ -374,6 +375,7 @@ function AppContent() {
     <div className="app">
       <Routes>
           <Route path="/" element={<ApplicantWizard />} />
+          <Route path="/track" element={<ApplicationStatusPage />} />
           <Route path="/succession" element={<SuccessionReadinessEngine />} />
           
           {/* Interviewer Routes */}
@@ -526,7 +528,7 @@ function AppContent() {
             path="/admin/rsp/qualified"
             element={
               <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
-                <QualifiedApplicantsPage />
+                <QualifiedApplicantsRSPPage />
               </AdminRoute>
             }
           />
@@ -542,7 +544,7 @@ function AppContent() {
             path="/admin/rsp/qualified/:jobId"
             element={
               <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
-                <QualifiedApplicantsPage />
+                <QualifiedApplicantsRSPPage />
               </AdminRoute>
             }
           />

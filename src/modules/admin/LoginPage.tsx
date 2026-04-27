@@ -95,18 +95,18 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
         return;
       }
 
-      const { data: roleData, error: roleError } = await supabase
+      const { data: roleData, error: roleError } = await (supabase as any)
         .from('user_roles')
         .select('role')
         .eq('id', authData.user.id)
         .single();
 
-      if (roleError || !roleData?.role) {
+      if (roleError || !(roleData as any)?.role) {
         alert('No role assigned. Contact the admin.');
         return;
       }
 
-      const role = normalizeAdminRole(roleData.role);
+      const role = normalizeAdminRole((roleData as any).role);
       if (!role) {
         alert('Invalid role assignment. Contact the admin.');
         return;

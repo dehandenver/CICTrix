@@ -6,7 +6,10 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "docker:start": "scripts\\start-dev.bat",
+    "docker:stop": "scripts\\stop-dev.bat",
+    "docker:setup": "scripts\\setup-backend.bat"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.93.3",

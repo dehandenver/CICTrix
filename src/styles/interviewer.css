@@ -368,7 +368,7 @@
   max-width: none;
   margin: 0;
   padding: 2rem;
-  background: #f8f9fa;
+  background: #e5e7eb;
   min-height: 100vh;
   display: block;
   visibility: visible;
@@ -377,22 +377,29 @@
 
 .dashboard-header {
   margin-bottom: 2rem;
-  background: white;
-  padding: 1.5rem;
-  border-radius: 8px;
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+  color: #ffffff;
+  padding: 1.75rem 1.75rem 1.5rem;
+  border-radius: 14px;
+  box-shadow: 0 4px 18px rgba(11, 61, 145, 0.18);
 }
 
 .dashboard-header h1 {
   font-size: 2rem;
-  font-weight: 600;
-  margin: 0 0 0.5rem 0;
-  color: #212121;
+  font-weight: 700;
+  margin: 0 0 0.35rem 0;
+  color: #ffffff;
 }
 
 .dashboard-header p {
   margin: 0;
   font-size: 0.938rem;
-  color: #616161;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.dashboard-header .mt-1.text-sm.text-gray-600 {
+  color: var(--color-accent-yellow) !important;
+  font-weight: 500;
 }
 
 .search-filter-bar {
@@ -419,18 +426,19 @@
 
 .search-input {
   width: 100%;
-  padding: 0.75rem 1rem 0.75rem 2.75rem;
-  border: 1px solid #E0E0E0;
-  border-radius: 8px;
+  padding: 0.85rem 1rem 0.85rem 2.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
   font-size: 0.938rem;
   background: white;
   transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .search-input:focus {
   outline: none;
-  border-color: #1976D2;
-  box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(11, 61, 145, 0.12);
 }
 
 .filter-group {
@@ -482,7 +490,7 @@
   display: block;
   font-size: 1.75rem;
   font-weight: 600;
-  color: #1976D2;
+  color: var(--color-primary);
 }
 
 /* Search and Filter Bar */
@@ -523,8 +531,8 @@
 
 .search-input:focus {
   outline: none;
-  border-color: #1976D2;
-  box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(11, 61, 145, 0.1);
 }
 
 .filter-wrapper {
@@ -532,11 +540,12 @@
   align-items: center;
   gap: 0.5rem;
   background: white;
-  border: 1px solid #E0E0E0;
-  border-radius: 8px;
-  padding: 0.5rem 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.6rem 1rem;
   min-width: 180px;
-  color: #BDBDBD;
+  color: #94a3b8;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .filter-select {
@@ -559,10 +568,11 @@
 /* Jobs Table */
 .jobs-table-wrapper {
   background: white;
-  border-radius: 8px;
-  border: 1px solid #E0E0E0;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
   overflow: hidden;
   margin-bottom: 2rem;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.07);
 }
 
 .jobs-table {
@@ -628,7 +638,7 @@
 .applicant-count {
   display: inline-block;
   background: #E3F2FD;
-  color: #1565C0;
+  color: var(--color-primary-hover);
   padding: 0.375rem 0.75rem;
   border-radius: 12px;
   font-weight: 500;
@@ -643,7 +653,7 @@
 .view-applicants-link {
   background: none;
   border: none;
-  color: #1976D2;
+  color: var(--color-primary);
   cursor: pointer;
   font-weight: 500;
   display: flex;
@@ -654,7 +664,7 @@
 }
 
 .view-applicants-link:hover {
-  color: #1565C0;
+  color: var(--color-primary-hover);
   text-decoration: underline;
 }
 
@@ -674,27 +684,31 @@
 
 .stat-box {
   background: white;
-  border: 1px solid #E0E0E0;
-  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
   padding: 1.5rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
   transition: all 0.2s ease;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.07);
 }
 
 .stat-box:hover {
-  border-color: #BDBDBD;
+  border-color: var(--color-primary);
+  box-shadow: 0 4px 16px rgba(11, 61, 145, 0.12);
 }
 
 .stat-label {
-  color: #757575;
+  color: #64748b;
   font-size: 0.875rem;
-  font-weight: 500;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .stat-value {
-  color: #212121;
+  color: var(--color-primary);
   font-size: 2rem;
   font-weight: 700;
 }
@@ -706,8 +720,8 @@
 }
 
 .clickable-stat:hover {
-  border-color: #1976D2;
-  box-shadow: 0 2px 8px rgba(25, 118, 210, 0.15);
+  border-color: var(--color-primary);
+  box-shadow: 0 2px 8px rgba(11, 61, 145, 0.15);
 }
 
 /* Modal Styles */
@@ -775,8 +789,8 @@
 
 .applicant-modal-item:hover {
   background: white;
-  border-color: #1976D2;
-  box-shadow: 0 2px 8px rgba(25, 118, 210, 0.1);
+  border-color: var(--color-primary);
+  box-shadow: 0 2px 8px rgba(11, 61, 145, 0.1);
 }
 
 .applicant-modal-info {
@@ -799,7 +813,7 @@
 .applicant-contact {
   margin: 0;
   font-size: 0.875rem;
-  color: #1976D2;
+  color: var(--color-primary);
 }
 
 .applicant-actions {
@@ -900,7 +914,7 @@
 
 .evaluation-status.pending {
   background: #E3F2FD;
-  color: #1565C0;
+  color: var(--color-primary-hover);
 }
 
 .action-btn {
@@ -915,14 +929,14 @@
 }
 
 .action-btn.evaluate {
-  background: #1976D2;
+  background: var(--color-primary);
   color: white;
 }
 
 .action-btn.evaluate:hover {
-  background: #1565C0;
+  background: var(--color-primary-hover);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(25, 118, 210, 0.3);
+  box-shadow: 0 4px 12px rgba(11, 61, 145, 0.3);
 }
 
 .action-btn.evaluated {
@@ -1028,7 +1042,7 @@
 
 .status-badge.status-shortlisted {
   background: #E3F2FD;
-  color: #1565C0;
+  color: var(--color-primary-hover);
 }
 
 /* Loading and Error States */
@@ -1045,7 +1059,7 @@
 .error-state button {
   margin-top: 1rem;
   padding: 0.75rem 1.5rem;
-  background: #1976D2;
+  background: var(--color-primary);
   color: white;
   border: none;
   border-radius: 4px;
@@ -1055,7 +1069,7 @@
 }
 
 .error-state button:hover {
-  background: #1565C0;
+  background: var(--color-primary-hover);
 }
 
 @media (max-width: 768px) {
@@ -2157,9 +2171,19 @@
 
 .applicants-page-title-section {
   margin-bottom: 2rem;
-  background: white;
-  padding: 1.5rem;
-  border-radius: 8px;
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+  color: #ffffff;
+  padding: 1.75rem 1.75rem 1.5rem;
+  border-radius: 14px;
+  box-shadow: 0 4px 18px rgba(11, 61, 145, 0.18);
+}
+
+.applicants-page-title {
+  color: #ffffff !important;
+}
+
+.applicants-page-subtitle {
+  color: rgba(255, 255, 255, 0.85) !important;
 }
 
 .applicants-page-title {
@@ -2195,7 +2219,7 @@
 .error-state button {
   margin-top: 1rem;
   padding: 0.625rem 2rem;
-  background: #1976D2;
+  background: var(--color-primary);
   color: white;
   border: none;
   border-radius: 6px;
@@ -2295,7 +2319,7 @@
 
 .pcpt-input:focus {
   outline: none;
-  border-bottom: 1px solid #1976D2;
+  border-bottom: 1px solid var(--color-primary);
   box-shadow: none;
 }
 
@@ -2365,14 +2389,20 @@
 
 .pcpt-score-select:focus {
   outline: none;
-  border-color: #1976D2;
-  box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(11, 61, 145, 0.1);
 }
 
 .pcpt-form-footer {
   margin-top: 2rem;
   padding-top: 2rem;
   border-top: 1px solid #ddd;
+}
+
+.pcpt-next-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1rem;
 }
 
 .form-group {
@@ -2400,8 +2430,8 @@
 
 .form-textarea:focus {
   outline: none;
-  border-color: #1976D2;
-  box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(11, 61, 145, 0.1);
 }
 
 .form-actions {
@@ -2443,8 +2473,8 @@
 
 .evaluation-tab.active {
   background: #ffffff;
-  color: #1976D2;
-  border-bottom: 3px solid #1976D2;
+  color: var(--color-primary);
+  border-bottom: 3px solid var(--color-primary);
 }
 
 .evaluation-tab:not(.active):hover {
@@ -2540,7 +2570,7 @@
 
 .oral-input:focus {
   outline: none;
-  border-bottom: 1px solid #1976D2;
+  border-bottom: 1px solid var(--color-primary);
   box-shadow: none;
 }
 
@@ -2551,7 +2581,7 @@
   gap: 2rem;
   padding: 1.5rem;
   background: #e8f4fd;
-  border: 2px solid #1976D2;
+  border: 2px solid var(--color-primary);
   border-radius: 8px;
   margin-bottom: 2rem;
   align-items: center;
@@ -2584,7 +2614,7 @@
 
 .oral-table thead {
   background: #e8f4fd;
-  border-bottom: 2px solid #1976D2;
+  border-bottom: 2px solid var(--color-primary);
 }
 
 .oral-table th {
@@ -2682,8 +2712,8 @@
 
 .remarks-textarea:focus {
   outline: none;
-  border-color: #1976D2;
-  box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(11, 61, 145, 0.1);
 }
 
 /* Score Summary Box */
@@ -2693,7 +2723,7 @@
   gap: 1.5rem;
   padding: 2rem;
   background: #e8f4fd;
-  border: 2px solid #1976D2;
+  border: 2px solid var(--color-primary);
   border-radius: 8px;
   margin-bottom: 2rem;
 }
@@ -2716,7 +2746,7 @@
   display: block;
   font-size: 1.75rem;
   font-weight: 700;
-  color: #1976D2;
+  color: var(--color-primary);
 }
 
 .qualification-status {
@@ -2761,8 +2791,8 @@
 
 .interview-notes-textarea:focus {
   outline: none;
-  border-color: #1976D2;
-  box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(11, 61, 145, 0.1);
 }
 
 /* Form Actions */
@@ -2776,7 +2806,7 @@
 }
 
 .submit-btn {
-  background: #1976D2;
+  background: var(--color-primary);
   color: white;
   padding: 0.75rem 2rem;
 }

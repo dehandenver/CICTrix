@@ -1,5 +1,7 @@
 import { BookOpen, FileText, LayoutDashboard, Settings, TrendingUp, UserCog, Users } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { getApplicantsFromSupabase, getApplicants } from '../lib/recruitmentData';
 import '../styles/sidebar.css';
 
 type AdminRole = 'super-admin' | 'rsp' | 'lnd' | 'pm';
@@ -9,9 +11,55 @@ interface SidebarProps {
   userRole?: AdminRole;
 }
 
+interface MenuItem {
+  path: string;
+  icon: any;
+  label: string;
+  sublabel: string;
+  isActive: boolean;
+  roles: AdminRole[];
+  badge?: string;
+}
+
 export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
   const location = useLocation();
   const navigate = useNavigate();
+  const [qualifiedCount, setQualifiedCount] = useState(0);
+
+  // Function to update qualified applicant count
+  const updateQualifiedCount = async () => {
+    try {
+      // Try Supabase first (source of truth)
+      const applicants = await getApplicantsFromSupabase();
+      const count = applicants.filter((a) => {
+        const s = (a.status || '').toLowerCase();
+        return s.includes('qualified') || s.includes('recommend') || s.includes('hired');
+      }).length;
+      setQualifiedCount(count);
+    } catch (err) {
+      // Fallback to localStorage
+      try {
+        const applicants = getApplicants();
+        const count = applicants.filter((a) => {
+          const s = (a.status || '').toLowerCase();
+          return s.includes('qualified') || s.includes('recommend') || s.includes('hired');
+        }).length;
+        setQualifiedCount(count);
+      } catch (fallbackErr) {
+        console.error('Failed to get applicants for sidebar badge:', fallbackErr);
+      }
+    }
+  };
+
+  useEffect(() => {
+    // Initial load
+    void updateQualifiedCount();
+
+    // Listen for applicant updates
+    window.addEventListener('cictrix:applicants-updated', updateQualifiedCount);
+    return () => window.removeEventListener('cictrix:applicants-updated', updateQualifiedCount);
+  }, []);
+
   const sessionRaw = localStorage.getItem('cictrix_admin_session');
   let session: { email: string; role: AdminRole } | null = null;
   try {
@@ -27,7 +75,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
   const getPath = (module: 'dashboard' | 'rsp' | 'lnd' | 'pm' | 'settings', defaultPath: string) =>
     isSuperAdmin ? `/admin?module=${module}` : defaultPath;
   
-  const menuItems = [
+  const menuItems: MenuItem[] = [
     {
       path: getPath('dashboard', '/admin'),
       icon: LayoutDashboard,
@@ -96,7 +144,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
     }
   ];
 
-  const rspMenuItems = [
+  const rspMenuItems: MenuItem[] = [
     {
       path: '/admin/rsp',
       icon: LayoutDashboard,
@@ -120,6 +168,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       sublabel: 'Ready for interview',
       isActive: location.pathname === '/admin/rsp/qualified',
       roles: ['rsp'] as AdminRole[],
+      badge: qualifiedCount > 0 ? qualifiedCount.toString() : undefined,
     },
     {
       path: '/admin/rsp/new-hired',
@@ -192,10 +241,17 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
               className={`sidebar-nav-item ${item.isActive ? 'active' : ''}`}
             >
               <Icon size={18} />
-              <span className="sidebar-nav-text">
-                <span className="sidebar-nav-title">{item.label}</span>
-                {item.sublabel ? <span className="sidebar-nav-subtitle">{item.sublabel}</span> : null}
-              </span>
+              <div className="sidebar-nav-text flex-1 flex items-center justify-between">
+                <div>
+                  <span className="sidebar-nav-title">{item.label}</span>
+                  {item.sublabel ? <span className="sidebar-nav-subtitle flex">{item.sublabel}</span> : null}
+                </div>
+                {item.badge && (
+                  <span className="ml-2 bg-blue-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                    {item.badge}
+                  </span>
+                )}
+              </div>
             </Link>
           );
         })}

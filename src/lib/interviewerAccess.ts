@@ -1,5 +1,4 @@
-import { mockDatabase } from './mockDatabase';
-import { isMockModeEnabled, supabase } from './supabase';
+import { supabase } from './supabase';
 
 const INTERVIEWER_SESSION_KEY = 'cictrix_interviewer_session';
 const RATER_ASSIGNMENTS_KEY = 'cictrix_rater_assigned_positions';
@@ -60,10 +59,9 @@ export const resolveAssignedPositionsForInterviewer = async (
 
   const normalizedEmail = normalizeText(email);
   const localPositions = getLocallyAssignedPositionsForEmail(email);
-  const client = isMockModeEnabled ? (mockDatabase as any) : supabase;
 
   try {
-    const { data, error } = await client.from('raters').select('email,assigned_positions');
+    const { data, error } = await supabase.from('raters').select('email,assigned_positions');
     if (error) throw error;
 
     const rows = Array.isArray(data) ? data : [];

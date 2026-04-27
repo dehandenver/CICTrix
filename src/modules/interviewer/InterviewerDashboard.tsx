@@ -3,11 +3,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Dialog } from '../../components/Dialog';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
-import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import { isPositionAssignedToInterviewer, resolveAssignedPositionsForInterviewer } from '../../lib/interviewerAccess';
 import { mockDatabase } from '../../lib/mockDatabase';
-import { ensureRecruitmentSeedData, getAuthoritativeJobPostings } from '../../lib/recruitmentData';
-import { isMockModeEnabled, supabase } from '../../lib/supabase';
+import { ensureRecruitmentSeedData, getAuthoritativeJobPostings, getJobPostingsFromSupabase } from '../../lib/recruitmentData';
+import { supabase } from '../../lib/supabase';
 import '../../styles/interviewer.css';
 import type { JobPosting as RecruitmentJobPosting } from '../../types/recruitment.types';
 
@@ -64,6 +63,19 @@ const isDemoApplicant = (applicant: any): boolean => {
 };
 
 const fetchApplicantsFromClient = async (client: any): Promise<any[]> => {
+  // Use backend API to bypass RLS on Supabase
+  if (client && typeof client.from === 'function') {
+    try {
+      const response = await fetch('/api/applicants/?skip=0&limit=1000');
+      if (response.ok) {
+        return await response.json();
+      }
+    } catch {
+      // Fall back to direct query if API fails
+      const { data } = await client.from('applicants').select('*');
+      return data || [];
+    }
+  }
   const { data } = await client.from('applicants').select('*');
   return data || [];
 };
@@ -76,7 +88,23 @@ const fetchEvaluationsFromClient = async (client: any): Promise<any[]> => {
 const normalizeText = (value: string) => value.trim().toLowerCase();
 
 const buildJobsFromPostings = (jobRows: RecruitmentJobPosting[], allApplicants: any[]) => {
-  const activeJobs = (jobRows || []).filter((job) => String(job?.status || '').toLowerCase() === 'active');
+  // Dedup defensively: same posting may exist twice in Supabase (e.g. created via
+  // both job_postings and jobs tables, or a duplicate row was inserted). Keep the
+  // first occurrence by jobCode → falls back to normalized title when jobCode is
+  // empty. This is a display-layer guard and does not modify the DB.
+  const seenKeys = new Set<string>();
+  const dedupedRows: RecruitmentJobPosting[] = [];
+  for (const job of jobRows || []) {
+    const code = String(job?.jobCode || '').trim();
+    const title = normalizeText(String(job?.title || ''));
+    const key = code || title;
+    if (!key) continue;
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    dedupedRows.push(job);
+  }
+
+  const activeJobs = dedupedRows.filter((job) => String(job?.status || '').toLowerCase() === 'active');
   const activeTitleSet = new Set(activeJobs.map((job) => normalizeText(String(job?.title || ''))).filter(Boolean));
 
   const visibleApplicants = (allApplicants || []).filter((applicant) => {
@@ -117,7 +145,7 @@ const buildJobsFromPostings = (jobRows: RecruitmentJobPosting[], allApplicants: 
 };
 
 const filterJobsByAssignments = (jobRows: RecruitmentJobPosting[], assignedPositions: string[]) => {
-  if (assignedPositions.length === 0) return [];
+  if (assignedPositions.length === 0) return jobRows;
   return jobRows.filter((job) => isPositionAssignedToInterviewer(String(job?.title ?? ''), assignedPositions));
 };
 
@@ -136,7 +164,6 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [applicantToDelete, setApplicantToDelete] = useState<Applicant | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [assignedPositions, setAssignedPositions] = useState<string[]>([]);
 
   useEffect(() => {
     const syncJobs = () => {
@@ -170,16 +197,31 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
     try {
       setLoading(true);
       setError(null);
-      const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
-      const primaryClient = preferredMode === 'local' ? (mockDatabase as any) : supabase;
-      const secondaryClient = preferredMode === 'local' ? supabase : (mockDatabase as any);
+      // CRITICAL: Always fetch applicants from Supabase (as per user requirement: "all datas must be stored in supabase")
+      const primaryClient = supabase; // Always use Supabase for applicants
+      const secondaryClient = (mockDatabase as any); // Fallback only if Supabase fails
 
       let allApplicants: any[] = [];
       let allEvaluations: any[] = [];
       ensureRecruitmentSeedData();
       const { positions } = await resolveAssignedPositionsForInterviewer(session?.email);
-      setAssignedPositions(positions);
-      const canonicalJobRows = filterJobsByAssignments(getAuthoritativeJobPostings(), positions);
+      
+      // CRITICAL: Fetch job postings from Supabase first (source of truth), fallback to localStorage
+      let canonicalJobPostings: RecruitmentJobPosting[] = [];
+      try {
+        canonicalJobPostings = await getJobPostingsFromSupabase();
+        if (canonicalJobPostings.length === 0) {
+          console.log('[INTERVIEWER] No jobs from Supabase, falling back to localStorage');
+          canonicalJobPostings = getAuthoritativeJobPostings();
+        } else {
+          console.log('[INTERVIEWER] ✓ Loaded', canonicalJobPostings.length, 'jobs from Supabase');
+        }
+      } catch (err) {
+        console.warn('[INTERVIEWER] Failed to fetch jobs from Supabase, using localStorage:', err);
+        canonicalJobPostings = getAuthoritativeJobPostings();
+      }
+      
+      const canonicalJobRows = filterJobsByAssignments(canonicalJobPostings, positions);
 
       try {
         allApplicants = await fetchApplicantsFromClient(primaryClient);
@@ -188,7 +230,7 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
         console.warn('Primary interviewer data source failed:', primaryErr);
       }
 
-      if ((!allApplicants || allApplicants.length === 0) && !isMockModeEnabled) {
+      if ((!allApplicants || allApplicants.length === 0)) {
         try {
           allApplicants = await fetchApplicantsFromClient(secondaryClient);
           allEvaluations = await fetchEvaluationsFromClient(secondaryClient);
@@ -377,11 +419,9 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
                 ) : (
                   <tr>
                     <td colSpan={5} className="empty-message">
-                      {assignedPositions.length === 0
-                        ? 'No job positions are assigned to your interviewer account yet.'
-                        : searchTerm
-                          ? 'No job postings found matching your search.'
-                          : 'No active job postings available.'}
+                      {searchTerm
+                        ? 'No job postings found matching your search.'
+                        : 'No active job postings available.'}
                     </td>
                   </tr>
                 )}

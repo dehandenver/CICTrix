@@ -143,13 +143,13 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
     try {
       if (editingCycle) {
-        const { error } = await supabase
+        const { error } = await (supabase as any)
           .from('performance_cycles')
           .update(newCycle)
           .eq('id', editingCycle.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase
+        const { error } = await (supabase as any)
           .from('performance_cycles')
           .insert([newCycle]);
         if (error) throw error;

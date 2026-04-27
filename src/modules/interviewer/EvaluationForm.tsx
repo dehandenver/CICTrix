@@ -17,6 +17,7 @@ interface Applicant {
   email: string;
   position: string;
   office: string;
+  job_posting_id?: string | null;
   contact_number: string;
   address: string;
   is_pwd: boolean;
@@ -388,6 +389,7 @@ export function EvaluationForm() {
 
       const insertData: any = {
         applicant_id: id || null,
+        job_posting_id: applicant?.job_posting_id || null,
         interviewer_name: evaluation.interviewer_name || null,
         communication_skills_score: evaluation.communication_skills_score > 0 ? evaluation.communication_skills_score : null,
         confidence_score: evaluation.confidence_score > 0 ? evaluation.confidence_score : null,
@@ -506,7 +508,7 @@ export function EvaluationForm() {
       }
 
       setTimeout(() => {
-        navigate('/interviewer/applicants');
+        navigate('/interviewer/dashboard');
       }, 1500);
     } catch (err) {
       console.error('Error submitting evaluation:', err);
@@ -786,6 +788,14 @@ export function EvaluationForm() {
                   </tbody>
                 </table>
               </div>
+
+              {hasOralEvaluation && (
+                <div className="pcpt-next-actions">
+                  <Button type="button" onClick={() => setActiveTab('oral')}>
+                    Next: Oral Interview Form
+                  </Button>
+                </div>
+              )}
 
               {!hasOralEvaluation && (
                 <form onSubmit={handleSubmit}>
@@ -1136,14 +1146,14 @@ export function EvaluationForm() {
         open={showSuccess}
         onClose={() => {
           setShowSuccess(false);
-          navigate('/interviewer/applicants');
+          navigate('/interviewer/dashboard');
         }}
         title="Evaluation Submitted"
       >
         <p>✅ Evaluation has been successfully submitted!</p>
         <p>The applicant status has been updated to "Reviewed".</p>
-        <Button onClick={() => navigate('/interviewer/applicants')}>
-          Back to Applicants List
+        <Button onClick={() => navigate('/interviewer/dashboard')}>
+          Back to Dashboard
         </Button>
       </Dialog>
     </div>

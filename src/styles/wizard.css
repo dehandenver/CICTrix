@@ -63,12 +63,13 @@
 }
 
 .application-entry-card {
-  background: #f3f4f6;
-  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 14px;
   padding: 2rem;
   max-width: 760px;
   margin: 0 auto;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.07);
 }
 
 .entry-icon-wrap {
@@ -123,10 +124,10 @@
 
 .employee-note-card {
   max-width: 760px;
-  margin: 1.35rem auto 0;
-  border: 1px solid #d1d5db;
+  margin: 1.35rem auto 0.5rem;
+  border: 1px solid #e2e8f0;
   border-radius: 12px;
-  background: #f3f4f6;
+  background: #f8fafc;
   padding: 1rem;
 }
 
@@ -161,13 +162,14 @@
 }
 
 .wizard-sidebar {
-  background: #f8fafc;
-  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 14px;
   padding: 1.6rem;
   height: fit-content;
   position: sticky;
   top: 1rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 .wizard-sidebar h3 {
@@ -234,10 +236,11 @@
 }
 
 .wizard-main {
-  background: #f8fafc;
-  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 14px;
   padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 .wizard-heading h2 {
@@ -483,10 +486,55 @@
   color: #475569;
 }
 
+.submission-reference-box {
+  margin-top: 1.25rem;
+  background: #f0f4ff;
+  border: 1.5px solid #c7d7f7;
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  text-align: center;
+}
+
+.submission-reference-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 0.35rem;
+}
+
 .submission-reference {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #1e3a5f;
+  letter-spacing: 0.04em;
+  margin: 0;
+}
+
+.submission-reference-hint {
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin: 0.5rem 0 0;
+}
+
+.track-application-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   margin-top: 1rem;
-  font-size: 1rem;
-  color: #94a3b8;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #1e3a5f;
+  text-decoration: none;
+  padding: 0.4rem 0.75rem;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+
+.track-application-link:hover {
+  background: #e8edf5;
+  text-decoration: none;
 }
 
 @media (max-width: 1100px) {

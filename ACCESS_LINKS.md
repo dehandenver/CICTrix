@@ -105,6 +105,65 @@ Reference for local development access to frontend pages and backend API endpoin
 4. Open:
    - [http://127.0.0.1:5173/](http://127.0.0.1:5173/)
 
+## Commands to Run Each Module
+
+### Full System Startup (All Services)
+**Option A: One-command start (recommended)**
+```bash
+start-dev.bat
+```
+
+**Option B: Manual full startup from separate terminals**
+
+Terminal 1 - Start Backend:
+```bash
+cd backend
+python -m uvicorn main:app --reload --port 8000
+```
+
+Terminal 2 - Start Frontend:
+```bash
+npm run dev
+```
+
+### Backend Only
+```bash
+cd backend
+python -m uvicorn main:app --reload --port 8000
+```
+
+### Frontend Only
+```bash
+npm run dev
+```
+
+### Access Each Module (After Servers Are Running)
+
+| Module | Startup Command | Then Open |
+|---|---|---|
+| **Applicant** | `npm run dev` | [http://localhost:5173/applicant/login](http://localhost:5173/applicant/login) |
+| **Employee** | `npm run dev` | [http://localhost:5173/employee/login](http://localhost:5173/employee/login) |
+| **Interviewer / Rater** | `npm run dev` | [http://localhost:5173/interviewer/login](http://localhost:5173/interviewer/login) |
+| **Admin (All Roles)** | `npm run dev` | [http://localhost:5173/admin/login](http://localhost:5173/admin/login) |
+| **API Documentation** | `cd backend && python -m uvicorn main:app --reload --port 8000` | [http://localhost:8000/docs](http://localhost:8000/docs) |
+
+### Quick Access Shortcuts (Copy & Paste Ready)
+
+**Run everything from VS Code terminal:**
+```bash
+# Terminal 1
+cd backend && python -m uvicorn main:app --reload --port 8000
+
+# Terminal 2
+npm run dev
+```
+
+**Then navigate to:**
+- Applicant Module: `http://localhost:5173/applicant/login`
+- Employee Dashboard: `http://localhost:5173/employee/login`
+- Interviewer Dashboard: `http://localhost:5173/interviewer/login`
+- Admin Dashboard: `http://localhost:5173/admin/login`
+
 ### Optional: Auto-start on Windows login
 
 - Enable once:

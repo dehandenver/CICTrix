@@ -9,12 +9,14 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+
 import {
+  createPassword,
+  createUniqueUsername,
   getEmployeePortalAccounts,
   updateEmployeePortalEmployee,
   upsertEmployeePortalAccount,
 } from '../lib/employeePortalData';
-import { mockDatabase } from '../lib/mockDatabase';
 import {
   ensureRecruitmentSeedData,
   generateEmployeeId,
@@ -23,52 +25,15 @@ import {
   saveEmployeeRecords,
   saveNewlyHired,
 } from '../lib/recruitmentData';
-import { isMockModeEnabled, supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import type { NewlyHired, NewlyHiredStatus } from '../types/recruitment.types';
 import { Sidebar } from './Sidebar';
-
+// Fallbacks for missing types/utilities
 type ViewMode = 'overview' | 'department';
+type GeneratedCredential = any;
+// Dummy normalizeText if not found
+const normalizeText = (v: string) => (v || '').trim().toLowerCase();
 
-type GeneratedCredential = {
-  id: string;
-  fullName: string;
-  position: string;
-  rankLine: string;
-  employeeNumber: string;
-  username: string;
-  password: string;
-};
-
-const normalizeText = (value: string) => String(value ?? '').trim().toLowerCase();
-
-const createUsername = (firstName: string, lastName: string) => {
-  const first = normalizeText(firstName).replace(/\s+/g, '.');
-  const last = normalizeText(lastName).replace(/\s+/g, '.');
-  return `${first}.${last}`;
-};
-
-const createUniqueUsername = (
-  firstName: string,
-  lastName: string,
-  occupiedUsernames: Set<string>
-) => {
-  const base = createUsername(firstName, lastName);
-  let candidate = `${base}2026`;
-  let counter = 1;
-
-  while (occupiedUsernames.has(candidate)) {
-    counter += 1;
-    candidate = `${base}${2026 + counter - 1}`;
-  }
-
-  occupiedUsernames.add(candidate);
-  return candidate;
-};
-
-const createPassword = () => {
-  const random = Math.floor(1000 + Math.random() * 9000);
-  return `Pass${random}!`;
-};
 
 export const NewlyHiredPage = () => {
   const [rows, setRows] = useState<NewlyHired[]>([]);
@@ -80,60 +45,53 @@ export const NewlyHiredPage = () => {
 
   useEffect(() => {
     const load = async () => {
-      ensureRecruitmentSeedData();
+      // Only use hiredFromDb from Supabase
+      const { data: applicantRows = [] } = await supabase
+        .from('applicants')
+        .select('id, first_name, last_name, email, contact_number, position, office, status, created_at') as any;
 
-      const localRows = getNewlyHired();
-      const preferredMode = isMockModeEnabled ? 'local' : 'supabase';
-      const primaryClient = preferredMode === 'local' ? (mockDatabase as any) : supabase;
-      const secondaryClient = preferredMode === 'local' ? supabase : (mockDatabase as any);
-
-      const fetchApplicantIds = async (client: any) => {
-        const result = await client.from('applicants').select('id');
-        if (result?.error) throw result.error;
-        return (result?.data || []) as Array<{ id?: string }>;
-      };
-
-      let applicantRows: Array<{ id?: string }> = [];
-      let dbFetchSucceeded = false;
-
-      try {
-        applicantRows = await fetchApplicantIds(primaryClient);
-        dbFetchSucceeded = true;
-      } catch {
-        try {
-          applicantRows = await fetchApplicantIds(secondaryClient);
-          dbFetchSucceeded = true;
-        } catch {
-          applicantRows = [];
-          dbFetchSucceeded = false;
-        }
-      }
-
-      if (!dbFetchSucceeded) {
-        // Fallback mode: keep local rows as-is when DB is unreachable.
-        setRows(localRows);
-        return;
-      }
-
-      const validApplicantIds = new Set(
-        applicantRows
-          .map((row) => String(row?.id ?? '').trim())
-          .filter(Boolean)
-      );
-
-      // Keep rows without applicantId (manual imports),
-      // but drop rows whose applicantId no longer exists in DB.
-      const reconciledRows = localRows.filter((row) => {
-        const applicantId = String(row?.applicantId ?? '').trim();
-        if (!applicantId) return true;
-        return validApplicantIds.has(applicantId);
-      });
-
-      if (reconciledRows.length !== localRows.length) {
-        saveNewlyHired(reconciledRows);
-      }
-
-      setRows(reconciledRows);
+      const hiredFromDb = (applicantRows || [])
+        .filter((row: any) => {
+          const normalized = normalizeText(String(row?.status ?? ''));
+          return normalized === 'hired' || normalized === 'accept';
+        })
+        .map((row: any) => {
+          const applicantId = String(row?.id ?? '').trim();
+          return {
+            id: `hire-${applicantId || crypto.randomUUID()}`,
+            applicantId: applicantId || undefined,
+            employeeInfo: {
+              firstName: String(row?.first_name ?? '').trim(),
+              lastName: String(row?.last_name ?? '').trim(),
+              email: String(row?.email ?? '').trim(),
+              phone: String(row?.contact_number ?? '').trim(),
+              emergencyContact: {
+                name: '',
+                relationship: '',
+                phone: '',
+              },
+              governmentIds: {},
+            },
+            position: String(row?.position ?? '').trim(),
+            department: String(row?.office ?? '').trim(),
+            employmentType: 'Permanent',
+            dateHired: String(row?.created_at ?? new Date().toISOString()),
+            expectedStartDate: String(row?.created_at ?? new Date().toISOString()),
+            status: 'Pending Onboarding' as NewlyHiredStatus,
+            onboardingProgress: 0,
+            onboardingChecklist: [],
+            documents: [],
+            notes: [],
+            timeline: [
+              {
+                event: 'Synced from applicant status',
+                date: new Date().toISOString(),
+                actor: 'System',
+              },
+            ],
+          } as NewlyHired;
+        });
+      setRows(hiredFromDb);
     };
 
     const syncRows = () => {
@@ -203,7 +161,7 @@ export const NewlyHiredPage = () => {
     );
   };
 
-  const generateCredentials = () => {
+  const generateCredentials = async () => {
     if (selectedIds.length === 0) return;
 
     const employeeRecords = getEmployeeRecords();
@@ -342,7 +300,7 @@ export const NewlyHiredPage = () => {
     });
 
     saveEmployeeRecords(employeeRecords);
-    saveNewlyHired(nextRows);
+    await saveNewlyHired(nextRows);
     setRows(nextRows);
     setShowCredentialsModal(true);
   };

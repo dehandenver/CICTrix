@@ -222,7 +222,7 @@ export const mockDatabase = {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
-    evaluations.push(newEvaluation);
+    evaluations.push(newEvaluation as MockEvaluation);
     saveEvaluations(evaluations as MockEvaluation[]);
     return { data: newEvaluation, error: null };
   },
