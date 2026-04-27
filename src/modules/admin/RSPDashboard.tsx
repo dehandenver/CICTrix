@@ -1498,13 +1498,17 @@ export const RSPDashboard = () => {
 
   const fallbackEmployeeDirectorySource = useMemo(() => {
     const employeeRecords = getEmployeeRecords();
-    return employeeRecords.reduce<ApplicantRecord[]>((records, record) => {
+    const seenEmployeeIds = new Set<string>();
+    
+    // Add employees from recruitment records
+    const records = employeeRecords.reduce<ApplicantRecord[]>((acc, record) => {
         const employeeId = String(record.employeeId ?? '').trim();
-        if (!employeeId) return records;
+        if (!employeeId) return acc;
 
+        seenEmployeeIds.add(employeeId);
         const account = portalAccountByEmployeeId.get(employeeId);
 
-        records.push({
+        acc.push({
           id: employeeId,
           employeeId,
           full_name: String(account?.employee.fullName ?? record.name ?? 'Employee'),
@@ -1517,20 +1521,56 @@ export const RSPDashboard = () => {
           total_score: null,
         });
 
-        return records;
+        return acc;
       }, []);
-  }, [portalAccountByEmployeeId]);
+
+    // Also add any portal accounts that aren't in recruitment records
+    portalAccounts.forEach((account) => {
+      const employeeId = String(account.employee.employeeId ?? '').trim();
+      if (!employeeId || seenEmployeeIds.has(employeeId)) return;
+
+      records.push({
+        id: employeeId,
+        employeeId,
+        full_name: account.employee.fullName,
+        email: account.employee.email,
+        contact_number: account.employee.mobileNumber || '',
+        position: account.employee.currentPosition || 'Employee',
+        office: account.employee.currentDepartment || 'Unassigned',
+        status: 'Active',
+        created_at: account.createdAt,
+        total_score: null,
+      });
+    });
+
+    return records;
+  }, [portalAccountByEmployeeId, portalAccounts]);
 
   const directoryEmployeesSource = useMemo(
     () => {
       const merged = new Map<string, ApplicantRecord>();
 
+      // Add credentialed applicants (those with employee numbers generated)
       credentialedApplicantDirectorySource.forEach((employee) => {
         const key = String(employee.employeeId ?? employee.id).trim();
         if (!key) return;
         merged.set(key, employee);
       });
 
+      // Add ALL hired applicants (even those without credentials yet)
+      applicants
+        .filter((app) => app.status === 'Hired')
+        .forEach((employee) => {
+          const key = String(employee.id).trim();
+          if (!key || merged.has(key)) return;
+          merged.set(key, {
+            ...employee,
+            status: 'Hired',
+            employeeId: undefined, // No employee number yet
+          });
+        });
+
+      // Add fallback employee records
       fallbackEmployeeDirectorySource.forEach((employee) => {
         const key = String(employee.employeeId ?? employee.id).trim();
         if (!key || merged.has(key)) return;
@@ -1539,7 +1579,7 @@ export const RSPDashboard = () => {
 
       return Array.from(merged.values());
     },
-    [credentialedApplicantDirectorySource, fallbackEmployeeDirectorySource]
+    [applicants, credentialedApplicantDirectorySource, fallbackEmployeeDirectorySource]
   );
 
   const employeeDirectoryCards = useMemo(() => {
@@ -1548,7 +1588,12 @@ export const RSPDashboard = () => {
     const grouped = new Map<string, { position: string; office: string; count: number; activeCount: number; inactiveCount: number; status: EmployeeDirectoryCardStatus }>();
 
     source.forEach((employee) => {
+      // Skip placeholder/unassigned positions
       const position = employee.position || 'Unassigned Position';
+      if (position === 'Employee' || position === 'Unassigned Position' || !position.trim()) {
+        return;
+      }
+
       const office = employee.office || 'Unassigned Office';
       const isInactive = employee.status.toLowerCase().includes('inactive');
       const key = `${position}__${office}`;

@@ -68,6 +68,14 @@ type GovernmentDraft = {
   tinNumber: string;
 };
 
+type PersonalDetailsDraft = {
+  fullName: string;
+  dateOfBirth: string;
+  placeOfBirth: string;
+  gender: string;
+  homeAddress: string;
+};
+
 interface EditableInputProps {
   label: string;
   value: string;
@@ -95,6 +103,14 @@ const getGovernmentDraft = (employee: Employee): GovernmentDraft => ({
   tinNumber: employee.tinNumber || '',
 });
 
+const getPersonalDetailsDraft = (employee: Employee): PersonalDetailsDraft => ({
+  fullName: employee.fullName || '',
+  dateOfBirth: employee.dateOfBirth || '',
+  placeOfBirth: employee.placeOfBirth || '',
+  gender: employee.gender || '',
+  homeAddress: employee.homeAddress || '',
+});
+
 const EditableInput: React.FC<EditableInputProps> = ({ label, value, onChange, type = 'text', disabled = false }) => (
   <label className="block">
     <span className="mb-2 block text-sm font-semibold text-slate-700">{label}</span>
@@ -117,6 +133,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   const [contactDraft, setContactDraft] = useState<ContactDraft>(getContactDraft(currentUser));
   const [emergencyDraft, setEmergencyDraft] = useState<EmergencyDraft>(getEmergencyDraft(currentUser));
   const [governmentDraft, setGovernmentDraft] = useState<GovernmentDraft>(getGovernmentDraft(currentUser));
+  const [personalDraft, setPersonalDraft] = useState<PersonalDetailsDraft>(getPersonalDetailsDraft(currentUser));
 
   const profileSyncVersion = `${currentUser.employeeId}|${currentUser.updatedAt ?? ''}`;
 
@@ -125,6 +142,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
     setContactDraft(getContactDraft(currentUser));
     setEmergencyDraft(getEmergencyDraft(currentUser));
     setGovernmentDraft(getGovernmentDraft(currentUser));
+    setPersonalDraft(getPersonalDetailsDraft(currentUser));
     setEditingSection(null);
   }, [profileSyncVersion]);
 
@@ -225,6 +243,9 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   };
 
   const startEditing = (section: Exclude<EditableSection, null>) => {
+    if (section === 'personal') {
+      setPersonalDraft(getPersonalDetailsDraft(profile));
+    }
     if (section === 'contact') {
       setContactDraft(getContactDraft(profile));
     }
@@ -241,6 +262,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
     setContactDraft(getContactDraft(profile));
     setEmergencyDraft(getEmergencyDraft(profile));
     setGovernmentDraft(getGovernmentDraft(profile));
+    setPersonalDraft(getPersonalDetailsDraft(profile));
     setEditingSection(null);
   };
 
@@ -268,6 +290,18 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
       philhealthNumber: governmentDraft.philhealthNumber.trim(),
       pagibigNumber: governmentDraft.pagibigNumber.trim(),
       tinNumber: governmentDraft.tinNumber.trim(),
+    });
+    setEditingSection(null);
+  };
+
+  const savePersonalInfo = () => {
+    persistProfilePatch({
+      fullName: personalDraft.fullName.trim(),
+      dateOfBirth: personalDraft.dateOfBirth.trim(),
+      placeOfBirth: personalDraft.placeOfBirth.trim(),
+      gender: personalDraft.gender.trim(),
+      homeAddress: personalDraft.homeAddress.trim(),
+      personalDetailsFinalized: true, // Lock editing after first save
     });
     setEditingSection(null);
   };
@@ -355,21 +389,88 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
               <div className="mb-4 flex items-center justify-between">
                 <div>
                   <h2 className="text-lg font-bold text-slate-900">Personal Information</h2>
-                  <p className="text-sm text-slate-500">Your basic personal details are maintained by HR and cannot be edited here.</p>
+                  <p className="text-sm text-slate-500">
+                    {profile.personalDetailsFinalized
+                      ? 'Your personal details have been finalized and cannot be edited.'
+                      : 'Edit your personal details. You can only do this once.'}
+                  </p>
                 </div>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                  View only
-                </span>
+                {!profile.personalDetailsFinalized ? (
+                  editingSection === 'personal' ? (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={cancelEditing}
+                        className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={savePersonalInfo}
+                        className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700"
+                      >
+                        <Save className="h-3.5 w-3.5" />
+                        Save
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => startEditing('personal')}
+                      className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-200"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      Edit
+                    </button>
+                  )
+                ) : (
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">Locked</span>
+                )}
               </div>
-              <>
-                <FieldRow label="Full Name" value={profile.fullName} />
-                <FieldRow label="Employee ID" value={profile.employeeId} />
-                <FieldRow label="Date of Birth" value={profile.dateOfBirth} />
-                <FieldRow label="Place of Birth" value={profile.placeOfBirth || '--'} />
-                <FieldRow label="Gender" value={profile.gender || '--'} />
-                <FieldRow label="Address" value={profile.homeAddress} />
-                <FieldRow label="Position" value="Employee" />
-              </>
+              {editingSection === 'personal' ? (
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <EditableInput
+                    label="Full Name"
+                    value={personalDraft.fullName}
+                    onChange={(value) => setPersonalDraft((prev) => ({ ...prev, fullName: value }))}
+                  />
+                  <EditableInput
+                    label="Date of Birth"
+                    value={personalDraft.dateOfBirth}
+                    type="date"
+                    onChange={(value) => setPersonalDraft((prev) => ({ ...prev, dateOfBirth: value }))}
+                  />
+                  <EditableInput
+                    label="Place of Birth"
+                    value={personalDraft.placeOfBirth}
+                    onChange={(value) => setPersonalDraft((prev) => ({ ...prev, placeOfBirth: value }))}
+                  />
+                  <EditableInput
+                    label="Gender"
+                    value={personalDraft.gender}
+                    onChange={(value) => setPersonalDraft((prev) => ({ ...prev, gender: value }))}
+                  />
+                  <div className="md:col-span-2">
+                    <EditableInput
+                      label="Address"
+                      value={personalDraft.homeAddress}
+                      onChange={(value) => setPersonalDraft((prev) => ({ ...prev, homeAddress: value }))}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <FieldRow label="Full Name" value={profile.fullName} />
+                  <FieldRow label="Employee ID" value={profile.employeeId} />
+                  <FieldRow label="Date of Birth" value={profile.dateOfBirth} />
+                  <FieldRow label="Place of Birth" value={profile.placeOfBirth || '--'} />
+                  <FieldRow label="Gender" value={profile.gender || '--'} />
+                  <FieldRow label="Address" value={profile.homeAddress} />
+                  <FieldRow label="Position" value="Employee" />
+                </>
+              )}
             </section>
 
             <section className="rounded-xl border border-slate-200 bg-white p-5">

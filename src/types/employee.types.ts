@@ -49,6 +49,7 @@ export interface Employee {
   // Metadata
   createdAt?: string;
   updatedAt?: string;
+  personalDetailsFinalized?: boolean; // True after first edit in employee portal
 }
 
 export interface EmployeeSession {
