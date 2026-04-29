@@ -49,7 +49,28 @@ interface JobPosting {
   department: string;
 }
 
-type ApplicantDetailsTab = 'overview' | 'documents' | 'activity';
+type ApplicantDetailsTab = 'overview' | 'scores' | 'documents' | 'activity';
+
+interface InterviewerEvaluationFields {
+  personality_score?: number | null;
+  job_knowledge_score?: number | null;
+  overall_impression_score?: number | null;
+  communication_skills_score?: number | null;
+  confidence_score?: number | null;
+  comprehension_score?: number | null;
+  personality_remarks?: string | null;
+  job_knowledge_remarks?: string | null;
+  overall_impression_remarks?: string | null;
+  communication_skills_remarks?: string | null;
+  confidence_remarks?: string | null;
+  comprehension_remarks?: string | null;
+  interview_notes?: string | null;
+  recommendation?: string | null;
+  interviewer_name?: string | null;
+  status?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
 type EmailTemplate = 'none' | 'missing_documents' | 'incorrect_format' | 'invalid_information' | 'schedule_interview' | 'custom';
 const INTERVIEWER_SCORE_SNAPSHOT_STORAGE_KEY = 'cictrix_interviewer_score_snapshot';
 
@@ -124,14 +145,16 @@ const buildEvaluationStatusMap = (evaluations: any[] = []) => {
       typeof e?.technical_score === 'number' ||
       typeof e?.communication_score === 'number';
 
-    const hasOralScores = [
+    // Check for oral scores: at least ONE must be > 0 (not ALL)
+    // This handles both complete oral evals AND partial PCPT-only evals
+    const hasAnyOralScore = [
       e.communication_skills_score,
       e.confidence_score,
       e.comprehension_score,
       e.personality_score,
       e.job_knowledge_score,
       e.overall_impression_score
-    ].every((value) => typeof value === 'number' && value > 0);
+    ].some((value) => typeof value === 'number' && value > 0);
 
     const hasLegacyScores = [
       e.technical_score,
@@ -139,7 +162,8 @@ const buildEvaluationStatusMap = (evaluations: any[] = []) => {
       e.overall_score
     ].every((value) => typeof value === 'number' && value > 0);
 
-    const isComplete = hasSubmittedEvaluation || hasOralScores || hasLegacyScores;
+    // Evaluation is complete if: has ANY scores OR has notes/recommendation
+    const isComplete = hasSubmittedEvaluation || hasAnyOralScore || hasLegacyScores;
     const current = evaluationMap.get(applicantId);
 
     if (isComplete || !current) {
@@ -370,6 +394,7 @@ export function InterviewerApplicantsList() {
   const [emailMessage, setEmailMessage] = useState('');
   const [internalNotesByApplicant, setInternalNotesByApplicant] = useState<Record<string, string>>({});
   const [assignedPositions, setAssignedPositions] = useState<string[]>([]);
+  const [evaluationsByApplicant, setEvaluationsByApplicant] = useState<Record<string, InterviewerEvaluationFields[]>>({});
 
   useEffect(() => {
     const syncJobs = () => {
@@ -470,6 +495,18 @@ export function InterviewerApplicantsList() {
 
       const evaluationMap = buildEvaluationStatusMap(allEvaluations);
       const interviewerScoreSnapshot = readInterviewerScoreSnapshot();
+      
+      // Store evaluations by applicant for scores tab
+      const evalByApplicant: Record<string, InterviewerEvaluationFields[]> = {};
+      allEvaluations.forEach((evaluation: any) => {
+        if (evaluation.applicant_id) {
+          if (!evalByApplicant[evaluation.applicant_id]) {
+            evalByApplicant[evaluation.applicant_id] = [];
+          }
+          evalByApplicant[evaluation.applicant_id].push(evaluation);
+        }
+      });
+      setEvaluationsByApplicant(evalByApplicant);
       const applicantsWithStatus = dedupeApplicants(
         Array.from(applicantsByPosition || [])
         .filter((applicant: any) => !isDemoApplicant(applicant))
@@ -762,7 +799,15 @@ export function InterviewerApplicantsList() {
                         <button
                           className="action-btn evaluate"
                           type="button"
-                          onClick={() => navigate(`/interviewer/evaluate/${applicant.id}`)}
+                          onClick={() => {
+                            console.log('[EVAL CLICK] Navigating to evaluate:', {
+                              applicant_id: applicant.id,
+                              applicant_name: getFullName(applicant),
+                              applicant_email: applicant.email,
+                              position: applicant.position
+                            });
+                            navigate(`/interviewer/evaluate/${applicant.id}`);
+                          }}
                         >
                           Evaluate
                         </button>
@@ -785,31 +830,37 @@ export function InterviewerApplicantsList() {
           <div className="applicant-details-modal" onClick={(event) => event.stopPropagation()}>
             <div className="applicant-details-header">
               <div>
-                <p className="details-breadcrumb">Recruitment / Applicants / Details</p>
+                {activeTab !== 'scores' && <p className="details-breadcrumb">Recruitment / Applicants / Details</p>}
                 <h3>{getFullName(activeApplicant)}</h3>
               </div>
               <div className="details-actions">
-                <button type="button" className="details-btn details-btn-neutral" onClick={() => setShowMessageDialog(true)}>
-                  <Plane size={16} /> Send Message
-                </button>
-                <button type="button" className="details-btn details-btn-danger" onClick={() => void updateApplicantStatus(activeApplicant.id, 'Not Qualified')}>
-                  <AlertCircle size={16} /> Disqualify
-                </button>
-                <button type="button" className="details-btn details-btn-primary" onClick={() => void updateApplicantStatus(activeApplicant.id, 'Shortlisted')}>
-                  <Star size={16} /> Shortlist
-                </button>
-                <button type="button" className="details-btn details-btn-success" onClick={() => void updateApplicantStatus(activeApplicant.id, 'Recommended for Hiring')}>
-                  <CheckCircle2 size={16} /> Qualify
-                </button>
+                {activeTab !== 'scores' && (
+                  <>
+                    <button type="button" className="details-btn details-btn-neutral" onClick={() => setShowMessageDialog(true)}>
+                      <Plane size={16} /> Send Message
+                    </button>
+                    <button type="button" className="details-btn details-btn-danger" onClick={() => void updateApplicantStatus(activeApplicant.id, 'Not Qualified')}>
+                      <AlertCircle size={16} /> Disqualify
+                    </button>
+                    <button type="button" className="details-btn details-btn-primary" onClick={() => void updateApplicantStatus(activeApplicant.id, 'Shortlisted')}>
+                      <Star size={16} /> Shortlist
+                    </button>
+                    <button type="button" className="details-btn details-btn-success" onClick={() => void updateApplicantStatus(activeApplicant.id, 'Recommended for Hiring')}>
+                      <CheckCircle2 size={16} /> Qualify
+                    </button>
+                  </>
+                )}
                 <button type="button" className="details-close-btn" onClick={closeApplicantDetails}>
                   <X size={18} />
                 </button>
               </div>
             </div>
 
+            {activeTab !== 'scores' && (
             <div className="details-tabs">
               {[
                 { key: 'overview', label: 'Overview' },
+                { key: 'scores', label: 'Interviewer Scores' },
                 { key: 'documents', label: 'Documents' },
                 { key: 'activity', label: 'Activity' },
               ].map((tab) => (
@@ -823,8 +874,10 @@ export function InterviewerApplicantsList() {
                 </button>
               ))}
             </div>
+            )}
 
-            <div className="details-content-grid">
+            <div className={`details-content-grid ${activeTab === 'scores' ? 'scores-fullwidth' : ''}`}>
+              {activeTab !== 'scores' && (
               <aside className="applicant-summary-card">
                 <div className="applicant-avatar-lg">
                   <User size={42} />
@@ -854,8 +907,67 @@ export function InterviewerApplicantsList() {
                   </div>
                 </div>
               </aside>
+              )}
 
               <section className="applicant-details-main">
+                {activeTab === 'scores' && (
+                  <article className="details-panel">
+                    <h5>Interviewer Evaluation Scores</h5>
+                    {!evaluationsByApplicant[activeApplicant.id] || evaluationsByApplicant[activeApplicant.id].length === 0 ? (
+                      <p className="empty-docs-text">No interviewer evaluations found for this applicant.</p>
+                    ) : (
+                      <div className="evaluations-container">
+                        {evaluationsByApplicant[activeApplicant.id].map((evaluation, idx) => (
+                          <div key={idx} className="evaluation-card">
+                            <div className="evaluation-header">
+                              <h6>Evaluation #{idx + 1}</h6>
+                              <span className="evaluation-date">{formatDate(evaluation.status || 'N/A')}</span>
+                            </div>
+                            <div className="evaluation-grid">
+                              <div className="score-row">
+                                <span className="score-label">Personality:</span>
+                                <strong className="score-value">{evaluation.personality_score !== null && evaluation.personality_score !== undefined ? evaluation.personality_score : '--'}</strong>
+                              </div>
+                              <div className="score-row">
+                                <span className="score-label">Job Knowledge:</span>
+                                <strong className="score-value">{evaluation.job_knowledge_score !== null && evaluation.job_knowledge_score !== undefined ? evaluation.job_knowledge_score : '--'}</strong>
+                              </div>
+                              <div className="score-row">
+                                <span className="score-label">Overall Impression:</span>
+                                <strong className="score-value">{evaluation.overall_impression_score !== null && evaluation.overall_impression_score !== undefined ? evaluation.overall_impression_score : '--'}</strong>
+                              </div>
+                              <div className="score-row">
+                                <span className="score-label">Communication Skills:</span>
+                                <strong className="score-value">{evaluation.communication_skills_score !== null && evaluation.communication_skills_score !== undefined ? evaluation.communication_skills_score : '--'}</strong>
+                              </div>
+                              <div className="score-row">
+                                <span className="score-label">Confidence:</span>
+                                <strong className="score-value">{evaluation.confidence_score !== null && evaluation.confidence_score !== undefined ? evaluation.confidence_score : '--'}</strong>
+                              </div>
+                              <div className="score-row">
+                                <span className="score-label">Comprehension:</span>
+                                <strong className="score-value">{evaluation.comprehension_score !== null && evaluation.comprehension_score !== undefined ? evaluation.comprehension_score : '--'}</strong>
+                              </div>
+                            </div>
+                            {evaluation.interview_notes && (
+                              <div className="evaluation-remarks">
+                                <p><strong>Interview Notes:</strong></p>
+                                <p>{evaluation.interview_notes}</p>
+                              </div>
+                            )}
+                            {evaluation.recommendation && (
+                              <div className="evaluation-remarks">
+                                <p><strong>Recommendation:</strong></p>
+                                <p>{evaluation.recommendation}</p>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </article>
+                )}
+
                 {activeTab === 'overview' && (
                   <div className="details-stack">
                     <article className="details-panel">

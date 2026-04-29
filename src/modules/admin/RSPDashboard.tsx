@@ -49,7 +49,7 @@ import {
     saveNewlyHired,
     type DeletedJobReport,
 } from '../../lib/recruitmentData';
-import { runSingleFlight } from '../../lib/singleFlight';
+import { runSingleFlight, invalidateCacheKey } from '../../lib/singleFlight';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
 import '../../styles/admin.css';
 import type { JobPosting, NewlyHired } from '../../types/recruitment.types';
@@ -869,10 +869,26 @@ export const RSPDashboard = () => {
         const evaluationBestScore = new Map<string, number>();
         const evaluationsByApplicantId = new Map<string, any>();
         
+        console.log('[RSP] Evaluations response status:', evaluationsRes.status);
         if (evaluationsRes.status === 'fulfilled' && !evaluationsRes.value.error && Array.isArray(evaluationsRes.value.data)) {
+          console.log('[RSP] ✓ Evaluations fetched, count:', evaluationsRes.value.data.length);
+          evaluationsRes.value.data.forEach((e: any) => {
+            console.log('[RSP] Raw evaluation - applicant_id:', e.applicant_id, 'name:', e.interviewer_name, 'email:', e.email, 'scores:', {
+              personality: e.personality_score,
+              comm: e.communication_skills_score,
+              conf: e.confidence_score,
+              comp: e.comprehension_score,
+              job_k: e.job_knowledge_score,
+              overall: e.overall_impression_score
+            });
+          });
+          
           evaluationsRes.value.data.forEach((item: any) => {
             const applicantId = String(item?.applicant_id ?? '').trim();
-            if (!applicantId) return;
+            if (!applicantId) {
+              console.log('[RSP] Skipping evaluation with no applicant_id');
+              return;
+            }
             const score = deriveEvaluationTotalScore(item);
 
             const hasScore =
@@ -897,6 +913,9 @@ export const RSPDashboard = () => {
 
             if (!hasScore) return;
           });
+          console.log('[RSP] ✓ Evaluations stored in map, count:', evaluationsByApplicantId.size);
+        } else {
+          console.log('[RSP] ✗ Evaluations fetch failed or no data. Status:', evaluationsRes.status, 'Error:', evaluationsRes.status === 'fulfilled' ? evaluationsRes.value.error : 'pending/rejected');
         }
 
         const normalized = applicantsRes.value.data.map((item: any) => {
@@ -1043,6 +1062,11 @@ export const RSPDashboard = () => {
 
     const syncJobs = () => {
       if (disposed) return;
+
+      // CRITICAL: Invalidate cache when new evaluations are submitted
+      // This ensures we fetch fresh evaluation data instead of using cached bundle
+      invalidateCacheKey('rsp-bundle:supabase:primary');
+      invalidateCacheKey('rsp-bundle:supabase:secondary');
 
       if (inFlight) {
         pending = true;
@@ -4584,6 +4608,7 @@ export const RSPDashboard = () => {
                   </div>
                 ) : (
                   filteredAssessmentApplicants.map((applicant, index) => {
+
                     const bucket = toAssessmentStatusBucket(applicant.status);
                     const badgeClass =
                       bucket === 'hired'
@@ -4591,8 +4616,215 @@ export const RSPDashboard = () => {
                         : bucket === 'disqualified'
                           ? 'bg-red-100 text-red-700'
                           : 'bg-blue-100 text-blue-700';
-                    // Use the applicant's total_score that was already calculated and loaded from the database
-                    const totalScore = Number((applicant.total_score || 0).toFixed(2));
+
+
+                    const storedScores = loadStoredCategoryScores();
+                    const storedBase = storedScores[applicant.id] || {};
+                    const evalRow = (() => {
+                      const map = (window as any).__evaluationsByApplicantId;
+                      if (!map || typeof map.get !== 'function') {
+                        console.log('[EVAL LOOKUP] ✗ No eval map for:', applicant.full_name);
+                        return null;
+                      }
+                      
+                      // Try direct ID match first
+                      let result = map.get(String(applicant.id).trim()) ?? null;
+                      if (result) {
+                        console.log('[EVAL LOOKUP] ✓ Found by direct ID for:', applicant.full_name, 'personality_score:', result.personality_score);
+                        return result;
+                      }
+                      
+                      // Try case-insensitive ID match
+                      const idLower = String(applicant.id).trim().toLowerCase();
+                      for (const [key, value] of map.entries()) {
+                        if (String(key).trim().toLowerCase() === idLower) {
+                          console.log('[EVAL LOOKUP] ✓ Found by case-insensitive ID for:', applicant.full_name);
+                          return value;
+                        }
+                      }
+                      
+                      // Try email-based match
+                      const appEmail = String(applicant.email).trim().toLowerCase();
+                      if (appEmail) {
+                        for (const [, value] of map.entries()) {
+                          if (String(value?.email ?? '').trim().toLowerCase() === appEmail) {
+                            console.log('[EVAL LOOKUP] ✓ Found by email for:', applicant.full_name, 'personality_score:', value?.personality_score);
+                            return value;
+                          }
+                        }
+                      }
+                      
+                      console.log('[EVAL LOOKUP] ✗ No eval found for:', applicant.full_name, 'ID:', String(applicant.id).substring(0, 8) + '...', 'Email:', appEmail);
+                      return null;
+                    })() as any;
+
+                    // Merge interviewer evaluation fields as fallback for missing RSP/admin values
+                    const stored = { ...storedBase };
+                    if (evalRow) {
+                      // Written Exam
+                      if (!stored.writtenExam && typeof evalRow.written_exam === 'number') {
+                        stored.writtenExam = { finalScore: evalRow.written_exam };
+                      }
+                      // Oral Exam
+                      if (!stored.oralExam) {
+                        if (typeof evalRow.oral_exam === 'number') {
+                          stored.oralExam = { finalScore: evalRow.oral_exam };
+                        } else {
+                          // Fallback: compute from component scores if present
+                          // CRITICAL: personality_score can be PCPT (6-30) or oral (1-5)
+                          // Only include it if it's in oral range (1-5)
+                          const oralScores = [
+                            evalRow.communication_skills_score,
+                            evalRow.confidence_score,
+                            evalRow.comprehension_score,
+                            // Only include personality_score if it's oral-range (1-5), not PCPT-range (6-30)
+                            typeof evalRow.personality_score === 'number' && evalRow.personality_score > 0 && evalRow.personality_score < 6 
+                              ? evalRow.personality_score 
+                              : undefined,
+                            evalRow.job_knowledge_score,
+                            evalRow.overall_impression_score,
+                          ];
+                          const numeric = oralScores.filter((v) => typeof v === 'number') as number[];
+                          if (numeric.length > 0) {
+                            // Sum of 6 scores (max 5 each = max 30), normalize to 0-100 range
+                            const total = numeric.reduce((sum, v) => sum + v, 0);
+                            const normalized = Math.min(100, (total / 30) * 100);
+                            console.log('[ORAL DEBUG] Computed oral from components:', {
+                              scores: numeric,
+                              total,
+                              normalized,
+                              hasOralPersonality: numeric.some(v => v === evalRow.personality_score)
+                            });
+                            stored.oralExam = { finalScore: normalized };
+                          }
+                        }
+                      }
+                      // PCPT
+                      if (!stored.pcpt && typeof evalRow.personality_score === 'number') {
+                        stored.pcpt = { finalScore: evalRow.personality_score };
+                      }
+                      // Performance
+                      if (!stored.performance && typeof evalRow.performance_rating === 'number') {
+                        stored.performance = { finalScore: evalRow.performance_rating };
+                      }
+                      // Potential
+                      if (!stored.potential && typeof evalRow.potential_score === 'number') {
+                        stored.potential = { finalScore: evalRow.potential_score };
+                      }
+                    }
+
+                    // Helper for clamping
+                    const clamp20 = (n: number) => Math.min(20, Math.max(0, n));
+
+                    // Appointment type logic
+                    const appointmentType = stored?.appointmentType || applicant.appointmentType || 'original';
+                    const positionType = stored?.positionType || applicant.positionType || 'rank-and-file';
+
+                    // --- Education ---
+                    // Assume educationLevel is a number 0-20 (or use mapping if needed)
+                    let educationRaw = resolveScoreValue(stored?.education);
+                    let educationScore = 0;
+                    if (appointmentType === 'original' || appointmentType === 'promotional') {
+                      educationScore = clamp20(educationRaw);
+                    }
+
+                    // --- Experience ---
+                    let experienceRaw = resolveScoreValue(stored?.experience);
+                    let experienceScore = 0;
+                    if (appointmentType === 'original' || appointmentType === 'promotional') {
+                      experienceScore = clamp20(experienceRaw);
+                    }
+
+                    // --- Written Exam (Original only) ---
+                    let writtenExamScore = null;
+                    if (appointmentType === 'original') {
+                      let writtenRaw = resolveScoreValue(stored?.writtenExam);
+                      // If missing, try interviewer evaluation
+                      if ((!writtenRaw || writtenRaw <= 0) && typeof evalRow?.written_exam === 'number') {
+                        writtenRaw = evalRow.written_exam;
+                      }
+                      const maxRaw = positionType === 'executive' ? 35 : 30;
+                      writtenExamScore = typeof writtenRaw === 'number' && writtenRaw > 0 ? clamp20((writtenRaw / maxRaw) * 20) : null;
+                    }
+
+                    // --- Oral Exam (Original only) ---
+                    let oralExamScore = null;
+                    if (appointmentType === 'original') {
+                      let oralRaw = resolveScoreValue(stored?.oralExam);
+                      // If missing, try interviewer evaluation
+                      if ((!oralRaw || oralRaw <= 0) && typeof evalRow?.oral_exam === 'number') {
+                        oralRaw = evalRow.oral_exam;
+                      }
+                      console.log('[ORAL EXAM DEBUG] oralRaw:', oralRaw, 'type:', typeof oralRaw);
+                      oralExamScore = typeof oralRaw === 'number' && oralRaw > 0 ? clamp20((oralRaw / 100) * 20) : null;
+                      if (oralExamScore) {
+                        console.log('[ORAL EXAM DEBUG] oralRaw:', oralRaw, '→ oralExamScore:', oralExamScore);
+                      } else {
+                        console.log('[ORAL EXAM DEBUG] ✗ No oral exam score (oralRaw:', oralRaw, ')');
+                      }
+                    }
+
+                    // --- Performance (Promotional only) ---
+                    let performanceScore = null;
+                    if (appointmentType === 'promotional') {
+                      const perfRaw = resolveScoreValue(stored?.performance);
+                      performanceScore = typeof perfRaw === 'number' && perfRaw > 0 ? clamp20((perfRaw / 5.0) * 20) : null;
+                    }
+
+                    // --- PCPT (both) ---
+                    let pcptRaw = resolveScoreValue(stored?.pcpt);
+                    // Fallback to interviewer row if not present
+                    if ((!pcptRaw || pcptRaw <= 0) && typeof evalRow?.personality_score === 'number') {
+                      // CRITICAL: personality_score can be two different scales:
+                      // - PCPT sum: 6-30 (when interviewer filled PCPT tab)
+                      // - Oral score: 1-5 (legacy or oral-only evaluation)
+                      // Detect by range: if >= 6, it's PCPT; if < 6, it's oral
+                      
+                      console.log('[PCPT DEBUG] evalRow.personality_score:', evalRow.personality_score, 'type:', typeof evalRow.personality_score);
+                      
+                      if (evalRow.personality_score >= 6) {
+                        // This is PCPT data (6-30 range)
+                        pcptRaw = evalRow.personality_score;
+                        console.log('[PCPT DEBUG] ✓ Detected as PCPT (range 6-30), pcptRaw:', pcptRaw);
+                      } else if (evalRow.personality_score > 0 && evalRow.personality_score < 6) {
+                        // This is oral personality score (1-5), convert to PCPT-like range
+                        // Assume it's roughly representative, scale to 6-30 range
+                        pcptRaw = Math.round((evalRow.personality_score / 5) * 24 + 6); // Maps 1-5 to 6-30
+                        console.log('[PCPT DEBUG] ⚠ Detected as oral (1-5), scaling to PCPT range, pcptRaw:', pcptRaw);
+                      }
+                    }
+                    let pcptScore = null;
+                    if (typeof pcptRaw === 'number' && pcptRaw > 0) {
+                      pcptScore = clamp20((pcptRaw / 35) * 20);
+                      console.log('[PCPT DEBUG] pcptRaw:', pcptRaw, '→ pcptScore:', pcptScore);
+                    } else {
+                      console.log('[PCPT DEBUG] ✗ No PCPT data (pcptRaw:', pcptRaw, ')');
+                    }
+
+                    // --- Potential (Promotional only) ---
+                    let potentialScore = null;
+                    if (appointmentType === 'promotional') {
+                      const potRaw = resolveScoreValue(stored?.potential);
+                      potentialScore = typeof potRaw === 'number' && potRaw > 0 ? clamp20((potRaw / 100) * 20) : null;
+                    }
+
+                    // --- Total Score ---
+                    let totalScore = 0;
+                    if (appointmentType === 'original') {
+                      totalScore =
+                        (educationScore || 0) +
+                        (experienceScore || 0) +
+                        (writtenExamScore || 0) +
+                        (oralExamScore || 0) +
+                        (pcptScore || 0);
+                    } else {
+                      totalScore =
+                        (educationScore || 0) +
+                        (experienceScore || 0) +
+                        (performanceScore || 0) +
+                        (pcptScore || 0) +
+                        (potentialScore || 0);
+                    }
 
                     return (
                       <article key={applicant.id} className="assessment-form-card space-y-3">
@@ -4683,46 +4915,86 @@ export const RSPDashboard = () => {
                                 </tr>
                               </thead>
                               <tbody>
+                                {/* Education */}
                                 <tr>
                                   <td colSpan={3} className="border-b-2 border-black px-3 py-2 font-semibold bg-gray-100">EDUCATION</td>
                                 </tr>
                                 <tr>
                                   <td className="border-b border-black px-3 py-2">Education Level Attainment</td>
                                   <td className="border-b border-l-2 border-black px-3 py-2 text-center">20</td>
-                                  <td className="border-b border-l-2 border-black px-3 py-2 text-center font-semibold">{Math.min(20, Math.max(0, totalScore * 0.23)).toFixed(2)}</td>
+                                  <td className="border-b border-l-2 border-black px-3 py-2 text-center font-semibold">{educationScore !== null ? educationScore.toFixed(2) : 'N/A'}</td>
                                 </tr>
+                                {/* Experience */}
                                 <tr>
                                   <td colSpan={3} className="border-b-2 border-black px-3 py-2 font-semibold bg-gray-100">EXPERIENCE</td>
                                 </tr>
                                 <tr>
                                   <td className="border-b border-black px-3 py-2">Relevant Work Experience</td>
                                   <td className="border-b border-l-2 border-black px-3 py-2 text-center">20</td>
-                                  <td className="border-b border-l-2 border-black px-3 py-2 text-center font-semibold">{Math.min(20, Math.max(0, totalScore * 0.20)).toFixed(2)}</td>
+                                  <td className="border-b border-l-2 border-black px-3 py-2 text-center font-semibold">{experienceScore !== null ? experienceScore.toFixed(2) : 'N/A'}</td>
                                 </tr>
-                                <tr>
-                                  <td colSpan={3} className="border-b-2 border-black px-3 py-2 font-semibold bg-gray-100">PERFORMANCE</td>
-                                </tr>
-                                <tr>
-                                  <td className="border-b border-black px-3 py-2">Performance Rating (Last 2 Semesters)</td>
-                                  <td className="border-b border-l-2 border-black px-3 py-2 text-center">20</td>
-                                  <td className="border-b border-l-2 border-black px-3 py-2 text-center font-semibold">{Math.min(20, Math.max(0, totalScore * 0.22)).toFixed(2)}</td>
-                                </tr>
+                                {/* Written Exam (Original only) */}
+                                {appointmentType === 'original' && (
+                                  <>
+                                    <tr>
+                                      <td colSpan={3} className="border-b-2 border-black px-3 py-2 font-semibold bg-gray-100">WRITTEN EXAMINATION</td>
+                                    </tr>
+                                    <tr>
+                                      <td className="border-b border-black px-3 py-2">Written Exam</td>
+                                      <td className="border-b border-l-2 border-black px-3 py-2 text-center">20</td>
+                                      <td className="border-b border-l-2 border-black px-3 py-2 text-center font-semibold">{writtenExamScore !== null ? writtenExamScore.toFixed(2) : 'N/A'}</td>
+                                    </tr>
+                                  </>
+                                )}
+                                {/* Oral Exam (Original only) */}
+                                {appointmentType === 'original' && (
+                                  <>
+                                    <tr>
+                                      <td colSpan={3} className="border-b-2 border-black px-3 py-2 font-semibold bg-gray-100">ORAL EXAMINATION</td>
+                                    </tr>
+                                    <tr>
+                                      <td className="border-b border-black px-3 py-2">Oral Exam</td>
+                                      <td className="border-b border-l-2 border-black px-3 py-2 text-center">20</td>
+                                      <td className="border-b border-l-2 border-black px-3 py-2 text-center font-semibold">{oralExamScore !== null ? oralExamScore.toFixed(2) : 'N/A'}</td>
+                                    </tr>
+                                  </>
+                                )}
+                                {/* Performance (Promotional only) */}
+                                {appointmentType === 'promotional' && (
+                                  <>
+                                    <tr>
+                                      <td colSpan={3} className="border-b-2 border-black px-3 py-2 font-semibold bg-gray-100">PERFORMANCE</td>
+                                    </tr>
+                                    <tr>
+                                      <td className="border-b border-black px-3 py-2">Performance Rating (Last 2 Semesters)</td>
+                                      <td className="border-b border-l-2 border-black px-3 py-2 text-center">20</td>
+                                      <td className="border-b border-l-2 border-black px-3 py-2 text-center font-semibold">{performanceScore !== null ? performanceScore.toFixed(2) : 'N/A'}</td>
+                                    </tr>
+                                  </>
+                                )}
+                                {/* PCPT (both) */}
                                 <tr>
                                   <td colSpan={3} className="border-b-2 border-black px-3 py-2 font-semibold bg-gray-100">PSYCHOSOCIAL / COMPETENCY</td>
                                 </tr>
                                 <tr>
                                   <td className="border-b border-black px-3 py-2">PCPT Assessment</td>
                                   <td className="border-b border-l-2 border-black px-3 py-2 text-center">20</td>
-                                  <td className="border-b border-l-2 border-black px-3 py-2 text-center font-semibold">{Math.min(20, Math.max(0, totalScore * 0.17)).toFixed(2)}</td>
+                                  <td className="border-b border-l-2 border-black px-3 py-2 text-center font-semibold">{pcptScore !== null ? pcptScore.toFixed(2) : 'N/A'}</td>
                                 </tr>
-                                <tr>
-                                  <td colSpan={3} className="border-b-2 border-black px-3 py-2 font-semibold bg-gray-100">POTENTIAL</td>
-                                </tr>
-                                <tr>
-                                  <td className="border-b-2 border-black px-3 py-2">Potential Assessment</td>
-                                  <td className="border-b-2 border-l-2 border-black px-3 py-2 text-center">20</td>
-                                  <td className="border-b-2 border-l-2 border-black px-3 py-2 text-center font-semibold">{Math.min(20, Math.max(0, totalScore * 0.20)).toFixed(2)}</td>
-                                </tr>
+                                {/* Potential (Promotional only) */}
+                                {appointmentType === 'promotional' && (
+                                  <>
+                                    <tr>
+                                      <td colSpan={3} className="border-b-2 border-black px-3 py-2 font-semibold bg-gray-100">POTENTIAL</td>
+                                    </tr>
+                                    <tr>
+                                      <td className="border-b-2 border-black px-3 py-2">Potential Assessment</td>
+                                      <td className="border-b-2 border-l-2 border-black px-3 py-2 text-center">20</td>
+                                      <td className="border-b-2 border-l-2 border-black px-3 py-2 text-center font-semibold">{potentialScore !== null ? potentialScore.toFixed(2) : 'N/A'}</td>
+                                    </tr>
+                                  </>
+                                )}
+                                {/* Total */}
                                 <tr className="bg-gray-100">
                                   <td className="border-b-2 border-black px-3 py-2 text-right font-bold">TOTAL SCORE:</td>
                                   <td className="border-b-2 border-l-2 border-black px-3 py-2 text-center font-bold">100</td>

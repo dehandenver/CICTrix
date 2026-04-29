@@ -29,3 +29,8 @@ export const runSingleFlight = <T>(key: string, factory: () => Promise<T>, ttlMs
   inFlightRequests.set(key, promise);
   return promise;
 };
+
+/** Invalidate cached results for a specific key to force fresh fetch on next call */
+export const invalidateCacheKey = (key: string): void => {
+  recentResults.delete(key);
+};

@@ -333,6 +333,15 @@ export function EvaluationForm() {
         attachmentsData = result.attachmentsData;
       }
 
+      // LOG: Verify loaded applicant matches URL ID
+      const loadedName = getFullName(applicantData);
+      console.log('[EVAL LOAD] Loaded applicant:', {
+        url_id: id,
+        loaded_id: applicantData.id,
+        loaded_name: loadedName,
+        ids_match: id === applicantData.id
+      });
+
       setApplicant(applicantData);
       if (id && isPromotionalSource(applicantData)) {
         setAppointmentType('promotional');
@@ -386,6 +395,23 @@ export function EvaluationForm() {
     try {
       setSubmitting(true);
       setError(null);
+
+      // LOG: Capture submission details before database insert
+      const applicantName = applicant ? getFullName(applicant) : 'Unknown';
+      console.log('[EVAL SUBMIT] Starting evaluation submission:', {
+        applicant_id: id,
+        applicant_name: applicantName,
+        applicant_email: applicant?.email,
+        form_type: activeTab === 'oral' ? 'Oral Interview' : 'PCPT Evaluation',
+        scores: {
+          communication_skills: evaluation.communication_skills_score,
+          confidence: evaluation.confidence_score,
+          comprehension: evaluation.comprehension_score,
+          personality: evaluation.personality_score,
+          job_knowledge: evaluation.job_knowledge_score,
+          overall_impression: evaluation.overall_impression_score,
+        }
+      });
 
       const insertData: any = {
         applicant_id: id || null,
@@ -507,9 +533,10 @@ export function EvaluationForm() {
         window.dispatchEvent(new CustomEvent('cictrix:applicants-updated'));
       }
 
-      setTimeout(() => {
-        navigate('/interviewer/dashboard');
-      }, 1500);
+      // REMOVED auto-navigation - user must manually click button to check console logs
+      // setTimeout(() => {
+      //   navigate('/interviewer/dashboard');
+      // }, 1500);
     } catch (err) {
       console.error('Error submitting evaluation:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to submit evaluation';

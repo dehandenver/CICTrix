@@ -2065,6 +2065,113 @@
   margin-top: var(--spacing-xl);
 }
 
+/* Evaluation Scores Display */
+.details-content-grid.scores-fullwidth {
+  display: block;
+  padding: var(--spacing-xl);
+}
+
+.applicant-details-main.scores-fullwidth-main {
+  width: 100%;
+}
+
+.evaluations-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  margin-top: var(--spacing-md);
+}
+
+.evaluation-card {
+  border: 1px solid #e5eaf1;
+  border-radius: var(--radius-md);
+  padding: var(--spacing-lg);
+  background: #f9fbfd;
+  transition: all var(--transition-base);
+}
+
+.evaluation-card:hover {
+  border-color: #1f5fff;
+  box-shadow: 0 4px 12px rgba(31, 95, 255, 0.1);
+}
+
+.evaluation-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-md);
+  padding-bottom: var(--spacing-md);
+  border-bottom: 1px solid #e5eaf1;
+}
+
+.evaluation-header h6 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.evaluation-date {
+  font-size: 0.85rem;
+  color: #8b92a8;
+}
+
+.evaluation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+}
+
+.score-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: white;
+  border-radius: var(--radius-sm);
+  border: 1px solid #f0f3f8;
+}
+
+.score-label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #4b5968;
+}
+
+.score-value {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1f5fff;
+}
+
+.evaluation-remarks {
+  margin-top: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: white;
+  border-radius: var(--radius-sm);
+  border-left: 3px solid #1f5fff;
+}
+
+.evaluation-remarks p {
+  margin: 0.25rem 0;
+  font-size: 0.9rem;
+  color: #32435e;
+  line-height: 1.4;
+}
+
+.evaluation-remarks p:first-child {
+  color: #1f2937;
+  font-weight: 600;
+}
+
+.empty-docs-text {
+  text-align: center;
+  color: #8b92a8;
+  padding: var(--spacing-lg);
+  font-style: italic;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
   .dashboard-container,
@@ -2096,6 +2203,10 @@
 
   .form-actions button {
     width: 100%;
+  }
+
+  .evaluation-grid {
+    grid-template-columns: 1fr;
   }
 }
 
