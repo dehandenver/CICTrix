@@ -2,6 +2,471 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   EXTREME CONTRAST THEME SYSTEM - Pro Dark & Pro Light
+   
+   WCAG AAA Compliance: All text must have extreme contrast
+   Dark Mode: Pure white text (#f8f9fa) on deep black backgrounds (#121417)
+   Light Mode: Pure dark text (#212529) on white backgrounds (#ffffff)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── ROOT DEFAULTS: PRO LIGHT THEME (applies by default) ──────────────────*/
+:root {
+  /* CRITICAL LEGIBILITY: ALL TEXT IS DARK */
+  --text-primary: #212529;
+  --text-secondary: #495057;
+  --icon-primary: var(--text-primary);
+
+  /* ALL BACKGROUNDS ARE LIGHT */
+  --bg-main: #ffffff;
+  --bg-sidebar: #f8f9fa;
+  --bg-control: #ffffff;
+  --border-subtle: #dee2e6;
+
+  /* ACCENTS */
+  --accent-primary: #007bff;
+  --selected-border: none;
+  --control-active-bg: var(--accent-primary);
+  --control-active-text: #ffffff;
+
+  /* Accent color variants */
+  --accent-green: #28a745;
+  --accent-purple: #6f42c1;
+  --accent-orange: #fd7e14;
+}
+
+/* ─── PRO LIGHT THEME (Explicit) ──────────────────────────────────────────*/
+.theme-light {
+  /* CRITICAL LEGIBILITY: ALL TEXT IS DARK */
+  --text-primary: #212529;
+  --text-secondary: #495057;
+  --icon-primary: var(--text-primary);
+
+  /* ALL BACKGROUNDS ARE LIGHT */
+  --bg-main: #ffffff;
+  --bg-sidebar: #f8f9fa;
+  --bg-control: #ffffff;
+  --border-subtle: #dee2e6;
+
+  /* ACCENTS */
+  --accent-primary: #007bff;
+  --selected-border: none;
+  --control-active-bg: var(--accent-primary);
+  --control-active-text: #ffffff;
+
+  color-scheme: light;
+}
+
+/* ─── PRO DARK THEME (Extreme Contrast) ──────────────────────────────────────
+   CRITICAL: Pure white text on deep black backgrounds for maximum legibility
+*/
+.theme-dark {
+  /* CRITICAL LEGIBILITY: ALL TEXT IS LIGHT */
+  --text-primary: #f8f9fa;      /* High-contrast pure white */
+  --text-secondary: #e9ecef;    /* Slightly dimmer white */
+  --icon-primary: var(--text-primary);
+
+  /* ALL BACKGROUNDS ARE DARK */
+  --bg-main: #121417;           /* Deepest black */
+  --bg-sidebar: #17191e;        /* Subtle sidebar depth */
+  --bg-control: #212529;        /* Control elements */
+  --border-subtle: #3a3f4e;     /* Clean divider border */
+
+  /* ACCENTS */
+  --accent-primary: #007bff;    /* Vibrant Blue */
+  --selected-border: 1px solid var(--accent-primary);
+  --control-active-bg: var(--bg-control);
+  --control-active-text: #ffffff; /* Must be white */
+
+  color-scheme: dark;
+}
+
+/* ─── Backward Compatibility: data-theme Attribute ──────────────────────────*/
+html[data-theme='light'] {
+  --text-primary: #212529;
+  --text-secondary: #495057;
+  --icon-primary: var(--text-primary);
+  --bg-main: #ffffff;
+  --bg-sidebar: #f8f9fa;
+  --bg-control: #ffffff;
+  --border-subtle: #dee2e6;
+  --accent-primary: #007bff;
+  --selected-border: none;
+  --control-active-bg: var(--accent-primary);
+  --control-active-text: #ffffff;
+  color-scheme: light;
+}
+
+html[data-theme='dark'] {
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --icon-primary: var(--text-primary);
+  --bg-main: #0b1220;
+  --bg-sidebar: #0f172a;
+  --bg-control: #1e293b;
+  --border-subtle: #334155;
+  --accent-primary: #3b82f6;
+  --selected-border: 1px solid var(--accent-primary);
+  --control-active-bg: var(--bg-control);
+  --control-active-text: #ffffff;
+
+  /* Override legacy --color-* aliases so components using them go dark */
+  --color-text-primary: #f1f5f9;
+  --color-text-secondary: #cbd5e1;
+  --color-text-muted: #94a3b8;
+  --color-background: #0b1220;
+  --color-background-secondary: #0f172a;
+  --color-background-tertiary: #1e293b;
+  --color-border: #334155;
+  --color-border-light: #1e293b;
+  --color-border-focus: #3b82f6;
+  --border-color: #334155;
+  --color-primary: #3b82f6;
+  --color-primary-dark: #1d4ed8;
+  --color-primary-hover: #2563eb;
+  --color-primary-light: rgba(59, 130, 246, 0.15);
+  --color-secondary: #94a3b8;
+
+  /* Shadows on dark surfaces need stronger black */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px -2px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 10px 24px -4px rgba(0, 0, 0, 0.6);
+  --shadow-xl: 0 20px 40px -8px rgba(0, 0, 0, 0.7);
+
+  /* STATUS & SEVERITY COLORS (Dark Mode) */
+  --status-success: #10b981;
+  --status-success-light: rgba(16, 185, 129, 0.15);
+  --status-warning: #f59e0b;
+  --status-warning-light: rgba(245, 158, 11, 0.15);
+  --status-error: #ef4444;
+  --status-error-light: rgba(239, 68, 68, 0.15);
+  --status-pending: #6366f1;
+  --status-pending-light: rgba(99, 102, 241, 0.15);
+  --status-info: #0ea5e9;
+  --status-info-light: rgba(14, 165, 233, 0.15);
+
+  /* ACCENT COLOR VARIANTS (Dark Mode) */
+  --accent-blue: #0ea5e9;
+  --accent-green: #10b981;
+  --accent-orange: #f59e0b;
+  --accent-purple: #a855f7;
+  --accent-red: #ef4444;
+  --accent-indigo: #6366f1;
+  --accent-cyan: #06b6d4;
+
+  /* SCORE RATINGS (Dark Mode) */
+  --score-excellent-text: #10b981;
+  --score-excellent-bg: rgba(16, 185, 129, 0.15);
+  --score-very-good-text: #0ea5e9;
+  --score-very-good-bg: rgba(14, 165, 233, 0.15);
+  --score-good-text: #a855f7;
+  --score-good-bg: rgba(168, 85, 247, 0.15);
+  --score-average-text: #f59e0b;
+  --score-average-bg: rgba(245, 158, 11, 0.15);
+  --score-below-average-text: #ef4444;
+  --score-below-average-bg: rgba(239, 68, 68, 0.15);
+
+  color-scheme: dark;
+}
+
+:root {
+  /* STATUS & SEVERITY COLORS (Light Mode) */
+  --status-success: #059669;
+  --status-success-light: #dcfce7;
+  --status-warning: #d97706;
+  --status-warning-light: #fef3c7;
+  --status-error: #dc2626;
+  --status-error-light: #fee2e2;
+  --status-pending: #7c3aed;
+  --status-pending-light: #ede9fe;
+  --status-info: #0891b2;
+  --status-info-light: #cffafe;
+
+  /* ACCENT COLOR VARIANTS (Light Mode) */
+  --accent-blue: #1d4ed8;
+  --accent-green: #059669;
+  --accent-orange: #ea580c;
+  --accent-purple: #7c3aed;
+  --accent-red: #dc2626;
+  --accent-indigo: #4f46e5;
+  --accent-cyan: #0891b2;
+
+  /* SCORE RATINGS (Light Mode) */
+  --score-excellent-text: #15803d;
+  --score-excellent-bg: #dcfce7;
+  --score-very-good-text: #1d4ed8;
+  --score-very-good-bg: #dbeafe;
+  --score-good-text: #7c3aed;
+  --score-good-bg: #ede9fe;
+  --score-average-text: #b45309;
+  --score-average-bg: #fef9c3;
+  --score-below-average-text: #dc2626;
+  --score-below-average-bg: #fee2e2;
+}
+
+.theme-light {
+  /* STATUS & SEVERITY COLORS (Light Mode) */
+  --status-success: #059669;
+  --status-success-light: #dcfce7;
+  --status-warning: #d97706;
+  --status-warning-light: #fef3c7;
+  --status-error: #dc2626;
+  --status-error-light: #fee2e2;
+  --status-pending: #7c3aed;
+  --status-pending-light: #ede9fe;
+  --status-info: #0891b2;
+  --status-info-light: #cffafe;
+
+  /* ACCENT COLOR VARIANTS (Light Mode) */
+  --accent-blue: #1d4ed8;
+  --accent-green: #059669;
+  --accent-orange: #ea580c;
+  --accent-purple: #7c3aed;
+  --accent-red: #dc2626;
+  --accent-indigo: #4f46e5;
+  --accent-cyan: #0891b2;
+
+  /* SCORE RATINGS (Light Mode) */
+  --score-excellent-text: #15803d;
+  --score-excellent-bg: #dcfce7;
+  --score-very-good-text: #1d4ed8;
+  --score-very-good-bg: #dbeafe;
+  --score-good-text: #7c3aed;
+  --score-good-bg: #ede9fe;
+  --score-average-text: #b45309;
+  --score-average-bg: #fef9c3;
+  --score-below-average-text: #dc2626;
+  --score-below-average-bg: #fee2e2;
+}
+
+/* ─── Global Body & HTML Styling ────────────────────────────────────────────*/
+html,
+body {
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.theme-light,
+.theme-light body,
+html[data-theme='light'],
+html[data-theme='light'] body {
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+}
+
+.theme-dark,
+.theme-dark body,
+html[data-theme='dark'],
+html[data-theme='dark'] body {
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+}
+
+/* ─── ALL TEXT ELEMENTS ──────────────────────────────────────────────────────
+   Force extreme contrast on all text
+*/
+h1, h2, h3, h4, h5, h6,
+p, span, label, button, a,
+.admin-subtitle,
+.text-muted,
+.help-text {
+  color: var(--text-primary);
+}
+
+/* Sub-text (secondary labels) */
+.admin-subtitle,
+.help-text,
+.text-secondary {
+  color: var(--text-secondary);
+}
+
+/* ─── FORM CONTROLS & INPUTS ────────────────────────────────────────────────
+   All inputs must have extreme contrast
+*/
+input:not([type='checkbox']):not([type='radio']):not([type='range']),
+textarea,
+select {
+  background-color: var(--bg-control);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  transition: all 0.2s;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
+/* ─── SIDEBAR STYLING ────────────────────────────────────────────────────────*/
+.sidebar {
+  background-color: var(--bg-sidebar);
+  border-right: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+}
+
+.sidebar-nav-item {
+  color: var(--text-primary);
+  border: none;
+  transition: all 0.2s;
+}
+
+.sidebar-nav-item:hover {
+  background-color: rgba(0, 123, 255, 0.1);
+  color: var(--text-primary);
+  border: none;
+}
+
+.sidebar-nav-item.active {
+  background-color: rgba(0, 123, 255, 0.15);
+  color: var(--text-primary);
+  border: none;
+}
+
+.sidebar-nav-item svg {
+  color: var(--text-primary);
+}
+
+.sidebar-nav-subtitle {
+  color: var(--text-secondary);
+}
+
+.sidebar-user-email {
+  color: var(--text-secondary);
+}
+
+.sidebar-logout {
+  background-color: var(--bg-control);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+}
+
+/* ─── ADMIN LAYOUT & HEADERS ────────────────────────────────────────────────*/
+.admin-layout {
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+}
+
+.admin-content {
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+}
+
+.admin-header h1 {
+  color: var(--text-primary);
+}
+
+.admin-header,
+.admin-subtitle {
+  color: var(--text-primary);
+}
+
+/* ─── SECTION CARDS & CONTAINERS ───────────────────────────────────────────*/
+.admin-section,
+.stat-card,
+.rater-card,
+.job-card {
+  background-color: var(--bg-control);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+}
+
+.section-header {
+  border-bottom-color: var(--border-subtle);
+  color: var(--text-primary);
+}
+
+.stat-label,
+.stat-value {
+  color: var(--text-primary);
+}
+
+/* ─── TABLES ────────────────────────────────────────────────────────────────*/
+.admin-table {
+  color: var(--text-primary);
+  border-collapse: collapse;
+}
+
+.admin-table thead {
+  background-color: var(--bg-sidebar);
+  color: var(--text-primary);
+}
+
+.admin-table th {
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.admin-table td {
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.admin-table tbody tr:hover {
+  background-color: var(--bg-sidebar);
+}
+
+/* ─── STATUS BADGES ─────────────────────────────────────────────────────────*/
+.status-badge {
+  background-color: var(--bg-control);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+}
+
+/* ─── BUTTONS (General) ─────────────────────────────────────────────────────*/
+button {
+  color: var(--text-primary);
+}
+
+button:hover {
+  background-color: var(--bg-control);
+  color: var(--text-primary);
+}
+
+/* ─── ACCENT COLOR SWITCHING (data-accent attribute) ─────────────────────────*/
+html[data-accent='green'] {
+  --accent-primary: #28a745;
+}
+
+html[data-accent='purple'] {
+  --accent-primary: #6f42c1;
+}
+
+html[data-accent='orange'] {
+  --accent-primary: #fd7e14;
+}
+
+/* CSS Reset and Base Styles */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+  font-size: 1rem;
+  line-height: 1.5;
+  text-rendering: optimizeLegibility;
+}
+
 /* CSS Reset and Base Styles */
 *,
 *::before,
@@ -25,22 +490,20 @@
   --color-warning: #d97706;
   --color-info: #0b3d91;
   
-  /* Neutrals */
+  /* Aliases for legacy styles */
+  --primary-color: var(--color-primary);
   --color-text-primary: #111827;
   --color-text-secondary: #6b7280;
   --color-text-muted: #9ca3af;
+  --text-primary: var(--color-text-primary);
+  --text-secondary: var(--color-text-secondary);
+  --text-muted: var(--color-text-muted);
   --color-background: #ffffff;
   --color-background-secondary: #f9fafb;
   --color-background-tertiary: #f3f4f6;
   --color-border: #e5e7eb;
   --color-border-light: #f3f4f6;
   --color-border-focus: #0b3d91;
-
-  /* Aliases for legacy styles */
-  --primary-color: var(--color-primary);
-  --text-primary: var(--color-text-primary);
-  --text-secondary: var(--color-text-secondary);
-  --text-muted: var(--color-text-muted);
   --border-color: var(--color-border);
   
   /* Spacing - Consistent scale */
@@ -108,6 +571,12 @@ body {
   background: linear-gradient(135deg, #fff7e0 0%, #f1f5ff 100%);
   min-height: 100vh;
   text-rendering: optimizeLegibility;
+}
+
+html[data-theme='dark'] body,
+html[data-theme='dark'] {
+  background: linear-gradient(135deg, #0b1220 0%, #0f172a 100%);
+  color: var(--color-text-primary);
 }
 
 /* Typography */
@@ -269,4 +738,207 @@ p {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DARK MODE — Component-Level Overrides
+   Catches hardcoded white backgrounds and slate-* / gray-* text in admin.css,
+   sidebar.css, and Tailwind utilities used inline on JSX components.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+html[data-theme='dark'] .admin-section,
+html[data-theme='dark'] .admin-card,
+html[data-theme='dark'] .stat-card,
+html[data-theme='dark'] .rater-card,
+html[data-theme='dark'] .job-card,
+html[data-theme='dark'] .modal,
+html[data-theme='dark'] .modal-content,
+html[data-theme='dark'] .modal-body,
+html[data-theme='dark'] .card,
+html[data-theme='dark'] .panel,
+html[data-theme='dark'] .dashboard-card {
+  background: #1e293b;
+  color: #f1f5f9;
+  border-color: #334155;
+}
+
+html[data-theme='dark'] .modal-header,
+html[data-theme='dark'] .modal-footer {
+  background: #0f172a;
+  border-color: #334155;
+}
+
+html[data-theme='dark'] .admin-table,
+html[data-theme='dark'] table {
+  background: #1e293b;
+  color: #f1f5f9;
+}
+
+html[data-theme='dark'] .admin-table thead,
+html[data-theme='dark'] table thead {
+  background: #0f172a;
+}
+
+html[data-theme='dark'] .admin-table tbody tr:hover,
+html[data-theme='dark'] table tbody tr:hover {
+  background: #273449;
+}
+
+/* Sidebar (admin) */
+html[data-theme='dark'] .sidebar {
+  background: linear-gradient(180deg, #0f172a 0%, #0b1220 100%) !important;
+  border-right-color: #334155 !important;
+  color: #f1f5f9 !important;
+}
+
+html[data-theme='dark'] .sidebar-nav-item {
+  color: #e2e8f0 !important;
+}
+
+html[data-theme='dark'] .sidebar-nav-item svg {
+  color: #cbd5e1 !important;
+}
+
+html[data-theme='dark'] .sidebar-nav-item:hover {
+  background: rgba(59, 130, 246, 0.15) !important;
+  color: #ffffff !important;
+}
+
+html[data-theme='dark'] .sidebar-nav-item.active {
+  background: rgba(59, 130, 246, 0.25) !important;
+  color: #ffffff !important;
+}
+
+html[data-theme='dark'] .sidebar-nav-item.active svg {
+  color: #ffffff !important;
+}
+
+html[data-theme='dark'] .sidebar-nav-subtitle,
+html[data-theme='dark'] .sidebar-user-email {
+  color: #94a3b8 !important;
+}
+
+html[data-theme='dark'] .sidebar-logout {
+  background: #1e293b !important;
+  color: #f1f5f9 !important;
+  border-color: #334155 !important;
+}
+
+html[data-theme='dark'] .sidebar-logout:hover {
+  background: #273449 !important;
+}
+
+html[data-theme='dark'] .sidebar-section-title,
+html[data-theme='dark'] .sidebar-brand,
+html[data-theme='dark'] .sidebar-user-name {
+  color: #f1f5f9 !important;
+}
+
+/* Inputs and form controls */
+html[data-theme='dark'] input:not([type='checkbox']):not([type='radio']):not([type='range']),
+html[data-theme='dark'] textarea,
+html[data-theme='dark'] select {
+  background: #0f172a !important;
+  color: #f1f5f9 !important;
+  border-color: #334155 !important;
+}
+
+html[data-theme='dark'] input::placeholder,
+html[data-theme='dark'] textarea::placeholder {
+  color: #64748b !important;
+}
+
+html[data-theme='dark'] input:focus,
+html[data-theme='dark'] textarea:focus,
+html[data-theme='dark'] select:focus {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2) !important;
+}
+
+/* Tailwind utility overrides — only for the dashboards/pages using bg-white, slate-*, gray-* */
+html[data-theme='dark'] .bg-white { background-color: #1e293b !important; }
+html[data-theme='dark'] .bg-gray-50 { background-color: #0f172a !important; }
+html[data-theme='dark'] .bg-gray-100 { background-color: #1e293b !important; }
+html[data-theme='dark'] .bg-gray-200 { background-color: #273449 !important; }
+html[data-theme='dark'] .bg-slate-50 { background-color: #0f172a !important; }
+html[data-theme='dark'] .bg-slate-100 { background-color: #1e293b !important; }
+html[data-theme='dark'] .bg-slate-200 { background-color: #273449 !important; }
+
+html[data-theme='dark'] .text-gray-900,
+html[data-theme='dark'] .text-gray-800,
+html[data-theme='dark'] .text-slate-900,
+html[data-theme='dark'] .text-slate-800,
+html[data-theme='dark'] .text-black {
+  color: #f1f5f9 !important;
+}
+
+html[data-theme='dark'] .text-gray-700,
+html[data-theme='dark'] .text-slate-700 {
+  color: #e2e8f0 !important;
+}
+
+html[data-theme='dark'] .text-gray-600,
+html[data-theme='dark'] .text-slate-600,
+html[data-theme='dark'] .text-gray-500,
+html[data-theme='dark'] .text-slate-500 {
+  color: #cbd5e1 !important;
+}
+
+html[data-theme='dark'] .text-gray-400,
+html[data-theme='dark'] .text-slate-400 {
+  color: #94a3b8 !important;
+}
+
+html[data-theme='dark'] .border-gray-200,
+html[data-theme='dark'] .border-gray-300,
+html[data-theme='dark'] .border-slate-200,
+html[data-theme='dark'] .border-slate-300 {
+  border-color: #334155 !important;
+}
+
+/* Inline-style fallback for components using style={{ background: 'white' }} */
+html[data-theme='dark'] [style*="background: white"],
+html[data-theme='dark'] [style*="background:#fff"],
+html[data-theme='dark'] [style*="background: #fff"],
+html[data-theme='dark'] [style*="background:#ffffff"],
+html[data-theme='dark'] [style*="background: #ffffff"],
+html[data-theme='dark'] [style*="background-color: white"],
+html[data-theme='dark'] [style*="background-color:#fff"],
+html[data-theme='dark'] [style*="background-color: #fff"] {
+  background-color: #1e293b !important;
+  background: #1e293b !important;
+}
+
+html[data-theme='dark'] [style*="color: #111"],
+html[data-theme='dark'] [style*="color:#111"],
+html[data-theme='dark'] [style*="color: #000"],
+html[data-theme='dark'] [style*="color:#000"],
+html[data-theme='dark'] [style*="color: black"] {
+  color: #f1f5f9 !important;
+}
+
+/* Accent variants — keep readable hues in dark mode */
+html[data-theme='dark'][data-accent='blue'] { --accent-primary: #3b82f6; --color-primary: #3b82f6; }
+html[data-theme='dark'][data-accent='green'] { --accent-primary: #22c55e; --color-primary: #22c55e; }
+html[data-theme='dark'][data-accent='purple'] { --accent-primary: #a855f7; --color-primary: #a855f7; }
+html[data-theme='dark'][data-accent='orange'] { --accent-primary: #fb923c; --color-primary: #fb923c; }
+
+/* Body paragraph color in dark mode (overrides line ~595 default) */
+html[data-theme='dark'] p {
+  color: var(--color-text-secondary);
+}
+
+html[data-theme='dark'] h1,
+html[data-theme='dark'] h2,
+html[data-theme='dark'] h3,
+html[data-theme='dark'] h4,
+html[data-theme='dark'] h5,
+html[data-theme='dark'] h6 {
+  color: var(--color-text-primary);
+}
+
+/* Scrollbar */
+html[data-theme='dark'] ::-webkit-scrollbar { width: 10px; height: 10px; }
+html[data-theme='dark'] ::-webkit-scrollbar-track { background: #0f172a; }
+html[data-theme='dark'] ::-webkit-scrollbar-thumb { background: #334155; border-radius: 5px; }
+html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover { background: #475569; }
 

@@ -71,10 +71,10 @@ const steps = [
     label: 'Step 1:',
     title: 'Position DNA',
     desc: 'Define hard skills, decision authority, and critical workflows required for the vacant role.',
-    bg: '#fffbeb',
-    border: '#fde68a',
-    color: '#d97706',
-    iconBg: '#fef3c7',
+    bg: 'var(--status-warning-light)',
+    border: 'var(--status-warning)',
+    color: 'var(--status-warning)',
+    iconBg: 'var(--status-warning-light)',
     icon: <LockIcon />,
   },
   {
@@ -82,10 +82,10 @@ const steps = [
     label: 'Step 2:',
     title: 'Candidate Matrix',
     desc: 'Score 2-3 candidates across Technical, Business Logic, Leadership, and Strategic dimensions.',
-    bg: '#f0f0ff',
-    border: '#c7d2fe',
-    color: '#4f46e5',
-    iconBg: '#e0e7ff',
+    bg: 'var(--status-pending-light)',
+    border: 'var(--status-pending)',
+    color: 'var(--status-pending)',
+    iconBg: 'var(--status-pending-light)',
     icon: <BranchIcon />,
   },
   {
@@ -93,10 +93,10 @@ const steps = [
     label: 'Step 3:',
     title: 'System Intelligence',
     desc: 'Analyze candidates using C4.5 Decision Tree and 9-Box Talent Matrix classification methodology.',
-    bg: '#f0fdf4',
-    border: '#bbf7d0',
-    color: '#16a34a',
-    iconBg: '#dcfce7',
+    bg: 'var(--status-success-light)',
+    border: 'var(--status-success)',
+    color: 'var(--status-success)',
+    iconBg: 'var(--status-success-light)',
     icon: <CircleIcon />,
   },
   {
@@ -104,10 +104,10 @@ const steps = [
     label: 'Step 4:',
     title: 'Final Scoring',
     desc: 'Combines Education, Experience, Performance, and Potential to generate Gap Reports.',
-    bg: '#fff1f2',
-    border: '#fecdd3',
-    color: '#e11d48',
-    iconBg: '#ffe4e6',
+    bg: 'var(--status-error-light)',
+    border: 'var(--status-error)',
+    color: 'var(--status-error)',
+    iconBg: 'var(--status-error-light)',
     icon: <ChevronIcon />,
   },
 ];
@@ -154,36 +154,36 @@ export default function SuccessionReadinessEngine() {
     >
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        .tab-btn { background: none; border: none; display: flex; align-items: center; gap: 6px; padding: 12px 4px; font-size: 14px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #6b7280; border-bottom: 2px solid transparent; transition: color 0.2s, border-color 0.2s; white-space: nowrap; }
-        .tab-btn.active { color: #4f46e5; border-bottom-color: #4f46e5; font-weight: 600; cursor: default; }
+        .tab-btn { background: none; border: none; display: flex; align-items: center; gap: 6px; padding: 12px 4px; font-size: 14px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: var(--text-secondary); border-bottom: 2px solid transparent; transition: color 0.2s, border-color 0.2s; white-space: nowrap; }
+        .tab-btn.active { color: var(--accent-primary); border-bottom-color: var(--accent-primary); font-weight: 600; cursor: default; }
         .tab-btn.disabled { cursor: not-allowed; opacity: 0.45; pointer-events: none; }
         .step-card { border-radius: 12px; padding: 20px; border: 1px solid; transition: transform 0.15s, box-shadow 0.15s; }
         .step-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
-        .start-btn { background: linear-gradient(135deg, #6366f1, #4f46e5); color: white; border: none; padding: 14px 32px; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 10px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; transition: opacity 0.2s, transform 0.15s; }
+        .start-btn { background: var(--accent-primary); color: white; border: none; padding: 14px 32px; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 10px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; transition: opacity 0.2s, transform 0.15s; }
         .start-btn:hover { opacity: 0.92; transform: translateY(-1px); }
-        .num-badge { width: 28px; height: 28px; border-radius: 50%; background: #e8e9ff; color: #4f46e5; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-        .phase-badge { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: #9ca3af; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-        .time-chip { font-size: 12px; color: #6366f1; background: #ede9fe; padding: 3px 10px; border-radius: 20px; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+        .num-badge { width: 28px; height: 28px; border-radius: 50%; background: var(--status-pending-light); color: var(--status-pending); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+        .phase-badge { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; color: var(--text-secondary); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+        .time-chip { font-size: 12px; color: var(--status-pending); background: var(--status-pending-light); padding: 3px 10px; border-radius: 20px; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
       `}</style>
 
       <div
         style={{
           maxWidth: 900,
           margin: '0 auto',
-          background: 'white',
+          background: 'var(--bg-control)',
           borderRadius: 16,
           boxShadow: '0 4px 32px rgba(0,0,0,0.07)',
           overflow: 'hidden',
         }}
       >
-        <div style={{ padding: '28px 32px 0', borderBottom: '1px solid #f0f0f0' }}>
+        <div style={{ padding: '28px 32px 0', borderBottom: `1px solid var(--border-subtle)` }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
             <div
               style={{
                 width: 48,
                 height: 48,
                 borderRadius: 12,
-                background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                background: 'var(--accent-primary)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -197,7 +197,7 @@ export default function SuccessionReadinessEngine() {
                   fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
                   fontSize: 22,
                   fontWeight: 700,
-                  color: '#111827',
+                  color: 'var(--text-primary)',
                   letterSpacing: '-0.01em',
                 }}
               >
@@ -206,7 +206,7 @@ export default function SuccessionReadinessEngine() {
               <div
                 style={{
                   fontSize: 13,
-                  color: '#9ca3af',
+                  color: 'var(--text-secondary)',
                   marginTop: 2,
                   fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
                 }}
@@ -237,7 +237,7 @@ export default function SuccessionReadinessEngine() {
                 fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
                 fontSize: 26,
                 fontWeight: 700,
-                color: '#111827',
+                color: 'var(--text-primary)',
               }}
             >
               Evaluation Process
@@ -247,15 +247,15 @@ export default function SuccessionReadinessEngine() {
           <p
             style={{
               fontSize: 14.5,
-              color: '#4b5563',
+              color: 'var(--text-secondary)',
               lineHeight: 1.7,
               marginBottom: 28,
               fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
             }}
           >
-            This evaluation system uses objective criteria to assess candidates for <span style={{ color: '#4f46e5', fontWeight: 500 }}>promotion</span> and{' '}
-            <span style={{ color: '#4f46e5', fontWeight: 500 }}>succession planning</span>. The process includes position definition, candidate scoring, data-driven{' '}
-            <span style={{ color: '#4f46e5', fontWeight: 500 }}>analysis</span>, and final <span style={{ color: '#4f46e5', fontWeight: 500 }}>scoring</span>.
+            This evaluation system uses objective criteria to assess candidates for <span style={{ color: 'var(--accent-primary)', fontWeight: 500 }}>promotion</span> and{' '}
+            <span style={{ color: 'var(--accent-primary)', fontWeight: 500 }}>succession planning</span>. The process includes position definition, candidate scoring, data-driven{' '}
+            <span style={{ color: 'var(--accent-primary)', fontWeight: 500 }}>analysis</span>, and final <span style={{ color: 'var(--accent-primary)', fontWeight: 500 }}>scoring</span>.
           </p>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16, marginBottom: 36 }}>
@@ -278,10 +278,10 @@ export default function SuccessionReadinessEngine() {
                   </div>
                   <div style={{ fontSize: 14, fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
                     <span style={{ color: s.color, fontWeight: 700 }}>{s.label} </span>
-                    <span style={{ color: '#111827', fontWeight: 600 }}>{s.title}</span>
+                    <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{s.title}</span>
                   </div>
                 </div>
-                <p style={{ fontSize: 13.5, color: '#374151', lineHeight: 1.6, fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>{s.desc}</p>
+                <p style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.6, fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>{s.desc}</p>
               </div>
             ))}
           </div>
@@ -292,7 +292,7 @@ export default function SuccessionReadinessEngine() {
                 fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
                 fontSize: 18,
                 fontWeight: 700,
-                color: '#111827',
+                color: 'var(--text-primary)',
                 marginBottom: 20,
               }}
             >
@@ -302,21 +302,21 @@ export default function SuccessionReadinessEngine() {
               {howItWorks.map((item) => (
                 <div key={item.n} style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
                   <div className="num-badge">{item.n}</div>
-                  <p style={{ fontSize: 13.5, color: '#374151', lineHeight: 1.65, fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
-                    <strong style={{ color: '#111827' }}>{item.title}</strong> {item.text}
+                  <p style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.65, fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
+                    <strong style={{ color: 'var(--text-primary)' }}>{item.title}</strong> {item.text}
                   </p>
                 </div>
               ))}
             </div>
           </div>
 
-          <div style={{ border: '1px solid #e5e7eb', borderRadius: 12, padding: '24px 28px', marginBottom: 20 }}>
+          <div style={{ border: `1px solid var(--border-subtle)`, borderRadius: 12, padding: '24px 28px', marginBottom: 20 }}>
             <h3
               style={{
                 fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
                 fontSize: 18,
                 fontWeight: 700,
-                color: '#111827',
+                color: 'var(--text-primary)',
                 marginBottom: 20,
               }}
             >
@@ -331,10 +331,10 @@ export default function SuccessionReadinessEngine() {
                     alignItems: 'center',
                     gap: 14,
                     padding: '14px 0',
-                    borderBottom: i < timeline.length - 1 ? '1px solid #f3f4f6' : 'none',
+                    borderBottom: i < timeline.length - 1 ? `1px solid var(--border-subtle)` : 'none',
                   }}
                 >
-                  <div className="num-badge" style={{ background: '#e8e9ff' }}>
+                  <div className="num-badge" style={{ background: 'var(--status-pending-light)' }}>
                     {item.phase}
                   </div>
                   <div style={{ flex: 1 }}>
@@ -344,7 +344,7 @@ export default function SuccessionReadinessEngine() {
                         style={{
                           fontSize: 14,
                           fontWeight: 600,
-                          color: '#111827',
+                            color: 'var(--text-primary)',
                           fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
                         }}
                       >
@@ -354,7 +354,7 @@ export default function SuccessionReadinessEngine() {
                     <div
                       style={{
                         fontSize: 12.5,
-                        color: '#9ca3af',
+                          color: 'var(--text-secondary)',
                         marginTop: 3,
                         fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
                       }}
@@ -368,21 +368,21 @@ export default function SuccessionReadinessEngine() {
             </div>
           </div>
 
-          <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12, padding: '18px 22px', marginBottom: 28 }}>
+          <div style={{ background: 'var(--status-warning-light)', border: `1px solid var(--status-warning)`, borderRadius: 12, padding: '18px 22px', marginBottom: 28 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <WarningIcon />
               <span
                 style={{
                   fontWeight: 700,
                   fontSize: 14,
-                  color: '#92400e',
+                  color: 'var(--status-warning)',
                   fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
                 }}
               >
                 Before You Begin
               </span>
             </div>
-            <p style={{ fontSize: 13.5, color: '#b45309', lineHeight: 1.65, fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
+            <p style={{ fontSize: 13.5, color: 'var(--status-warning)', lineHeight: 1.65, fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
               Ensure you have organizational approval and HR data access before launching the evaluation. All candidate data is strictly confidential. Evaluators must complete all four
               stages for a valid succession recommendation.
             </p>

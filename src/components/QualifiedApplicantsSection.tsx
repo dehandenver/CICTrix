@@ -93,42 +93,42 @@ const CAT_META: Record<CatKey, {
 }> = {
   education:   {
     roman: 'I',   label: 'Education',         maxOriginal: 20, maxPromotional: 20,
-    color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe', badgeBg: '#dbeafe', rspOwned: true,
+    color: 'var(--accent-blue)', bg: 'var(--score-very-good-bg)', border: 'var(--accent-blue)', badgeBg: 'var(--score-very-good-bg)', rspOwned: true,
     guide: "Bachelor's Degree = 15 pts | Master's Degree = 18 pts | Doctorate = 20 pts",
   },
   experience:  {
     roman: 'II',  label: 'Experience',         maxOriginal: 25, maxPromotional: 25,
-    color: '#ea580c', bg: '#fff7ed', border: '#fed7aa', badgeBg: '#ffedd5', rspOwned: true,
+    color: 'var(--accent-orange)', bg: 'var(--status-warning-light)', border: 'var(--accent-orange)', badgeBg: 'var(--status-warning-light)', rspOwned: true,
     guide: '1-5 yrs = 12 pts | 6-10 yrs = 14 pts | 11-15 yrs = 16 pts | 16-20 yrs = 18 pts | 21+ yrs = 25 pts',
   },
   performance: {
     roman: 'III', label: 'Performance Rating', maxOriginal: 0,  maxPromotional: 20,
-    color: '#b45309', bg: '#fefce8', border: '#fde68a', badgeBg: '#fef9c3', rspOwned: true,
+    color: 'var(--status-warning)', bg: 'var(--score-average-bg)', border: 'var(--status-warning)', badgeBg: 'var(--score-average-bg)', rspOwned: true,
     guide: 'Outstanding = 20 pts | Very Satisfactory = 18 pts | Satisfactory = 15 pts | Unsatisfactory = 0 pts',
   },
   pcpt:        {
     roman: 'IV',  label: 'PCPT',               maxOriginal: 20, maxPromotional: 10,
-    color: '#7c3aed', bg: '#faf5ff', border: '#e9d5ff', badgeBg: '#ede9fe', rspOwned: false,
+    color: 'var(--accent-purple)', bg: 'var(--score-good-bg)', border: 'var(--accent-purple)', badgeBg: 'var(--score-good-bg)', rspOwned: false,
     guide: '20-22 = 10 pts | 23-25 = 12 pts | 26-28 = 14 pts | 29-31 = 16 pts | 32-34 = 18 pts | 35 = 20 pts',
   },
   potential:   {
     roman: 'V',   label: 'Potential',           maxOriginal: 0,  maxPromotional: 25,
-    color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', badgeBg: '#dcfce7', rspOwned: false,
+    color: 'var(--status-success)', bg: 'var(--score-excellent-bg)', border: 'var(--status-success)', badgeBg: 'var(--score-excellent-bg)', rspOwned: false,
     guide: '51-60 = 12 pts | 61-70 = 14 pts | 71-80 = 16 pts | 81-90 = 18 pts | 91-100 = 25 pts',
   },
   writtenExam: {
     roman: '—',   label: 'Written Exam',        maxOriginal: 100, maxPromotional: 100,
-    color: '#15803d', bg: '#f0fdf4', border: '#bbf7d0', badgeBg: '#dcfce7', rspOwned: false,
+    color: 'var(--status-success)', bg: 'var(--score-excellent-bg)', border: 'var(--status-success)', badgeBg: 'var(--score-excellent-bg)', rspOwned: false,
     guide: 'Raw score 0–100. Contributes 30% to overall score.',
   },
 };
 
 const ADJECTIVAL_RANGES = [
-  { min: 90, max: 100, label: 'Excellent',     color: '#15803d', bg: '#dcfce7' },
-  { min: 77, max: 89,  label: 'Very Good',     color: '#1d4ed8', bg: '#dbeafe' },
-  { min: 64, max: 76,  label: 'Good',          color: '#7c3aed', bg: '#ede9fe' },
-  { min: 51, max: 63,  label: 'Average',       color: '#b45309', bg: '#fef9c3' },
-  { min: 0,  max: 50,  label: 'Below Average', color: '#dc2626', bg: '#fee2e2' },
+  { min: 90, max: 100, label: 'Excellent',     color: 'var(--score-excellent-text)', bg: 'var(--score-excellent-bg)' },
+  { min: 77, max: 89,  label: 'Very Good',     color: 'var(--score-very-good-text)', bg: 'var(--score-very-good-bg)' },
+  { min: 64, max: 76,  label: 'Good',          color: 'var(--score-good-text)', bg: 'var(--score-good-bg)' },
+  { min: 51, max: 63,  label: 'Average',       color: 'var(--score-average-text)', bg: 'var(--score-average-bg)' },
+  { min: 0,  max: 50,  label: 'Below Average', color: 'var(--score-below-average-text)', bg: 'var(--score-below-average-bg)' },
 ];
 
 const BASE_CATS: CatKey[] = ['education', 'experience', 'performance', 'pcpt', 'potential'];
@@ -250,42 +250,42 @@ const FilesViewerModal = ({ title, files, onClose }: FilesViewerModalProps) => {
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)', padding: '1rem' }}>
-      <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', width: '100%', maxWidth: 520 }}>
-        <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ background: 'var(--bg-control)', borderRadius: 16, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', width: '100%', maxWidth: 520 }}>
+        <div style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid var(--border-subtle)`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: '#fee2e2', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--status-error-light)', color: 'var(--status-error)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <FileText size={16} />
             </div>
-            <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#0f172a' }}>{title}</h3>
+            <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>{title}</h3>
           </div>
-          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 4 }}>
+          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: 4 }}>
             <X size={18} />
           </button>
         </div>
         <div style={{ padding: '1rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
           {files.length === 0 ? (
-            <p style={{ margin: 0, color: '#94a3b8', textAlign: 'center', padding: '1.5rem 0', fontSize: '0.9rem' }}>
+            <p style={{ margin: 0, color: 'var(--text-secondary)', textAlign: 'center', padding: '1.5rem 0', fontSize: '0.9rem' }}>
               No files uploaded for this category.
             </p>
           ) : (
             files.map((f) => (
               <div
                 key={f.id}
-                style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '0.75rem 1rem' }}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', background: 'var(--bg-sidebar)', border: `1px solid var(--border-subtle)`, borderRadius: 10, padding: '0.75rem 1rem' }}
               >
-                <div style={{ width: 36, height: 36, borderRadius: 8, background: '#fee2e2', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--status-error-light)', color: 'var(--status-error)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <FileText size={18} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ margin: 0, fontWeight: 600, color: '#0f172a', fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.file_name}</p>
-                  <p style={{ margin: 0, fontSize: '0.78rem', color: '#64748b' }}>
+                  <p style={{ margin: 0, fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.file_name}</p>
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
                     {fmtSize(f.file_size)}{f.created_at ? ` · ${fmtDate(f.created_at)}` : ''}
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => openFile(f)}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.4rem 0.75rem', background: '#2563eb', border: 'none', borderRadius: 6, color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem', flexShrink: 0 }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.4rem 0.75rem', background: 'var(--accent-blue)', border: 'none', borderRadius: 6, color: 'var(--text-primary)', cursor: 'pointer', fontWeight: 600, fontSize: '0.8rem', flexShrink: 0 }}
                 >
                   <Download size={13} /> Open
                 </button>
@@ -293,8 +293,8 @@ const FilesViewerModal = ({ title, files, onClose }: FilesViewerModalProps) => {
             ))
           )}
         </div>
-        <div style={{ padding: '0.85rem 1.5rem', borderTop: '1px solid #f1f5f9', textAlign: 'right' }}>
-          <button type="button" onClick={onClose} style={{ padding: '0.55rem 1.25rem', background: 'none', border: '1px solid #e2e8f0', borderRadius: 8, fontWeight: 600, fontSize: '0.9rem', color: '#475569', cursor: 'pointer' }}>
+        <div style={{ padding: '0.85rem 1.5rem', borderTop: `1px solid var(--border-subtle)`, textAlign: 'right' }}>
+          <button type="button" onClick={onClose} style={{ padding: '0.55rem 1.25rem', background: 'none', border: `1px solid var(--border-subtle)`, borderRadius: 8, fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
             Close
           </button>
         </div>
@@ -344,23 +344,23 @@ const ExamScoresModal = ({ folder, existingScores, onClose, onSave }: ExamScores
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)', padding: '1rem' }}>
-      <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 20px 60px rgba(0,0,0,0.15)', width: '100%', maxWidth: 680, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ background: 'var(--bg-control)', borderRadius: 16, boxShadow: '0 20px 60px rgba(0,0,0,0.15)', width: '100%', maxWidth: 680, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
         {/* Header */}
-        <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <div style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid var(--border-subtle)`, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <Pencil size={20} style={{ color: '#4f46e5' }} />
+            <Pencil size={20} style={{ color: 'var(--accent-primary)' }} />
             <div>
-              <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#0f172a' }}>Written Examination Scores</h2>
-              <p style={{ margin: 0, fontSize: '0.875rem', color: '#64748b' }}>{folder.position}</p>
+              <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>Written Examination Scores</h2>
+              <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)' }}>{folder.position}</p>
             </div>
           </div>
-          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 4 }}>
+          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: 4 }}>
             <X size={20} />
           </button>
         </div>
         {/* Instructions */}
-        <div style={{ padding: '0.75rem 1.5rem', borderBottom: '1px solid #f1f5f9' }}>
-          <p style={{ margin: 0, fontSize: '0.875rem', color: '#64748b' }}>
+        <div style={{ padding: '0.75rem 1.5rem', borderBottom: `1px solid var(--border-subtle)` }}>
+          <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
             Enter the written examination score (0–100) for each applicant.
           </p>
         </div>
@@ -371,18 +371,18 @@ const ExamScoresModal = ({ folder, existingScores, onClose, onSave }: ExamScores
             const valid = isValid(val);
             const prev = existingScores[a.id];
             return (
-              <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '0.9rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '0.8rem 1rem' }}>
-                <span style={{ width: 28, height: 28, borderRadius: '50%', background: '#e2e8f0', color: '#475569', fontWeight: 700, fontSize: '0.78rem', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '0.9rem', background: 'var(--bg-sidebar)', border: `1px solid var(--border-subtle)`, borderRadius: 10, padding: '0.8rem 1rem' }}>
+                <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--bg-control)', color: 'var(--text-secondary)', fontWeight: 700, fontSize: '0.78rem', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   #{i + 1}
                 </span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ margin: 0, fontWeight: 700, color: '#0f172a', fontSize: '0.95rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.full_name}</p>
-                  <p style={{ margin: 0, fontSize: '0.78rem', color: '#64748b' }}>
+                  <p style={{ margin: 0, fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.95rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.full_name}</p>
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
                     Eval score: {typeof a.total_score === 'number' ? `${a.total_score.toFixed(0)}/100` : '—'}
                   </p>
                 </div>
                 {prev && prev !== '' && (
-                  <span style={{ background: '#ede9fe', color: '#6d28d9', fontWeight: 700, fontSize: '0.875rem', padding: '0.2rem 0.7rem', borderRadius: 999, flexShrink: 0 }}>
+                  <span style={{ background: 'var(--status-pending-light)', color: 'var(--accent-purple)', fontWeight: 700, fontSize: '0.875rem', padding: '0.2rem 0.7rem', borderRadius: 999, flexShrink: 0 }}>
                     {prev}
                   </span>
                 )}
@@ -391,20 +391,20 @@ const ExamScoresModal = ({ folder, existingScores, onClose, onSave }: ExamScores
                   value={val}
                   onChange={(e) => setScores(p => ({ ...p, [a.id]: e.target.value }))}
                   placeholder="Score"
-                  style={{ width: 85, border: `1.5px solid ${val !== '' && !valid ? '#ef4444' : '#e2e8f0'}`, borderRadius: 8, padding: '0.45rem 0.65rem', fontSize: '0.95rem', outline: 'none', background: val !== '' && !valid ? '#fef2f2' : '#fff', textAlign: 'right', flexShrink: 0 }}
+                  style={{ width: 85, border: `1.5px solid ${val !== '' && !valid ? 'var(--status-error)' : 'var(--border-subtle)'}`, borderRadius: 8, padding: '0.45rem 0.65rem', fontSize: '0.95rem', outline: 'none', background: val !== '' && !valid ? 'var(--status-error-light)' : 'var(--bg-control)', textAlign: 'right', flexShrink: 0, color: 'var(--text-primary)' }}
                 />
               </div>
             );
           })}
         </div>
         {/* Footer */}
-        <div style={{ padding: '0.9rem 1.5rem', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'flex-end', gap: '0.65rem' }}>
-          <button type="button" onClick={onClose} style={{ padding: '0.55rem 1.25rem', background: 'none', border: '1px solid #e2e8f0', borderRadius: 8, fontWeight: 600, fontSize: '0.9rem', color: '#475569', cursor: 'pointer' }}>
+        <div style={{ padding: '0.9rem 1.5rem', borderTop: `1px solid var(--border-subtle)`, display: 'flex', justifyContent: 'flex-end', gap: '0.65rem' }}>
+          <button type="button" onClick={onClose} style={{ padding: '0.55rem 1.25rem', background: 'none', border: `1px solid var(--border-subtle)`, borderRadius: 8, fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-secondary)', cursor: 'pointer' }}>
             Cancel
           </button>
           <button
             type="button" onClick={handleSave} disabled={!allFilled || saving || saved}
-            style={{ padding: '0.55rem 1.5rem', background: saved ? '#16a34a' : allFilled ? '#2563eb' : '#93c5fd', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: '0.9rem', color: '#fff', cursor: !allFilled || saving || saved ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+            style={{ padding: '0.55rem 1.5rem', background: saved ? 'var(--status-success)' : allFilled ? 'var(--accent-blue)' : 'var(--accent-blue-light)', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)', cursor: !allFilled || saving || saved ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
           >
             <Save size={15} />
             {saved ? 'Saved!' : saving ? 'Saving…' : 'Save Scores'}
@@ -600,17 +600,17 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
   return (
     <>
       <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)', padding: '1rem' }}>
-        <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', width: '100%', maxWidth: 760, maxHeight: '95vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ background: 'var(--bg-control)', borderRadius: 16, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', width: '100%', maxWidth: 760, maxHeight: '95vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
           {/* Blue header */}
-          <div style={{ background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', padding: '1.25rem 1.5rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexShrink: 0 }}>
+          <div style={{ background: 'linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-blue) 100%)', padding: '1.25rem 1.5rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexShrink: 0 }}>
             <div>
-              <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#fff' }}>Applicant Evaluation &amp; Scoring</h2>
-              <p style={{ margin: 0, fontSize: '0.875rem', color: 'rgba(255,255,255,0.8)', marginTop: 2 }}>
+              <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)' }}>Applicant Evaluation &amp; Scoring</h2>
+              <p style={{ margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: 2 }}>
                 {applicant.full_name} &mdash; {applicant.position}
               </p>
             </div>
-            <button type="button" onClick={onClose} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 8, cursor: 'pointer', color: '#fff', padding: '0.35rem', display: 'flex' }}>
+            <button type="button" onClick={onClose} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 8, cursor: 'pointer', color: 'var(--text-primary)', padding: '0.35rem', display: 'flex' }}>
               <X size={18} />
             </button>
           </div>
@@ -620,19 +620,19 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
 
             {/* Score finalized banner */}
             {isFinalized && (
-              <div style={{ background: '#dcfce7', border: '1px solid #86efac', borderRadius: 10, padding: '0.85rem 1rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                <CheckCircle2 size={18} style={{ color: '#16a34a', flexShrink: 0 }} />
+              <div style={{ background: 'var(--status-success-light)', border: `1px solid var(--status-success)`, borderRadius: 10, padding: '0.85rem 1rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <CheckCircle2 size={18} style={{ color: 'var(--status-success)', flexShrink: 0 }} />
                 <div>
-                  <p style={{ margin: 0, fontWeight: 700, color: '#15803d', fontSize: '0.95rem' }}>Score Finalized — View Only Mode</p>
-                  <p style={{ margin: 0, fontSize: '0.82rem', color: '#166534' }}>This applicant's evaluation has been finalized. Fields are read-only.</p>
+                  <p style={{ margin: 0, fontWeight: 700, color: 'var(--status-success)', fontSize: '0.95rem' }}>Score Finalized — View Only Mode</p>
+                  <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>This applicant's evaluation has been finalized. Fields are read-only.</p>
                 </div>
               </div>
             )}
 
             {/* Appointment Type */}
-            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: '1rem' }}>
-              <p style={{ margin: '0 0 0.75rem', fontWeight: 700, color: '#0f172a', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-                <RefreshCw size={15} style={{ color: '#2563eb' }} /> Select Appointment Type
+            <div style={{ background: 'var(--bg-sidebar)', border: `1px solid var(--border-subtle)`, borderRadius: 12, padding: '1rem' }}>
+              <p style={{ margin: '0 0 0.75rem', fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                <RefreshCw size={15} style={{ color: 'var(--accent-blue)' }} /> Select Appointment Type
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                 {(['original', 'promotional'] as AppointmentType[]).map(t => {
@@ -645,31 +645,31 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                       onClick={() => { if (!buttonDisabled) setApptType(t); }}
                       title={isLockedOriginal ? 'Locked: applicant is a current employee' : undefined}
                       style={{
-                        border: `2px solid ${apptType === t ? '#2563eb' : '#e2e8f0'}`,
+                        border: `2px solid ${apptType === t ? 'var(--accent-blue)' : 'var(--border-subtle)'}`,
                         borderRadius: 10,
                         padding: '0.9rem 1rem',
                         cursor: buttonDisabled ? 'not-allowed' : 'pointer',
-                        background: apptType === t ? '#eff6ff' : '#fff',
+                        background: apptType === t ? 'var(--accent-blue-light)' : 'var(--bg-control)',
                         textAlign: 'left',
                         opacity: isLockedOriginal ? 0.45 : 1,
                       }}
                     >
-                      <p style={{ margin: 0, fontWeight: 700, color: '#0f172a', fontSize: '0.9rem' }}>
+                      <p style={{ margin: 0, fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
                         {t === 'original' ? 'Original Appointment' : 'Promotional Appointment'}
                       </p>
-                      <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem', color: '#64748b' }}>
+                      <p style={{ margin: '0.2rem 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
                         {t === 'original'
                           ? 'Education • Experience • Written Exam • Oral Exam* • PCPT*'
                           : 'Education • Experience • Performance • PCPT* • Potential'}
                       </p>
-                      <p style={{ margin: '0.15rem 0 0', fontSize: '0.73rem', color: '#94a3b8' }}>*Interviewer-provided</p>
+                      <p style={{ margin: '0.15rem 0 0', fontSize: '0.73rem', color: 'var(--text-secondary)' }}>*Interviewer-provided</p>
                       {isLockedOriginal && (
-                        <p style={{ margin: '0.35rem 0 0', fontSize: '0.72rem', color: '#dc2626', fontWeight: 600 }}>
+                        <p style={{ margin: '0.35rem 0 0', fontSize: '0.72rem', color: 'var(--status-error)', fontWeight: 600 }}>
                           Locked — applicant is a current employee
                         </p>
                       )}
                       {isCurrentEmployee && t === 'promotional' && (
-                        <p style={{ margin: '0.35rem 0 0', fontSize: '0.72rem', color: '#1d4ed8', fontWeight: 600 }}>
+                        <p style={{ margin: '0.35rem 0 0', fontSize: '0.72rem', color: 'var(--accent-blue)', fontWeight: 600 }}>
                           Auto-set: applicant is a current employee
                         </p>
                       )}
@@ -681,14 +681,14 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
               {/* Position type toggle (Original only) */}
               {apptType === 'original' && (
                 <div style={{ marginTop: '0.85rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                  <p style={{ margin: '0 0 0.45rem', fontSize: '0.82rem', fontWeight: 600, color: '#475569', gridColumn: '1/-1' }}>
+                  <p style={{ margin: '0 0 0.45rem', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-secondary)', gridColumn: '1/-1' }}>
                     Position Type (for Written Exam scoring)
                   </p>
                   {(['rank-and-file', 'executive'] as PositionType[]).map(pt => (
                     <button
                       key={pt} type="button" disabled={isFinalized}
                       onClick={() => setPosType(pt)}
-                      style={{ border: `2px solid ${posType === pt ? '#2563eb' : '#e2e8f0'}`, borderRadius: 8, padding: '0.6rem', cursor: isFinalized ? 'default' : 'pointer', background: posType === pt ? '#2563eb' : '#fff', color: posType === pt ? '#fff' : '#0f172a', fontWeight: 700, fontSize: '0.875rem' }}
+                      style={{ border: `2px solid ${posType === pt ? 'var(--accent-blue)' : 'var(--border-subtle)'}`, borderRadius: 8, padding: '0.6rem', cursor: isFinalized ? 'default' : 'pointer', background: posType === pt ? 'var(--accent-blue)' : 'var(--bg-control)', color: posType === pt ? 'var(--text-primary)' : 'var(--text-primary)', fontWeight: 700, fontSize: '0.875rem' }}
                     >
                       {pt === 'rank-and-file' ? 'Rank and File' : 'Executive / Managerial'}
                     </button>
@@ -698,11 +698,11 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
             </div>
 
             {/* Final Numerical Score */}
-            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 12, padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ background: 'var(--status-success-light)', border: `1px solid var(--status-success)`, borderRadius: 12, padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <Calculator size={24} style={{ color: '#16a34a' }} />
+                <Calculator size={24} style={{ color: 'var(--status-success)' }} />
                 <div>
-                  <p style={{ margin: 0, fontSize: '0.8rem', color: '#4b5563' }}>Final Numerical Score</p>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Final Numerical Score</p>
                   <p style={{ margin: 0, fontSize: '2rem', fontWeight: 800, color: '#0f172a', lineHeight: 1 }}>{totalScore.toFixed(2)}</p>
                 </div>
               </div>

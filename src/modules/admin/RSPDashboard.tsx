@@ -51,6 +51,13 @@ import {
 } from '../../lib/recruitmentData';
 import { runSingleFlight, invalidateCacheKey } from '../../lib/singleFlight';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
+import {
+    EMPLOYEE_DOCUMENTS_UPDATED_EVENT,
+    downloadEmployeeDocument,
+    listEmployeeDocumentsByType,
+    type EmployeeDocumentSubmission as SupabaseEmployeeDocumentSubmission,
+    type EmployeeDocumentType,
+} from '../../lib/employeeDocuments';
 import '../../styles/admin.css';
 import type { JobPosting, NewlyHired } from '../../types/recruitment.types';
 
@@ -346,6 +353,19 @@ const matchesDocumentTemplate = (templateId: EmployeeDocumentTemplateId, documen
   const normalizedType = normalizeTextValue(documentType);
   const keywords = documentTypeKeywordsByTemplate[templateId] || [];
   return keywords.some((keyword) => normalizedType.includes(keyword));
+};
+
+/**
+ * Bridge between the short card id (used in URL/UI state) and the canonical
+ * document_type value stored in Supabase / used by the Employee Portal upload flow.
+ */
+const TEMPLATE_ID_TO_DOCUMENT_TYPE: Record<EmployeeDocumentTemplateId, EmployeeDocumentType> = {
+  nbi: 'NBI Clearance',
+  medical: 'Medical Certificate',
+  saln: 'SALN',
+  training: 'Certificate of Training',
+  pef: 'Performance Evaluation Form',
+  resume: 'Updated Resume/CV',
 };
 
 const getPreferredClient = () => {
@@ -1506,47 +1526,50 @@ export const RSPDashboard = () => {
     [activeDocumentTemplateId]
   );
 
-  const activeDocumentSubmissions = useMemo<EmployeeDocumentSubmission[]>(() => {
-    if (!activeDocumentTemplateId) return [];
-    const recruitmentApplicants = getRecruitmentApplicants();
-    const recruitmentById = new Map(recruitmentApplicants.map((entry) => [entry.id, entry]));
+  // Real employee-document submissions, fetched from Supabase whenever the
+  // active card changes or an upload event fires from the Employee Portal.
+  const [activeDocumentSubmissions, setActiveDocumentSubmissions] = useState<EmployeeDocumentSubmission[]>([]);
 
-    const normalized = applicants
-      .filter((applicant) => Boolean(applicant.id) && Boolean(applicant.office))
-      .map((applicant, index) => {
-        const recruitmentRecord = recruitmentById.get(applicant.id);
-        const matchingDoc = (recruitmentRecord?.documents || []).find((doc) =>
-          matchesDocumentTemplate(activeDocumentTemplateId, doc.type || '')
-        );
-        if (!matchingDoc) return null;
+  useEffect(() => {
+    if (!activeDocumentTemplateId) {
+      setActiveDocumentSubmissions([]);
+      return;
+    }
 
-        let status: EmployeeDocumentSubmission['status'] = 'Pending';
-        if (matchingDoc.verified) {
-          status = 'Approved';
-        } else {
-          const applicantStatus = normalizeTextValue(applicant.status || '');
-          if (applicantStatus.includes('reject') || applicantStatus.includes('disqual')) {
-            status = 'Rejected';
-          }
-        }
+    const canonicalType = TEMPLATE_ID_TO_DOCUMENT_TYPE[activeDocumentTemplateId];
+    let cancelled = false;
 
-        return {
-          id: `${activeDocumentTemplateId}-${applicant.id}`,
-          applicantId: applicant.id,
-          fullName: applicant.full_name,
-          employeeCode: `EMP-${new Date(applicant.created_at || Date.now()).getFullYear()}-${String(1000 + index)}`,
-          position: applicant.position || 'Unassigned Position',
-          office: applicant.office || 'Unassigned Office',
-          submittedDate: formatDate(recruitmentRecord?.applicationDate || applicant.created_at),
-          status,
-          documentUrl: matchingDoc.url || '#',
-          documentType: matchingDoc.type || activeDocumentTemplateId,
-        } as EmployeeDocumentSubmission;
-      })
-      .filter(Boolean) as EmployeeDocumentSubmission[];
+    const refresh = async () => {
+      const rows = await listEmployeeDocumentsByType(canonicalType);
+      if (cancelled) return;
+      const mapped = rows.map((row: SupabaseEmployeeDocumentSubmission): EmployeeDocumentSubmission => ({
+        id: row.id,
+        applicantId: row.employee_id,
+        fullName: row.full_name,
+        employeeCode: row.employee_number,
+        position: row.position,
+        office: row.department,
+        submittedDate: formatDate(row.uploaded_at),
+        status: row.status,
+        documentUrl: row.file_url,
+        documentType: row.document_type,
+      }));
+      setActiveDocumentSubmissions(mapped);
+    };
 
-    return normalized.sort((a, b) => a.office.localeCompare(b.office) || a.fullName.localeCompare(b.fullName));
-  }, [activeDocumentTemplateId, applicants]);
+    void refresh();
+
+    const handleUpdate = () => { void refresh(); };
+    window.addEventListener(EMPLOYEE_DOCUMENTS_UPDATED_EVENT, handleUpdate);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(EMPLOYEE_DOCUMENTS_UPDATED_EVENT, handleUpdate);
+    };
+  }, [activeDocumentTemplateId]);
+
+  // Reference the now-unused matcher so the import stays valid for any future use
+  // and TypeScript doesn't flag it; the Reports view itself reads from Supabase above.
+  void matchesDocumentTemplate;
 
   const documentSubmissionsByOffice = useMemo(() => {
     const grouped = new Map<string, EmployeeDocumentSubmission[]>();
@@ -2456,14 +2479,12 @@ export const RSPDashboard = () => {
     if (downloadable.length > 0) {
       downloadable.forEach((entry, index) => {
         window.setTimeout(() => {
-          const link = document.createElement('a');
-          link.href = entry.documentUrl;
-          link.target = '_blank';
-          link.rel = 'noreferrer';
-          link.download = `${entry.fullName}-${entry.documentType}`.replace(/\s+/g, '_');
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
+          const fileName =
+            `${entry.fullName}-${entry.documentType}`.replace(/\s+/g, '_') || 'document';
+          void downloadEmployeeDocument({
+            file_url: entry.documentUrl,
+            file_name: fileName,
+          });
         }, index * 120);
       });
       return;

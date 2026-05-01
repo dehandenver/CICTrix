@@ -1157,4 +1157,125 @@
   box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   EXTREME CONTRAST THEME CONTROLS - Segmented Button UI
+   
+   Theme and Accent buttons styled with pure CSS variables for legibility.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.theme-controls-container {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+/* THEME BUTTON GROUP - Segmented Control */
+.theme-button-group {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  max-width: 400px;
+}
+
+.theme-button {
+  padding: 0.875rem 1.25rem;
+  border: 2px solid var(--border-subtle);
+  border-radius: 10px;
+  background-color: var(--bg-control);
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  text-align: center;
+  white-space: nowrap;
+  user-select: none;
+  outline: none;
+  position: relative;
+}
+
+.theme-button:hover:not(.active) {
+  border-color: var(--accent-primary);
+  background-color: var(--bg-sidebar);
+  color: var(--text-primary);
+}
+
+.theme-button.active {
+  border: var(--selected-border);
+  background-color: var(--control-active-bg);
+  color: var(--control-active-text);
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.25);
+}
+
+.theme-button:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+/* ACCENT BUTTON GROUP */
+.accent-button-group {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  max-width: 400px;
+}
+
+.accent-button {
+  padding: 0.875rem 1rem;
+  border: 2px solid var(--border-subtle);
+  border-radius: 10px;
+  background-color: var(--bg-control);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  user-select: none;
+  outline: none;
+}
+
+.accent-button:hover:not(.active) {
+  border-color: var(--accent-primary);
+  background-color: var(--bg-sidebar);
+  color: var(--text-primary);
+}
+
+.accent-button.active {
+  border: 2px solid var(--accent-primary);
+  background-color: var(--bg-control);
+  color: var(--text-primary);
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.15);
+}
+
+.accent-button:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+.accent-color-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 2px solid currentColor;
+  opacity: 0.9;
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+  .theme-button-group {
+    max-width: 100%;
+  }
+
+  .accent-button-group {
+    grid-template-columns: repeat(2, 1fr);
+    max-width: 100%;
+  }
+}
+
+
 

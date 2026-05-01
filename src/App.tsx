@@ -12,6 +12,7 @@ import {
   findEmployeePortalAccount,
 } from './lib/employeePortalData';
 import { supabase } from './lib/supabase';
+import { syncThemeWithRoute } from './lib/theme';
 import { LNDDashboard } from './modules/admin/LNDDashboard';
 import { LoginPage } from './modules/admin/LoginPage';
 import { PMDashboard } from './modules/admin/PMDashboard';
@@ -306,6 +307,11 @@ function AppContent() {
   }, [isInterviewerRoute, interviewerSession, revokedInterviewerDialogOpen]);
 
   useEffect(() => {
+    // Apply RSP-scoped theme only when in the RSP module; force light elsewhere.
+    syncThemeWithRoute();
+  }, [location.pathname, location.search]);
+
+  useEffect(() => {
     // Notify data-driven pages that a route has been activated so they can refresh
     // without requiring a full browser reload.
     window.dispatchEvent(new CustomEvent('cictrix:route-activated'));
@@ -584,7 +590,7 @@ function AppContent() {
             path="/admin/rsp/settings"
             element={
               <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
-                <RSPDashboard />
+                <SettingsPage />
               </AdminRoute>
             }
           />
@@ -612,6 +618,14 @@ function AppContent() {
             }
           />
           <Route
+            path="/admin/lnd/settings"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'lnd']}>
+                <SettingsPage />
+              </AdminRoute>
+            }
+          />
+          <Route
             path="/admin/pm"
             element={
               <AdminRoute session={adminSession} allowedRoles={['super-admin', 'pm']}>
@@ -627,12 +641,20 @@ function AppContent() {
               </AdminRoute>
             }
           />
+          <Route
+            path="/admin/pm/settings"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'pm']}>
+                <SettingsPage />
+              </AdminRoute>
+            }
+          />
         </Routes>
 
         <Dialog open={isInterviewerRoute && revokedInterviewerDialogOpen} onClose={handleRevokedInterviewerAcknowledge}>
           <div style={{ textAlign: 'center' }}>
-            <h3 style={{ marginBottom: '10px', color: '#dc2626' }}>Access Revoked</h3>
-            <p style={{ marginBottom: '16px', color: '#374151' }}>
+            <h3 style={{ marginBottom: '10px', color: 'var(--status-error)' }}>Access Revoked</h3>
+            <p style={{ marginBottom: '16px', color: 'var(--text-secondary)' }}>
               Your interviewer access has been revoked by an admin.
             </p>
             <button
@@ -642,8 +664,8 @@ function AppContent() {
                 border: 'none',
                 borderRadius: '8px',
                 padding: '10px 18px',
-                backgroundColor: '#1f2937',
-                color: '#ffffff',
+                backgroundColor: 'var(--accent-primary)',
+                color: 'var(--text-primary)',
                 fontWeight: 600,
                 cursor: 'pointer',
               }}

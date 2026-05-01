@@ -219,7 +219,7 @@ export function InterviewerLogin({ onLogin }: InterviewerLoginProps) {
                     right: '0.75rem',
                     top: '50%',
                     transform: 'translateY(-50%)',
-                    color: '#94a3b8',
+                    color: 'var(--text-secondary)',
                   }}
                 >
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}

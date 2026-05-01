@@ -15,6 +15,16 @@ import {
 } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import {
+    EMPLOYEE_DOCUMENTS_UPDATED_EVENT,
+    EMPLOYEE_DOC_TYPES,
+    dispatchEmployeeDocumentsUpdated,
+    downloadEmployeeDocument,
+    listEmployeeDocumentsForEmployee,
+    uploadEmployeeDocument,
+    type EmployeeDocumentRow,
+    type EmployeeDocumentType,
+} from '../../lib/employeeDocuments';
 import { updateEmployeePortalEmployee } from '../../lib/employeePortalData';
 import { Employee } from '../../types/employee.types';
 
@@ -34,17 +44,9 @@ interface TabConfig {
 }
 
 interface RequirementItem {
-  id: string;
+  id: EmployeeDocumentType;
   title: string;
   description: string;
-  status: 'required' | 'uploaded' | 'locked';
-}
-
-interface SubmissionItem {
-  id: string;
-  title: string;
-  status: 'pending' | 'submitted';
-  note?: string;
 }
 
 type EditableSection = 'personal' | 'contact' | 'emergency' | 'government' | null;
@@ -127,7 +129,10 @@ const EditableInput: React.FC<EditableInputProps> = ({ label, value, onChange, t
 export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogout }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [selectedFile, setSelectedFile] = useState<Record<string, string>>({});
+  const [selectedFile, setSelectedFile] = useState<Record<string, File | null>>({});
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [employeeDocuments, setEmployeeDocuments] = useState<EmployeeDocumentRow[]>([]);
   const [profile, setProfile] = useState<Employee>(currentUser);
   const [editingSection, setEditingSection] = useState<EditableSection>(null);
   const [contactDraft, setContactDraft] = useState<ContactDraft>(getContactDraft(currentUser));
@@ -162,77 +167,87 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
     return 'personal';
   }, [location.pathname]);
 
-  const requirementItems: RequirementItem[] = [
-    {
-      id: 'marriage_certificate',
-      title: 'Marriage Certificate',
-      description: 'Marriage Certificate (for married employees)',
-      status: 'required',
-    },
-    {
-      id: 'birth_certificate',
-      title: 'Birth Certificate',
-      description: 'Employee Birth Certificate',
-      status: 'uploaded',
-    },
-    {
-      id: 'medical_cert',
-      title: 'Medical Certificate',
-      description: 'Annual medical fitness certificate',
-      status: 'locked',
-    },
-  ];
+  const requirementItems: RequirementItem[] = useMemo(
+    () =>
+      EMPLOYEE_DOC_TYPES.map((type) => ({
+        id: type.id,
+        title: type.label,
+        description: type.description,
+      })),
+    [],
+  );
 
-  const submissionItems: SubmissionItem[] = [
-    {
-      id: 'pending_1',
-      title: 'Marriage Certificate',
-      status: 'pending',
-      note: 'Uploaded file is waiting for HR verification.',
-    },
-    {
-      id: 'pending_2',
-      title: 'Updated Employee Data Sheet',
-      status: 'pending',
-      note: 'Pending review and approval.',
-    },
-    {
-      id: 'pending_3',
-      title: 'Emergency Contact Form',
-      status: 'pending',
-      note: 'Recently submitted.',
-    },
-    {
-      id: 'submitted_1',
-      title: 'Birth Certificate',
-      status: 'submitted',
-      note: 'Approved and archived by HR.',
-    },
-    {
-      id: 'submitted_2',
-      title: 'BIR Form 2316',
-      status: 'submitted',
-      note: 'Submitted during onboarding.',
-    },
-  ];
+  // Index of the most-recent submission per document type, so the requirements
+  // tab can show "Uploaded" / "Replace" without re-rendering the whole list.
+  const latestByType = useMemo(() => {
+    const map = new Map<string, EmployeeDocumentRow>();
+    for (const doc of employeeDocuments) {
+      const existing = map.get(doc.document_type);
+      if (!existing || new Date(doc.uploaded_at) > new Date(existing.uploaded_at)) {
+        map.set(doc.document_type, doc);
+      }
+    }
+    return map;
+  }, [employeeDocuments]);
 
-  const pendingItems = submissionItems.filter((item) => item.status === 'pending');
-  const submittedItems = submissionItems.filter((item) => item.status === 'submitted');
+  const pendingDocuments = useMemo(
+    () => employeeDocuments.filter((d) => d.status === 'Pending'),
+    [employeeDocuments],
+  );
+
+  const submittedDocuments = useMemo(
+    () => employeeDocuments.filter((d) => d.status === 'Approved'),
+    [employeeDocuments],
+  );
+
+  const refreshEmployeeDocuments = async () => {
+    if (!currentUser?.employeeId) return;
+    const rows = await listEmployeeDocumentsForEmployee(currentUser.employeeId);
+    setEmployeeDocuments(rows);
+  };
+
+  useEffect(() => {
+    void refreshEmployeeDocuments();
+    const handler = () => { void refreshEmployeeDocuments(); };
+    window.addEventListener(EMPLOYEE_DOCUMENTS_UPDATED_EVENT, handler);
+    return () => window.removeEventListener(EMPLOYEE_DOCUMENTS_UPDATED_EVENT, handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.employeeId]);
 
   const handleTabSelect = (tab: TabConfig) => {
     navigate(tab.route);
   };
 
-  const handleFileSelect = (id: string, fileName: string) => {
-    setSelectedFile((prev) => ({ ...prev, [id]: fileName }));
+  const handleFileSelect = (id: string, file: File | null) => {
+    setSelectedFile((prev) => ({ ...prev, [id]: file }));
   };
 
-  const handleUpload = (id: string) => {
-    if (!selectedFile[id]) {
+  const handleUpload = async (id: EmployeeDocumentType) => {
+    const file = selectedFile[id];
+    if (!file) {
+      setUploadError('Please choose a file before clicking Upload.');
       return;
     }
 
-    alert(`Submitted ${selectedFile[id]} for ${id.replace('_', ' ')}`);
+    setUploadingId(id);
+    setUploadError(null);
+
+    const result = await uploadEmployeeDocument({
+      employeeId: currentUser.employeeId,
+      documentType: id,
+      file,
+    });
+
+    setUploadingId(null);
+
+    if (result.success === false) {
+      setUploadError(result.error);
+      return;
+    }
+
+    setSelectedFile((prev) => ({ ...prev, [id]: null }));
+    await refreshEmployeeDocuments();
+    dispatchEmployeeDocumentsUpdated();
   };
 
   const persistProfilePatch = (patch: Partial<Employee>) => {
@@ -686,66 +701,86 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
                 </span>
               </div>
 
+              {uploadError && (
+                <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {uploadError}
+                </p>
+              )}
+
               <div className="space-y-3">
-                {requirementItems.map((item) => (
-                  <article
-                    key={item.id}
-                    className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-4"
-                  >
-                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                      <div>
-                        <h3 className="font-semibold text-slate-900">{item.title}</h3>
-                        <p className="text-sm text-slate-500">{item.description}</p>
-                      </div>
+                {requirementItems.map((item) => {
+                  const latest = latestByType.get(item.id);
+                  const pickedFile = selectedFile[item.id] ?? null;
+                  const isUploading = uploadingId === item.id;
 
-                      {item.status === 'locked' && (
-                        <button
-                          className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600"
-                          disabled
-                        >
-                          <Lock className="h-4 w-4" />
-                          Locked
-                        </button>
-                      )}
+                  return (
+                    <article
+                      key={item.id}
+                      className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-4"
+                    >
+                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <h3 className="font-semibold text-slate-900">{item.title}</h3>
+                          <p className="text-sm text-slate-500">{item.description}</p>
+                          {latest && (
+                            <p className="mt-1 text-xs text-emerald-700">
+                              Last submitted: {latest.file_name} —{' '}
+                              {new Date(latest.uploaded_at).toLocaleDateString()} (
+                              {latest.status})
+                            </p>
+                          )}
+                        </div>
 
-                      {item.status === 'uploaded' && (
-                        <button className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">
-                          <Eye className="h-4 w-4" />
-                          Preview
-                        </button>
-                      )}
+                        <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center">
+                          {latest && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                downloadEmployeeDocument({
+                                  file_url: latest.file_url,
+                                  file_name: latest.file_name,
+                                })
+                              }
+                              className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
+                            >
+                              <Eye className="h-4 w-4" />
+                              View Submitted
+                            </button>
+                          )}
 
-                      {item.status === 'required' && (
-                        <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row">
                           <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
                             <input
                               type="file"
                               className="hidden"
                               onChange={(e) => {
-                                const fileName = e.target.files?.[0]?.name || '';
-                                handleFileSelect(item.id, fileName);
+                                const file = e.target.files?.[0] ?? null;
+                                handleFileSelect(item.id, file);
                               }}
                             />
                             <FileText className="h-4 w-4" />
-                            {selectedFile[item.id] ? 'Change File' : 'Select File'}
+                            {pickedFile ? 'Change File' : latest ? 'Replace File' : 'Select File'}
                           </label>
 
                           <button
+                            type="button"
                             onClick={() => handleUpload(item.id)}
-                            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                            disabled={!pickedFile || isUploading}
+                            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
                           >
                             <Upload className="h-4 w-4" />
-                            Upload
+                            {isUploading ? 'Uploading...' : 'Upload'}
                           </button>
                         </div>
-                      )}
-                    </div>
+                      </div>
 
-                    {selectedFile[item.id] && (
-                      <p className="mt-3 text-xs text-slate-500">Selected file: {selectedFile[item.id]}</p>
-                    )}
-                  </article>
-                ))}
+                      {pickedFile && (
+                        <p className="mt-3 text-xs text-slate-500">
+                          Selected file: {pickedFile.name} ({Math.round(pickedFile.size / 1024)} KB)
+                        </p>
+                      )}
+                    </article>
+                  );
+                })}
               </div>
             </section>
           </div>
@@ -757,19 +792,25 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-lg font-bold text-slate-900">Pending Submissions</h2>
                 <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
-                  {pendingItems.length}
+                  {pendingDocuments.length}
                 </span>
               </div>
 
               <div className="space-y-3">
-                {pendingItems.map((item) => (
+                {pendingDocuments.length === 0 && (
+                  <p className="text-sm text-slate-500">No pending submissions.</p>
+                )}
+                {pendingDocuments.map((doc) => (
                   <div
-                    key={item.id}
+                    key={doc.id}
                     className="flex items-start justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3"
                   >
                     <div>
-                      <p className="font-semibold text-amber-900">{item.title}</p>
-                      <p className="text-sm text-amber-800">{item.note}</p>
+                      <p className="font-semibold text-amber-900">{doc.document_type}</p>
+                      <p className="text-sm text-amber-800">
+                        {doc.file_name} — submitted{' '}
+                        {new Date(doc.uploaded_at).toLocaleDateString()}
+                      </p>
                     </div>
                     <Clock className="h-4 w-4 text-amber-700" />
                   </div>
@@ -781,22 +822,35 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-lg font-bold text-slate-900">Submitted Documents</h2>
                 <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                  {submittedItems.length}
+                  {submittedDocuments.length}
                 </span>
               </div>
 
               <div className="space-y-3">
-                {submittedItems.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3"
+                {submittedDocuments.length === 0 && (
+                  <p className="text-sm text-slate-500">No approved documents yet.</p>
+                )}
+                {submittedDocuments.map((doc) => (
+                  <button
+                    key={doc.id}
+                    type="button"
+                    onClick={() =>
+                      downloadEmployeeDocument({
+                        file_url: doc.file_url,
+                        file_name: doc.file_name,
+                      })
+                    }
+                    className="flex w-full items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-left hover:bg-emerald-100"
                   >
                     <div>
-                      <p className="font-semibold text-emerald-900">{item.title}</p>
-                      <p className="text-sm text-emerald-800">{item.note}</p>
+                      <p className="font-semibold text-emerald-900">{doc.document_type}</p>
+                      <p className="text-sm text-emerald-800">
+                        {doc.file_name} — approved{' '}
+                        {new Date(doc.uploaded_at).toLocaleDateString()}
+                      </p>
                     </div>
                     <ChevronRight className="h-4 w-4 text-emerald-700" />
-                  </div>
+                  </button>
                 ))}
               </div>
             </section>

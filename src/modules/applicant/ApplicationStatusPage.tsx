@@ -14,64 +14,74 @@ interface ApplicationRecord {
   application_type: string | null;
 }
 
-const STATUS_CONFIG: Record<string, { label: string; color: string; icon: JSX.Element; description: string }> = {
+const STATUS_CONFIG: Record<string, { label: string; colorVar: string; icon: JSX.Element; description: string; bgVar: string }> = {
   'New Application': {
     label: 'New Application',
-    color: '#2563eb',
+    colorVar: '--status-pending-text',
+    bgVar: '--status-pending-light',
     icon: <FileSearch size={28} />,
     description: 'Your application has been received and is queued for initial review.',
   },
   'Under Review': {
     label: 'Under Review',
-    color: '#d97706',
+    colorVar: '--status-warning-text',
+    bgVar: '--status-warning-light',
     icon: <Clock size={28} />,
     description: 'Our HR team is currently reviewing your application and documents.',
   },
   'Shortlisted': {
     label: 'Shortlisted',
-    color: '#7c3aed',
+    colorVar: '--status-pending-text',
+    bgVar: '--status-pending-light',
     icon: <CheckCircle2 size={28} />,
     description: 'Congratulations! You have been shortlisted for further evaluation.',
   },
   'For Interview': {
     label: 'For Interview',
-    color: '#0891b2',
+    colorVar: '--status-info',
+    bgVar: '--status-info-light',
     icon: <CheckCircle2 size={28} />,
     description: 'You have been selected for an interview. Please wait for scheduling details.',
   },
   'Interview Scheduled': {
     label: 'Interview Scheduled',
-    color: '#0891b2',
+    colorVar: '--status-info',
+    bgVar: '--status-info-light',
     icon: <CheckCircle2 size={28} />,
     description: 'Your interview has been scheduled. Check your email for details.',
   },
   'Interview Completed': {
     label: 'Interview Completed',
-    color: '#059669',
+    colorVar: '--status-success',
+    bgVar: '--status-success-light',
     icon: <CheckCircle2 size={28} />,
     description: 'Your interview has been completed. Results are being processed.',
   },
   'Recommended for Hiring': {
     label: 'Recommended for Hiring',
-    color: '#059669',
+    colorVar: '--status-success',
+    bgVar: '--status-success-light',
     icon: <CheckCircle2 size={28} />,
     description: 'You have been recommended for hiring. HR will contact you soon.',
   },
   'Not Qualified': {
     label: 'Not Qualified',
-    color: '#dc2626',
+    colorVar: '--status-error',
+    bgVar: '--status-error-light',
     icon: <XCircle size={28} />,
     description: 'Unfortunately, your application did not meet the requirements for this position.',
   },
   'Rejected': {
     label: 'Rejected',
-    color: '#dc2626',
+    colorVar: '--status-error',
+    bgVar: '--status-error-light',
     icon: <XCircle size={28} />,
     description: 'Your application was not selected for this position.',
   },
   'Pending': {
     label: 'Pending Review',
-    color: '#6b7280',
+    colorVar: '--text-secondary',
+    bgVar: '--bg-sidebar',
     icon: <Clock size={28} />,
     description: 'Your application is pending initial review.',
   },
@@ -80,7 +90,8 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: JSX.El
 const getStatusConfig = (status: string) =>
   STATUS_CONFIG[status] ?? {
     label: status,
-    color: '#6b7280',
+    colorVar: '--text-secondary',
+    bgVar: '--bg-sidebar',
     icon: <Clock size={28} />,
     description: 'Your application is being processed.',
   };
@@ -142,10 +153,10 @@ export const ApplicationStatusPage = () => {
 
       <main style={{ maxWidth: 640, margin: '3rem auto', padding: '0 1.5rem' }}>
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <h2 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#1e3a5f', marginBottom: '0.5rem' }}>
+          <h2 style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
             Track Your Application
           </h2>
-          <p style={{ color: '#6b7280' }}>
+          <p style={{ color: 'var(--text-secondary)' }}>
             Enter your email address or application item number to check your status.
           </p>
         </div>
@@ -159,10 +170,12 @@ export const ApplicationStatusPage = () => {
             style={{
               flex: 1,
               padding: '0.75rem 1rem',
-              border: '1.5px solid #d1d5db',
+              border: `1.5px solid var(--border-subtle)`,
               borderRadius: 8,
               fontSize: '0.95rem',
               outline: 'none',
+              backgroundColor: 'var(--bg-control)',
+              color: 'var(--text-primary)',
             }}
           />
           <button
@@ -170,8 +183,8 @@ export const ApplicationStatusPage = () => {
             disabled={loading}
             style={{
               padding: '0.75rem 1.25rem',
-              background: '#1e3a5f',
-              color: '#fff',
+              background: 'var(--accent-primary)',
+              color: 'var(--text-primary)',
               border: 'none',
               borderRadius: 8,
               fontWeight: 600,
@@ -187,16 +200,16 @@ export const ApplicationStatusPage = () => {
         </form>
 
         {error && (
-          <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', color: '#dc2626', padding: '0.75rem 1rem', borderRadius: 8, marginBottom: '1rem' }}>
+          <div style={{ background: 'var(--status-error-light)', border: `1px solid var(--status-error)`, color: 'var(--status-error)', padding: '0.75rem 1rem', borderRadius: 8, marginBottom: '1rem' }}>
             {error}
           </div>
         )}
 
         {searched && results !== null && results.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '3rem 1rem', color: '#6b7280' }}>
+          <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-secondary)' }}>
             <FileSearch size={48} style={{ margin: '0 auto 1rem', opacity: 0.4 }} />
-            <p style={{ fontWeight: 600 }}>No application found</p>
-            <p style={{ fontSize: '0.9rem' }}>Double-check your email or item number and try again.</p>
+            <p style={{ fontWeight: 600, color: 'var(--text-primary)' }}>No application found</p>
+            <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Double-check your email or item number and try again.</p>
           </div>
         )}
 
@@ -208,19 +221,19 @@ export const ApplicationStatusPage = () => {
                 <div
                   key={record.item_number}
                   style={{
-                    background: '#fff',
-                    border: '1.5px solid #e5e7eb',
-                    borderLeft: `5px solid ${cfg.color}`,
+                    background: 'var(--bg-control)',
+                    border: `1.5px solid var(--border-subtle)`,
+                    borderLeft: `5px solid var(${cfg.colorVar})`,
                     borderRadius: 10,
                     padding: '1.25rem 1.5rem',
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
                     <div>
-                      <p style={{ fontWeight: 700, fontSize: '1.05rem', color: '#1e3a5f', margin: 0 }}>
+                      <p style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-primary)', margin: 0 }}>
                         {record.first_name} {record.last_name}
                       </p>
-                      <p style={{ color: '#6b7280', fontSize: '0.875rem', margin: '0.2rem 0 0' }}>
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: '0.2rem 0 0' }}>
                         {record.position} &mdash; {record.office}
                       </p>
                     </div>
@@ -229,8 +242,8 @@ export const ApplicationStatusPage = () => {
                       fontWeight: 600,
                       padding: '0.25rem 0.625rem',
                       borderRadius: 999,
-                      background: `${cfg.color}15`,
-                      color: cfg.color,
+                      background: `var(${cfg.bgVar})`,
+                      color: `var(${cfg.colorVar})`,
                       whiteSpace: 'nowrap',
                     }}>
                       {record.application_type === 'promotion' ? 'Promotional' : 'Job Application'}
@@ -241,21 +254,21 @@ export const ApplicationStatusPage = () => {
                     display: 'flex',
                     alignItems: 'center',
                     gap: '0.75rem',
-                    background: `${cfg.color}0d`,
-                    border: `1px solid ${cfg.color}30`,
+                    background: `var(${cfg.bgVar})`,
+                    border: `1px solid var(${cfg.colorVar})`,
                     borderRadius: 8,
                     padding: '0.75rem 1rem',
                     marginBottom: '0.75rem',
                   }}>
-                    <span style={{ color: cfg.color, flexShrink: 0 }}>{cfg.icon}</span>
+                    <span style={{ color: `var(${cfg.colorVar})`, flexShrink: 0 }}>{cfg.icon}</span>
                     <div>
-                      <p style={{ fontWeight: 700, color: cfg.color, margin: 0, fontSize: '0.95rem' }}>{cfg.label}</p>
-                      <p style={{ color: '#374151', margin: '0.2rem 0 0', fontSize: '0.875rem' }}>{cfg.description}</p>
+                      <p style={{ fontWeight: 700, color: `var(${cfg.colorVar})`, margin: 0, fontSize: '0.95rem' }}>{cfg.label}</p>
+                      <p style={{ color: 'var(--text-secondary)', margin: '0.2rem 0 0', fontSize: '0.875rem' }}>{cfg.description}</p>
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#9ca3af' }}>
-                    <span>Item No: <strong style={{ color: '#1e3a5f' }}>{record.item_number}</strong></span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    <span>Item No: <strong style={{ color: 'var(--text-primary)' }}>{record.item_number}</strong></span>
                     <span>Submitted: {formatDate(record.created_at)}</span>
                   </div>
                 </div>
@@ -265,7 +278,7 @@ export const ApplicationStatusPage = () => {
         )}
 
         <div style={{ textAlign: 'center', marginTop: '2.5rem' }}>
-          <a href="/" style={{ color: '#1e3a5f', fontSize: '0.9rem', textDecoration: 'none', fontWeight: 600 }}>
+          <a href="/" style={{ color: 'var(--accent-primary)', fontSize: '0.9rem', textDecoration: 'none', fontWeight: 600 }}>
             ← Back to Applicant Portal
           </a>
         </div>

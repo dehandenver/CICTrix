@@ -1,7 +1,11 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { initTheme } from './lib/theme';
 import './styles/interviewer.css';
+
+// Apply persisted theme + accent before first render so we don't flash light mode.
+initTheme();
 
 const RUNTIME_DATA_VERSION_KEY = 'cictrix_runtime_data_version';
 const RUNTIME_DATA_VERSION = '2026-03-08-job-sync-v3';
