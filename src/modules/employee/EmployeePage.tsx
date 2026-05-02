@@ -19,12 +19,12 @@ import {
     EMPLOYEE_DOCUMENTS_UPDATED_EVENT,
     EMPLOYEE_DOC_TYPES,
     dispatchEmployeeDocumentsUpdated,
-    downloadEmployeeDocument,
     listEmployeeDocumentsForEmployee,
     uploadEmployeeDocument,
     type EmployeeDocumentRow,
     type EmployeeDocumentType,
 } from '../../lib/employeeDocuments';
+import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
 import { updateEmployeePortalEmployee } from '../../lib/employeePortalData';
 import { Employee } from '../../types/employee.types';
 
@@ -132,7 +132,9 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   const [selectedFile, setSelectedFile] = useState<Record<string, File | null>>({});
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const [employeeDocuments, setEmployeeDocuments] = useState<EmployeeDocumentRow[]>([]);
+  const [previewDocument, setPreviewDocument] = useState<EmployeeDocumentRow | null>(null);
   const [profile, setProfile] = useState<Employee>(currentUser);
   const [editingSection, setEditingSection] = useState<EditableSection>(null);
   const [contactDraft, setContactDraft] = useState<ContactDraft>(getContactDraft(currentUser));
@@ -201,8 +203,11 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   );
 
   const refreshEmployeeDocuments = async () => {
-    if (!currentUser?.employeeId) return;
-    const rows = await listEmployeeDocumentsForEmployee(currentUser.employeeId);
+    if (!currentUser?.employeeId && !currentUser?.email) return;
+    const rows = await listEmployeeDocumentsForEmployee(
+      currentUser.employeeId,
+      currentUser.email,
+    );
     setEmployeeDocuments(rows);
   };
 
@@ -226,14 +231,17 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
     const file = selectedFile[id];
     if (!file) {
       setUploadError('Please choose a file before clicking Upload.');
+      setUploadSuccess(null);
       return;
     }
 
     setUploadingId(id);
     setUploadError(null);
+    setUploadSuccess(null);
 
     const result = await uploadEmployeeDocument({
       employeeId: currentUser.employeeId,
+      email: currentUser.email,
       documentType: id,
       file,
     });
@@ -246,6 +254,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
     }
 
     setSelectedFile((prev) => ({ ...prev, [id]: null }));
+    setUploadSuccess(`Uploaded "${file.name}" for ${id}. RSP will see it under Reports → ${id}.`);
     await refreshEmployeeDocuments();
     dispatchEmployeeDocumentsUpdated();
   };
@@ -707,6 +716,12 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
                 </p>
               )}
 
+              {uploadSuccess && (
+                <p className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                  {uploadSuccess}
+                </p>
+              )}
+
               <div className="space-y-3">
                 {requirementItems.map((item) => {
                   const latest = latestByType.get(item.id);
@@ -735,12 +750,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
                           {latest && (
                             <button
                               type="button"
-                              onClick={() =>
-                                downloadEmployeeDocument({
-                                  file_url: latest.file_url,
-                                  file_name: latest.file_name,
-                                })
-                              }
+                              onClick={() => setPreviewDocument(latest)}
                               className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
                             >
                               <Eye className="h-4 w-4" />
@@ -834,12 +844,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
                   <button
                     key={doc.id}
                     type="button"
-                    onClick={() =>
-                      downloadEmployeeDocument({
-                        file_url: doc.file_url,
-                        file_name: doc.file_name,
-                      })
-                    }
+                    onClick={() => setPreviewDocument(doc)}
                     className="flex w-full items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-left hover:bg-emerald-100"
                   >
                     <div>
@@ -861,6 +866,20 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
           </div>
         )}
       </main>
+
+      <DocumentPreviewModal
+        open={previewDocument !== null}
+        fileUrl={previewDocument?.file_url ?? ''}
+        fileName={previewDocument?.file_name ?? ''}
+        fileType={previewDocument?.file_type ?? null}
+        title={previewDocument ? previewDocument.document_type : ''}
+        subtitle={
+          previewDocument
+            ? `${previewDocument.file_name} — uploaded ${new Date(previewDocument.uploaded_at).toLocaleDateString()} (${previewDocument.status})`
+            : ''
+        }
+        onClose={() => setPreviewDocument(null)}
+      />
     </div>
   );
 };

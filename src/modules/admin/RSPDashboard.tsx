@@ -58,6 +58,7 @@ import {
     type EmployeeDocumentSubmission as SupabaseEmployeeDocumentSubmission,
     type EmployeeDocumentType,
 } from '../../lib/employeeDocuments';
+import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
 import '../../styles/admin.css';
 import type { JobPosting, NewlyHired } from '../../types/recruitment.types';
 
@@ -169,6 +170,8 @@ interface EmployeeDocumentSubmission {
   status: 'Approved' | 'Pending' | 'Rejected';
   documentUrl: string;
   documentType: string;
+  fileName?: string;
+  fileType?: string | null;
 }
 
 const BULK_REQUEST_TEMPLATES = [
@@ -726,6 +729,7 @@ export const RSPDashboard = () => {
   const [activeDocumentTemplateId, setActiveDocumentTemplateId] = useState<EmployeeDocumentTemplateId | null>(null);
   const [expandedDocumentOffices, setExpandedDocumentOffices] = useState<Record<string, boolean>>({});
   const [selectedDocumentSubmissionIds, setSelectedDocumentSubmissionIds] = useState<string[]>([]);
+  const [previewSubmission, setPreviewSubmission] = useState<EmployeeDocumentSubmission | null>(null);
 
   const [raterSearch, setRaterSearch] = useState('');
   const [raterStatus, setRaterStatus] = useState('all');
@@ -1529,10 +1533,13 @@ export const RSPDashboard = () => {
   // Real employee-document submissions, fetched from Supabase whenever the
   // active card changes or an upload event fires from the Employee Portal.
   const [activeDocumentSubmissions, setActiveDocumentSubmissions] = useState<EmployeeDocumentSubmission[]>([]);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [documentsError, setDocumentsError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!activeDocumentTemplateId) {
       setActiveDocumentSubmissions([]);
+      setDocumentsError(null);
       return;
     }
 
@@ -1540,21 +1547,35 @@ export const RSPDashboard = () => {
     let cancelled = false;
 
     const refresh = async () => {
-      const rows = await listEmployeeDocumentsByType(canonicalType);
-      if (cancelled) return;
-      const mapped = rows.map((row: SupabaseEmployeeDocumentSubmission): EmployeeDocumentSubmission => ({
-        id: row.id,
-        applicantId: row.employee_id,
-        fullName: row.full_name,
-        employeeCode: row.employee_number,
-        position: row.position,
-        office: row.department,
-        submittedDate: formatDate(row.uploaded_at),
-        status: row.status,
-        documentUrl: row.file_url,
-        documentType: row.document_type,
-      }));
-      setActiveDocumentSubmissions(mapped);
+      setDocumentsLoading(true);
+      setDocumentsError(null);
+      try {
+        const rows = await listEmployeeDocumentsByType(canonicalType);
+        if (cancelled) return;
+        const mapped = rows.map((row: SupabaseEmployeeDocumentSubmission): EmployeeDocumentSubmission => ({
+          id: row.id,
+          applicantId: row.employee_id,
+          fullName: row.full_name,
+          employeeCode: row.employee_number,
+          position: row.position,
+          office: row.department,
+          submittedDate: formatDate(row.uploaded_at),
+          status: row.status ?? 'Pending',
+          documentUrl: row.file_url,
+          documentType: row.document_type,
+          fileName: row.file_name,
+          fileType: row.file_type,
+        }));
+        setActiveDocumentSubmissions(mapped);
+      } catch (error) {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : String(error);
+        console.error('listEmployeeDocumentsByType: refresh failed', error);
+        setDocumentsError(message);
+        setActiveDocumentSubmissions([]);
+      } finally {
+        if (!cancelled) setDocumentsLoading(false);
+      }
     };
 
     void refresh();
@@ -3846,7 +3867,7 @@ export const RSPDashboard = () => {
                     );
                   })}
                 </section>
-              ) : reportsView === 'ranking' ? (
+              ) : reportsView === 'documents' ? null : reportsView === 'ranking' ? (
                 <section className="space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--border-color)] bg-white p-5">
                     <div>
@@ -3986,9 +4007,21 @@ export const RSPDashboard = () => {
                 <section className="space-y-4">
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
-                      <p className="!mb-1 text-sm text-blue-600">RSP / Reports / {activeDocumentTemplate?.name.replace(' (Statement of Assets, Liabilities and Net Worth)', '') || 'Employee Documents'}</p>
+                      <p className="!mb-1 text-sm text-blue-600">
+                        <button
+                          type="button"
+                          onClick={() => { setReportsView('overview'); setActiveDocumentTemplateId(null); }}
+                          className="cursor-pointer underline-offset-2 hover:underline"
+                        >
+                          RSP / Reports
+                        </button>
+                        {' / '}
+                        {activeDocumentTemplate?.name.replace(' (Statement of Assets, Liabilities and Net Worth)', '') || 'Employee Documents'}
+                      </p>
                       <h2 className="!mb-1 !text-2xl font-bold text-[var(--text-primary)]">{activeDocumentTemplate?.name.replace(' (Statement of Assets, Liabilities and Net Worth)', '') || 'Employee Documents'}</h2>
-                      <p className="!mb-0 !text-sm text-[var(--text-secondary)]">{activeDocumentSubmissions.length} total submissions across all departments</p>
+                      <p className="!mb-0 !text-sm text-[var(--text-secondary)]">
+                        {documentsLoading ? 'Loading submissions…' : `${activeDocumentSubmissions.length} total submissions across all departments`}
+                      </p>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
@@ -4019,6 +4052,25 @@ export const RSPDashboard = () => {
                       </button>
                     </div>
                   </div>
+
+                  {documentsError && (
+                    <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-800">
+                      <p className="!mb-1 font-semibold">Could not load submissions.</p>
+                      <p className="!mb-0">{documentsError}</p>
+                    </div>
+                  )}
+
+                  {!documentsError && !documentsLoading && documentSubmissionsByOffice.length === 0 && (
+                    <div className="rounded-2xl border border-dashed border-[var(--border-color)] bg-white p-8 text-center">
+                      <p className="!mb-1 !text-base font-semibold text-[var(--text-primary)]">
+                        No submissions yet for this document.
+                      </p>
+                      <p className="!mb-0 !text-sm text-[var(--text-secondary)]">
+                        Employees can upload from the Employee Portal → Document Requirements.
+                        Submissions appear here as soon as they're uploaded.
+                      </p>
+                    </div>
+                  )}
 
                   <div className="space-y-3">
                     {documentSubmissionsByOffice.map((group) => {
@@ -4078,6 +4130,14 @@ export const RSPDashboard = () => {
                                         </span>
                                         <button
                                           type="button"
+                                          onClick={() => setPreviewSubmission(entry)}
+                                          disabled={!entry.documentUrl || entry.documentUrl === '#'}
+                                          className="text-sm font-semibold text-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                          View
+                                        </button>
+                                        <button
+                                          type="button"
                                           onClick={() => triggerDocumentDownload([entry])}
                                           disabled={!entry.documentUrl || entry.documentUrl === '#'}
                                           className="text-sm font-semibold text-purple-600 disabled:cursor-not-allowed disabled:opacity-50"
@@ -4098,6 +4158,7 @@ export const RSPDashboard = () => {
                 </section>
               )}
 
+              {reportsView !== 'documents' && (
               <section className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
@@ -4200,6 +4261,7 @@ export const RSPDashboard = () => {
                   </div>
                 )}
               </section>
+              )}
             </>
           )}
 
@@ -5608,6 +5670,16 @@ export const RSPDashboard = () => {
           </div>
         </div>
       )}
+
+      <DocumentPreviewModal
+        open={previewSubmission !== null}
+        fileUrl={previewSubmission?.documentUrl ?? ''}
+        fileName={previewSubmission?.fileName || previewSubmission?.documentType || ''}
+        fileType={previewSubmission?.fileType ?? null}
+        title={previewSubmission ? `${previewSubmission.fullName} — ${previewSubmission.documentType}` : ''}
+        subtitle={previewSubmission ? `${previewSubmission.employeeCode} • ${previewSubmission.position} • Submitted ${previewSubmission.submittedDate}` : ''}
+        onClose={() => setPreviewSubmission(null)}
+      />
     </div>
   );
 };

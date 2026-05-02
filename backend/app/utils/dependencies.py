@@ -18,6 +18,11 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         )
 
 
+async def get_current_user_id(current_user: TokenData = Depends(get_current_user)) -> str:
+    """Dependency to get current user's ID"""
+    return current_user.user_id
+
+
 def require_role(*allowed_roles: str):
     """Dependency factory to require specific roles"""
     async def role_checker(current_user: TokenData = Depends(get_current_user)) -> TokenData:

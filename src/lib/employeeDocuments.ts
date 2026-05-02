@@ -86,57 +86,85 @@ const sanitizeForKey = (input: string): string => {
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Resolve a Supabase employee UUID from either:
- *   - a UUID (returned as-is after a fast existence check), or
- *   - a human-readable employee_number (e.g. "EMP-2024-1234").
- * Returns null if no row matches.
+ * Resolve a Supabase employee UUID using multiple strategies (in order):
+ *   1. If `identifier` is already a UUID, return it.
+ *   2. Match `employees.employee_number = identifier`.
+ *   3. Match `employees.plantilla_item_number = identifier` (the legacy "ITEM-…" column).
+ *   4. If `fallbackEmail` is provided, match `employees.email = fallbackEmail`.
+ * Returns null if nothing matches.
  */
-export async function resolveEmployeeUuid(identifier: string): Promise<string | null> {
+export async function resolveEmployeeUuid(
+  identifier: string,
+  fallbackEmail?: string,
+): Promise<string | null> {
   const normalized = String(identifier ?? '').trim();
-  if (!normalized) return null;
+  const normalizedEmail = String(fallbackEmail ?? '').trim().toLowerCase();
 
-  if (UUID_REGEX.test(normalized)) {
+  if (normalized && UUID_REGEX.test(normalized)) {
     return normalized;
   }
 
-  const result = await (supabase as any)
-    .from('employees')
-    .select('id')
-    .eq('employee_number', normalized)
-    .limit(1)
-    .maybeSingle();
+  const tryColumn = async (column: string, value: string): Promise<string | null> => {
+    if (!value) return null;
+    const result = await (supabase as any)
+      .from('employees')
+      .select('id')
+      .eq(column, value)
+      .limit(1)
+      .maybeSingle();
 
-  if (result.error) {
-    console.error('resolveEmployeeUuid: lookup failed', result.error);
-    return null;
+    if (result.error) {
+      // Column might not exist on the schema; that's fine, try the next strategy.
+      console.warn(`resolveEmployeeUuid: lookup by ${column} failed`, result.error);
+      return null;
+    }
+    return result.data?.id ?? null;
+  };
+
+  if (normalized) {
+    const byEmployeeNumber = await tryColumn('employee_number', normalized);
+    if (byEmployeeNumber) return byEmployeeNumber;
+
+    const byItemNumber = await tryColumn('plantilla_item_number', normalized);
+    if (byItemNumber) return byItemNumber;
   }
-  return result.data?.id ?? null;
+
+  if (normalizedEmail) {
+    const byEmail = await tryColumn('email', normalizedEmail);
+    if (byEmail) return byEmail;
+  }
+
+  return null;
 }
 
 /**
  * Upload a file to Storage and insert a metadata row in employee_documents.
- * Accepts either a Supabase UUID or a human employee_number for `employeeId`.
+ * Accepts a Supabase UUID, a human employee_number, or an email lookup.
  * Returns the inserted row on success.
  */
 export async function uploadEmployeeDocument(params: {
   employeeId: string;
+  email?: string;
   documentType: EmployeeDocumentType;
   file: File;
 }): Promise<{ success: true; row: EmployeeDocumentRow } | { success: false; error: string }> {
-  const { employeeId, documentType, file } = params;
+  const { employeeId, email, documentType, file } = params;
 
-  if (!employeeId) {
-    return { success: false, error: 'Missing employee id.' };
+  if (!employeeId && !email) {
+    return { success: false, error: 'Missing employee identifier.' };
   }
   if (!file) {
     return { success: false, error: 'No file selected.' };
   }
 
-  const employeeUuid = await resolveEmployeeUuid(employeeId);
+  const employeeUuid = await resolveEmployeeUuid(employeeId, email);
   if (!employeeUuid) {
+    const queriedFor = [employeeId && `employee_number="${employeeId}"`, email && `email="${email}"`]
+      .filter(Boolean)
+      .join(' or ');
     return {
       success: false,
-      error: `No employee record found for "${employeeId}". Make sure this employee exists in the database.`,
+      error: `No employee record found in Supabase for ${queriedFor}. Make sure this employee exists in the employees table.`,
     };
   }
 
@@ -209,7 +237,10 @@ export async function listEmployeeDocumentsByType(
 
   if (docResult.error) {
     console.error('listEmployeeDocumentsByType: fetch failed', docResult.error);
-    return [];
+    throw new Error(
+      `Could not fetch employee_documents (${docResult.error.message ?? 'unknown error'}). ` +
+      `Make sure migration 004_employee_documents_uploads.sql has been applied to Supabase.`,
+    );
   }
 
   const rows = (docResult.data || []) as EmployeeDocumentRow[];
@@ -251,10 +282,11 @@ export async function listEmployeeDocumentsByType(
  */
 export async function listEmployeeDocumentsForEmployee(
   employeeId: string,
+  email?: string,
 ): Promise<EmployeeDocumentRow[]> {
-  if (!employeeId) return [];
+  if (!employeeId && !email) return [];
 
-  const employeeUuid = await resolveEmployeeUuid(employeeId);
+  const employeeUuid = await resolveEmployeeUuid(employeeId, email);
   if (!employeeUuid) return [];
 
   const result = await (supabase as any)

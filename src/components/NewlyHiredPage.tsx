@@ -18,10 +18,8 @@ import {
   upsertEmployeePortalAccount,
 } from '../lib/employeePortalData';
 import {
-  ensureRecruitmentSeedData,
   generateEmployeeId,
   getEmployeeRecords,
-  getNewlyHired,
   saveEmployeeRecords,
   saveNewlyHired,
 } from '../lib/recruitmentData';
@@ -45,10 +43,26 @@ export const NewlyHiredPage = () => {
 
   useEffect(() => {
     const load = async () => {
-      // Only use hiredFromDb from Supabase
+      // Hired applicants from Supabase
       const { data: applicantRows = [] } = await supabase
         .from('applicants')
         .select('id, first_name, last_name, email, contact_number, position, office, status, created_at') as any;
+
+      // Already-saved newly_hired rows (carries persisted employee_id so credentials survive reloads)
+      const newlyHiredResult = await (supabase as any)
+        .from('newly_hired')
+        .select('applicant_id, employee_id, status, onboarding_progress');
+
+      const persistedByApplicantId = new Map<string, { employee_id?: string; status?: string; onboarding_progress?: number }>();
+      for (const row of (newlyHiredResult.data || []) as any[]) {
+        const applicantKey = String(row?.applicant_id ?? '').trim();
+        if (!applicantKey) continue;
+        persistedByApplicantId.set(applicantKey, {
+          employee_id: row?.employee_id ?? undefined,
+          status: row?.status ?? undefined,
+          onboarding_progress: row?.onboarding_progress ?? undefined,
+        });
+      }
 
       const hiredFromDb = (applicantRows || [])
         .filter((row: any) => {
@@ -57,9 +71,11 @@ export const NewlyHiredPage = () => {
         })
         .map((row: any) => {
           const applicantId = String(row?.id ?? '').trim();
+          const persisted = applicantId ? persistedByApplicantId.get(applicantId) : undefined;
           return {
             id: `hire-${applicantId || crypto.randomUUID()}`,
             applicantId: applicantId || undefined,
+            employeeId: persisted?.employee_id || undefined,
             employeeInfo: {
               firstName: String(row?.first_name ?? '').trim(),
               lastName: String(row?.last_name ?? '').trim(),
@@ -77,14 +93,17 @@ export const NewlyHiredPage = () => {
             employmentType: 'Permanent',
             dateHired: String(row?.created_at ?? new Date().toISOString()),
             expectedStartDate: String(row?.created_at ?? new Date().toISOString()),
-            status: 'Pending Onboarding' as NewlyHiredStatus,
-            onboardingProgress: 0,
+            status: (persisted?.status as NewlyHiredStatus | undefined)
+              ?? (persisted?.employee_id ? 'In Onboarding' : 'Pending Onboarding') as NewlyHiredStatus,
+            onboardingProgress: persisted?.onboarding_progress ?? 0,
             onboardingChecklist: [],
             documents: [],
             notes: [],
             timeline: [
               {
-                event: 'Synced from applicant status',
+                event: persisted?.employee_id
+                  ? 'Loaded with persisted employee number from newly_hired'
+                  : 'Synced from applicant status',
                 date: new Date().toISOString(),
                 actor: 'System',
               },
@@ -162,7 +181,12 @@ export const NewlyHiredPage = () => {
   };
 
   const generateCredentials = async () => {
-    if (selectedIds.length === 0) return;
+    // Skip rows that already have credentials (defensive — checkbox is locked but be safe)
+    const eligibleIds = selectedIds.filter((id) => {
+      const row = rows.find((r) => r.id === id);
+      return row && !row.employeeId;
+    });
+    if (eligibleIds.length === 0) return;
 
     const employeeRecords = getEmployeeRecords();
     const existingAccounts = getEmployeePortalAccounts();
@@ -170,19 +194,68 @@ export const NewlyHiredPage = () => {
       existingAccounts.map((account) => [String(account.employee.employeeId || '').trim(), account])
     );
     const occupiedUsernames = new Set(existingAccounts.map((account) => normalizeText(account.username)));
-    let sequence = employeeRecords.length + 1;
+
+    // Collect every employee_number/employee_id ever used so the next sequence is truly unique.
+    const usedEmployeeNumbers = new Set<string>();
+    for (const record of employeeRecords) {
+      if (record.employeeId) usedEmployeeNumbers.add(String(record.employeeId).trim());
+    }
+    for (const account of existingAccounts) {
+      const empId = String(account.employee.employeeId || '').trim();
+      if (empId) usedEmployeeNumbers.add(empId);
+    }
+    for (const r of rows) {
+      if (r.employeeId) usedEmployeeNumbers.add(String(r.employeeId).trim());
+    }
+
+    try {
+      const empNumbersResult = await (supabase as any)
+        .from('employees')
+        .select('employee_number');
+      for (const row of (empNumbersResult.data || []) as any[]) {
+        const num = String(row?.employee_number ?? '').trim();
+        if (num) usedEmployeeNumbers.add(num);
+      }
+    } catch (error) {
+      console.warn('generateCredentials: could not pre-fetch employee_number list', error);
+    }
+    try {
+      const newlyHiredResult = await (supabase as any)
+        .from('newly_hired')
+        .select('employee_id');
+      for (const row of (newlyHiredResult.data || []) as any[]) {
+        const num = String(row?.employee_id ?? '').trim();
+        if (num) usedEmployeeNumbers.add(num);
+      }
+    } catch (error) {
+      console.warn('generateCredentials: could not pre-fetch newly_hired employee_id list', error);
+    }
+
+    let sequence = 1;
+    const nextEmployeeNumber = (): string => {
+      while (true) {
+        const candidate = generateEmployeeId(sequence++);
+        if (!usedEmployeeNumbers.has(candidate)) {
+          usedEmployeeNumbers.add(candidate);
+          return candidate;
+        }
+      }
+    };
+
     const nowIso = new Date().toISOString();
 
     const nextRows = rows.map((row) => {
-      if (!selectedIds.includes(row.id)) return row;
+      if (!eligibleIds.includes(row.id)) return row;
 
       const isInternalPromotion = row.applicationType === 'promotion' && Boolean(row.internalApplication?.employeeId);
       const existingEmployeeNumber = row.employeeId || row.internalApplication?.employeeId;
-      const employeeNumber = existingEmployeeNumber || generateEmployeeId(sequence++);
+      const employeeNumber = existingEmployeeNumber || nextEmployeeNumber();
       const existingAccount = accountByEmployeeId.get(employeeNumber);
       const username = existingAccount
         ? existingAccount.username
         : createUniqueUsername(row.employeeInfo.firstName, row.employeeInfo.lastName, occupiedUsernames);
+      // Reserve the username inside this batch so two employees with the same name don't collide.
+      occupiedUsernames.add(normalizeText(username));
       const password = createPassword();
       const positionHistoryEntry = {
         position: row.position,
@@ -242,7 +315,7 @@ export const NewlyHiredPage = () => {
           employee: {
             employeeId: employeeNumber,
             fullName: `${row.employeeInfo.firstName} ${row.employeeInfo.lastName}`,
-            email: row.employeeInfo.email || `${username}@employee.local`,
+            email: row.employeeInfo.email || `${username}.${employeeNumber.toLowerCase()}@employee.local`,
             dateOfBirth: '',
             age: 0,
             gender: 'Prefer not to say',
@@ -306,6 +379,66 @@ export const NewlyHiredPage = () => {
   };
 
   const clearGeneratedCache = () => setGeneratedCredentials([]);
+
+  const [savingCredentials, setSavingCredentials] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const saveAccountDetails = async () => {
+    if (generatedCredentials.length === 0) {
+      setShowCredentialsModal(false);
+      return;
+    }
+
+    setSavingCredentials(true);
+    setSaveError(null);
+
+    try {
+      // Persist newly_hired rows (carries employee_id so re-loads stay locked).
+      await saveNewlyHired(rows);
+
+      // Mirror each generated credential into the Supabase `employees` table so
+      // the employee can be located by document upload / RSP reports.
+      for (const credential of generatedCredentials) {
+        const row = rows.find((r) => r.id === credential.id);
+        if (!row) continue;
+
+        const insertResult = await (supabase as any)
+          .from('employees')
+          .upsert(
+            [
+              {
+                employee_number: credential.employeeNumber,
+                first_name: row.employeeInfo.firstName,
+                last_name: row.employeeInfo.lastName,
+                email: row.employeeInfo.email || `${credential.username}.${credential.employeeNumber.toLowerCase()}@employee.local`,
+                phone: row.employeeInfo.phone || null,
+                position: row.position,
+                department: row.department,
+                date_hired: row.dateHired || new Date().toISOString().slice(0, 10),
+                employment_status: 'Probationary',
+                qualified_applicant_id: null,
+                application_id: null,
+              },
+            ],
+            { onConflict: 'employee_number' },
+          );
+
+        if (insertResult.error) {
+          console.error('saveAccountDetails: employees upsert failed', insertResult.error);
+          throw new Error(insertResult.error.message || 'Failed to save employee row.');
+        }
+      }
+
+      setShowCredentialsModal(false);
+      clearGeneratedCache();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('saveAccountDetails: persist failed', error);
+      setSaveError(message);
+    } finally {
+      setSavingCredentials(false);
+    }
+  };
 
   return (
     <div className="admin-layout">
@@ -428,9 +561,18 @@ export const NewlyHiredPage = () => {
                   const statusLabel = hasEmployeeNumber ? 'Pending Update' : 'Pending';
 
                   return (
-                    <label key={row.id} className="flex cursor-pointer items-center justify-between border-b border-slate-100 px-6 py-5 last:border-b-0">
+                    <label
+                      key={row.id}
+                      className={`flex items-center justify-between border-b border-slate-100 px-6 py-5 last:border-b-0 ${hasEmployeeNumber ? 'cursor-not-allowed bg-slate-50' : 'cursor-pointer'}`}
+                    >
                       <div className="flex items-center gap-4">
-                        <input type="checkbox" checked={checked} onChange={() => toggleSelect(row.id)} className="h-5 w-5" />
+                        <input
+                          type="checkbox"
+                          checked={hasEmployeeNumber ? false : checked}
+                          disabled={hasEmployeeNumber}
+                          onChange={() => { if (!hasEmployeeNumber) toggleSelect(row.id); }}
+                          className="h-5 w-5 disabled:cursor-not-allowed disabled:opacity-40"
+                        />
                         <div>
                           <p className="text-xl font-semibold text-slate-900">{fullName}</p>
                           <p className="text-base text-slate-600">{row.position}</p>
@@ -440,7 +582,11 @@ export const NewlyHiredPage = () => {
 
                       <div className="text-right">
                         {hasEmployeeNumber && <p className="mb-2 rounded bg-slate-100 px-2 py-1 text-xs text-slate-500">{row.employeeId}</p>}
-                        <span className="rounded-full bg-orange-100 px-4 py-1.5 text-sm font-semibold text-orange-700">{statusLabel}</span>
+                        {hasEmployeeNumber ? (
+                          <span className="rounded-full bg-emerald-100 px-4 py-1.5 text-sm font-semibold text-emerald-700">Credentials Saved</span>
+                        ) : (
+                          <span className="rounded-full bg-orange-100 px-4 py-1.5 text-sm font-semibold text-orange-700">{statusLabel}</span>
+                        )}
                       </div>
                     </label>
                   );
@@ -470,17 +616,28 @@ export const NewlyHiredPage = () => {
               </div>
 
               <div className="flex items-center gap-3">
-                <button type="button" className="rounded-2xl bg-blue-600 px-5 py-2.5 text-base font-semibold text-white">
+                <button type="button" onClick={() => window.print()} className="rounded-2xl bg-blue-600 px-5 py-2.5 text-base font-semibold text-white">
                   <Printer className="mr-2 inline h-4 w-4" /> Print
                 </button>
-                <button type="button" className="rounded-2xl bg-green-600 px-5 py-2.5 text-base font-semibold text-white">
-                  <Save className="mr-2 inline h-4 w-4" /> Save Account Details
+                <button
+                  type="button"
+                  onClick={saveAccountDetails}
+                  disabled={savingCredentials}
+                  className="rounded-2xl bg-green-600 px-5 py-2.5 text-base font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+                >
+                  <Save className="mr-2 inline h-4 w-4" /> {savingCredentials ? 'Saving…' : 'Save Account Details'}
                 </button>
                 <button type="button" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" onClick={() => { setShowCredentialsModal(false); clearGeneratedCache(); }}>
                   <X size={20} />
                 </button>
               </div>
             </header>
+
+            {saveError && (
+              <p className="mx-8 mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {saveError}
+              </p>
+            )}
 
             <div className="max-h-[72vh] space-y-4 overflow-y-auto p-8">
               {generatedCredentials.length === 0 && (
