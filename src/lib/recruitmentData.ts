@@ -710,6 +710,74 @@ export const downloadTextFile = (filename: string, content: string, mimeType: st
 export const generateEmployeeId = (indexSeed: number) =>
   `EMP-2026-${String(indexSeed).padStart(3, '0')}`;
 
+/**
+ * Returns an `allocator()` that hands out unique `EMP-2026-NNN` numbers,
+ * skipping any value that already appears in any of these sources:
+ *   - Supabase `employees.employee_number`
+ *   - Supabase `newly_hired.employee_id`
+ *   - the local employee records cache
+ *   - the local employee portal accounts (localStorage legacy)
+ *   - any extra numbers the caller passes in (e.g. rows currently on screen)
+ *
+ * Each call to the returned `allocator()` reserves the chosen number so two
+ * employees inside the same batch can't get the same value.
+ */
+export const createEmployeeNumberAllocator = async (
+  extraReserved: Iterable<string> = [],
+): Promise<{ allocate: () => string; reserved: Set<string> }> => {
+  const reserved = new Set<string>();
+
+  const addIfPresent = (value: unknown) => {
+    const str = String(value ?? '').trim();
+    if (str) reserved.add(str);
+  };
+
+  for (const v of extraReserved) addIfPresent(v);
+
+  // Pull from Supabase.
+  try {
+    const empRes = await (supabase as any).from('employees').select('employee_number');
+    for (const row of (empRes?.data ?? []) as any[]) addIfPresent(row?.employee_number);
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn('createEmployeeNumberAllocator: employees fetch failed', error);
+  }
+  try {
+    const nhRes = await (supabase as any).from('newly_hired').select('employee_id');
+    for (const row of (nhRes?.data ?? []) as any[]) addIfPresent(row?.employee_id);
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn('createEmployeeNumberAllocator: newly_hired fetch failed', error);
+  }
+
+  // Pull from local stores so legacy data is honored.
+  try {
+    for (const record of getEmployeeRecords()) addIfPresent(record.employeeId);
+  } catch { /* ignore */ }
+  try {
+    const raw = localStorage.getItem('cictrix_employee_portal_accounts');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        for (const account of parsed) addIfPresent(account?.employee?.employeeId);
+      }
+    }
+  } catch { /* ignore */ }
+
+  let sequence = 1;
+  const allocate = (): string => {
+    while (true) {
+      const candidate = generateEmployeeId(sequence++);
+      if (!reserved.has(candidate)) {
+        reserved.add(candidate);
+        return candidate;
+      }
+    }
+  };
+
+  return { allocate, reserved };
+};
+
 type SyncAttachment = {
   name: string;
   type: string;

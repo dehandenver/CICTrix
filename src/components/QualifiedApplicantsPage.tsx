@@ -25,8 +25,8 @@ import { mockDatabase } from '../lib/mockDatabase';
 import {
     ensureRecruitmentSeedData,
     formatPHDate,
+    createEmployeeNumberAllocator,
     formatPHDateTime,
-    generateEmployeeId,
     getApplicants,
     getAuthoritativeJobPostings,
     getEmployeeRecords,
@@ -975,7 +975,14 @@ export const QualifiedApplicantsPage = () => {
         .filter(([email]) => Boolean(email))
     );
     const occupiedUsernames = new Set(existingAccounts.map((account) => normalizeUsername(account.username)));
-    let sequence = employeeRecords.length + 1;
+
+    // Allocator skips any employee_number already used in Supabase / local stores so
+    // we never hand out the same EMP-2026-NNN twice. Each call inside the loop reserves.
+    const reservedFromExistingNewlyHired = existingNewlyHired
+      .map((item) => String(item.employeeId ?? '').trim())
+      .filter(Boolean);
+    const { allocate: allocateEmployeeNumber } = await createEmployeeNumberAllocator(reservedFromExistingNewlyHired);
+
     const nowIso = new Date().toISOString();
 
     const hiredIdSet = new Set<string>();
@@ -1005,8 +1012,11 @@ export const QualifiedApplicantsPage = () => {
 
       const employeeNumber = isInternalPromotion
         ? String(existingAccount?.employee.employeeId ?? employeeIdFromApplication)
-        : generateEmployeeId(sequence++);
+        : allocateEmployeeNumber();
       const username = existingAccount?.username ?? createUniqueUsername(row, occupiedUsernames);
+      // Reserve the username inside this batch so two new hires with the same name
+      // don't both get the same login.
+      occupiedUsernames.add(normalizeUsername(username));
       const positionHistoryEntry = {
         position: targetPosition,
         department: targetDepartment,

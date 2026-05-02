@@ -18,7 +18,7 @@ import {
   upsertEmployeePortalAccount,
 } from '../lib/employeePortalData';
 import {
-  generateEmployeeId,
+  createEmployeeNumberAllocator,
   getEmployeeRecords,
   saveEmployeeRecords,
   saveNewlyHired,
@@ -195,52 +195,12 @@ export const NewlyHiredPage = () => {
     );
     const occupiedUsernames = new Set(existingAccounts.map((account) => normalizeText(account.username)));
 
-    // Collect every employee_number/employee_id ever used so the next sequence is truly unique.
-    const usedEmployeeNumbers = new Set<string>();
-    for (const record of employeeRecords) {
-      if (record.employeeId) usedEmployeeNumbers.add(String(record.employeeId).trim());
-    }
-    for (const account of existingAccounts) {
-      const empId = String(account.employee.employeeId || '').trim();
-      if (empId) usedEmployeeNumbers.add(empId);
-    }
-    for (const r of rows) {
-      if (r.employeeId) usedEmployeeNumbers.add(String(r.employeeId).trim());
-    }
-
-    try {
-      const empNumbersResult = await (supabase as any)
-        .from('employees')
-        .select('employee_number');
-      for (const row of (empNumbersResult.data || []) as any[]) {
-        const num = String(row?.employee_number ?? '').trim();
-        if (num) usedEmployeeNumbers.add(num);
-      }
-    } catch (error) {
-      console.warn('generateCredentials: could not pre-fetch employee_number list', error);
-    }
-    try {
-      const newlyHiredResult = await (supabase as any)
-        .from('newly_hired')
-        .select('employee_id');
-      for (const row of (newlyHiredResult.data || []) as any[]) {
-        const num = String(row?.employee_id ?? '').trim();
-        if (num) usedEmployeeNumbers.add(num);
-      }
-    } catch (error) {
-      console.warn('generateCredentials: could not pre-fetch newly_hired employee_id list', error);
-    }
-
-    let sequence = 1;
-    const nextEmployeeNumber = (): string => {
-      while (true) {
-        const candidate = generateEmployeeId(sequence++);
-        if (!usedEmployeeNumbers.has(candidate)) {
-          usedEmployeeNumbers.add(candidate);
-          return candidate;
-        }
-      }
-    };
+    // Allocator collects every employee_number already used (Supabase +
+    // local stores) and hands out a fresh, unique number per call.
+    const reservedFromCurrentRows = rows
+      .map((r) => String(r.employeeId ?? '').trim())
+      .filter(Boolean);
+    const { allocate: nextEmployeeNumber } = await createEmployeeNumberAllocator(reservedFromCurrentRows);
 
     const nowIso = new Date().toISOString();
 
@@ -293,7 +253,7 @@ export const NewlyHiredPage = () => {
         });
       }
 
-      const resolvedRank = Math.max(1, Number(row.rankingRank ?? sequence - 1));
+      const resolvedRank = Math.max(1, Number(row.rankingRank ?? 1));
       const resolvedScore = Number(row.rankingScore ?? 0);
       const rankLine = `Rank: #${resolvedRank} • Score: ${resolvedScore.toFixed(2)}`;
 

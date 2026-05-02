@@ -34,7 +34,13 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/Button';
 import { Sidebar } from '../../components/Sidebar';
 import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
-import { getEmployeePortalAccounts } from '../../lib/employeePortalData';
+import {
+    createPassword,
+    createUniqueUsername,
+    findEmployeePortalAccount,
+    getEmployeePortalAccounts,
+    upsertEmployeePortalAccount,
+} from '../../lib/employeePortalData';
 import { mockDatabase } from '../../lib/mockDatabase';
 import {
     ensureRecruitmentSeedData,
@@ -743,6 +749,159 @@ export const RSPDashboard = () => {
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [employeeDetailsTab, setEmployeeDetailsTab] = useState<'personal' | 'documents'>('personal');
   const [showPositionChangeModal, setShowPositionChangeModal] = useState(false);
+
+  // Reset password flow for the Employee Accounts detail panel
+  const [resetPwState, setResetPwState] = useState<'idle' | 'confirm' | 'working' | 'done' | 'error'>('idle');
+  const [resetPwUsername, setResetPwUsername] = useState<string | null>(null);
+  const [resetPwValue, setResetPwValue] = useState<string | null>(null);
+  const [resetPwError, setResetPwError] = useState<string | null>(null);
+
+  const handleResetEmployeePasswordConfirm = async () => {
+    if (!selectedEmployeeDetails) {
+      setResetPwError('No employee selected.');
+      setResetPwState('error');
+      return;
+    }
+
+    setResetPwState('working');
+    setResetPwError(null);
+
+    try {
+      const empNumber = String(
+        selectedEmployeeDetails.employeeId
+          ?? employeeNumberById.get(selectedEmployeeDetails.id)
+          ?? '',
+      ).trim();
+      const empEmail = String((selectedEmployeeDetails as any).email ?? '').trim().toLowerCase();
+      const firstName = String((selectedEmployeeDetails as any).first_name ?? '').trim();
+      const lastName = String((selectedEmployeeDetails as any).last_name ?? '').trim();
+      const fullNameNormalized = `${firstName} ${lastName}`.trim().toLowerCase();
+
+      const accounts = getEmployeePortalAccounts();
+
+      // Prefer matching by email (most authoritative since it's per-person), then by employee_number.
+      const existingAccount =
+        (empEmail
+          ? accounts.find((a) => String(a.employee.email ?? '').trim().toLowerCase() === empEmail)
+          : null)
+        ?? (empNumber
+          ? accounts.find((a) => String(a.employee.employeeId ?? '').trim() === empNumber)
+          : null)
+        ?? null;
+
+      // Build the username that should be assigned to the *current* employee.
+      // Sanitize the same way createUniqueUsername does so we can compare apples-to-apples.
+      const sanitize = (str: string) => str.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const expectedBase = `${sanitize(firstName)}${sanitize(lastName)}`;
+
+      if (!existingAccount && !expectedBase) {
+        setResetPwError(
+          `No employee-portal account exists for ${empNumber || empEmail || 'this employee'} ` +
+            `and no first/last name available to create one. Generate credentials from Newly Hired first.`,
+        );
+        setResetPwState('error');
+        return;
+      }
+
+      // Decide which username to assign:
+      //   1) If the account exists and its username matches the current employee's name → keep it.
+      //   2) Otherwise (stale account from a different employee, or missing) → regenerate from the
+      //      current first/last name, ensuring it doesn't collide with other accounts.
+      let username = existingAccount?.username ?? '';
+      const usernameMatchesCurrent =
+        Boolean(username) &&
+        (
+          sanitize(username) === expectedBase ||
+          sanitize(username).startsWith(expectedBase) // tolerates johnsmith1, johnsmith2, etc.
+        );
+
+      if (!usernameMatchesCurrent) {
+        const occupied = new Set(
+          accounts
+            .filter((a) => a !== existingAccount) // don't count the slot we're about to overwrite
+            .map((a) => a.username.toLowerCase()),
+        );
+        username = createUniqueUsername(firstName || 'employee', lastName || empNumber || 'user', occupied);
+      }
+
+      const newPassword = createPassword();
+
+      const baseEmployee = existingAccount?.employee ?? {
+        employeeId: empNumber,
+        fullName: `${firstName} ${lastName}`.trim() || username,
+        email: empEmail,
+        dateOfBirth: '',
+        age: 0,
+        gender: 'Prefer not to say' as const,
+        civilStatus: 'Single' as const,
+        nationality: 'Filipino',
+        mobileNumber: String((selectedEmployeeDetails as any).phone ?? '').trim(),
+        homeAddress: '',
+        emergencyContactName: '',
+        emergencyRelationship: '',
+        emergencyContactNumber: '',
+        sssNumber: '',
+        philhealthNumber: '',
+        pagibigNumber: '',
+        tinNumber: '',
+        currentPosition: String((selectedEmployeeDetails as any).position ?? '').trim(),
+        currentDepartment: String((selectedEmployeeDetails as any).office ?? (selectedEmployeeDetails as any).department ?? '').trim(),
+        positionHistory: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      // Always realign the stored profile to the *current* employee's identifiers so
+      // the portal account never drifts from who the row actually represents.
+      const realignedEmployee = {
+        ...baseEmployee,
+        employeeId: empNumber || baseEmployee.employeeId,
+        fullName: `${firstName} ${lastName}`.trim() || baseEmployee.fullName,
+        email: empEmail || baseEmployee.email,
+      };
+
+      upsertEmployeePortalAccount({
+        id: existingAccount?.id ?? `employee-account-${empNumber || username}`,
+        username,
+        password: newPassword,
+        employee: realignedEmployee,
+      });
+
+      // Sanity-check the new credential pair authenticates.
+      const verify = findEmployeePortalAccount(username, newPassword);
+      if (!verify) {
+        setResetPwError('Password generated but verification failed. Please retry.');
+        setResetPwState('error');
+        return;
+      }
+
+      // Note: fullNameNormalized is only used here to keep ESLint quiet about the local.
+      void fullNameNormalized;
+
+      setResetPwUsername(username);
+      setResetPwValue(newPassword);
+      setResetPwState('done');
+    } catch (error) {
+      console.error('handleResetEmployeePasswordConfirm: failed', error);
+      setResetPwError(error instanceof Error ? error.message : String(error));
+      setResetPwState('error');
+    }
+  };
+
+  const closeResetPwModal = () => {
+    setResetPwState('idle');
+    setResetPwUsername(null);
+    setResetPwValue(null);
+    setResetPwError(null);
+  };
+
+  const copyResetPwValue = async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch (error) {
+      console.warn('clipboard write failed', error);
+    }
+  };
   const [savedScoredApplicantIds, setSavedScoredApplicantIds] = useState<Set<string>>(getSavedScoredApplicantIdSet);
   const [positionChangeForm, setPositionChangeForm] = useState({
     changeType: 'promotion' as 'promotion' | 'succession' | 'transfer',
@@ -3636,7 +3795,11 @@ export const RSPDashboard = () => {
 
                             <section className="rounded-2xl border border-[var(--border-color)] p-5">
                               <h3 className="!mb-3 text-2xl font-semibold text-[var(--text-primary)]">Reset Password</h3>
-                              <button type="button" className="w-full rounded-xl bg-red-600 px-4 py-3 text-base font-semibold text-white">
+                              <button
+                                type="button"
+                                onClick={() => { setResetPwState('confirm'); setResetPwError(null); }}
+                                className="w-full rounded-xl bg-red-600 px-4 py-3 text-base font-semibold text-white"
+                              >
                                 <Lock size={16} className="mr-2 inline" /> Reset Password
                               </button>
                             </section>
@@ -5680,6 +5843,139 @@ export const RSPDashboard = () => {
         subtitle={previewSubmission ? `${previewSubmission.employeeCode} • ${previewSubmission.position} • Submitted ${previewSubmission.submittedDate}` : ''}
         onClose={() => setPreviewSubmission(null)}
       />
+
+      {resetPwState !== 'idle' && (
+        <div
+          className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/60 px-4"
+          onClick={() => { if (resetPwState !== 'working') closeResetPwModal(); }}
+        >
+          <div
+            className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+              <h3 className="!mb-0 text-base font-semibold text-slate-900">
+                {resetPwState === 'done' ? 'New Password Generated' : 'Reset Employee Password'}
+              </h3>
+              <button
+                type="button"
+                onClick={closeResetPwModal}
+                disabled={resetPwState === 'working'}
+                className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-4 px-5 py-4">
+              {resetPwState === 'confirm' && selectedEmployeeDetails && (
+                <>
+                  <p className="!mb-0 text-sm text-slate-700">
+                    Generate a new password for{' '}
+                    <span className="font-semibold">
+                      {selectedEmployeeDetails.full_name || `${(selectedEmployeeDetails as any).first_name ?? ''} ${(selectedEmployeeDetails as any).last_name ?? ''}`.trim()}
+                    </span>
+                    {employeeNumberById.get(selectedEmployeeDetails.id)
+                      ? ` (${employeeNumberById.get(selectedEmployeeDetails.id)})`
+                      : ''}
+                    ? The old password will stop working immediately.
+                  </p>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={closeResetPwModal}
+                      className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleResetEmployeePasswordConfirm}
+                      className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                    >
+                      Yes, reset password
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {resetPwState === 'working' && (
+                <p className="!mb-0 text-sm text-slate-600">Generating new password…</p>
+              )}
+
+              {resetPwState === 'done' && resetPwValue && (
+                <>
+                  <p className="!mb-0 text-sm text-slate-700">
+                    Password reset successfully. Share these credentials with the employee — they
+                    won't be shown again.
+                  </p>
+
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                    <div className="mb-2">
+                      <p className="!mb-0 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Username</p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="!mb-0 font-mono text-sm font-semibold text-slate-900">{resetPwUsername}</p>
+                        <button
+                          type="button"
+                          onClick={() => copyResetPwValue(resetPwUsername ?? '')}
+                          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="!mb-0 text-[11px] font-semibold uppercase tracking-wide text-slate-500">New Password</p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="!mb-0 font-mono text-sm font-semibold text-red-600">{resetPwValue}</p>
+                        <button
+                          type="button"
+                          onClick={() => copyResetPwValue(resetPwValue)}
+                          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="!mb-0 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    The employee should change this password on their first login.
+                  </p>
+
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={closeResetPwModal}
+                      className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {resetPwState === 'error' && (
+                <>
+                  <p className="!mb-0 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {resetPwError ?? 'Something went wrong. Please try again.'}
+                  </p>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={closeResetPwModal}
+                      className="rounded-lg bg-slate-600 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

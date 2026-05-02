@@ -1,6 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { ChevronLeft, Mail, Phone, MapPin, Heart, Lock } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { ChevronLeft, Copy, Heart, Lock, Mail, MapPin, Phone, X } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
+import {
+  createPassword,
+  findEmployeePortalAccount,
+  getEmployeePortalAccounts,
+  upsertEmployeePortalAccount,
+} from '../../../lib/employeePortalData';
 import ChangePositionModal from './ChangePositionModal';
 
 interface Employee {
@@ -43,6 +49,12 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
   const [showChangePositionModal, setShowChangePositionModal] = useState(false);
   const [documents, setDocuments] = useState<any[]>([]);
   const [fullEmployee, setFullEmployee] = useState<Employee>(employee);
+
+  // Reset password flow
+  const [resetState, setResetState] = useState<'idle' | 'confirm' | 'working' | 'done' | 'error'>('idle');
+  const [resetPasswordValue, setResetPasswordValue] = useState<string | null>(null);
+  const [resetUsername, setResetUsername] = useState<string | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   useEffect(() => {
     // Check if this is a newly hired applicant or an established employee
@@ -126,6 +138,84 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
   };
 
   const age = calculateAge(fullEmployee.date_of_birth);
+
+  /**
+   * Locate the Employee Portal account for this employee. Portal accounts are
+   * keyed by employee_number / email, so we try the most reliable identifiers
+   * in order.
+   */
+  const findPortalAccountForEmployee = () => {
+    const accounts = getEmployeePortalAccounts();
+    const empNumber = String(fullEmployee.employee_number ?? '').trim();
+    const email = String(fullEmployee.email ?? '').trim().toLowerCase();
+
+    return (
+      accounts.find((account) =>
+        String(account.employee.employeeId ?? '').trim() === empNumber,
+      ) ??
+      accounts.find((account) =>
+        String(account.employee.email ?? '').trim().toLowerCase() === email,
+      ) ??
+      null
+    );
+  };
+
+  const handleResetPasswordConfirm = async () => {
+    setResetState('working');
+    setResetError(null);
+
+    try {
+      const account = findPortalAccountForEmployee();
+      if (!account) {
+        setResetError(
+          `No employee-portal account exists for ${fullEmployee.employee_number} / ${fullEmployee.email}. ` +
+            `Generate credentials from Newly Hired first.`,
+        );
+        setResetState('error');
+        return;
+      }
+
+      const newPassword = createPassword();
+
+      upsertEmployeePortalAccount({
+        id: account.id,
+        username: account.username,
+        password: newPassword,
+        employee: account.employee,
+      });
+
+      // Sanity check that the new credential pair works for login.
+      const verify = findEmployeePortalAccount(account.username, newPassword);
+      if (!verify) {
+        setResetError('Password was generated but could not be verified. Please retry.');
+        setResetState('error');
+        return;
+      }
+
+      setResetUsername(account.username);
+      setResetPasswordValue(newPassword);
+      setResetState('done');
+    } catch (error) {
+      console.error('handleResetPasswordConfirm: failed', error);
+      setResetError(error instanceof Error ? error.message : String(error));
+      setResetState('error');
+    }
+  };
+
+  const closeResetModal = () => {
+    setResetState('idle');
+    setResetPasswordValue(null);
+    setResetUsername(null);
+    setResetError(null);
+  };
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (error) {
+      console.warn('clipboard write failed', error);
+    }
+  };
 
   const getStatusColor = (status: string, id?: string) => {
     // Newly hired applicants get orange/amber status
@@ -386,7 +476,11 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
 
                 {/* Reset Password Button */}
                 <div className="pt-6 border-t border-gray-200">
-                  <button className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium flex items-center gap-2 transition-colors">
+                  <button
+                    type="button"
+                    onClick={() => { setResetState('confirm'); setResetError(null); }}
+                    className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium flex items-center gap-2 transition-colors"
+                  >
                     <Lock size={18} />
                     Reset Password
                   </button>
@@ -431,6 +525,136 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
             onRefresh();
           }}
         />
+      )}
+
+      {resetState !== 'idle' && (
+        <div
+          className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 px-4"
+          onClick={() => { if (resetState !== 'working') closeResetModal(); }}
+        >
+          <div
+            className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+              <h3 className="text-base font-semibold text-slate-900">
+                {resetState === 'done' ? 'New Password Generated' : 'Reset Employee Password'}
+              </h3>
+              <button
+                type="button"
+                onClick={closeResetModal}
+                disabled={resetState === 'working'}
+                className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-4 px-5 py-4">
+              {resetState === 'confirm' && (
+                <>
+                  <p className="text-sm text-slate-700">
+                    Generate a new password for{' '}
+                    <span className="font-semibold">
+                      {fullEmployee.first_name} {fullEmployee.last_name}
+                    </span>{' '}
+                    ({fullEmployee.employee_number})? The old password will stop working immediately.
+                  </p>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={closeResetModal}
+                      className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleResetPasswordConfirm}
+                      className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+                    >
+                      Yes, reset password
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {resetState === 'working' && (
+                <p className="text-sm text-slate-600">Generating new password…</p>
+              )}
+
+              {resetState === 'done' && resetPasswordValue && (
+                <>
+                  <p className="text-sm text-slate-700">
+                    Password reset successfully. Share these credentials with the employee — they
+                    won't be shown again.
+                  </p>
+
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                    <div className="mb-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Username</p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-mono text-sm font-semibold text-slate-900">{resetUsername}</p>
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(resetUsername ?? '')}
+                          className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                        >
+                          <Copy size={14} /> Copy
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">New Password</p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-mono text-sm font-semibold text-red-600">{resetPasswordValue}</p>
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(resetPasswordValue)}
+                          className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                        >
+                          <Copy size={14} /> Copy
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    The employee should change this password on their first login.
+                  </p>
+
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={closeResetModal}
+                      className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                    >
+                      Done
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {resetState === 'error' && (
+                <>
+                  <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {resetError ?? 'Something went wrong. Please try again.'}
+                  </p>
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={closeResetModal}
+                      className="rounded-lg bg-slate-600 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
