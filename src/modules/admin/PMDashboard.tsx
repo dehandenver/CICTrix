@@ -8,6 +8,7 @@ import {
     CalendarDays,
     CheckCircle2,
     ChevronDown,
+    ChevronLeft,
     ChevronUp,
     ClipboardList,
     Clock,
@@ -102,6 +103,34 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     end_date: '',
     status: 'Planned'
   });
+
+  // Pagination state for Performance Reviews table
+  const [reviewPage, setReviewPage] = useState(1);
+  const [reviewRowsPerPage, setReviewRowsPerPage] = useState(20);
+
+  const reviewsData = [
+    { name: 'Manuel Reyes', id: 'EMP-0142', pos: 'HR Officer I', dept: 'Operations', score: 4.4, rating: 'Very Satisfactory', date: 'Feb 27, 2025' },
+    { name: 'Valentina Santos', id: 'EMP-0141', pos: 'IT Officer II', dept: 'HR Department', score: 4.2, rating: 'Very Satisfactory', date: 'Feb 24, 2025' },
+    { name: 'Diego Flores', id: 'EMP-0140', pos: 'HR Assistant', dept: 'Finance', score: 4.9, rating: 'Outstanding', date: 'Feb 21, 2025' },
+    { name: 'Sofia Morales', id: 'EMP-0139', pos: 'Admin Officer II', dept: 'IT Department', score: 4.3, rating: 'Very Satisfactory', date: 'Feb 18, 2025' },
+    { name: 'Antonio Mercado', id: 'EMP-0136', pos: 'Legal Officer I', dept: 'Operations', score: 4.1, rating: 'Very Satisfactory', date: 'Feb 9, 2025' },
+    { name: 'Teresa dela Cruz', id: 'EMP-0135', pos: 'Finance Officer I', dept: 'HR Department', score: 4.8, rating: 'Outstanding', date: 'Feb 6, 2025' },
+    { name: 'Pedro Gutierrez', id: 'EMP-0134', pos: 'IT Support Specialist', dept: 'Finance', score: 4.2, rating: 'Very Satisfactory', date: 'Feb 3, 2025' },
+    { name: 'Gloria Rivera', id: 'EMP-0133', pos: 'Systems Analyst', dept: 'IT Department', score: 3.9, rating: 'Satisfactory', date: 'Jan 31, 2025' },
+    { name: 'Fernando Fernandez', id: 'EMP-0132', pos: 'HR Officer I', dept: 'Admin Services', score: 4.5, rating: 'Outstanding', date: 'Jan 28, 2025' },
+    { name: 'Liza Lopez', id: 'EMP-0131', pos: 'IT Officer II', dept: 'Legal', score: 4.0, rating: 'Very Satisfactory', date: 'Jan 25, 2025' },
+    { name: 'Miguel Lim', id: 'EMP-0130', pos: 'HR Assistant', dept: 'Operations', score: 4.7, rating: 'Outstanding', date: 'Jan 22, 2025' },
+    { name: 'Ricardo Cruz', id: 'EMP-0129', pos: 'Admin Officer II', dept: 'HR Department', score: 4.3, rating: 'Very Satisfactory', date: 'Jan 19, 2025' },
+    { name: 'Carmen Mendoza', id: 'EMP-0128', pos: 'Accounting Clerk', dept: 'Finance', score: 3.7, rating: 'Satisfactory', date: 'Jan 16, 2025' },
+    { name: 'Jose Navarro', id: 'EMP-0127', pos: 'Admin Assistant II', dept: 'IT Department', score: 4.9, rating: 'Outstanding', date: 'Jan 13, 2025' },
+    { name: 'Elena Castillo', id: 'EMP-0126', pos: 'Legal Officer I', dept: 'Admin Services', score: 4.1, rating: 'Very Satisfactory', date: 'Jan 10, 2025' },
+    { name: 'Roberto Ramos', id: 'EMP-0125', pos: 'Finance Officer I', dept: 'Legal', score: 4.4, rating: 'Very Satisfactory', date: 'Jan 7, 2025' },
+    { name: 'Ana Gonzales', id: 'EMP-0124', pos: 'IT Support Specialist', dept: 'Operations', score: 3.8, rating: 'Satisfactory', date: 'Jan 4, 2025' },
+    { name: 'Juan Diaz', id: 'EMP-0123', pos: 'Systems Analyst', dept: 'HR Department', score: 4.6, rating: 'Outstanding', date: 'Jan 1, 2025' },
+  ];
+  const reviewTotalPages = Math.ceil(reviewsData.length / reviewRowsPerPage);
+  const reviewStartIdx = (reviewPage - 1) * reviewRowsPerPage;
+  const reviewPageData = reviewsData.slice(reviewStartIdx, reviewStartIdx + reviewRowsPerPage);
 
   useEffect(() => {
     fetchCycles();
@@ -800,26 +829,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   </div>
                   {/* Rows */}
                   <div className="divide-y divide-slate-100">
-                    {[
-                      { name: 'Manuel Reyes', id: 'EMP-0142', pos: 'HR Officer I', dept: 'Operations', score: 4.4, rating: 'Very Satisfactory', date: 'Feb 27, 2025' },
-                      { name: 'Valentina Santos', id: 'EMP-0141', pos: 'IT Officer II', dept: 'HR Department', score: 4.2, rating: 'Very Satisfactory', date: 'Feb 24, 2025' },
-                      { name: 'Diego Flores', id: 'EMP-0140', pos: 'HR Assistant', dept: 'Finance', score: 4.9, rating: 'Outstanding', date: 'Feb 21, 2025' },
-                      { name: 'Sofia Morales', id: 'EMP-0139', pos: 'Admin Officer II', dept: 'IT Department', score: 4.3, rating: 'Very Satisfactory', date: 'Feb 18, 2025' },
-                      { name: 'Antonio Mercado', id: 'EMP-0136', pos: 'Legal Officer I', dept: 'Operations', score: 4.1, rating: 'Very Satisfactory', date: 'Feb 9, 2025' },
-                      { name: 'Teresa dela Cruz', id: 'EMP-0135', pos: 'Finance Officer I', dept: 'HR Department', score: 4.8, rating: 'Outstanding', date: 'Feb 6, 2025' },
-                      { name: 'Pedro Gutierrez', id: 'EMP-0134', pos: 'IT Support Specialist', dept: 'Finance', score: 4.2, rating: 'Very Satisfactory', date: 'Feb 3, 2025' },
-                      { name: 'Gloria Rivera', id: 'EMP-0133', pos: 'Systems Analyst', dept: 'IT Department', score: 3.9, rating: 'Satisfactory', date: 'Jan 31, 2025' },
-                      { name: 'Fernando Fernandez', id: 'EMP-0132', pos: 'HR Officer I', dept: 'Admin Services', score: 4.5, rating: 'Outstanding', date: 'Jan 28, 2025' },
-                      { name: 'Liza Lopez', id: 'EMP-0131', pos: 'IT Officer II', dept: 'Legal', score: 4.0, rating: 'Very Satisfactory', date: 'Jan 25, 2025' },
-                      { name: 'Miguel Lim', id: 'EMP-0130', pos: 'HR Assistant', dept: 'Operations', score: 4.7, rating: 'Outstanding', date: 'Jan 22, 2025' },
-                      { name: 'Ricardo Cruz', id: 'EMP-0129', pos: 'Admin Officer II', dept: 'HR Department', score: 4.3, rating: 'Very Satisfactory', date: 'Jan 19, 2025' },
-                      { name: 'Carmen Mendoza', id: 'EMP-0128', pos: 'Accounting Clerk', dept: 'Finance', score: 3.7, rating: 'Satisfactory', date: 'Jan 16, 2025' },
-                      { name: 'Jose Navarro', id: 'EMP-0127', pos: 'Admin Assistant II', dept: 'IT Department', score: 4.9, rating: 'Outstanding', date: 'Jan 13, 2025' },
-                      { name: 'Elena Castillo', id: 'EMP-0126', pos: 'Legal Officer I', dept: 'Admin Services', score: 4.1, rating: 'Very Satisfactory', date: 'Jan 10, 2025' },
-                      { name: 'Roberto Ramos', id: 'EMP-0125', pos: 'Finance Officer I', dept: 'Legal', score: 4.4, rating: 'Very Satisfactory', date: 'Jan 7, 2025' },
-                      { name: 'Ana Gonzales', id: 'EMP-0124', pos: 'IT Support Specialist', dept: 'Operations', score: 3.8, rating: 'Satisfactory', date: 'Jan 4, 2025' },
-                      { name: 'Juan Diaz', id: 'EMP-0123', pos: 'Systems Analyst', dept: 'HR Department', score: 4.6, rating: 'Outstanding', date: 'Jan 1, 2025' },
-                    ].map((row) => {
+                    {reviewPageData.map((row) => {
                       const ratingColor = row.rating === 'Outstanding' ? 'text-emerald-600' : row.rating === 'Very Satisfactory' ? 'text-blue-600' : 'text-orange-500';
                       return (
                         <div key={row.id} className="grid grid-cols-12 items-center px-5 py-3.5 text-sm hover:bg-slate-50/60 transition">
@@ -843,18 +853,40 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                       );
                     })}
                   </div>
-                  {/* Footer */}
+                  {/* Footer with functional pagination */}
                   <div className="px-5 py-3.5 border-t border-slate-100 flex items-center justify-between">
-                    <span className="text-xs font-medium text-blue-600">Showing 1 – 20 of 142 records</span>
+                    <span className="text-xs font-medium text-blue-600">
+                      Showing {reviewStartIdx + 1} – {Math.min(reviewStartIdx + reviewRowsPerPage, reviewsData.length)} of {reviewsData.length} records
+                    </span>
                     <div className="flex items-center gap-3 text-xs text-slate-500">
                       <span>Rows:</span>
-                      {[10, 20, 50].map(n => <button key={n} type="button" className={`h-6 w-7 rounded ${n === 20 ? 'bg-blue-600 text-white font-semibold' : 'bg-slate-100 text-slate-600'} text-xs`}>{n}</button>)}
+                      {[10, 20, 50].map(n => (
+                        <button key={n} type="button"
+                          onClick={() => { setReviewRowsPerPage(n); setReviewPage(1); }}
+                          className={`h-6 w-7 rounded ${n === reviewRowsPerPage ? 'bg-blue-600 text-white font-semibold' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'} text-xs transition`}
+                        >{n}</button>
+                      ))}
                       <span className="ml-2 flex items-center gap-1">
-                        <button type="button" className="px-2 py-1 rounded border border-slate-200 text-slate-400 text-xs">&lt; Previous</button>
-                        {[1, 2, 3].map(n => <button key={n} type="button" className={`h-6 w-6 rounded ${n === 1 ? 'bg-blue-600 text-white font-semibold' : 'border border-slate-200 text-slate-600'} text-xs`}>{n}</button>)}
-                        <span className="text-slate-400">…</span>
-                        <button type="button" className="h-6 w-6 rounded border border-slate-200 text-slate-600 text-xs">8</button>
-                        <button type="button" className="px-2 py-1 rounded border border-slate-200 text-slate-600 text-xs">Next &gt;</button>
+                        <button type="button" disabled={reviewPage === 1}
+                          onClick={() => setReviewPage(p => Math.max(1, p - 1))}
+                          className={`px-2 py-1 rounded border border-slate-200 text-xs transition ${reviewPage === 1 ? 'text-slate-300 cursor-default' : 'text-slate-600 hover:bg-slate-100'}`}
+                        >&lt; Previous</button>
+                        {Array.from({ length: reviewTotalPages }, (_, i) => i + 1).map(n => {
+                          if (reviewTotalPages <= 5 || n === 1 || n === reviewTotalPages || Math.abs(n - reviewPage) <= 1) {
+                            return (
+                              <button key={n} type="button" onClick={() => setReviewPage(n)}
+                                className={`h-6 w-6 rounded text-xs transition ${n === reviewPage ? 'bg-blue-600 text-white font-semibold' : 'border border-slate-200 text-slate-600 hover:bg-slate-100'}`}
+                              >{n}</button>
+                            );
+                          }
+                          if (n === 2 && reviewPage > 3) return <span key={n} className="text-slate-400">…</span>;
+                          if (n === reviewTotalPages - 1 && reviewPage < reviewTotalPages - 2) return <span key={n} className="text-slate-400">…</span>;
+                          return null;
+                        })}
+                        <button type="button" disabled={reviewPage === reviewTotalPages}
+                          onClick={() => setReviewPage(p => Math.min(reviewTotalPages, p + 1))}
+                          className={`px-2 py-1 rounded border border-slate-200 text-xs transition ${reviewPage === reviewTotalPages ? 'text-slate-300 cursor-default' : 'text-slate-600 hover:bg-slate-100'}`}
+                        >Next &gt;</button>
                       </span>
                     </div>
                   </div>
@@ -864,18 +896,131 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
             {activeSection === 'goals' && (
               <>
-                <h2 className="text-3xl font-bold text-slate-900">Goals & Objectives</h2>
-                <p className="mt-1 text-slate-600">Track employee goals and objectives status</p>
+                {/* Header */}
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <button type="button" className="p-1 text-slate-400 hover:text-slate-600 transition"><ChevronLeft className="h-5 w-5" /></button>
+                    <div>
+                      <h2 className="text-2xl font-bold text-slate-900 tracking-tight">DPCR System</h2>
+                      <p className="text-sm text-slate-500">Departmental Performance Commitment and Review</p>
+                    </div>
+                  </div>
+                  <button type="button" className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition shadow-sm">
+                    <Plus className="h-4 w-4" /> New IPCR
+                  </button>
+                </div>
+                <div className="h-1 w-full bg-gradient-to-r from-blue-500 to-blue-300 rounded-full mb-6" />
 
-                <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"><p className="text-sm text-slate-600">Total Goals</p><p className="text-3xl font-bold">8</p></div>
-                  <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"><p className="text-sm text-slate-600">Completed Goals</p><p className="text-3xl font-bold text-emerald-600">2</p></div>
-                  <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"><p className="text-sm text-slate-600">Under Review</p><p className="text-3xl font-bold text-amber-600">2</p></div>
+                {/* Department IPCR Reports */}
+                <h3 className="text-base font-bold text-slate-800 mb-1">Department IPCR Reports</h3>
+                <p className="text-sm text-slate-500 mb-4">Click a department card to view its summary and individual employee IPCR forms</p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
+                  {[
+                    { dept: 'IT Department', count: 3, score: 4.20, rating: 'Very Satisfactory', hasData: true },
+                    { dept: 'Finance Department', count: 2, score: 4.33, rating: 'Very Satisfactory', hasData: true },
+                    { dept: 'HR Department', count: 0, score: 0, rating: '', hasData: false },
+                    { dept: 'Operations', count: 0, score: 0, rating: '', hasData: false },
+                    { dept: 'Legal Department', count: 0, score: 0, rating: '', hasData: false },
+                  ].map((d) => (
+                    <div key={d.dept} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:border-blue-300 hover:shadow-md transition cursor-pointer">
+                      <div className="flex items-center gap-3 mb-3">
+                        <span className="flex items-center justify-center h-10 w-10 rounded-lg bg-blue-50"><FileText className="h-5 w-5 text-blue-500" /></span>
+                        <div>
+                          <p className="font-bold text-sm text-slate-800">{d.dept}</p>
+                          <p className="text-xs text-blue-500">{d.count} evaluated</p>
+                        </div>
+                      </div>
+                      {d.hasData ? (
+                        <>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs text-slate-400">Avg. Score</span>
+                            <span className="text-2xl font-extrabold text-blue-600">{d.score.toFixed(2)}</span>
+                          </div>
+                          <span className="inline-block rounded-full border border-blue-300 bg-blue-50 px-3 py-0.5 text-xs font-semibold text-blue-700 mb-3">{d.rating}</span>
+                        </>
+                      ) : (
+                        <p className="text-xs text-slate-400 italic mb-3">No completed IPCRs yet</p>
+                      )}
+                      <button type="button" className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:underline">
+                        <Eye className="h-3.5 w-3.5" /> View Department Report & IPCRs
+                      </button>
+                    </div>
+                  ))}
                 </div>
 
-                <div className="mt-6 rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
-                  <p className="text-sm text-slate-500 text-center">No employee goals data available</p>
-                </div>
+                {/* IPCR Submissions */}
+                <h3 className="text-base font-bold text-slate-800 mb-1">IPCR Submissions</h3>
+                <p className="text-sm text-slate-500 mb-4">All employee IPCR submissions — click "View IPCR" to open the full performance form</p>
+
+                <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                  {/* Toolbar */}
+                  <div className="flex items-center gap-4 px-5 py-3.5 border-b border-slate-100">
+                    <div className="relative flex-1 max-w-lg">
+                      <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                      <input className="w-full rounded-lg border border-slate-300 pl-10 pr-4 py-2 text-sm" placeholder="Search employee name, department..." />
+                    </div>
+                    <select className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600"><option>All Departments</option></select>
+                    <select className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600"><option>All Statuses</option></select>
+                    <span className="text-xs text-slate-400">6 of 6 records</span>
+                  </div>
+                  {/* Column headers */}
+                  <div className="grid grid-cols-12 items-center px-5 py-2.5 bg-slate-800 text-[11px] font-semibold text-white uppercase tracking-wider">
+                    <div className="col-span-2">Department</div>
+                    <div className="col-span-2">Employee Name</div>
+                    <div className="col-span-2">Date of Submission</div>
+                    <div className="col-span-2 text-center">Total Score</div>
+                    <div className="col-span-2 text-center">Status</div>
+                    <div className="col-span-2 text-right">Action</div>
+                  </div>
+                  {/* Rows */}
+                  <div className="divide-y divide-slate-100">
+                    {[
+                      { dept: 'IT Department', deptColor: 'bg-blue-100 text-blue-700 border-blue-200', initials: 'MS', name: 'Maria Santos', position: 'IT Officer II', date: 'January 15, 2024', score: 4.58, rating: 'Outstanding', status: 'Submitted', hasScore: true },
+                      { dept: 'IT Department', deptColor: 'bg-blue-100 text-blue-700 border-blue-200', initials: 'Jd', name: 'Juan dela Cruz', position: 'Systems Analyst', date: 'January 18, 2024', score: 4.23, rating: 'Very Satisfactory', status: 'Submitted', hasScore: true },
+                      { dept: 'IT Department', deptColor: 'bg-blue-100 text-blue-700 border-blue-200', initials: 'AR', name: 'Ana Reyes', position: 'IT Support Specialist', date: 'January 20, 2024', score: 3.79, rating: 'Very Satisfactory', status: 'Submitted', hasScore: true },
+                      { dept: 'Finance Department', deptColor: 'bg-emerald-100 text-emerald-700 border-emerald-200', initials: 'CM', name: 'Carlos Mendoza', position: 'Accountant II', date: 'January 12, 2024', score: 4.50, rating: 'Outstanding', status: 'Submitted', hasScore: true },
+                      { dept: 'Finance Department', deptColor: 'bg-emerald-100 text-emerald-700 border-emerald-200', initials: 'EM', name: 'Elena Mercado', position: 'Budget Officer I', date: 'January 14, 2024', score: 4.17, rating: 'Very Satisfactory', status: 'Submitted', hasScore: true },
+                      { dept: 'HR Department', deptColor: 'bg-purple-100 text-purple-700 border-purple-200', initials: 'RC', name: 'Roberto Cruz', position: 'HR Officer I', date: '', score: 0, rating: '', status: 'Monitoring Phase', hasScore: false },
+                    ].map((row, idx) => (
+                      <div key={idx} className="grid grid-cols-12 items-center px-5 py-4 text-sm hover:bg-slate-50/60 transition">
+                        <div className="col-span-2">
+                          <span className={`inline-block rounded-full border px-3 py-0.5 text-[11px] font-semibold ${row.deptColor}`}>{row.dept}</span>
+                        </div>
+                        <div className="col-span-2 flex items-center gap-2.5">
+                          <span className="flex items-center justify-center h-8 w-8 rounded-full bg-slate-200 text-xs font-bold text-slate-600">{row.initials}</span>
+                          <div>
+                            <p className="font-semibold text-slate-800">{row.name}</p>
+                            <p className="text-xs text-slate-400">{row.position}</p>
+                          </div>
+                        </div>
+                        <div className="col-span-2 text-slate-500">{row.date || <span className="italic text-slate-400">Not yet submitted</span>}</div>
+                        <div className="col-span-2 text-center">
+                          {row.hasScore ? (
+                            <div>
+                              <p className="text-lg font-extrabold text-blue-600">{row.score.toFixed(2)}</p>
+                              <p className={`text-[11px] font-medium ${row.rating === 'Outstanding' ? 'text-emerald-600' : 'text-blue-500'}`}>{row.rating}</p>
+                            </div>
+                          ) : <span className="text-slate-400">—</span>}
+                        </div>
+                        <div className="col-span-2 text-center">
+                          {row.status === 'Submitted' ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-0.5 text-[11px] font-semibold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Submitted</span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-3 py-0.5 text-[11px] font-semibold text-orange-700"><Clock className="h-3 w-3" /> Monitoring Phase</span>
+                          )}
+                        </div>
+                        <div className="col-span-2 text-right">
+                          {row.hasScore ? (
+                            <button type="button" className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 transition">
+                              <Eye className="h-3.5 w-3.5" /> View IPCR
+                            </button>
+                          ) : <span className="text-xs text-slate-400 italic">Not available</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
               </>
             )}
 
