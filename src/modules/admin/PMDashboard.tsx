@@ -1,9 +1,16 @@
 import {
     AlertCircle,
+    AlertTriangle,
     BarChart3,
     Bell,
+    BookOpen,
     CalendarCheck2,
+    CalendarDays,
+    CheckCircle2,
+    ChevronDown,
+    ChevronUp,
     ClipboardList,
+    Clock,
     Database,
     Edit2,
     Eye,
@@ -14,16 +21,20 @@ import {
     LayoutDashboard,
     LogOut,
     Mail,
+    MoreHorizontal,
     Palette,
     Plus,
     Search,
     Settings,
     Shield,
+    SlidersHorizontal,
     Target,
     Trash2,
     TrendingUp,
     User,
     UserCircle2,
+    Users,
+    XCircle,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '../../components/Button';
@@ -197,10 +208,10 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
       { key: 'dashboard', label: 'Dashboard', subtitle: '', icon: LayoutDashboard },
       { key: 'evaluation-status', label: 'Employee Evaluation Status', subtitle: 'Track progress', icon: ClipboardList },
       { key: 'performance-reviews', label: 'Performance Reviews', subtitle: 'Upcoming reviews', icon: CalendarCheck2 },
-      { key: 'goals', label: 'Goals & Objectives', subtitle: 'Track progress', icon: Target },
-      { key: 'ipcr', label: 'IPCR', subtitle: 'Individual performance', icon: FileCheck2 },
-      { key: 'analytics', label: 'Analytics', subtitle: 'Performance insights', icon: BarChart3 },
-      { key: 'reports', label: 'Department Reports', subtitle: 'Adjectival ratings', icon: FileText },
+      { key: 'goals', label: 'DPCR', subtitle: 'Individual performance', icon: FileCheck2 },
+      { key: 'ipcr', label: 'Summary of Ratings', subtitle: 'IPCR ratings per dept', icon: BarChart3 },
+      { key: 'reports', label: 'Documents', subtitle: 'Document submissions', icon: FileText },
+      { key: 'analytics', label: 'Analytics', subtitle: 'Performance insights', icon: TrendingUp },
       { key: 'settings', label: 'Settings', subtitle: '', icon: Settings },
     ] as const;
 
@@ -271,107 +282,260 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
           <main className="flex-1 p-6">
             {activeSection === 'dashboard' && (
               <>
-                <p className="text-sm text-slate-500 mb-2">Performance Management <span className="mx-1">/</span> Dashboard</p>
-                <h2 className="text-3xl font-bold text-slate-900">PM Dashboard</h2>
-                <p className="mt-1 text-slate-600">Overview of employee performance and evaluation activities</p>
+                {/* ── Header Area ── */}
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-sm text-blue-600 font-medium">Performance Management <span className="mx-1 text-slate-400">&gt;</span> <span className="text-slate-500">Dashboard</span></p>
+                  <button type="button" className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition">
+                    <Clock className="h-4 w-4" /> How to Navigate
+                  </button>
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 tracking-tight">PM Dashboard</h2>
+                <p className="text-sm text-slate-500 mt-0.5">Performance evaluation overview — FY 2025</p>
 
                 {errorMessage && (
-                  <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
                     {errorMessage}
                   </div>
                 )}
 
-                <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-slate-600">Evaluations in Progress</p>
-                        <p className="text-3xl font-bold mt-2">{loading ? '...' : stats.pendingReviews + 30}</p>
-                      </div>
-                      <div className="h-12 w-12 rounded-lg bg-amber-100 grid place-content-center">
-                        <ClipboardList className="h-6 w-6 text-amber-600" />
-                      </div>
+                {/* ── KPI Cards Row ── */}
+                <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+                    <div className="flex items-center gap-2 mb-1">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                      <p className="text-xs font-medium text-slate-500">Completed Evaluations</p>
                     </div>
+                    <p className="text-3xl font-extrabold text-slate-900 leading-none">142</p>
+                    <p className="text-xs text-slate-400 mt-1">FY 2025 total</p>
                   </div>
-                  <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-slate-600">Completed Evaluations</p>
-                        <p className="text-3xl font-bold mt-2">142</p>
-                      </div>
-                      <div className="h-12 w-12 rounded-lg bg-emerald-100 grid place-content-center">
-                        <TrendingUp className="h-6 w-6 text-emerald-600" />
-                      </div>
+                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+                    <div className="flex items-center gap-2 mb-1">
+                      <AlertCircle className="h-4 w-4 text-red-500" />
+                      <p className="text-xs font-medium text-slate-500">Pending IPCR Reviews</p>
                     </div>
+                    <p className="text-3xl font-extrabold text-orange-500 leading-none">24</p>
+                    <p className="text-xs text-slate-400 mt-1">Awaiting validation</p>
                   </div>
-                  <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-slate-600">Performance Alerts</p>
-                        <p className="text-3xl font-bold mt-2">6</p>
-                      </div>
-                      <div className="h-12 w-12 rounded-lg bg-rose-100 grid place-content-center">
-                        <AlertCircle className="h-6 w-6 text-rose-600" />
-                      </div>
+                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+                    <div className="flex items-center gap-2 mb-1">
+                      <AlertTriangle className="h-4 w-4 text-amber-500" />
+                      <p className="text-xs font-medium text-slate-500">Urgent Training Approvals</p>
                     </div>
+                    <p className="text-3xl font-extrabold text-slate-900 leading-none">7</p>
+                    <p className="text-xs text-slate-400 mt-1">Due within 3 days</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Users className="h-4 w-4 text-blue-500" />
+                      <p className="text-xs font-medium text-slate-500">Expiring Certifications</p>
+                    </div>
+                    <p className="text-3xl font-extrabold text-slate-900 leading-none">12</p>
+                    <p className="text-xs text-slate-400 mt-1">Next 30 days</p>
                   </div>
                 </div>
 
-                <div className="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-6">
-                  <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-                    <header className="px-5 py-3 border-b border-slate-200"><h3 className="text-lg font-semibold">Recent Evaluations</h3></header>
-                    <div className="p-4">
-                      <p className="text-sm text-slate-500 text-center py-8">No recent evaluations</p>
+                {/* ── Middle Section (60/40) ── */}
+                <div className="mt-6 grid grid-cols-1 xl:grid-cols-5 gap-6">
+                  {/* Left – Action Required Queue (60%) */}
+                  <section className="xl:col-span-3 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                    <header className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-orange-400" />
+                        <h3 className="text-sm font-bold text-slate-800">Action Required Queue</h3>
+                        <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">4 pending</span>
+                      </div>
+                      <button type="button" className="text-xs font-medium text-blue-600 hover:underline">View all</button>
+                    </header>
+                    {/* Column headers */}
+                    <div className="grid grid-cols-12 items-center gap-2 px-5 py-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-50">
+                      <div className="col-span-3">Employee</div>
+                      <div className="col-span-3">Department</div>
+                      <div className="col-span-3">Request Type</div>
+                      <div className="col-span-3 text-right">Action</div>
                     </div>
-                  </section>
-
-                  <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-                    <header className="px-5 py-3 border-b border-slate-200"><h3 className="text-lg font-semibold">Upcoming Reviews</h3></header>
-                    <div className="p-4">
-                      <p className="text-sm text-slate-500 text-center py-8">No upcoming reviews scheduled</p>
-                    </div>
-                  </section>
-                </div>
-
-                <div className="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-6">
-                  <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                    <h3 className="text-lg font-semibold mb-4">Performance Distribution</h3>
-                    <div className="space-y-4">
+                    <div className="divide-y divide-slate-100">
                       {[
-                        { label: 'Outstanding (4.5-5.0)', count: 65, pct: 35, color: 'bg-emerald-600' },
-                        { label: 'Very Satisfactory (3.5-4.4)', count: 78, pct: 42, color: 'bg-blue-600' },
-                        { label: 'Satisfactory (2.5-3.4)', count: 33, pct: 18, color: 'bg-teal-600' },
-                        { label: 'Unsatisfactory (1.5-2.4)', count: 8, pct: 4, color: 'bg-orange-600' },
-                        { label: 'Poor (1.0-1.4)', count: 2, pct: 1, color: 'bg-rose-600' },
-                      ].map((item) => (
-                        <div key={item.label}>
-                          <div className="mb-1 flex items-center justify-between text-sm">
-                            <span>{item.label}</span>
-                            <span className="font-semibold">{item.count} <span className="text-xs text-slate-500">({item.pct}%)</span></span>
+                        { name: 'Elena Mercado', dept: 'Finance', type: 'IPCR Validation', typeColor: 'bg-emerald-100 text-emerald-700' },
+                        { name: 'Jose Reyes', dept: 'IT Department', type: 'Performance Evaluation', typeColor: 'bg-emerald-100 text-emerald-700' },
+                        { name: 'Carmen Diaz', dept: 'IT Department', type: 'IPCR Validation', typeColor: 'bg-emerald-100 text-emerald-700' },
+                        { name: 'Ricardo Lim', dept: 'Finance', type: 'Rating Dispute', typeColor: 'bg-slate-100 text-slate-600' },
+                      ].map((row) => (
+                        <div key={row.name} className="grid grid-cols-12 items-center gap-2 px-5 py-3.5 text-sm hover:bg-slate-50/60 transition">
+                          <div className="col-span-3 font-semibold text-slate-800">{row.name}</div>
+                          <div className="col-span-3 text-slate-500">{row.dept}</div>
+                          <div className="col-span-3">
+                            <span className={`inline-block rounded-full px-3 py-0.5 text-xs font-semibold ${row.typeColor}`}>{row.type}</span>
                           </div>
-                          <div className="h-3 rounded-full bg-slate-200">
-                            <div className={`h-3 rounded-full ${item.color}`} style={{ width: `${item.pct}%` }} />
+                          <div className="col-span-3 text-right">
+                            <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition">
+                              Review <span className="text-slate-400">&gt;</span>
+                            </button>
                           </div>
                         </div>
                       ))}
                     </div>
                   </section>
 
-                  <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                    <h3 className="text-lg font-semibold mb-4">Recent Performance Alerts</h3>
-                    <div className="space-y-3">
-                      <div className="rounded-lg border border-rose-200 bg-rose-50 p-3">
-                        <p className="text-sm font-semibold text-rose-700">Low KPI Completion</p>
-                        <p className="text-xs text-rose-600">3 employees below 65% completion rate</p>
+                  {/* Right – Performance Distribution Donut (40%) */}
+                  <section className="xl:col-span-2 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <TrendingUp className="h-4 w-4 text-slate-500" />
+                        <h3 className="text-sm font-bold text-slate-800">Performance Distribution</h3>
                       </div>
-                      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                        <p className="text-sm font-semibold text-amber-700">Evaluation Overdue</p>
-                        <p className="text-xs text-amber-600">5 employees pending evaluation</p>
+                      <span className="text-xs text-slate-400">Q3 2025</span>
+                    </div>
+                    <div className="flex flex-col items-center">
+                      {/* SVG Donut Chart – 5 segments: 70+76+30+7+2 = 185, circumference=289 */}
+                      <svg viewBox="0 0 120 120" className="w-44 h-44">
+                        {/* Outstanding green: 70/185 = 37.8% → 109 */}
+                        <circle cx="60" cy="60" r="46" fill="none" stroke="#22c55e" strokeWidth="18"
+                          strokeDasharray="109 289" strokeDashoffset="0"
+                          transform="rotate(-90 60 60)" />
+                        {/* Very Satisfactory blue: 76/185 = 41.1% → 119 */}
+                        <circle cx="60" cy="60" r="46" fill="none" stroke="#3b82f6" strokeWidth="18"
+                          strokeDasharray="119 289" strokeDashoffset="-109"
+                          transform="rotate(-90 60 60)" />
+                        {/* Satisfactory yellow: 30/185 = 16.2% → 47 */}
+                        <circle cx="60" cy="60" r="46" fill="none" stroke="#eab308" strokeWidth="18"
+                          strokeDasharray="47 289" strokeDashoffset="-228"
+                          transform="rotate(-90 60 60)" />
+                        {/* Unsatisfactory orange: 7/185 = 3.8% → 11 */}
+                        <circle cx="60" cy="60" r="46" fill="none" stroke="#f97316" strokeWidth="18"
+                          strokeDasharray="11 289" strokeDashoffset="-275"
+                          transform="rotate(-90 60 60)" />
+                        {/* Poor red: 2/185 = 1.1% → 3 */}
+                        <circle cx="60" cy="60" r="46" fill="none" stroke="#ef4444" strokeWidth="18"
+                          strokeDasharray="3 289" strokeDashoffset="-286"
+                          transform="rotate(-90 60 60)" />
+                        <text x="60" y="56" textAnchor="middle" fill="#1e293b" fontSize="22" fontWeight="700">185</text>
+                        <text x="60" y="72" textAnchor="middle" fill="#94a3b8" fontSize="9" fontWeight="500">Evaluated</text>
+                      </svg>
+                      {/* Legend */}
+                      <div className="mt-4 w-full space-y-1.5">
+                        {[
+                          { label: 'Outstanding', value: 70, color: '#22c55e' },
+                          { label: 'Very Satisfactory', value: 76, color: '#3b82f6' },
+                          { label: 'Satisfactory', value: 30, color: '#eab308' },
+                          { label: 'Unsatisfactory', value: 7, color: '#f97316' },
+                          { label: 'Poor', value: 2, color: '#ef4444' },
+                        ].map((item) => (
+                          <div key={item.label} className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                              <span className="text-slate-600">{item.label}</span>
+                            </div>
+                            <span className="font-semibold text-slate-800">{item.value}</span>
+                          </div>
+                        ))}
                       </div>
-                      <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-3">
-                        <p className="text-sm font-semibold text-yellow-700">Performance Review Due</p>
-                        <p className="text-xs text-yellow-600">Q1 reviews due in 2 weeks</p>
+                    </div>
+                  </section>
+                </div>
+
+                {/* ── Bottom Section (50/50) ── */}
+                <div className="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-6">
+                  <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                    <header className="px-5 py-3.5 border-b border-slate-100">
+                      <div className="flex items-center gap-2">
+                        <Users className="h-4 w-4 text-slate-500" />
+                        <h3 className="text-sm font-bold text-slate-800">Competency & Succession Watchlist</h3>
                       </div>
+                    </header>
+                    <div className="p-5 space-y-6">
+                      <div>
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Skill Gap Alerts by Department</p>
+                        <div className="space-y-3">
+                          {[
+                            { dept: 'Finance', value: 72 },
+                            { dept: 'IT Dept', value: 58 },
+                            { dept: 'Admin', value: 45 },
+                            { dept: 'HR Dept', value: 38 },
+                            { dept: 'Engineering', value: 25 },
+                          ].map((d) => (
+                            <div key={d.dept} className="flex items-center gap-3 text-xs">
+                              <span className="w-20 text-slate-600 shrink-0">{d.dept}</span>
+                              <div className="flex-1 h-2.5 rounded-full bg-slate-100">
+                                <div className="h-2.5 rounded-full bg-blue-500" style={{ width: `${d.value}%` }} />
+                              </div>
+                              <span className="w-8 text-right font-semibold text-slate-700">{d.value}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Upcoming Retirements (Next 12 Months)</p>
+                        <div className="divide-y divide-slate-100">
+                          {[
+                            { name: 'Alfredo Santos', role: 'Director III', date: 'Aug 2025', dateColor: 'bg-orange-100 text-orange-700' },
+                            { name: 'Lourdes Castillo', role: 'Admin Officer V', date: 'Nov 2025', dateColor: 'bg-orange-100 text-orange-700' },
+                            { name: 'Eduardo Ramos', role: 'Senior Budget Analyst', date: 'Feb 2026', dateColor: 'bg-emerald-100 text-emerald-700' },
+                          ].map((r) => (
+                            <div key={r.name} className="flex items-center justify-between py-2.5 text-xs">
+                              <div>
+                                <p className="font-semibold text-slate-800">{r.name}</p>
+                                <p className="text-slate-400">{r.role}</p>
+                              </div>
+                              <span className={`rounded-full px-3 py-0.5 text-[11px] font-semibold ${r.dateColor}`}>{r.date}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                    <header className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <BookOpen className="h-4 w-4 text-slate-500" />
+                        <h3 className="text-sm font-bold text-slate-800">IPCR Submissions</h3>
+                      </div>
+                      <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">6 total</span>
+                    </header>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-slate-50/80 text-left">
+                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Employee</th>
+                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Dept.</th>
+                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Period</th>
+                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Rating</th>
+                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Status</th>
+                            <th className="px-4 py-2.5"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {[
+                            { name: 'Maria Santos', position: 'IT Officer II', dept: 'IT Department', period: 'Q1 2025', rating: '4.66', status: 'Approved', statusColor: 'bg-emerald-100 text-emerald-700' },
+                            { name: 'Carlos Mendoza', position: 'Accountant II', dept: 'Finance', period: 'Q1 2025', rating: '4.50', status: 'Approved', statusColor: 'bg-emerald-100 text-emerald-700' },
+                            { name: 'Juan dela Cruz', position: 'HR Officer I', dept: 'HR Dept', period: 'Q2 2025', rating: '4.20', status: 'Under Review', statusColor: 'bg-orange-100 text-orange-700' },
+                            { name: 'Ana Reyes', position: 'Admin Officer III', dept: 'Admin', period: 'Q2 2025', rating: '3.80', status: 'Submitted', statusColor: 'bg-blue-100 text-blue-700' },
+                            { name: 'Roberto Cruz', position: 'Systems Analyst', dept: 'IT Department', period: 'Q1 2025', rating: '4.50', status: 'Approved', statusColor: 'bg-emerald-100 text-emerald-700' },
+                          ].map((row) => (
+                            <tr key={row.name + row.period} className="hover:bg-slate-50/60 transition">
+                              <td className="px-4 py-3">
+                                <p className="font-semibold text-slate-800">{row.name}</p>
+                                <p className="text-slate-400">{row.position}</p>
+                              </td>
+                              <td className="px-4 py-3 text-slate-500">{row.dept}</td>
+                              <td className="px-4 py-3 text-slate-500">{row.period}</td>
+                              <td className="px-4 py-3">
+                                <span className="inline-block rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">{row.rating}</span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${row.statusColor}`}>
+                                  {row.status}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                <button type="button" className="rounded-md p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition" title="View">
+                                  <Eye className="h-4 w-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </section>
                 </div>
@@ -380,53 +544,216 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
             {activeSection === 'evaluation-status' && (
               <>
-                <p className="text-sm text-slate-500 mb-2">Performance Management <span className="mx-1">/</span> Employee Evaluation Status</p>
-                <h2 className="text-3xl font-bold text-slate-900">Employee Evaluation Status</h2>
-                <p className="mt-1 text-slate-600">Track the progress of performance evaluations across departments</p>
+                {/* Header */}
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-sm text-blue-600 font-medium">Performance Management <span className="mx-1 text-slate-400">&gt;</span> <span className="text-slate-500">Employee Evaluation Status</span></p>
+                  <button type="button" className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition">
+                    <CalendarDays className="h-4 w-4" /> Jan – Jun 2025 (1st Semester) <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+                  </button>
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Employee Evaluation Status</h2>
+                <p className="text-sm text-slate-500 mt-0.5">Track the complete progress of performance evaluations across your organization</p>
 
-                <div className="mt-6 grid grid-cols-1 xl:grid-cols-3 gap-6">
-                  <section className="xl:col-span-2 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                    <h3 className="text-lg font-semibold mb-4">Evaluation Progress by Department</h3>
-                    <div className="h-64 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4">
-                      <div className="h-full grid grid-cols-6 items-end gap-3">
-                        {[78, 82, 80, 79, 84, 81].map((value, idx) => (
-                          <div key={idx} className="h-full flex flex-col justify-end">
-                            <div className="w-full rounded-t-md bg-green-600" style={{ height: `${Math.max(18, value * 0.15)}%` }} />
-                            <div className="w-full rounded-t-md bg-blue-500" style={{ height: `${Math.max(32, value * 0.5)}%` }} />
-                          </div>
-                        ))}
-                      </div>
+                {/* 5 KPI Cards */}
+                <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+                    <p className="text-xs text-slate-500 mb-1">Overall Completion</p>
+                    <div className="flex items-center gap-2.5">
+                      <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-blue-100"><BarChart3 className="h-5 w-5 text-blue-600" /></span>
+                      <div><p className="text-2xl font-extrabold text-slate-900 leading-none">51%</p><p className="text-xs text-slate-400 mt-0.5">of 35 employees</p></div>
                     </div>
-                  </section>
-
-                  <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-                    <h3 className="text-lg font-semibold">Overview</h3>
-                    <div className="rounded-lg bg-blue-50 p-3"><p className="text-xs text-blue-600">Total Employees</p><p className="text-2xl font-bold text-blue-700">186</p></div>
-                    <div className="rounded-lg bg-emerald-50 p-3"><p className="text-xs text-emerald-600">Submitted</p><p className="text-2xl font-bold text-emerald-700">37</p></div>
-                    <div className="rounded-lg bg-amber-50 p-3"><p className="text-xs text-amber-600">Pending Review</p><p className="text-2xl font-bold text-amber-700">112</p></div>
-                  </section>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+                    <p className="text-xs text-slate-500 mb-1">Approved</p>
+                    <div className="flex items-center gap-2.5">
+                      <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-emerald-100"><CheckCircle2 className="h-5 w-5 text-emerald-600" /></span>
+                      <div><p className="text-2xl font-extrabold text-emerald-600 leading-none">18</p><p className="text-xs text-slate-400 mt-0.5">Fully completed</p></div>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+                    <p className="text-xs text-slate-500 mb-1">In Progress</p>
+                    <div className="flex items-center gap-2.5">
+                      <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-orange-100"><Clock className="h-5 w-5 text-orange-500" /></span>
+                      <div><p className="text-2xl font-extrabold text-orange-500 leading-none">13</p><p className="text-xs text-slate-400 mt-0.5">Under supervisor review</p></div>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+                    <p className="text-xs text-slate-500 mb-1">Planning</p>
+                    <div className="flex items-center gap-2.5">
+                      <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-blue-100"><SlidersHorizontal className="h-5 w-5 text-blue-600" /></span>
+                      <div><p className="text-2xl font-extrabold text-slate-900 leading-none">3</p><p className="text-xs text-slate-400 mt-0.5">Self-evaluation stage</p></div>
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+                    <p className="text-xs text-slate-500 mb-1">Rejected</p>
+                    <div className="flex items-center gap-2.5">
+                      <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-red-100"><XCircle className="h-5 w-5 text-red-500" /></span>
+                      <div><p className="text-2xl font-extrabold text-red-500 leading-none">1</p><p className="text-xs text-slate-400 mt-0.5">Requires resubmission</p></div>
+                    </div>
+                  </div>
                 </div>
 
-                <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-5">
-                    <div className="relative">
+                {/* Stacked Bar Chart */}
+                <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="flex items-center justify-between mb-5">
+                    <h3 className="text-sm font-bold text-slate-800">Evaluation Completion by Department</h3>
+                    <span className="text-xs text-slate-400">Jan – Jun 2025 (1st Semester)</span>
+                  </div>
+                  <svg viewBox="0 0 500 220" className="w-full" style={{ maxHeight: 260 }}>
+                    {/* Y-axis labels & gridlines */}
+                    {[0, 2, 4, 6, 8, 10].map((v) => {
+                      const y = 180 - (v / 10) * 170;
+                      return (
+                        <g key={v}>
+                          <text x="20" y={y + 3} textAnchor="end" fontSize="10" fill="#94a3b8">{v}</text>
+                          <line x1="28" y1={y} x2="490" y2={y} stroke="#e2e8f0" strokeWidth="0.5" />
+                        </g>
+                      );
+                    })}
+                    {/* Bars */}
+                    {[
+                      { dept: 'Finance', approved: 6, review: 2, self: 1, planning: 1, rejected: 0 },
+                      { dept: 'IT Dept', approved: 4, review: 3, self: 1, planning: 1, rejected: 0 },
+                      { dept: 'HR', dept2: 'Department', approved: 5, review: 2, self: 1, planning: 0, rejected: 0 },
+                      { dept: 'Admin', dept2: 'Services', approved: 5, review: 2, self: 1, planning: 1, rejected: 0 },
+                      { dept: 'Engineering', approved: 3, review: 1, self: 1, planning: 0, rejected: 1 },
+                    ].map((d, i) => {
+                      const x = 55 + i * 92;
+                      const bw = 42;
+                      const unitH = 17;
+                      const baseY = 180;
+                      let cy = baseY;
+                      const segments = [
+                        { val: d.approved, color: '#22c55e' },
+                        { val: d.review, color: '#fb923c' },
+                        { val: d.self, color: '#22d3ee' },
+                        { val: d.planning, color: '#2563eb' },
+                        { val: d.rejected, color: '#ef4444' },
+                      ];
+                      return (
+                        <g key={d.dept}>
+                          {segments.map((seg, si) => {
+                            if (seg.val === 0) return null;
+                            const h = seg.val * unitH;
+                            cy -= h;
+                            return <rect key={si} x={x} y={cy} width={bw} height={h} fill={seg.color} rx={si === segments.length - 1 || (segments.slice(si + 1).every(s => s.val === 0)) ? 2 : 0} />;
+                          })}
+                          <text x={x + bw / 2} y={195} textAnchor="middle" fontSize="10" fill="#64748b">{d.dept}</text>
+                          {'dept2' in d && d.dept2 && <text x={x + bw / 2} y={206} textAnchor="middle" fontSize="10" fill="#64748b">{d.dept2 as string}</text>}
+                        </g>
+                      );
+                    })}
+                  </svg>
+                  {/* Legend */}
+                  <div className="flex items-center justify-center gap-5 mt-2 text-xs text-slate-600">
+                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500 inline-block" /> Approved</span>
+                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-orange-400 inline-block" /> Supervisor Review</span>
+                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-cyan-400 inline-block" /> Self Evaluation</span>
+                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-blue-600 inline-block" /> Planning</span>
+                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-red-500 inline-block" /> Rejected</span>
+                  </div>
+                </section>
+
+                {/* Employee Table */}
+                <section className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                  {/* Toolbar */}
+                  <div className="flex items-center gap-4 px-5 py-3.5 border-b border-slate-100">
+                    <div className="relative flex-1 max-w-sm">
                       <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                       <input className="w-full rounded-lg border border-slate-300 pl-10 pr-4 py-2 text-sm" placeholder="Search by name or position..." />
                     </div>
-                    <select className="rounded-lg border border-slate-300 px-4 py-2 text-sm"><option>All Departments</option></select>
-                    <select className="rounded-lg border border-slate-300 px-4 py-2 text-sm"><option>All Statuses</option></select>
+                    <select className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600"><option>All Departments</option></select>
+                    <select className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600"><option>All Statuses</option></select>
+                    <div className="flex-1" />
+                    <button type="button" className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-400 cursor-default">Bulk Actions <ChevronDown className="h-3.5 w-3.5" /></button>
                   </div>
 
-                  <div className="rounded-lg border border-slate-200 overflow-hidden">
-                    <div className="grid grid-cols-12 bg-slate-50 px-4 py-2.5 text-xs font-semibold text-slate-500">
-                      <div className="col-span-3">Employee Name</div>
-                      <div className="col-span-3">Position</div>
-                      <div className="col-span-3">Evaluation Status</div>
-                      <div className="col-span-2">Review Period</div>
-                      <div className="col-span-1">Actions</div>
+                  {/* Column headers */}
+                  <div className="grid grid-cols-12 items-center px-5 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                    <div className="col-span-1 flex items-center gap-2"><input type="checkbox" className="rounded border-slate-300 h-4 w-4" /><span className="text-blue-600 normal-case text-xs font-medium">Showing 1–10 of 35 employees</span></div>
+                    <div className="col-span-3 pl-8">Employee</div>
+                    <div className="col-span-3">Position</div>
+                    <div className="col-span-3">Status</div>
+                    <div className="col-span-2 text-right">Actions</div>
+                  </div>
+
+                  {/* Department groups */}
+                  {[
+                    {
+                      dept: 'Finance', count: 9, pct: 56, approved: 5, review: 2, self: 1, planning: 1,
+                      employees: [
+                        { name: 'Carlos Mendoza', position: 'Accountant II', status: 'Approved' },
+                        { name: 'Elena Mercado', position: 'Budget Officer III', status: 'Approved' },
+                        { name: 'Miguel Santos', position: 'Finance Officer II', status: 'Approved' },
+                        { name: 'Diana Cruz', position: 'Accountant I', status: 'Approved' },
+                        { name: 'Patricia Ramos', position: 'Budget Analyst', status: 'Approved' },
+                        { name: 'Ricardo Lim', position: 'Finance Officer I', status: 'Supervisor Review' },
+                      ],
+                    },
+                    {
+                      dept: 'IT Department', count: 7, pct: 50, approved: 3, review: 2, self: 1, planning: 1,
+                      employees: [
+                        { name: 'Roberto Cruz', position: 'Systems Analyst', status: 'Approved' },
+                        { name: 'Kevin Tan', position: 'Database Administrator', status: 'Approved' },
+                        { name: 'Angela Lim', position: 'Web Developer', status: 'Approved' },
+                        { name: 'Jose Reyes', position: 'IT Support Specialist', status: 'Supervisor Review' },
+                        { name: 'Carmen Diaz', position: 'Network Administrator', status: 'Supervisor Review' },
+                      ],
+                    },
+                  ].map((group) => (
+                    <div key={group.dept} className="border-b border-slate-100">
+                      {/* Group header */}
+                      <div className="flex items-center gap-3 px-5 py-3 bg-slate-50/50 border-b border-slate-100">
+                        <input type="checkbox" className="rounded border-slate-300 h-4 w-4" />
+                        <span className="font-bold text-sm text-slate-800">{group.dept}</span>
+                        <span className="text-xs text-slate-400">{group.count} employees</span>
+                        <div className="flex-1 flex items-center gap-3 ml-4">
+                          <div className="w-24 h-2 rounded-full bg-slate-200 overflow-hidden"><div className="h-full rounded-full bg-amber-400" style={{ width: `${group.pct}%` }} /></div>
+                          <span className="text-xs font-semibold text-emerald-600">{group.pct}% Complete</span>
+                          <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">{group.approved} Approved</span>
+                          {group.review > 0 && <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-[11px] font-semibold text-orange-700">{group.review} Supervisor Review</span>}
+                          {group.self > 0 && <span className="rounded-full bg-cyan-100 px-2.5 py-0.5 text-[11px] font-semibold text-cyan-700">{group.self} Self Evaluation</span>}
+                          {group.planning > 0 && <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">{group.planning} Planning</span>}
+                        </div>
+                        <ChevronUp className="h-4 w-4 text-slate-400" />
+                      </div>
+                      {/* Employee rows */}
+                      {group.employees.map((emp) => {
+                        const statusColors: Record<string, string> = { 'Approved': 'bg-emerald-100 text-emerald-700', 'Supervisor Review': 'bg-orange-100 text-orange-700', 'Self Evaluation': 'bg-cyan-100 text-cyan-700', 'Planning': 'bg-blue-100 text-blue-700', 'Rejected': 'bg-red-100 text-red-700' };
+                        const dotColors: Record<string, string> = { 'Approved': 'bg-emerald-500', 'Supervisor Review': 'bg-orange-500', 'Self Evaluation': 'bg-cyan-500', 'Planning': 'bg-blue-600', 'Rejected': 'bg-red-500' };
+                        return (
+                          <div key={emp.name} className="grid grid-cols-12 items-center px-5 py-3.5 text-sm hover:bg-slate-50/60 transition border-b border-slate-50 last:border-b-0">
+                            <div className="col-span-1"><input type="checkbox" className="rounded border-slate-300 h-4 w-4" /></div>
+                            <div className="col-span-3 font-semibold text-slate-800">{emp.name}</div>
+                            <div className="col-span-3 text-slate-400">{emp.position}</div>
+                            <div className="col-span-3"><span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-0.5 text-xs font-semibold ${statusColors[emp.status]}`}><span className={`h-1.5 w-1.5 rounded-full ${dotColors[emp.status]}`} />{emp.status}</span></div>
+                            <div className="col-span-2 flex items-center justify-end gap-2">
+                              <button type="button" className="p-1 text-slate-400 hover:text-blue-600 transition" title="View"><Eye className="h-4 w-4" /></button>
+                              <button type="button" className="p-1 text-slate-400 hover:text-slate-600 transition"><MoreHorizontal className="h-4 w-4" /></button>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <div className="px-4 py-12 text-center text-sm text-slate-500">
-                      No employee evaluation records found
+                  ))}
+
+                  {/* Footer */}
+                  <div className="px-5 py-3.5 border-t border-slate-100 flex items-center justify-between">
+                    <div className="flex items-center gap-4 text-xs text-slate-600">
+                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Approved: 18</span>
+                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-orange-400" /> Supervisor Review: 8</span>
+                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-cyan-400" /> Self Evaluation: 5</span>
+                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-blue-600" /> Planning: 3</span>
+                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-red-500" /> Rejected: 1</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-slate-500">
+                      <span>Rows per page:</span>
+                      <span className="flex items-center gap-1">{[10, 20, 30].map(n => <button key={n} type="button" className={`h-6 w-7 rounded ${n === 10 ? 'bg-blue-600 text-white font-semibold' : 'bg-slate-100 text-slate-600'} text-xs`}>{n}</button>)}</span>
+                      <span>1–10 of 35</span>
+                      <span className="flex items-center gap-1">
+                        {[1, 2, 3, 4].map(n => <button key={n} type="button" className={`h-6 w-6 rounded ${n === 1 ? 'bg-blue-600 text-white font-semibold' : 'bg-slate-100 text-slate-600'} text-xs`}>{n}</button>)}
+                        <button type="button" className="h-6 w-6 rounded bg-slate-100 text-slate-600 text-xs">&gt;</button>
+                      </span>
                     </div>
                   </div>
                 </section>
