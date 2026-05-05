@@ -155,10 +155,10 @@ const LndSidebar = ({ activeModule, onSelect }: { activeModule: MenuId; onSelect
                 'flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition',
                 isActive
                   ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-gray-700 hover:bg-gray-50',
+                  : 'text-gray-900 hover:bg-gray-200',
               ].join(' ')}
             >
-              <Icon className={isActive ? 'mt-0.5 h-5 w-5 text-white' : 'mt-0.5 h-5 w-5 text-gray-500'} />
+              <Icon className={isActive ? 'mt-0.5 h-5 w-5 text-white' : 'mt-0.5 h-5 w-5 text-gray-600'} />
               <span className="flex flex-col">
                 <span className="text-sm font-semibold">{item.label}</span>
                 <span className={isActive ? 'text-xs text-blue-100' : 'text-xs text-gray-500'}>{item.sublabel}</span>
