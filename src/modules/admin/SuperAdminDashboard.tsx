@@ -1,5 +1,6 @@
 import { AlertCircle, Award, Building2, GraduationCap, TrendingUp, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { AdminHeader } from '../../components/AdminHeader';
 import { Sidebar } from '../../components/Sidebar';
 import { supabase } from '../../lib/supabase';
 import '../../styles/admin.css';
@@ -74,7 +75,9 @@ export const SuperAdminDashboard = () => {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-100 text-slate-800">
+      <AdminHeader userName="Super Admin" divisionLabel="System Administrator" />
+      <div className="flex">
       <Sidebar />
       <main className="flex-1 overflow-auto">
         <div className="p-8">
@@ -355,6 +358,7 @@ export const SuperAdminDashboard = () => {
           </div>
         </div>
       </main>
+      </div>
     </div>
   );
 };

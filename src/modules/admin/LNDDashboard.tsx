@@ -1,21 +1,17 @@
 import {
     Award,
-    Bell,
     BookOpen,
     Calendar,
     ClipboardCheck,
     FileText,
-    HelpCircle,
     LayoutDashboard,
     LineChart as LineChartIcon,
-    LogOut,
     Settings,
     Target,
-    User,
     Users,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { LogoutConfirmPopover } from '../../components/LogoutConfirmPopover';
+import { AdminHeader } from '../../components/AdminHeader';
 import {
     CartesianGrid,
     Legend,
@@ -142,51 +138,11 @@ const statusColor = (status: RequestStatus) => {
   return 'bg-red-100 text-red-700';
 };
 
-const TopNav = () => {
-  return (
-    <header className="fixed inset-x-0 top-0 z-50 h-16 border-b border-gray-200 bg-white shadow-sm">
-      <div className="flex h-full items-center justify-between px-5">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 text-sm font-bold text-white">
-            HR
-          </div>
-          <div>
-            <p className="text-sm font-bold text-gray-900">Government HRIS</p>
-            <p className="text-xs text-gray-500">Human Resource Information System</p>
-          </div>
-        </div>
 
-        <div className="flex items-center gap-2">
-          <button className="rounded-lg p-2 text-gray-600 transition hover:bg-gray-100 hover:text-gray-900" type="button" aria-label="Help">
-            <HelpCircle className="h-5 w-5" />
-          </button>
-          <button className="relative rounded-lg p-2 text-gray-600 transition hover:bg-gray-100 hover:text-gray-900" type="button" aria-label="Notifications">
-            <Bell className="h-5 w-5" />
-            <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500" />
-          </button>
-          <span className="mx-2 h-6 w-px bg-gray-200" />
-          <div className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-gray-50">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 text-white">
-              <User className="h-4 w-4" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-gray-900">Alex Gonzales</p>
-              <p className="text-xs text-gray-500">L&D Division</p>
-            </div>
-          </div>
-          <LogoutConfirmPopover
-            buttonClassName="ml-2 inline-flex items-center gap-1 rounded-lg px-2 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50"
-          />
-        </div>
-      </div>
-    </header>
-  );
-};
-
-const Sidebar = ({ activeModule, onSelect }: { activeModule: MenuId; onSelect: (id: MenuId) => void }) => {
+const LndSidebar = ({ activeModule, onSelect }: { activeModule: MenuId; onSelect: (id: MenuId) => void }) => {
   return (
-    <aside className="fixed left-0 top-16 z-40 h-[calc(100vh-4rem)] w-64 overflow-y-auto border-r border-gray-200 bg-white">
-      <nav className="space-y-1 p-3">
+    <aside className="w-64 shrink-0 border-r border-slate-200 bg-white px-3 py-4 min-h-[calc(100vh-70px)]">
+      <nav className="space-y-1.5">
         {LND_MENU.map((item) => {
           const Icon = item.icon;
           const isActive = activeModule === item.id;
@@ -260,7 +216,7 @@ const LndDashboardContent = () => {
   );
 
   return (
-    <div className="space-y-6 p-8 pt-24">
+    <div className="space-y-6 p-8">
       <section>
         <p className="text-sm font-medium text-gray-500">
           <span className="text-blue-600">L&D</span> <span className="mx-1 text-gray-400">/</span> Dashboard
@@ -431,11 +387,11 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
   const [activeModule, setActiveModule] = useState<MenuId>('dashboard');
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <TopNav />
-      <div className="flex pt-16">
-        <Sidebar activeModule={activeModule} onSelect={setActiveModule} />
-        <main className="ml-64 flex-1">
+    <div className="min-h-screen bg-slate-100 text-slate-800">
+      <AdminHeader userName="Alex Gonzales" divisionLabel="L&D Division" />
+      <div className="flex">
+        <LndSidebar activeModule={activeModule} onSelect={setActiveModule} />
+        <main className="flex-1">
           {activeModule === 'dashboard' ? (
             <LndDashboardContent />
           ) : activeModule === 'training-courses' ? (

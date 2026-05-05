@@ -31,6 +31,7 @@ import {
 import { QualifiedApplicantsSection } from '../../components/QualifiedApplicantsSection';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { AdminHeader } from '../../components/AdminHeader';
 import { Button } from '../../components/Button';
 import { Sidebar } from '../../components/Sidebar';
 import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
@@ -2922,6 +2923,8 @@ export const RSPDashboard = () => {
   ];
 
   return (
+    <div className="min-h-screen bg-slate-100 text-slate-800">
+      <AdminHeader userName="RSP Admin" divisionLabel="RSP Division" />
     <div className="admin-layout">
       <Sidebar activeModule="RSP" userRole="rsp" />
 
@@ -5976,6 +5979,7 @@ export const RSPDashboard = () => {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 };

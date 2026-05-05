@@ -1,48 +1,46 @@
 import {
-    AlertCircle,
-    AlertTriangle,
-    BarChart3,
-    Bell,
-    BookOpen,
-    CalendarCheck2,
-    CalendarDays,
-    CheckCircle2,
-    ChevronDown,
-    ChevronLeft,
-    ChevronUp,
-    ClipboardList,
-    Clock,
-    Database,
-    Download,
-    Edit2,
-    Eye,
-    FileCheck2,
-    FileText,
-    Globe,
-    HelpCircle,
-    LayoutDashboard,
-    LogOut,
-    Mail,
-    MoreHorizontal,
-    Palette,
-    Plus,
-    Search,
-    Settings,
-    Shield,
-    SlidersHorizontal,
-    Target,
-    Trash2,
-    TrendingUp,
-    User,
-    UserCircle2,
-    Users,
-    XCircle,
+  AlertCircle,
+  AlertTriangle,
+  BarChart3,
+  Bell,
+  BookOpen,
+  CalendarCheck2,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronUp,
+  ClipboardList,
+  Clock,
+  Database,
+  Download,
+  Edit2,
+  Eye,
+  FileCheck2,
+  FileText,
+  Globe,
+  HelpCircle,
+  LayoutDashboard,
+  Mail,
+  MoreHorizontal,
+  Palette,
+  Plus,
+  Search,
+  Settings,
+  Shield,
+  SlidersHorizontal,
+  Trash2,
+  TrendingUp,
+  User,
+  UserCircle2,
+  Users,
+  XCircle
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { LogoutConfirmPopover } from '../../components/LogoutConfirmPopover';
 import { Button } from '../../components/Button';
 import { Dialog } from '../../components/Dialog';
 import { Input } from '../../components/Input';
+import { LogoutConfirmPopover } from '../../components/LogoutConfirmPopover';
 import { Sidebar } from '../../components/Sidebar';
 import { supabase } from '../../lib/supabase';
 import '../../styles/admin.css';
@@ -196,7 +194,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
           .insert([newCycle]);
         if (error) throw error;
       }
-      
+
       await fetchCycles();
       setShowCycleDialog(false);
       setEditingCycle(null);
@@ -289,9 +287,8 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                     type="button"
                     key={item.key}
                     onClick={() => setActiveSection(item.key)}
-                    className={`w-full rounded-lg px-3 py-2.5 text-left transition ${
-                      isActive ? 'bg-blue-600 text-white shadow-md' : 'hover:bg-slate-100 text-slate-700'
-                    }`}
+                    className={`w-full rounded-lg px-3 py-2.5 text-left transition ${isActive ? 'bg-blue-600 text-white shadow-md' : 'hover:bg-slate-100 text-slate-700'
+                      }`}
                   >
                     <div className="flex items-start gap-3">
                       <Icon className={`mt-0.5 h-5 w-5 ${isActive ? 'text-white' : 'text-slate-500'}`} />
@@ -1170,9 +1167,8 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                         <button
                           key={tab.id}
                           type="button"
-                          className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition ${
-                            isActive ? 'bg-blue-50 text-blue-600 font-medium' : 'hover:bg-slate-50 text-slate-700'
-                          }`}
+                          className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition ${isActive ? 'bg-blue-50 text-blue-600 font-medium' : 'hover:bg-slate-50 text-slate-700'
+                            }`}
                         >
                           <Icon className={`h-5 w-5 ${isActive ? 'text-blue-600' : 'text-slate-500'}`} />
                           <span className="text-sm">{tab.label}</span>
@@ -1309,11 +1305,10 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                         <td className="px-6 py-4 text-sm text-slate-600">{new Date(cycle.start_date).toLocaleDateString()}</td>
                         <td className="px-6 py-4 text-sm text-slate-600">{new Date(cycle.end_date).toLocaleDateString()}</td>
                         <td className="px-6 py-4 text-sm">
-                          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                            cycle.status === 'Active' ? 'bg-blue-100 text-blue-800' :
+                          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${cycle.status === 'Active' ? 'bg-blue-100 text-blue-800' :
                             cycle.status === 'Completed' ? 'bg-green-100 text-green-800' :
-                            'bg-slate-100 text-slate-800'
-                          }`}>
+                              'bg-slate-100 text-slate-800'
+                            }`}>
                             {cycle.status}
                           </span>
                         </td>
@@ -1324,14 +1319,14 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                           </button>
                         </td>
                         <td className="px-6 py-4 text-right space-x-2">
-                          <button 
+                          <button
                             onClick={() => handleEditCycle(cycle)}
                             className="text-blue-900 hover:text-blue-700 transition"
                             title="Edit"
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
-                          <button 
+                          <button
                             onClick={() => handleDeleteCycle(cycle.id)}
                             className="text-red-600 hover:text-red-800 transition"
                             title="Delete"
@@ -1350,8 +1345,8 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
       </main>
 
       {/* Create/Edit Evaluation Cycle Dialog */}
-      <Dialog 
-        open={showCycleDialog} 
+      <Dialog
+        open={showCycleDialog}
         onClose={() => {
           setShowCycleDialog(false);
           setEditingCycle(null);
@@ -1402,13 +1397,13 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
           </div>
 
           <div className="flex gap-3 pt-4">
-            <Button 
+            <Button
               onClick={handleAddCycle}
               className="flex-1 bg-blue-900 text-white"
             >
               {editingCycle ? 'Update Cycle' : 'Create Cycle'}
             </Button>
-            <Button 
+            <Button
               onClick={() => {
                 setShowCycleDialog(false);
                 setEditingCycle(null);
