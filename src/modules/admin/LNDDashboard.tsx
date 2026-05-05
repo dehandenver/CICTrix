@@ -15,6 +15,7 @@ import {
     Users,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { LogoutConfirmPopover } from '../../components/LogoutConfirmPopover';
 import {
     CartesianGrid,
     Legend,
@@ -173,10 +174,9 @@ const TopNav = () => {
               <p className="text-xs text-gray-500">L&D Division</p>
             </div>
           </div>
-          <button className="ml-2 inline-flex items-center gap-1 rounded-lg px-2 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50" type="button">
-            <LogOut className="h-4 w-4" />
-            Logout
-          </button>
+          <LogoutConfirmPopover
+            buttonClassName="ml-2 inline-flex items-center gap-1 rounded-lg px-2 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50"
+          />
         </div>
       </div>
     </header>

@@ -39,6 +39,7 @@ import {
     XCircle,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { LogoutConfirmPopover } from '../../components/LogoutConfirmPopover';
 import { Button } from '../../components/Button';
 import { Dialog } from '../../components/Dialog';
 import { Input } from '../../components/Input';
@@ -272,9 +273,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   <p className="text-xs text-slate-500">PM Division</p>
                 </div>
               </div>
-              <button type="button" className="ml-2 inline-flex items-center gap-2 text-red-600 font-semibold text-sm">
-                <LogOut className="h-4 w-4" /> Logout
-              </button>
+              <LogoutConfirmPopover />
             </div>
           </div>
         </header>

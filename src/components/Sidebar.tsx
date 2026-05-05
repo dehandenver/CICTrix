@@ -1,6 +1,7 @@
 import { BookOpen, FileText, LayoutDashboard, Settings, TrendingUp, UserCog, Users } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
+import { LogoutConfirmPopover } from './LogoutConfirmPopover';
 import { getApplicantsFromSupabase, getApplicants } from '../lib/recruitmentData';
 import '../styles/sidebar.css';
 
@@ -264,16 +265,12 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
             <p className="sidebar-user-role">{resolvedRole}</p>
           </div>
         )}
-        <button
-          type="button"
-          className="sidebar-logout"
-          onClick={() => {
-            localStorage.removeItem('cictrix_admin_session');
-            navigate('/admin/login');
-          }}
+        <LogoutConfirmPopover
+          buttonClassName="sidebar-logout"
+          position="above"
         >
           Log out
-        </button>
+        </LogoutConfirmPopover>
       </div>
     </aside>
   );
