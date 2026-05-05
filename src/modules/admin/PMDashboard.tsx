@@ -683,22 +683,21 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                 {/* Employee Table */}
                 <section className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                   {/* Toolbar */}
-                  <div className="flex items-center gap-4 px-5 py-3.5 border-b border-slate-100">
+                  <div className="flex items-center gap-4 px-5 py-2.5 border-b border-slate-100">
                     <div className="relative flex-1 max-w-sm">
                       <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                      <input className="w-full rounded-lg border border-slate-300 pl-10 pr-4 py-2 text-sm" placeholder="Search by name or position..." />
+                      <input className="w-full rounded-lg border border-slate-300 pl-10 pr-4 py-1.5 text-sm" placeholder="Search by name or position..." />
                     </div>
-                    <select className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600"><option>All Departments</option></select>
-                    <select className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600"><option>All Statuses</option></select>
+                    <select className="rounded-lg border border-slate-300 px-4 py-1.5 text-sm text-slate-600"><option>All Departments</option></select>
+                    <select className="rounded-lg border border-slate-300 px-4 py-1.5 text-sm text-slate-600"><option>All Statuses</option></select>
                     <div className="flex-1" />
-                    <button type="button" className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-400 cursor-default">Bulk Actions <ChevronDown className="h-3.5 w-3.5" /></button>
+                    <button type="button" className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-slate-50 px-4 py-1.5 text-sm font-medium text-slate-400 cursor-default">Bulk Actions <ChevronDown className="h-3.5 w-3.5" /></button>
                   </div>
 
                   {/* Column headers */}
-                  <div className="grid grid-cols-12 items-center px-5 py-2.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                  <div className="grid grid-cols-12 items-center px-5 py-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-100">
                     <div className="col-span-1 flex items-center gap-2"><input type="checkbox" className="rounded border-slate-300 h-4 w-4" /><span className="text-blue-600 normal-case text-xs font-medium">Showing 1–10 of 35 employees</span></div>
-                    <div className="col-span-3 pl-8">Employee</div>
-                    <div className="col-span-3">Position</div>
+                    <div className="col-span-6 pl-10">Employee</div>
                     <div className="col-span-3">Status</div>
                     <div className="col-span-2 text-right">Actions</div>
                   </div>
@@ -729,7 +728,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   ].map((group) => (
                     <div key={group.dept} className="border-b border-slate-100">
                       {/* Group header */}
-                      <div className="flex items-center gap-3 px-5 py-3 bg-slate-50/50 border-b border-slate-100">
+                      <div className="flex items-center gap-3 px-5 py-2.5 bg-slate-50/50 border-b border-slate-100">
                         <input type="checkbox" className="rounded border-slate-300 h-4 w-4" />
                         <span className="font-bold text-sm text-slate-800">{group.dept}</span>
                         <span className="text-xs text-slate-400">{group.count} employees</span>
@@ -747,13 +746,22 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                       {group.employees.map((emp) => {
                         const statusColors: Record<string, string> = { 'Approved': 'bg-emerald-100 text-emerald-700', 'Supervisor Review': 'bg-orange-100 text-orange-700', 'Self Evaluation': 'bg-cyan-100 text-cyan-700', 'Planning': 'bg-blue-100 text-blue-700', 'Rejected': 'bg-red-100 text-red-700' };
                         const dotColors: Record<string, string> = { 'Approved': 'bg-emerald-500', 'Supervisor Review': 'bg-orange-500', 'Self Evaluation': 'bg-cyan-500', 'Planning': 'bg-blue-600', 'Rejected': 'bg-red-500' };
+                        const initials = emp.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                        
                         return (
-                          <div key={emp.name} className="grid grid-cols-12 items-center px-5 py-3.5 text-sm hover:bg-slate-50/60 transition border-b border-slate-50 last:border-b-0">
-                            <div className="col-span-1"><input type="checkbox" className="rounded border-slate-300 h-4 w-4" /></div>
-                            <div className="col-span-3 font-semibold text-slate-800">{emp.name}</div>
-                            <div className="col-span-3 text-slate-400">{emp.position}</div>
-                            <div className="col-span-3"><span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-0.5 text-xs font-semibold ${statusColors[emp.status]}`}><span className={`h-1.5 w-1.5 rounded-full ${dotColors[emp.status]}`} />{emp.status}</span></div>
-                            <div className="col-span-2 flex items-center justify-end gap-2">
+                          <div key={emp.name} className="grid grid-cols-12 items-start px-5 py-2.5 text-sm hover:bg-slate-50/60 transition border-b border-slate-50 last:border-b-0">
+                            <div className="col-span-1 pt-2"><input type="checkbox" className="rounded border-slate-300 h-4 w-4" /></div>
+                            <div className="col-span-6 flex items-start gap-3 pl-2">
+                              <span className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-[11px] font-bold text-blue-600 shrink-0">
+                                {initials}
+                              </span>
+                              <div className="flex flex-col pt-1.5">
+                                <p className="font-semibold text-slate-800 leading-none">{emp.name}</p>
+                                <p className="text-[11px] text-slate-500 mt-1">{emp.position}</p>
+                              </div>
+                            </div>
+                            <div className="col-span-3 pt-1.5"><span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-0.5 text-xs font-semibold ${statusColors[emp.status]}`}><span className={`h-1.5 w-1.5 rounded-full ${dotColors[emp.status]}`} />{emp.status}</span></div>
+                            <div className="col-span-2 flex items-center justify-end gap-2 pt-1.5">
                               <button type="button" className="p-1 text-slate-400 hover:text-blue-600 transition" title="View"><Eye className="h-4 w-4" /></button>
                               <button type="button" className="p-1 text-slate-400 hover:text-slate-600 transition"><MoreHorizontal className="h-4 w-4" /></button>
                             </div>
@@ -764,7 +772,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   ))}
 
                   {/* Footer */}
-                  <div className="px-5 py-3.5 border-t border-slate-100 flex items-center justify-between">
+                  <div className="px-5 py-2.5 border-t border-slate-100 flex items-center justify-between">
                     <div className="flex items-center gap-4 text-xs text-slate-600">
                       <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Approved: 18</span>
                       <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-orange-400" /> Supervisor Review: 8</span>
@@ -1127,20 +1135,161 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
             {activeSection === 'reports' && (
               <>
-                <h2 className="text-3xl font-bold text-slate-900">Department Reports</h2>
-                <p className="mt-1 text-slate-600">Performance reports with adjectival ratings</p>
+                {/* Header Area */}
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-sm text-blue-600 font-medium">Performance Management <span className="mx-1 text-slate-400">/</span> <span className="text-slate-500">Documents</span></p>
+                </div>
+                
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Documents</h2>
+                    <p className="text-sm text-slate-500 mt-1">Request and track document submissions from employees, organized by department</p>
+                  </div>
+                  <button type="button" className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition shadow-sm">
+                    <Plus className="h-4 w-4" /> New Request
+                  </button>
+                </div>
 
-                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <select className="rounded-lg border border-slate-300 px-4 py-2 text-sm">
-                    <option>All Departments</option>
+                {/* KPI Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                  <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Total Requests</p>
+                    <p className="text-3xl font-bold text-slate-900 leading-none">24</p>
+                  </div>
+                  <div className="rounded-xl border border-orange-300 bg-white p-4 shadow-sm">
+                    <p className="text-[11px] font-semibold text-orange-500 uppercase tracking-wider mb-1.5">Pending</p>
+                    <p className="text-3xl font-bold text-orange-500 leading-none">8</p>
+                  </div>
+                  <div className="rounded-xl border border-red-200 bg-white p-4 shadow-sm">
+                    <p className="text-[11px] font-semibold text-red-500 uppercase tracking-wider mb-1.5">Overdue</p>
+                    <p className="text-3xl font-bold text-red-500 leading-none">3</p>
+                  </div>
+                  <div className="rounded-xl border border-emerald-200 bg-white p-4 shadow-sm">
+                    <p className="text-[11px] font-semibold text-emerald-500 uppercase tracking-wider mb-1.5">Approved</p>
+                    <p className="text-3xl font-bold text-emerald-500 leading-none">5</p>
+                  </div>
+                </div>
+
+                {/* Filters */}
+                <div className="rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm flex items-center gap-3 mb-4">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                    <input className="w-full rounded-lg border border-slate-200 pl-9 pr-4 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Search employee or document..." />
+                  </div>
+                  <select className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-500 outline-none w-48">
+                    <option>All Status</option>
+                    <option>Pending</option>
+                    <option>Submitted</option>
+                    <option>Under Review</option>
+                    <option>Approved</option>
+                    <option>Overdue</option>
                   </select>
-                  <select className="rounded-lg border border-slate-300 px-4 py-2 text-sm">
-                    <option>Q1 2024 (Jan-Mar)</option>
+                  <select className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-500 outline-none w-56">
+                    <option>All Document Types</option>
+                    <option>IPCR</option>
+                    <option>Accomplishment Report</option>
+                    <option>Service Record</option>
+                    <option>Position Description Form</option>
                   </select>
                 </div>
 
-                <div className="mt-6 rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
-                  <p className="text-sm text-slate-500 text-center">No department reports available</p>
+                {/* Table Section */}
+                <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden mb-4">
+                  {/* Dark Header */}
+                  <div className="bg-[#1e293b] px-5 py-3 flex items-center justify-between text-white">
+                    <div className="flex items-center gap-4">
+                      <div>
+                        <h3 className="text-base font-bold leading-tight">IT Department</h3>
+                        <p className="text-xs text-slate-400">6 requests - 2 pages</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center rounded-full bg-orange-500 px-2.5 py-0.5 text-[11px] font-bold text-white">2 Pending</span>
+                        <span className="inline-flex items-center rounded-full bg-blue-500 px-2.5 py-0.5 text-[11px] font-bold text-white">1 Submitted</span>
+                        <span className="inline-flex items-center rounded-full bg-[#a855f7] px-2.5 py-0.5 text-[11px] font-bold text-white">1 Under Review</span>
+                        <span className="inline-flex items-center rounded-full bg-emerald-500 px-2.5 py-0.5 text-[11px] font-bold text-white">1 Approved</span>
+                        <span className="inline-flex items-center rounded-full bg-red-500 px-2.5 py-0.5 text-[11px] font-bold text-white">1 Overdue</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 cursor-pointer hover:text-slate-300">
+                      <span className="text-sm font-semibold">6 employees</span>
+                      <ChevronUp className="h-4 w-4" />
+                    </div>
+                  </div>
+
+                  {/* Table Header */}
+                  <div className="grid grid-cols-12 items-center px-5 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                    <div className="col-span-1">NO.</div>
+                    <div className="col-span-3">EMPLOYEE</div>
+                    <div className="col-span-2">DOCUMENT TYPE</div>
+                    <div className="col-span-2">DATE REQUESTED</div>
+                    <div className="col-span-2">DATE SUBMITTED</div>
+                    <div className="col-span-1 text-center">STATUS</div>
+                    <div className="col-span-1 text-right">ACTION</div>
+                  </div>
+
+                  {/* Rows */}
+                  <div className="divide-y divide-slate-100">
+                    {[
+                      { no: 1, initials: 'SM', name: 'Santos, Maria G.', role: 'IT Officer II', docType: 'IPCR', dateReq: 'Mar 1, 2025', dateSub: 'Mar 12, 2025', status: 'Submitted', statusClass: 'border-blue-200 bg-blue-50 text-blue-600', action: 'View', actionClass: 'border-purple-200 text-purple-600 hover:bg-purple-50', icon: Eye },
+                      { no: 2, initials: 'DC', name: 'Dela Cruz, Juan P.', role: 'Systems Analyst', docType: 'Accomplishment Report', dateReq: 'Mar 1, 2025', dateSub: 'Mar 10, 2025', status: 'Approved', statusClass: 'border-emerald-200 bg-emerald-50 text-emerald-600', action: 'Request', actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList, isPrimaryAction: true },
+                      { no: 3, initials: 'RA', name: 'Reyes, Ana T.', role: 'Network Administrator', docType: 'IPCR', dateReq: 'Mar 1, 2025', dateSub: '', status: 'Pending', statusClass: 'border-orange-200 bg-orange-50 text-orange-600', action: 'Request', actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList, isPrimaryAction: true },
+                      { no: 4, initials: 'AR', name: 'Aguilar, Ricardo M.', role: 'IT Support Specialist', docType: 'Service Record', dateReq: 'Mar 3, 2025', dateSub: 'Mar 18, 2025', status: 'Under Review', statusClass: 'border-purple-200 bg-purple-50 text-purple-600', action: 'View', actionClass: 'border-purple-200 text-purple-600 hover:bg-purple-50', icon: Eye },
+                      { no: 5, initials: 'BL', name: 'Bautista, Lourdes S.', role: 'Database Administrator', docType: 'Position Description Form', dateReq: 'Feb 15, 2025', dateSub: '', status: 'Overdue', statusClass: 'border-red-200 bg-red-50 text-red-600', action: 'Request', actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList, isPrimaryAction: true },
+                    ].map((row, i) => (
+                      <div key={i} className="grid grid-cols-12 items-start px-5 py-3 text-sm hover:bg-slate-50/50 transition">
+                        <div className="col-span-1 text-slate-500 pt-1.5">{row.no}</div>
+                        <div className="col-span-3 flex items-start gap-3">
+                          <span className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-[11px] font-bold text-blue-600 shrink-0">
+                            {row.initials}
+                          </span>
+                          <div className="flex flex-col pt-1.5">
+                            <p className="font-semibold text-slate-800 leading-none">{row.name}</p>
+                            <p className="text-[11px] text-slate-400 mt-1">{row.role}</p>
+                          </div>
+                        </div>
+                        <div className="col-span-2 flex items-center gap-2 text-slate-600 pt-1.5">
+                          <FileText className="h-4 w-4 text-slate-400" />
+                          {row.docType}
+                        </div>
+                        <div className="col-span-2 text-slate-600 pt-1.5">{row.dateReq}</div>
+                        <div className="col-span-2 text-slate-600 pt-1.5">{row.dateSub}</div>
+                        <div className="col-span-1 flex justify-center pt-1.5">
+                          <span className={`inline-block rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${row.statusClass}`}>
+                            {row.status}
+                          </span>
+                        </div>
+                        <div className="col-span-1 flex justify-end pt-1">
+                          <button type="button" className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition border ${row.actionClass}`}>
+                            <row.icon className="h-3.5 w-3.5" />
+                            {row.action}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Table Footer */}
+                  <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between">
+                    <span className="text-xs text-slate-500">
+                      Showing <span className="font-semibold text-slate-700">1–5</span> of <span className="font-semibold text-slate-700">6</span> requests
+                    </span>
+                    <div className="flex items-center gap-1 text-lg text-slate-400">
+                      <button type="button" className="px-1 hover:text-blue-600 transition disabled:opacity-50" disabled>&laquo;</button>
+                      <button type="button" className="px-1 hover:text-blue-600 transition disabled:opacity-50" disabled>&lsaquo;</button>
+                      <button type="button" className="h-7 w-7 rounded bg-blue-600 text-white text-xs font-semibold mx-1">1</button>
+                      <button type="button" className="h-7 w-7 rounded bg-transparent text-slate-600 hover:bg-slate-100 text-xs font-medium mr-1">2</button>
+                      <button type="button" className="px-1 hover:text-blue-600 transition">&rsaquo;</button>
+                      <button type="button" className="px-1 hover:text-blue-600 transition">&raquo;</button>
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px] font-bold uppercase text-slate-400 tracking-wider">
+                      DISTRIBUTION: 
+                      <span className="inline-block rounded bg-orange-100 px-2 py-0.5 text-orange-700 normal-case ml-1">2 Pending</span>
+                      <span className="inline-block rounded bg-blue-100 px-2 py-0.5 text-blue-700 normal-case">1 Submitted</span>
+                      <span className="inline-block rounded bg-purple-100 px-2 py-0.5 text-purple-700 normal-case">1 Under Review</span>
+                      <span className="inline-block rounded bg-emerald-100 px-2 py-0.5 text-emerald-700 normal-case">1 Approved</span>
+                      <span className="inline-block rounded bg-red-100 px-2 py-0.5 text-red-700 normal-case">1 Overdue</span>
+                    </div>
+                  </div>
                 </div>
               </>
             )}
