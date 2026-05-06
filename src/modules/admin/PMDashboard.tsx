@@ -247,6 +247,45 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const reviewStartIdx = (reviewPage - 1) * reviewRowsPerPage;
   const reviewPageData = reviewsData.slice(reviewStartIdx, reviewStartIdx + reviewRowsPerPage);
 
+  // L&D Report state
+  const [showLNDModal, setShowLNDModal] = useState(false);
+  const [lndReportData, setLndReportData] = useState({
+    department: 'IT Department',
+    period: 'Q1 2025',
+    average_rating: 4.2,
+    employees_flagged: 'Roberto Cruz',
+    pm_notes: 'Roberto needs further training on HR management.'
+  });
+  const [isSendingLND, setIsSendingLND] = useState(false);
+
+  const handleSendToLND = async () => {
+    setIsSendingLND(true);
+    try {
+      const { error } = await supabase.from('pm_lnd_reports').insert([{
+        department: lndReportData.department,
+        period: lndReportData.period,
+        average_rating: lndReportData.average_rating,
+        employees_flagged: JSON.stringify(lndReportData.employees_flagged.split(',').map(e => e.trim()).filter(Boolean)),
+        pm_notes: lndReportData.pm_notes
+      }]);
+      if (error) throw error;
+      alert('Report successfully sent to L&D for discernment!');
+      setShowLNDModal(false);
+      setLndReportData({
+        department: 'IT Department',
+        period: 'Q1 2025',
+        average_rating: 4.2,
+        employees_flagged: '',
+        pm_notes: ''
+      });
+    } catch (error) {
+      console.error('Error sending report to L&D:', error);
+      alert('Failed to send report. Please check the console.');
+    } finally {
+      setIsSendingLND(false);
+    }
+  };
+
   useEffect(() => {
     fetchCycles();
   }, []);
@@ -1146,8 +1185,15 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
             {activeSection === 'ipcr' && (
               <>
-                <h2 className="text-3xl font-bold text-slate-900">IPCR</h2>
-                <p className="mt-1 text-slate-600">Individual Performance Commitment and Review</p>
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="text-3xl font-bold text-slate-900">IPCR</h2>
+                    <p className="mt-1 text-slate-600">Individual Performance Commitment and Review</p>
+                  </div>
+                  <button type="button" onClick={() => setShowLNDModal(true)} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 transition shadow-sm">
+                    <Send className="h-4 w-4" /> Send Summary to L&D
+                  </button>
+                </div>
 
                 <section className="mt-6">
                   <h3 className="text-lg font-semibold mb-4">Department IPCR Reports</h3>
