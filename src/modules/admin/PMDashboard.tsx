@@ -1827,6 +1827,18 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                         {bulkSendTo === 'department' && <div className="h-2.5 w-2.5 rounded-full bg-blue-600" />}
                       </div>
                     </button>
+                    {bulkSendTo === 'department' && (
+                      <div className="animate-in fade-in slide-in-from-top-1 duration-200">
+                        <select className="w-full rounded-lg border border-blue-500 px-3 py-2.5 text-sm text-slate-700 outline-none focus:ring-1 focus:ring-blue-500 shadow-sm">
+                          <option value="">Select department...</option>
+                          <option value="IT Department">IT Department</option>
+                          <option value="Finance Department">Finance Department</option>
+                          <option value="HR Department">HR Department</option>
+                          <option value="Administration">Administration</option>
+                          <option value="Operations">Operations</option>
+                        </select>
+                      </div>
+                    )}
 
                     {/* Selected Employees */}
                     <button
@@ -1847,6 +1859,25 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                         {bulkSendTo === 'selected' && <div className="h-2.5 w-2.5 rounded-full bg-blue-600" />}
                       </div>
                     </button>
+                    {bulkSendTo === 'selected' && (
+                      <div className="animate-in fade-in slide-in-from-top-1 duration-200">
+                        <div className="rounded-lg border border-blue-500 bg-white overflow-hidden shadow-sm">
+                          <div className="flex items-center px-3 py-2.5 border-b border-slate-200">
+                            <Search className="h-4 w-4 text-slate-400 mr-2" />
+                            <input 
+                              type="text" 
+                              placeholder="Search by name, position, or department..." 
+                              className="w-full text-sm text-slate-700 outline-none bg-transparent placeholder-slate-400"
+                            />
+                          </div>
+                          <div className="flex flex-col items-center justify-center py-8 text-center bg-slate-50/30">
+                            <Search className="h-8 w-8 text-slate-300 mb-2 opacity-50" />
+                            <p className="text-sm font-medium text-slate-600">Start typing to search for employees</p>
+                            <p className="text-xs text-slate-400 mt-1">Search by name, position, or department</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1874,7 +1905,9 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition shadow-sm"
                 >
                   <FileText className="h-4 w-4" />
-                  Send to {totalEmployees} Employees
+                  {bulkSendTo === 'all' && `Send to All Employees (${totalEmployees})`}
+                  {bulkSendTo === 'department' && 'Send to Department'}
+                  {bulkSendTo === 'selected' && 'Send to Selected Employees'}
                 </button>
               </div>
             </div>
