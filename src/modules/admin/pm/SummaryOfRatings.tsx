@@ -1,5 +1,6 @@
-import { ChevronDown, ChevronLeft, ChevronUp, Info, Printer, Search, Send } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronUp, Info, Printer, Search, Send, X } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
+import { supabase } from '../../../lib/supabase';
 
 export interface IPCRRatingRecord {
   id: string;
@@ -92,11 +93,10 @@ const MOCK_RECORDS: IPCRRatingRecord[] = [
   { id: '9', department: 'Finance Department', name: 'Sy, Henry', position: 'Financial Analyst', period: 'JANUARY–JUNE 2025', numericalRating: null, remarks: 'Needs Improvement', submissionStatus: 'OVERDUE' },
 ];
 
-export const SummaryOfRatings = ({
-  onSendToLND
-}: {
-  onSendToLND: (computed: { dept: string; avg: number; flagged: string[] }) => void;
-}) => {
+const DEPT_OPTIONS = ['All Departments', 'IT Department', 'Finance Department'];
+const REPORT_PERIOD = 'January–June 2025';
+
+export const SummaryOfRatings = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('All Departments');
   const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({
@@ -107,6 +107,12 @@ export const SummaryOfRatings = ({
   // Pagination states keyed by department
   const [pages, setPages] = useState<Record<string, number>>({});
   const rowsPerPage = 5;
+
+  // L&D modal state
+  const [showLNDModal, setShowLNDModal] = useState(false);
+  const [modalDept, setModalDept] = useState<string>('All Departments');
+  const [pmNotes, setPmNotes] = useState('');
+  const [isSendingLND, setIsSendingLND] = useState(false);
 
   const filteredRecords = useMemo(() => {
     return MOCK_RECORDS.filter(r => {
@@ -119,6 +125,18 @@ export const SummaryOfRatings = ({
   const kpis = useMemo(() => computeKPIs(filteredRecords), [filteredRecords]);
   const deptGroups = useMemo(() => groupByDept(filteredRecords), [filteredRecords]);
 
+  // Modal-scoped data: ignores the page-level filter so the dropdown can switch independently.
+  const modalDeptRecords = useMemo(() => {
+    if (modalDept === 'All Departments') return MOCK_RECORDS;
+    return MOCK_RECORDS.filter(r => r.department === modalDept);
+  }, [modalDept]);
+
+  const modalAvg = useMemo(() => {
+    const rated = modalDeptRecords.filter(r => r.numericalRating !== null);
+    if (rated.length === 0) return 0;
+    return rated.reduce((s, r) => s + (r.numericalRating as number), 0) / rated.length;
+  }, [modalDeptRecords]);
+
   const toggleDept = (dept: string) => {
     setExpandedDepts(prev => ({ ...prev, [dept]: !prev[dept] }));
   };
@@ -127,12 +145,42 @@ export const SummaryOfRatings = ({
     setPages(prev => ({ ...prev, [dept]: newPage }));
   };
 
-  const handleSendToLND = (dept: string, avg: number) => {
-    onSendToLND({
-      dept,
-      avg,
-      flagged: [] // Logic for flagging employees can be added here
-    });
+  const openLNDModal = (dept: string) => {
+    setModalDept(dept);
+    setPmNotes('');
+    setShowLNDModal(true);
+  };
+
+  const closeLNDModal = () => {
+    if (isSendingLND) return;
+    setShowLNDModal(false);
+    setPmNotes('');
+  };
+
+  const submitLNDReport = async () => {
+    setIsSendingLND(true);
+    try {
+      const flagged = modalDeptRecords
+        .filter(r => r.submissionStatus !== 'SUBMITTED' || (r.numericalRating ?? 0) < 4.5)
+        .map(r => r.name);
+
+      const { error } = await supabase.from('pm_lnd_reports').insert([{
+        department: modalDept,
+        period: REPORT_PERIOD,
+        average_rating: Number(modalAvg.toFixed(3)),
+        employees_flagged: JSON.stringify(flagged),
+        pm_notes: pmNotes,
+      }]);
+      if (error) throw error;
+      alert('Report successfully sent to L&D for discernment!');
+      setShowLNDModal(false);
+      setPmNotes('');
+    } catch (err) {
+      console.error('Error sending report to L&D:', err);
+      alert('Failed to send report. Please check the console.');
+    } finally {
+      setIsSendingLND(false);
+    }
   };
 
   return (
@@ -153,23 +201,13 @@ export const SummaryOfRatings = ({
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {selectedDept !== 'All Departments' && deptGroups.has(selectedDept) ? (
-            <button
-              type="button"
-              onClick={() => handleSendToLND(selectedDept, deptGroups.get(selectedDept)!.avg)}
-              className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 transition shadow-sm"
-            >
-              <Send className="h-4 w-4" /> Send to L&D
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="inline-flex items-center gap-2 rounded-lg bg-emerald-600/50 px-4 py-2 text-sm font-semibold text-white cursor-not-allowed shadow-sm"
-              title="Select a specific department to send to L&D"
-            >
-              <Send className="h-4 w-4" /> Send to L&D
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => openLNDModal(selectedDept)}
+            className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 transition shadow-sm"
+          >
+            <Send className="h-4 w-4" /> Send to L&D
+          </button>
           <button
             type="button"
             onClick={() => window.print()}
@@ -293,6 +331,14 @@ export const SummaryOfRatings = ({
                     <span className="inline-flex items-center rounded-full border border-slate-500 bg-slate-700/50 px-3 py-1 text-xs font-bold text-white">
                       Avg: {group.avg > 0 ? group.avg.toFixed(4) : 'N/A'}
                     </span>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); openLNDModal(dept); }}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700 transition"
+                      title={`Send ${dept} summary to L&D`}
+                    >
+                      <Send className="h-3 w-3" /> Send to L&D
+                    </button>
                     {isExpanded ? <ChevronUp className="h-5 w-5 text-slate-400" /> : <ChevronDown className="h-5 w-5 text-slate-400" />}
                   </div>
                 </div>
@@ -458,6 +504,109 @@ export const SummaryOfRatings = ({
           </div>
         )}
       </div>
+
+      {showLNDModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 print:hidden"
+          onClick={closeLNDModal}
+        >
+          <div
+            className="w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Green header */}
+            <div className="flex items-start justify-between bg-emerald-600 px-5 py-4 text-white">
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-white/20 p-2">
+                  <Send className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold leading-tight">Send Summary to L&D</h3>
+                  <p className="text-xs text-emerald-50/90">Performance Management Division</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeLNDModal}
+                className="rounded p-1 text-white/80 hover:bg-white/10 hover:text-white transition"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="space-y-4 px-5 py-5">
+              {/* Read-only summary card */}
+              <div className="rounded-lg bg-emerald-50 p-4 text-sm">
+                <div className="grid grid-cols-2 gap-y-1.5">
+                  <span className="text-slate-600">Dept:</span>
+                  <span className="font-semibold text-slate-800">{modalDept}</span>
+                  <span className="text-slate-600">Period:</span>
+                  <span className="font-semibold text-slate-800">{REPORT_PERIOD}</span>
+                  <span className="text-slate-600">Employees:</span>
+                  <span className="font-semibold text-slate-800">{modalDeptRecords.length}</span>
+                  <span className="text-slate-600">Avg:</span>
+                  <span className="font-bold text-blue-600">
+                    {modalDeptRecords.length > 0 ? modalAvg.toFixed(3) : 'N/A'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Send report for */}
+              <div>
+                <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                  Send Report For
+                </label>
+                <select
+                  value={modalDept}
+                  onChange={(e) => setModalDept(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                >
+                  {DEPT_OPTIONS.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                  Notes <span className="font-normal normal-case text-slate-400">(optional)</span>
+                </label>
+                <textarea
+                  value={pmNotes}
+                  onChange={(e) => setPmNotes(e.target.value)}
+                  rows={3}
+                  placeholder="L&D will use this summary to identify training needs for employees rated below Outstanding or with Non-Submission status."
+                  className="w-full resize-none rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
+              <button
+                type="button"
+                onClick={closeLNDModal}
+                disabled={isSendingLND}
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitLNDReport}
+                disabled={isSendingLND}
+                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 transition disabled:opacity-60"
+              >
+                <Send className="h-4 w-4" />
+                {isSendingLND ? 'Sending…' : 'Send to L&D'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

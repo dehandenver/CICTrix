@@ -249,45 +249,6 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const reviewStartIdx = (reviewPage - 1) * reviewRowsPerPage;
   const reviewPageData = reviewsData.slice(reviewStartIdx, reviewStartIdx + reviewRowsPerPage);
 
-  // L&D Report state
-  const [showLNDModal, setShowLNDModal] = useState(false);
-  const [lndReportData, setLndReportData] = useState({
-    department: 'IT Department',
-    period: 'Q1 2025',
-    average_rating: 4.2,
-    employees_flagged: 'Roberto Cruz',
-    pm_notes: 'Roberto needs further training on HR management.'
-  });
-  const [isSendingLND, setIsSendingLND] = useState(false);
-
-  const handleSendToLND = async () => {
-    setIsSendingLND(true);
-    try {
-      const { error } = await supabase.from('pm_lnd_reports').insert([{
-        department: lndReportData.department,
-        period: lndReportData.period,
-        average_rating: lndReportData.average_rating,
-        employees_flagged: JSON.stringify(lndReportData.employees_flagged.split(',').map(e => e.trim()).filter(Boolean)),
-        pm_notes: lndReportData.pm_notes
-      }]);
-      if (error) throw error;
-      alert('Report successfully sent to L&D for discernment!');
-      setShowLNDModal(false);
-      setLndReportData({
-        department: 'IT Department',
-        period: 'Q1 2025',
-        average_rating: 4.2,
-        employees_flagged: '',
-        pm_notes: ''
-      });
-    } catch (error) {
-      console.error('Error sending report to L&D:', error);
-      alert('Failed to send report. Please check the console.');
-    } finally {
-      setIsSendingLND(false);
-    }
-  };
-
   useEffect(() => {
     fetchCycles();
   }, []);
@@ -1185,19 +1146,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
               </>
             )}
 
-            {activeSection === 'ipcr' && (
-              <SummaryOfRatings
-                onSendToLND={({ dept, avg, flagged }) => {
-                  setLndReportData(prev => ({
-                    ...prev,
-                    department: dept,
-                    average_rating: avg,
-                    employees_flagged: flagged.join(', ')
-                  }));
-                  setShowLNDModal(true);
-                }}
-              />
-            )}
+            {activeSection === 'ipcr' && <SummaryOfRatings />}
 
             {activeSection === 'analytics' && (
               <>
