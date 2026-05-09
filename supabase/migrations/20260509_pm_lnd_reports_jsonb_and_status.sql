@@ -4,26 +4,55 @@
 -- Run via: Supabase Dashboard → SQL Editor → paste → Run.
 -- Safe to re-run: ADD COLUMN/INDEX guarded with IF NOT EXISTS,
 -- trigger is dropped + recreated.
---
--- NOTE on step 1: this assumes employees_flagged is currently `text`
--- holding a stringified JSON array (matches what the app writes via
--- JSON.stringify). If it is already `jsonb` storing string scalars,
--- replace the USING clause with:
---   USING CASE
---     WHEN jsonb_typeof(employees_flagged) = 'string'
---       THEN (employees_flagged #>> '{}')::jsonb
---     ELSE employees_flagged
---   END
 
 BEGIN;
 
--- 1) employees_flagged: stringified JSON  →  real jsonb array
-ALTER TABLE pm_lnd_reports
-  ALTER COLUMN employees_flagged TYPE jsonb
-  USING COALESCE(NULLIF(employees_flagged, '')::jsonb, '[]'::jsonb);
+-- 1) employees_flagged: column is already jsonb, but existing rows hold
+--    *string scalars* (the result of JSON.stringify being stored as a
+--    jsonb value). Unwrap each string scalar back into a real array.
+--    Helper handles NULL, non-string scalars, and any unparseable row
+--    (all coerced to '[]'). Dropped at the end.
+CREATE OR REPLACE FUNCTION _migration_unwrap_jsonb_string(j jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+  inner_text text;
+BEGIN
+  IF j IS NULL THEN
+    RETURN '[]'::jsonb;
+  END IF;
+
+  IF jsonb_typeof(j) = 'array' THEN
+    RETURN j;
+  END IF;
+
+  IF jsonb_typeof(j) = 'string' THEN
+    inner_text := j #>> '{}';
+    IF inner_text IS NULL OR btrim(inner_text) = '' THEN
+      RETURN '[]'::jsonb;
+    END IF;
+    BEGIN
+      RETURN inner_text::jsonb;
+    EXCEPTION WHEN others THEN
+      RETURN '[]'::jsonb;
+    END;
+  END IF;
+
+  -- numbers, booleans, objects, null jsonb — not expected here
+  RETURN '[]'::jsonb;
+END;
+$$;
+
+UPDATE pm_lnd_reports
+SET employees_flagged = _migration_unwrap_jsonb_string(employees_flagged)
+WHERE jsonb_typeof(employees_flagged) IS DISTINCT FROM 'array';
 
 ALTER TABLE pm_lnd_reports
   ALTER COLUMN employees_flagged SET DEFAULT '[]'::jsonb;
+
+DROP FUNCTION _migration_unwrap_jsonb_string(jsonb);
 
 -- 2) status: workflow column for L&D acknowledgement
 ALTER TABLE pm_lnd_reports
