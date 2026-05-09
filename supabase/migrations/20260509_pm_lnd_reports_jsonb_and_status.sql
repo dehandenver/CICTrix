@@ -83,4 +83,10 @@ CREATE TRIGGER pm_lnd_reports_updated_at
 CREATE INDEX IF NOT EXISTS pm_lnd_reports_status_created_idx
   ON pm_lnd_reports (status, created_at DESC);
 
+-- 5) records: full per-employee IPCR snapshot (department roster + ratings) so
+--    L&D can render the official Summary-of-Ratings table, not just the totals.
+--    Stored as a jsonb array of IPCRRatingRecord shapes.
+ALTER TABLE pm_lnd_reports
+  ADD COLUMN IF NOT EXISTS records jsonb NOT NULL DEFAULT '[]'::jsonb;
+
 COMMIT;

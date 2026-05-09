@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, ArrowLeft, CheckCircle2, ChevronDown, ChevronUp, Clock, RefreshCw, Send } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { getAdjectival } from './pm/SummaryOfRatings';
+import { IPCRReportView } from './pm/IPCRReportView';
+import { type IPCRRatingRecord, getAdjectival } from './pm/SummaryOfRatings';
 
 type ReportStatus = 'Pending Review' | 'Reviewed' | 'Actioned';
 
@@ -15,6 +16,8 @@ interface PMLndReport {
   status: ReportStatus;
   created_at: string;
   updated_at?: string | null;
+  /** Full per-employee snapshot — present on reports sent after the records column was added. */
+  records: IPCRRatingRecord[];
 }
 
 interface PMReportsProps {
@@ -37,6 +40,29 @@ function parseFlagged(raw: unknown): string[] {
     }
   }
   return [];
+}
+
+// Defensive parser for the per-employee snapshot. Tolerates legacy rows
+// (no records column) and either jsonb arrays or stringified JSON.
+function parseRecords(raw: unknown): IPCRRatingRecord[] {
+  const arr = Array.isArray(raw)
+    ? raw
+    : typeof raw === 'string'
+    ? (() => {
+        try {
+          const p = JSON.parse(raw);
+          return Array.isArray(p) ? p : [];
+        } catch {
+          return [];
+        }
+      })()
+    : [];
+
+  return arr.filter((entry): entry is IPCRRatingRecord => {
+    if (!entry || typeof entry !== 'object') return false;
+    const r = entry as Record<string, unknown>;
+    return typeof r.name === 'string' && typeof r.department === 'string';
+  });
 }
 
 const STATUS_PILL: Record<ReportStatus, string> = {
@@ -91,6 +117,7 @@ export const PMReports = ({ onBack, selectedReportId, onSelectionConsumed }: PMR
         status: (row.status as ReportStatus) ?? 'Pending Review',
         created_at: String(row.created_at ?? ''),
         updated_at: row.updated_at ? String(row.updated_at) : null,
+        records: parseRecords(row.records),
       }));
 
       setReports(normalized);
@@ -317,6 +344,16 @@ export const PMReports = ({ onBack, selectedReportId, onSelectionConsumed }: PMR
 
                 {isExpanded && (
                   <div className="border-t border-slate-200 bg-slate-50 px-5 py-4 space-y-4">
+                    {/* Full IPCR table — official Summary-of-Ratings format */}
+                    <div>
+                      <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Summary of Ratings (Official Format)</p>
+                      <IPCRReportView
+                        records={report.records}
+                        department={report.department}
+                        period={report.period}
+                      />
+                    </div>
+
                     {report.employees_flagged.length > 0 && (
                       <div>
                         <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Flagged Employees</p>

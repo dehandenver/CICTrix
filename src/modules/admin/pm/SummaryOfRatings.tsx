@@ -174,13 +174,16 @@ export const SummaryOfRatings = () => {
         .filter(r => r.submissionStatus !== 'SUBMITTED' || (r.numericalRating ?? 0) < 4.5)
         .map(r => r.name);
 
+      // Cast: pm_lnd_reports isn't in the generated Database types yet;
+      // it lives in Supabase but predates the latest typegen.
       const { error } = await supabase.from('pm_lnd_reports').insert([{
         department: modalDept,
         period: REPORT_PERIOD,
         average_rating: Number(modalAvg.toFixed(3)),
         employees_flagged: JSON.stringify(flagged),
         pm_notes: pmNotes,
-      }]);
+        records: modalDeptRecords,
+      }] as never);
       if (error) throw error;
       setShowLNDModal(false);
       setPmNotes('');
