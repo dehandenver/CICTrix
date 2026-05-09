@@ -18,6 +18,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import { mockDatabase } from '../../lib/mockDatabase';
+import { sendEmail } from '../../lib/email';
 import { getApplicants, getAuthoritativeJobPostings, saveApplicants } from '../../lib/recruitmentData';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../../lib/supabase';
 import type { Applicant, JobPosting } from '../../types/recruitment.types';
@@ -647,6 +648,9 @@ export function ApplicantDetailsPage() {
   const [isScoreDraft, setIsScoreDraft] = useState(false);
 
   const [showSendEmailModal, setShowSendEmailModal] = useState(false);
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
   const [emailTemplate, setEmailTemplate] = useState('');
   const [emailSubject, setEmailSubject] = useState('');
   const [emailBody, setEmailBody] = useState('');
@@ -1047,13 +1051,37 @@ export function ApplicantDetailsPage() {
     setShowSendEmailModal(true);
   };
 
-  const handleSendEmail = () => {
+  const handleSendEmail = async () => {
     if (!emailSubject.trim() || !emailBody.trim()) return;
-    if (applicant?.email) {
-      const mailto = `mailto:${applicant.email}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
-      window.location.href = mailto;
+    if (!applicant?.email) {
+      setEmailError('This applicant has no email on file.');
+      return;
     }
-    setShowSendEmailModal(false);
+
+    setEmailSending(true);
+    setEmailError(null);
+    setEmailSuccess(null);
+
+    try {
+      const result = await sendEmail({
+        to: applicant.email,
+        subject: emailSubject.trim(),
+        body: emailBody,
+        applicantId: applicant.id,
+        template: emailTemplate || undefined,
+      });
+      setEmailSuccess(`Email sent to ${result.deliveredTo.join(', ') || applicant.email}.`);
+      // Auto-close after a short pause so the admin sees the confirmation.
+      window.setTimeout(() => {
+        setShowSendEmailModal(false);
+        setEmailSuccess(null);
+      }, 1200);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setEmailError(message);
+    } finally {
+      setEmailSending(false);
+    }
   };
 
   const handleUpdateStatus = (nextStatus: Applicant['status']) => {
@@ -1698,18 +1726,35 @@ export function ApplicantDetailsPage() {
             </div>
 
             {/* Footer */}
-            <div className="flex justify-end gap-3 border-t border-slate-200 bg-white px-6 py-4">
-              <button type="button" onClick={() => setShowSendEmailModal(false)} className="rounded-2xl border border-slate-300 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSendEmail}
-                disabled={!emailSubject.trim() || !emailBody.trim()}
-                className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Send size={15} /> Send Email
-              </button>
+            <div className="border-t border-slate-200 bg-white px-6 py-4">
+              {emailError && (
+                <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {emailError}
+                </p>
+              )}
+              {emailSuccess && (
+                <p className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                  {emailSuccess}
+                </p>
+              )}
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setShowSendEmailModal(false); setEmailError(null); setEmailSuccess(null); }}
+                  disabled={emailSending}
+                  className="rounded-2xl border border-slate-300 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSendEmail}
+                  disabled={!emailSubject.trim() || !emailBody.trim() || emailSending}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Send size={15} /> {emailSending ? 'Sending…' : 'Send Email'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

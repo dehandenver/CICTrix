@@ -1,6 +1,11 @@
+from dotenv import load_dotenv
+
+# Load env vars (SMTP_*, SUPABASE_*, etc.) before any route imports use them.
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import auth, applicants, evaluations, settings
+from app.routes import auth, applicants, email, evaluations, settings
 
 # Create FastAPI app
 app = FastAPI(
@@ -29,6 +34,7 @@ app.include_router(auth.router)
 app.include_router(applicants.router)
 app.include_router(evaluations.router)
 app.include_router(settings.router)
+app.include_router(email.router)
 
 
 @app.get("/")

@@ -65,6 +65,7 @@ import {
     type EmployeeDocumentType,
 } from '../../lib/employeeDocuments';
 import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
+import { sendEmail } from '../../lib/email';
 import '../../styles/admin.css';
 import type { JobPosting, NewlyHired } from '../../types/recruitment.types';
 
@@ -97,6 +98,10 @@ interface ApplicantRecord {
   status: string;
   created_at: string;
   total_score: number | null;
+  // Optional metadata used by the assessment-form rendering paths.
+  // Persisted on the applicant record when scoring is finalized.
+  appointmentType?: 'original' | 'promotional';
+  positionType?: 'rank-and-file' | 'executive';
 }
 
 interface RaterRecord {
@@ -147,6 +152,7 @@ interface StoredApplicantCategoryScores {
   pcpt?: StoredScoringCategory;
   potential?: StoredScoringCategory;
   writtenExam?: StoredScoringCategory;
+  oralExam?: StoredScoringCategory;
   appointmentType?: 'original' | 'promotional';
   positionType?: 'rank-and-file' | 'executive';
 }
@@ -2900,9 +2906,63 @@ export const RSPDashboard = () => {
     setAccountsView('details');
   };
 
-  const handleSendBulkRequest = () => {
+  const [bulkRequestSending, setBulkRequestSending] = useState(false);
+  const [bulkRequestError, setBulkRequestError] = useState<string | null>(null);
+
+  const handleSendBulkRequest = async () => {
     if (isBulkRequestSendDisabled) return;
-    closeBulkRequestDialog();
+
+    // Resolve recipients based on the selected mode.
+    const recipientEmployees =
+      bulkRequestForm.recipientMode === 'all'
+        ? bulkRequestEmployees
+        : bulkRequestForm.recipientMode === 'department'
+          ? selectedDepartmentEmployees
+          : selectedEmployeesList;
+
+    const emails = recipientEmployees
+      .map((employee: any) => String(employee?.email ?? '').trim())
+      .filter((email: string) => Boolean(email));
+
+    if (emails.length === 0) {
+      setBulkRequestError(
+        'None of the selected employees have an email on file. Update their records first.',
+      );
+      return;
+    }
+
+    setBulkRequestSending(true);
+    setBulkRequestError(null);
+
+    const dueDate = bulkRequestForm.dueDate
+      ? new Date(bulkRequestForm.dueDate).toLocaleDateString()
+      : 'as soon as possible';
+
+    const subject = `Document Request: ${bulkRequestForm.documentName}`;
+    const body =
+      `Good day,\n\n` +
+      `You are requested to submit the following document:\n\n` +
+      `Document: ${bulkRequestForm.documentName}\n` +
+      `Description: ${bulkRequestForm.description}\n` +
+      `Due Date: ${dueDate}\n\n` +
+      `Please log in to the Employee Portal at /employee/login and upload your file ` +
+      `under Document Requirements.\n\n` +
+      `Thank you,\nCICTrix HRIS — RSP Office`;
+
+    try {
+      // Send a single email with the recipients in TO so the SMTP server delivers
+      // the same message in one round-trip. The backend accepts a list.
+      await sendEmail({
+        to: emails,
+        subject,
+        body,
+      });
+      closeBulkRequestDialog();
+    } catch (error) {
+      setBulkRequestError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBulkRequestSending(false);
+    }
   };
 
   const urgentItems = [
@@ -5822,13 +5882,29 @@ export const RSPDashboard = () => {
               </section>
             </div>
 
-            <div className="flex justify-end gap-3 border-t border-[var(--border-color)] px-8 py-5">
-              <Button variant="secondary" onClick={closeBulkRequestDialog} className="!px-8 !py-3 text-lg">
-                Cancel
-              </Button>
-              <Button onClick={handleSendBulkRequest} disabled={isBulkRequestSendDisabled} className="!px-8 !py-3 text-lg">
-                <FileText size={18} /> Send to {bulkRequestRecipientCount} Employee{bulkRequestRecipientCount === 1 ? '' : 's'}
-              </Button>
+            <div className="border-t border-[var(--border-color)] px-8 py-5">
+              {bulkRequestError && (
+                <p className="!mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {bulkRequestError}
+                </p>
+              )}
+              <div className="flex justify-end gap-3">
+                <Button
+                  variant="secondary"
+                  onClick={() => { closeBulkRequestDialog(); setBulkRequestError(null); }}
+                  disabled={bulkRequestSending}
+                  className="!px-8 !py-3 text-lg"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSendBulkRequest}
+                  disabled={isBulkRequestSendDisabled || bulkRequestSending}
+                  className="!px-8 !py-3 text-lg"
+                >
+                  <FileText size={18} /> {bulkRequestSending ? 'Sending…' : `Send to ${bulkRequestRecipientCount} Employee${bulkRequestRecipientCount === 1 ? '' : 's'}`}
+                </Button>
+              </div>
             </div>
           </div>
         </div>

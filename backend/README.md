@@ -28,6 +28,33 @@ Edit `.env` and add your Supabase credentials:
 - `SUPABASE_SERVICE_ROLE_KEY`: Your service role key
 - `JWT_SECRET_KEY`: Generate a secure random key (e.g., `python -c "import secrets; print(secrets.token_urlsafe(32))"`)
 
+### SMTP / Email setup
+
+The "Send Email" feature in the RSP module (`POST /api/email/send`) uses
+Python's built-in `smtplib`, so no extra packages are required. Add these
+to `backend/.env`:
+
+```
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USE_TLS=true
+SMTP_USER=your.account@gmail.com
+SMTP_PASSWORD=your-app-password   # Gmail: create an App Password
+SMTP_FROM=your.account@gmail.com
+SMTP_FROM_NAME=CICTrix HRIS
+```
+
+**Gmail note:** you must use an
+[App Password](https://myaccount.google.com/apppasswords) — Gmail blocks
+SMTP login with your normal account password.
+
+**Other providers:** point `SMTP_HOST` / `SMTP_PORT` at your provider
+(SendGrid, Mailgun, AWS SES, Outlook, etc.). Use port `465` with
+`SMTP_USE_TLS=false` for SMTPS (implicit TLS).
+
+If `SMTP_USER` or `SMTP_PASSWORD` are missing, the endpoint returns a
+clear `503` so the admin sees an actionable error in the modal.
+
 5. **Run development server:**
 ```bash
 python -m uvicorn main:app --reload

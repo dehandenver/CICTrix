@@ -136,6 +136,81 @@ export const findEmployeeByEmployeeId = (employeeId: string) => {
   );
 };
 
+/**
+ * Rename the username of an existing portal account.
+ * Returns success or a structured error so the UI can show a precise message.
+ */
+export const changeEmployeePortalUsername = (
+  currentUsername: string,
+  newUsername: string,
+): { ok: true; account: EmployeePortalAccount } | { ok: false; error: string } => {
+  const currentKey = normalizeUsername(currentUsername);
+  const nextRaw = String(newUsername ?? '').trim();
+  const nextKey = normalizeUsername(nextRaw);
+
+  if (!nextRaw) return { ok: false, error: 'Please enter a new username.' };
+  if (nextRaw.length < 3) return { ok: false, error: 'Username must be at least 3 characters long.' };
+  if (!/^[a-zA-Z0-9._-]+$/.test(nextRaw)) {
+    return { ok: false, error: 'Username can only contain letters, digits, dot, underscore, or hyphen.' };
+  }
+  if (currentKey === nextKey) return { ok: false, error: 'New username is the same as the current one.' };
+
+  const accounts = getEmployeePortalAccounts();
+  const index = accounts.findIndex((account) => normalizeUsername(account.username) === currentKey);
+  if (index < 0) return { ok: false, error: 'Could not find your portal account.' };
+
+  const collision = accounts.some(
+    (account, i) => i !== index && normalizeUsername(account.username) === nextKey,
+  );
+  if (collision) return { ok: false, error: 'That username is already taken. Pick a different one.' };
+
+  const nowIso = new Date().toISOString();
+  accounts[index] = {
+    ...accounts[index],
+    username: nextRaw,
+    updatedAt: nowIso,
+  };
+
+  saveEmployeePortalAccounts(accounts);
+  return { ok: true, account: accounts[index] };
+};
+
+/**
+ * Change the password of an existing portal account, requiring the current
+ * password as a confirmation.
+ */
+export const changeEmployeePortalPassword = (
+  username: string,
+  currentPassword: string,
+  newPassword: string,
+): { ok: true } | { ok: false; error: string } => {
+  if (!newPassword || newPassword.length < 6) {
+    return { ok: false, error: 'New password must be at least 6 characters long.' };
+  }
+  if (newPassword === currentPassword) {
+    return { ok: false, error: 'New password must differ from your current password.' };
+  }
+
+  const usernameKey = normalizeUsername(username);
+  const accounts = getEmployeePortalAccounts();
+  const index = accounts.findIndex((account) => normalizeUsername(account.username) === usernameKey);
+  if (index < 0) return { ok: false, error: 'Could not find your portal account.' };
+
+  if (accounts[index].password !== currentPassword) {
+    return { ok: false, error: 'Current password is incorrect.' };
+  }
+
+  const nowIso = new Date().toISOString();
+  accounts[index] = {
+    ...accounts[index],
+    password: newPassword,
+    updatedAt: nowIso,
+  };
+
+  saveEmployeePortalAccounts(accounts);
+  return { ok: true };
+};
+
 export const updateEmployeePortalEmployee = (employeeId: string, patch: Partial<Employee>) => {
   const normalizedEmployeeId = String(employeeId ?? '').trim();
   if (!normalizedEmployeeId) return false;

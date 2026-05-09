@@ -3,6 +3,7 @@ import {
     ChevronRight,
     Clock,
     Eye,
+    EyeOff,
     FileText,
     Home,
     Lock,
@@ -25,7 +26,13 @@ import {
     type EmployeeDocumentType,
 } from '../../lib/employeeDocuments';
 import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
-import { updateEmployeePortalEmployee } from '../../lib/employeePortalData';
+import {
+  changeEmployeePortalPassword,
+  changeEmployeePortalUsername,
+  findEmployeeByEmployeeId,
+  findEmployeePortalAccount,
+  updateEmployeePortalEmployee,
+} from '../../lib/employeePortalData';
 import { Employee } from '../../types/employee.types';
 
 interface EmployeePageProps {
@@ -33,7 +40,7 @@ interface EmployeePageProps {
   onLogout: () => void;
 }
 
-type PortalTab = 'personal' | 'documents' | 'submission';
+type PortalTab = 'personal' | 'documents' | 'submission' | 'account';
 
 interface TabConfig {
   id: PortalTab;
@@ -135,6 +142,124 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const [employeeDocuments, setEmployeeDocuments] = useState<EmployeeDocumentRow[]>([]);
   const [previewDocument, setPreviewDocument] = useState<EmployeeDocumentRow | null>(null);
+
+  // Account & Security tab — username + password change forms
+  const portalAccountAtMount = useMemo(
+    () => (currentUser?.employeeId ? findEmployeeByEmployeeId(currentUser.employeeId) : null),
+    [currentUser?.employeeId],
+  );
+  const [currentPortalUsername, setCurrentPortalUsername] = useState<string>(
+    portalAccountAtMount?.username ?? '',
+  );
+  const [usernameDraft, setUsernameDraft] = useState<string>(portalAccountAtMount?.username ?? '');
+  const [usernameMessage, setUsernameMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+
+  const [currentPasswordInput, setCurrentPasswordInput] = useState<string>('');
+  const [newPasswordInput, setNewPasswordInput] = useState<string>('');
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState<string>('');
+  const [passwordMessage, setPasswordMessage] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+
+  // Re-authentication gate for the Account & Security tab.
+  // Locked by default and re-locks every time the user leaves the tab,
+  // so a colleague walking up to the screen can't change credentials.
+  const [accountTabUnlocked, setAccountTabUnlocked] = useState(false);
+  const [confirmLoginUsername, setConfirmLoginUsername] = useState('');
+  const [confirmLoginPassword, setConfirmLoginPassword] = useState('');
+  const [confirmLoginError, setConfirmLoginError] = useState<string | null>(null);
+  const [confirmLoginVerifying, setConfirmLoginVerifying] = useState(false);
+
+  // Per-field "show password" toggles for the four password inputs.
+  const [showConfirmLoginPw, setShowConfirmLoginPw] = useState(false);
+  const [showCurrentPw, setShowCurrentPw] = useState(false);
+  const [showNewPw, setShowNewPw] = useState(false);
+  const [showConfirmNewPw, setShowConfirmNewPw] = useState(false);
+
+  const handleConfirmLogin = (event?: React.FormEvent) => {
+    event?.preventDefault();
+    setConfirmLoginError(null);
+
+    if (!currentPortalUsername) {
+      setConfirmLoginError(
+        'No portal account was found for your record. Contact HR to generate your credentials first.',
+      );
+      return;
+    }
+
+    if (!confirmLoginUsername.trim()) {
+      setConfirmLoginError('Please enter your username.');
+      return;
+    }
+
+    if (!confirmLoginPassword) {
+      setConfirmLoginError('Please enter your password.');
+      return;
+    }
+
+    setConfirmLoginVerifying(true);
+    const verified = findEmployeePortalAccount(confirmLoginUsername.trim(), confirmLoginPassword);
+    setConfirmLoginVerifying(false);
+
+    if (!verified) {
+      setConfirmLoginError('Username or password is incorrect.');
+      return;
+    }
+
+    // The credentials must belong to the *currently logged-in* employee — not any
+    // other portal account that happens to authenticate.
+    const verifiedEmployeeId = String(verified.employee.employeeId ?? '').trim();
+    const sessionEmployeeId = String(currentUser?.employeeId ?? '').trim();
+    if (verifiedEmployeeId && sessionEmployeeId && verifiedEmployeeId !== sessionEmployeeId) {
+      setConfirmLoginError("These credentials don't match the account you're logged in as.");
+      return;
+    }
+
+    setAccountTabUnlocked(true);
+    setConfirmLoginUsername('');
+    setConfirmLoginPassword('');
+  };
+
+
+  const handleSaveUsername = () => {
+    setUsernameMessage(null);
+    const result = changeEmployeePortalUsername(currentPortalUsername, usernameDraft);
+    if (result.ok === false) {
+      setUsernameMessage({ kind: 'error', text: result.error });
+      return;
+    }
+    setCurrentPortalUsername(result.account.username);
+    setUsernameDraft(result.account.username);
+    setUsernameMessage({
+      kind: 'success',
+      text: `Username updated to "${result.account.username}". Use it the next time you log in.`,
+    });
+  };
+
+  const handleSavePassword = () => {
+    setPasswordMessage(null);
+
+    if (newPasswordInput !== confirmPasswordInput) {
+      setPasswordMessage({ kind: 'error', text: 'New password and confirmation do not match.' });
+      return;
+    }
+
+    const result = changeEmployeePortalPassword(
+      currentPortalUsername,
+      currentPasswordInput,
+      newPasswordInput,
+    );
+    if (result.ok === false) {
+      setPasswordMessage({ kind: 'error', text: result.error });
+      return;
+    }
+
+    setCurrentPasswordInput('');
+    setNewPasswordInput('');
+    setConfirmPasswordInput('');
+    setPasswordMessage({
+      kind: 'success',
+      text: 'Password updated. Use the new password the next time you log in.',
+    });
+  };
   const [profile, setProfile] = useState<Employee>(currentUser);
   const [editingSection, setEditingSection] = useState<EditableSection>(null);
   const [contactDraft, setContactDraft] = useState<ContactDraft>(getContactDraft(currentUser));
@@ -158,6 +283,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
       { id: 'personal', label: 'Personal Information', icon: User, route: '/employee/profile' },
       { id: 'documents', label: 'Document Requirements', icon: FileText, route: '/employee/documents/requirements' },
       { id: 'submission', label: 'Submission Bin', icon: Bell, route: '/employee/documents/submission', count: 3 },
+      { id: 'account', label: 'Account & Security', icon: Lock, route: '/employee/account' },
     ],
     []
   );
@@ -165,9 +291,30 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   const activeTab = useMemo<PortalTab>(() => {
     if (location.pathname.includes('/documents/requirements')) return 'documents';
     if (location.pathname.includes('/documents/submission')) return 'submission';
+    if (location.pathname.includes('/account')) return 'account';
     if (location.pathname.includes('/profile')) return 'personal';
     return 'personal';
   }, [location.pathname]);
+
+  // Re-lock the Account & Security tab whenever the user navigates away.
+  // Coming back forces another password confirmation.
+  useEffect(() => {
+    if (activeTab !== 'account') {
+      setAccountTabUnlocked(false);
+      setConfirmLoginUsername('');
+      setConfirmLoginPassword('');
+      setConfirmLoginError(null);
+      setCurrentPasswordInput('');
+      setNewPasswordInput('');
+      setConfirmPasswordInput('');
+      setUsernameMessage(null);
+      setPasswordMessage(null);
+      setShowConfirmLoginPw(false);
+      setShowCurrentPw(false);
+      setShowNewPw(false);
+      setShowConfirmNewPw(false);
+    }
+  }, [activeTab]);
 
   const requirementItems: RequirementItem[] = useMemo(
     () =>
@@ -319,11 +466,17 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   };
 
   const savePersonalInfo = () => {
+    const trimmedGender = personalDraft.gender.trim();
+    const allowedGenders: Employee['gender'][] = ['Male', 'Female', 'Other', 'Prefer not to say'];
+    const safeGender: Employee['gender'] = (allowedGenders as string[]).includes(trimmedGender)
+      ? (trimmedGender as Employee['gender'])
+      : 'Prefer not to say';
+
     persistProfilePatch({
       fullName: personalDraft.fullName.trim(),
       dateOfBirth: personalDraft.dateOfBirth.trim(),
       placeOfBirth: personalDraft.placeOfBirth.trim(),
-      gender: personalDraft.gender.trim(),
+      gender: safeGender,
       homeAddress: personalDraft.homeAddress.trim(),
       personalDetailsFinalized: true, // Lock editing after first save
     });
@@ -863,6 +1016,299 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
             <p className="text-sm text-slate-500">
               For concerns about your pending documents, contact the HR office for verification updates.
             </p>
+          </div>
+        )}
+
+        {activeTab === 'account' && !accountTabUnlocked && (
+          <div className="space-y-5">
+            <section className="rounded-xl border border-slate-200 bg-white p-5">
+              <div className="mb-4 flex items-start gap-3">
+                <div className="rounded-lg bg-blue-100 p-2 text-blue-700">
+                  <Lock className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Confirm It's You</h2>
+                  <p className="text-sm text-slate-500">
+                    For your security, please re-enter your password before changing your username or password.
+                  </p>
+                </div>
+              </div>
+
+              {!currentPortalUsername && (
+                <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  No portal account was found for your record. Contact HR to generate your credentials first.
+                </p>
+              )}
+
+              <form
+                onSubmit={handleConfirmLogin}
+                className="space-y-3"
+                autoComplete="off"
+                data-form-type="other"
+              >
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Username
+                  </span>
+                  <input
+                    type="text"
+                    value={confirmLoginUsername}
+                    onChange={(e) => setConfirmLoginUsername(e.target.value)}
+                    disabled={!currentPortalUsername || confirmLoginVerifying}
+                    autoFocus
+                    autoComplete="off"
+                    name="cictrix-confirm-id-field"
+                    data-form-type="other"
+                    data-lpignore="true"
+                    data-1p-ignore="true"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
+                    placeholder="Enter your username"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Password
+                  </span>
+                  <div className="relative">
+                    {/* Use type="text" with text-security CSS masking instead of
+                        type="password" so the browser doesn't recognize this as a
+                        login form and offer the saved-credentials dropdown. */}
+                    <input
+                      type="text"
+                      value={confirmLoginPassword}
+                      onChange={(e) => setConfirmLoginPassword(e.target.value)}
+                      disabled={!currentPortalUsername || confirmLoginVerifying}
+                      autoComplete="off"
+                      name="cictrix-confirm-secret-field"
+                      data-form-type="other"
+                      data-lpignore="true"
+                      data-1p-ignore="true"
+                      style={{
+                        // @ts-expect-error: webkit-only text masking
+                        WebkitTextSecurity: showConfirmLoginPw ? 'none' : 'disc',
+                        textSecurity: showConfirmLoginPw ? 'none' : 'disc',
+                        fontFamily: showConfirmLoginPw ? undefined : 'text-security-disc, inherit',
+                      }}
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 pr-10 text-sm text-slate-900 focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
+                      placeholder="Enter your current password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmLoginPw((v) => !v)}
+                      tabIndex={-1}
+                      aria-label={showConfirmLoginPw ? 'Hide password' : 'Show password'}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                    >
+                      {showConfirmLoginPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </label>
+
+                {confirmLoginError && (
+                  <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {confirmLoginError}
+                  </p>
+                )}
+
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={
+                      !currentPortalUsername ||
+                      !confirmLoginUsername.trim() ||
+                      !confirmLoginPassword ||
+                      confirmLoginVerifying
+                    }
+                    className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                  >
+                    {confirmLoginVerifying ? 'Verifying…' : 'Continue'}
+                  </button>
+                </div>
+              </form>
+            </section>
+          </div>
+        )}
+
+        {activeTab === 'account' && accountTabUnlocked && (
+          <div className="space-y-5">
+            <section className="rounded-xl border border-slate-200 bg-white p-5">
+              <div className="mb-4">
+                <h2 className="text-lg font-bold text-slate-900">Change Username</h2>
+                <p className="text-sm text-slate-500">
+                  Pick a unique username you'll use to log in. Letters, digits, dot, underscore, and hyphen only.
+                </p>
+              </div>
+
+              {!currentPortalUsername && (
+                <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  No portal account was found for your record. Contact HR to generate your credentials first.
+                </p>
+              )}
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Current Username
+                  </span>
+                  <input
+                    type="text"
+                    value={currentPortalUsername}
+                    disabled
+                    className="w-full cursor-not-allowed rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    New Username
+                  </span>
+                  <input
+                    type="text"
+                    value={usernameDraft}
+                    onChange={(e) => setUsernameDraft(e.target.value)}
+                    disabled={!currentPortalUsername}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
+                    placeholder="e.g. mariasantos"
+                  />
+                </label>
+              </div>
+
+              {usernameMessage && (
+                <p
+                  className={`mt-3 rounded-lg border px-3 py-2 text-sm ${
+                    usernameMessage.kind === 'success'
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                      : 'border-red-200 bg-red-50 text-red-700'
+                  }`}
+                >
+                  {usernameMessage.text}
+                </p>
+              )}
+
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleSaveUsername}
+                  disabled={!currentPortalUsername || usernameDraft.trim() === currentPortalUsername}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                >
+                  Save Username
+                </button>
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-slate-200 bg-white p-5">
+              <div className="mb-4">
+                <h2 className="text-lg font-bold text-slate-900">Change Password</h2>
+                <p className="text-sm text-slate-500">
+                  Enter your current password, then choose a new one. Minimum 6 characters.
+                </p>
+              </div>
+
+              <div className="grid gap-3">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Current Password
+                  </span>
+                  <div className="relative">
+                    <input
+                      type={showCurrentPw ? 'text' : 'password'}
+                      value={currentPasswordInput}
+                      onChange={(e) => setCurrentPasswordInput(e.target.value)}
+                      disabled={!currentPortalUsername}
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 pr-10 text-sm text-slate-900 focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
+                      autoComplete="current-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPw((v) => !v)}
+                      tabIndex={-1}
+                      aria-label={showCurrentPw ? 'Hide password' : 'Show password'}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                    >
+                      {showCurrentPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </label>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      New Password
+                    </span>
+                    <div className="relative">
+                      <input
+                        type={showNewPw ? 'text' : 'password'}
+                        value={newPasswordInput}
+                        onChange={(e) => setNewPasswordInput(e.target.value)}
+                        disabled={!currentPortalUsername}
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 pr-10 text-sm text-slate-900 focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
+                        autoComplete="new-password"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPw((v) => !v)}
+                        tabIndex={-1}
+                        aria-label={showNewPw ? 'Hide password' : 'Show password'}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                      >
+                        {showNewPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Confirm New Password
+                    </span>
+                    <div className="relative">
+                      <input
+                        type={showConfirmNewPw ? 'text' : 'password'}
+                        value={confirmPasswordInput}
+                        onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                        disabled={!currentPortalUsername}
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 pr-10 text-sm text-slate-900 focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
+                        autoComplete="new-password"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmNewPw((v) => !v)}
+                        tabIndex={-1}
+                        aria-label={showConfirmNewPw ? 'Hide password' : 'Show password'}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                      >
+                        {showConfirmNewPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {passwordMessage && (
+                <p
+                  className={`mt-3 rounded-lg border px-3 py-2 text-sm ${
+                    passwordMessage.kind === 'success'
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                      : 'border-red-200 bg-red-50 text-red-700'
+                  }`}
+                >
+                  {passwordMessage.text}
+                </p>
+              )}
+
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleSavePassword}
+                  disabled={
+                    !currentPortalUsername ||
+                    !currentPasswordInput ||
+                    !newPasswordInput ||
+                    !confirmPasswordInput
+                  }
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                >
+                  Save Password
+                </button>
+              </div>
+            </section>
           </div>
         )}
       </main>

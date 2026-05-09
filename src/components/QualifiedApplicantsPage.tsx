@@ -35,6 +35,7 @@ import {
     saveEmployeeRecords,
     saveNewlyHired,
 } from '../lib/recruitmentData';
+import { sendEmail } from '../lib/email';
 import { runSingleFlight } from '../lib/singleFlight';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../lib/supabase';
 import { Applicant, ApplicantStatus, JobPosting, NewlyHired } from '../types/recruitment.types';
@@ -421,6 +422,40 @@ export const QualifiedApplicantsPage = () => {
   const [emailTemplate, setEmailTemplate] = useState<EmailTemplateKey>('none');
   const [emailSubject, setEmailSubject] = useState('');
   const [emailMessage, setEmailMessage] = useState('');
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+
+  const handleSendApplicantEmail = async () => {
+    if (!activeApplicant) {
+      setEmailError('No applicant selected.');
+      return;
+    }
+    const recipient = String(activeApplicant.personalInfo?.email ?? '').trim();
+    if (!recipient) {
+      setEmailError('This applicant has no email on file.');
+      return;
+    }
+
+    setEmailSending(true);
+    setEmailError(null);
+
+    try {
+      await sendEmail({
+        to: recipient,
+        subject: emailSubject.trim(),
+        body: emailMessage,
+        applicantId: activeApplicant.id,
+      });
+      setShowMessageDialog(false);
+      setEmailSubject('');
+      setEmailMessage('');
+      setToast(`Email sent to ${recipient}`);
+    } catch (error) {
+      setEmailError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setEmailSending(false);
+    }
+  };
   const [showGuide, setShowGuide] = useState(false);
   const [toast, setToast] = useState('');
   const [noteDraft, setNoteDraft] = useState('');
@@ -2274,11 +2309,28 @@ export const QualifiedApplicantsPage = () => {
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 border-t border-slate-200 bg-white px-6 py-4">
-              <button className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700" onClick={() => setShowMessageDialog(false)}>Cancel</button>
-              <button className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white disabled:opacity-50" disabled={!emailSubject.trim() || !emailMessage.trim()} onClick={() => { setShowMessageDialog(false); setToast('Message sent to applicant'); }}>
-                <Plane className="h-5 w-5" /> Send Message
-              </button>
+            <div className="border-t border-slate-200 bg-white px-6 py-4">
+              {emailError && (
+                <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {emailError}
+                </p>
+              )}
+              <div className="flex justify-end gap-3">
+                <button
+                  className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 disabled:opacity-50"
+                  onClick={() => { setShowMessageDialog(false); setEmailError(null); }}
+                  disabled={emailSending}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  disabled={!emailSubject.trim() || !emailMessage.trim() || emailSending}
+                  onClick={handleSendApplicantEmail}
+                >
+                  <Plane className="h-5 w-5" /> {emailSending ? 'Sending…' : 'Send Email'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

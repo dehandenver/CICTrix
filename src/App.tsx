@@ -490,6 +490,23 @@ function AppContent() {
             }
           />
           <Route
+            path="/employee/account"
+            element={
+              <EmployeeRoute session={employeeSession}>
+                {resolveEmployeeFromSession(employeeSession) ? (
+                  <EmployeePage
+                    currentUser={resolveEmployeeFromSession(employeeSession) as Employee}
+                    onLogout={handleEmployeeLogout}
+                  />
+                ) : (
+                  <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-600">
+                    Loading employee profile...
+                  </div>
+                )}
+              </EmployeeRoute>
+            }
+          />
+          <Route
             path="/employee/*"
             element={<Navigate to={employeeSession ? '/employee/dashboard' : '/employee/login'} replace />}
           />

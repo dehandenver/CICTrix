@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Search, FileText, ChevronRight, Users } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { supabase as supabaseClient } from '../../lib/supabase';
+
+// Bypass auto-generated Supabase types resolving to `never`. Same escape hatch
+// used elsewhere in the codebase.
+const supabase = supabaseClient as any;
 import EmployeeListByPosition from './components/EmployeeListByPosition';
 import EmployeeDetailPage from './components/EmployeeDetailPage';
 

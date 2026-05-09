@@ -15,6 +15,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import { isPositionAssignedToInterviewer, resolveAssignedPositionsForInterviewer } from '../../lib/interviewerAccess';
+import { sendEmail } from '../../lib/email';
 import { mockDatabase } from '../../lib/mockDatabase';
 import { ensureRecruitmentSeedData, getAuthoritativeJobPostings, getApplicants as getRecruitmentApplicants } from '../../lib/recruitmentData';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../../lib/supabase';
@@ -392,6 +393,39 @@ export function InterviewerApplicantsList() {
   const [emailTemplate, setEmailTemplate] = useState<EmailTemplate>('none');
   const [emailSubject, setEmailSubject] = useState('');
   const [emailMessage, setEmailMessage] = useState('');
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+
+  const handleSendApplicantEmail = async () => {
+    if (!activeApplicant) {
+      setEmailError('No applicant selected.');
+      return;
+    }
+    const recipient = String(activeApplicant.email ?? '').trim();
+    if (!recipient) {
+      setEmailError('This applicant has no email on file.');
+      return;
+    }
+
+    setEmailSending(true);
+    setEmailError(null);
+
+    try {
+      await sendEmail({
+        to: recipient,
+        subject: emailSubject.trim(),
+        body: emailMessage,
+        applicantId: activeApplicant.id,
+      });
+      setShowMessageDialog(false);
+      setEmailSubject('');
+      setEmailMessage('');
+    } catch (error) {
+      setEmailError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setEmailSending(false);
+    }
+  };
   const [internalNotesByApplicant, setInternalNotesByApplicant] = useState<Record<string, string>>({});
   const [assignedPositions, setAssignedPositions] = useState<string[]>([]);
   const [evaluationsByApplicant, setEvaluationsByApplicant] = useState<Record<string, InterviewerEvaluationFields[]>>({});
@@ -1141,18 +1175,30 @@ export function InterviewerApplicantsList() {
               </section>
             </div>
 
-            <div className="message-dialog-footer">
-              <button type="button" className="dialog-btn-cancel" onClick={() => setShowMessageDialog(false)}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="dialog-btn-send"
-                onClick={() => setShowMessageDialog(false)}
-                disabled={!emailSubject.trim() || !emailMessage.trim()}
-              >
-                <Plane size={16} /> Send Message
-              </button>
+            <div className="message-dialog-footer" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '12px' }}>
+              {emailError && (
+                <p style={{ margin: 0, padding: '8px 12px', borderRadius: '8px', border: '1px solid #fecaca', background: '#fef2f2', color: '#b91c1c', fontSize: '13px' }}>
+                  {emailError}
+                </p>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                <button
+                  type="button"
+                  className="dialog-btn-cancel"
+                  onClick={() => { setShowMessageDialog(false); setEmailError(null); }}
+                  disabled={emailSending}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="dialog-btn-send"
+                  onClick={handleSendApplicantEmail}
+                  disabled={!emailSubject.trim() || !emailMessage.trim() || emailSending}
+                >
+                  <Plane size={16} /> {emailSending ? 'Sending…' : 'Send Email'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
