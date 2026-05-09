@@ -51,6 +51,8 @@ import { LogoutConfirmPopover } from '../../components/LogoutConfirmPopover';
 import { Sidebar } from '../../components/Sidebar';
 import { supabase } from '../../lib/supabase';
 import '../../styles/admin.css';
+import { SummaryOfRatings } from './pm/SummaryOfRatings';
+
 
 interface EvaluationCycle {
   id: number;
@@ -401,7 +403,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
     return (
       <div className="min-h-screen bg-slate-100 text-slate-800">
-        <header className="sticky top-0 z-40 border-b border-slate-200 bg-white shadow-sm">
+        <header className="sticky top-0 z-40 border-b border-slate-200 bg-white shadow-sm print:hidden">
           <div className="flex items-center justify-between px-6 py-3">
             <div className="flex items-center gap-4">
               <div className="h-10 w-10 rounded-xl bg-blue-600 text-white grid place-content-center text-lg font-bold">HR</div>
@@ -432,7 +434,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
         </header>
 
         <div className="flex">
-          <aside className="w-64 shrink-0 border-r border-slate-200 bg-white px-3 py-4 min-h-[calc(100vh-70px)]">
+          <aside className="w-64 shrink-0 border-r border-slate-200 bg-white px-3 py-4 min-h-[calc(100vh-70px)] print:hidden">
             <nav className="space-y-1.5">
               {sideNavItems.map((item) => {
                 const Icon = item.icon;
@@ -1184,31 +1186,17 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
             )}
 
             {activeSection === 'ipcr' && (
-              <>
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h2 className="text-3xl font-bold text-slate-900">IPCR</h2>
-                    <p className="mt-1 text-slate-600">Individual Performance Commitment and Review</p>
-                  </div>
-                  <button type="button" onClick={() => setShowLNDModal(true)} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 transition shadow-sm">
-                    <Send className="h-4 w-4" /> Send Summary to L&D
-                  </button>
-                </div>
-
-                <section className="mt-6">
-                  <h3 className="text-lg font-semibold mb-4">Department IPCR Reports</h3>
-                  <div className="rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
-                    <p className="text-sm text-slate-500 text-center">No department IPCR reports available</p>
-                  </div>
-                </section>
-
-                <section className="mt-8">
-                  <h3 className="text-lg font-semibold mb-4">Individual Employee IPCRs</h3>
-                  <div className="rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
-                    <p className="text-sm text-slate-500 text-center">No individual IPCRs available</p>
-                  </div>
-                </section>
-              </>
+              <SummaryOfRatings
+                onSendToLND={({ dept, avg, flagged }) => {
+                  setLndReportData(prev => ({
+                    ...prev,
+                    department: dept,
+                    average_rating: avg,
+                    employees_flagged: flagged.join(', ')
+                  }));
+                  setShowLNDModal(true);
+                }}
+              />
             )}
 
             {activeSection === 'analytics' && (
