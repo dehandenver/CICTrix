@@ -15,12 +15,19 @@ export interface IPCRRatingRecord {
 
 export type Adjectival = 'Outstanding' | 'Very Satisfactory' | 'Satisfactory' | 'Unsatisfactory' | 'Poor' | 'Non-Submission';
 
+// Official IPCR Final Average Rating scale (per government PMT guidelines):
+//   4.75 – 5.00  Outstanding
+//   4.00 – 4.74  Very Satisfactory
+//   3.00 – 3.99  Satisfactory
+//   2.00 – 2.99  Unsatisfactory
+//   1.00 – 1.99  Poor
+// Note: numerical values must NOT be rounded off to the nearest thousandths when computing averages.
 export function getAdjectival(score: number | null): { label: Adjectival; pillClass: string } {
   if (score === null) return { label: 'Non-Submission', pillClass: 'bg-blue-300 text-blue-900' };
-  if (score >= 4.5) return { label: 'Outstanding', pillClass: 'bg-yellow-400 text-yellow-900' };
-  if (score >= 3.5) return { label: 'Very Satisfactory', pillClass: 'bg-emerald-400 text-emerald-900' };
-  if (score >= 2.5) return { label: 'Satisfactory', pillClass: 'bg-teal-400 text-teal-900' };
-  if (score >= 1.5) return { label: 'Unsatisfactory', pillClass: 'bg-red-300 text-red-900' };
+  if (score >= 4.75) return { label: 'Outstanding', pillClass: 'bg-yellow-400 text-yellow-900' };
+  if (score >= 4) return { label: 'Very Satisfactory', pillClass: 'bg-emerald-400 text-emerald-900' };
+  if (score >= 3) return { label: 'Satisfactory', pillClass: 'bg-teal-400 text-teal-900' };
+  if (score >= 2) return { label: 'Unsatisfactory', pillClass: 'bg-red-300 text-red-900' };
   return { label: 'Poor', pillClass: 'bg-red-500 text-white' };
 }
 
