@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, ArrowLeft, CheckCircle2, ChevronDown, ChevronUp, Clock, RefreshCw, Send } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getAdjectival } from './pm/SummaryOfRatings';
@@ -19,6 +19,10 @@ interface PMLndReport {
 
 interface PMReportsProps {
   onBack: () => void;
+  /** When provided, the matching report is auto-expanded and scrolled into view on first render. */
+  selectedReportId?: string | null;
+  /** Called once the selectedReportId has been honored, so the caller can clear it. */
+  onSelectionConsumed?: () => void;
 }
 
 // Defensive parser: handles both legacy stringified-JSON and migrated jsonb-array shapes.
@@ -55,13 +59,16 @@ const fmtDate = (iso: string) => {
   }
 };
 
-export const PMReports = ({ onBack }: PMReportsProps) => {
+export const PMReports = ({ onBack, selectedReportId, onSelectionConsumed }: PMReportsProps) => {
   const [reports, setReports] = useState<PMLndReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | ReportStatus>('all');
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const selectionHandledRef = useRef(false);
 
   const fetchReports = useCallback(async () => {
     setLoading(true);
@@ -98,6 +105,33 @@ export const PMReports = ({ onBack }: PMReportsProps) => {
   useEffect(() => {
     void fetchReports();
   }, [fetchReports]);
+
+  // Reset the "handled" gate if the caller targets a different report.
+  useEffect(() => {
+    selectionHandledRef.current = false;
+  }, [selectedReportId]);
+
+  // After data lands, honor the deep-link: expand + scroll + briefly highlight.
+  useEffect(() => {
+    if (!selectedReportId || selectionHandledRef.current) return;
+    if (loading) return;
+    const exists = reports.some(r => r.id === selectedReportId);
+    if (!exists) return;
+
+    selectionHandledRef.current = true;
+    setExpandedId(selectedReportId);
+    setHighlightId(selectedReportId);
+
+    // Defer to next frame so the expanded content has laid out before scrolling.
+    requestAnimationFrame(() => {
+      const node = rowRefs.current.get(selectedReportId);
+      node?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+
+    const t = setTimeout(() => setHighlightId(null), 2400);
+    onSelectionConsumed?.();
+    return () => clearTimeout(t);
+  }, [loading, reports, selectedReportId, onSelectionConsumed]);
 
   const updateStatus = async (id: string, next: ReportStatus) => {
     setUpdatingId(id);
@@ -230,8 +264,20 @@ export const PMReports = ({ onBack }: PMReportsProps) => {
           {filteredReports.map(report => {
             const adj = getAdjectival(report.average_rating);
             const isExpanded = expandedId === report.id;
+            const isHighlighted = highlightId === report.id;
             return (
-              <div key={report.id} className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div
+                key={report.id}
+                ref={(node) => {
+                  if (node) rowRefs.current.set(report.id, node);
+                  else rowRefs.current.delete(report.id);
+                }}
+                className={`rounded-xl border bg-white shadow-sm overflow-hidden transition ${
+                  isHighlighted
+                    ? 'border-blue-500 ring-2 ring-blue-200 shadow-md'
+                    : 'border-slate-200'
+                }`}
+              >
                 <div
                   className="flex flex-col md:flex-row md:items-center justify-between gap-3 px-5 py-4 cursor-pointer hover:bg-slate-50 transition"
                   onClick={() => setExpandedId(isExpanded ? null : report.id)}

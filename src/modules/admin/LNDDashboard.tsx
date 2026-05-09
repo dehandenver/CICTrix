@@ -353,10 +353,15 @@ const documentTypes = [
   'Updated Resume/CV',
 ];
 
-const LNDDocuments = () => {
-  // Sub-view: main documents list, or "Summary of Ratings (from PM)" page
-  const [showPMReports, setShowPMReports] = useState(false);
+interface LNDDocumentsProps {
+  showPMReports: boolean;
+  setShowPMReports: (open: boolean) => void;
+  selectedReportId: string | null;
+  /** Caller clears its own selectedReportId once PMReports has consumed it. */
+  onSelectionConsumed: () => void;
+}
 
+const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSelectionConsumed }: LNDDocumentsProps) => {
   // Individual request modal state
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [requestEmployee, setRequestEmployee] = useState<{ name: string; role: string; dept: string; initials: string } | null>(null);
@@ -468,7 +473,16 @@ const LNDDocuments = () => {
   ];
 
   if (showPMReports) {
-    return <PMReports onBack={() => setShowPMReports(false)} />;
+    return (
+      <PMReports
+        onBack={() => {
+          setShowPMReports(false);
+          onSelectionConsumed();
+        }}
+        selectedReportId={selectedReportId}
+        onSelectionConsumed={onSelectionConsumed}
+      />
+    );
   }
 
   return (
@@ -999,9 +1013,22 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
   const [activeModule, setActiveModule] = useState<MenuId>('dashboard');
   const [courses, setCourses] = useState<Course[]>([]);
 
+  // Lifted so AdminHeader notifications can deep-link into a specific report.
+  const [showPMReports, setShowPMReports] = useState(false);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800">
-      <AdminHeader userName="Alex Gonzales" divisionLabel="L&D Division" />
+      <AdminHeader
+        userName="Alex Gonzales"
+        divisionLabel="L&D Division"
+        division="lnd"
+        onNotificationClick={(item) => {
+          setActiveModule('documents');
+          setShowPMReports(true);
+          setSelectedReportId(item.payload.reportId);
+        }}
+      />
       <div className="flex">
         <LndSidebar activeModule={activeModule} onSelect={setActiveModule} />
         <main className="flex-1">
@@ -1014,7 +1041,12 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
           ) : activeModule === 'employee-progress' ? (
             <EmployeeDevelopment />
           ) : activeModule === 'documents' ? (
-            <LNDDocuments />
+            <LNDDocuments
+              showPMReports={showPMReports}
+              setShowPMReports={setShowPMReports}
+              selectedReportId={selectedReportId}
+              onSelectionConsumed={() => setSelectedReportId(null)}
+            />
           ) : (
             <PlaceholderPage label={LND_MENU.find((item) => item.id === activeModule)?.label || 'Module'} />
           )}
