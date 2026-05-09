@@ -68,24 +68,7 @@ interface PerformanceStats {
   pendingReviews: number;
 }
 
-const FALLBACK_CYCLES: EvaluationCycle[] = [
-  {
-    id: 1,
-    title: 'Q1 2026 Performance Review',
-    start_date: '2026-01-15',
-    end_date: '2026-03-31',
-    status: 'Active',
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 2,
-    title: 'Annual 2025 Evaluation',
-    start_date: '2025-10-01',
-    end_date: '2025-12-20',
-    status: 'Completed',
-    created_at: new Date().toISOString(),
-  },
-];
+const FALLBACK_CYCLES: EvaluationCycle[] = [];
 
 export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: boolean }) => {
   const [stats, setStats] = useState<PerformanceStats>({
@@ -225,26 +208,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const [reviewPage, setReviewPage] = useState(1);
   const [reviewRowsPerPage, setReviewRowsPerPage] = useState(20);
 
-  const reviewsData = [
-    { name: 'Manuel Reyes', id: 'EMP-0142', pos: 'HR Officer I', dept: 'Operations', score: 4.4, rating: 'Very Satisfactory', date: 'Feb 27, 2025' },
-    { name: 'Valentina Santos', id: 'EMP-0141', pos: 'IT Officer II', dept: 'HR Department', score: 4.2, rating: 'Very Satisfactory', date: 'Feb 24, 2025' },
-    { name: 'Diego Flores', id: 'EMP-0140', pos: 'HR Assistant', dept: 'Finance', score: 4.9, rating: 'Outstanding', date: 'Feb 21, 2025' },
-    { name: 'Sofia Morales', id: 'EMP-0139', pos: 'Admin Officer II', dept: 'IT Department', score: 4.3, rating: 'Very Satisfactory', date: 'Feb 18, 2025' },
-    { name: 'Antonio Mercado', id: 'EMP-0136', pos: 'Legal Officer I', dept: 'Operations', score: 4.1, rating: 'Very Satisfactory', date: 'Feb 9, 2025' },
-    { name: 'Teresa dela Cruz', id: 'EMP-0135', pos: 'Finance Officer I', dept: 'HR Department', score: 4.8, rating: 'Outstanding', date: 'Feb 6, 2025' },
-    { name: 'Pedro Gutierrez', id: 'EMP-0134', pos: 'IT Support Specialist', dept: 'Finance', score: 4.2, rating: 'Very Satisfactory', date: 'Feb 3, 2025' },
-    { name: 'Gloria Rivera', id: 'EMP-0133', pos: 'Systems Analyst', dept: 'IT Department', score: 3.9, rating: 'Satisfactory', date: 'Jan 31, 2025' },
-    { name: 'Fernando Fernandez', id: 'EMP-0132', pos: 'HR Officer I', dept: 'Admin Services', score: 4.5, rating: 'Outstanding', date: 'Jan 28, 2025' },
-    { name: 'Liza Lopez', id: 'EMP-0131', pos: 'IT Officer II', dept: 'Legal', score: 4.0, rating: 'Very Satisfactory', date: 'Jan 25, 2025' },
-    { name: 'Miguel Lim', id: 'EMP-0130', pos: 'HR Assistant', dept: 'Operations', score: 4.7, rating: 'Outstanding', date: 'Jan 22, 2025' },
-    { name: 'Ricardo Cruz', id: 'EMP-0129', pos: 'Admin Officer II', dept: 'HR Department', score: 4.3, rating: 'Very Satisfactory', date: 'Jan 19, 2025' },
-    { name: 'Carmen Mendoza', id: 'EMP-0128', pos: 'Accounting Clerk', dept: 'Finance', score: 3.7, rating: 'Satisfactory', date: 'Jan 16, 2025' },
-    { name: 'Jose Navarro', id: 'EMP-0127', pos: 'Admin Assistant II', dept: 'IT Department', score: 4.9, rating: 'Outstanding', date: 'Jan 13, 2025' },
-    { name: 'Elena Castillo', id: 'EMP-0126', pos: 'Legal Officer I', dept: 'Admin Services', score: 4.1, rating: 'Very Satisfactory', date: 'Jan 10, 2025' },
-    { name: 'Roberto Ramos', id: 'EMP-0125', pos: 'Finance Officer I', dept: 'Legal', score: 4.4, rating: 'Very Satisfactory', date: 'Jan 7, 2025' },
-    { name: 'Ana Gonzales', id: 'EMP-0124', pos: 'IT Support Specialist', dept: 'Operations', score: 3.8, rating: 'Satisfactory', date: 'Jan 4, 2025' },
-    { name: 'Juan Diaz', id: 'EMP-0123', pos: 'Systems Analyst', dept: 'HR Department', score: 4.6, rating: 'Outstanding', date: 'Jan 1, 2025' },
-  ];
+  const reviewsData: any[] = [];
   const reviewTotalPages = Math.ceil(reviewsData.length / reviewRowsPerPage);
   const reviewStartIdx = (reviewPage - 1) * reviewRowsPerPage;
   const reviewPageData = reviewsData.slice(reviewStartIdx, reviewStartIdx + reviewRowsPerPage);

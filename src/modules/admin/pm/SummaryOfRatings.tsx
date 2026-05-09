@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronLeft, ChevronUp, Info, Printer, Search, Send, X } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronUp, Info, Printer, Search, Send, X } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
 
@@ -121,6 +121,9 @@ export const SummaryOfRatings = () => {
   const [pmNotes, setPmNotes] = useState('');
   const [isSendingLND, setIsSendingLND] = useState(false);
 
+  // Post-send notification (replaces native browser alert)
+  const [notification, setNotification] = useState<{ type: 'success' | 'error'; title: string; message: string } | null>(null);
+
   const filteredRecords = useMemo(() => {
     return MOCK_RECORDS.filter(r => {
       const matchSearch = r.name.toLowerCase().includes(searchTerm.toLowerCase()) || r.department.toLowerCase().includes(searchTerm.toLowerCase());
@@ -179,12 +182,20 @@ export const SummaryOfRatings = () => {
         pm_notes: pmNotes,
       }]);
       if (error) throw error;
-      alert('Report successfully sent to L&D for discernment!');
       setShowLNDModal(false);
       setPmNotes('');
+      setNotification({
+        type: 'success',
+        title: 'Report Sent Successfully',
+        message: `The Summary of Ratings for ${modalDept} (${REPORT_PERIOD}) has been forwarded to the Learning & Development division for discernment.`,
+      });
     } catch (err) {
       console.error('Error sending report to L&D:', err);
-      alert('Failed to send report. Please check the console.');
+      setNotification({
+        type: 'error',
+        title: 'Failed to Send Report',
+        message: 'The report could not be sent to L&D. Please check your connection and try again.',
+      });
     } finally {
       setIsSendingLND(false);
     }
@@ -609,6 +620,65 @@ export const SummaryOfRatings = () => {
               >
                 <Send className="h-4 w-4" />
                 {isSendingLND ? 'Sending…' : 'Send to L&D'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {notification && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4 print:hidden"
+          onClick={() => setNotification(null)}
+        >
+          <div
+            className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="notification-title"
+          >
+            <div
+              className={`flex items-center justify-between gap-3 px-5 py-4 text-white ${
+                notification.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className="rounded-lg bg-white/20 p-2">
+                  {notification.type === 'success' ? (
+                    <CheckCircle2 className="h-5 w-5" />
+                  ) : (
+                    <AlertCircle className="h-5 w-5" />
+                  )}
+                </div>
+                <h3 id="notification-title" className="text-base font-bold leading-tight">
+                  {notification.title}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNotification(null)}
+                className="rounded p-1 text-white/80 hover:bg-white/10 hover:text-white transition"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="px-5 py-5">
+              <p className="text-sm text-slate-700 leading-relaxed">{notification.message}</p>
+            </div>
+            <div className="flex items-center justify-end border-t border-slate-200 bg-slate-50 px-5 py-3">
+              <button
+                type="button"
+                onClick={() => setNotification(null)}
+                className={`rounded-lg px-4 py-2 text-sm font-semibold text-white transition ${
+                  notification.type === 'success'
+                    ? 'bg-emerald-600 hover:bg-emerald-700'
+                    : 'bg-red-600 hover:bg-red-700'
+                }`}
+                autoFocus
+              >
+                OK
               </button>
             </div>
           </div>

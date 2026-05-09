@@ -36,6 +36,7 @@ import {
     YAxis,
 } from 'recharts';
 import { EmployeeDevelopment } from './EmployeeDevelopment';
+import { PMReports } from './PMReports';
 import { SeminarEnrollment } from './SeminarEnrollment';
 import { type Course, TrainingCourses } from './TrainingCourses';
 
@@ -67,70 +68,15 @@ type StatCardProps = {
   sublabel: string;
 };
 
-const competencyGaps = [
-  { skill: 'Strategic Planning', currentLevel: 62, targetLevel: 88, gap: 26, priority: 'high' as Priority },
-  { skill: 'Data Analytics', currentLevel: 54, targetLevel: 82, gap: 28, priority: 'high' as Priority },
-  { skill: 'Public Communication', currentLevel: 71, targetLevel: 85, gap: 14, priority: 'medium' as Priority },
-  { skill: 'Policy Compliance', currentLevel: 79, targetLevel: 90, gap: 11, priority: 'low' as Priority },
-];
+const competencyGaps = [];
 
-const upcomingSeminars = [
-  { id: 'SEM-001', title: 'Leadership for Public Service', date: 'Mar 21, 2026', participants: 42, instructor: 'Dr. Maria Santos' },
-  { id: 'SEM-002', title: 'Cybersecurity Awareness for Offices', date: 'Mar 25, 2026', participants: 58, instructor: 'Engr. Paul Rivera' },
-  { id: 'SEM-003', title: 'Records Management Modernization', date: 'Apr 02, 2026', participants: 33, instructor: 'Atty. Liza Cruz' },
-];
+const upcomingSeminars = [];
 
-const trainingRequests = [
-  {
-    id: 'TR-1001',
-    employee: 'Juan Dela Cruz',
-    position: 'Administrative Officer II',
-    requestedTraining: 'Advanced Project Monitoring',
-    department: 'Planning Office',
-    dateRequested: 'Mar 08, 2026',
-    status: 'approved' as RequestStatus,
-  },
-  {
-    id: 'TR-1002',
-    employee: 'Ana Reyes',
-    position: 'HR Assistant',
-    requestedTraining: 'Competency-Based Interviewing',
-    department: 'HRMO',
-    dateRequested: 'Mar 10, 2026',
-    status: 'pending' as RequestStatus,
-  },
-  {
-    id: 'TR-1003',
-    employee: 'Carlos Mendoza',
-    position: 'IT Officer II',
-    requestedTraining: 'Cloud Infrastructure Operations',
-    department: 'MIS Office',
-    dateRequested: 'Mar 11, 2026',
-    status: 'rejected' as RequestStatus,
-  },
-  {
-    id: 'TR-1004',
-    employee: 'Sofia Ramirez',
-    position: 'Municipal Budget Officer',
-    requestedTraining: 'Public Finance Analytics',
-    department: 'Budget Office',
-    dateRequested: 'Mar 12, 2026',
-    status: 'approved' as RequestStatus,
-  },
-];
+const trainingRequests = [];
 
-const topPrograms = [
-  { id: 'TP-01', title: 'Leadership Essentials', rating: 4.9, completionRate: 93, participants: 210 },
-  { id: 'TP-02', title: 'Technical Skills Upskilling', rating: 4.8, completionRate: 89, participants: 178 },
-  { id: 'TP-03', title: 'Workplace Communication Mastery', rating: 4.7, completionRate: 91, participants: 165 },
-];
+const topPrograms = [];
 
-const monthlyTrainingData = [
-  { name: 'Week 1', Leadership: 10, Technical: 16, SoftSkills: 9, Compliance: 12 },
-  { name: 'Week 2', Leadership: 14, Technical: 18, SoftSkills: 11, Compliance: 13 },
-  { name: 'Week 3', Leadership: 12, Technical: 20, SoftSkills: 15, Compliance: 14 },
-  { name: 'Week 4', Leadership: 18, Technical: 22, SoftSkills: 17, Compliance: 16 },
-];
+const monthlyTrainingData = [];
 
 const LND_MENU: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', sublabel: 'Overview and KPIs', icon: LayoutDashboard },
@@ -408,6 +354,9 @@ const documentTypes = [
 ];
 
 const LNDDocuments = () => {
+  // Sub-view: main documents list, or "Summary of Ratings (from PM)" page
+  const [showPMReports, setShowPMReports] = useState(false);
+
   // Individual request modal state
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [requestEmployee, setRequestEmployee] = useState<{ name: string; role: string; dept: string; initials: string } | null>(null);
@@ -518,6 +467,10 @@ const LNDDocuments = () => {
     { no: 5, initials: 'BL', name: 'Bautista, Lourdes S.', role: 'Database Administrator', dept: 'IT Department', docType: 'Position Description Form', dateReq: 'Feb 15, 2025', dateSub: '', status: 'Overdue', statusClass: 'border-red-200 bg-red-50 text-red-600', action: 'Request' as const, actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList },
   ];
 
+  if (showPMReports) {
+    return <PMReports onBack={() => setShowPMReports(false)} />;
+  }
+
   return (
     <>
       <div className="space-y-4 p-6 md:p-8">
@@ -534,9 +487,19 @@ const LNDDocuments = () => {
             <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Documents</h2>
             <p className="text-sm text-slate-500 mt-1">Request and track document submissions from employees, organized by department</p>
           </div>
-          <button type="button" onClick={openBulkRequestModal} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition shadow-sm">
-            <Plus className="h-4 w-4" /> New Request
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowPMReports(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+              title="View Summary of Ratings forwarded by Performance Management"
+            >
+              <FileText className="h-3.5 w-3.5" /> Summary of Ratings (PM)
+            </button>
+            <button type="button" onClick={openBulkRequestModal} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition shadow-sm">
+              <Plus className="h-4 w-4" /> New Request
+            </button>
+          </div>
         </div>
 
         {/* KPI Cards */}
