@@ -265,34 +265,6 @@ export const SummaryOfRatings = () => {
         <span className="text-sm text-slate-400 px-2">{filteredRecords.length} records</span>
       </div>
 
-      {/* 6 KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 print:grid-cols-6">
-        <div className="rounded-xl bg-slate-800 text-white p-4 shadow-sm flex flex-col items-center justify-center text-center">
-          <p className="text-3xl font-extrabold leading-none mb-1">{kpis.Total}</p>
-          <p className="text-xs font-semibold">Total Employees</p>
-        </div>
-        <div className="rounded-xl bg-yellow-400 text-yellow-900 p-4 shadow-sm flex flex-col items-center justify-center text-center">
-          <p className="text-3xl font-extrabold leading-none mb-1">{kpis.Outstanding}</p>
-          <p className="text-xs font-semibold">Outstanding</p>
-        </div>
-        <div className="rounded-xl bg-emerald-400 text-emerald-900 p-4 shadow-sm flex flex-col items-center justify-center text-center">
-          <p className="text-3xl font-extrabold leading-none mb-1">{kpis['Very Satisfactory']}</p>
-          <p className="text-xs font-semibold">Very Satisfactory</p>
-        </div>
-        <div className="rounded-xl bg-teal-400 text-teal-900 p-4 shadow-sm flex flex-col items-center justify-center text-center">
-          <p className="text-3xl font-extrabold leading-none mb-1">{kpis.Satisfactory}</p>
-          <p className="text-xs font-semibold">Satisfactory</p>
-        </div>
-        <div className="rounded-xl bg-red-300 text-red-900 p-4 shadow-sm flex flex-col items-center justify-center text-center">
-          <p className="text-3xl font-extrabold leading-none mb-1">{kpis.Unsatisfactory}</p>
-          <p className="text-xs font-semibold">Unsatisfactory</p>
-        </div>
-        <div className="rounded-xl bg-blue-300 text-blue-900 p-4 shadow-sm flex flex-col items-center justify-center text-center">
-          <p className="text-3xl font-extrabold leading-none mb-1">{kpis['Non-Submission']}</p>
-          <p className="text-xs font-semibold">Non-Submission</p>
-        </div>
-      </div>
-
       {/* Legend */}
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-center gap-2 mb-2">
