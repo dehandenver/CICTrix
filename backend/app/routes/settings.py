@@ -49,7 +49,7 @@ class UpdateLocalizationSettings(BaseModel):
 async def get_user_settings(user_id: str = Depends(get_current_user_id)):
     """Get current user's settings"""
     try:
-        response = await db.table("employee_settings").select("*").eq("employee_id", user_id).single().execute()
+        response = db.get_client().table("employee_settings").select("*").eq("employee_id", user_id).single().execute()
         if response.data:
             return UserSettingsResponse(**response.data)
         # Return defaults if no settings exist
@@ -86,8 +86,10 @@ async def update_notification_settings(
                 detail="No settings to update",
             )
 
-        response = await db.table("employee_settings").update(update_data).eq("employee_id", user_id).execute()
+        response = db.get_client().table("employee_settings").update(update_data).eq("employee_id", user_id).execute()
         return {"message": "Notification settings updated", "data": response.data}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -112,8 +114,10 @@ async def update_profile_settings(
                 detail="No settings to update",
             )
 
-        response = await db.table("employee_settings").update(update_data).eq("employee_id", user_id).execute()
+        response = db.get_client().table("employee_settings").update(update_data).eq("employee_id", user_id).execute()
         return {"message": "Profile settings updated", "data": response.data}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -138,8 +142,10 @@ async def update_appearance_settings(
                 detail="No settings to update",
             )
 
-        response = await db.table("employee_settings").update(update_data).eq("employee_id", user_id).execute()
+        response = db.get_client().table("employee_settings").update(update_data).eq("employee_id", user_id).execute()
         return {"message": "Appearance settings updated", "data": response.data}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -166,8 +172,10 @@ async def update_localization_settings(
                 detail="No settings to update",
             )
 
-        response = await db.table("employee_settings").update(update_data).eq("employee_id", user_id).execute()
+        response = db.get_client().table("employee_settings").update(update_data).eq("employee_id", user_id).execute()
         return {"message": "Localization settings updated", "data": response.data}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
