@@ -1,0 +1,1988 @@
+1:import {
+2:  AlertCircle,
+3:  AlertTriangle,
+4:  BarChart3,
+5:  Bell,
+6:  BookOpen,
+7:  Building2,
+8:  CalendarCheck2,
+9:  CalendarDays,
+10:  CheckCircle2,
+11:  ChevronDown,
+12:  ChevronLeft,
+13:  ChevronRight,
+14:  ChevronUp,
+15:  ClipboardList,
+16:  Clock,
+17:  Database,
+18:  Download,
+19:  Edit2,
+20:  Eye,
+21:  FileCheck2,
+22:  FileText,
+23:  Globe,
+24:  HelpCircle,
+25:  Info,
+26:  LayoutDashboard,
+27:  Mail,
+28:  MoreHorizontal,
+29:  Palette,
+30:  Plus,
+31:  Search,
+32:  Send,
+33:  Settings,
+34:  Shield,
+35:  SlidersHorizontal,
+36:  Trash2,
+37:  TrendingUp,
+38:  Upload,
+39:  User,
+40:  UserCircle2,
+41:  Users,
+42:  UsersRound,
+43:  X,
+44:  XCircle
+45:} from 'lucide-react';
+46:import { useEffect, useState } from 'react';
+47:import { Button } from '../../components/Button';
+48:import { Dialog } from '../../components/Dialog';
+49:import { Input } from '../../components/Input';
+50:import { LogoutConfirmPopover } from '../../components/LogoutConfirmPopover';
+51:import { Sidebar } from '../../components/Sidebar';
+52:import { supabase } from '../../lib/supabase';
+53:import '../../styles/admin.css';
+54:import { SummaryOfRatings } from './pm/SummaryOfRatings';
+55:
+56:
+57:interface EvaluationCycle {
+58:  id: number;
+59:  title: string;
+60:  start_date: string;
+61:  end_date: string;
+62:  status: 'Active' | 'Completed' | 'Planned';
+63:  created_at: string;
+64:}
+65:
+66:interface PerformanceStats {
+67:  activeCycle: string;
+68:  pendingReviews: number;
+69:}
+70:
+71:const FALLBACK_CYCLES: EvaluationCycle[] = [];
+72:
+73:export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: boolean }) => {
+74:  const [stats, setStats] = useState<PerformanceStats>({
+75:    activeCycle: 'None',
+76:    pendingReviews: 0
+77:  });
+78:  const [cycles, setCycles] = useState<EvaluationCycle[]>([]);
+79:  const [showCycleDialog, setShowCycleDialog] = useState(false);
+80:  const [editingCycle, setEditingCycle] = useState<EvaluationCycle | null>(null);
+81:  const [loading, setLoading] = useState(true);
+82:  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+83:  const [activeSection, setActiveSection] = useState<
+84:    'dashboard' | 'evaluation-status' | 'performance-reviews' | 'goals' | 'ipcr' | 'analytics' | 'reports' | 'settings'
+85:  >('dashboard');
+86:  const [newCycle, setNewCycle] = useState<{
+87:    title: string;
+88:    start_date: string;
+89:    end_date: string;
+90:    status: 'Active' | 'Completed' | 'Planned';
+91:  }>({
+92:    title: '',
+93:    start_date: '',
+94:    end_date: '',
+95:    status: 'Planned'
+96:  });
+97:
+98:  // Request Document modal state (individual employee requests)
+99:  const [showRequestModal, setShowRequestModal] = useState(false);
+100:  const [requestEmployee, setRequestEmployee] = useState<{ name: string; role: string; dept: string; initials: string } | null>(null);
+101:  const [requestDocType, setRequestDocType] = useState('');
+102:  const [requestDueDate, setRequestDueDate] = useState('');
+103:
+104:  const documentTypes = [
+105:    'NBI Clearance',
+106:    'Medical Certificate',
+107:    'SALN',
+108:    'Certificate of Training',
+109:    'Performance Evaluation Form',
+110:    'Updated Resume/CV',
+111:  ];
+112:
+113:  const openRequestModal = (employee?: { name: string; role: string; dept: string; initials: string }) => {
+114:    setRequestEmployee(employee || null);
+115:    setRequestDocType('');
+116:    setRequestDueDate('');
+117:    setShowRequestModal(true);
+118:  };
+119:
+120:  const closeRequestModal = () => {
+121:    setShowRequestModal(false);
+122:    setRequestEmployee(null);
+123:    setRequestDocType('');
+124:    setRequestDueDate('');
+125:  };
+126:
+127:  const handleSendRequest = () => {
+128:    if (!requestDocType || !requestDueDate) {
+129:      alert('Please select a document type and due date.');
+130:      return;
+131:    }
+132:    // TODO: integrate with Supabase to persist the request
+133:    alert(`Request sent for "${requestDocType}" due ${requestDueDate}${requestEmployee ? ` to ${requestEmployee.name}` : ''}.`);
+134:    closeRequestModal();
+135:  };
+136:
+137:  // Bulk Document Request modal state
+138:  const [showBulkRequestModal, setShowBulkRequestModal] = useState(false);
+139:  const [bulkDocName, setBulkDocName] = useState('');
+140:  const [bulkDescription, setBulkDescription] = useState('');
+141:  const [bulkDueDate, setBulkDueDate] = useState<Date | null>(null);
+142:  const [bulkCalendarMonth, setBulkCalendarMonth] = useState(new Date().getMonth());
+143:  const [bulkCalendarYear, setBulkCalendarYear] = useState(new Date().getFullYear());
+144:  const [bulkSendTo, setBulkSendTo] = useState<'all' | 'department' | 'selected'>('all');
+145:  const totalEmployees = 24;
+146:
+147:  const openBulkRequestModal = () => {
+148:    setBulkDocName('');
+149:    setBulkDescription('');
+150:    setBulkDueDate(null);
+151:    setBulkSendTo('all');
+152:    setBulkCalendarMonth(new Date().getMonth());
+153:    setBulkCalendarYear(new Date().getFullYear());
+154:    setShowBulkRequestModal(true);
+155:  };
+156:
+157:  const closeBulkRequestModal = () => {
+158:    setShowBulkRequestModal(false);
+159:  };
+160:
+161:  const handleBulkSendRequest = () => {
+162:    if (!bulkDocName || !bulkDescription || !bulkDueDate) {
+163:      alert('Please fill in all required fields.');
+164:      return;
+165:    }
+166:    // TODO: integrate with Supabase to persist the bulk request
+167:    alert(`Bulk request for "${bulkDocName}" sent to ${totalEmployees} employees, due ${bulkDueDate.toLocaleDateString()}.`);
+168:    closeBulkRequestModal();
+169:  };
+170:
+171:  const getCalendarDays = (month: number, year: number) => {
+172:    const firstDay = new Date(year, month, 1).getDay();
+173:    const daysInMonth = new Date(year, month + 1, 0).getDate();
+174:    const days: (number | null)[] = [];
+175:    for (let i = 0; i < firstDay; i++) days.push(null);
+176:    for (let d = 1; d <= daysInMonth; d++) days.push(d);
+177:    return days;
+178:  };
+179:
+180:  const handleCalendarPrev = () => {
+181:    if (bulkCalendarMonth === 0) {
+182:      setBulkCalendarMonth(11);
+183:      setBulkCalendarYear(bulkCalendarYear - 1);
+184:    } else {
+185:      setBulkCalendarMonth(bulkCalendarMonth - 1);
+186:    }
+187:  };
+188:
+189:  const handleCalendarNext = () => {
+190:    if (bulkCalendarMonth === 11) {
+191:      setBulkCalendarMonth(0);
+192:      setBulkCalendarYear(bulkCalendarYear + 1);
+193:    } else {
+194:      setBulkCalendarMonth(bulkCalendarMonth + 1);
+195:    }
+196:  };
+197:
+198:  const calendarMonthName = new Date(bulkCalendarYear, bulkCalendarMonth).toLocaleString('default', { month: 'long' });
+199:
+200:  const isDatePast = (day: number) => {
+201:    const today = new Date();
+202:    today.setHours(0, 0, 0, 0);
+203:    const check = new Date(bulkCalendarYear, bulkCalendarMonth, day);
+204:    return check < today;
+205:  };
+206:
+207:  // Pagination state for Performance Reviews table
+208:  const [reviewPage, setReviewPage] = useState(1);
+209:  const [reviewRowsPerPage, setReviewRowsPerPage] = useState(20);
+210:
+211:  const reviewsData: any[] = [];
+212:  const reviewTotalPages = Math.ceil(reviewsData.length / reviewRowsPerPage);
+213:  const reviewStartIdx = (reviewPage - 1) * reviewRowsPerPage;
+214:  const reviewPageData = reviewsData.slice(reviewStartIdx, reviewStartIdx + reviewRowsPerPage);
+215:
+216:  useEffect(() => {
+217:    fetchCycles();
+218:  }, []);
+219:
+220:  useEffect(() => {
+221:    calculateStats();
+222:  }, [cycles]);
+223:
+224:  const fetchCycles = async () => {
+225:    setLoading(true);
+226:    setErrorMessage(null);
+227:    try {
+228:      const { data, error } = await supabase
+229:        .from('performance_cycles')
+230:        .select('*')
+231:        .order('start_date', { ascending: false });
+232:
+233:      if (error) throw error;
+234:      const safeCycles = (Array.isArray(data) ? data : []).map((item: any, index: number) => ({
+235:        id: Number(item?.id ?? index + 1),
+236:        title: String(item?.title ?? `Cycle ${index + 1}`),
+237:        start_date: String(item?.start_date ?? ''),
+238:        end_date: String(item?.end_date ?? ''),
+239:        status: (item?.status === 'Active' || item?.status === 'Completed' ? item.status : 'Planned') as 'Active' | 'Completed' | 'Planned',
+240:        created_at: String(item?.created_at ?? new Date().toISOString()),
+241:      }));
+242:      setCycles(safeCycles);
+243:    } catch (error) {
+244:      console.error('Error fetching evaluation cycles:', error);
+245:      setCycles(FALLBACK_CYCLES);
+246:      setErrorMessage('Using local sample evaluation data (live source unavailable).');
+247:    } finally {
+248:      setLoading(false);
+249:    }
+250:  };
+251:
+252:  const calculateStats = () => {
+253:    const activeCycle = cycles.find(c => c.status === 'Active');
+254:    setStats({
+255:      activeCycle: activeCycle?.title || 'None',
+256:      pendingReviews: 12 // Dummy for now
+257:    });
+258:  };
+259:
+260:  const handleAddCycle = async () => {
+261:    if (!newCycle.title || !newCycle.start_date || !newCycle.end_date) {
+262:      alert('Please fill in all fields');
+263:      return;
+264:    }
+265:
+266:    try {
+267:      if (editingCycle) {
+268:        const { error } = await (supabase as any)
+269:          .from('performance_cycles')
+270:          .update(newCycle)
+271:          .eq('id', editingCycle.id);
+272:        if (error) throw error;
+273:      } else {
+274:        const { error } = await (supabase as any)
+275:          .from('performance_cycles')
+276:          .insert([newCycle]);
+277:        if (error) throw error;
+278:      }
+279:
+280:      await fetchCycles();
+281:      setShowCycleDialog(false);
+282:      setEditingCycle(null);
+283:      setNewCycle({ title: '', start_date: '', end_date: '', status: 'Planned' });
+284:    } catch (error) {
+285:      console.error('Error saving evaluation cycle:', error);
+286:      alert('Failed to save evaluation cycle');
+287:    }
+288:  };
+289:
+290:  const handleDeleteCycle = async (id: number) => {
+291:    if (!confirm('Are you sure you want to delete this evaluation cycle?')) return;
+292:
+293:    try {
+294:      const { error } = await supabase
+295:        .from('performance_cycles')
+296:        .delete()
+297:        .eq('id', id);
+298:      if (error) throw error;
+299:      await fetchCycles();
+300:    } catch (error) {
+301:      console.error('Error deleting evaluation cycle:', error);
+302:      alert('Failed to delete evaluation cycle');
+303:    }
+304:  };
+305:
+306:  const handleEditCycle = (cycle: EvaluationCycle) => {
+307:    setEditingCycle(cycle);
+308:    setNewCycle({
+309:      title: cycle.title,
+310:      start_date: cycle.start_date,
+311:      end_date: cycle.end_date,
+312:      status: cycle.status as 'Active' | 'Completed' | 'Planned'
+313:    });
+314:    setShowCycleDialog(true);
+315:  };
+316:
+317:  if (isDashboardView) {
+318:    const sideNavItems = [
+319:      { key: 'dashboard', label: 'Dashboard', subtitle: '', icon: LayoutDashboard },
+320:      { key: 'evaluation-status', label: 'Employee Evaluation Status', subtitle: 'Track progress', icon: ClipboardList },
+321:      { key: 'performance-reviews', label: 'Performance Reviews', subtitle: 'Upcoming reviews', icon: CalendarCheck2 },
+322:      { key: 'goals', label: 'DPCR', subtitle: 'Individual performance', icon: FileCheck2 },
+323:      { key: 'ipcr', label: 'Summary of Ratings', subtitle: 'IPCR ratings per dept', icon: BarChart3 },
+324:      { key: 'reports', label: 'Documents', subtitle: 'Document submissions', icon: FileText },
+325:      { key: 'analytics', label: 'Analytics', subtitle: 'Performance insights', icon: TrendingUp },
+326:      { key: 'settings', label: 'Settings', subtitle: '', icon: Settings },
+327:    ] as const;
+328:
+329:    return (
+330:      <div className="min-h-screen bg-slate-100 text-slate-800">
+331:        <header className="sticky top-0 z-40 border-b border-slate-200 bg-white shadow-sm print:hidden">
+332:          <div className="flex items-center justify-between px-6 py-3">
+333:            <div className="flex items-center gap-4">
+334:              <div className="h-10 w-10 rounded-xl bg-blue-600 text-white grid place-content-center text-lg font-bold">HR</div>
+335:              <div>
+336:                <h1 className="text-lg font-bold leading-none">Government HRIS</h1>
+337:                <p className="text-xs text-slate-500">Human Resource Information System</p>
+338:              </div>
+339:            </div>
+340:            <div className="flex items-center gap-4 text-slate-500">
+341:              <button className="rounded-full p-2 hover:bg-slate-100" type="button"><HelpCircle className="h-5 w-5" /></button>
+342:              <button className="rounded-full p-2 hover:bg-slate-100 relative" type="button">
+343:                <Bell className="h-5 w-5" />
+344:                <span className="absolute right-2 top-1 inline-block h-2 w-2 rounded-full bg-red-500" />
+345:              </button>
+346:              <div className="h-8 w-px bg-slate-200" />
+347:              <div className="flex items-center gap-3">
+348:                <div className="h-10 w-10 rounded-full bg-blue-600 text-white grid place-content-center">
+349:                  <UserCircle2 className="h-6 w-6" />
+350:                </div>
+351:                <div className="leading-tight">
+352:                  <p className="text-sm font-semibold text-slate-800">interviewer</p>
+353:                  <p className="text-xs text-slate-500">PM Division</p>
+354:                </div>
+355:              </div>
+356:              <LogoutConfirmPopover />
+357:            </div>
+358:          </div>
+359:        </header>
+360:
+361:        <div className="flex">
+362:          <aside className="w-64 shrink-0 border-r border-slate-200 bg-white px-3 py-4 min-h-[calc(100vh-70px)] print:hidden">
+363:            <nav className="space-y-1.5">
+364:              {sideNavItems.map((item) => {
+365:                const Icon = item.icon;
+366:                const isActive = activeSection === item.key;
+367:                return (
+368:                  <button
+369:                    type="button"
+370:                    key={item.key}
+371:                    onClick={() => setActiveSection(item.key)}
+372:                    className={`w-full rounded-lg px-3 py-2.5 text-left transition ${isActive ? 'bg-blue-600 text-white shadow-md' : 'text-black hover:bg-slate-200'
+373:                      }`}
+374:                  >
+375:                    <div className="flex items-start gap-3">
+376:                      <Icon className={`mt-0.5 h-5 w-5 ${isActive ? 'text-white' : 'text-slate-600'}`} />
+377:                      <div>
+378:                        <p className={`text-sm font-semibold leading-tight ${isActive ? 'text-white' : 'text-black'}`}>{item.label}</p>
+379:                        {item.subtitle ? (
+380:                          <p className={`text-xs ${isActive ? 'text-blue-100' : 'text-black'}`}>{item.subtitle}</p>
+381:                        ) : null}
+382:                      </div>
+383:                    </div>
+384:                  </button>
+385:                );
+386:              })}
+387:            </nav>
+388:          </aside>
+389:
+390:          <main className="flex-1 p-6">
+391:            {activeSection === 'dashboard' && (
+392:              <>
+393:                {/* ── Header Area ── */}
+394:                <div className="flex items-center justify-between mb-1">
+395:                  <p className="text-sm text-blue-600 font-medium">Performance Management <span className="mx-1 text-slate-400">&gt;</span> <span className="text-slate-500">Dashboard</span></p>
+396:                  <button type="button" className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition">
+397:                    <Clock className="h-4 w-4" /> How to Navigate
+398:                  </button>
+399:                </div>
+400:                <h2 className="text-2xl font-bold text-slate-900 tracking-tight">PM Dashboard</h2>
+401:                <p className="text-sm text-slate-500 mt-0.5">Performance evaluation overview — FY 2025</p>
+402:
+403:                {errorMessage && (
+404:                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+405:                    {errorMessage}
+406:                  </div>
+407:                )}
+408:
+409:                {/* ── KPI Cards Row ── */}
+410:                <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+411:                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+412:                    <div className="flex items-center gap-2 mb-1">
+413:                      <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+414:                      <p className="text-xs font-medium text-slate-500">Completed Evaluations</p>
+415:                    </div>
+416:                    <p className="text-3xl font-extrabold text-slate-900 leading-none">142</p>
+417:                    <p className="text-xs text-slate-400 mt-1">FY 2025 total</p>
+418:                  </div>
+419:                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+420:                    <div className="flex items-center gap-2 mb-1">
+421:                      <AlertCircle className="h-4 w-4 text-red-500" />
+422:                      <p className="text-xs font-medium text-slate-500">Pending IPCR Reviews</p>
+423:                    </div>
+424:                    <p className="text-3xl font-extrabold text-orange-500 leading-none">24</p>
+425:                    <p className="text-xs text-slate-400 mt-1">Awaiting validation</p>
+426:                  </div>
+427:                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+428:                    <div className="flex items-center gap-2 mb-1">
+429:                      <AlertTriangle className="h-4 w-4 text-amber-500" />
+430:                      <p className="text-xs font-medium text-slate-500">Urgent Training Approvals</p>
+431:                    </div>
+432:                    <p className="text-3xl font-extrabold text-slate-900 leading-none">7</p>
+433:                    <p className="text-xs text-slate-400 mt-1">Due within 3 days</p>
+434:                  </div>
+435:                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+436:                    <div className="flex items-center gap-2 mb-1">
+437:                      <Users className="h-4 w-4 text-blue-500" />
+438:                      <p className="text-xs font-medium text-slate-500">Expiring Certifications</p>
+439:                    </div>
+440:                    <p className="text-3xl font-extrabold text-slate-900 leading-none">12</p>
+441:                    <p className="text-xs text-slate-400 mt-1">Next 30 days</p>
+442:                  </div>
+443:                </div>
+444:
+445:                {/* ── Middle Section (60/40) ── */}
+446:                <div className="mt-6 grid grid-cols-1 xl:grid-cols-5 gap-6">
+447:                  {/* Left – Action Required Queue (60%) */}
+448:                  <section className="xl:col-span-3 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+449:                    <header className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+450:                      <div className="flex items-center gap-2.5">
+451:                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-orange-400" />
+452:                        <h3 className="text-sm font-bold text-slate-800">Action Required Queue</h3>
+453:                        <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">4 pending</span>
+454:                      </div>
+455:                      <button type="button" className="text-xs font-medium text-blue-600 hover:underline">View all</button>
+456:                    </header>
+457:                    {/* Column headers */}
+458:                    <div className="grid grid-cols-12 items-center gap-2 px-5 py-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-50">
+459:                      <div className="col-span-3">Employee</div>
+460:                      <div className="col-span-3">Department</div>
+461:                      <div className="col-span-3">Request Type</div>
+462:                      <div className="col-span-3 text-right">Action</div>
+463:                    </div>
+464:                    <div className="divide-y divide-slate-100">
+465:                      {[
+466:                        { name: 'Elena Mercado', dept: 'Finance', type: 'IPCR Validation', typeColor: 'bg-emerald-100 text-emerald-700' },
+467:                        { name: 'Jose Reyes', dept: 'IT Department', type: 'Performance Evaluation', typeColor: 'bg-emerald-100 text-emerald-700' },
+468:                        { name: 'Carmen Diaz', dept: 'IT Department', type: 'IPCR Validation', typeColor: 'bg-emerald-100 text-emerald-700' },
+469:                        { name: 'Ricardo Lim', dept: 'Finance', type: 'Rating Dispute', typeColor: 'bg-slate-100 text-slate-600' },
+470:                      ].map((row) => (
+471:                        <div key={row.name} className="grid grid-cols-12 items-center gap-2 px-5 py-3.5 text-sm hover:bg-slate-50/60 transition">
+472:                          <div className="col-span-3 font-semibold text-slate-800">{row.name}</div>
+473:                          <div className="col-span-3 text-slate-500">{row.dept}</div>
+474:                          <div className="col-span-3">
+475:                            <span className={`inline-block rounded-full px-3 py-0.5 text-xs font-semibold ${row.typeColor}`}>{row.type}</span>
+476:                          </div>
+477:                          <div className="col-span-3 text-right">
+478:                            <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition">
+479:                              Review <span className="text-slate-400">&gt;</span>
+480:                            </button>
+481:                          </div>
+482:                        </div>
+483:                      ))}
+484:                    </div>
+485:                  </section>
+486:
+487:                  {/* Right – Performance Distribution Donut (40%) */}
+488:                  <section className="xl:col-span-2 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+489:                    <div className="flex items-center justify-between mb-4">
+490:                      <div className="flex items-center gap-2">
+491:                        <TrendingUp className="h-4 w-4 text-slate-500" />
+492:                        <h3 className="text-sm font-bold text-slate-800">Performance Distribution</h3>
+493:                      </div>
+494:                      <span className="text-xs text-slate-400">Q3 2025</span>
+495:                    </div>
+496:                    <div className="flex flex-col items-center">
+497:                      {/* SVG Donut Chart – 5 segments: 70+76+30+7+2 = 185, circumference=289 */}
+498:                      <svg viewBox="0 0 120 120" className="w-44 h-44">
+499:                        {/* Outstanding green: 70/185 = 37.8% → 109 */}
+500:                        <circle cx="60" cy="60" r="46" fill="none" stroke="#22c55e" strokeWidth="18"
+501:                          strokeDasharray="109 289" strokeDashoffset="0"
+502:                          transform="rotate(-90 60 60)" />
+503:                        {/* Very Satisfactory blue: 76/185 = 41.1% → 119 */}
+504:                        <circle cx="60" cy="60" r="46" fill="none" stroke="#3b82f6" strokeWidth="18"
+505:                          strokeDasharray="119 289" strokeDashoffset="-109"
+506:                          transform="rotate(-90 60 60)" />
+507:                        {/* Satisfactory yellow: 30/185 = 16.2% → 47 */}
+508:                        <circle cx="60" cy="60" r="46" fill="none" stroke="#eab308" strokeWidth="18"
+509:                          strokeDasharray="47 289" strokeDashoffset="-228"
+510:                          transform="rotate(-90 60 60)" />
+511:                        {/* Unsatisfactory orange: 7/185 = 3.8% → 11 */}
+512:                        <circle cx="60" cy="60" r="46" fill="none" stroke="#f97316" strokeWidth="18"
+513:                          strokeDasharray="11 289" strokeDashoffset="-275"
+514:                          transform="rotate(-90 60 60)" />
+515:                        {/* Poor red: 2/185 = 1.1% → 3 */}
+516:                        <circle cx="60" cy="60" r="46" fill="none" stroke="#ef4444" strokeWidth="18"
+517:                          strokeDasharray="3 289" strokeDashoffset="-286"
+518:                          transform="rotate(-90 60 60)" />
+519:                        <text x="60" y="56" textAnchor="middle" fill="#1e293b" fontSize="22" fontWeight="700">185</text>
+520:                        <text x="60" y="72" textAnchor="middle" fill="#94a3b8" fontSize="9" fontWeight="500">Evaluated</text>
+521:                      </svg>
+522:                      {/* Legend */}
+523:                      <div className="mt-4 w-full space-y-1.5">
+524:                        {[
+525:                          { label: 'Outstanding', value: 70, color: '#22c55e' },
+526:                          { label: 'Very Satisfactory', value: 76, color: '#3b82f6' },
+527:                          { label: 'Satisfactory', value: 30, color: '#eab308' },
+528:                          { label: 'Unsatisfactory', value: 7, color: '#f97316' },
+529:                          { label: 'Poor', value: 2, color: '#ef4444' },
+530:                        ].map((item) => (
+531:                          <div key={item.label} className="flex items-center justify-between text-xs">
+532:                            <div className="flex items-center gap-2">
+533:                              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+534:                              <span className="text-slate-600">{item.label}</span>
+535:                            </div>
+536:                            <span className="font-semibold text-slate-800">{item.value}</span>
+537:                          </div>
+538:                        ))}
+539:                      </div>
+540:                    </div>
+541:                  </section>
+542:                </div>
+543:
+544:                {/* ── Bottom Section (50/50) ── */}
+545:                <div className="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-6">
+546:                  <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+547:                    <header className="px-5 py-3.5 border-b border-slate-100">
+548:                      <div className="flex items-center gap-2">
+549:                        <Users className="h-4 w-4 text-slate-500" />
+550:                        <h3 className="text-sm font-bold text-slate-800">Competency & Succession Watchlist</h3>
+551:                      </div>
+552:                    </header>
+553:                    <div className="p-5 space-y-6">
+554:                      <div>
+555:                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Skill Gap Alerts by Department</p>
+556:                        <div className="space-y-3">
+557:                          {[
+558:                            { dept: 'Finance', value: 72 },
+559:                            { dept: 'IT Dept', value: 58 },
+560:                            { dept: 'Admin', value: 45 },
+561:                            { dept: 'HR Dept', value: 38 },
+562:                            { dept: 'Engineering', value: 25 },
+563:                          ].map((d) => (
+564:                            <div key={d.dept} className="flex items-center gap-3 text-xs">
+565:                              <span className="w-20 text-slate-600 shrink-0">{d.dept}</span>
+566:                              <div className="flex-1 h-2.5 rounded-full bg-slate-100">
+567:                                <div className="h-2.5 rounded-full bg-blue-500" style={{ width: `${d.value}%` }} />
+568:                              </div>
+569:                              <span className="w-8 text-right font-semibold text-slate-700">{d.value}%</span>
+570:                            </div>
+571:                          ))}
+572:                        </div>
+573:                      </div>
+574:                      <div>
+575:                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Upcoming Retirements (Next 12 Months)</p>
+576:                        <div className="divide-y divide-slate-100">
+577:                          {[
+578:                            { name: 'Alfredo Santos', role: 'Director III', date: 'Aug 2025', dateColor: 'bg-orange-100 text-orange-700' },
+579:                            { name: 'Lourdes Castillo', role: 'Admin Officer V', date: 'Nov 2025', dateColor: 'bg-orange-100 text-orange-700' },
+580:                            { name: 'Eduardo Ramos', role: 'Senior Budget Analyst', date: 'Feb 2026', dateColor: 'bg-emerald-100 text-emerald-700' },
+581:                          ].map((r) => (
+582:                            <div key={r.name} className="flex items-center justify-between py-2.5 text-xs">
+583:                              <div>
+584:                                <p className="font-semibold text-slate-800">{r.name}</p>
+585:                                <p className="text-slate-400">{r.role}</p>
+586:                              </div>
+587:                              <span className={`rounded-full px-3 py-0.5 text-[11px] font-semibold ${r.dateColor}`}>{r.date}</span>
+588:                            </div>
+589:                          ))}
+590:                        </div>
+591:                      </div>
+592:                    </div>
+593:                  </section>
+594:
+595:                  <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+596:                    <header className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+597:                      <div className="flex items-center gap-2">
+598:                        <BookOpen className="h-4 w-4 text-slate-500" />
+599:                        <h3 className="text-sm font-bold text-slate-800">IPCR Submissions</h3>
+600:                      </div>
+601:                      <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">6 total</span>
+602:                    </header>
+603:                    <div className="overflow-x-auto">
+604:                      <table className="w-full text-xs">
+605:                        <thead>
+606:                          <tr className="bg-slate-50/80 text-left">
+607:                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Employee</th>
+608:                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Dept.</th>
+609:                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Period</th>
+610:                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Rating</th>
+611:                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Status</th>
+612:                            <th className="px-4 py-2.5"></th>
+613:                          </tr>
+614:                        </thead>
+615:                        <tbody className="divide-y divide-slate-100">
+616:                          {[
+617:                            { name: 'Maria Santos', position: 'IT Officer II', dept: 'IT Department', period: 'Q1 2025', rating: '4.66', status: 'Approved', statusColor: 'bg-emerald-100 text-emerald-700' },
+618:                            { name: 'Carlos Mendoza', position: 'Accountant II', dept: 'Finance', period: 'Q1 2025', rating: '4.50', status: 'Approved', statusColor: 'bg-emerald-100 text-emerald-700' },
+619:                            { name: 'Juan dela Cruz', position: 'HR Officer I', dept: 'HR Dept', period: 'Q2 2025', rating: '4.20', status: 'Under Review', statusColor: 'bg-orange-100 text-orange-700' },
+620:                            { name: 'Ana Reyes', position: 'Admin Officer III', dept: 'Admin', period: 'Q2 2025', rating: '3.80', status: 'Submitted', statusColor: 'bg-blue-100 text-blue-700' },
+621:                            { name: 'Roberto Cruz', position: 'Systems Analyst', dept: 'IT Department', period: 'Q1 2025', rating: '4.50', status: 'Approved', statusColor: 'bg-emerald-100 text-emerald-700' },
+622:                          ].map((row) => (
+623:                            <tr key={row.name + row.period} className="hover:bg-slate-50/60 transition">
+624:                              <td className="px-4 py-3">
+625:                                <p className="font-semibold text-slate-800">{row.name}</p>
+626:                                <p className="text-slate-400">{row.position}</p>
+627:                              </td>
+628:                              <td className="px-4 py-3 text-slate-500">{row.dept}</td>
+629:                              <td className="px-4 py-3 text-slate-500">{row.period}</td>
+630:                              <td className="px-4 py-3">
+631:                                <span className="inline-block rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">{row.rating}</span>
+632:                              </td>
+633:                              <td className="px-4 py-3">
+634:                                <span className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${row.statusColor}`}>
+635:                                  {row.status}
+636:                                </span>
+637:                              </td>
+638:                              <td className="px-4 py-3 text-center">
+639:                                <button type="button" className="rounded-md p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition" title="View">
+640:                                  <Eye className="h-4 w-4" />
+641:                                </button>
+642:                              </td>
+643:                            </tr>
+644:                          ))}
+645:                        </tbody>
+646:                      </table>
+647:                    </div>
+648:                  </section>
+649:                </div>
+650:              </>
+651:            )}
+652:
+653:            {activeSection === 'evaluation-status' && (
+654:              <>
+655:                {/* Header */}
+656:                <div className="flex items-center justify-between mb-1">
+657:                  <p className="text-sm text-blue-600 font-medium">Performance Management <span className="mx-1 text-slate-400">&gt;</span> <span className="text-slate-500">Employee Evaluation Status</span></p>
+658:                  <button type="button" className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition">
+659:                    <CalendarDays className="h-4 w-4" /> Jan – Jun 2025 (1st Semester) <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
+660:                  </button>
+661:                </div>
+662:                <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Employee Evaluation Status</h2>
+663:                <p className="text-sm text-slate-500 mt-0.5">Track the complete progress of performance evaluations across your organization</p>
+664:
+665:                {/* 5 KPI Cards */}
+666:                <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+667:                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+668:                    <p className="text-xs text-slate-500 mb-1">Overall Completion</p>
+669:                    <div className="flex items-center gap-2.5">
+670:                      <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-blue-100"><BarChart3 className="h-5 w-5 text-blue-600" /></span>
+671:                      <div><p className="text-2xl font-extrabold text-slate-900 leading-none">51%</p><p className="text-xs text-slate-400 mt-0.5">of 35 employees</p></div>
+672:                    </div>
+673:                  </div>
+674:                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+675:                    <p className="text-xs text-slate-500 mb-1">Approved</p>
+676:                    <div className="flex items-center gap-2.5">
+677:                      <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-emerald-100"><CheckCircle2 className="h-5 w-5 text-emerald-600" /></span>
+678:                      <div><p className="text-2xl font-extrabold text-emerald-600 leading-none">18</p><p className="text-xs text-slate-400 mt-0.5">Fully completed</p></div>
+679:                    </div>
+680:                  </div>
+681:                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+682:                    <p className="text-xs text-slate-500 mb-1">In Progress</p>
+683:                    <div className="flex items-center gap-2.5">
+684:                      <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-orange-100"><Clock className="h-5 w-5 text-orange-500" /></span>
+685:                      <div><p className="text-2xl font-extrabold text-orange-500 leading-none">13</p><p className="text-xs text-slate-400 mt-0.5">Under supervisor review</p></div>
+686:                    </div>
+687:                  </div>
+688:                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+689:                    <p className="text-xs text-slate-500 mb-1">Planning</p>
+690:                    <div className="flex items-center gap-2.5">
+691:                      <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-blue-100"><SlidersHorizontal className="h-5 w-5 text-blue-600" /></span>
+692:                      <div><p className="text-2xl font-extrabold text-slate-900 leading-none">3</p><p className="text-xs text-slate-400 mt-0.5">Self-evaluation stage</p></div>
+693:                    </div>
+694:                  </div>
+695:                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+696:                    <p className="text-xs text-slate-500 mb-1">Rejected</p>
+697:                    <div className="flex items-center gap-2.5">
+698:                      <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-red-100"><XCircle className="h-5 w-5 text-red-500" /></span>
+699:                      <div><p className="text-2xl font-extrabold text-red-500 leading-none">1</p><p className="text-xs text-slate-400 mt-0.5">Requires resubmission</p></div>
+700:                    </div>
+701:                  </div>
+702:                </div>
+703:
+704:                {/* Stacked Bar Chart */}
+705:                <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+706:                  <div className="flex items-center justify-between mb-5">
+707:                    <h3 className="text-sm font-bold text-slate-800">Evaluation Completion by Department</h3>
+708:                    <span className="text-xs text-slate-400">Jan – Jun 2025 (1st Semester)</span>
+709:                  </div>
+710:                  <svg viewBox="0 0 500 220" className="w-full" style={{ maxHeight: 260 }}>
+711:                    {/* Y-axis labels & gridlines */}
+712:                    {[0, 2, 4, 6, 8, 10].map((v) => {
+713:                      const y = 180 - (v / 10) * 170;
+714:                      return (
+715:                        <g key={v}>
+716:                          <text x="20" y={y + 3} textAnchor="end" fontSize="10" fill="#94a3b8">{v}</text>
+717:                          <line x1="28" y1={y} x2="490" y2={y} stroke="#e2e8f0" strokeWidth="0.5" />
+718:                        </g>
+719:                      );
+720:                    })}
+721:                    {/* Bars */}
+722:                    {[
+723:                      { dept: 'Finance', approved: 6, review: 2, self: 1, planning: 1, rejected: 0 },
+724:                      { dept: 'IT Dept', approved: 4, review: 3, self: 1, planning: 1, rejected: 0 },
+725:                      { dept: 'HR', dept2: 'Department', approved: 5, review: 2, self: 1, planning: 0, rejected: 0 },
+726:                      { dept: 'Admin', dept2: 'Services', approved: 5, review: 2, self: 1, planning: 1, rejected: 0 },
+727:                      { dept: 'Engineering', approved: 3, review: 1, self: 1, planning: 0, rejected: 1 },
+728:                    ].map((d, i) => {
+729:                      const x = 55 + i * 92;
+730:                      const bw = 42;
+731:                      const unitH = 17;
+732:                      const baseY = 180;
+733:                      let cy = baseY;
+734:                      const segments = [
+735:                        { val: d.approved, color: '#22c55e' },
+736:                        { val: d.review, color: '#fb923c' },
+737:                        { val: d.self, color: '#22d3ee' },
+738:                        { val: d.planning, color: '#2563eb' },
+739:                        { val: d.rejected, color: '#ef4444' },
+740:                      ];
+741:                      return (
+742:                        <g key={d.dept}>
+743:                          {segments.map((seg, si) => {
+744:                            if (seg.val === 0) return null;
+745:                            const h = seg.val * unitH;
+746:                            cy -= h;
+747:                            return <rect key={si} x={x} y={cy} width={bw} height={h} fill={seg.color} rx={si === segments.length - 1 || (segments.slice(si + 1).every(s => s.val === 0)) ? 2 : 0} />;
+748:                          })}
+749:                          <text x={x + bw / 2} y={195} textAnchor="middle" fontSize="10" fill="#64748b">{d.dept}</text>
+750:                          {'dept2' in d && d.dept2 && <text x={x + bw / 2} y={206} textAnchor="middle" fontSize="10" fill="#64748b">{d.dept2 as string}</text>}
+751:                        </g>
+752:                      );
+753:                    })}
+754:                  </svg>
+755:                  {/* Legend */}
+756:                  <div className="flex items-center justify-center gap-5 mt-2 text-xs text-slate-600">
+757:                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500 inline-block" /> Approved</span>
+758:                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-orange-400 inline-block" /> Supervisor Review</span>
+759:                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-cyan-400 inline-block" /> Self Evaluation</span>
+760:                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-blue-600 inline-block" /> Planning</span>
+761:                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-red-500 inline-block" /> Rejected</span>
+762:                  </div>
+763:                </section>
+764:
+765:                {/* Employee Table */}
+766:                <section className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+767:                  {/* Toolbar */}
+768:                  <div className="flex items-center gap-4 px-5 py-2.5 border-b border-slate-100">
+769:                    <div className="relative flex-1 max-w-sm">
+770:                      <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+771:                      <input className="w-full rounded-lg border border-slate-300 pl-10 pr-4 py-1.5 text-sm" placeholder="Search by name or position..." />
+772:                    </div>
+773:                    <select className="rounded-lg border border-slate-300 px-4 py-1.5 text-sm text-slate-600"><option>All Departments</option></select>
+774:                    <select className="rounded-lg border border-slate-300 px-4 py-1.5 text-sm text-slate-600"><option>All Statuses</option></select>
+775:                    <div className="flex-1" />
+776:                    <button type="button" className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-slate-50 px-4 py-1.5 text-sm font-medium text-slate-400 cursor-default">Bulk Actions <ChevronDown className="h-3.5 w-3.5" /></button>
+777:                  </div>
+778:
+779:                  {/* Column headers */}
+780:                  <div className="grid grid-cols-12 items-center px-5 py-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+781:                    <div className="col-span-1 flex items-center gap-2"><input type="checkbox" className="rounded border-slate-300 h-4 w-4" /><span className="text-blue-600 normal-case text-xs font-medium">Showing 1–10 of 35 employees</span></div>
+782:                    <div className="col-span-6 pl-10">Employee</div>
+783:                    <div className="col-span-3">Status</div>
+784:                    <div className="col-span-2 text-right">Actions</div>
+785:                  </div>
+786:
+787:                  {/* Department groups */}
+788:                  {[
+789:                    {
+790:                      dept: 'Finance', count: 9, pct: 56, approved: 5, review: 2, self: 1, planning: 1,
+791:                      employees: [
+792:                        { name: 'Carlos Mendoza', position: 'Accountant II', status: 'Approved' },
+793:                        { name: 'Elena Mercado', position: 'Budget Officer III', status: 'Approved' },
+794:                        { name: 'Miguel Santos', position: 'Finance Officer II', status: 'Approved' },
+795:                        { name: 'Diana Cruz', position: 'Accountant I', status: 'Approved' },
+796:                        { name: 'Patricia Ramos', position: 'Budget Analyst', status: 'Approved' },
+797:                        { name: 'Ricardo Lim', position: 'Finance Officer I', status: 'Supervisor Review' },
+798:                      ],
+799:                    },
+800:                    {
+801:                      dept: 'IT Department', count: 7, pct: 50, approved: 3, review: 2, self: 1, planning: 1,
+802:                      employees: [
+803:                        { name: 'Roberto Cruz', position: 'Systems Analyst', status: 'Approved' },
+804:                        { name: 'Kevin Tan', position: 'Database Administrator', status: 'Approved' },
+805:                        { name: 'Angela Lim', position: 'Web Developer', status: 'Approved' },
+806:                        { name: 'Jose Reyes', position: 'IT Support Specialist', status: 'Supervisor Review' },
+807:                        { name: 'Carmen Diaz', position: 'Network Administrator', status: 'Supervisor Review' },
+808:                      ],
+809:                    },
+810:                  ].map((group) => (
+811:                    <div key={group.dept} className="border-b border-slate-100">
+812:                      {/* Group header */}
+813:                      <div className="flex items-center gap-3 px-5 py-2.5 bg-slate-50/50 border-b border-slate-100">
+814:                        <input type="checkbox" className="rounded border-slate-300 h-4 w-4" />
+815:                        <span className="font-bold text-sm text-slate-800">{group.dept}</span>
+816:                        <span className="text-xs text-slate-400">{group.count} employees</span>
+817:                        <div className="flex-1 flex items-center gap-3 ml-4">
+818:                          <div className="w-24 h-2 rounded-full bg-slate-200 overflow-hidden"><div className="h-full rounded-full bg-amber-400" style={{ width: `${group.pct}%` }} /></div>
+819:                          <span className="text-xs font-semibold text-emerald-600">{group.pct}% Complete</span>
+820:                          <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">{group.approved} Approved</span>
+821:                          {group.review > 0 && <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-[11px] font-semibold text-orange-700">{group.review} Supervisor Review</span>}
+822:                          {group.self > 0 && <span className="rounded-full bg-cyan-100 px-2.5 py-0.5 text-[11px] font-semibold text-cyan-700">{group.self} Self Evaluation</span>}
+823:                          {group.planning > 0 && <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">{group.planning} Planning</span>}
+824:                        </div>
+825:                        <ChevronUp className="h-4 w-4 text-slate-400" />
+826:                      </div>
+827:                      {/* Employee rows */}
+828:                      {group.employees.map((emp) => {
+829:                        const statusColors: Record<string, string> = { 'Approved': 'bg-emerald-100 text-emerald-700', 'Supervisor Review': 'bg-orange-100 text-orange-700', 'Self Evaluation': 'bg-cyan-100 text-cyan-700', 'Planning': 'bg-blue-100 text-blue-700', 'Rejected': 'bg-red-100 text-red-700' };
+830:                        const dotColors: Record<string, string> = { 'Approved': 'bg-emerald-500', 'Supervisor Review': 'bg-orange-500', 'Self Evaluation': 'bg-cyan-500', 'Planning': 'bg-blue-600', 'Rejected': 'bg-red-500' };
+831:                        const initials = emp.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+832:
+833:                        return (
+834:                          <div key={emp.name} className="grid grid-cols-12 items-start px-5 py-2.5 text-sm hover:bg-slate-50/60 transition border-b border-slate-50 last:border-b-0">
+835:                            <div className="col-span-1 pt-2"><input type="checkbox" className="rounded border-slate-300 h-4 w-4" /></div>
+836:                            <div className="col-span-6 flex items-start gap-3 pl-2">
+837:                              <span className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-[11px] font-bold text-blue-600 shrink-0">
+838:                                {initials}
+839:                              </span>
+840:                              <div className="flex flex-col pt-1.5">
+841:                                <p className="font-semibold text-slate-800 leading-none">{emp.name}</p>
+842:                                <p className="text-[11px] text-slate-500 mt-1">{emp.position}</p>
+843:                              </div>
+844:                            </div>
+845:                            <div className="col-span-3 pt-1.5"><span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-0.5 text-xs font-semibold ${statusColors[emp.status]}`}><span className={`h-1.5 w-1.5 rounded-full ${dotColors[emp.status]}`} />{emp.status}</span></div>
+846:                            <div className="col-span-2 flex items-center justify-end gap-2 pt-1.5">
+847:                              <button type="button" className="p-1 text-slate-400 hover:text-blue-600 transition" title="View"><Eye className="h-4 w-4" /></button>
+848:                              <button type="button" className="p-1 text-slate-400 hover:text-slate-600 transition"><MoreHorizontal className="h-4 w-4" /></button>
+849:                            </div>
+850:                          </div>
+851:                        );
+852:                      })}
+853:                    </div>
+854:                  ))}
+855:
+856:                  {/* Footer */}
+857:                  <div className="px-5 py-2.5 border-t border-slate-100 flex items-center justify-between">
+858:                    <div className="flex items-center gap-4 text-xs text-slate-600">
+859:                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Approved: 18</span>
+860:                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-orange-400" /> Supervisor Review: 8</span>
+861:                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-cyan-400" /> Self Evaluation: 5</span>
+862:                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-blue-600" /> Planning: 3</span>
+863:                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-red-500" /> Rejected: 1</span>
+864:                    </div>
+865:                    <div className="flex items-center gap-3 text-xs text-slate-500">
+866:                      <span>Rows per page:</span>
+867:                      <span className="flex items-center gap-1">{[10, 20, 30].map(n => <button key={n} type="button" className={`h-6 w-7 rounded ${n === 10 ? 'bg-blue-600 text-white font-semibold' : 'bg-slate-100 text-slate-600'} text-xs`}>{n}</button>)}</span>
+868:                      <span>1–10 of 35</span>
+869:                      <span className="flex items-center gap-1">
+870:                        {[1, 2, 3, 4].map(n => <button key={n} type="button" className={`h-6 w-6 rounded ${n === 1 ? 'bg-blue-600 text-white font-semibold' : 'bg-slate-100 text-slate-600'} text-xs`}>{n}</button>)}
+871:                        <button type="button" className="h-6 w-6 rounded bg-slate-100 text-slate-600 text-xs">&gt;</button>
+872:                      </span>
+873:                    </div>
+874:                  </div>
+875:                </section>
+876:              </>
+877:            )}
+878:
+879:            {activeSection === 'performance-reviews' && (
+880:              <>
+881:                {/* Header */}
+882:                <div className="mb-1">
+883:                  <p className="text-sm text-blue-600 font-medium">Performance Management <span className="mx-1 text-slate-400">&gt;</span> <span className="text-slate-500">Performance Reviews</span></p>
+884:                </div>
+885:                <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Completed Performance Reviews</h2>
+886:                <p className="text-sm text-slate-500 mt-0.5">Archive of all finalized evaluation records across the organization</p>
+887:
+888:                {/* Toolbar */}
+889:                <div className="mt-5 flex items-center gap-4">
+890:                  <div className="relative flex-1 max-w-lg">
+891:                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+892:                    <input className="w-full rounded-lg border border-slate-300 pl-10 pr-4 py-2 text-sm" placeholder="Search employee by name, ID, or department..." />
+893:                  </div>
+894:                  <select className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600"><option>All Departments</option></select>
+895:                  <button type="button" className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition shadow-sm">
+896:                    <Download className="h-4 w-4" /> Export CSV / Excel
+897:                  </button>
+898:                </div>
+899:
+900:                {/* Table */}
+901:                <section className="mt-5 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+902:                  {/* Record count */}
+903:                  <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+904:                    <span className="text-sm text-slate-700"><span className="font-bold">142</span> Records Found</span>
+905:                    <span className="text-xs text-slate-400 italic">Jan 2024 – Feb 2025</span>
+906:                  </div>
+907:                  {/* Column headers */}
+908:                  <div className="grid grid-cols-12 items-center px-5 py-2.5 bg-slate-800 text-[11px] font-semibold text-white uppercase tracking-wider">
+909:                    <div className="col-span-2">Employee ↕</div>
+910:                    <div className="col-span-2">Position</div>
+911:                    <div className="col-span-2">Department ↕</div>
+912:                    <div className="col-span-2">Final Score (out of 5.0) ↕</div>
+913:                    <div className="col-span-2">Review Date ↓</div>
+914:                    <div className="col-span-2">Actions</div>
+915:                  </div>
+916:                  {/* Rows */}
+917:                  <div className="divide-y divide-slate-100">
+918:                    {reviewPageData.map((row) => {
+919:                      const ratingColor = row.rating === 'Outstanding' ? 'text-emerald-600' : row.rating === 'Very Satisfactory' ? 'text-blue-600' : 'text-orange-500';
+920:                      return (
+921:                        <div key={row.id} className="grid grid-cols-12 items-center px-5 py-3.5 text-sm hover:bg-slate-50/60 transition">
+922:                          <div className="col-span-2">
+923:                            <p className="font-semibold text-slate-800">{row.name}</p>
+924:                            <p className="text-xs text-slate-400">{row.id}</p>
+925:                          </div>
+926:                          <div className="col-span-2 text-slate-500">{row.pos}</div>
+927:                          <div className="col-span-2 text-slate-500">{row.dept}</div>
+928:                          <div className="col-span-2 flex items-center gap-2">
+929:                            <span className="font-bold text-slate-800">{row.score.toFixed(1)}</span>
+930:                            <span className={`text-xs font-medium ${ratingColor}`}>{row.rating}</span>
+931:                          </div>
+932:                          <div className="col-span-2 text-slate-500">{row.date}</div>
+933:                          <div className="col-span-2 flex items-center gap-3">
+934:                            <button type="button" className="text-xs font-semibold text-blue-600 hover:underline">View Review</button>
+935:                            <span className="text-slate-300">|</span>
+936:                            <button type="button" className="text-xs font-medium text-slate-400 hover:text-slate-600">Download IPCR</button>
+937:                          </div>
+938:                        </div>
+939:                      );
+940:                    })}
+941:                  </div>
+942:                  {/* Footer with functional pagination */}
+943:                  <div className="px-5 py-3.5 border-t border-slate-100 flex items-center justify-between">
+944:                    <span className="text-xs font-medium text-blue-600">
+945:                      Showing {reviewStartIdx + 1} – {Math.min(reviewStartIdx + reviewRowsPerPage, reviewsData.length)} of {reviewsData.length} records
+946:                    </span>
+947:                    <div className="flex items-center gap-3 text-xs text-slate-500">
+948:                      <span>Rows:</span>
+949:                      {[10, 20, 50].map(n => (
+950:                        <button key={n} type="button"
+951:                          onClick={() => { setReviewRowsPerPage(n); setReviewPage(1); }}
+952:                          className={`h-6 w-7 rounded ${n === reviewRowsPerPage ? 'bg-blue-600 text-white font-semibold' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'} text-xs transition`}
+953:                        >{n}</button>
+954:                      ))}
+955:                      <span className="ml-2 flex items-center gap-1">
+956:                        <button type="button" disabled={reviewPage === 1}
+957:                          onClick={() => setReviewPage(p => Math.max(1, p - 1))}
+958:                          className={`px-2 py-1 rounded border border-slate-200 text-xs transition ${reviewPage === 1 ? 'text-slate-300 cursor-default' : 'text-slate-600 hover:bg-slate-100'}`}
+959:                        >&lt; Previous</button>
+960:                        {Array.from({ length: reviewTotalPages }, (_, i) => i + 1).map(n => {
+961:                          if (reviewTotalPages <= 5 || n === 1 || n === reviewTotalPages || Math.abs(n - reviewPage) <= 1) {
+962:                            return (
+963:                              <button key={n} type="button" onClick={() => setReviewPage(n)}
+964:                                className={`h-6 w-6 rounded text-xs transition ${n === reviewPage ? 'bg-blue-600 text-white font-semibold' : 'border border-slate-200 text-slate-600 hover:bg-slate-100'}`}
+965:                              >{n}</button>
+966:                            );
+967:                          }
+968:                          if (n === 2 && reviewPage > 3) return <span key={n} className="text-slate-400">…</span>;
+969:                          if (n === reviewTotalPages - 1 && reviewPage < reviewTotalPages - 2) return <span key={n} className="text-slate-400">…</span>;
+970:                          return null;
+971:                        })}
+972:                        <button type="button" disabled={reviewPage === reviewTotalPages}
+973:                          onClick={() => setReviewPage(p => Math.min(reviewTotalPages, p + 1))}
+974:                          className={`px-2 py-1 rounded border border-slate-200 text-xs transition ${reviewPage === reviewTotalPages ? 'text-slate-300 cursor-default' : 'text-slate-600 hover:bg-slate-100'}`}
+975:                        >Next &gt;</button>
+976:                      </span>
+977:                    </div>
+978:                  </div>
+979:                </section>
+980:              </>
+981:            )}
+982:
+983:            {activeSection === 'goals' && (
+984:              <>
+985:                {/* Header */}
+986:                <div className="flex items-center justify-between mb-4">
+987:                  <div className="flex items-center gap-3">
+988:                    <button type="button" className="p-1 text-slate-400 hover:text-slate-600 transition"><ChevronLeft className="h-5 w-5" /></button>
+989:                    <div>
+990:                      <h2 className="text-2xl font-bold text-slate-900 tracking-tight">DPCR System</h2>
+991:                      <p className="text-sm text-slate-500">Departmental Performance Commitment and Review</p>
+992:                    </div>
+993:                  </div>
+994:                  <button type="button" className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition shadow-sm">
+995:                    <Plus className="h-4 w-4" /> New IPCR
+996:                  </button>
+997:                </div>
+998:                <div className="h-1 w-full bg-gradient-to-r from-blue-500 to-blue-300 rounded-full mb-6" />
+999:
+1000:                {/* Department IPCR Reports */}
+1001:                <h3 className="text-base font-bold text-slate-800 mb-1">Department IPCR Reports</h3>
+1002:                <p className="text-sm text-slate-500 mb-4">Click a department card to view its summary and individual employee IPCR forms</p>
+1003:
+1004:                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
+1005:                  {[
+1006:                    { dept: 'IT Department', count: 3, score: 4.20, rating: 'Very Satisfactory', hasData: true },
+1007:                    { dept: 'Finance Department', count: 2, score: 4.33, rating: 'Very Satisfactory', hasData: true },
+1008:                    { dept: 'HR Department', count: 0, score: 0, rating: '', hasData: false },
+1009:                    { dept: 'Operations', count: 0, score: 0, rating: '', hasData: false },
+1010:                    { dept: 'Legal Department', count: 0, score: 0, rating: '', hasData: false },
+1011:                  ].map((d) => (
+1012:                    <div key={d.dept} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:border-blue-300 hover:shadow-md transition cursor-pointer">
+1013:                      <div className="flex items-center gap-3 mb-3">
+1014:                        <span className="flex items-center justify-center h-10 w-10 rounded-lg bg-blue-50"><FileText className="h-5 w-5 text-blue-500" /></span>
+1015:                        <div>
+1016:                          <p className="font-bold text-sm text-slate-800">{d.dept}</p>
+1017:                          <p className="text-xs text-blue-500">{d.count} evaluated</p>
+1018:                        </div>
+1019:                      </div>
+1020:                      {d.hasData ? (
+1021:                        <>
+1022:                          <div className="flex items-center justify-between mb-2">
+1023:                            <span className="text-xs text-slate-400">Avg. Score</span>
+1024:                            <span className="text-2xl font-extrabold text-blue-600">{d.score.toFixed(2)}</span>
+1025:                          </div>
+1026:                          <span className="inline-block rounded-full border border-blue-300 bg-blue-50 px-3 py-0.5 text-xs font-semibold text-blue-700 mb-3">{d.rating}</span>
+1027:                        </>
+1028:                      ) : (
+1029:                        <p className="text-xs text-slate-400 italic mb-3">No completed IPCRs yet</p>
+1030:                      )}
+1031:                      <button type="button" className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:underline">
+1032:                        <Eye className="h-3.5 w-3.5" /> View Department Report & IPCRs
+1033:                      </button>
+1034:                    </div>
+1035:                  ))}
+1036:                </div>
+1037:
+1038:                {/* IPCR Submissions */}
+1039:                <h3 className="text-base font-bold text-slate-800 mb-1">IPCR Submissions</h3>
+1040:                <p className="text-sm text-slate-500 mb-4">All employee IPCR submissions — click "View IPCR" to open the full performance form</p>
+1041:
+1042:                <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+1043:                  {/* Toolbar */}
+1044:                  <div className="flex items-center gap-4 px-5 py-3.5 border-b border-slate-100">
+1045:                    <div className="relative flex-1 max-w-lg">
+1046:                      <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+1047:                      <input className="w-full rounded-lg border border-slate-300 pl-10 pr-4 py-2 text-sm" placeholder="Search employee name, department..." />
+1048:                    </div>
+1049:                    <select className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600"><option>All Departments</option></select>
+1050:                    <select className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600"><option>All Statuses</option></select>
+1051:                    <span className="text-xs text-slate-400">6 of 6 records</span>
+1052:                  </div>
+1053:                  {/* Column headers */}
+1054:                  <div className="grid grid-cols-12 items-center px-5 py-2.5 bg-slate-800 text-[11px] font-semibold text-white uppercase tracking-wider">
+1055:                    <div className="col-span-2">Department</div>
+1056:                    <div className="col-span-2">Employee Name</div>
+1057:                    <div className="col-span-2">Date of Submission</div>
+1058:                    <div className="col-span-2 text-center">Total Score</div>
+1059:                    <div className="col-span-2 text-center">Status</div>
+1060:                    <div className="col-span-2 text-right">Action</div>
+1061:                  </div>
+1062:                  {/* Rows */}
+1063:                  <div className="divide-y divide-slate-100">
+1064:                    {[
+1065:                      { dept: 'IT Department', deptColor: 'bg-blue-100 text-blue-700 border-blue-200', initials: 'MS', name: 'Maria Santos', position: 'IT Officer II', date: 'January 15, 2024', score: 4.58, rating: 'Outstanding', status: 'Submitted', hasScore: true },
+1066:                      { dept: 'IT Department', deptColor: 'bg-blue-100 text-blue-700 border-blue-200', initials: 'Jd', name: 'Juan dela Cruz', position: 'Systems Analyst', date: 'January 18, 2024', score: 4.23, rating: 'Very Satisfactory', status: 'Submitted', hasScore: true },
+1067:                      { dept: 'IT Department', deptColor: 'bg-blue-100 text-blue-700 border-blue-200', initials: 'AR', name: 'Ana Reyes', position: 'IT Support Specialist', date: 'January 20, 2024', score: 3.79, rating: 'Very Satisfactory', status: 'Submitted', hasScore: true },
+1068:                      { dept: 'Finance Department', deptColor: 'bg-emerald-100 text-emerald-700 border-emerald-200', initials: 'CM', name: 'Carlos Mendoza', position: 'Accountant II', date: 'January 12, 2024', score: 4.50, rating: 'Outstanding', status: 'Submitted', hasScore: true },
+1069:                      { dept: 'Finance Department', deptColor: 'bg-emerald-100 text-emerald-700 border-emerald-200', initials: 'EM', name: 'Elena Mercado', position: 'Budget Officer I', date: 'January 14, 2024', score: 4.17, rating: 'Very Satisfactory', status: 'Submitted', hasScore: true },
+1070:                      { dept: 'HR Department', deptColor: 'bg-purple-100 text-purple-700 border-purple-200', initials: 'RC', name: 'Roberto Cruz', position: 'HR Officer I', date: '', score: 0, rating: '', status: 'Monitoring Phase', hasScore: false },
+1071:                    ].map((row, idx) => (
+1072:                      <div key={idx} className="grid grid-cols-12 items-center px-5 py-4 text-sm hover:bg-slate-50/60 transition">
+1073:                        <div className="col-span-2">
+1074:                          <span className={`inline-block rounded-full border px-3 py-0.5 text-[11px] font-semibold ${row.deptColor}`}>{row.dept}</span>
+1075:                        </div>
+1076:                        <div className="col-span-2 flex items-center gap-2.5">
+1077:                          <span className="flex items-center justify-center h-8 w-8 rounded-full bg-slate-200 text-xs font-bold text-slate-600">{row.initials}</span>
+1078:                          <div>
+1079:                            <p className="font-semibold text-slate-800">{row.name}</p>
+1080:                            <p className="text-xs text-slate-400">{row.position}</p>
+1081:                          </div>
+1082:                        </div>
+1083:                        <div className="col-span-2 text-slate-500">{row.date || <span className="italic text-slate-400">Not yet submitted</span>}</div>
+1084:                        <div className="col-span-2 text-center">
+1085:                          {row.hasScore ? (
+1086:                            <div>
+1087:                              <p className="text-lg font-extrabold text-blue-600">{row.score.toFixed(2)}</p>
+1088:                              <p className={`text-[11px] font-medium ${row.rating === 'Outstanding' ? 'text-emerald-600' : 'text-blue-500'}`}>{row.rating}</p>
+1089:                            </div>
+1090:                          ) : <span className="text-slate-400">—</span>}
+1091:                        </div>
+1092:                        <div className="col-span-2 text-center">
+1093:                          {row.status === 'Submitted' ? (
+1094:                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-0.5 text-[11px] font-semibold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Submitted</span>
+1095:                          ) : (
+1096:                            <span className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-3 py-0.5 text-[11px] font-semibold text-orange-700"><Clock className="h-3 w-3" /> Monitoring Phase</span>
+1097:                          )}
+1098:                        </div>
+1099:                        <div className="col-span-2 text-right">
+1100:                          {row.hasScore ? (
+1101:                            <button type="button" className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 transition">
+1102:                              <Eye className="h-3.5 w-3.5" /> View IPCR
+1103:                            </button>
+1104:                          ) : <span className="text-xs text-slate-400 italic">Not available</span>}
+1105:                        </div>
+1106:                      </div>
+1107:                    ))}
+1108:                  </div>
+1109:                </section>
+1110:              </>
+1111:            )}
+1112:
+1113:            {activeSection === 'ipcr' && <SummaryOfRatings />}
+1114:
+1115:            {activeSection === 'analytics' && (
+1116:              <>
+1117:                <h2 className="text-3xl font-bold text-slate-900">Analytics</h2>
+1118:                <p className="mt-1 text-slate-600">Comprehensive performance insights and trends</p>
+1119:
+1120:                <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+1121:                  <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+1122:                    <div className="flex items-center justify-between">
+1123:                      <div>
+1124:                        <p className="text-sm text-slate-600">Overall Avg Rating</p>
+1125:                        <p className="text-3xl font-bold mt-2 text-slate-400">--</p>
+1126:                      </div>
+1127:                      <div className="h-12 w-12 rounded-lg bg-blue-100 grid place-content-center">
+1128:                        <TrendingUp className="h-6 w-6 text-blue-600" />
+1129:                      </div>
+1130:                    </div>
+1131:                  </div>
+1132:                  <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+1133:                    <div className="flex items-center justify-between">
+1134:                      <div>
+1135:                        <p className="text-sm text-slate-600">Top Performers</p>
+1136:                        <p className="text-3xl font-bold mt-2 text-slate-400">--</p>
+1137:                      </div>
+1138:                      <div className="h-12 w-12 rounded-lg bg-emerald-100 grid place-content-center">
+1139:                        <TrendingUp className="h-6 w-6 text-emerald-600" />
+1140:                      </div>
+1141:                    </div>
+1142:                  </div>
+1143:                  <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+1144:                    <div className="flex items-center justify-between">
+1145:                      <div>
+1146:                        <p className="text-sm text-slate-600">Departments</p>
+1147:                        <p className="text-3xl font-bold mt-2 text-slate-400">--</p>
+1148:                      </div>
+1149:                      <div className="h-12 w-12 rounded-lg bg-slate-100 grid place-content-center">
+1150:                        <FileText className="h-6 w-6 text-slate-600" />
+1151:                      </div>
+1152:                    </div>
+1153:                  </div>
+1154:                </div>
+1155:
+1156:                <div className="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-6">
+1157:                  <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+1158:                    <div className="flex items-center justify-between mb-4">
+1159:                      <h3 className="text-lg font-semibold">Performance by Department</h3>
+1160:                      <FileText className="h-5 w-5 text-slate-400" />
+1161:                    </div>
+1162:                    <div className="py-12 text-center text-sm text-slate-500">
+1163:                      No department performance data available
+1164:                    </div>
+1165:                  </section>
+1166:
+1167:                  <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+1168:                    <div className="flex items-center justify-between mb-4">
+1169:                      <h3 className="text-lg font-semibold">Performance Distribution</h3>
+1170:                      <BarChart3 className="h-5 w-5 text-slate-400" />
+1171:                    </div>
+1172:                    <div className="py-12 text-center text-sm text-slate-500">
+1173:                      No performance distribution data available
+1174:                    </div>
+1175:                  </section>
+1176:                </div>
+1177:
+1178:                <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+1179:                  <h3 className="text-lg font-semibold mb-4">Quarterly Performance Trends</h3>
+1180:                  <div className="py-12 text-center text-sm text-slate-500">
+1181:                    No quarterly trend data available
+1182:                  </div>
+1183:                </section>
+1184:
+1185:                <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+1186:                  <div className="flex items-center justify-between mb-4">
+1187:                    <h3 className="text-lg font-semibold">Top Performers</h3>
+1188:                    <select className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
+1189:                      <option>All Departments</option>
+1190:                    </select>
+1191:                  </div>
+1192:                  <div className="py-12 text-center text-sm text-slate-500">
+1193:                    No top performer data available
+1194:                  </div>
+1195:                </section>
+1196:              </>
+1197:            )}
+1198:
+1199:            {activeSection === 'reports' && (
+1200:              <>
+1201:                {/* Header Area */}
+1202:                <div className="flex items-center justify-between mb-1">
+1203:                  <p className="text-sm text-blue-600 font-medium">Performance Management <span className="mx-1 text-slate-400">/</span> <span className="text-slate-500">Documents</span></p>
+1204:                </div>
+1205:
+1206:                <div className="flex items-center justify-between mb-4">
+1207:                  <div>
+1208:                    <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Documents</h2>
+1209:                    <p className="text-sm text-slate-500 mt-1">Request and track document submissions from employees, organized by department</p>
+1210:                  </div>
+1211:                  <button type="button" onClick={openBulkRequestModal} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition shadow-sm">
+1212:                    <Plus className="h-4 w-4" /> New Request
+1213:                  </button>
+1214:                </div>
+1215:
+1216:                {/* KPI Cards */}
+1217:                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+1218:                  <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+1219:                    <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Total Requests</p>
+1220:                    <p className="text-3xl font-bold text-slate-900 leading-none">24</p>
+1221:                  </div>
+1222:                  <div className="rounded-xl border border-orange-300 bg-white p-4 shadow-sm">
+1223:                    <p className="text-[11px] font-semibold text-orange-500 uppercase tracking-wider mb-1.5">Pending</p>
+1224:                    <p className="text-3xl font-bold text-orange-500 leading-none">8</p>
+1225:                  </div>
+1226:                  <div className="rounded-xl border border-red-200 bg-white p-4 shadow-sm">
+1227:                    <p className="text-[11px] font-semibold text-red-500 uppercase tracking-wider mb-1.5">Overdue</p>
+1228:                    <p className="text-3xl font-bold text-red-500 leading-none">3</p>
+1229:                  </div>
+1230:                  <div className="rounded-xl border border-emerald-200 bg-white p-4 shadow-sm">
+1231:                    <p className="text-[11px] font-semibold text-emerald-500 uppercase tracking-wider mb-1.5">Approved</p>
+1232:                    <p className="text-3xl font-bold text-emerald-500 leading-none">5</p>
+1233:                  </div>
+1234:                </div>
+1235:
+1236:                {/* Filters */}
+1237:                <div className="rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm flex items-center gap-3 mb-4">
+1238:                  <div className="relative flex-1">
+1239:                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+1240:                    <input className="w-full rounded-lg border border-slate-200 pl-9 pr-4 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Search employee or document..." />
+1241:                  </div>
+1242:                  <select className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-500 outline-none w-48">
+1243:                    <option>All Status</option>
+1244:                    <option>Pending</option>
+1245:                    <option>Submitted</option>
+1246:                    <option>Under Review</option>
+1247:                    <option>Approved</option>
+1248:                    <option>Overdue</option>
+1249:                  </select>
+1250:                  <select className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-500 outline-none w-56">
+1251:                    <option>All Document Types</option>
+1252:                    <option>IPCR</option>
+1253:                    <option>Accomplishment Report</option>
+1254:                    <option>Service Record</option>
+1255:                    <option>Position Description Form</option>
+1256:                  </select>
+1257:                </div>
+1258:
+1259:                {/* Table Section */}
+1260:                <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden mb-4">
+1261:                  {/* Dark Header */}
+1262:                  <div className="bg-[#1e293b] px-5 py-3 flex items-center justify-between text-white">
+1263:                    <div className="flex items-center gap-4">
+1264:                      <div>
+1265:                        <h3 className="text-base font-bold leading-tight">IT Department</h3>
+1266:                        <p className="text-xs text-slate-400">6 requests - 2 pages</p>
+1267:                      </div>
+1268:                      <div className="flex items-center gap-2">
+1269:                        <span className="inline-flex items-center rounded-full bg-orange-500 px-2.5 py-0.5 text-[11px] font-bold text-white">2 Pending</span>
+1270:                        <span className="inline-flex items-center rounded-full bg-blue-500 px-2.5 py-0.5 text-[11px] font-bold text-white">1 Submitted</span>
+1271:                        <span className="inline-flex items-center rounded-full bg-[#a855f7] px-2.5 py-0.5 text-[11px] font-bold text-white">1 Under Review</span>
+1272:                        <span className="inline-flex items-center rounded-full bg-emerald-500 px-2.5 py-0.5 text-[11px] font-bold text-white">1 Approved</span>
+1273:                        <span className="inline-flex items-center rounded-full bg-red-500 px-2.5 py-0.5 text-[11px] font-bold text-white">1 Overdue</span>
+1274:                      </div>
+1275:                    </div>
+1276:                    <div className="flex items-center gap-2 cursor-pointer hover:text-slate-300">
+1277:                      <span className="text-sm font-semibold">6 employees</span>
+1278:                      <ChevronUp className="h-4 w-4" />
+1279:                    </div>
+1280:                  </div>
+1281:
+1282:                  {/* Table Header */}
+1283:                  <div className="grid grid-cols-12 items-center px-5 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+1284:                    <div className="col-span-1">NO.</div>
+1285:                    <div className="col-span-3">EMPLOYEE</div>
+1286:                    <div className="col-span-2">DOCUMENT TYPE</div>
+1287:                    <div className="col-span-2">DATE REQUESTED</div>
+1288:                    <div className="col-span-2">DATE SUBMITTED</div>
+1289:                    <div className="col-span-1 text-center">STATUS</div>
+1290:                    <div className="col-span-1 text-right">ACTION</div>
+1291:                  </div>
+1292:
+1293:                  {/* Rows */}
+1294:                  <div className="divide-y divide-slate-100">
+1295:                    {[
+1296:                      { no: 1, initials: 'SM', name: 'Santos, Maria G.', role: 'IT Officer II', dept: 'IT Department', docType: 'IPCR', dateReq: 'Mar 1, 2025', dateSub: 'Mar 12, 2025', status: 'Submitted', statusClass: 'border-blue-200 bg-blue-50 text-blue-600', action: 'View', actionClass: 'border-purple-200 text-purple-600 hover:bg-purple-50', icon: Eye },
+1297:                      { no: 2, initials: 'DC', name: 'Dela Cruz, Juan P.', role: 'Systems Analyst', dept: 'IT Department', docType: 'Accomplishment Report', dateReq: 'Mar 1, 2025', dateSub: 'Mar 10, 2025', status: 'Approved', statusClass: 'border-emerald-200 bg-emerald-50 text-emerald-600', action: 'Request', actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList, isPrimaryAction: true },
+1298:                      { no: 3, initials: 'RA', name: 'Reyes, Ana T.', role: 'Network Administrator', dept: 'IT Department', docType: 'IPCR', dateReq: 'Mar 1, 2025', dateSub: '', status: 'Pending', statusClass: 'border-orange-200 bg-orange-50 text-orange-600', action: 'Request', actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList, isPrimaryAction: true },
+1299:                      { no: 4, initials: 'AR', name: 'Aguilar, Ricardo M.', role: 'IT Support Specialist', dept: 'IT Department', docType: 'Service Record', dateReq: 'Mar 3, 2025', dateSub: 'Mar 18, 2025', status: 'Under Review', statusClass: 'border-purple-200 bg-purple-50 text-purple-600', action: 'View', actionClass: 'border-purple-200 text-purple-600 hover:bg-purple-50', icon: Eye },
+1300:                      { no: 5, initials: 'BL', name: 'Bautista, Lourdes S.', role: 'Database Administrator', dept: 'IT Department', docType: 'Position Description Form', dateReq: 'Feb 15, 2025', dateSub: '', status: 'Overdue', statusClass: 'border-red-200 bg-red-50 text-red-600', action: 'Request', actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList, isPrimaryAction: true },
+1301:                    ].map((row, i) => (
+1302:                      <div key={i} className="grid grid-cols-12 items-start px-5 py-3 text-sm hover:bg-slate-50/50 transition">
+1303:                        <div className="col-span-1 text-slate-500 pt-1.5">{row.no}</div>
+1304:                        <div className="col-span-3 flex items-start gap-3">
+1305:                          <span className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-[11px] font-bold text-blue-600 shrink-0">
+1306:                            {row.initials}
+1307:                          </span>
+1308:                          <div className="flex flex-col pt-1.5">
+1309:                            <p className="font-semibold text-slate-800 leading-none">{row.name}</p>
+1310:                            <p className="text-[11px] text-slate-400 mt-1">{row.role}</p>
+1311:                          </div>
+1312:                        </div>
+1313:                        <div className="col-span-2 flex items-center gap-2 text-slate-600 pt-1.5">
+1314:                          <FileText className="h-4 w-4 text-slate-400" />
+1315:                          {row.docType}
+1316:                        </div>
+1317:                        <div className="col-span-2 text-slate-600 pt-1.5">{row.dateReq}</div>
+1318:                        <div className="col-span-2 text-slate-600 pt-1.5">{row.dateSub}</div>
+1319:                        <div className="col-span-1 flex justify-center pt-1.5">
+1320:                          <span className={`inline-block rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${row.statusClass}`}>
+1321:                            {row.status}
+1322:                          </span>
+1323:                        </div>
+1324:                        <div className="col-span-1 flex justify-end pt-1">
+1325:                          <button
+1326:                            type="button"
+1327:                            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition border ${row.actionClass}`}
+1328:                            onClick={() => {
+1329:                              if (row.action === 'Request') {
+1330:                                openRequestModal({ name: row.name, role: row.role, dept: row.dept, initials: row.initials });
+1331:                              }
+1332:                            }}
+1333:                          >
+1334:                            <row.icon className="h-3.5 w-3.5" />
+1335:                            {row.action}
+1336:                          </button>
+1337:                        </div>
+1338:                      </div>
+1339:                    ))}
+1340:                  </div>
+1341:
+1342:                  {/* Table Footer */}
+1343:                  <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between">
+1344:                    <span className="text-xs text-slate-500">
+1345:                      Showing <span className="font-semibold text-slate-700">1–5</span> of <span className="font-semibold text-slate-700">6</span> requests
+1346:                    </span>
+1347:                    <div className="flex items-center gap-1 text-lg text-slate-400">
+1348:                      <button type="button" className="px-1 hover:text-blue-600 transition disabled:opacity-50" disabled>&laquo;</button>
+1349:                      <button type="button" className="px-1 hover:text-blue-600 transition disabled:opacity-50" disabled>&lsaquo;</button>
+1350:                      <button type="button" className="h-7 w-7 rounded bg-blue-600 text-white text-xs font-semibold mx-1">1</button>
+1351:                      <button type="button" className="h-7 w-7 rounded bg-transparent text-slate-600 hover:bg-slate-100 text-xs font-medium mr-1">2</button>
+1352:                      <button type="button" className="px-1 hover:text-blue-600 transition">&rsaquo;</button>
+1353:                      <button type="button" className="px-1 hover:text-blue-600 transition">&raquo;</button>
+1354:                    </div>
+1355:                    <div className="flex items-center gap-2 text-[10px] font-bold uppercase text-slate-400 tracking-wider">
+1356:                      DISTRIBUTION:
+1357:                      <span className="inline-block rounded bg-orange-100 px-2 py-0.5 text-orange-700 normal-case ml-1">2 Pending</span>
+1358:                      <span className="inline-block rounded bg-blue-100 px-2 py-0.5 text-blue-700 normal-case">1 Submitted</span>
+1359:                      <span className="inline-block rounded bg-purple-100 px-2 py-0.5 text-purple-700 normal-case">1 Under Review</span>
+1360:                      <span className="inline-block rounded bg-emerald-100 px-2 py-0.5 text-emerald-700 normal-case">1 Approved</span>
+1361:                      <span className="inline-block rounded bg-red-100 px-2 py-0.5 text-red-700 normal-case">1 Overdue</span>
+1362:                    </div>
+1363:                  </div>
+1364:                </div>
+1365:              </>
+1366:            )}
+1367:
+1368:            {activeSection === 'settings' && (
+1369:              <>
+1370:                <h2 className="text-3xl font-bold text-slate-900">Settings</h2>
+1371:                <p className="mt-1 text-slate-600">Configure your system preferences and account settings</p>
+1372:
+1373:                <div className="mt-6 grid grid-cols-1 xl:grid-cols-4 gap-6">
+1374:                  <aside className="xl:col-span-1 space-y-2">
+1375:                    {[
+1376:                      { id: 'profile', label: 'Profile Settings', icon: User },
+1377:                      { id: 'notifications', label: 'Notifications', icon: Bell },
+1378:                      { id: 'security', label: 'Security', icon: Shield },
+1379:                      { id: 'system', label: 'System Settings', icon: Database },
+1380:                      { id: 'email', label: 'Email Configuration', icon: Mail },
+1381:                      { id: 'appearance', label: 'Appearance', icon: Palette },
+1382:                      { id: 'localization', label: 'Localization', icon: Globe },
+1383:                    ].map((tab) => {
+1384:                      const Icon = tab.icon;
+1385:                      const isActive = tab.id === 'profile';
+1386:                      return (
+1387:                        <button
+1388:                          key={tab.id}
+1389:                          type="button"
+1390:                          className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition ${isActive ? 'bg-blue-50 text-blue-600 font-medium' : 'hover:bg-slate-50 text-slate-700'
+1391:                            }`}
+1392:                        >
+1393:                          <Icon className={`h-5 w-5 ${isActive ? 'text-blue-600' : 'text-slate-500'}`} />
+1394:                          <span className="text-sm">{tab.label}</span>
+1395:                        </button>
+1396:                      );
+1397:                    })}
+1398:                  </aside>
+1399:
+1400:                  <div className="xl:col-span-3">
+1401:                    <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+1402:                      <h3 className="text-2xl font-bold text-slate-900">Profile Settings</h3>
+1403:                      <p className="mt-1 text-sm text-slate-600">Personal information is view-only in this screen.</p>
+1404:
+1405:                      <div className="mt-6 flex items-center gap-4">
+1406:                        <div className="h-24 w-24 rounded-full bg-blue-100 grid place-content-center">
+1407:                          <UserCircle2 className="h-12 w-12 text-blue-600" />
+1408:                        </div>
+1409:                        <div>
+1410:                          <button type="button" className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition">
+1411:                            Change Photo
+1412:                          </button>
+1413:                          <p className="mt-1 text-xs text-slate-500">JPG, PNG or GIF. Max size 2MB</p>
+1414:                        </div>
+1415:                      </div>
+1416:
+1417:                      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+1418:                        <div>
+1419:                          <label className="block text-sm font-medium text-slate-700 mb-2">First Name</label>
+1420:                          <input type="text" className="w-full rounded-lg border border-slate-300 bg-slate-50 px-4 py-2 text-sm" placeholder="Enter first name" readOnly />
+1421:                        </div>
+1422:                        <div>
+1423:                          <label className="block text-sm font-medium text-slate-700 mb-2">Last Name</label>
+1424:                          <input type="text" className="w-full rounded-lg border border-slate-300 bg-slate-50 px-4 py-2 text-sm" placeholder="Enter last name" readOnly />
+1425:                        </div>
+1426:                      </div>
+1427:
+1428:                      <div className="mt-4">
+1429:                        <label className="block text-sm font-medium text-slate-700 mb-2">Email Address</label>
+1430:                        <input type="email" className="w-full rounded-lg border border-slate-300 bg-slate-50 px-4 py-2 text-sm" placeholder="Enter email address" readOnly />
+1431:                      </div>
+1432:
+1433:                      <div className="mt-4">
+1434:                        <label className="block text-sm font-medium text-slate-700 mb-2">Role</label>
+1435:                        <input type="text" className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm bg-slate-50" value="PM" disabled />
+1436:                      </div>
+1437:
+1438:                      <div className="mt-4">
+1439:                        <label className="block text-sm font-medium text-slate-700 mb-2">Department</label>
+1440:                        <select className="w-full rounded-lg border border-slate-300 bg-slate-50 px-4 py-2 text-sm" disabled>
+1441:                          <option>Select department</option>
+1442:                          <option>Human Resource Management Office</option>
+1443:                          <option>Finance Department</option>
+1444:                          <option>IT Department</option>
+1445:                        </select>
+1446:                      </div>
+1447:
+1448:                      <div className="mt-4">
+1449:                        <label className="block text-sm font-medium text-slate-700 mb-2">Bio</label>
+1450:                        <textarea className="w-full rounded-lg border border-slate-300 bg-slate-50 px-4 py-2 text-sm" rows={4} placeholder="Tell us about yourself..." readOnly></textarea>
+1451:                      </div>
+1452:
+1453:                      <div className="mt-6 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+1454:                        Personal information updates must be handled outside this screen.
+1455:                      </div>
+1456:                    </section>
+1457:                  </div>
+1458:                </div>
+1459:              </>
+1460:            )}
+1461:
+1462:            {!['dashboard', 'evaluation-status', 'performance-reviews', 'goals', 'ipcr', 'analytics', 'reports', 'settings'].includes(activeSection) && (
+1463:              <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+1464:                <h2 className="text-2xl font-bold text-slate-900 capitalize">{activeSection.replace('-', ' ')}</h2>
+1465:                <p className="mt-2 text-slate-600">Section scaffold is ready. Share the next screenshots and I'll match this page exactly.</p>
+1466:              </div>
+1467:            )}
+1468:          </main>
+1469:        </div>
+1470:
+1471:        {/* Request Document Modal */}
+1472:        {showRequestModal && (
+1473:          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={closeRequestModal}>
+1474:            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
+1475:              {/* Modal Header */}
+1476:              <div className="flex items-center justify-between px-6 pt-6 pb-2">
+1477:                <div>
+1478:                  <h2 className="text-xl font-bold text-slate-900">Request Document</h2>
+1479:                  <p className="text-sm text-slate-500 mt-0.5">Send a document request to this employee</p>
+1480:                </div>
+1481:                <button type="button" onClick={closeRequestModal} className="text-slate-400 hover:text-slate-600 transition">
+1482:                  <X className="h-5 w-5" />
+1483:                </button>
+1484:              </div>
+1485:
+1486:              {/* Employee Info */}
+1487:              {requestEmployee && (
+1488:                <div className="mx-6 mt-4 flex items-center gap-3 rounded-xl bg-slate-50 px-4 py-3">
+1489:                  <span className="flex items-center justify-center h-10 w-10 rounded-full bg-blue-900 text-sm font-bold text-white shrink-0">
+1490:                    {requestEmployee.initials}
+1491:                  </span>
+1492:                  <div>
+1493:                    <p className="font-semibold text-slate-900 text-sm">{requestEmployee.name}</p>
+1494:                    <p className="text-xs text-slate-500">{requestEmployee.role} &middot; {requestEmployee.dept}</p>
+1495:                  </div>
+1496:                </div>
+1497:              )}
+1498:
+1499:              {/* Form */}
+1500:              <div className="px-6 pt-5 pb-6 space-y-5">
+1501:                {/* Document Type */}
+1502:                <div>
+1503:                  <label className="block text-sm font-semibold text-slate-800 mb-1.5">
+1504:                    Document Type <span className="text-red-500">*</span>
+1505:                  </label>
+1506:                  <select
+1507:                    value={requestDocType}
+1508:                    onChange={(e) => setRequestDocType(e.target.value)}
+1509:                    className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none appearance-none bg-white"
+1510:                  >
+1511:                    <option value="">Select document type...</option>
+1512:                    {documentTypes.map((type) => (
+1513:                      <option key={type} value={type}>{type}</option>
+1514:                    ))}
+1515:                  </select>
+1516:                </div>
+1517:
+1518:                {/* Due Date */}
+1519:                <div>
+1520:                  <label className="block text-sm font-semibold text-slate-800 mb-1.5">
+1521:                    Due Date <span className="text-red-500">*</span>
+1522:                  </label>
+1523:                  <input
+1524:                    type="date"
+1525:                    value={requestDueDate}
+1526:                    onChange={(e) => setRequestDueDate(e.target.value)}
+1527:                    min={new Date().toISOString().split('T')[0]}
+1528:                    className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+1529:                  />
+1530:                </div>
+1531:              </div>
+1532:
+1533:              {/* Footer */}
+1534:              <div className="flex items-center justify-end gap-3 px-6 pb-6">
+1535:                <button
+1536:                  type="button"
+1537:                  onClick={closeRequestModal}
+1538:                  className="rounded-lg border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+1539:                >
+1540:                  Cancel
+1541:                </button>
+1542:                <button
+1543:                  type="button"
+1544:                  onClick={handleSendRequest}
+1545:                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition shadow-sm"
+1546:                >
+1547:                  <Send className="h-4 w-4" />
+1548:                  Send Request
+1549:                </button>
+1550:              </div>
+1551:            </div>
+1552:          </div>
+1553:        )}
+1554:
+1555:        {/* Bulk Document Request Modal */}
+1556:        {showBulkRequestModal && (
+1557:          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={closeBulkRequestModal}>
+1558:            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+1559:              {/* Modal Header */}
+1560:              <div className="flex items-center justify-between px-6 pt-6 pb-2 sticky top-0 bg-white rounded-t-2xl z-10">
+1561:                <div>
+1562:                  <h2 className="text-xl font-bold text-slate-900">Bulk Document Request</h2>
+1563:                  <p className="text-sm text-slate-500 mt-0.5">Request documents from multiple employees at once</p>
+1564:                </div>
+1565:                <button type="button" onClick={closeBulkRequestModal} className="text-slate-400 hover:text-slate-600 transition">
+1566:                  <X className="h-5 w-5" />
+1567:                </button>
+1568:              </div>
+1569:
+1570:              <div className="px-6 pt-5 pb-6 space-y-6">
+1571:                {/* Quick Templates */}
+1572:                <div>
+1573:                  <p className="text-sm font-semibold text-slate-800 mb-2">
+1574:                    Quick Templates <span className="text-slate-400 font-normal">(Optional)</span>
+1575:                  </p>
+1576:                  <div className="grid grid-cols-2 gap-2">
+1577:                    {documentTypes.map((type) => (
+1578:                      <button
+1579:                        key={type}
+1580:                        type="button"
+1581:                        onClick={() => setBulkDocName(type)}
+1582:                        className={`flex items-center gap-2.5 rounded-lg border px-3.5 py-2.5 text-sm text-left transition ${
+1583:                          bulkDocName === type
+1584:                            ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
+1585:                            : 'border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+1586:                        }`}
+1587:                      >
+1588:                        <FileText className={`h-4 w-4 shrink-0 ${bulkDocName === type ? 'text-blue-500' : 'text-blue-400'}`} />
+1589:                        <span className="leading-snug">{type === 'SALN' ? 'SALN (Statement of Assets, Liabilities and Net Worth)' : type}</span>
+1590:                      </button>
+1591:                    ))}
+1592:                  </div>
+1593:                </div>
+1594:
+1595:                {/* Document Name */}
+1596:                <div>
+1597:                  <label className="block text-sm font-semibold text-slate-800 mb-1.5">
+1598:                    Document Name <span className="text-red-500">*</span>
+1599:                  </label>
+1600:                  <input
+1601:                    type="text"
+1602:                    value={bulkDocName}
+1603:                    onChange={(e) => setBulkDocName(e.target.value)}
+1604:                    placeholder="e.g., NBI Clearance, Medical Certificate, etc."
+1605:                    className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+1606:                  />
+1607:                </div>
+1608:
+1609:                {/* Description / Requirements */}
+1610:                <div>
+1611:                  <label className="block text-sm font-semibold text-slate-800 mb-1.5">
+1612:                    Description / Requirements <span className="text-red-500">*</span>
+1613:                  </label>
+1614:                  <textarea
+1615:                    value={bulkDescription}
+1616:                    onChange={(e) => setBulkDescription(e.target.value)}
+1617:                    placeholder="Provide details about what the document should include, validity requirements, etc."
+1618:                    rows={3}
+1619:                    className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none resize-none"
+1620:                  />
+1621:                </div>
+1622:
+1623:                {/* Due Date with inline calendar */}
+1624:                <div>
+1625:                  <label className="block text-sm font-semibold text-slate-800 mb-1.5">
+1626:                    Due Date <span className="text-red-500">*</span>
+1627:                  </label>
+1628:                  <div className="rounded-lg border border-slate-300 p-3">
+1629:                    {/* Calendar Navigation */}
+1630:                    <div className="flex items-center justify-between mb-3">
+1631:                      <button type="button" onClick={handleCalendarPrev} className="text-slate-400 hover:text-slate-600 transition p-1">
+1632:                        <ChevronLeft className="h-4 w-4" />
+1633:                      </button>
+1634:                      <span className="text-sm font-semibold text-slate-800">{calendarMonthName} {bulkCalendarYear}</span>
+1635:                      <button type="button" onClick={handleCalendarNext} className="text-slate-400 hover:text-slate-600 transition p-1">
+1636:                        <ChevronRight className="h-4 w-4" />
+1637:                      </button>
+1638:                    </div>
+1639:                    {/* Day headers */}
+1640:                    <div className="grid grid-cols-7 text-center text-[11px] font-semibold text-slate-400 mb-1">
+1641:                      {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => (
+1642:                        <span key={d} className="py-1">{d}</span>
+1643:                      ))}
+1644:                    </div>
+1645:                    {/* Day cells */}
+1646:                    <div className="grid grid-cols-7 text-center text-sm">
+1647:                      {getCalendarDays(bulkCalendarMonth, bulkCalendarYear).map((day, idx) => {
+1648:                        if (day === null) return <span key={idx} />;
+1649:                        const past = isDatePast(day);
+1650:                        const selected = bulkDueDate && bulkDueDate.getDate() === day && bulkDueDate.getMonth() === bulkCalendarMonth && bulkDueDate.getFullYear() === bulkCalendarYear;
+1651:                        return (
+1652:                          <button
+1653:                            key={idx}
+1654:                            type="button"
+1655:                            disabled={past}
+1656:                            onClick={() => setBulkDueDate(new Date(bulkCalendarYear, bulkCalendarMonth, day))}
+1657:                            className={`py-1.5 rounded-full transition text-sm ${
+1658:                              selected
+1659:                                ? 'bg-blue-600 text-white font-semibold'
+1660:                                : past
+1661:                                  ? 'text-slate-300 cursor-not-allowed'
+1662:                                  : 'text-slate-700 hover:bg-blue-50'
+1663:                            }`}
+1664:                          >
+1665:                            {day}
+1666:                          </button>
+1667:                        );
+1668:                      })}
+1669:                    </div>
+1670:                  </div>
+1671:                </div>
+1672:
+1673:                {/* Upload Template File */}
+1674:                <div>
+1675:                  <label className="block text-sm font-semibold text-slate-800 mb-1.5">
+1676:                    Upload Template File <span className="text-slate-400 font-normal">(Optional)</span>
+1677:                  </label>
+1678:                  <label className="flex items-center gap-2.5 rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-500 cursor-pointer hover:border-slate-400 transition">
+1679:                    <Upload className="h-4 w-4 text-slate-400" />
+1680:                    <span>Choose File</span>
+1681:                    <span className="text-slate-400">No file chosen</span>
+1682:                    <input type="file" className="hidden" />
+1683:                  </label>
+1684:                </div>
+1685:
+1686:                {/* Send Request To */}
+1687:                <div>
+1688:                  <label className="block text-sm font-semibold text-slate-800 mb-2">
+1689:                    Send Request To <span className="text-red-500">*</span>
+1690:                  </label>
+1691:                  <div className="space-y-2">
+1692:                    {/* All Employees */}
+1693:                    <button
+1694:                      type="button"
+1695:                      onClick={() => setBulkSendTo('all')}
+1696:                      className={`w-full flex items-center gap-3 rounded-lg border p-3.5 text-left transition ${
+1697:                        bulkSendTo === 'all' ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-slate-300'
+1698:                      }`}
+1699:                    >
+1700:                      <span className={`flex items-center justify-center h-10 w-10 rounded-full shrink-0 ${bulkSendTo === 'all' ? 'bg-blue-600' : 'bg-slate-100'}`}>
+1701:                        <Users className={`h-5 w-5 ${bulkSendTo === 'all' ? 'text-white' : 'text-slate-500'}`} />
+1702:                      </span>
+1703:                      <div className="flex-1">
+1704:                        <p className={`text-sm font-semibold ${bulkSendTo === 'all' ? 'text-blue-800' : 'text-slate-800'}`}>All Employees</p>
+1705:                        <p className={`text-xs ${bulkSendTo === 'all' ? 'text-blue-600' : 'text-slate-400'}`}>{totalEmployees} employees will receive this request</p>
+1706:                      </div>
+1707:                      <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0 ${bulkSendTo === 'all' ? 'border-blue-600' : 'border-slate-300'}`}>
+1708:                        {bulkSendTo === 'all' && <div className="h-2.5 w-2.5 rounded-full bg-blue-600" />}
+1709:                      </div>
+1710:                    </button>
+1711:
+1712:                    {/* By Department */}
+1713:                    <button
+1714:                      type="button"
+1715:                      onClick={() => setBulkSendTo('department')}
+1716:                      className={`w-full flex items-center gap-3 rounded-lg border p-3.5 text-left transition ${
+1717:                        bulkSendTo === 'department' ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-slate-300'
+1718:                      }`}
+1719:                    >
+1720:                      <span className={`flex items-center justify-center h-10 w-10 rounded-full shrink-0 ${bulkSendTo === 'department' ? 'bg-blue-600' : 'bg-slate-100'}`}>
+1721:                        <Building2 className={`h-5 w-5 ${bulkSendTo === 'department' ? 'text-white' : 'text-slate-500'}`} />
+1722:                      </span>
+1723:                      <div className="flex-1">
+1724:                        <p className={`text-sm font-semibold ${bulkSendTo === 'department' ? 'text-blue-800' : 'text-slate-800'}`}>By Department</p>
+1725:                        <p className={`text-xs ${bulkSendTo === 'department' ? 'text-blue-600' : 'text-slate-400'}`}>Select a specific department</p>
+1726:                      </div>
+1727:                      <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0 ${bulkSendTo === 'department' ? 'border-blue-600' : 'border-slate-300'}`}>
+1728:                        {bulkSendTo === 'department' && <div className="h-2.5 w-2.5 rounded-full bg-blue-600" />}
+1729:                      </div>
+1730:                    </button>
+1731:                    {bulkSendTo === 'department' && (
+1732:                      <div className="animate-in fade-in slide-in-from-top-1 duration-200">
+1733:                        <select className="w-full rounded-lg border border-blue-500 px-3 py-2.5 text-sm text-slate-700 outline-none focus:ring-1 focus:ring-blue-500 shadow-sm">
+1734:                          <option value="">Select department...</option>
+1735:                          <option value="IT Department">IT Department</option>
+1736:                          <option value="Finance Department">Finance Department</option>
+1737:                          <option value="HR Department">HR Department</option>
+1738:                          <option value="Administration">Administration</option>
+1739:                          <option value="Operations">Operations</option>
+1740:                        </select>
+1741:                      </div>
+1742:                    )}
+1743:
+1744:                    {/* Selected Employees */}
+1745:                    <button
+1746:                      type="button"
+1747:                      onClick={() => setBulkSendTo('selected')}
+1748:                      className={`w-full flex items-center gap-3 rounded-lg border p-3.5 text-left transition ${
+1749:                        bulkSendTo === 'selected' ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-slate-300'
+1750:                      }`}
+1751:                    >
+1752:                      <span className={`flex items-center justify-center h-10 w-10 rounded-full shrink-0 ${bulkSendTo === 'selected' ? 'bg-blue-600' : 'bg-slate-100'}`}>
+1753:                        <UsersRound className={`h-5 w-5 ${bulkSendTo === 'selected' ? 'text-white' : 'text-slate-500'}`} />
+1754:                      </span>
+1755:                      <div className="flex-1">
+1756:                        <p className={`text-sm font-semibold ${bulkSendTo === 'selected' ? 'text-blue-800' : 'text-slate-800'}`}>Selected Employees</p>
+1757:                        <p className={`text-xs ${bulkSendTo === 'selected' ? 'text-blue-600' : 'text-slate-400'}`}>Choose specific employees from the list</p>
+1758:                      </div>
+1759:                      <div className={`h-5 w-5 rounded-full border-2 flex items-center justify-center shrink-0 ${bulkSendTo === 'selected' ? 'border-blue-600' : 'border-slate-300'}`}>
+1760:                        {bulkSendTo === 'selected' && <div className="h-2.5 w-2.5 rounded-full bg-blue-600" />}
+1761:                      </div>
+1762:                    </button>
+1763:                    {bulkSendTo === 'selected' && (
+1764:                      <div className="animate-in fade-in slide-in-from-top-1 duration-200">
+1765:                        <div className="rounded-lg border border-blue-500 bg-white overflow-hidden shadow-sm">
+1766:                          <div className="flex items-center px-3 py-2.5 border-b border-slate-200">
+1767:                            <Search className="h-4 w-4 text-slate-400 mr-2" />
+1768:                            <input 
+1769:                              type="text" 
+1770:                              placeholder="Search by name, position, or department..." 
+1771:                              className="w-full text-sm text-slate-700 outline-none bg-transparent placeholder-slate-400"
+1772:                            />
+1773:                          </div>
+1774:                          <div className="flex flex-col items-center justify-center py-8 text-center bg-slate-50/30">
+1775:                            <Search className="h-8 w-8 text-slate-300 mb-2 opacity-50" />
+1776:                            <p className="text-sm font-medium text-slate-600">Start typing to search for employees</p>
+1777:                            <p className="text-xs text-slate-400 mt-1">Search by name, position, or department</p>
+1778:                          </div>
+1779:                        </div>
+1780:                      </div>
+1781:                    )}
+1782:                  </div>
+1783:                </div>
+1784:
+1785:                {/* Summary */}
+1786:                <div className="flex items-start gap-2.5 rounded-lg bg-blue-50 border border-blue-100 px-4 py-3">
+1787:                  <Info className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
+1788:                  <p className="text-sm text-slate-700">
+1789:                    <span className="font-semibold">Summary:</span> This document request will be sent to <span className="font-bold text-slate-900">{totalEmployees}</span> employees. All employees will be notified.
+1790:                  </p>
+1791:                </div>
+1792:              </div>
+1793:
+1794:              {/* Footer */}
+1795:              <div className="flex items-center justify-end gap-3 px-6 pb-6">
+1796:                <button
+1797:                  type="button"
+1798:                  onClick={closeBulkRequestModal}
+1799:                  className="rounded-lg border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+1800:                >
+1801:                  Cancel
+1802:                </button>
+1803:                <button
+1804:                  type="button"
+1805:                  onClick={handleBulkSendRequest}
+1806:                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition shadow-sm"
+1807:                >
+1808:                  <FileText className="h-4 w-4" />
+1809:                  {bulkSendTo === 'all' && `Send to All Employees (${totalEmployees})`}
+1810:                  {bulkSendTo === 'department' && 'Send to Department'}
+1811:                  {bulkSendTo === 'selected' && 'Send to Selected Employees'}
+1812:                </button>
+1813:              </div>
+1814:            </div>
+1815:          </div>
+1816:        )}
+1817:      </div>
+1818:    );
+1819:  }
+1820:
+1821:  return (
+1822:    <div className="flex h-screen bg-slate-50">
+1823:      <Sidebar />
+1824:      <main className="flex-1 overflow-auto">
+1825:        <div className="p-8">
+1826:          <div className="flex items-center justify-between mb-8">
+1827:            <h1 className="text-3xl font-bold text-slate-900">Performance Management System</h1>
+1828:            <Button onClick={() => {
+1829:              setEditingCycle(null);
+1830:              setNewCycle({ title: '', start_date: '', end_date: '', status: 'Planned' });
+1831:              setShowCycleDialog(true);
+1832:            }} className="flex items-center gap-2">
+1833:              <Plus className="w-4 h-4" />
+1834:              Create Evaluation Cycle
+1835:            </Button>
+1836:          </div>
+1837:
+1838:          {errorMessage && (
+1839:            <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+1840:              {errorMessage}
+1841:            </div>
+1842:          )}
+1843:
+1844:          {loading ? (
+1845:            <div className="flex items-center justify-center py-12">
+1846:              <p className="text-slate-600">Loading evaluation cycles...</p>
+1847:            </div>
+1848:          ) : (
+1849:            <div className="bg-white rounded-lg shadow-md border border-slate-200 overflow-hidden">
+1850:              <table className="w-full">
+1851:                <thead className="bg-slate-50 border-b border-slate-200">
+1852:                  <tr>
+1853:                    <th className="px-6 py-3 text-left text-sm font-semibold text-slate-900">Cycle Name</th>
+1854:                    <th className="px-6 py-3 text-left text-sm font-semibold text-slate-900">Start Date</th>
+1855:                    <th className="px-6 py-3 text-left text-sm font-semibold text-slate-900">End Date</th>
+1856:                    <th className="px-6 py-3 text-left text-sm font-semibold text-slate-900">Status</th>
+1857:                    <th className="px-6 py-3 text-left text-sm font-semibold text-slate-900">Action</th>
+1858:                    <th className="px-6 py-3 text-right text-sm font-semibold text-slate-900">Options</th>
+1859:                  </tr>
+1860:                </thead>
+1861:                <tbody>
+1862:                  {cycles.length === 0 ? (
+1863:                    <tr>
+1864:                      <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
+1865:                        No evaluation cycles created yet.
+1866:                      </td>
+1867:                    </tr>
+1868:                  ) : (
+1869:                    cycles.map((cycle) => (
+1870:                      <tr key={cycle.id} className="border-b border-slate-200 hover:bg-slate-50 transition">
+1871:                        <td className="px-6 py-4 text-sm text-slate-900 font-medium">{cycle.title}</td>
+1872:                        <td className="px-6 py-4 text-sm text-slate-600">{new Date(cycle.start_date).toLocaleDateString()}</td>
+1873:                        <td className="px-6 py-4 text-sm text-slate-600">{new Date(cycle.end_date).toLocaleDateString()}</td>
+1874:                        <td className="px-6 py-4 text-sm">
+1875:                          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${cycle.status === 'Active' ? 'bg-blue-100 text-blue-800' :
+1876:                            cycle.status === 'Completed' ? 'bg-green-100 text-green-800' :
+1877:                              'bg-slate-100 text-slate-800'
+1878:                            }`}>
+1879:                            {cycle.status}
+1880:                          </span>
+1881:                        </td>
+1882:                        <td className="px-6 py-4 text-sm">
+1883:                          <button className="text-blue-900 hover:text-blue-700 transition flex items-center gap-1 font-medium">
+1884:                            <Eye className="w-4 h-4" />
+1885:                            View Status
+1886:                          </button>
+1887:                        </td>
+1888:                        <td className="px-6 py-4 text-right space-x-2">
+1889:                          <button
+1890:                            onClick={() => handleEditCycle(cycle)}
+1891:                            className="text-blue-900 hover:text-blue-700 transition"
+1892:                            title="Edit"
+1893:                          >
+1894:                            <Edit2 className="w-4 h-4" />
+1895:                          </button>
+1896:                          <button
+1897:                            onClick={() => handleDeleteCycle(cycle.id)}
+1898:                            className="text-red-600 hover:text-red-800 transition"
+1899:                            title="Delete"
+1900:                          >
+1901:                            <Trash2 className="w-4 h-4" />
+1902:                          </button>
+1903:                        </td>
+1904:                      </tr>
+1905:                    ))
+1906:                  )}
+1907:                </tbody>
+1908:              </table>
+1909:            </div>
+1910:          )}
+1911:        </div>
+1912:      </main>
+1913:
+1914:      {/* Create/Edit Evaluation Cycle Dialog */}
+1915:      <Dialog
+1916:        open={showCycleDialog}
+1917:        onClose={() => {
+1918:          setShowCycleDialog(false);
+1919:          setEditingCycle(null);
+1920:          setNewCycle({ title: '', start_date: '', end_date: '', status: 'Planned' });
+1921:        }}
+1922:        title={editingCycle ? 'Edit Evaluation Cycle' : 'Create New Evaluation Cycle'}
+1923:      >
+1924:        <div className="space-y-4">
+1925:          <div>
+1926:            <label className="block text-sm font-medium text-slate-700 mb-1">Cycle Name *</label>
+1927:            <Input
+1928:              type="text"
+1929:              placeholder="e.g., Annual Review 2026"
+1930:              value={newCycle.title}
+1931:              onChange={(e) => setNewCycle({ ...newCycle, title: e.target.value })}
+1932:            />
+1933:          </div>
+1934:
+1935:          <div>
+1936:            <label className="block text-sm font-medium text-slate-700 mb-1">Start Date *</label>
+1937:            <Input
+1938:              type="date"
+1939:              value={newCycle.start_date}
+1940:              onChange={(e) => setNewCycle({ ...newCycle, start_date: e.target.value })}
+1941:            />
+1942:          </div>
+1943:
+1944:          <div>
+1945:            <label className="block text-sm font-medium text-slate-700 mb-1">End Date *</label>
+1946:            <Input
+1947:              type="date"
+1948:              value={newCycle.end_date}
+1949:              onChange={(e) => setNewCycle({ ...newCycle, end_date: e.target.value })}
+1950:            />
+1951:          </div>
+1952:
+1953:          <div>
+1954:            <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+1955:            <select
+1956:              value={newCycle.status}
+1957:              onChange={(e) => setNewCycle({ ...newCycle, status: e.target.value as 'Active' | 'Completed' | 'Planned' })}
+1958:              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-900/30 focus:border-blue-900"
+1959:            >
+1960:              <option value="Planned">Planned</option>
+1961:              <option value="Active">Active</option>
+1962:              <option value="Completed">Completed</option>
+1963:            </select>
+1964:          </div>
+1965:
+1966:          <div className="flex gap-3 pt-4">
+1967:            <Button
+1968:              onClick={handleAddCycle}
+1969:              className="flex-1 bg-blue-900 text-white"
+1970:            >
+1971:              {editingCycle ? 'Update Cycle' : 'Create Cycle'}
+1972:            </Button>
+1973:            <Button
+1974:              onClick={() => {
+1975:                setShowCycleDialog(false);
+1976:                setEditingCycle(null);
+1977:                setNewCycle({ title: '', start_date: '', end_date: '', status: 'Planned' });
+1978:              }}
+1979:              className="flex-1 bg-slate-300 text-slate-900"
+1980:            >
+1981:              Cancel
+1982:            </Button>
+1983:          </div>
+1984:        </div>
+1985:      </Dialog>
+1986:    </div>
+1987:  );
+1988:};
