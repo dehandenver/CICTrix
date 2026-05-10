@@ -26,7 +26,10 @@ export const POSITION_OPTIONS = POSITIONS.map(pos => ({
 }));
 
 /**
- * Standard departments/offices in the organization
+ * @deprecated Source of truth is now the `departments` table (migration 006).
+ * Use listDepartments() / getDepartmentOptions() from src/lib/api/departments.ts.
+ * This constant is retained as an offline fallback during phase 1 and should
+ * not be referenced by new code.
  */
 export const DEPARTMENTS = [
   'Human Resources',
@@ -40,7 +43,8 @@ export const DEPARTMENTS = [
 ] as const;
 
 /**
- * Department options formatted for Select components
+ * @deprecated See DEPARTMENTS — use getDepartmentOptions() from
+ * src/lib/api/departments.ts instead.
  */
 export const DEPARTMENT_OPTIONS = DEPARTMENTS.map(dept => ({
   value: dept,

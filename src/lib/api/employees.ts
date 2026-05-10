@@ -158,21 +158,21 @@ export async function getPositions() {
 }
 
 /**
- * Get distinct departments
+ * Get departments from the canonical lookup table.
+ * Returns an array of names to preserve the previous shape; callers
+ * that need IDs/codes should use src/lib/api/departments.ts directly.
  */
 export async function getDepartments() {
   try {
     const { data, error } = await supabase
-      .from('employees')
-      .select('department')
-      .eq('status', 'Active')
-      .neq('department', null);
+      .from('departments')
+      .select('name')
+      .eq('is_active', true)
+      .order('name');
 
     if (error) throw error;
 
-    const departments = Array.from(new Set(data?.map((e) => e.department) || []))
-      .sort();
-
+    const departments = (data ?? []).map((d) => d.name);
     return { success: true, data: departments };
   } catch (error) {
     console.error('Error fetching departments:', error);
