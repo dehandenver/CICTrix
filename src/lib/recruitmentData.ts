@@ -8,10 +8,6 @@ import {
 } from '../types/recruitment.types';
 import { supabase } from './supabase';
 
-const JOB_POSTINGS_KEY = 'cictrix_job_postings';
-const AUTHORITATIVE_JOB_POSTINGS_KEY = 'cictrix_authoritative_job_postings';
-const LEGACY_JOBS_KEY = 'cictrix_jobs';
-const APPLICANT_POSITION_OPTIONS_KEY = 'cictrix_applicant_position_options';
 const APPLICANTS_KEY = 'cictrix_qualified_applicants';
 const DELETED_JOB_REPORTS_KEY = 'cictrix_deleted_job_reports';
 const NEWLY_HIRED_KEY = 'cictrix_newly_hired';
@@ -263,45 +259,26 @@ const buildInitialData = () => {
 };
 
 export const ensureRecruitmentSeedData = () => {
+  // Job postings now live in Supabase; this function only seeds remaining
+  // localStorage-backed tables (applicants, newly hired, raters, employees).
   const currentVersion = localStorage.getItem(RECRUITMENT_DATA_VERSION_KEY);
   if (currentVersion !== RECRUITMENT_DATA_VERSION) {
-    // Clear demo people data so testing can start from a clean state.
     localStorage.setItem(APPLICANTS_KEY, JSON.stringify([]));
     localStorage.setItem(NEWLY_HIRED_KEY, JSON.stringify([]));
     localStorage.setItem(RATER_ASSIGNMENTS_KEY, JSON.stringify([]));
     localStorage.setItem(EMPLOYEE_DB_KEY, JSON.stringify([]));
-
-    // Align old department labels to applicant-side canonical department list.
-    const existingJobs = safeJsonParse<JobPosting[]>(localStorage.getItem(JOB_POSTINGS_KEY), []);
-    if (existingJobs.length) {
-      const normalizedJobs = existingJobs
-        .filter((job) => !isLikelySeededDemoJob(job))
-        .map((job) => ({
-        ...job,
-        department: normalizeDepartment(job.department),
-      }));
-      saveJobPostings(normalizedJobs);
-    } else {
-      saveJobPostings([]);
-    }
-
     localStorage.setItem(RECRUITMENT_DATA_VERSION_KEY, RECRUITMENT_DATA_VERSION);
   }
 
-  const hasSeed = Boolean(localStorage.getItem(JOB_POSTINGS_KEY));
-  if (hasSeed) {
-    backfillPortalApplicantsToRecruitment();
-    return;
+  const hasSeed = Boolean(localStorage.getItem(APPLICANTS_KEY));
+  if (!hasSeed) {
+    const seed = buildInitialData();
+    localStorage.setItem(APPLICANTS_KEY, JSON.stringify(seed.applicants));
+    localStorage.setItem(NEWLY_HIRED_KEY, JSON.stringify(seed.newlyHired));
+    localStorage.setItem(RATER_ASSIGNMENTS_KEY, JSON.stringify(seed.assignments));
+    localStorage.setItem(EVALUATION_PERIODS_KEY, JSON.stringify(seed.periods));
+    localStorage.setItem(EMPLOYEE_DB_KEY, JSON.stringify(seed.employees));
   }
-
-  const seed = buildInitialData();
-  saveJobPostings(seed.jobs);
-  localStorage.setItem(APPLICANTS_KEY, JSON.stringify(seed.applicants));
-  localStorage.setItem(NEWLY_HIRED_KEY, JSON.stringify(seed.newlyHired));
-  localStorage.setItem(RATER_ASSIGNMENTS_KEY, JSON.stringify(seed.assignments));
-  localStorage.setItem(EVALUATION_PERIODS_KEY, JSON.stringify(seed.periods));
-  localStorage.setItem(EMPLOYEE_DB_KEY, JSON.stringify(seed.employees));
-  localStorage.setItem(RECRUITMENT_DATA_VERSION_KEY, RECRUITMENT_DATA_VERSION);
 
   backfillPortalApplicantsToRecruitment();
 };
@@ -359,16 +336,34 @@ export const getJobPostingsFromSupabase = async (): Promise<JobPosting[]> => {
   }
 };
 
-export const getJobPostings = () => safeJsonParse<JobPosting[]>(localStorage.getItem(JOB_POSTINGS_KEY), []);
+// ─── Job postings: Supabase-backed in-memory cache ──────────────────────────
+// Source of truth is the Supabase `job_postings` table. We keep a module-level
+// cache so the existing sync API (getJobPostings/getAuthoritativeJobPostings/
+// saveJobPostings) keeps working without forcing every caller to await.
+// Boot the cache by awaiting loadJobPostings() in main.tsx before render.
 
-export const getAuthoritativeJobPostings = () => {
-  const authoritative = safeJsonParse<JobPosting[]>(
-    localStorage.getItem(AUTHORITATIVE_JOB_POSTINGS_KEY),
-    []
-  );
-  if (authoritative.length > 0) return authoritative;
-  return getJobPostings();
+let jobPostingsCache: JobPosting[] = [];
+let jobPostingsLoaded = false;
+
+const dispatchJobPostingsUpdated = (): void => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('cictrix:job-postings-updated'));
+  }
 };
+
+export const loadJobPostings = async (): Promise<JobPosting[]> => {
+  const rows = await getJobPostingsFromSupabase();
+  jobPostingsCache = rows;
+  jobPostingsLoaded = true;
+  dispatchJobPostingsUpdated();
+  return rows;
+};
+
+export const isJobPostingsLoaded = (): boolean => jobPostingsLoaded;
+
+export const getJobPostings = (): JobPosting[] => jobPostingsCache;
+
+export const getAuthoritativeJobPostings = (): JobPosting[] => jobPostingsCache;
 
 export type ApplicantPositionOption = {
   value: string;
@@ -399,75 +394,80 @@ const buildApplicantPositionOptions = (rows: JobPosting[]): ApplicantPositionOpt
   return applicantOptions;
 };
 
-export const getApplicantPositionOptions = () => {
-  // Always derive from current postings so deleted jobs never linger in applicant options.
-  const derived = buildApplicantPositionOptions(getJobPostings());
-  localStorage.setItem(APPLICANT_POSITION_OPTIONS_KEY, JSON.stringify(derived));
-  return derived;
+export const getApplicantPositionOptions = (): ApplicantPositionOption[] =>
+  buildApplicantPositionOptions(getJobPostings());
+
+const mapJobPostingToSupabaseRow = (job: JobPosting) => ({
+  id: job.id,
+  title: job.title,
+  item_number: job.jobCode || '',
+  department: job.department || '',
+  office: job.department || '',
+  status:
+    job.status === 'Active' ? 'Open'
+    : job.status === 'Draft' ? 'Reviewing'
+    : job.status === 'Filled' ? 'Closed'
+    : job.status || 'Open',
+});
+
+const persistJobPostingsToSupabase = async (rows: JobPosting[]): Promise<void> => {
+  // database.types.ts does not yet include job_postings, so the typed client
+  // resolves the row shape to `never`. Cast at the call site rather than fight
+  // the generated types until a regenerate pass adds the table.
+  const client = supabase as unknown as {
+    from: (table: string) => {
+      upsert: (rows: unknown[], options?: { onConflict?: string }) => Promise<{ error: { message: string } | null }>;
+      delete: () => {
+        neq: (column: string, value: string) => Promise<{ error: { message: string } | null }>;
+        not: (column: string, op: string, value: string) => Promise<{ error: { message: string } | null }>;
+      };
+    };
+  };
+
+  const supabaseRows = rows.filter((job) => Boolean(job.id)).map(mapJobPostingToSupabaseRow);
+
+  try {
+    if (supabaseRows.length > 0) {
+      const { error: upsertError } = await client
+        .from('job_postings')
+        .upsert(supabaseRows, { onConflict: 'id' });
+      if (upsertError) {
+        console.warn('[RECRUITMENT] Upsert failed:', upsertError);
+      }
+    }
+
+    // Remove rows that are no longer present in the local list.
+    const keptIds = supabaseRows.map((row) => row.id);
+    if (keptIds.length === 0) {
+      await client
+        .from('job_postings')
+        .delete()
+        .neq('id', '00000000-0000-0000-0000-000000000000');
+    } else {
+      const formattedIds = `(${keptIds.map((id) => `"${id}"`).join(',')})`;
+      const { error: deleteError } = await client
+        .from('job_postings')
+        .delete()
+        .not('id', 'in', formattedIds);
+      if (deleteError) {
+        console.warn('[RECRUITMENT] Delete-removed failed:', deleteError);
+      }
+    }
+  } catch (err) {
+    console.warn('[RECRUITMENT] Error persisting job postings to Supabase:', err);
+  }
 };
 
-export const saveJobPostings = (rows: JobPosting[]) => {
+export const saveJobPostings = (rows: JobPosting[]): void => {
   const normalizedRows = Array.isArray(rows) ? rows : [];
 
-  // Persist both keys so all modules read the same latest job postings state.
-  localStorage.setItem(JOB_POSTINGS_KEY, JSON.stringify(normalizedRows));
-  localStorage.setItem(AUTHORITATIVE_JOB_POSTINGS_KEY, JSON.stringify(normalizedRows));
+  // Update cache + notify subscribers synchronously for instant UI feedback.
+  jobPostingsCache = normalizedRows;
+  jobPostingsLoaded = true;
+  dispatchJobPostingsUpdated();
 
-  // Keep legacy/mock jobs table in sync so pages reading `jobs` reflect the same source of truth.
-  const legacyRows = normalizedRows.map((job, index) => ({
-    id: index + 1,
-    title: job.title,
-    item_number: job.jobCode,
-    salary_grade: job.salaryGrade ?? '',
-    department: job.department,
-    description: job.summary,
-    status: job.status === 'Active' ? 'Open' : job.status === 'Closed' || job.status === 'Filled' ? 'Closed' : 'On Hold',
-    created_at: job.postedDate,
-    updated_at: new Date().toISOString(),
-  }));
-
-  localStorage.setItem(LEGACY_JOBS_KEY, JSON.stringify(legacyRows));
-
-  // Rebuild and overwrite applicant dropdown cache from current active postings.
-  const applicantOptions = buildApplicantPositionOptions(normalizedRows);
-
-  localStorage.setItem(APPLICANT_POSITION_OPTIONS_KEY, JSON.stringify(applicantOptions));
-
-  // CRITICAL: Also persist to Supabase (source of truth) so interviewer side sees updates across tabs/sessions
-  void (async () => {
-    try {
-      // Upsert job postings to Supabase - this ensures interviewer side always sees latest data
-      // Map JobPosting fields to the actual DB column names (item_number, not jobCode; created_at handled by DB default).
-      // Map recruitment-domain status back to the UI-domain values the table stores.
-      const supabaseRows = normalizedRows.map((job) => ({
-        title: job.title,
-        item_number: job.jobCode || '',
-        department: job.department || '',
-        office: job.department || '',
-        status: job.status === 'Active' ? 'Open'
-               : job.status === 'Draft' ? 'Reviewing'
-               : job.status || 'Open',
-      }));
-      
-      // Delete existing rows and insert new ones to ensure clean state
-      await supabase.from('job_postings').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      if (supabaseRows.length > 0) {
-        const { error } = await (supabase as any).from('job_postings').insert(supabaseRows);
-        if (error) {
-          console.warn('[RECRUITMENT] Failed to save job postings to Supabase:', error);
-        } else {
-          console.log('[RECRUITMENT] ✓ Job postings saved to Supabase');
-        }
-      }
-    } catch (err) {
-      console.warn('[RECRUITMENT] Error saving job postings to Supabase:', err);
-    }
-  })();
-
-  // Broadcast changes so ApplicantAssessmentForm re-syncs immediately.
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('cictrix:job-postings-updated'));
-  }
+  // Persist to Supabase in the background (source of truth).
+  void persistJobPostingsToSupabase(normalizedRows);
 };
 
 export const getApplicants = () => safeJsonParse<Applicant[]>(localStorage.getItem(APPLICANTS_KEY), []);

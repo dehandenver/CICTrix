@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { loadJobPostings } from './lib/recruitmentData';
 import { initTheme } from './lib/theme';
 import './styles/interviewer.css';
 
@@ -8,37 +9,22 @@ import './styles/interviewer.css';
 initTheme();
 
 const RUNTIME_DATA_VERSION_KEY = 'cictrix_runtime_data_version';
-const RUNTIME_DATA_VERSION = '2026-03-08-job-sync-v3';
+const RUNTIME_DATA_VERSION = '2026-05-11-supabase-job-postings';
 
-const runOneTimeRuntimeMigration = (): boolean => {
+const purgeLegacyJobPostingLocalStorage = (): void => {
   try {
     const current = localStorage.getItem(RUNTIME_DATA_VERSION_KEY);
-    if (current === RUNTIME_DATA_VERSION) {
-      return false;
-    }
+    if (current === RUNTIME_DATA_VERSION) return;
 
-    const authoritativeRaw = localStorage.getItem('cictrix_authoritative_job_postings');
-    const postingsRaw = localStorage.getItem('cictrix_job_postings');
-    const sourceRaw = authoritativeRaw ?? postingsRaw ?? '[]';
-
-    let normalizedRaw = '[]';
-    try {
-      const parsed = JSON.parse(sourceRaw);
-      normalizedRaw = Array.isArray(parsed) ? JSON.stringify(parsed) : '[]';
-    } catch {
-      normalizedRaw = '[]';
-    }
-
-    // Normalize canonical keys and clear derived keys that can hold stale options.
-    localStorage.setItem('cictrix_job_postings', normalizedRaw);
-    localStorage.setItem('cictrix_authoritative_job_postings', normalizedRaw);
+    // Job postings now live exclusively in Supabase. Clear any legacy local copies
+    // so a returning browser does not show stale or duplicated entries.
+    localStorage.removeItem('cictrix_job_postings');
+    localStorage.removeItem('cictrix_authoritative_job_postings');
     localStorage.removeItem('cictrix_applicant_position_options');
     localStorage.removeItem('cictrix_jobs');
     localStorage.setItem(RUNTIME_DATA_VERSION_KEY, RUNTIME_DATA_VERSION);
-
-    return true;
   } catch {
-    return false;
+    // localStorage may be unavailable in some sandboxes; nothing to do.
   }
 };
 
@@ -50,16 +36,19 @@ if (shouldRedirectToCanonicalHost) {
   window.location.replace(url.toString());
 }
 
-const migrationApplied = !shouldRedirectToCanonicalHost && runOneTimeRuntimeMigration();
+if (!shouldRedirectToCanonicalHost) {
+  purgeLegacyJobPostingLocalStorage();
 
-if (migrationApplied) {
-  window.location.reload();
-}
+  const renderApp = () => {
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <React.StrictMode>
+        <App />
+      </React.StrictMode>,
+    );
+  };
 
-if (!shouldRedirectToCanonicalHost && !migrationApplied) {
-  ReactDOM.createRoot(document.getElementById('root')!).render(
-    <React.StrictMode>
-      <App />
-    </React.StrictMode>,
-  );
+  // Kick off the Supabase fetch but do not block first paint — pages listen
+  // for the 'cictrix:job-postings-updated' event and re-render when ready.
+  void loadJobPostings();
+  renderApp();
 }
