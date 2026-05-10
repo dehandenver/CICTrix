@@ -1,5 +1,9 @@
 import os
+from pathlib import Path
 from pydantic_settings import BaseSettings
+
+# Always resolve .env relative to this file, regardless of CWD at startup
+_ENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
 
 
 class Settings(BaseSettings):
@@ -16,7 +20,8 @@ class Settings(BaseSettings):
     JWT_EXPIRATION_HOURS: int = 24
 
     class Config:
-        env_file = ".env"
+        env_file = str(_ENV_PATH)
+        env_file_encoding = "utf-8"
         case_sensitive = True
 
 

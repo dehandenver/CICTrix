@@ -1,16 +1,14 @@
-from fastapi import APIRouter, HTTPException, status, Depends, Query
-from typing import List
+from fastapi import APIRouter, HTTPException, status, Depends, Query, Body
+from typing import List, Optional
 from app.models.applicant import ApplicantResponse, ApplicantCreate, ApplicantUpdate, StatusUpdateRequest
 from app.models.user import UserRole
+from app.core.security import TokenData
 from app.core.supabase_client import db
 from app.utils.dependencies import get_current_user, require_role
 
 router = APIRouter(prefix="/api/applicants", tags=["applicants"])
 
 
-# POST endpoint to create a new applicant
-from fastapi import Body
-from app.models.applicant import ApplicantResponse
 
 @router.post("/", response_model=ApplicantResponse, status_code=201)
 async def create_applicant(
@@ -97,7 +95,6 @@ async def create_applicant(
         )
 
 
-from typing import Optional
 
 @router.get("/", response_model=List[ApplicantResponse])
 async def list_applicants(
@@ -138,7 +135,7 @@ async def list_applicants(
 @router.get("/{applicant_id}", response_model=ApplicantResponse)
 async def get_applicant(
     applicant_id: str,
-    current_user: UserRole = Depends(get_current_user),
+    current_user: TokenData = Depends(get_current_user),
 ):
     """
     Get a specific applicant with access control.
@@ -181,7 +178,7 @@ async def get_applicant(
 async def update_applicant(
     applicant_id: str,
     update_data: ApplicantUpdate,
-    current_user: UserRole = Depends(require_role("ADMIN", "PM", "RSP", "LND")),
+    current_user: TokenData = Depends(require_role("ADMIN", "PM", "RSP", "LND")),
 ):
     """
     Update an applicant (Admin only).
@@ -223,7 +220,7 @@ async def update_applicant(
 async def update_applicant_status(
     applicant_id: str,
     body: StatusUpdateRequest,
-    current_user: UserRole = Depends(require_role("ADMIN", "PM", "RSP", "LND")),
+    current_user: TokenData = Depends(require_role("ADMIN", "PM", "RSP", "LND")),
 ):
     """
     Update an applicant's evaluation status.
