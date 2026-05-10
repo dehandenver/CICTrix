@@ -1,8 +1,19 @@
 # CICTrix HRIS Access Guide
 
-Reference for local development access to frontend pages and backend API endpoints.
+Reference for local development access to frontend pages and backend API endpoints, as well as live production URLs.
 
-## Environment URLs
+## Live Production URLs (Vercel)
+
+| Service / Portal | Live URL | Description / Access |
+|---|---|---|
+| **Applicant Portal (Home)** | [https://cic-trix.vercel.app/](https://cic-trix.vercel.app/) | Public access |
+| **Admin Portal** | [https://cic-trix.vercel.app/admin/login](https://cic-trix.vercel.app/admin/login) | Super Admin, RSP, LND, PM |
+| **Employee Portal** | [https://cic-trix.vercel.app/employee/login](https://cic-trix.vercel.app/employee/login) | Employee credentials |
+| **Interviewer Portal** | [https://cic-trix.vercel.app/interviewer/login](https://cic-trix.vercel.app/interviewer/login) | Set up via Admin portal |
+| **Backend API** | [https://cic-trix.vercel.app/api](https://cic-trix.vercel.app/api) | Production API endpoints |
+| **API Docs (Swagger)** | [https://cic-trix.vercel.app/api/docs](https://cic-trix.vercel.app/api/docs) | Production API Documentation |
+
+## Local Environment URLs
 
 | Service | Primary URL | Fallback URL |
 |---|---|---|
