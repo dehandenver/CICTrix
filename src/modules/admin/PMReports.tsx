@@ -1,16 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, ArrowLeft, CheckCircle2, ChevronDown, ChevronUp, Clock, RefreshCw, Send } from 'lucide-react';
-<<<<<<< HEAD
 import { supabase as supabaseClient } from '../../lib/supabase';
+import { IPCRReportView } from './pm/IPCRReportView';
+import { type IPCRRatingRecord, getAdjectival } from './pm/SummaryOfRatings';
 
 // Bypass auto-generated Supabase types resolving to `never`.
 const supabase = supabaseClient as any;
-import { getAdjectival } from './pm/SummaryOfRatings';
-=======
-import { supabase } from '../../lib/supabase';
-import { IPCRReportView } from './pm/IPCRReportView';
-import { type IPCRRatingRecord, getAdjectival } from './pm/SummaryOfRatings';
->>>>>>> 799e1b3e64f023fbf7de0ac27c513002015a8ba4
 
 type ReportStatus = 'Pending Review' | 'Reviewed' | 'Actioned';
 
