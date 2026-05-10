@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, ArrowLeft, CheckCircle2, ChevronDown, ChevronUp, Clock, RefreshCw, Send } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { supabase as supabaseClient } from '../../lib/supabase';
+
+// Bypass auto-generated Supabase types resolving to `never`.
+const supabase = supabaseClient as any;
 import { getAdjectival } from './pm/SummaryOfRatings';
 
 type ReportStatus = 'Pending Review' | 'Reviewed' | 'Actioned';

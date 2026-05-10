@@ -319,11 +319,17 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   };
 
   const savePersonalInfo = () => {
+    const trimmedGender = personalDraft.gender.trim();
+    const allowedGenders: Employee['gender'][] = ['Male', 'Female', 'Other', 'Prefer not to say'];
+    const safeGender: Employee['gender'] = (allowedGenders as string[]).includes(trimmedGender)
+      ? (trimmedGender as Employee['gender'])
+      : 'Prefer not to say';
+
     persistProfilePatch({
       fullName: personalDraft.fullName.trim(),
       dateOfBirth: personalDraft.dateOfBirth.trim(),
       placeOfBirth: personalDraft.placeOfBirth.trim(),
-      gender: personalDraft.gender.trim(),
+      gender: safeGender,
       homeAddress: personalDraft.homeAddress.trim(),
       personalDetailsFinalized: true, // Lock editing after first save
     });
