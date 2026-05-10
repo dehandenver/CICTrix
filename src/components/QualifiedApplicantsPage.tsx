@@ -17,10 +17,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getPreferredDataSourceMode } from '../lib/dataSourceMode';
-import {
-    getEmployeePortalAccounts,
-    updateEmployeePortalEmployee,
-} from '../lib/employeePortalData';
+import { hireApplicant } from '../lib/api/employeesApi';
 import { mockDatabase } from '../lib/mockDatabase';
 import {
     ensureRecruitmentSeedData,
