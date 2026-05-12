@@ -249,7 +249,7 @@ export async function listEmployeeDocumentsByType(
   const employeeIds = Array.from(new Set(rows.map((r) => r.employee_id).filter(Boolean)));
 
   const empResult = await (supabase as any)
-    .from('employees')
+    .from('employees_with_department')
     .select('id, employee_number, first_name, last_name, position, department')
     .in('id', employeeIds);
 

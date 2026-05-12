@@ -1,11 +1,14 @@
--- ============================================================================
+ -- ============================================================================
 -- DEPARTMENTS LOOKUP TABLE (Phase 1)
 -- Created: 2026-05-11
 -- Introduces the normalized `departments` table and adds employees.department_id
--- as a FK to it. The legacy `employees.department` text column is RETAINED for
--- now so existing reads/writes continue to work; a later migration will drop it
--- once all consumers are migrated to read department via the FK or the
--- `employees_with_department` view.
+-- as a FK to it. The legacy `employees.current_department` text column is
+-- RETAINED for now so existing reads/writes continue to work; a later migration
+-- will drop it once all consumers are migrated to read department via the FK
+-- or the `employees_with_department` view.
+--
+-- Targets the LIVE employees schema (current_department text, nullable),
+-- NOT the schema in migration 001 — the two have drifted.
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -68,11 +71,11 @@ CREATE TABLE IF NOT EXISTS departments_backfill_audit (
 );
 
 -- ----------------------------------------------------------------------------
--- 5. Backfill department_id
+-- 5. Backfill department_id from current_department
 --    Strategy:
 --      a. Exact match against departments.name
 --      b. LEGACY_DEPARTMENT_MAP from src/lib/recruitmentData.ts
---      c. Fallback to 'Operations' (logged in audit table)
+--      c. Fallback to 'Operations' for nulls/unmapped values (logged in audit)
 -- ----------------------------------------------------------------------------
 
 -- 5a. Exact match
@@ -81,11 +84,12 @@ WITH matched AS (
   SET department_id = d.id
   FROM departments d
   WHERE e.department_id IS NULL
-    AND TRIM(e.department) = d.name
-  RETURNING e.id, e.department, d.name
+    AND e.current_department IS NOT NULL
+    AND TRIM(e.current_department) = d.name
+  RETURNING e.id, e.current_department, d.name
 )
 INSERT INTO departments_backfill_audit (employee_id, legacy_value, resolved_to, resolution)
-SELECT id, department, name, 'exact' FROM matched;
+SELECT id, current_department, name, 'exact' FROM matched;
 
 -- 5b. Legacy normalization map (mirrors LEGACY_DEPARTMENT_MAP)
 WITH legacy_map(legacy_value, canonical_name) AS (
@@ -105,62 +109,63 @@ mapped AS (
   FROM legacy_map lm
   JOIN departments d ON d.name = lm.canonical_name
   WHERE e.department_id IS NULL
-    AND TRIM(e.department) = lm.legacy_value
-  RETURNING e.id, e.department, d.name
+    AND e.current_department IS NOT NULL
+    AND TRIM(e.current_department) = lm.legacy_value
+  RETURNING e.id, e.current_department, d.name
 )
 INSERT INTO departments_backfill_audit (employee_id, legacy_value, resolved_to, resolution)
-SELECT id, department, name, 'legacy_map' FROM mapped;
+SELECT id, current_department, name, 'legacy_map' FROM mapped;
 
--- 5c. Fallback for any remaining unmapped rows
+-- 5c. Fallback for any remaining unmapped/null rows
 WITH fallback AS (
   UPDATE employees e
   SET department_id = d.id
   FROM departments d
   WHERE e.department_id IS NULL
     AND d.name = 'Operations'
-  RETURNING e.id, e.department, d.name
+  RETURNING e.id, e.current_department, d.name
 )
 INSERT INTO departments_backfill_audit (employee_id, legacy_value, resolved_to, resolution)
-SELECT id, department, name, 'fallback' FROM fallback;
+SELECT id, current_department, name, 'fallback' FROM fallback;
 
 -- ----------------------------------------------------------------------------
--- 6. Enforce NOT NULL on department_id (legacy text column stays for now).
---    Phase 2 migration will drop employees.department once consumers move to
---    department_id. Until then, application writes should set BOTH fields to
---    keep them in sync.
+-- 6. Enforce NOT NULL on department_id (legacy current_department stays).
+--    Phase 2 migration will drop employees.current_department once consumers
+--    move to department_id.
 -- ----------------------------------------------------------------------------
 ALTER TABLE employees ALTER COLUMN department_id SET NOT NULL;
 
-COMMENT ON COLUMN employees.department IS
+COMMENT ON COLUMN employees.current_department IS
   'DEPRECATED: legacy free-text department. Use department_id FK + departments table. Will be dropped in a follow-up migration.';
 
 -- ----------------------------------------------------------------------------
 -- 7. Convenience view: employees with department name + code flattened.
---    Useful even alongside the legacy column because it also exposes
---    department_code, and as the canonical read path once `department` is gone.
+--    Exposes `department` (the canonical name from the lookup) and
+--    `department_code`. Safe alongside the legacy column because the live
+--    employees table has no column called `department`.
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE VIEW employees_with_department AS
 SELECT
   e.*,
+  d.name AS department,
   d.code AS department_code
 FROM employees e
 LEFT JOIN departments d ON d.id = e.department_id;
 
 COMMENT ON VIEW employees_with_department IS
-  'Adds department_code from the departments lookup. After legacy employees.department is dropped, this view will also expose d.name as `department` for back-compat.';
+  'Adds department + department_code from the departments lookup. Use this as the canonical read path during phase 1.';
 
 -- ----------------------------------------------------------------------------
--- 8. Sync trigger: keep legacy employees.department aligned with the FK.
---    During phase 1 both columns coexist. New code can write only
---    department_id and this trigger will populate `department` from the
---    lookup, satisfying the existing NOT NULL constraint without forcing
---    every caller to write both fields.
+-- 8. Sync trigger: keep legacy current_department aligned with the FK.
+--    During phase 1 both fields coexist. New code can write only
+--    department_id and this trigger will populate current_department from
+--    the lookup, so existing readers don't see stale text.
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION sync_employee_department_text()
 RETURNS TRIGGER AS $$
 BEGIN
   IF NEW.department_id IS NOT NULL THEN
-    SELECT name INTO NEW.department FROM departments WHERE id = NEW.department_id;
+    SELECT name INTO NEW.current_department FROM departments WHERE id = NEW.department_id;
   END IF;
   RETURN NEW;
 END;
@@ -173,4 +178,4 @@ CREATE TRIGGER trigger_sync_employee_department_text
   EXECUTE FUNCTION sync_employee_department_text();
 
 COMMENT ON FUNCTION sync_employee_department_text() IS
-  'Phase 1 only: keeps legacy employees.department text aligned with departments.name when department_id is written. Drop together with the legacy column in phase 2.';
+  'Phase 1 only: keeps legacy employees.current_department aligned with departments.name when department_id is written. Drop together with the legacy column in phase 2.';

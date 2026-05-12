@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, AlertCircle } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
+import { listDepartments, getDepartmentIdByName } from '../../../lib/api/departments';
 
 interface Employee {
   id: string;
@@ -44,29 +45,9 @@ export default function ChangePositionModal({ employee, onClose, onSuccess }: Pr
 
   const fetchDepartments = async () => {
     try {
-      // Get departments from both employees and applicants tables
-      const [empData, appData] = await Promise.all([
-        supabase
-          .from('employees')
-          .select('department')
-          .eq('status', 'Active')
-          .neq('department', null)
-          .catch(() => ({ data: [] })),
-        supabase
-          .from('applicants')
-          .select('office')
-          .eq('status', 'Hired')
-          .neq('office', null)
-          .catch(() => ({ data: [] })),
-      ]);
-
-      const allDepts = [
-        ...(empData?.data?.map((e) => e.department) || []),
-        ...(appData?.data?.map((a) => a.office) || []),
-      ];
-      
-      const uniqueDepts = Array.from(new Set(allDepts)).sort();
-      setDepartments(uniqueDepts);
+      const result = await listDepartments(false);
+      if (!result.success) return;
+      setDepartments(result.data.map((d) => d.name));
     } catch (error) {
       console.error('Error fetching departments:', error);
     }
@@ -74,10 +55,11 @@ export default function ChangePositionModal({ employee, onClose, onSuccess }: Pr
 
   const fetchPositions = async () => {
     try {
-      // Get positions from both employees and applicants tables for the selected department
+      // Get positions from both employees (via department-aware view) and applicants
+      // for the selected department.
       const [empData, appData] = await Promise.all([
         supabase
-          .from('employees')
+          .from('employees_with_department')
           .select('position')
           .eq('department', newDepartment)
           .eq('status', 'Active')
@@ -134,13 +116,20 @@ export default function ChangePositionModal({ employee, onClose, onSuccess }: Pr
 
         alert(`${changeType.charAt(0).toUpperCase() + changeType.slice(1)} successful!`);
       } else {
-        // For established employees, update the employees table
-        // Note: This requires the employees table to be deployed in Supabase
+        // For established employees, update the employees table.
+        // Resolve the department name to its FK; the BEFORE-INSERT/UPDATE
+        // trigger keeps the legacy current_department text in sync.
+        const departmentId = await getDepartmentIdByName(newDepartment);
+        if (!departmentId) {
+          alert(`Unknown department: ${newDepartment}`);
+          return;
+        }
+
         const { error: updateError } = await supabase
           .from('employees')
           .update({
             position: newPosition,
-            department: newDepartment,
+            department_id: departmentId,
             modified_at: new Date().toISOString(),
           })
           .eq('id', employee.id);

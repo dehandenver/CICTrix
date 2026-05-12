@@ -4,6 +4,7 @@
  */
 
 import { supabase } from '../../lib/supabase';
+import { getDepartmentIdByName } from './departments';
 
 export interface Employee {
   id: string;
@@ -11,7 +12,10 @@ export interface Employee {
   first_name: string;
   last_name: string;
   position: string;
+  /** Canonical name from departments lookup (sourced via employees_with_department view). */
   department: string;
+  /** FK to departments.id. Authoritative; `department` is for display/back-compat. */
+  department_id?: string;
   status: string;
   email: string;
   phone?: string;
@@ -30,7 +34,9 @@ export async function getAllEmployees(filters?: {
   search?: string;
 }) {
   try {
-    let query = supabase.from('employees').select('*');
+    // Read via the view so each row carries the canonical `department`
+    // string sourced from the departments lookup.
+    let query = supabase.from('employees_with_department').select('*');
 
     if (filters?.status) {
       query = query.eq('status', filters.status);
@@ -67,7 +73,7 @@ export async function getAllEmployees(filters?: {
 export async function getEmployeeById(employeeId: string) {
   try {
     const { data: employee, error: empError } = await supabase
-      .from('employees')
+      .from('employees_with_department')
       .select('*')
       .eq('id', employeeId)
       .single();
@@ -106,7 +112,7 @@ export async function getEmployeeById(employeeId: string) {
 export async function getEmployeesByPosition(position: string, department: string) {
   try {
     const { data, error } = await supabase
-      .from('employees')
+      .from('employees_with_department')
       .select('*')
       .eq('position', position)
       .eq('department', department)
@@ -127,7 +133,7 @@ export async function getEmployeesByPosition(position: string, department: strin
 export async function getPositions() {
   try {
     const { data: employees, error } = await supabase
-      .from('employees')
+      .from('employees_with_department')
       .select('position, department')
       .eq('status', 'Active');
 
@@ -194,21 +200,26 @@ export async function updateEmployeePosition(
   }
 ) {
   try {
-    // Get current employee data for history
+    // Get current employee data for history (via view so `department` is populated)
     const { data: employee, error: empError } = await supabase
-      .from('employees')
+      .from('employees_with_department')
       .select('*')
       .eq('id', employeeId)
       .single();
 
     if (empError) throw empError;
 
-    // Update employee
+    const newDepartmentId = await getDepartmentIdByName(updates.department);
+    if (!newDepartmentId) {
+      throw new Error(`Unknown department: ${updates.department}`);
+    }
+
+    // Update employee — write department_id; trigger keeps current_department in sync.
     const { error: updateError } = await supabase
       .from('employees')
       .update({
         position: updates.position,
-        department: updates.department,
+        department_id: newDepartmentId,
         modified_at: new Date().toISOString(),
       })
       .eq('id', employeeId);

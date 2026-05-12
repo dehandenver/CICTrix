@@ -96,3 +96,22 @@ export async function getDepartmentOptions(): Promise<DepartmentOption[]> {
   if (!result.success) return [];
   return result.data.map((d) => ({ value: d.name, label: d.name }));
 }
+
+/**
+ * Resolve a department name to its UUID. Used by writes that still take a
+ * name from the UI but need to persist the FK. Returns null if unknown.
+ */
+export async function getDepartmentIdByName(name: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from('departments')
+      .select('id')
+      .eq('name', name)
+      .maybeSingle();
+    if (error) throw error;
+    return data?.id ?? null;
+  } catch (error) {
+    console.error('Error resolving department id:', error);
+    return null;
+  }
+}
