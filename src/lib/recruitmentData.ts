@@ -296,11 +296,7 @@ export const getJobPostingsFromSupabase = async (): Promise<JobPosting[]> => {
     if (!data || !Array.isArray(data)) return [];
 
     return data.map((row: any): JobPosting => {
-      const dbStatus = String(row.status || '').toLowerCase();
-      const status: JobPosting['status'] =
-        dbStatus === 'closed' || dbStatus === 'filled' ? 'Closed'
-        : dbStatus === 'reviewing' || dbStatus === 'draft' ? 'Draft'
-        : 'Active'; // 'open' and any unknown value → 'Active'
+      const status = mapSupabaseStatusToJobPostingStatus(row.status);
 
       return {
         id: String(row.id ?? ''),
@@ -403,12 +399,22 @@ const mapJobPostingToSupabaseRow = (job: JobPosting) => ({
   item_number: job.jobCode || '',
   department: job.department || '',
   office: job.department || '',
+  // job_postings.status has a CHECK constraint allowing only:
+  //   'Open' | 'Closed' | 'On Hold'
+  // Map the broader app-domain statuses into this allowed set.
   status:
     job.status === 'Active' ? 'Open'
-    : job.status === 'Draft' ? 'Reviewing'
     : job.status === 'Filled' ? 'Closed'
-    : job.status || 'Open',
+    : job.status === 'Closed' ? 'Closed'
+    : 'On Hold',
 });
+
+const mapSupabaseStatusToJobPostingStatus = (raw: string | null | undefined): JobPosting['status'] => {
+  const v = String(raw ?? '').toLowerCase();
+  if (v === 'closed') return 'Closed';
+  if (v === 'on hold') return 'Draft';
+  return 'Active';
+};
 
 const persistJobPostingsToSupabase = async (rows: JobPosting[]): Promise<void> => {
   // database.types.ts does not yet include job_postings, so the typed client
