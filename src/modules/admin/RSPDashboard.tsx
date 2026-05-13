@@ -98,6 +98,9 @@ interface ApplicantRecord {
   status: string;
   created_at: string;
   total_score: number | null;
+  // Optional metadata used by the assessment-form rendering paths.
+  appointmentType?: 'original' | 'promotional';
+  positionType?: 'rank-and-file' | 'executive';
 }
 
 interface RaterRecord {
@@ -148,6 +151,7 @@ interface StoredApplicantCategoryScores {
   pcpt?: StoredScoringCategory;
   potential?: StoredScoringCategory;
   writtenExam?: StoredScoringCategory;
+  oralExam?: StoredScoringCategory;
   appointmentType?: 'original' | 'promotional';
   positionType?: 'rank-and-file' | 'executive';
 }
@@ -2924,7 +2928,26 @@ export const RSPDashboard = () => {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800">
-      <AdminHeader userName="RSP Admin" divisionLabel="RSP Division" />
+      <AdminHeader
+        userName="RSP Admin"
+        divisionLabel="RSP Division"
+        division="rsp"
+        onNotificationClick={(item) => {
+          // Route to the most relevant page for the source of the notification.
+          if (item.source === 'applicant' && item.payload.applicantId) {
+            navigate(`/admin/rsp/applicant/${item.payload.applicantId}`);
+            return;
+          }
+          if (item.source === 'evaluation' && item.payload.applicantId) {
+            navigate(`/admin/rsp/applicant/${item.payload.applicantId}`);
+            return;
+          }
+          if (item.source === 'employee_doc') {
+            navigate('/admin/rsp/reports');
+            return;
+          }
+        }}
+      />
     <div className="admin-layout">
       <Sidebar activeModule="RSP" userRole="rsp" />
 

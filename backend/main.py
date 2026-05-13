@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import auth, applicants, evaluations, settings, departments
+from app.routes import auth, applicants, evaluations, settings, departments, employees
 
 # Create FastAPI app
 app = FastAPI(
@@ -12,13 +12,7 @@ app = FastAPI(
 # Add CORS middleware for frontend communication
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",  # Vite dev server
-        "http://127.0.0.1:5173",  # Vite dev server (IP form)
-        "http://localhost:3000",  # Alternative dev port
-        "http://127.0.0.1:3000",  # Alternative dev port (IP form)
-        # Add your production domains here
-    ],
+    allow_origins=["*"],  # Temporarily allow all for Vercel deployment/testing
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -28,6 +22,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(applicants.router)
 app.include_router(evaluations.router)
+app.include_router(employees.router)
 app.include_router(settings.router)
 app.include_router(departments.router)
 

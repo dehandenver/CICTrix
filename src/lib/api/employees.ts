@@ -3,8 +3,13 @@
  * Handles all employee-related API calls for the admin dashboard
  */
 
-import { supabase } from '../../lib/supabase';
+import { supabase as supabaseClient } from '../../lib/supabase';
 import { getDepartmentIdByName } from './departments';
+
+// Cast to `any` to bypass the auto-generated Supabase types resolving to `never`
+// for tables that exist at runtime but aren't reflected in the local type defs.
+// This is the same escape hatch used elsewhere in the codebase.
+const supabase = supabaseClient as any;
 
 export interface Employee {
   id: string;

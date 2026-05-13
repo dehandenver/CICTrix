@@ -1,6 +1,9 @@
 import { AlertCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronUp, Info, Printer, Search, Send, X } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
-import { supabase } from '../../../lib/supabase';
+import { supabase as supabaseClient } from '../../../lib/supabase';
+
+// Bypass auto-generated Supabase types resolving to `never`.
+const supabase = supabaseClient as any;
 
 export interface IPCRRatingRecord {
   id: string;
