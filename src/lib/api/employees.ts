@@ -1,6 +1,14 @@
 /**
  * Employee API Integration
- * Handles all employee-related API calls for the admin dashboard
+ * Handles all employee-related API calls for the admin dashboard.
+ *
+ * Column names match the LIVE Supabase schema (verified 2026-05-11):
+ *   employee_id (text), full_name, current_position, current_department,
+ *   current_division, hire_date, mobile_number, status enum
+ *   (Active/On Leave/Resigned/Terminated). Department is read via the
+ *   `employees_with_department` view which exposes the canonical `department`
+ *   name from the departments lookup (migration 006). Writes set `department_id`
+ *   and the BEFORE-trigger keeps `current_department` in sync.
  */
 
 import { supabase as supabaseClient } from '../../lib/supabase';
@@ -8,24 +16,21 @@ import { getDepartmentIdByName } from './departments';
 
 // Cast to `any` to bypass the auto-generated Supabase types resolving to `never`
 // for tables that exist at runtime but aren't reflected in the local type defs.
-// This is the same escape hatch used elsewhere in the codebase.
 const supabase = supabaseClient as any;
 
 export interface Employee {
   id: string;
-  employee_number: string;
-  first_name: string;
-  last_name: string;
-  position: string;
+  employee_id: string;
+  full_name: string;
+  current_position: string | null;
   /** Canonical name from departments lookup (sourced via employees_with_department view). */
-  department: string;
-  /** FK to departments.id. Authoritative; `department` is for display/back-compat. */
+  department: string | null;
+  current_department: string | null;
   department_id?: string;
-  status: string;
+  status: 'Active' | 'On Leave' | 'Resigned' | 'Terminated';
   email: string;
-  phone?: string;
-  date_hired: string;
-  employment_status: string;
+  mobile_number?: string | null;
+  hire_date: string | null;
   [key: string]: any;
 }
 
@@ -35,12 +40,9 @@ export interface Employee {
 export async function getAllEmployees(filters?: {
   status?: string;
   department?: string;
-  employment_status?: string;
   search?: string;
 }) {
   try {
-    // Read via the view so each row carries the canonical `department`
-    // string sourced from the departments lookup.
     let query = supabase.from('employees_with_department').select('*');
 
     if (filters?.status) {
@@ -51,18 +53,14 @@ export async function getAllEmployees(filters?: {
       query = query.eq('department', filters.department);
     }
 
-    if (filters?.employment_status) {
-      query = query.eq('employment_status', filters.employment_status);
-    }
-
     if (filters?.search) {
       const searchTerm = `%${filters.search}%`;
       query = query.or(
-        `first_name.ilike.${searchTerm},last_name.ilike.${searchTerm},email.ilike.${searchTerm},employee_number.ilike.${searchTerm}`
+        `full_name.ilike.${searchTerm},email.ilike.${searchTerm},employee_id.ilike.${searchTerm}`
       );
     }
 
-    const { data, error } = await query.order('first_name');
+    const { data, error } = await query.order('full_name');
 
     if (error) throw error;
     return { success: true, data: data || [] };
@@ -73,7 +71,7 @@ export async function getAllEmployees(filters?: {
 }
 
 /**
- * Get employee by ID with full details
+ * Get employee by Supabase UUID with related collections.
  */
 export async function getEmployeeById(employeeId: string) {
   try {
@@ -85,7 +83,6 @@ export async function getEmployeeById(employeeId: string) {
 
     if (empError) throw empError;
 
-    // Fetch related data
     const [education, experience, eligibility, training, documents] = await Promise.all([
       supabase.from('employee_education').select('*').eq('employee_id', employeeId),
       supabase.from('employee_work_experience').select('*').eq('employee_id', employeeId),
@@ -119,10 +116,10 @@ export async function getEmployeesByPosition(position: string, department: strin
     const { data, error } = await supabase
       .from('employees_with_department')
       .select('*')
-      .eq('position', position)
+      .eq('current_position', position)
       .eq('department', department)
       .eq('status', 'Active')
-      .order('first_name');
+      .order('full_name');
 
     if (error) throw error;
     return { success: true, data: data || [] };
@@ -139,18 +136,18 @@ export async function getPositions() {
   try {
     const { data: employees, error } = await supabase
       .from('employees_with_department')
-      .select('position, department')
+      .select('current_position, department')
       .eq('status', 'Active');
 
     if (error) throw error;
 
-    // Group by position
     const positionMap = new Map();
     employees?.forEach((emp) => {
-      const key = `${emp.position}-${emp.department}`;
+      if (!emp.current_position || !emp.department) return;
+      const key = `${emp.current_position}-${emp.department}`;
       if (!positionMap.has(key)) {
         positionMap.set(key, {
-          name: emp.position,
+          name: emp.current_position,
           department: emp.department,
           count: 0,
         });
@@ -170,8 +167,6 @@ export async function getPositions() {
 
 /**
  * Get departments from the canonical lookup table.
- * Returns an array of names to preserve the previous shape; callers
- * that need IDs/codes should use src/lib/api/departments.ts directly.
  */
 export async function getDepartments() {
   try {
@@ -205,7 +200,6 @@ export async function updateEmployeePosition(
   }
 ) {
   try {
-    // Get current employee data for history (via view so `department` is populated)
     const { data: employee, error: empError } = await supabase
       .from('employees_with_department')
       .select('*')
@@ -219,19 +213,17 @@ export async function updateEmployeePosition(
       throw new Error(`Unknown department: ${updates.department}`);
     }
 
-    // Update employee — write department_id; trigger keeps current_department in sync.
+    // Write department_id; trigger keeps current_department in sync.
     const { error: updateError } = await supabase
       .from('employees')
       .update({
-        position: updates.position,
+        current_position: updates.position,
         department_id: newDepartmentId,
-        modified_at: new Date().toISOString(),
       })
       .eq('id', employeeId);
 
     if (updateError) throw updateError;
 
-    // Log change in history
     const actionMap = {
       promotion: 'promoted',
       transfer: 'transferred',
@@ -243,8 +235,8 @@ export async function updateEmployeePosition(
       .insert({
         employee_id: employeeId,
         action: actionMap[updates.changeType],
-        field_changed: 'position,department',
-        old_value: `${employee.position} - ${employee.department}`,
+        field_changed: 'current_position,current_department',
+        old_value: `${employee.current_position ?? ''} - ${employee.department ?? ''}`,
         new_value: `${updates.position} - ${updates.department}`,
         effective_date: updates.effectiveDate,
         reason: updates.notes || null,
@@ -315,7 +307,6 @@ export async function getEmployeeLeaveBalances(employeeId: string, year?: number
 
     if (error && error.code !== 'PGRST116') throw error;
 
-    // If no balance exists for this year, return defaults
     if (!data) {
       return {
         success: true,
@@ -351,10 +342,10 @@ export async function getEmployeeLeaveBalances(employeeId: string, year?: number
 export async function searchEmployees(searchTerm: string) {
   try {
     const { data, error } = await supabase
-      .from('employees')
+      .from('employees_with_department')
       .select('*')
       .or(
-        `first_name.ilike.%${searchTerm}%,last_name.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%,employee_number.ilike.%${searchTerm}%`
+        `full_name.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%,employee_id.ilike.%${searchTerm}%`
       )
       .eq('status', 'Active')
       .limit(20);
@@ -372,11 +363,11 @@ export async function searchEmployees(searchTerm: string) {
  */
 export async function getEmployeeStatistics() {
   try {
-    const [totalResult, activeResult, onLeaveResult, probationaryResult] = await Promise.all([
-      supabase.from('employees').select('id').neq('status', 'Separated'),
+    const [totalResult, activeResult, onLeaveResult, resignedResult] = await Promise.all([
+      supabase.from('employees').select('id'),
       supabase.from('employees').select('id').eq('status', 'Active'),
       supabase.from('employees').select('id').eq('status', 'On Leave'),
-      supabase.from('employees').select('id').eq('employment_status', 'Probationary'),
+      supabase.from('employees').select('id').eq('status', 'Resigned'),
     ]);
 
     return {
@@ -385,7 +376,7 @@ export async function getEmployeeStatistics() {
         total: totalResult.data?.length || 0,
         active: activeResult.data?.length || 0,
         onLeave: onLeaveResult.data?.length || 0,
-        probationary: probationaryResult.data?.length || 0,
+        resigned: resignedResult.data?.length || 0,
       },
     };
   } catch (error) {
@@ -397,12 +388,8 @@ export async function getEmployeeStatistics() {
 /**
  * Reset employee password (admin action)
  */
-export async function resetEmployeePassword(employeeId: string) {
+export async function resetEmployeePassword(_employeeId: string) {
   try {
-    // This would typically call a backend endpoint that generates a reset token
-    // and sends an email to the employee
-    // For now, we'll just return a message
-
     return {
       success: true,
       message: 'Password reset email sent to employee',
@@ -418,35 +405,28 @@ export async function resetEmployeePassword(employeeId: string) {
  */
 export async function exportEmployeesToCSV(employees: Employee[]) {
   try {
-    // CSV headers
     const headers = [
-      'Employee Number',
-      'First Name',
-      'Last Name',
+      'Employee ID',
+      'Full Name',
       'Position',
       'Department',
       'Status',
       'Email',
-      'Phone',
-      'Date Hired',
-      'Employment Status',
+      'Mobile Number',
+      'Hire Date',
     ];
 
-    // CSV rows
     const rows = employees.map((emp) => [
-      emp.employee_number,
-      emp.first_name,
-      emp.last_name,
-      emp.position,
-      emp.department,
+      emp.employee_id,
+      emp.full_name,
+      emp.current_position ?? '',
+      emp.department ?? '',
       emp.status,
       emp.email,
-      emp.phone || '',
-      new Date(emp.date_hired).toLocaleDateString(),
-      emp.employment_status,
+      emp.mobile_number ?? '',
+      emp.hire_date ? new Date(emp.hire_date).toLocaleDateString() : '',
     ]);
 
-    // Create CSV content
     const csvContent = [
       headers.join(','),
       ...rows.map((row) => row.map((cell) => `"${cell}"`).join(',')),

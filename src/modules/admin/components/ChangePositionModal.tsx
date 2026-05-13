@@ -9,10 +9,9 @@ const supabase = supabaseClient as any;
 
 interface Employee {
   id: string;
-  employee_number: string;
-  first_name: string;
-  last_name: string;
-  position: string;
+  employee_id: string;
+  full_name: string;
+  current_position: string;
   department: string;
   status: string;
   [key: string]: any;
@@ -64,10 +63,10 @@ export default function ChangePositionModal({ employee, onClose, onSuccess }: Pr
       const [empData, appData] = await Promise.all([
         supabase
           .from('employees_with_department')
-          .select('position')
+          .select('current_position')
           .eq('department', newDepartment)
           .eq('status', 'Active')
-          .neq('position', null)
+          .neq('current_position', null)
           .catch(() => ({ data: [] })),
         supabase
           .from('applicants')
@@ -79,7 +78,7 @@ export default function ChangePositionModal({ employee, onClose, onSuccess }: Pr
       ]);
 
       const allPositions = [
-        ...(empData?.data?.map((e) => e.position) || []),
+        ...(empData?.data?.map((e) => e.current_position) || []),
         ...(appData?.data?.map((a) => a.position) || []),
       ];
       

@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   saveNewlyHired,
 } from '../lib/recruitmentData';
+import { getDepartmentIdByName } from '../lib/api/departments';
 import { supabase } from '../lib/supabase';
 import type { NewlyHired, NewlyHiredStatus } from '../types/recruitment.types';
 import { Sidebar } from './Sidebar';
@@ -196,29 +197,36 @@ export const NewlyHiredPage = () => {
 
       // Mirror each generated credential into the Supabase `employees` table so
       // the employee can be located by document upload / RSP reports.
+      // Writes Schema B columns (employee_id, full_name, current_position, etc.)
+      // and uses department_id (FK from migration 006) so the trigger syncs
+      // current_department text automatically.
       for (const credential of generatedCredentials) {
         const row = rows.find((r) => r.id === credential.id);
         if (!row) continue;
+
+        const departmentId = await getDepartmentIdByName(row.department);
+        if (!departmentId) {
+          throw new Error(`Unknown department "${row.department}". Add it to the departments lookup first.`);
+        }
+
+        const fullName = `${row.employeeInfo.firstName ?? ''} ${row.employeeInfo.lastName ?? ''}`.trim();
 
         const insertResult = await (supabase as any)
           .from('employees')
           .upsert(
             [
               {
-                employee_number: credential.employeeNumber,
-                first_name: row.employeeInfo.firstName,
-                last_name: row.employeeInfo.lastName,
+                employee_id: credential.employeeNumber,
+                full_name: fullName,
                 email: row.employeeInfo.email || `${credential.username}.${credential.employeeNumber.toLowerCase()}@employee.local`,
-                phone: row.employeeInfo.phone || null,
-                position: row.position,
-                department: row.department,
-                date_hired: row.dateHired || new Date().toISOString().slice(0, 10),
-                employment_status: 'Probationary',
-                qualified_applicant_id: null,
-                application_id: null,
+                mobile_number: row.employeeInfo.phone || null,
+                current_position: row.position,
+                department_id: departmentId,
+                hire_date: row.dateHired || new Date().toISOString().slice(0, 10),
+                status: 'Active',
               },
             ],
-            { onConflict: 'employee_number' },
+            { onConflict: 'employee_id' },
           );
 
         if (insertResult.error) {
