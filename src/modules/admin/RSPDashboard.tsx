@@ -302,8 +302,6 @@ const persistDashboardJobsToRecruitment = (rows: JobRecord[]) => {
     department: row.department || 'Operations',
     division: 'Operations',
     positionType: 'Civil Service',
-    salaryGrade: 'SG-10',
-    salaryRange: { min: 20000, max: 30000 },
     numberOfPositions: 1,
     employmentStatus: 'Permanent',
     summary: `${row.title} recruitment posting.`,
@@ -935,7 +933,6 @@ export const RSPDashboard = () => {
     item_number: '',
     department: '',
     status: 'Open' as JobStatus,
-    salary_grade: '',
     position_level: '',
     slots: '1',
     employment_type: 'Full-time',
@@ -2308,7 +2305,6 @@ export const RSPDashboard = () => {
       item_number: '',
       department: '',
       status: 'Open',
-      salary_grade: '',
       position_level: '',
       slots: '1',
       employment_type: 'Full-time',
@@ -2331,8 +2327,6 @@ export const RSPDashboard = () => {
       department: row.department || 'Operations',
       division: 'Operations',
       positionType: 'Civil Service',
-      salaryGrade: 'SG-10',
-      salaryRange: { min: 20000, max: 30000 },
       numberOfPositions: 1,
       employmentStatus: 'Permanent',
       summary: `${row.title} recruitment posting.`,
@@ -2377,8 +2371,6 @@ export const RSPDashboard = () => {
       department: row.department || 'Operations',
       division: 'Operations',
       positionType: 'Civil Service',
-      salaryGrade: 'SG-10',
-      salaryRange: { min: 20000, max: 30000 },
       numberOfPositions: 1,
       employmentStatus: 'Permanent',
       summary: `${row.title} recruitment posting.`,
@@ -5377,25 +5369,14 @@ export const RSPDashboard = () => {
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                    <div>
-                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Item Number <span className="text-red-500">*</span></label>
-                      <input
-                        className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
-                        placeholder="e.g., ITEM-2024-001"
-                        value={newJob.item_number}
-                        onChange={(event) => setNewJob((prev) => ({ ...prev, item_number: event.target.value }))}
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Salary Grade <span className="text-red-500">*</span></label>
-                      <input
-                        className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
-                        placeholder="e.g., SG-11"
-                        value={newJob.salary_grade}
-                        onChange={(event) => setNewJob((prev) => ({ ...prev, salary_grade: event.target.value }))}
-                      />
-                    </div>
+                  <div>
+                    <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Item Number <span className="text-red-500">*</span></label>
+                    <input
+                      className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
+                      placeholder="e.g., ITEM-2024-001"
+                      value={newJob.item_number}
+                      onChange={(event) => setNewJob((prev) => ({ ...prev, item_number: event.target.value }))}
+                    />
                   </div>
 
                   <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">

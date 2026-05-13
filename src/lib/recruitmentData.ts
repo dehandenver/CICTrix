@@ -332,8 +332,6 @@ export const getJobPostingsFromSupabase = async (): Promise<JobPosting[]> => {
         department: row.department || '',
         division: 'Operations',
         positionType: 'Civil Service',
-        salaryGrade: row.salary_grade || 'SG-10',
-        salaryRange: { min: 20000, max: 30000 },
         numberOfPositions: 1,
         employmentStatus: 'Permanent',
         summary: row.summary || `${row.title || ''} recruitment posting.`,
@@ -418,7 +416,6 @@ export const saveJobPostings = (rows: JobPosting[]) => {
     id: index + 1,
     title: job.title,
     item_number: job.jobCode,
-    salary_grade: job.salaryGrade ?? '',
     department: job.department,
     description: job.summary,
     status: job.status === 'Active' ? 'Open' : job.status === 'Closed' || job.status === 'Filled' ? 'Closed' : 'On Hold',
@@ -617,7 +614,7 @@ export const saveNewlyHired = async (rows: NewlyHired[]) => {
 
   // Always sync each newly hired record to Supabase
   for (const hired of rows) {
-    const { id, applicantId, employeeInfo, position, department, division, employmentType, salaryGrade, dateHired, expectedStartDate, supervisor, status, onboardingProgress, deployedDate, employeeId } = hired;
+    const { id, applicantId, employeeInfo, position, department, division, employmentType, dateHired, expectedStartDate, supervisor, status, onboardingProgress, deployedDate, employeeId } = hired;
     try {
       const result = await (supabase as any).from('newly_hired').upsert([
         {
@@ -631,7 +628,6 @@ export const saveNewlyHired = async (rows: NewlyHired[]) => {
           department,
           division,
           employment_type: employmentType,
-          salary_grade: salaryGrade,
           date_hired: dateHired,
           expected_start_date: expectedStartDate,
           supervisor,

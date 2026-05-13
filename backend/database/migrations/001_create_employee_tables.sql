@@ -63,10 +63,7 @@ CREATE TABLE IF NOT EXISTS employees (
   -- Employment details
   department VARCHAR(100) NOT NULL,
   position VARCHAR(200) NOT NULL,
-  salary_grade VARCHAR(10),
-  step_increment INT DEFAULT 1,
-  monthly_salary DECIMAL(10,2),
-  
+
   employment_status VARCHAR(50) NOT NULL DEFAULT 'Probationary',
   plantilla_item_number VARCHAR(50),
   
@@ -152,8 +149,6 @@ CREATE TABLE IF NOT EXISTS employee_work_experience (
   from_date DATE NOT NULL,
   to_date DATE,
   is_present BOOLEAN DEFAULT FALSE,
-  monthly_salary DECIMAL(10,2),
-  salary_grade VARCHAR(10),
   is_government_service BOOLEAN DEFAULT FALSE,
   duties_responsibilities TEXT,
   separation_reason VARCHAR(200),
@@ -253,7 +248,7 @@ CREATE TABLE IF NOT EXISTS employee_history (
   
   CONSTRAINT valid_action CHECK (action IN (
     'created', 'hired', 'regularized', 'promoted', 'transferred',
-    'salary_adjusted', 'suspended', 'reactivated', 'role_changed', 'updated', 'separated'
+    'suspended', 'reactivated', 'role_changed', 'updated', 'separated'
   ))
 );
 
@@ -423,6 +418,6 @@ INTEGRATION POINTS:
 AUDIT TRAIL:
 All significant changes logged in employee_history table:
 - Hiring, regularization, promotion, transfer, suspension, separation
-- Salary adjustments, role changes
+- Role changes
 - Account status changes
 */

@@ -104,7 +104,6 @@ export interface Database {
           updated_at: string | null;
           description: string | null;
           requirements: string | null;
-          salary_grade: string | null;
           employment_type: string | null;
           number_of_positions: number | null;
           posted_by: string | null;
@@ -120,7 +119,6 @@ export interface Database {
           updated_at?: string | null;
           description?: string | null;
           requirements?: string | null;
-          salary_grade?: string | null;
           employment_type?: string | null;
           number_of_positions?: number | null;
           posted_by?: string | null;
@@ -136,7 +134,6 @@ export interface Database {
           updated_at?: string | null;
           description?: string | null;
           requirements?: string | null;
-          salary_grade?: string | null;
           employment_type?: string | null;
           number_of_positions?: number | null;
           posted_by?: string | null;

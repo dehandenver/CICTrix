@@ -51,7 +51,6 @@ interface MockJob {
   id: number;
   title: string;
   item_number: string;
-  salary_grade: string;
   department: string;
   description: string;
   status: 'Open' | 'Closed' | 'On Hold';
