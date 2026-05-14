@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ChevronLeft, Copy, Heart, Lock, Mail, MapPin, Phone, X } from 'lucide-react';
+import { ChevronLeft, Copy, FilePlus2, Heart, Lock, Mail, MapPin, Phone, X } from 'lucide-react';
 import { supabase as supabaseClient } from '../../../lib/supabase';
 
 // Bypass auto-generated Supabase types resolving to `never`. Same escape hatch
@@ -11,6 +11,7 @@ import {
   getEmployeePortalAccounts,
   upsertEmployeePortalAccount,
 } from '../../../lib/employeePortalData';
+import { createDocumentRequest } from '../../../lib/employeeDocuments';
 import ChangePositionModal from './ChangePositionModal';
 
 interface Employee {
@@ -59,6 +60,15 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
   const [resetPasswordValue, setResetPasswordValue] = useState<string | null>(null);
   const [resetUsername, setResetUsername] = useState<string | null>(null);
   const [resetError, setResetError] = useState<string | null>(null);
+
+  // Request Document flow — HR creates an hr_request row that lands in the
+  // employee's Submission Bin.
+  const [requestModalOpen, setRequestModalOpen] = useState(false);
+  const [requestName, setRequestName] = useState('');
+  const [requestDescription, setRequestDescription] = useState('');
+  const [requestDueDate, setRequestDueDate] = useState('');
+  const [requestSaving, setRequestSaving] = useState(false);
+  const [requestError, setRequestError] = useState<string | null>(null);
 
   useEffect(() => {
     // Check if this is a newly hired applicant or an established employee
@@ -211,6 +221,42 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
     setResetPasswordValue(null);
     setResetUsername(null);
     setResetError(null);
+  };
+
+  const closeRequestModal = () => {
+    setRequestModalOpen(false);
+    setRequestName('');
+    setRequestDescription('');
+    setRequestDueDate('');
+    setRequestError(null);
+  };
+
+  const handleCreateRequest = async () => {
+    setRequestError(null);
+
+    if (!requestName.trim()) {
+      setRequestError('Document name is required.');
+      return;
+    }
+
+    setRequestSaving(true);
+    const result = await createDocumentRequest({
+      employeeId: fullEmployee.id,
+      email: fullEmployee.email,
+      documentName: requestName,
+      description: requestDescription,
+      dueDate: requestDueDate,
+      requestedBy: 'HR Department',
+    });
+    setRequestSaving(false);
+
+    if (result.success === false) {
+      setRequestError(result.error);
+      return;
+    }
+
+    closeRequestModal();
+    await fetchDocuments();
   };
 
   const copyToClipboard = async (text: string) => {
@@ -494,22 +540,87 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
 
             {activeTab === 'documents' && (
               <div>
+                <div className="mb-6 flex items-center justify-between">
+                  <p className="text-sm text-gray-600">
+                    Documents uploaded by the employee, plus any documents you've requested from them.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => { setRequestModalOpen(true); setRequestError(null); }}
+                    className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                  >
+                    <FilePlus2 size={16} />
+                    Request Document
+                  </button>
+                </div>
+
                 {documents.length === 0 ? (
-                  <p className="text-gray-500 text-center py-8">No documents uploaded yet.</p>
+                  <p className="text-gray-500 text-center py-8">No documents uploaded or requested yet.</p>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {documents.map((doc) => (
-                      <a
-                        key={doc.id}
-                        href={doc.file_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-4 border border-gray-200 rounded-lg hover:border-blue-400 hover:shadow-md transition-all"
-                      >
-                        <p className="font-medium text-gray-900 mb-1">{doc.document_name}</p>
-                        <p className="text-sm text-gray-600">{doc.document_type}</p>
-                      </a>
-                    ))}
+                    {documents.map((doc) => {
+                      const isRequest = doc.category === 'hr_request';
+                      const hasFile = Boolean(doc.file_url);
+                      const cardBase =
+                        'p-4 border rounded-lg transition-all block ' +
+                        (hasFile
+                          ? 'border-gray-200 hover:border-blue-400 hover:shadow-md'
+                          : 'border-amber-200 bg-amber-50');
+
+                      const body = (
+                        <>
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="font-medium text-gray-900 mb-1">{doc.document_name}</p>
+                            <span
+                              className={
+                                'shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ' +
+                                (doc.status === 'Approved'
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : doc.status === 'Submitted'
+                                    ? 'bg-blue-100 text-blue-700'
+                                    : doc.status === 'Rejected'
+                                      ? 'bg-red-100 text-red-700'
+                                      : 'bg-amber-100 text-amber-700')
+                              }
+                            >
+                              {doc.status}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-600">
+                            {isRequest ? 'HR Request' : doc.document_type}
+                          </p>
+                          {doc.description && (
+                            <p className="mt-1 text-sm text-gray-500">{doc.description}</p>
+                          )}
+                          {doc.due_date && (
+                            <p className="mt-1 text-xs text-gray-500">
+                              Due: {String(doc.due_date).slice(0, 10)}
+                            </p>
+                          )}
+                          {!hasFile && (
+                            <p className="mt-1 text-xs font-medium text-amber-700">
+                              Awaiting employee upload
+                            </p>
+                          )}
+                        </>
+                      );
+
+                      return hasFile ? (
+                        <a
+                          key={doc.id}
+                          href={doc.file_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={cardBase}
+                        >
+                          {body}
+                        </a>
+                      ) : (
+                        <div key={doc.id} className={cardBase}>
+                          {body}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -529,6 +640,103 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
             onRefresh();
           }}
         />
+      )}
+
+      {requestModalOpen && (
+        <div
+          className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 px-4"
+          onClick={() => { if (!requestSaving) closeRequestModal(); }}
+        >
+          <div
+            className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-3">
+              <h3 className="text-base font-semibold text-slate-900">Request a Document</h3>
+              <button
+                type="button"
+                onClick={closeRequestModal}
+                disabled={requestSaving}
+                className="rounded-lg p-1 text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-4 px-5 py-4">
+              <p className="text-sm text-slate-600">
+                This will appear in {fullEmployee.first_name}'s Submission Bin as a pending request.
+              </p>
+
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Document Name
+                </span>
+                <input
+                  type="text"
+                  value={requestName}
+                  onChange={(e) => setRequestName(e.target.value)}
+                  disabled={requestSaving}
+                  placeholder="e.g. Medical Certificate"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none disabled:bg-slate-100"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Description
+                </span>
+                <textarea
+                  value={requestDescription}
+                  onChange={(e) => setRequestDescription(e.target.value)}
+                  disabled={requestSaving}
+                  rows={3}
+                  placeholder="What exactly does the employee need to submit?"
+                  className="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none disabled:bg-slate-100"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Due Date
+                </span>
+                <input
+                  type="date"
+                  value={requestDueDate}
+                  onChange={(e) => setRequestDueDate(e.target.value)}
+                  disabled={requestSaving}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none disabled:bg-slate-100"
+                />
+              </label>
+
+              {requestError && (
+                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {requestError}
+                </p>
+              )}
+
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={closeRequestModal}
+                  disabled={requestSaving}
+                  className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateRequest}
+                  disabled={requestSaving || !requestName.trim()}
+                  className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                >
+                  {requestSaving ? 'Creating…' : 'Send Request'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {resetState !== 'idle' && (
