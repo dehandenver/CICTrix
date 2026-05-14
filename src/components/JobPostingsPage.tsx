@@ -322,6 +322,23 @@ export const JobPostingsPage = () => {
     setLiveApplicants(Array.from(mergedById.values()));
   };
 
+  // Hydrate from the in-memory job-postings cache. The cache is populated
+  // asynchronously from Supabase at app boot via loadJobPostings(), so this
+  // effect re-runs whenever 'cictrix:job-postings-updated' fires.
+  //
+  // IMPORTANT: do NOT call saveJobPostings() here. Doing so on mount with an
+  // empty cache (cache still loading) wiped the Supabase job_postings table
+  // via the "delete rows not in current list" branch. That caused new postings
+  // to appear duplicated or vanish entirely on refresh.
+  const [jobPostingsCacheVersion, setJobPostingsCacheVersion] = useState(0);
+  useEffect(() => {
+    const bump = () => setJobPostingsCacheVersion((v) => v + 1);
+    window.addEventListener('cictrix:job-postings-updated', bump as EventListener);
+    return () => {
+      window.removeEventListener('cictrix:job-postings-updated', bump as EventListener);
+    };
+  }, []);
+
   useEffect(() => {
     ensureRecruitmentSeedData();
     const loadedJobs = getJobPostings();
@@ -330,11 +347,8 @@ export const JobPostingsPage = () => {
       title: normalizeRomanNumeralsInText(job.title),
     }));
     setJobs(normalizedJobs);
-    // Normalize derived stores (legacy jobs/options) from the current source-of-truth list.
-    saveJobPostings(normalizedJobs);
-    // Keep the legacy liveApplicants pipeline (other flows like delete depend on it).
     void resolveLiveApplicants(normalizedJobs);
-  }, []);
+  }, [jobPostingsCacheVersion]);
 
   // Dedicated fetch for raw applicant rows. This is the source the card counts and
   // the View Applicants list both consume. Using .select('*') avoids column-drift 400s,

@@ -571,13 +571,16 @@ export const RaterManagementPage = () => {
     try {
       const accessClient = getAccessClient();
 
+      // The Supabase `raters` table has columns:
+      //   id, name, email, department, is_active, assigned_positions, created_at, updated_at
+      // It does NOT have `designation` or `last_login` — sending those silently
+      // failed every write, leaving assigned_positions stuck at [] in the DB.
       if (selectedRater) {
         await runRaterEmailUpdate(
           accessClient,
           {
             assigned_positions: nextAssignedPositions,
             is_active: true,
-            designation: accountToUse.designation,
             department: accountToUse.department,
           },
           accountToUse.email,
@@ -587,11 +590,9 @@ export const RaterManagementPage = () => {
         const insertResult = await accessClient.from('raters').insert({
           name: accountToUse.name,
           email: accountToUse.email,
-          designation: accountToUse.designation,
           department: accountToUse.department,
           assigned_positions: nextAssignedPositions,
           is_active: true,
-          last_login: null,
         });
 
         if ((insertResult as any)?.error) {
