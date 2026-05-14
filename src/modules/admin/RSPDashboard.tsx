@@ -1725,7 +1725,10 @@ export const RSPDashboard = () => {
           position: row.position,
           office: row.department,
           submittedDate: formatDate(row.uploaded_at),
-          status: row.status ?? 'Pending',
+          // RSP Reports only surfaces compliance docs, which never use the
+          // 'Submitted' status (that is hr_request-only). Coerce to satisfy
+          // the narrower local type.
+          status: row.status === 'Submitted' ? 'Pending' : (row.status ?? 'Pending'),
           documentUrl: row.file_url,
           documentType: row.document_type,
           fileName: row.file_name,

@@ -52,7 +52,45 @@ export const EMPLOYEE_DOC_TYPES = [
 
 export type EmployeeDocumentType = (typeof EMPLOYEE_DOC_TYPES)[number]['id'];
 
-export type EmployeeDocumentStatus = 'Pending' | 'Approved' | 'Rejected';
+/**
+ * Application documents shown on the Employee Portal "Document Requirements" tab.
+ * The string `id` IS the document_type column value (must match the CHECK
+ * constraint in migration 006_employee_document_requests.sql).
+ */
+export const APPLICATION_DOC_TYPES = [
+  {
+    id: 'Resume / Curriculum Vitae',
+    label: 'Resume / Curriculum Vitae',
+    description: 'Your most recent resume or CV submitted with your application.',
+  },
+  {
+    id: 'Application Letter',
+    label: 'Application Letter',
+    description: 'The application or cover letter you submitted for this position.',
+  },
+  {
+    id: 'Transcript of Records',
+    label: 'Transcript of Records',
+    description: 'Official transcript of records from your school or university.',
+  },
+  {
+    id: 'Other Relevant Documents',
+    label: 'Other Relevant Documents',
+    description: 'Any additional supporting documents relevant to your application.',
+  },
+] as const;
+
+export type ApplicationDocumentType = (typeof APPLICATION_DOC_TYPES)[number]['id'];
+
+export type EmployeeDocumentStatus = 'Pending' | 'Submitted' | 'Approved' | 'Rejected';
+
+/**
+ * Routes a row to the correct Employee Portal tab:
+ *   'application' -> Document Requirements tab
+ *   'compliance'  -> RSP Reports pipeline (NBI, Medical, SALN, ...)
+ *   'hr_request'  -> Submission Bin tab (HR-created, carries a due date)
+ */
+export type EmployeeDocumentCategory = 'application' | 'compliance' | 'hr_request';
 
 export interface EmployeeDocumentRow {
   id: string;
@@ -64,6 +102,10 @@ export interface EmployeeDocumentRow {
   file_size: number | null;
   file_type: string | null;
   status: EmployeeDocumentStatus;
+  category: EmployeeDocumentCategory;
+  due_date: string | null;
+  requested_by: string | null;
+  description: string | null;
   uploaded_at: string;
 }
 
@@ -145,10 +187,18 @@ export async function resolveEmployeeUuid(
 export async function uploadEmployeeDocument(params: {
   employeeId: string;
   email?: string;
-  documentType: EmployeeDocumentType;
+  documentType: string;
   file: File;
+  /** Which Employee Portal tab this upload belongs to. Defaults to 'compliance'. */
+  category?: EmployeeDocumentCategory;
+  /**
+   * When set, the upload *fulfills* an existing hr_request row: the row is
+   * updated in place (file fields set, status -> 'Submitted') instead of
+   * inserting a new row. Used by the Submission Bin's Upload / Resubmit buttons.
+   */
+  requestId?: string;
 }): Promise<{ success: true; row: EmployeeDocumentRow } | { success: false; error: string }> {
-  const { employeeId, email, documentType, file } = params;
+  const { employeeId, email, documentType, file, category = 'compliance', requestId } = params;
 
   if (!employeeId && !email) {
     return { success: false, error: 'Missing employee identifier.' };
@@ -192,16 +242,40 @@ export async function uploadEmployeeDocument(params: {
 
   const fileUrl: string = publicUrlResult?.data?.publicUrl ?? objectKey;
 
-  // 3) Insert the metadata row.
-  const insertPayload = {
-    employee_id: employeeUuid,
-    document_type: documentType,
-    document_name: documentType,
+  const fileFields = {
     file_name: file.name,
     file_url: fileUrl,
     file_size: file.size ?? null,
     file_type: file.type || null,
+    uploaded_at: new Date().toISOString(),
+  };
+
+  // 3a) Fulfilling an existing HR request — update that row in place.
+  if (requestId) {
+    const updateResult = await (supabase as any)
+      .from('employee_documents')
+      .update({ ...fileFields, status: 'Submitted' as EmployeeDocumentStatus })
+      .eq('id', requestId)
+      .select('*')
+      .single();
+
+    if (updateResult.error) {
+      console.error('uploadEmployeeDocument: request fulfillment update failed', updateResult.error);
+      await (supabase as any).storage.from(EMPLOYEE_DOCUMENTS_BUCKET).remove([objectKey]);
+      return { success: false, error: updateResult.error.message || 'Could not attach file to the request.' };
+    }
+
+    return { success: true, row: updateResult.data as EmployeeDocumentRow };
+  }
+
+  // 3b) Fresh upload — insert a new metadata row.
+  const insertPayload = {
+    employee_id: employeeUuid,
+    document_type: documentType,
+    document_name: documentType,
+    category,
     status: 'Pending' as EmployeeDocumentStatus,
+    ...fileFields,
   };
 
   const insertResult = await (supabase as any)
@@ -217,6 +291,58 @@ export async function uploadEmployeeDocument(params: {
       .from(EMPLOYEE_DOCUMENTS_BUCKET)
       .remove([objectKey]);
     return { success: false, error: insertResult.error.message || 'Metadata insert failed.' };
+  }
+
+  return { success: true, row: insertResult.data as EmployeeDocumentRow };
+}
+
+/**
+ * HR creates a document request for an employee (Submission Bin).
+ * Inserts a row with category='hr_request', status='Pending' and no file —
+ * the employee later fulfills it via uploadEmployeeDocument({ requestId }).
+ */
+export async function createDocumentRequest(params: {
+  employeeId: string;
+  email?: string;
+  documentName: string;
+  description: string;
+  dueDate: string;
+  requestedBy: string;
+}): Promise<{ success: true; row: EmployeeDocumentRow } | { success: false; error: string }> {
+  const { employeeId, email, documentName, description, dueDate, requestedBy } = params;
+
+  if (!documentName.trim()) {
+    return { success: false, error: 'Document name is required.' };
+  }
+
+  const employeeUuid = await resolveEmployeeUuid(employeeId, email);
+  if (!employeeUuid) {
+    return {
+      success: false,
+      error: 'No matching employee record found in Supabase for this request.',
+    };
+  }
+
+  const insertPayload = {
+    employee_id: employeeUuid,
+    document_type: 'Other Relevant Documents',
+    document_name: documentName.trim(),
+    category: 'hr_request' as EmployeeDocumentCategory,
+    status: 'Pending' as EmployeeDocumentStatus,
+    description: description.trim() || null,
+    due_date: dueDate || null,
+    requested_by: requestedBy.trim() || null,
+  };
+
+  const insertResult = await (supabase as any)
+    .from('employee_documents')
+    .insert(insertPayload)
+    .select('*')
+    .single();
+
+  if (insertResult.error) {
+    console.error('createDocumentRequest: insert failed', insertResult.error);
+    return { success: false, error: insertResult.error.message || 'Could not create the document request.' };
   }
 
   return { success: true, row: insertResult.data as EmployeeDocumentRow };
