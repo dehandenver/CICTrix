@@ -1,6 +1,7 @@
 import {
     Bell,
-    ChevronRight,
+    Calendar,
+    CheckCircle2,
     Clock,
     Eye,
     EyeOff,
@@ -17,13 +18,13 @@ import {
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
+    APPLICATION_DOC_TYPES,
     EMPLOYEE_DOCUMENTS_UPDATED_EVENT,
-    EMPLOYEE_DOC_TYPES,
     dispatchEmployeeDocumentsUpdated,
     listEmployeeDocumentsForEmployee,
     uploadEmployeeDocument,
+    type ApplicationDocumentType,
     type EmployeeDocumentRow,
-    type EmployeeDocumentType,
 } from '../../lib/employeeDocuments';
 import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
 import {
@@ -51,7 +52,7 @@ interface TabConfig {
 }
 
 interface RequirementItem {
-  id: EmployeeDocumentType;
+  id: ApplicationDocumentType;
   title: string;
   description: string;
 }
@@ -111,6 +112,32 @@ const getGovernmentDraft = (employee: Employee): GovernmentDraft => ({
   pagibigNumber: employee.pagibigNumber || '',
   tinNumber: employee.tinNumber || '',
 });
+
+// Figma shows ISO-style dates (e.g. "2026-02-20"). Keep it timezone-safe by
+// reading the date parts rather than constructing a Date in local time.
+const formatPortalDate = (value: string | null | undefined): string => {
+  if (!value) return '—';
+  const iso = String(value).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : new Date(value).toISOString().slice(0, 10);
+};
+
+// Whole-day countdown to a due date. Negative => overdue.
+const daysUntil = (dueDate: string | null | undefined): number | null => {
+  if (!dueDate) return null;
+  const due = new Date(`${String(dueDate).slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(due.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((due.getTime() - today.getTime()) / 86_400_000);
+};
+
+const dueLabel = (dueDate: string | null | undefined): string => {
+  const days = daysUntil(dueDate);
+  if (days === null) return '';
+  if (days < 0) return `${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} overdue`;
+  if (days === 0) return 'due today';
+  return `${days} day${days === 1 ? '' : 's'} left`;
+};
 
 const getPersonalDetailsDraft = (employee: Employee): PersonalDetailsDraft => ({
   fullName: employee.fullName || '',
@@ -278,14 +305,36 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
     setEditingSection(null);
   }, [profileSyncVersion]);
 
+  // HR-created document requests drive the Submission Bin tab.
+  const hrRequests = useMemo(
+    () => employeeDocuments.filter((d) => d.category === 'hr_request'),
+    [employeeDocuments],
+  );
+
+  const pendingRequests = useMemo(
+    () => hrRequests.filter((d) => d.status === 'Pending' || d.status === 'Rejected'),
+    [hrRequests],
+  );
+
+  const submittedRequests = useMemo(
+    () => hrRequests.filter((d) => d.status === 'Submitted' || d.status === 'Approved'),
+    [hrRequests],
+  );
+
   const tabs: TabConfig[] = useMemo(
     () => [
       { id: 'personal', label: 'Personal Information', icon: User, route: '/employee/profile' },
       { id: 'documents', label: 'Document Requirements', icon: FileText, route: '/employee/documents/requirements' },
-      { id: 'submission', label: 'Submission Bin', icon: Bell, route: '/employee/documents/submission', count: 3 },
+      {
+        id: 'submission',
+        label: 'Submission Bin',
+        icon: Bell,
+        route: '/employee/documents/submission',
+        count: pendingRequests.length || undefined,
+      },
       { id: 'account', label: 'Account & Security', icon: Lock, route: '/employee/account' },
     ],
-    []
+    [pendingRequests.length]
   );
 
   const activeTab = useMemo<PortalTab>(() => {
@@ -318,7 +367,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
 
   const requirementItems: RequirementItem[] = useMemo(
     () =>
-      EMPLOYEE_DOC_TYPES.map((type) => ({
+      APPLICATION_DOC_TYPES.map((type) => ({
         id: type.id,
         title: type.label,
         description: type.description,
@@ -326,11 +375,13 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
     [],
   );
 
-  // Index of the most-recent submission per document type, so the requirements
-  // tab can show "Uploaded" / "Replace" without re-rendering the whole list.
+  // Index of the most-recent application-document submission per type, so the
+  // Document Requirements tab can show "Uploaded" / "Replace" without
+  // re-rendering the whole list.
   const latestByType = useMemo(() => {
     const map = new Map<string, EmployeeDocumentRow>();
     for (const doc of employeeDocuments) {
+      if (doc.category !== 'application') continue;
       const existing = map.get(doc.document_type);
       if (!existing || new Date(doc.uploaded_at) > new Date(existing.uploaded_at)) {
         map.set(doc.document_type, doc);
@@ -338,16 +389,6 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
     }
     return map;
   }, [employeeDocuments]);
-
-  const pendingDocuments = useMemo(
-    () => employeeDocuments.filter((d) => d.status === 'Pending'),
-    [employeeDocuments],
-  );
-
-  const submittedDocuments = useMemo(
-    () => employeeDocuments.filter((d) => d.status === 'Approved'),
-    [employeeDocuments],
-  );
 
   const refreshEmployeeDocuments = async () => {
     if (!currentUser?.employeeId && !currentUser?.email) return;
@@ -374,7 +415,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
     setSelectedFile((prev) => ({ ...prev, [id]: file }));
   };
 
-  const handleUpload = async (id: EmployeeDocumentType) => {
+  const handleUpload = async (id: ApplicationDocumentType) => {
     const file = selectedFile[id];
     if (!file) {
       setUploadError('Please choose a file before clicking Upload.');
@@ -391,6 +432,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
       email: currentUser.email,
       documentType: id,
       file,
+      category: 'application',
     });
 
     setUploadingId(null);
@@ -401,7 +443,36 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
     }
 
     setSelectedFile((prev) => ({ ...prev, [id]: null }));
-    setUploadSuccess(`Uploaded "${file.name}" for ${id}. RSP will see it under Reports → ${id}.`);
+    setUploadSuccess(`Uploaded "${file.name}" for ${id}.`);
+    await refreshEmployeeDocuments();
+    dispatchEmployeeDocumentsUpdated();
+  };
+
+  // Submission Bin: attach a file to an HR-created request (status -> 'Submitted').
+  const handleRequestUpload = async (request: EmployeeDocumentRow, file: File | null) => {
+    if (!file) return;
+
+    setUploadingId(request.id);
+    setUploadError(null);
+    setUploadSuccess(null);
+
+    const result = await uploadEmployeeDocument({
+      employeeId: currentUser.employeeId,
+      email: currentUser.email,
+      documentType: request.document_type,
+      file,
+      category: 'hr_request',
+      requestId: request.id,
+    });
+
+    setUploadingId(null);
+
+    if (result.success === false) {
+      setUploadError(result.error);
+      return;
+    }
+
+    setUploadSuccess(`Submitted "${file.name}" for ${request.document_name}.`);
     await refreshEmployeeDocuments();
     dispatchEmployeeDocumentsUpdated();
   };
@@ -852,30 +923,29 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
 
         {activeTab === 'documents' && (
           <div className="space-y-4">
-            <section className="rounded-xl border border-slate-200 bg-white p-5">
-              <div className="mb-5 flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-bold text-slate-900">Document Requirements</h2>
-                  <p className="text-sm text-slate-500">Submit all required documents for profile completion.</p>
-                </div>
-                <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700">
-                  {requirementItems.length} total
-                </span>
-              </div>
+            <div className="rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 text-sm text-blue-800">
+              Manage your original application documents. You can upload or update the required documents below.
+            </div>
 
-              {uploadError && (
-                <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                  {uploadError}
-                </p>
-              )}
+            {uploadError && (
+              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {uploadError}
+              </p>
+            )}
 
-              {uploadSuccess && (
-                <p className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                  {uploadSuccess}
-                </p>
-              )}
+            {uploadSuccess && (
+              <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                {uploadSuccess}
+              </p>
+            )}
 
-              <div className="space-y-3">
+            <section className="rounded-xl border border-slate-200 bg-white p-6">
+              <h2 className="text-xl font-bold text-slate-900">Requirements Upload Bin</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Upload or update the documents. Only the document types listed below are allowed.
+              </p>
+
+              <div className="mt-5 space-y-4">
                 {requirementItems.map((item) => {
                   const latest = latestByType.get(item.id);
                   const pickedFile = selectedFile[item.id] ?? null;
@@ -884,138 +954,263 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
                   return (
                     <article
                       key={item.id}
-                      className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-4"
+                      className="rounded-xl border border-slate-200 bg-white px-5 py-4"
                     >
-                      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                        <div>
-                          <h3 className="font-semibold text-slate-900">{item.title}</h3>
-                          <p className="text-sm text-slate-500">{item.description}</p>
-                          {latest && (
-                            <p className="mt-1 text-xs text-emerald-700">
-                              Last submitted: {latest.file_name} —{' '}
-                              {new Date(latest.uploaded_at).toLocaleDateString()} (
-                              {latest.status})
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <FileText className="h-5 w-5 shrink-0 text-indigo-500" />
+                            <h3 className="font-semibold text-slate-900">{item.title}</h3>
+                          </div>
+
+                          {latest ? (
+                            <div className="mt-2 space-y-1 pl-7 text-sm text-slate-500">
+                              <p className="flex items-center gap-2">
+                                <FileText className="h-4 w-4 text-slate-400" />
+                                {latest.file_name}
+                              </p>
+                              <p className="flex items-center gap-2">
+                                <Calendar className="h-4 w-4 text-slate-400" />
+                                Uploaded: {formatPortalDate(latest.uploaded_at)}
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="mt-2 pl-7 text-sm text-slate-400">No file uploaded yet</p>
+                          )}
+
+                          {pickedFile && (
+                            <p className="mt-2 pl-7 text-xs text-indigo-600">
+                              Selected: {pickedFile.name} ({Math.round(pickedFile.size / 1024)} KB)
                             </p>
                           )}
                         </div>
 
-                        <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center">
+                        <div className="flex shrink-0 items-center gap-2">
                           {latest && (
                             <button
                               type="button"
                               onClick={() => setPreviewDocument(latest)}
-                              className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
+                              className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
                             >
                               <Eye className="h-4 w-4" />
-                              View Submitted
+                              Preview
                             </button>
                           )}
 
-                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
-                            <input
-                              type="file"
-                              className="hidden"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0] ?? null;
-                                handleFileSelect(item.id, file);
-                              }}
-                            />
-                            <FileText className="h-4 w-4" />
-                            {pickedFile ? 'Change File' : latest ? 'Replace File' : 'Select File'}
-                          </label>
-
-                          <button
-                            type="button"
-                            onClick={() => handleUpload(item.id)}
-                            disabled={!pickedFile || isUploading}
-                            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-                          >
-                            <Upload className="h-4 w-4" />
-                            {isUploading ? 'Uploading...' : 'Upload'}
-                          </button>
+                          {pickedFile ? (
+                            <button
+                              type="button"
+                              onClick={() => handleUpload(item.id)}
+                              disabled={isUploading}
+                              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                            >
+                              <Upload className="h-4 w-4" />
+                              {isUploading ? 'Uploading…' : 'Confirm Upload'}
+                            </button>
+                          ) : (
+                            <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
+                              <input
+                                type="file"
+                                className="hidden"
+                                onChange={(e) => handleFileSelect(item.id, e.target.files?.[0] ?? null)}
+                              />
+                              <Upload className="h-4 w-4" />
+                              {latest ? 'Replace' : 'Upload'}
+                            </label>
+                          )}
                         </div>
                       </div>
-
-                      {pickedFile && (
-                        <p className="mt-3 text-xs text-slate-500">
-                          Selected file: {pickedFile.name} ({Math.round(pickedFile.size / 1024)} KB)
-                        </p>
-                      )}
                     </article>
                   );
                 })}
+              </div>
+
+              <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                <span className="font-semibold">Note:</span> Accepted file formats: PDF, DOC, DOCX, JPG, PNG.
+                Maximum file size: 10MB. You can replace an uploaded document at any time — please ensure you
+                upload the correct file.
               </div>
             </section>
           </div>
         )}
 
         {activeTab === 'submission' && (
-          <div className="space-y-5">
-            <section className="rounded-xl border border-slate-200 bg-white p-5">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-lg font-bold text-slate-900">Pending Submissions</h2>
-                <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
-                  {pendingDocuments.length}
-                </span>
+          <div className="space-y-4">
+            {pendingRequests.length > 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800">
+                HR has requested additional documents. Please review and submit the required documents by the due date.
+              </div>
+            )}
+
+            {uploadError && (
+              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {uploadError}
+              </p>
+            )}
+
+            {uploadSuccess && (
+              <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                {uploadSuccess}
+              </p>
+            )}
+
+            <section className="rounded-xl border border-slate-200 bg-white p-6">
+              <h2 className="text-xl font-bold text-slate-900">Submission Bin</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                HR may request additional documents from time to time. Upload the requested documents by the due date.
+              </p>
+
+              {/* Pending Submissions */}
+              <div className="mt-6 flex items-center gap-2">
+                <Clock className="h-5 w-5 text-amber-500" />
+                <h3 className="font-semibold text-slate-900">
+                  Pending Submissions ({pendingRequests.length})
+                </h3>
               </div>
 
-              <div className="space-y-3">
-                {pendingDocuments.length === 0 && (
-                  <p className="text-sm text-slate-500">No pending submissions.</p>
+              <div className="mt-3 space-y-3">
+                {pendingRequests.length === 0 && (
+                  <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                    No pending document requests.
+                  </p>
                 )}
-                {pendingDocuments.map((doc) => (
-                  <div
-                    key={doc.id}
-                    className="flex items-start justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-3"
-                  >
-                    <div>
-                      <p className="font-semibold text-amber-900">{doc.document_type}</p>
-                      <p className="text-sm text-amber-800">
-                        {doc.file_name} — submitted{' '}
-                        {new Date(doc.uploaded_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <Clock className="h-4 w-4 text-amber-700" />
-                  </div>
-                ))}
+                {pendingRequests.map((request) => {
+                  const isUploading = uploadingId === request.id;
+                  const days = daysUntil(request.due_date);
+                  const overdue = days !== null && days < 0;
+
+                  return (
+                    <article
+                      key={request.id}
+                      className="rounded-xl border border-amber-200 border-l-4 border-l-amber-400 bg-amber-50/60 px-5 py-4"
+                    >
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="font-semibold text-slate-900">{request.document_name}</h4>
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                              <Clock className="h-3 w-3" />
+                              {request.status === 'Rejected' ? 'Needs Resubmission' : 'Pending'}
+                            </span>
+                          </div>
+                          {request.description && (
+                            <p className="mt-1 text-sm text-slate-600">{request.description}</p>
+                          )}
+                          <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-500">
+                            <span>
+                              Requested by:{' '}
+                              <span className="font-medium text-slate-700">
+                                {request.requested_by || 'HR Department'}
+                              </span>
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Calendar className="h-3.5 w-3.5" />
+                              Due: {formatPortalDate(request.due_date)}
+                              {request.due_date && (
+                                <span className={overdue ? 'font-semibold text-red-600' : 'font-semibold text-amber-700'}>
+                                  {' '}({dueLabel(request.due_date)})
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                        </div>
+
+                        <label className="inline-flex shrink-0 cursor-pointer items-center gap-2 self-start rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
+                          <input
+                            type="file"
+                            className="hidden"
+                            disabled={isUploading}
+                            onChange={(e) => void handleRequestUpload(request, e.target.files?.[0] ?? null)}
+                          />
+                          <Upload className="h-4 w-4" />
+                          {isUploading ? 'Uploading…' : 'Upload'}
+                        </label>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+
+              {/* Submitted Documents */}
+              <div className="mt-7 flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                <h3 className="font-semibold text-slate-900">
+                  Submitted Documents ({submittedRequests.length})
+                </h3>
+              </div>
+
+              <div className="mt-3 space-y-3">
+                {submittedRequests.length === 0 && (
+                  <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                    No submitted documents yet.
+                  </p>
+                )}
+                {submittedRequests.map((request) => {
+                  const isUploading = uploadingId === request.id;
+
+                  return (
+                    <article
+                      key={request.id}
+                      className="rounded-xl border border-emerald-200 border-l-4 border-l-emerald-400 bg-emerald-50/60 px-5 py-4"
+                    >
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="font-semibold text-slate-900">{request.document_name}</h4>
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                              <CheckCircle2 className="h-3 w-3" />
+                              {request.status === 'Approved' ? 'Approved' : 'Submitted'}
+                            </span>
+                          </div>
+                          {request.description && (
+                            <p className="mt-1 text-sm text-slate-600">{request.description}</p>
+                          )}
+                          {request.file_name && (
+                            <p className="mt-1 flex items-center gap-2 text-sm text-slate-500">
+                              <FileText className="h-4 w-4 text-slate-400" />
+                              {request.file_name}
+                            </p>
+                          )}
+                          <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-500">
+                            <span>Submitted: {formatPortalDate(request.uploaded_at)}</span>
+                            {request.due_date && <span>Due date: {formatPortalDate(request.due_date)}</span>}
+                          </div>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-2 self-start">
+                          {request.file_url && (
+                            <button
+                              type="button"
+                              onClick={() => setPreviewDocument(request)}
+                              className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+                            >
+                              <Eye className="h-4 w-4" />
+                              Preview
+                            </button>
+                          )}
+                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-50">
+                            <input
+                              type="file"
+                              className="hidden"
+                              disabled={isUploading}
+                              onChange={(e) => void handleRequestUpload(request, e.target.files?.[0] ?? null)}
+                            />
+                            <Upload className="h-4 w-4" />
+                            {isUploading ? 'Uploading…' : 'Resubmit'}
+                          </label>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+
+              <div className="mt-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                <span className="font-semibold">Important:</span> Please submit all requested documents before
+                the due date. Late submissions may affect your employment records. Contact HR if you need an
+                extension or have questions about the requirements.
               </div>
             </section>
-
-            <section className="rounded-xl border border-slate-200 bg-white p-5">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-lg font-bold text-slate-900">Submitted Documents</h2>
-                <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                  {submittedDocuments.length}
-                </span>
-              </div>
-
-              <div className="space-y-3">
-                {submittedDocuments.length === 0 && (
-                  <p className="text-sm text-slate-500">No approved documents yet.</p>
-                )}
-                {submittedDocuments.map((doc) => (
-                  <button
-                    key={doc.id}
-                    type="button"
-                    onClick={() => setPreviewDocument(doc)}
-                    className="flex w-full items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-left hover:bg-emerald-100"
-                  >
-                    <div>
-                      <p className="font-semibold text-emerald-900">{doc.document_type}</p>
-                      <p className="text-sm text-emerald-800">
-                        {doc.file_name} — approved{' '}
-                        {new Date(doc.uploaded_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <ChevronRight className="h-4 w-4 text-emerald-700" />
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            <p className="text-sm text-slate-500">
-              For concerns about your pending documents, contact the HR office for verification updates.
-            </p>
           </div>
         )}
 
