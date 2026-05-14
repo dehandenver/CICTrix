@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, Eye, Filter, Search } from 'lucide-react';
+import { getAllEmployees, type Employee } from '../../lib/api/employees';
 
 type EmployeeRecord = {
   id: string;
@@ -9,6 +10,24 @@ type EmployeeRecord = {
   department: string;
   totalSeminars: number;
 };
+
+/** Derive 2-letter initials from a full_name string. */
+const getInitials = (name: string): string => {
+  const parts = (name ?? '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '??';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
+
+const toEmployeeRecord = (emp: Employee): EmployeeRecord => ({
+  id: emp.id,
+  name: emp.full_name ?? 'Unnamed',
+  initials: getInitials(emp.full_name ?? ''),
+  position: emp.current_position ?? 'Unassigned Position',
+  department: emp.department ?? emp.current_department ?? 'Unassigned Department',
+  // No training/seminar source wired yet — placeholder until LND domain tables exist.
+  totalSeminars: 0,
+});
 
 const employeesData: EmployeeRecord[] = [
   { id: '1', name: 'Juan dela Cruz', initials: 'JdC', position: 'IT Manager', department: 'IT Department', totalSeminars: 3 },
@@ -26,15 +45,37 @@ const employeesData: EmployeeRecord[] = [
 export const EmployeeDevelopment = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('All Departments');
+  const [dbEmployees, setDbEmployees] = useState<EmployeeRecord[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const result = await getAllEmployees({ status: 'Active' });
+      if (cancelled) return;
+      if (result.success && Array.isArray(result.data) && result.data.length > 0) {
+        setDbEmployees((result.data as Employee[]).map(toEmployeeRecord));
+      } else {
+        // DB empty or error — fall back to hardcoded demo data.
+        setDbEmployees(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Real data when present; hardcoded demo array as fallback for empty DB.
+  const sourceEmployees: EmployeeRecord[] =
+    dbEmployees && dbEmployees.length > 0 ? dbEmployees : employeesData;
 
   const departments = useMemo(
-    () => ['All Departments', ...Array.from(new Set(employeesData.map((employee) => employee.department)))],
-    []
+    () => ['All Departments', ...Array.from(new Set(sourceEmployees.map((employee) => employee.department)))],
+    [sourceEmployees]
   );
 
   const filteredEmployees = useMemo(() => {
     const query = searchQuery.toLowerCase();
-    return employeesData.filter((employee) => {
+    return sourceEmployees.filter((employee) => {
       const matchesSearch =
         employee.name.toLowerCase().includes(query) ||
         employee.position.toLowerCase().includes(query) ||
@@ -43,7 +84,7 @@ export const EmployeeDevelopment = () => {
         departmentFilter === 'All Departments' || employee.department === departmentFilter;
       return matchesSearch && matchesDepartment;
     });
-  }, [searchQuery, departmentFilter]);
+  }, [searchQuery, departmentFilter, sourceEmployees]);
 
   return (
     <div className="p-6 md:p-8 pt-24 bg-gray-50 min-h-screen flex flex-col space-y-6">

@@ -50,8 +50,21 @@ import { Input } from '../../components/Input';
 import { LogoutConfirmPopover } from '../../components/LogoutConfirmPopover';
 import { Sidebar } from '../../components/Sidebar';
 import { supabase } from '../../lib/supabase';
+import { getAllEmployees, type Employee } from '../../lib/api/employees';
 import '../../styles/admin.css';
 import { SummaryOfRatings } from './pm/SummaryOfRatings';
+
+type EvaluationEmployeeRow = { name: string; position: string; status: string };
+type EvaluationGroup = {
+  dept: string;
+  count: number;
+  pct: number;
+  approved: number;
+  review: number;
+  self: number;
+  planning: number;
+  employees: EvaluationEmployeeRow[];
+};
 
 
 interface EvaluationCycle {
@@ -213,6 +226,11 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const reviewStartIdx = (reviewPage - 1) * reviewRowsPerPage;
   const reviewPageData = reviewsData.slice(reviewStartIdx, reviewStartIdx + reviewRowsPerPage);
 
+  // Department-grouped employees from the central employees table.
+  // When empty (live DB has no employees yet), the UI falls back to the
+  // hardcoded demo array inlined in the evaluation-status section.
+  const [dbEvaluationGroups, setDbEvaluationGroups] = useState<EvaluationGroup[]>([]);
+
   useEffect(() => {
     fetchCycles();
   }, []);
@@ -220,6 +238,51 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   useEffect(() => {
     calculateStats();
   }, [cycles]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const result = await getAllEmployees({ status: 'Active' });
+      if (cancelled) return;
+      if (!result.success || !Array.isArray(result.data) || result.data.length === 0) {
+        setDbEvaluationGroups([]);
+        return;
+      }
+
+      // Group active employees by department; per-cycle review status is not
+      // tracked on the employees table, so each row defaults to 'Planning'.
+      const groupsByDept = new Map<string, EvaluationEmployeeRow[]>();
+      for (const emp of result.data as Employee[]) {
+        const dept = emp.department ?? emp.current_department ?? 'Unassigned Department';
+        const row: EvaluationEmployeeRow = {
+          name: emp.full_name ?? 'Unnamed',
+          position: emp.current_position ?? 'Unassigned Position',
+          status: 'Planning',
+        };
+        const existing = groupsByDept.get(dept);
+        if (existing) existing.push(row);
+        else groupsByDept.set(dept, [row]);
+      }
+
+      const groups: EvaluationGroup[] = Array.from(groupsByDept.entries())
+        .map(([dept, employees]) => ({
+          dept,
+          count: employees.length,
+          pct: 0,
+          approved: 0,
+          review: 0,
+          self: 0,
+          planning: employees.length,
+          employees,
+        }))
+        .sort((a, b) => a.dept.localeCompare(b.dept));
+
+      setDbEvaluationGroups(groups);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const fetchCycles = async () => {
     setLoading(true);
@@ -784,8 +847,12 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                     <div className="col-span-2 text-right">Actions</div>
                   </div>
 
-                  {/* Department groups */}
-                  {[
+                  {/* Department groups — uses live employees from the central
+                      employees table when present, otherwise falls back to the
+                      hardcoded demo data below. */}
+                  {(dbEvaluationGroups.length > 0
+                    ? dbEvaluationGroups
+                    : [
                     {
                       dept: 'Finance', count: 9, pct: 56, approved: 5, review: 2, self: 1, planning: 1,
                       employees: [
@@ -807,7 +874,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                         { name: 'Carmen Diaz', position: 'Network Administrator', status: 'Supervisor Review' },
                       ],
                     },
-                  ].map((group) => (
+                  ]).map((group) => (
                     <div key={group.dept} className="border-b border-slate-100">
                       {/* Group header */}
                       <div className="flex items-center gap-3 px-5 py-2.5 bg-slate-50/50 border-b border-slate-100">

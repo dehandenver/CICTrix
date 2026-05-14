@@ -23,8 +23,33 @@ import {
     UsersRound,
     X,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AdminHeader } from '../../components/AdminHeader';
+import { getAllEmployees, type Employee } from '../../lib/api/employees';
+
+type DocumentRow = {
+  no: number;
+  initials: string;
+  name: string;
+  role: string;
+  dept: string;
+  docType: string;
+  dateReq: string;
+  dateSub: string;
+  status: string;
+  statusClass: string;
+  action: 'Request' | 'View';
+  actionClass: string;
+  icon: any;
+};
+
+/** Derive 2-letter initials from a full_name string. */
+const getDocRowInitials = (name: string): string => {
+  const parts = (name ?? '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '??';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
 import {
     CartesianGrid,
     Legend,
@@ -378,6 +403,44 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
   const [bulkSendTo, setBulkSendTo] = useState<'all' | 'department' | 'selected'>('all');
   const totalEmployees = 24;
 
+  // Employees from the central employees table. When empty, the documents
+  // table falls back to the hardcoded demo `rows` below.
+  const [dbDocumentRows, setDbDocumentRows] = useState<DocumentRow[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const result = await getAllEmployees({ status: 'Active' });
+      if (cancelled) return;
+      if (!result.success || !Array.isArray(result.data) || result.data.length === 0) {
+        setDbDocumentRows([]);
+        return;
+      }
+      // Per-employee per-document tracking is not wired yet, so every real
+      // employee shows up with a 'Pending' / 'Request' default until the
+      // document-request domain table exists.
+      const mapped: DocumentRow[] = (result.data as Employee[]).map((emp, idx) => ({
+        no: idx + 1,
+        initials: getDocRowInitials(emp.full_name ?? ''),
+        name: emp.full_name ?? 'Unnamed',
+        role: emp.current_position ?? 'Unassigned Position',
+        dept: emp.department ?? emp.current_department ?? 'Unassigned Department',
+        docType: '—',
+        dateReq: '—',
+        dateSub: '',
+        status: 'Pending',
+        statusClass: 'border-orange-200 bg-orange-50 text-orange-600',
+        action: 'Request',
+        actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent',
+        icon: ClipboardList,
+      }));
+      setDbDocumentRows(mapped);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // ── Individual request helpers ──────────────────────────────────────
   const openRequestModal = (employee?: { name: string; role: string; dept: string; initials: string }) => {
     setRequestEmployee(employee || null);
@@ -464,13 +527,15 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
   };
 
   // ── Table row data ──────────────────────────────────────────────────
-  const rows = [
+  // Hardcoded demo rows; used as fallback when no real employees exist yet.
+  const fallbackRows: DocumentRow[] = [
     { no: 1, initials: 'SM', name: 'Santos, Maria G.', role: 'IT Officer II', dept: 'IT Department', docType: 'IPCR', dateReq: 'Mar 1, 2025', dateSub: 'Mar 12, 2025', status: 'Submitted', statusClass: 'border-blue-200 bg-blue-50 text-blue-600', action: 'View' as const, actionClass: 'border-purple-200 text-purple-600 hover:bg-purple-50', icon: Eye },
     { no: 2, initials: 'DC', name: 'Dela Cruz, Juan P.', role: 'Systems Analyst', dept: 'IT Department', docType: 'Accomplishment Report', dateReq: 'Mar 1, 2025', dateSub: 'Mar 10, 2025', status: 'Approved', statusClass: 'border-emerald-200 bg-emerald-50 text-emerald-600', action: 'Request' as const, actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList },
     { no: 3, initials: 'RA', name: 'Reyes, Ana T.', role: 'Network Administrator', dept: 'IT Department', docType: 'IPCR', dateReq: 'Mar 1, 2025', dateSub: '', status: 'Pending', statusClass: 'border-orange-200 bg-orange-50 text-orange-600', action: 'Request' as const, actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList },
     { no: 4, initials: 'AR', name: 'Aguilar, Ricardo M.', role: 'IT Support Specialist', dept: 'IT Department', docType: 'Service Record', dateReq: 'Mar 3, 2025', dateSub: 'Mar 18, 2025', status: 'Under Review', statusClass: 'border-purple-200 bg-purple-50 text-purple-600', action: 'View' as const, actionClass: 'border-purple-200 text-purple-600 hover:bg-purple-50', icon: Eye },
     { no: 5, initials: 'BL', name: 'Bautista, Lourdes S.', role: 'Database Administrator', dept: 'IT Department', docType: 'Position Description Form', dateReq: 'Feb 15, 2025', dateSub: '', status: 'Overdue', statusClass: 'border-red-200 bg-red-50 text-red-600', action: 'Request' as const, actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList },
   ];
+  const rows: DocumentRow[] = dbDocumentRows.length > 0 ? dbDocumentRows : fallbackRows;
 
   if (showPMReports) {
     return (

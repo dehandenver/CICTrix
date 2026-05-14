@@ -1,6 +1,7 @@
 import { Eye, EyeOff } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import iloiloCitySeal from '../../assets/iloilo-city-seal.png';
 import { supabase } from '../../lib/supabase';
 import '../../styles/admin.css';
 import { scheduleTransientUiReset } from '../../utils/uiReset';
@@ -134,7 +135,11 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
           <span className="admin-login-orb orb-one" />
           <span className="admin-login-orb orb-two" />
           <span className="admin-login-orb orb-three" />
-          <div className="admin-login-logo" aria-hidden="true" />
+          <img
+            src={iloiloCitySeal}
+            alt="City of Iloilo Seal"
+            className="admin-login-logo"
+          />
           <h2>HRIS Portal</h2>
           <p>Human Resource Information System</p>
           <ul>

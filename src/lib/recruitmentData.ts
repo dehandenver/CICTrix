@@ -732,8 +732,8 @@ export const createEmployeeNumberAllocator = async (
 
   // Pull from Supabase.
   try {
-    const empRes = await (supabase as any).from('employees').select('employee_number');
-    for (const row of (empRes?.data ?? []) as any[]) addIfPresent(row?.employee_number);
+    const empRes = await (supabase as any).from('employees').select('employee_id');
+    for (const row of (empRes?.data ?? []) as any[]) addIfPresent(row?.employee_id);
   } catch (error) {
     // eslint-disable-next-line no-console
     console.warn('createEmployeeNumberAllocator: employees fetch failed', error);

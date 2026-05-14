@@ -131,9 +131,8 @@ export default function ChangePositionModal({ employee, onClose, onSuccess }: Pr
         const { error: updateError } = await supabase
           .from('employees')
           .update({
-            position: newPosition,
+            current_position: newPosition,
             department_id: departmentId,
-            modified_at: new Date().toISOString(),
           })
           .eq('id', employee.id);
 
@@ -157,8 +156,8 @@ export default function ChangePositionModal({ employee, onClose, onSuccess }: Pr
                   : changeType === 'succession'
                     ? 'transferred'
                     : 'transferred',
-              field_changed: 'position,department',
-              old_value: `${employee.position} - ${employee.department}`,
+              field_changed: 'current_position,current_department',
+              old_value: `${employee.current_position} - ${employee.department}`,
               new_value: `${newPosition} - ${newDepartment}`,
               effective_date: effectiveDate,
               reason: notes,
@@ -189,7 +188,7 @@ export default function ChangePositionModal({ employee, onClose, onSuccess }: Pr
         <div className="flex items-center justify-between p-6 border-b border-gray-200 sticky top-0 bg-white">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">Change Position</h2>
-            <p className="text-sm text-gray-600 mt-1">Update position for {employee.first_name} {employee.last_name}</p>
+            <p className="text-sm text-gray-600 mt-1">Update position for {employee.full_name}</p>
           </div>
           <button
             onClick={onClose}
@@ -207,7 +206,7 @@ export default function ChangePositionModal({ employee, onClose, onSuccess }: Pr
             <div className="grid grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm text-gray-600 mb-1">Current Position</label>
-                <p className="text-gray-900 font-medium">{employee.position}</p>
+                <p className="text-gray-900 font-medium">{employee.current_position}</p>
               </div>
               <div>
                 <label className="block text-sm text-gray-600 mb-1">Current Department</label>

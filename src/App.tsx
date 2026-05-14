@@ -345,7 +345,7 @@ function AppContent() {
       const session: EmployeeSession = {
         employeeId: empData.employee_id,
         email: empData.email,
-        fullName: `${empData.first_name} ${empData.last_name}`,
+        fullName: empData.full_name,
         loginUsername: empData.employee_id,
       };
 
