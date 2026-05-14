@@ -303,12 +303,11 @@ export const RaterManagementPage = () => {
             ? row.assigned_positions.filter((value: unknown) => typeof value === 'string')
             : [];
           const positionsFromLocal = emailKey ? localAssignments[emailKey] ?? [] : [];
-          const positionsFromDepartment = row?.department ? [String(row.department)] : ['Unassigned'];
-          const assignedPositions = uniqueStrings(
-            positionsFromRow.length > 0
-              ? [...positionsFromRow, ...positionsFromLocal]
-              : [...positionsFromLocal, ...positionsFromDepartment]
-          );
+          // Only real job-title strings belong here. Department names and the
+          // sentinel 'Unassigned' must not pollute this list — they were silently
+          // poisoning the interviewer's filter (no job title matches 'Unassigned'
+          // so ALL jobs vanished from the interviewer dashboard after assignment).
+          const assignedPositions = uniqueStrings([...positionsFromRow, ...positionsFromLocal]);
 
           const nextRow: RaterSourceRow = {
             id: String(row?.id ?? crypto.randomUUID()),
@@ -426,6 +425,19 @@ export const RaterManagementPage = () => {
     [availableAccounts, form.selectedEmail]
   );
 
+  // Reactive list of job titles to assign from. The job postings cache is
+  // populated asynchronously from Supabase at app boot, so we must re-read it
+  // whenever the 'cictrix:job-postings-updated' event fires; a useMemo with []
+  // deps captures an empty cache when the page mounts before the fetch resolves.
+  const [jobPostingsVersion, setJobPostingsVersion] = useState(0);
+  useEffect(() => {
+    const onUpdate = () => setJobPostingsVersion((v) => v + 1);
+    window.addEventListener('cictrix:job-postings-updated', onUpdate as EventListener);
+    return () => {
+      window.removeEventListener('cictrix:job-postings-updated', onUpdate as EventListener);
+    };
+  }, []);
+
   const assignableJobPositions = useMemo(() => {
     return getAuthoritativeJobPostings()
       .filter((posting) => String(posting?.status ?? '').trim().toLowerCase() === 'active')
@@ -433,7 +445,7 @@ export const RaterManagementPage = () => {
       .filter(Boolean)
       .filter((value, index, rows) => rows.indexOf(value) === index)
       .sort((left, right) => left.localeCompare(right));
-  }, []);
+  }, [jobPostingsVersion]);
 
   const filteredRaters = useMemo(() => {
     return ratersData.filter((rater) => {
