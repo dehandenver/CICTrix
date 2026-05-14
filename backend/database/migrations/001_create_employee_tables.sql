@@ -13,8 +13,8 @@ CREATE TABLE IF NOT EXISTS employees (
   employee_number VARCHAR(50) UNIQUE NOT NULL,
   
   -- Link to recruitment (if hired through RSP)
-  qualified_applicant_id UUID REFERENCES qualified_applicants(id) ON DELETE SET NULL,
-  application_id UUID REFERENCES applications(id) ON DELETE SET NULL,
+  qualified_applicant_id UUID,
+  application_id UUID,
   
   -- Personal information
   first_name VARCHAR(100) NOT NULL,
@@ -229,8 +229,8 @@ CREATE TABLE IF NOT EXISTS employee_documents (
   ))
 );
 
-CREATE INDEX idx_employee_documents_employee_id ON employee_documents(employee_id);
-CREATE INDEX idx_employee_documents_document_type ON employee_documents(document_type);
+CREATE INDEX IF NOT EXISTS idx_employee_documents_employee_id ON employee_documents(employee_id);
+CREATE INDEX IF NOT EXISTS idx_employee_documents_document_type ON employee_documents(document_type);
 
 -- ============================================================================
 -- TABLE 7: employee_history (Audit Trail)

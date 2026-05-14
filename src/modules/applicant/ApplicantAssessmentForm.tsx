@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Checkbox, Input, Select } from '../../components';
 import { DEPARTMENT_OPTIONS, POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
-import { ensureRecruitmentSeedData, getAuthoritativeJobPostings } from '../../lib/recruitmentData';
+import { ensureRecruitmentSeedData, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
 import type { ApplicantFormData, ValidationErrors } from '../../types/applicant.types';
 
 interface ApplicantAssessmentFormProps {
@@ -79,8 +79,11 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
 
   useEffect(() => {
     syncPostedPositions(formData.position);
+    loadJobPostings().then(() => syncPostedPositions(formData.position));
 
-    const onFocus = () => syncPostedPositions(formData.position);
+    const onFocus = () => {
+      loadJobPostings().then(() => syncPostedPositions(formData.position));
+    };
     const onUpdated = () => syncPostedPositions(formData.position);
     window.addEventListener('focus', onFocus);
     window.addEventListener('cictrix:job-postings-updated', onUpdated as EventListener);
