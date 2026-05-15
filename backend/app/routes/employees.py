@@ -9,6 +9,34 @@ from app.utils.dependencies import get_current_user, require_role
 
 router = APIRouter(prefix="/api/employees", tags=["employees"])
 
+
+def _resolve_department_id(client, department_name: Optional[str]) -> str:
+    """
+    Resolve a department name to its UUID in the `departments` lookup table.
+    Migration 006 made employees.department_id NOT NULL, so every insert must
+    supply one. Falls back to 'Operations' (the same fallback migration 006's
+    backfill used) when the name is missing or unmatched.
+    """
+    name = (department_name or "").strip()
+    if name:
+        match = client.table("departments").select("id").eq("name", name).execute()
+        if match.data:
+            return match.data[0]["id"]
+
+    fallback = (
+        client.table("departments").select("id").eq("name", "Operations").execute()
+    )
+    if fallback.data:
+        return fallback.data[0]["id"]
+
+    raise HTTPException(
+        status_code=500,
+        detail=(
+            "Could not resolve a department_id: no match for "
+            f"'{name}' and no 'Operations' fallback in the departments table."
+        ),
+    )
+
 @router.post("/", response_model=EmployeeResponse, status_code=201)
 async def create_employee(
     employee: EmployeeCreate = Body(...),
@@ -124,16 +152,23 @@ async def hire_from_applicant(
     if not emp_id:
         emp_id = f"EMP-{uuid.uuid4().hex[:8].upper()}"
 
+    department_name = app_data.get("office") or app_data.get("current_department")
+    department_id = _resolve_department_id(client, department_name)
+
     insert_data = {
         "employee_id": emp_id,
-        "user_id": None, 
+        "user_id": None,
         "full_name": full_name or "Unknown Name",
         "email": app_data.get("email"),
         "mobile_number": app_data.get("contact_number"),
         "home_address": app_data.get("address"),
         "gender": app_data.get("gender"),
         "current_position": app_data.get("position") or app_data.get("current_position"),
-        "current_department": app_data.get("office") or app_data.get("current_department"),
+        # department_id satisfies the NOT NULL FK from migration 006; the
+        # sync trigger keeps current_department text aligned, but we set it
+        # too so the row is correct even if the trigger is ever dropped.
+        "department_id": department_id,
+        "current_department": department_name,
         "current_division": app_data.get("current_division"),
         "hire_date": today_str,
         "status": "Active",
