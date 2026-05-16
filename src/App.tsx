@@ -708,3 +708,21 @@ function App() {
 }
 
 export default App;
+
+import React from 'react';
+import SplitScreenSignUp from './components/SplitScreenSignUp';
+import OnboardingModal from './components/OnboardingModal';
+import './styles/globals.css';
+
+export const App: React.FC = () => {
+  return (
+    <div>
+      {/* Uncomment one at a time to preview */}
+      <SplitScreenSignUp />
+      
+      {/* <OnboardingModal onNext={(sel) => console.log('selected', sel)} /> */}
+    </div>
+  );
+};
+
+export default App;
