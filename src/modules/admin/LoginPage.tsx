@@ -1,8 +1,7 @@
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Lock, Mail } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
-import '../../styles/admin.css';
 import { scheduleTransientUiReset } from '../../utils/uiReset';
 
 type Role = 'super-admin' | 'rsp' | 'lnd' | 'pm';
@@ -32,18 +31,25 @@ interface LoginPageProps {
 
 // Mock credentials for development
 const MOCK_USERS: Record<string, { password: string; role: Role }> = {
-  // Documented credentials (ACCESS_LINKS.md)
   'admin@cictrix.gov.ph': { password: 'admin123', role: 'super-admin' },
   'rsp@cictrix.gov.ph': { password: 'rsp123', role: 'rsp' },
   'lnd@cictrix.gov.ph': { password: 'lnd123', role: 'lnd' },
   'pm@cictrix.gov.ph': { password: 'pm123', role: 'pm' },
 
-  // Backward-compatible legacy credentials
   'admin@cictrix.com': { password: 'Admin@123', role: 'super-admin' },
   'rsp@cictrix.com': { password: 'RSP@123', role: 'rsp' },
   'lnd@cictrix.com': { password: 'LND@123', role: 'lnd' },
   'pm@cictrix.com': { password: 'PM@123', role: 'pm' },
 };
+
+const ROLES: { key: Role; label: string; sublabel: string }[] = [
+  { key: 'rsp', label: 'RSP', sublabel: 'Recruitment' },
+  { key: 'lnd', label: 'L&D', sublabel: 'Learning' },
+  { key: 'pm', label: 'PM', sublabel: 'Performance' },
+  { key: 'super-admin', label: 'Admin', sublabel: 'HR Head' },
+];
+
+const INTER_STACK = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 
 export const LoginPage = ({ onLogin }: LoginPageProps) => {
   const [email, setEmail] = useState('');
@@ -56,7 +62,6 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
 
   useEffect(() => {
     const cleanupUiReset = scheduleTransientUiReset({ dispatchOverlayClose: true });
-
     return () => {
       cleanupUiReset();
     };
@@ -71,7 +76,6 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
 
     setLoading(true);
     try {
-      // Try mock auth first
       const normalizedEmail = email.trim().toLowerCase();
       const mockUser = MOCK_USERS[normalizedEmail];
       if (mockUser && mockUser.password === password) {
@@ -84,7 +88,6 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
         return;
       }
 
-      // Fall back to Supabase auth
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -128,133 +131,281 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
   };
 
   return (
-    <div className="admin-login-page">
-      <div className="admin-login-shell">
-        <div className="admin-login-illustration">
-          <span className="admin-login-orb orb-one" />
-          <span className="admin-login-orb orb-two" />
-          <span className="admin-login-orb orb-three" />
-          <div className="admin-login-logo" aria-hidden="true" />
-          <h2>HRIS Portal</h2>
-          <p>Human Resource Information System</p>
-          <ul>
-            <li>Recruitment &amp; Selection</li>
-            <li>Learning &amp; Development</li>
-            <li>Performance Management</li>
-          </ul>
-        </div>
+    <div
+      className="min-h-screen w-full bg-slate-50 text-slate-900"
+      style={{ fontFamily: INTER_STACK }}
+    >
+      <div className="flex min-h-screen w-full">
+        {/* LEFT — solid indigo brand panel */}
+        <aside
+          className="relative hidden w-1/2 overflow-hidden lg:flex"
+          style={{ backgroundColor: '#4F46E5', color: '#FFFFFF' }}
+        >
+          {/* Subtle decorative orbs (very low contrast — premium, not loud). */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -top-32 -left-32 h-96 w-96 rounded-full blur-3xl"
+            style={{ backgroundColor: 'rgba(255,255,255,0.10)' }}
+          />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -bottom-40 -right-24 h-[28rem] w-[28rem] rounded-full blur-3xl"
+            style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
+          />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0"
+            style={{
+              backgroundImage:
+                'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.18) 1px, transparent 0)',
+              backgroundSize: '24px 24px',
+              opacity: 0.4,
+            }}
+          />
 
-        <div className="admin-login-form-panel">
-          <div className="admin-login-form-header">
-            <h1>Welcome Back</h1>
-            <p>Please sign in to your account</p>
-          </div>
-
-          <form onSubmit={handleLogin} className="admin-login-form">
-            <div className="field">
-              <label>Email Address</label>
-              <div className="input-with-icon">
-                <span className="input-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M4 4h16v16H4z" opacity="0" />
-                    <path d="M4 6h16" />
-                    <path d="m4 6 8 6 8-6" />
-                    <path d="M4 6v12h16V6" />
-                  </svg>
-                </span>
-                <input
-                  type="email"
-                  placeholder="Enter your email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  autoComplete="email"
-                />
+          {/* Top-left wordmark */}
+          <div className="relative z-10 flex w-full flex-col p-12">
+            <div className="flex items-center gap-3">
+              <div
+                className="flex h-10 w-10 items-center justify-center rounded-xl"
+                style={{
+                  backgroundColor: 'rgba(255,255,255,0.15)',
+                  boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.25)',
+                  backdropFilter: 'blur(8px)',
+                }}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#FFFFFF"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-5 w-5"
+                  aria-hidden="true"
+                >
+                  <path d="M3 12l9-9 9 9" />
+                  <path d="M5 10v10h14V10" />
+                  <path d="M10 20v-6h4v6" />
+                </svg>
               </div>
+              <span
+                className="text-sm font-semibold tracking-wide"
+                style={{ color: 'rgba(255,255,255,0.92)' }}
+              >
+                CICTrix
+              </span>
             </div>
 
-            <div className="field">
-              <label>Password</label>
-              <div className="input-with-icon">
-                <span className="input-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="4" y="11" width="16" height="9" rx="2" />
-                    <path d="M8 11V8a4 4 0 0 1 8 0v3" />
-                  </svg>
-                </span>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="current-password"
-                  style={{ paddingRight: '2.5rem' }}
-                />
+            {/* Centered hero block */}
+            <div className="m-auto w-full max-w-md text-center">
+              <div
+                className="mx-auto mb-8 flex h-20 w-20 items-center justify-center rounded-3xl"
+                style={{
+                  backgroundColor: 'rgba(255,255,255,0.16)',
+                  boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.28)',
+                  backdropFilter: 'blur(8px)',
+                }}
+              >
+                <Lock className="h-9 w-9" strokeWidth={1.6} style={{ color: '#FFFFFF' }} />
+              </div>
+              <h1
+                className="text-4xl font-bold tracking-tight"
+                style={{ lineHeight: 1.1, color: '#FFFFFF' }}
+              >
+                HRIS Portal
+              </h1>
+              <p
+                className="mt-3 text-base font-medium"
+                style={{ color: 'rgba(255,255,255,0.82)' }}
+              >
+                Human Resource Information System
+              </p>
+              <ul className="mt-10 space-y-3 text-left text-sm">
+                {['Recruitment & Selection', 'Learning & Development', 'Performance Management'].map(
+                  (item) => (
+                    <li
+                      key={item}
+                      className="flex items-center gap-3"
+                      style={{ color: 'rgba(255,255,255,0.88)' }}
+                    >
+                      <span
+                        className="h-1.5 w-1.5 rounded-full"
+                        style={{ backgroundColor: 'rgba(255,255,255,0.75)' }}
+                        aria-hidden="true"
+                      />
+                      {item}
+                    </li>
+                  ),
+                )}
+              </ul>
+            </div>
+
+            <p
+              className="text-xs font-medium"
+              style={{ color: 'rgba(255,255,255,0.55)' }}
+            >
+              &copy; {new Date().getFullYear()} CICTrix Resorts. All rights reserved.
+            </p>
+          </div>
+        </aside>
+
+        {/* RIGHT — form panel */}
+        <main className="flex w-full items-center justify-center px-6 py-12 lg:w-1/2 lg:px-16">
+          <div className="w-full max-w-md">
+            {/* Mobile-only mini brand */}
+            <div className="mb-8 flex items-center gap-2 lg:hidden">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#4F46E5]">
+                <Lock className="h-4 w-4 text-white" strokeWidth={2} />
+              </div>
+              <span className="text-sm font-semibold text-slate-900">CICTrix HRIS</span>
+            </div>
+
+            <div className="mb-8">
+              <h1
+                className="text-3xl font-bold tracking-tight text-slate-900"
+                style={{ lineHeight: 1.15 }}
+              >
+                Welcome back
+              </h1>
+              <p className="mt-2 text-sm text-slate-500">Please sign in to your account</p>
+            </div>
+
+            <form onSubmit={handleLogin} className="space-y-5">
+              {/* Email */}
+              <div>
+                <label
+                  htmlFor="admin-login-email"
+                  className="mb-2 block text-sm font-semibold text-slate-700"
+                >
+                  Email Address
+                </label>
+                <div className="relative">
+                  <Mail
+                    className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                    strokeWidth={1.8}
+                    aria-hidden="true"
+                  />
+                  <input
+                    id="admin-login-email"
+                    type="email"
+                    placeholder="Enter your email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    autoComplete="email"
+                    className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-3 text-sm text-slate-900 placeholder:text-slate-400 transition-shadow focus:border-[#4F46E5] focus:outline-none focus:ring-4 focus:ring-[#EEF2FF]"
+                  />
+                </div>
+              </div>
+
+              {/* Password */}
+              <div>
+                <label
+                  htmlFor="admin-login-password"
+                  className="mb-2 block text-sm font-semibold text-slate-700"
+                >
+                  Password
+                </label>
+                <div className="relative">
+                  <Lock
+                    className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                    strokeWidth={1.8}
+                    aria-hidden="true"
+                  />
+                  <input
+                    id="admin-login-password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="current-password"
+                    className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-11 text-sm text-slate-900 placeholder:text-slate-400 transition-shadow focus:border-[#4F46E5] focus:outline-none focus:ring-4 focus:ring-[#EEF2FF]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                  >
+                    {showPassword ? <EyeOff size={16} strokeWidth={1.8} /> : <Eye size={16} strokeWidth={1.8} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Role selection */}
+              <div>
+                <p className="mb-2 text-sm font-semibold text-slate-700">Select Your Role</p>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {ROLES.map((role) => {
+                    const isActive = selectedRole === role.key;
+                    return (
+                      <button
+                        key={role.key}
+                        type="button"
+                        onClick={() => setSelectedRole(role.key)}
+                        className={[
+                          'group flex flex-col items-start gap-0.5 rounded-xl border px-4 py-3 text-left transition',
+                          isActive
+                            ? 'border-[#4F46E5] bg-[#EEF2FF] ring-1 ring-[#4F46E5]/30'
+                            : 'border-gray-200 bg-white hover:border-slate-300 hover:bg-slate-50',
+                        ].join(' ')}
+                      >
+                        <span
+                          className={[
+                            'text-sm font-semibold transition',
+                            isActive ? 'text-[#4338CA]' : 'text-slate-900',
+                          ].join(' ')}
+                        >
+                          {role.label}
+                        </span>
+                        <span
+                          className={[
+                            'text-xs transition',
+                            isActive ? 'text-[#4F46E5]/80' : 'text-slate-500',
+                          ].join(' ')}
+                        >
+                          {role.sublabel}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Remember + forgot */}
+              <div className="flex items-center justify-between pt-1">
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(event) => setRememberMe(event.target.checked)}
+                    className="h-4 w-4 cursor-pointer rounded border-gray-300 text-[#4F46E5] focus:ring-2 focus:ring-[#EEF2FF]"
+                  />
+                  Remember me
+                </label>
                 <button
                   type="button"
-                  onClick={() => setShowPassword((prev) => !prev)}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    padding: 0,
-                    cursor: 'pointer',
-                    position: 'absolute',
-                    right: '0.75rem',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    color: 'var(--text-secondary)',
-                  }}
+                  className="text-sm font-medium text-[#4F46E5] transition hover:text-[#4338CA]"
                 >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  Forgot password?
                 </button>
               </div>
-            </div>
 
-            <div className="role-select">
-              <p>Select Your Role</p>
-              <div className="role-grid">
-                {([
-                  { key: 'rsp', label: 'RSP', sublabel: 'Recruitment' },
-                  { key: 'lnd', label: 'L&D', sublabel: 'Learning' },
-                  { key: 'pm', label: 'PM', sublabel: 'Performance' },
-                  { key: 'super-admin', label: 'Admin', sublabel: 'HR Head' }
-                ] as { key: Role; label: string; sublabel: string }[]).map((role) => (
-                  <button
-                    key={role.key}
-                    type="button"
-                    className={`role-card ${selectedRole === role.key ? 'active' : ''}`}
-                    onClick={() => setSelectedRole(role.key)}
-                  >
-                    <span>{role.label}</span>
-                    <small>{role.sublabel}</small>
-                  </button>
-                ))}
-              </div>
-            </div>
+              {/* Submit */}
+              <button
+                type="submit"
+                disabled={loading}
+                className="mt-2 inline-flex w-full items-center justify-center rounded-xl bg-[#4F46E5] px-4 py-3 text-sm font-semibold text-white shadow-sm shadow-indigo-500/20 transition hover:bg-[#4338CA] focus:outline-none focus:ring-4 focus:ring-[#EEF2FF] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
+              >
+                {loading ? 'Signing in…' : 'Sign in'}
+              </button>
+            </form>
 
-            <div className="login-actions">
-              <label className="remember-me">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(event) => setRememberMe(event.target.checked)}
-                />
-                Remember me
-              </label>
-              <button type="button" className="forgot-link">Forgot Password?</button>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="primary-login-button"
-            >
-              {loading ? 'Signing in…' : 'Sign In'}
-            </button>
-          </form>
-
-          <p className="login-footer">Protected by government security protocols</p>
-        </div>
+            <p className="mt-10 text-center text-xs font-medium text-slate-400">
+              Protected by government security protocols
+            </p>
+          </div>
+        </main>
       </div>
     </div>
   );
