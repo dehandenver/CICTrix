@@ -21,8 +21,10 @@
 --     category='hr_request' (migration 006). No separate table here.
 --   - "Upcoming Retirements" reads employees.date_of_birth (already present
 --     in the live employees schema, migration 20260510). No new column.
---   - RLS follows the same admin-role gate used elsewhere in the project
---     (ADMIN/PM/RSP/LND can read+write; employees can read their own row).
+--   - RLS gates ADMIN/PM/RSP/LND for read+write. Self-read policies for
+--     employees are deferred until the employees table carries a user_id
+--     column linking to auth.users — the live schema drifted off the
+--     20260510 migration and does not have it today.
 -- ============================================================================
 
 BEGIN;
@@ -160,13 +162,8 @@ CREATE POLICY performance_evaluations_admin_all
   USING ((auth.jwt() -> 'user_metadata' ->> 'role') IN ('ADMIN', 'PM', 'RSP', 'LND'))
   WITH CHECK ((auth.jwt() -> 'user_metadata' ->> 'role') IN ('ADMIN', 'PM', 'RSP', 'LND'));
 
-DROP POLICY IF EXISTS performance_evaluations_self_read ON performance_evaluations;
-CREATE POLICY performance_evaluations_self_read
-  ON performance_evaluations
-  FOR SELECT
-  USING (
-    employee_id IN (SELECT id FROM employees WHERE user_id = auth.uid())
-  );
+-- (Self-read policy on performance_evaluations deferred: requires
+--  employees.user_id, which the live schema does not currently expose.)
 
 -- competencies: admin full; authenticated read.
 DROP POLICY IF EXISTS competencies_admin_all ON competencies;
@@ -190,12 +187,7 @@ CREATE POLICY employee_competencies_admin_all
   USING ((auth.jwt() -> 'user_metadata' ->> 'role') IN ('ADMIN', 'PM', 'RSP', 'LND'))
   WITH CHECK ((auth.jwt() -> 'user_metadata' ->> 'role') IN ('ADMIN', 'PM', 'RSP', 'LND'));
 
-DROP POLICY IF EXISTS employee_competencies_self_read ON employee_competencies;
-CREATE POLICY employee_competencies_self_read
-  ON employee_competencies
-  FOR SELECT
-  USING (
-    employee_id IN (SELECT id FROM employees WHERE user_id = auth.uid())
-  );
+-- (Self-read policy on employee_competencies deferred: same reason —
+--  no employees.user_id column in the live schema.)
 
 COMMIT;

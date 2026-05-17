@@ -82,6 +82,7 @@ type EvaluationGroup = {
   review: number;
   self: number;
   planning: number;
+  rejected: number;
   employees: EvaluationEmployeeRow[];
 };
 
@@ -371,6 +372,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
           const review = employees.filter(e => e.status === 'Supervisor Review').length;
           const self = employees.filter(e => e.status === 'Self Evaluation').length;
           const planning = employees.filter(e => e.status === 'Planning').length;
+          const rejected = employees.filter(e => e.status === 'Rejected').length;
           const count = employees.length;
           return {
             dept,
@@ -380,6 +382,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
             review,
             self,
             planning,
+            rejected,
             employees,
           };
         })
@@ -1364,7 +1367,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                       </div>
                     )}
                     {(() => {
-                      const goalEvals = evaluations.filter(e => e.status === 'Submitted' || e.status === 'Supervisor Review' || e.status === 'Approved');
+                      const goalEvals = evaluations.filter(e => e.status === 'Self Evaluation' || e.status === 'Supervisor Review' || e.status === 'Approved');
                       if (goalEvals.length === 0 && !evaluationsLoading) {
                         return (
                           <div className="py-12 flex flex-col items-center justify-center text-center">
@@ -1404,7 +1407,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                             <div className="col-span-2 text-center">
                               {e.status === 'Approved' ? (
                                 <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-0.5 text-[11px] font-semibold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Approved</span>
-                              ) : e.status === 'Submitted' || e.status === 'Supervisor Review' ? (
+                              ) : e.status === 'Self Evaluation' || e.status === 'Supervisor Review' ? (
                                 <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-0.5 text-[11px] font-semibold text-blue-700"><CheckCircle2 className="h-3 w-3" /> Submitted</span>
                               ) : (
                                 <span className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-3 py-0.5 text-[11px] font-semibold text-orange-700"><Clock className="h-3 w-3" /> Monitoring Phase</span>

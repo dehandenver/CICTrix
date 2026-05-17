@@ -69,3 +69,38 @@ export function computeSkillGapByDepartment(rows: EmployeeCompetencyRow[]) {
     }))
     .sort((a, b) => b.value - a.value);
 }
+
+export function computeLNDSkillGaps(rows: EmployeeCompetencyRow[]) {
+  const byDept = new Map<string, { currentSum: number; reqSum: number; count: number }>();
+  for (const r of rows) {
+    const dept = r.department ?? 'Unassigned';
+    const entry = byDept.get(dept) ?? { currentSum: 0, reqSum: 0, count: 0 };
+    entry.currentSum += r.proficiency_level;
+    entry.reqSum += r.required_level;
+    entry.count += 1;
+    byDept.set(dept, entry);
+  }
+  
+  return Array.from(byDept.entries())
+    .map(([dept, { currentSum, reqSum, count }]) => {
+      if (count === 0) return { skill: dept, currentLevel: 0, targetLevel: 0, gap: 0, priority: 'low' as const };
+      
+      const avgCurrent = currentSum / count;
+      const avgReq = reqSum / count;
+      // Assuming max level is 4 or 5. Let's use 5 as max for percentage calculation.
+      const currentLevel = Math.round((avgCurrent / 5) * 100);
+      const targetLevel = Math.round((avgReq / 5) * 100);
+      
+      const gap = Math.max(targetLevel - currentLevel, 0);
+      const priority = gap >= 60 ? 'high' : gap >= 30 ? 'medium' : 'low';
+      
+      return {
+        skill: dept,
+        currentLevel,
+        targetLevel,
+        gap,
+        priority: priority as 'high' | 'medium' | 'low'
+      };
+    })
+    .sort((a, b) => b.gap - a.gap);
+}
