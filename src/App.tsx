@@ -4,7 +4,6 @@ import { Dialog } from './components/Dialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { JobPostingsPage } from './components/JobPostingsPage';
 import { NewlyHiredPage } from './components/NewlyHiredPage';
-import { QualifiedApplicantsPage } from './components/QualifiedApplicantsPage';
 import { QualifiedApplicantsRSPPage } from './components/QualifiedApplicantsRSPPage';
 import { RaterManagementPage } from './components/RaterManagementPage';
 import SuccessionReadinessEngine from './components/SuccessionReadinessEngine';
@@ -706,23 +705,5 @@ function App() {
     </ErrorBoundary>
   );
 }
-
-export default App;
-
-import React from 'react';
-import SplitScreenSignUp from './components/SplitScreenSignUp';
-import OnboardingModal from './components/OnboardingModal';
-import './styles/globals.css';
-
-export const App: React.FC = () => {
-  return (
-    <div>
-      {/* Uncomment one at a time to preview */}
-      <SplitScreenSignUp />
-      
-      {/* <OnboardingModal onNext={(sel) => console.log('selected', sel)} /> */}
-    </div>
-  );
-};
 
 export default App;
