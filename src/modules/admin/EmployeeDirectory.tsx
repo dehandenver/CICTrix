@@ -18,16 +18,14 @@ interface Position {
 
 interface Employee {
   id: string;
-  employee_number: string;
-  first_name: string;
-  last_name: string;
-  position: string;
+  employee_id: string;
+  full_name: string;
+  current_position: string;
   department: string;
   status: string;
   email: string;
-  phone: string;
-  date_hired: string;
-  employment_status: string;
+  mobile_number: string;
+  hire_date: string;
   photo_url?: string;
 }
 
@@ -111,16 +109,14 @@ export default function EmployeeDirectory() {
       // Transform hired applicants to match Employee type
       const transformedApplicants: Employee[] = (hiredApplicants || []).map((app) => ({
         id: `applicant-${app.id}`,
-        employee_number: `NEW-${app.id.substring(0, 8).toUpperCase()}`,
-        first_name: app.first_name,
-        last_name: app.last_name,
-        position: app.position,
+        employee_id: `NEW-${app.id.substring(0, 8).toUpperCase()}`,
+        full_name: `${app.first_name ?? ''} ${app.last_name ?? ''}`.trim(),
+        current_position: app.position,
         department: app.office,
         status: 'Pending Onboarding',
         email: app.email,
-        phone: app.contact_number,
-        date_hired: app.created_at,
-        employment_status: 'Probationary',
+        mobile_number: app.contact_number,
+        hire_date: app.created_at,
       }));
 
       setSelectedPosition({

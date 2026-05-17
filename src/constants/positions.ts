@@ -26,7 +26,10 @@ export const POSITION_OPTIONS = POSITIONS.map(pos => ({
 }));
 
 /**
- * Standard departments/offices in the organization
+ * @deprecated Source of truth is now the `departments` table (migration 006).
+ * Use listDepartments() / getDepartmentOptions() from src/lib/api/departments.ts.
+ * This constant is retained as an offline fallback during phase 1 and should
+ * not be referenced by new code.
  */
 export const DEPARTMENTS = [
   'Human Resources',
@@ -40,7 +43,8 @@ export const DEPARTMENTS = [
 ] as const;
 
 /**
- * Department options formatted for Select components
+ * @deprecated See DEPARTMENTS — use getDepartmentOptions() from
+ * src/lib/api/departments.ts instead.
  */
 export const DEPARTMENT_OPTIONS = DEPARTMENTS.map(dept => ({
   value: dept,
@@ -63,24 +67,7 @@ export const POSITION_TO_DEPARTMENT_MAP: Record<string, string> = {
 };
 
 /**
- * Salary grades available in the system
- */
-export const SALARY_GRADES = [
-  'SG-1', 'SG-2', 'SG-3', 'SG-4', 'SG-5',
-  'SG-6', 'SG-7', 'SG-8', 'SG-9', 'SG-10'
-] as const;
-
-/**
- * Salary grade options formatted for Select components
- */
-export const SALARY_GRADE_OPTIONS = SALARY_GRADES.map(grade => ({
-  value: grade,
-  label: grade
-}));
-
-/**
  * Type definitions for type safety
  */
 export type Position = typeof POSITIONS[number];
 export type Department = typeof DEPARTMENTS[number];
-export type SalaryGrade = typeof SALARY_GRADES[number];

@@ -51,9 +51,11 @@
   background: linear-gradient(160deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
   display: flex;
   flex-direction: column;
+  align-items: center;
   justify-content: center;
   gap: 1rem;
   min-height: 100%;
+  text-align: center;
 }
 
 .admin-login-orb {
@@ -85,14 +87,17 @@
 }
 
 .admin-login-logo {
-  width: 110px;
-  height: 110px;
-  border-radius: 18px;
+  width: 170px;
+  height: 170px;
+  border-radius: 50%;
   background: white;
   box-shadow: 0 12px 24px rgba(15, 23, 42, 0.2);
   visibility: visible;
   opacity: 1;
   display: block;
+  object-fit: cover;
+  align-self: center;
+  border: 3px solid rgba(255, 255, 255, 0.85);
 }
 
 .admin-login-header-logo {
@@ -100,9 +105,10 @@
   height: 120px;
   margin: 0 auto 1rem;
   display: block;
-  border-radius: 18px;
+  border-radius: 50%;
   background: white;
   box-shadow: 0 10px 22px rgba(15, 23, 42, 0.12);
+  object-fit: cover;
 }
 
 .admin-login-illustration h2 {

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status, Depends, Query
 from typing import List, Optional
-from app.models.user import UserRole
+from app.core.security import TokenData
 from app.core.supabase_client import db
 from app.utils.dependencies import get_current_user, require_role
 from pydantic import BaseModel
@@ -24,7 +24,7 @@ class EvaluationResponse(BaseModel):
 
 @router.get("/", response_model=List[EvaluationResponse])
 async def list_evaluations(
-    current_user: UserRole = Depends(require_role("ADMIN", "PM", "RSP", "LND", "RATER")),
+    current_user: TokenData = Depends(require_role("ADMIN", "PM", "RSP", "LND", "RATER")),
     applicant_id: Optional[str] = Query(None),
 ):
     """
@@ -56,7 +56,7 @@ async def list_evaluations(
 @router.post("/", response_model=EvaluationResponse)
 async def create_evaluation(
     evaluation: EvaluationCreate,
-    current_user: UserRole = Depends(require_role("RATER", "INTERVIEWER")),
+    current_user: TokenData = Depends(require_role("RATER", "INTERVIEWER")),
 ):
     """
     Create an evaluation (Rater/Interviewer only).

@@ -11,18 +11,9 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 
 import {
-  createPassword,
-  createUniqueUsername,
-  getEmployeePortalAccounts,
-  updateEmployeePortalEmployee,
-  upsertEmployeePortalAccount,
-} from '../lib/employeePortalData';
-import {
-  createEmployeeNumberAllocator,
-  getEmployeeRecords,
-  saveEmployeeRecords,
   saveNewlyHired,
 } from '../lib/recruitmentData';
+import { getDepartmentIdByName } from '../lib/api/departments';
 import { supabase } from '../lib/supabase';
 import type { NewlyHired, NewlyHiredStatus } from '../types/recruitment.types';
 import { Sidebar } from './Sidebar';
@@ -181,161 +172,9 @@ export const NewlyHiredPage = () => {
   };
 
   const generateCredentials = async () => {
-    // Skip rows that already have credentials (defensive — checkbox is locked but be safe)
-    const eligibleIds = selectedIds.filter((id) => {
-      const row = rows.find((r) => r.id === id);
-      return row && !row.employeeId;
-    });
-    if (eligibleIds.length === 0) return;
-
-    const employeeRecords = getEmployeeRecords();
-    const existingAccounts = getEmployeePortalAccounts();
-    const accountByEmployeeId = new Map(
-      existingAccounts.map((account) => [String(account.employee.employeeId || '').trim(), account])
-    );
-    const occupiedUsernames = new Set(existingAccounts.map((account) => normalizeText(account.username)));
-
-    // Allocator collects every employee_number already used (Supabase +
-    // local stores) and hands out a fresh, unique number per call.
-    const reservedFromCurrentRows = rows
-      .map((r) => String(r.employeeId ?? '').trim())
-      .filter(Boolean);
-    const { allocate: nextEmployeeNumber } = await createEmployeeNumberAllocator(reservedFromCurrentRows);
-
-    const nowIso = new Date().toISOString();
-
-    const nextRows = rows.map((row) => {
-      if (!eligibleIds.includes(row.id)) return row;
-
-      const isInternalPromotion = row.applicationType === 'promotion' && Boolean(row.internalApplication?.employeeId);
-      const existingEmployeeNumber = row.employeeId || row.internalApplication?.employeeId;
-      const employeeNumber = existingEmployeeNumber || nextEmployeeNumber();
-      const existingAccount = accountByEmployeeId.get(employeeNumber);
-      const username = existingAccount
-        ? existingAccount.username
-        : createUniqueUsername(row.employeeInfo.firstName, row.employeeInfo.lastName, occupiedUsernames);
-      // Reserve the username inside this batch so two employees with the same name don't collide.
-      occupiedUsernames.add(normalizeText(username));
-      const password = createPassword();
-      const positionHistoryEntry = {
-        position: row.position,
-        department: row.department,
-        division: row.division,
-        effectiveDate: nowIso,
-        changeType: isInternalPromotion ? 'promotion' as const : 'hire' as const,
-        sourceApplicantId: row.applicantId,
-        notes: isInternalPromotion
-          ? `Promoted from ${row.internalApplication?.previousPosition || 'current assignment'}`
-          : 'Employee portal account generated from newly hired queue.',
-      };
-
-      const employeeRecordIndex = employeeRecords.findIndex((record) => record.employeeId === employeeNumber);
-      if (employeeRecordIndex >= 0) {
-        const existingRecord = employeeRecords[employeeRecordIndex];
-        employeeRecords[employeeRecordIndex] = {
-          ...existingRecord,
-          name: `${row.employeeInfo.firstName} ${row.employeeInfo.lastName}`,
-          position: row.position,
-          department: row.department,
-          division: row.division,
-          positionHistory: [...(existingRecord.positionHistory ?? []), positionHistoryEntry],
-        };
-      } else {
-        employeeRecords.push({
-          id: crypto.randomUUID(),
-          employeeId: employeeNumber,
-          name: `${row.employeeInfo.firstName} ${row.employeeInfo.lastName}`,
-          position: row.position,
-          department: row.department,
-          division: row.division,
-          startDate: row.expectedStartDate || nowIso,
-          positionHistory: [positionHistoryEntry],
-        });
-      }
-
-      const resolvedRank = Math.max(1, Number(row.rankingRank ?? 1));
-      const resolvedScore = Number(row.rankingScore ?? 0);
-      const rankLine = `Rank: #${resolvedRank} • Score: ${resolvedScore.toFixed(2)}`;
-
-      if (isInternalPromotion && existingAccount) {
-        updateEmployeePortalEmployee(employeeNumber, {
-          fullName: `${row.employeeInfo.firstName} ${row.employeeInfo.lastName}`,
-          email: row.employeeInfo.email || existingAccount.employee.email,
-          mobileNumber: row.employeeInfo.phone || existingAccount.employee.mobileNumber,
-          currentPosition: row.position,
-          currentDepartment: row.department,
-          currentDivision: row.division,
-          positionHistory: [...(existingAccount.employee.positionHistory ?? []), positionHistoryEntry],
-        });
-      } else {
-        upsertEmployeePortalAccount({
-          id: `employee-account-${employeeNumber}`,
-          username,
-          password,
-          employee: {
-            employeeId: employeeNumber,
-            fullName: `${row.employeeInfo.firstName} ${row.employeeInfo.lastName}`,
-            email: row.employeeInfo.email || `${username}.${employeeNumber.toLowerCase()}@employee.local`,
-            dateOfBirth: '',
-            age: 0,
-            gender: 'Prefer not to say',
-            civilStatus: 'Single',
-            nationality: 'Filipino',
-            mobileNumber: row.employeeInfo.phone || '',
-            homeAddress: '',
-            emergencyContactName: row.employeeInfo.emergencyContact?.name || '',
-            emergencyRelationship: row.employeeInfo.emergencyContact?.relationship || '',
-            emergencyContactNumber: row.employeeInfo.emergencyContact?.phone || '',
-            sssNumber: row.employeeInfo.governmentIds?.sss || '',
-            philhealthNumber: row.employeeInfo.governmentIds?.philhealth || '',
-            pagibigNumber: row.employeeInfo.governmentIds?.pagibig || '',
-            tinNumber: row.employeeInfo.governmentIds?.tin || '',
-            currentPosition: row.position,
-            currentDepartment: row.department,
-            currentDivision: row.division,
-            positionHistory: [positionHistoryEntry],
-            createdAt: nowIso,
-            updatedAt: nowIso,
-          },
-        });
-      }
-
-      if (!isInternalPromotion) {
-        setGeneratedCredentials((current) => [
-          ...current,
-          {
-            id: row.id,
-            fullName: `${row.employeeInfo.firstName} ${row.employeeInfo.lastName}`,
-            position: row.position,
-            rankLine,
-            employeeNumber,
-            username,
-            password,
-          },
-        ]);
-      }
-
-      return {
-        ...row,
-        employeeId: employeeNumber,
-        status: 'In Onboarding' as NewlyHiredStatus,
-        timeline: [
-          ...row.timeline,
-          {
-            event: isInternalPromotion
-              ? 'Existing employee account updated for promotional movement'
-              : 'Employee number and account generated',
-            date: nowIso,
-            actor: 'RSP Admin',
-          },
-        ],
-      };
-    });
-
-    saveEmployeeRecords(employeeRecords);
-    await saveNewlyHired(nextRows);
-    setRows(nextRows);
-    setShowCredentialsModal(true);
+    // Disabled. Backend '/api/employees/from-applicant/:id' creates accounts automatically
+    // during the Qualified Applicants stage. No local generation needed.
+    alert('Credentials are automatically provisioned by the backend now!');
   };
 
   const clearGeneratedCache = () => setGeneratedCredentials([]);
@@ -358,29 +197,36 @@ export const NewlyHiredPage = () => {
 
       // Mirror each generated credential into the Supabase `employees` table so
       // the employee can be located by document upload / RSP reports.
+      // Writes Schema B columns (employee_id, full_name, current_position, etc.)
+      // and uses department_id (FK from migration 006) so the trigger syncs
+      // current_department text automatically.
       for (const credential of generatedCredentials) {
         const row = rows.find((r) => r.id === credential.id);
         if (!row) continue;
+
+        const departmentId = await getDepartmentIdByName(row.department);
+        if (!departmentId) {
+          throw new Error(`Unknown department "${row.department}". Add it to the departments lookup first.`);
+        }
+
+        const fullName = `${row.employeeInfo.firstName ?? ''} ${row.employeeInfo.lastName ?? ''}`.trim();
 
         const insertResult = await (supabase as any)
           .from('employees')
           .upsert(
             [
               {
-                employee_number: credential.employeeNumber,
-                first_name: row.employeeInfo.firstName,
-                last_name: row.employeeInfo.lastName,
+                employee_id: credential.employeeNumber,
+                full_name: fullName,
                 email: row.employeeInfo.email || `${credential.username}.${credential.employeeNumber.toLowerCase()}@employee.local`,
-                phone: row.employeeInfo.phone || null,
-                position: row.position,
-                department: row.department,
-                date_hired: row.dateHired || new Date().toISOString().slice(0, 10),
-                employment_status: 'Probationary',
-                qualified_applicant_id: null,
-                application_id: null,
+                mobile_number: row.employeeInfo.phone || null,
+                current_position: row.position,
+                department_id: departmentId,
+                hire_date: row.dateHired || new Date().toISOString().slice(0, 10),
+                status: 'Active',
               },
             ],
-            { onConflict: 'employee_number' },
+            { onConflict: 'employee_id' },
           );
 
         if (insertResult.error) {

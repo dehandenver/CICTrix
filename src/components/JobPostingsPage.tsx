@@ -63,9 +63,6 @@ interface JobPostFormValues {
   division: string;
   positionLevel: string;
   positionType: JobPosting['positionType'];
-  salaryGrade: string;
-  salaryMin: number;
-  salaryMax: number;
   numberOfPositions: number;
   employmentType: 'Full-time' | 'Part-time' | 'Contractual' | 'Project-based';
   employmentStatus: JobPosting['employmentStatus'];
@@ -94,9 +91,6 @@ const buildDefaultJobForm = (): JobPostFormValues => ({
   division: '',
   positionLevel: '',
   positionType: 'Civil Service',
-  salaryGrade: 'SG-11',
-  salaryMin: 28000,
-  salaryMax: 36000,
   numberOfPositions: 1,
   employmentType: 'Full-time',
   employmentStatus: 'Permanent',
@@ -727,9 +721,6 @@ export const JobPostingsPage = () => {
       division: job.division ?? '',
       positionLevel: '',
       positionType: job.positionType,
-      salaryGrade: job.salaryGrade ?? '',
-      salaryMin: job.salaryRange?.min ?? 20000,
-      salaryMax: job.salaryRange?.max ?? 30000,
       numberOfPositions: job.numberOfPositions,
       employmentType: job.employmentStatus === 'Contractual' ? 'Contractual' : job.employmentStatus === 'Permanent' ? 'Full-time' : 'Part-time',
       employmentStatus: job.employmentStatus,
@@ -777,8 +768,6 @@ export const JobPostingsPage = () => {
       department: form.department,
       division: form.division || undefined,
       positionType: form.positionType,
-      salaryGrade: form.salaryGrade,
-      salaryRange: { min: form.salaryMin, max: form.salaryMax },
       numberOfPositions: form.numberOfPositions,
       employmentStatus: form.employmentType === 'Contractual' ? 'Contractual' : form.employmentType === 'Full-time' ? 'Permanent' : 'Temporary',
       summary: form.summary,
@@ -1225,25 +1214,14 @@ export const JobPostingsPage = () => {
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                    <div>
-                      <label className="mb-2 block text-base font-semibold text-slate-900">Item Number <span className="text-red-500">*</span></label>
-                      <input
-                        className="w-full rounded-xl border border-slate-300 p-3 text-base"
-                        placeholder="e.g., ITEM-2024-001"
-                        value={form.jobCode}
-                        onChange={(event) => setForm((prev) => ({ ...prev, jobCode: event.target.value }))}
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-base font-semibold text-slate-900">Salary Grade <span className="text-red-500">*</span></label>
-                      <input
-                        className="w-full rounded-xl border border-slate-300 p-3 text-base"
-                        placeholder="e.g., SG-11"
-                        value={form.salaryGrade}
-                        onChange={(event) => setForm((prev) => ({ ...prev, salaryGrade: event.target.value }))}
-                      />
-                    </div>
+                  <div>
+                    <label className="mb-2 block text-base font-semibold text-slate-900">Item Number <span className="text-red-500">*</span></label>
+                    <input
+                      className="w-full rounded-xl border border-slate-300 p-3 text-base"
+                      placeholder="e.g., ITEM-2024-001"
+                      value={form.jobCode}
+                      onChange={(event) => setForm((prev) => ({ ...prev, jobCode: event.target.value }))}
+                    />
                   </div>
 
                   <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, AlertCircle } from 'lucide-react';
 import { supabase as supabaseClient } from '../../../lib/supabase';
+import { listDepartments, getDepartmentIdByName } from '../../../lib/api/departments';
 
 // Bypass auto-generated Supabase types resolving to `never`. Same escape hatch
 // used by the rest of the codebase (see RSPDashboard.tsx, employeeDocuments.ts).
@@ -8,10 +9,9 @@ const supabase = supabaseClient as any;
 
 interface Employee {
   id: string;
-  employee_number: string;
-  first_name: string;
-  last_name: string;
-  position: string;
+  employee_id: string;
+  full_name: string;
+  current_position: string;
   department: string;
   status: string;
   [key: string]: any;
@@ -48,29 +48,9 @@ export default function ChangePositionModal({ employee, onClose, onSuccess }: Pr
 
   const fetchDepartments = async () => {
     try {
-      // Get departments from both employees and applicants tables
-      const [empData, appData] = await Promise.all([
-        supabase
-          .from('employees')
-          .select('department')
-          .eq('status', 'Active')
-          .neq('department', null)
-          .catch(() => ({ data: [] })),
-        supabase
-          .from('applicants')
-          .select('office')
-          .eq('status', 'Hired')
-          .neq('office', null)
-          .catch(() => ({ data: [] })),
-      ]);
-
-      const allDepts = [
-        ...(empData?.data?.map((e) => e.department) || []),
-        ...(appData?.data?.map((a) => a.office) || []),
-      ];
-      
-      const uniqueDepts = Array.from(new Set(allDepts)).sort();
-      setDepartments(uniqueDepts);
+      const result = await listDepartments(false);
+      if (!result.success) return;
+      setDepartments(result.data.map((d) => d.name));
     } catch (error) {
       console.error('Error fetching departments:', error);
     }
@@ -78,14 +58,15 @@ export default function ChangePositionModal({ employee, onClose, onSuccess }: Pr
 
   const fetchPositions = async () => {
     try {
-      // Get positions from both employees and applicants tables for the selected department
+      // Get positions from both employees (via department-aware view) and applicants
+      // for the selected department.
       const [empData, appData] = await Promise.all([
         supabase
-          .from('employees')
-          .select('position')
+          .from('employees_with_department')
+          .select('current_position')
           .eq('department', newDepartment)
           .eq('status', 'Active')
-          .neq('position', null)
+          .neq('current_position', null)
           .catch(() => ({ data: [] })),
         supabase
           .from('applicants')
@@ -97,7 +78,7 @@ export default function ChangePositionModal({ employee, onClose, onSuccess }: Pr
       ]);
 
       const allPositions = [
-        ...(empData?.data?.map((e) => e.position) || []),
+        ...(empData?.data?.map((e) => e.current_position) || []),
         ...(appData?.data?.map((a) => a.position) || []),
       ];
       
@@ -138,14 +119,20 @@ export default function ChangePositionModal({ employee, onClose, onSuccess }: Pr
 
         alert(`${changeType.charAt(0).toUpperCase() + changeType.slice(1)} successful!`);
       } else {
-        // For established employees, update the employees table
-        // Note: This requires the employees table to be deployed in Supabase
+        // For established employees, update the employees table.
+        // Resolve the department name to its FK; the BEFORE-INSERT/UPDATE
+        // trigger keeps the legacy current_department text in sync.
+        const departmentId = await getDepartmentIdByName(newDepartment);
+        if (!departmentId) {
+          alert(`Unknown department: ${newDepartment}`);
+          return;
+        }
+
         const { error: updateError } = await supabase
           .from('employees')
           .update({
-            position: newPosition,
-            department: newDepartment,
-            modified_at: new Date().toISOString(),
+            current_position: newPosition,
+            department_id: departmentId,
           })
           .eq('id', employee.id);
 
@@ -169,8 +156,8 @@ export default function ChangePositionModal({ employee, onClose, onSuccess }: Pr
                   : changeType === 'succession'
                     ? 'transferred'
                     : 'transferred',
-              field_changed: 'position,department',
-              old_value: `${employee.position} - ${employee.department}`,
+              field_changed: 'current_position,current_department',
+              old_value: `${employee.current_position} - ${employee.department}`,
               new_value: `${newPosition} - ${newDepartment}`,
               effective_date: effectiveDate,
               reason: notes,
@@ -201,7 +188,7 @@ export default function ChangePositionModal({ employee, onClose, onSuccess }: Pr
         <div className="flex items-center justify-between p-6 border-b border-gray-200 sticky top-0 bg-white">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">Change Position</h2>
-            <p className="text-sm text-gray-600 mt-1">Update position for {employee.first_name} {employee.last_name}</p>
+            <p className="text-sm text-gray-600 mt-1">Update position for {employee.full_name}</p>
           </div>
           <button
             onClick={onClose}
@@ -219,7 +206,7 @@ export default function ChangePositionModal({ employee, onClose, onSuccess }: Pr
             <div className="grid grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm text-gray-600 mb-1">Current Position</label>
-                <p className="text-gray-900 font-medium">{employee.position}</p>
+                <p className="text-gray-900 font-medium">{employee.current_position}</p>
               </div>
               <div>
                 <label className="block text-sm text-gray-600 mb-1">Current Department</label>
