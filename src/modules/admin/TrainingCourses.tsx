@@ -247,11 +247,19 @@ export const TrainingCourses = ({ courses, onAddCourse }: TrainingCoursesProps) 
   const [statusFilter, setStatusFilter] = useState<string>('All Statuses');
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const filteredCourses =
     statusFilter === 'All Statuses'
       ? courses
       : courses.filter((c) => c.status === statusFilter);
+
+  const totalPages = Math.ceil(filteredCourses.length / itemsPerPage);
+  const paginatedCourses = filteredCourses.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   return (
     <div className="p-6 md:p-8 pt-24 bg-white min-h-screen">
@@ -280,7 +288,7 @@ export const TrainingCourses = ({ courses, onAddCourse }: TrainingCoursesProps) 
               <div className="absolute left-0 top-full mt-1 z-20 w-44 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
                 <button
                   type="button"
-                  onClick={() => { setStatusFilter('All Statuses'); setIsFilterOpen(false); }}
+                  onClick={() => { setStatusFilter('All Statuses'); setIsFilterOpen(false); setCurrentPage(1); }}
                   className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-50 ${statusFilter === 'All Statuses' ? 'font-semibold text-blue-600' : 'text-gray-700'}`}
                 >
                   All Statuses
@@ -289,7 +297,7 @@ export const TrainingCourses = ({ courses, onAddCourse }: TrainingCoursesProps) 
                   <button
                     key={s}
                     type="button"
-                    onClick={() => { setStatusFilter(s); setIsFilterOpen(false); }}
+                    onClick={() => { setStatusFilter(s); setIsFilterOpen(false); setCurrentPage(1); }}
                     className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-50 ${statusFilter === s ? 'font-semibold text-blue-600' : 'text-gray-700'}`}
                   >
                     {s}
@@ -332,67 +340,77 @@ export const TrainingCourses = ({ courses, onAddCourse }: TrainingCoursesProps) 
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredCourses.map((course) => (
-            <div
-              key={course.id}
-              className="bg-white border border-gray-200 rounded-xl p-6 flex flex-col hover:border-blue-400 hover:shadow-md transition-all cursor-pointer"
-            >
-              <div className="flex justify-between items-start mb-2">
-                <h3 className="text-base font-bold text-gray-900 pr-4 leading-tight">{course.title}</h3>
-                <BookOpen className="w-5 h-5 text-blue-600 flex-shrink-0" />
-              </div>
+        <div className="w-full">
+          <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm bg-white">
+            <table className="w-full text-left text-sm text-gray-600">
+              <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 border-b border-gray-200">
+                <tr>
+                  <th className="px-6 py-4 font-semibold">Course Title</th>
+                  <th className="px-6 py-4 font-semibold">Status</th>
+                  <th className="px-6 py-4 font-semibold">Instructor</th>
+                  <th className="px-6 py-4 font-semibold">Schedule</th>
+                  <th className="px-6 py-4 font-semibold">Location</th>
+                  <th className="px-6 py-4 font-semibold text-right">Attendees</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {paginatedCourses.map((course) => (
+                  <tr key={course.id} className="hover:bg-gray-50 transition-colors cursor-pointer group">
+                    <td className="px-6 py-4 max-w-xs">
+                      <p className="font-bold text-gray-900 truncate group-hover:text-blue-600 transition-colors">{course.title}</p>
+                      {course.category && <p className="text-xs text-gray-500 mt-1">{course.category}</p>}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${statusBadge(course.status)}`}>
+                        {course.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="font-medium text-gray-900">{course.instructor}</p>
+                      {course.instructorTitle && <p className="text-xs text-gray-500 mt-0.5">{course.instructorTitle}</p>}
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="font-medium text-gray-700">{formatDate(course.startDate)} – {formatDate(course.endDate)}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{formatTime(course.startTime)} – {formatTime(course.endTime)}</p>
+                    </td>
+                    <td className="px-6 py-4 text-gray-700">
+                      {course.location}
+                    </td>
+                    <td className="px-6 py-4 text-right whitespace-nowrap">
+                      <span className="font-medium text-blue-600 text-base">{course.attendees}</span>
+                      <span className="text-gray-400 text-xs ml-1">/ {course.capacity}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-              {/* Category */}
-              {course.category && (
-                <p className="text-xs font-medium text-gray-500 mb-3">{course.category}</p>
-              )}
-
-              <div className="mb-4 flex items-center gap-2">
-                <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${statusBadge(course.status)}`}>{course.status}</span>
-              </div>
-
-              <div className="space-y-2.5 mb-4">
-                <div className="flex items-center text-sm text-gray-600">
-                  <Users className="w-4 h-4 mr-3 text-gray-400 flex-shrink-0" />
-                  <span>
-                    {course.instructor}
-                    {course.instructorTitle && <span className="text-gray-400"> — {course.instructorTitle}</span>}
-                  </span>
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <Calendar className="w-4 h-4 mr-3 text-gray-400 flex-shrink-0" />
-                  {formatDate(course.startDate)} – {formatDate(course.endDate)}
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <Clock className="w-4 h-4 mr-3 text-gray-400 flex-shrink-0" />
-                  {formatTime(course.startTime)} – {formatTime(course.endTime)}
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <MapPin className="w-4 h-4 mr-3 text-gray-400 flex-shrink-0" />
-                  {course.location}
-                </div>
-              </div>
-
-              {/* Description */}
-              {course.description && (
-                <p className="text-xs text-gray-500 mb-3 line-clamp-2">{course.description}</p>
-              )}
-
-              {/* Learning Objectives */}
-              {course.learningObjectives && (
-                <div className="mb-3">
-                  <p className="text-xs font-semibold text-gray-600 mb-1">Learning Objectives</p>
-                  <p className="text-xs text-gray-500 line-clamp-2">{course.learningObjectives}</p>
-                </div>
-              )}
-
-              <div className="mt-auto pt-4 border-t border-gray-100 flex items-center justify-between">
-                <span className="text-sm text-gray-500">Attendees</span>
-                <span className="text-sm font-medium text-blue-600">{course.attendees}/{course.capacity}</span>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-6 px-2">
+              <span className="text-sm text-gray-500">
+                Showing <span className="font-medium text-gray-900">{(currentPage - 1) * itemsPerPage + 1}</span> to <span className="font-medium text-gray-900">{Math.min(currentPage * itemsPerPage, filteredCourses.length)}</span> of <span className="font-medium text-gray-900">{filteredCourses.length}</span> results
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                >
+                  Next
+                </button>
               </div>
             </div>
-          ))}
+          )}
         </div>
       )}
 
