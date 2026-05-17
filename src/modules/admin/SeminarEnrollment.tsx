@@ -16,6 +16,7 @@ import {
   UserPlus,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { EnrollEmployeesModal } from './components/EnrollEmployeesModal';
 
 type SeminarStatus = 'Upcoming' | 'Ongoing' | 'Completed';
 type EnrollmentStatus = 'Confirmed' | 'Pending';
@@ -188,6 +189,13 @@ export const SeminarEnrollment = () => {
   const [expandedSeminarId, setExpandedSeminarId] = useState('1');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Upcoming' | 'Ongoing' | 'Completed' | 'Cancelled'>('All');
+  const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
+  const [activeSeminarForModal, setActiveSeminarForModal] = useState<Seminar | null>(null);
+
+  const openEnrollModal = (seminar: Seminar) => {
+    setActiveSeminarForModal(seminar);
+    setIsEnrollModalOpen(true);
+  };
 
   const toggleExpand = (id: string) => {
     setExpandedSeminarId((current) => (current === id ? '' : id));
@@ -303,7 +311,7 @@ export const SeminarEnrollment = () => {
                       <p className="text-xs text-gray-400 text-right mt-1">{slotsLeft} slots left</p>
                     </div>
 
-                    <button type="button" className="text-xs bg-green-100 text-green-700 px-2.5 py-1.5 rounded-md font-medium hover:bg-green-200">+ Add Employee</button>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); openEnrollModal(seminar); }} className="text-xs bg-green-100 text-green-700 px-2.5 py-1.5 rounded-md font-medium hover:bg-green-200">+ Add Employee</button>
                     <button type="button" className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500"><Edit2 className="w-4 h-4" /></button>
                     <button type="button" className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500"><Trash2 className="w-4 h-4" /></button>
                     <button type="button" className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500">
@@ -368,7 +376,7 @@ export const SeminarEnrollment = () => {
 
                   <div className="flex items-center justify-between p-4 border-t border-gray-100 bg-white">
                     <p className="text-sm text-gray-500">{seminar.enrolledCount} enrolled · {slotsLeft} slots remaining</p>
-                    <button type="button" className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center">
+                    <button type="button" onClick={() => openEnrollModal(seminar)} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center">
                       <UserPlus className="w-4 h-4 mr-2" />
                       Add Employee to Seminar
                     </button>
@@ -379,6 +387,17 @@ export const SeminarEnrollment = () => {
           );
         })}
       </div>
+
+      {activeSeminarForModal && (
+        <EnrollEmployeesModal
+          isOpen={isEnrollModalOpen}
+          onClose={() => setIsEnrollModalOpen(false)}
+          seminarTitle={activeSeminarForModal.title}
+          onEnroll={(selectedIds, status) => {
+            console.log('Enrolling', selectedIds, 'as', status, 'in', activeSeminarForModal.title);
+          }}
+        />
+      )}
     </div>
   );
 };
