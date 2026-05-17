@@ -5,7 +5,11 @@
  * in src/constants/positions.ts (kept only as offline fallback).
  */
 
-import { supabase } from '../supabase';
+import { supabase as supabaseClient } from '../supabase';
+
+// Bypass auto-generated Supabase types resolving to `never`. Same escape hatch
+// used elsewhere in the codebase.
+const supabase = supabaseClient as any;
 
 export interface Department {
   id: string;
