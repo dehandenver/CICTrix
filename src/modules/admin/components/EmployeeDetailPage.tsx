@@ -665,7 +665,7 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
 
             <div className="space-y-4 px-5 py-4">
               <p className="text-sm text-slate-600">
-                This will appear in {fullEmployee.first_name}'s Submission Bin as a pending request.
+                This will appear in {fullEmployee.full_name.split(' ')[0]}'s Submission Bin as a pending request.
               </p>
 
               <label className="block">
