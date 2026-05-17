@@ -13,6 +13,10 @@
 
 /* Admin Login Page */
 .admin-login-page {
+  --color-primary: #363EE8;
+  --color-primary-hover: #2f36d0;
+  --color-primary-soft: #EEF2FF;
+
   min-height: 100vh;
   display: flex;
   align-items: center;
@@ -44,7 +48,7 @@
   position: relative;
   color: white;
   padding: 3.5rem 3.25rem;
-  background: linear-gradient(160deg, #1b54e5 0%, #0c3a9f 100%);
+  background: linear-gradient(160deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -208,8 +212,8 @@
 
 .input-with-icon input:focus {
   outline: none;
-  border-color: #2c6bff;
-  box-shadow: 0 0 0 3px rgba(44, 107, 255, 0.15);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
   background: white;
 }
 
@@ -269,9 +273,9 @@
 }
 
 .role-card.active {
-  border-color: #2c6bff;
-  background: #f1f6ff;
-  box-shadow: 0 0 0 2px rgba(44, 107, 255, 0.12) inset;
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  box-shadow: 0 0 0 2px var(--color-primary-soft) inset;
 }
 
 .login-actions {
@@ -296,7 +300,7 @@
 .forgot-link {
   background: none;
   border: none;
-  color: #2c6bff;
+  color: var(--color-primary);
   font-weight: 600;
   cursor: pointer;
   padding: 0;
@@ -307,11 +311,11 @@
   border: none;
   border-radius: 14px;
   padding: 0.95rem;
-  background: #1d5bf4;
+  background: var(--color-primary);
   color: white;
   font-size: 1rem;
   font-weight: 700;
-  box-shadow: 0 12px 18px rgba(29, 91, 244, 0.25);
+  box-shadow: 0 12px 18px rgba(54, 62, 232, 0.25);
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
   visibility: visible;
@@ -320,7 +324,7 @@
 }
 
 .primary-login-button:hover:not(:disabled) {
-  background: #134edc;
+  background: var(--color-primary-hover);
   transform: translateY(-1px);
 }
 

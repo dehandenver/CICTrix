@@ -139,7 +139,7 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
         {/* LEFT — solid indigo brand panel */}
         <aside
           className="relative hidden w-1/2 overflow-hidden lg:flex"
-          style={{ backgroundColor: '#4F46E5', color: '#FFFFFF' }}
+          style={{ backgroundColor: '#363EE8', color: '#FFFFFF' }}
         >
           {/* Subtle decorative orbs (very low contrast — premium, not loud). */}
           <div
@@ -255,7 +255,7 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
           <div className="w-full max-w-md">
             {/* Mobile-only mini brand */}
             <div className="mb-8 flex items-center gap-2 lg:hidden">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#4F46E5]">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#363EE8]">
                 <Lock className="h-4 w-4 text-white" strokeWidth={2} />
               </div>
               <span className="text-sm font-semibold text-slate-900">CICTrix HRIS</span>
@@ -293,7 +293,7 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     autoComplete="email"
-                    className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-3 text-sm text-slate-900 placeholder:text-slate-400 transition-shadow focus:border-[#4F46E5] focus:outline-none focus:ring-4 focus:ring-[#EEF2FF]"
+                    className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-3 text-sm text-slate-900 placeholder:text-slate-400 transition-shadow focus:border-[#363EE8] focus:outline-none focus:ring-4 focus:ring-[#EEF2FF]"
                   />
                 </div>
               </div>
