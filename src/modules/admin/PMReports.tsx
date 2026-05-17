@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, ArrowLeft, CheckCircle2, ChevronDown, ChevronUp, Clock, RefreshCw, Send } from 'lucide-react';
+import { AlertCircle, ArrowLeft, CheckCircle2, ChevronDown, ChevronUp, Clock, RefreshCw, Send, ChevronLeft, ChevronRight } from 'lucide-react';
 import { supabase as supabaseClient } from '../../lib/supabase';
 import { IPCRReportView } from './pm/IPCRReportView';
 import { type IPCRRatingRecord, getAdjectival } from './pm/SummaryOfRatings';
@@ -96,6 +96,8 @@ export const PMReports = ({ onBack, selectedReportId, onSelectionConsumed }: PMR
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | ReportStatus>('all');
   const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(5);
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const selectionHandledRef = useRef(false);
 
@@ -188,6 +190,16 @@ export const PMReports = ({ onBack, selectedReportId, onSelectionConsumed }: PMR
     return reports.filter(r => r.status === statusFilter);
   }, [reports, statusFilter]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredReports.length / itemsPerPage));
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const currentVisibleReports = useMemo(() => {
+    return filteredReports.slice(startIndex, startIndex + itemsPerPage);
+  }, [filteredReports, startIndex, itemsPerPage]);
+
   const counts = useMemo(() => {
     const c = { total: reports.length, pending: 0, reviewed: 0, actioned: 0 };
     reports.forEach(r => {
@@ -198,12 +210,133 @@ export const PMReports = ({ onBack, selectedReportId, onSelectionConsumed }: PMR
     return c;
   }, [reports]);
 
+  const activeReport = expandedId ? reports.find(r => r.id === expandedId) : null;
+
+  if (activeReport) {
+    const adj = getAdjectival(activeReport.average_rating);
+    return (
+      <div className="space-y-4 p-6 md:p-8">
+        {/* Breadcrumb */}
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-sm text-blue-600 font-medium">
+            L&amp;D Division <span className="mx-1 text-slate-400">/</span>{' '}
+            <span className="cursor-pointer hover:underline" onClick={onBack}>Documents</span>
+            <span className="mx-1 text-slate-400">/</span>{' '}
+            <span className="cursor-pointer hover:underline" onClick={() => setExpandedId(null)}>Summary of Ratings</span>
+            <span className="mx-1 text-slate-400">/</span> <span className="text-slate-500">{activeReport.department}</span>
+          </p>
+        </div>
+
+        <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
+          <div className="flex items-start gap-3">
+            <button
+              type="button"
+              onClick={() => setExpandedId(null)}
+              className="mt-1 rounded-lg border border-slate-300 bg-white p-1.5 text-slate-600 hover:bg-slate-50 transition"
+              aria-label="Back to Reports Table"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+            <div>
+              <h2 className="text-3xl font-bold text-slate-900 tracking-tight">{activeReport.department} Report</h2>
+              <p className="text-sm text-slate-500 mt-1">
+                {activeReport.period} &bull; Sent {fmtDate(activeReport.created_at)}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+             <div className="text-right mr-2 hidden sm:block">
+               <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Avg Rating</p>
+               <p className="text-xl font-bold text-slate-900 leading-none">
+                 {activeReport.average_rating ? activeReport.average_rating.toFixed(4) : 'N/A'}
+               </p>
+             </div>
+             <span className={`inline-flex items-center rounded px-2.5 py-1 text-xs font-bold uppercase ${adj.pillClass}`}>
+               {adj.label}
+             </span>
+             <span className={`inline-flex items-center rounded-md border px-3 py-1.5 text-sm font-semibold ${STATUS_PILL[activeReport.status]}`}>
+               {activeReport.status}
+             </span>
+          </div>
+        </div>
+        
+        {/* Report details */}
+        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
+          <div>
+            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Summary of Ratings (Official Format)</p>
+            <div className="border border-slate-200 rounded-lg overflow-hidden">
+              <IPCRReportView
+                records={activeReport.records}
+                department={activeReport.department}
+                period={activeReport.period}
+              />
+            </div>
+          </div>
+
+          {activeReport.employees_flagged.length > 0 && (
+            <div>
+              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Flagged Employees</p>
+              <div className="flex flex-wrap gap-2">
+                {activeReport.employees_flagged.map((name, idx) => (
+                  <span key={`${activeReport.id}-${idx}`} className="inline-flex items-center rounded-full bg-red-50 border border-red-200 px-3 py-1 text-xs font-medium text-red-700 shadow-sm">
+                    {name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">PM Notes</p>
+            <div className="rounded-lg bg-slate-50 p-4 border border-slate-100">
+              <p className="text-sm text-slate-700 whitespace-pre-wrap">
+                {activeReport.pm_notes && activeReport.pm_notes.trim() ? activeReport.pm_notes : <span className="italic text-slate-400">No notes provided by PM.</span>}
+              </p>
+            </div>
+          </div>
+
+          {activeReport.updated_at && activeReport.updated_at !== activeReport.created_at && (
+            <p className="text-xs text-slate-400">Last updated {fmtDate(activeReport.updated_at)}</p>
+          )}
+
+          <div className="flex flex-wrap items-center gap-3 pt-4 border-t border-slate-200">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mr-2">Update Status:</span>
+            <button
+              type="button"
+              onClick={() => void updateStatus(activeReport.id, 'Pending Review')}
+              disabled={updatingId === activeReport.id || activeReport.status === 'Pending Review'}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-orange-300 bg-white px-4 py-2 text-sm font-semibold text-orange-700 hover:bg-orange-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Pending Review
+            </button>
+            <button
+              type="button"
+              onClick={() => void updateStatus(activeReport.id, 'Reviewed')}
+              disabled={updatingId === activeReport.id || activeReport.status === 'Reviewed'}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-blue-300 bg-white px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <CheckCircle2 className="h-4 w-4" /> Mark Reviewed
+            </button>
+            <button
+              type="button"
+              onClick={() => void updateStatus(activeReport.id, 'Actioned')}
+              disabled={updatingId === activeReport.id || activeReport.status === 'Actioned'}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <CheckCircle2 className="h-4 w-4" /> Mark Actioned
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4 p-6 md:p-8">
       {/* Breadcrumb */}
       <div className="flex items-center justify-between mb-1">
         <p className="text-sm text-blue-600 font-medium">
-          L&amp;D Division <span className="mx-1 text-slate-400">/</span> <span className="text-slate-500">Documents</span>
+          L&amp;D Division <span className="mx-1 text-slate-400">/</span> <span className="cursor-pointer hover:underline" onClick={onBack}>Documents</span>
           <span className="mx-1 text-slate-400">/</span> <span className="text-slate-500">Summary of Ratings (from PM)</span>
         </p>
       </div>
@@ -290,129 +423,109 @@ export const PMReports = ({ onBack, selectedReportId, onSelectionConsumed }: PMR
             : 'No reports match the current filter.'}
         </div>
       ) : (
-        <div className="space-y-3">
-          {filteredReports.map(report => {
-            const adj = getAdjectival(report.average_rating);
-            const isExpanded = expandedId === report.id;
-            const isHighlighted = highlightId === report.id;
-            return (
-              <div
-                key={report.id}
-                ref={(node) => {
-                  if (node) rowRefs.current.set(report.id, node);
-                  else rowRefs.current.delete(report.id);
-                }}
-                className={`rounded-xl border bg-white shadow-sm overflow-hidden transition ${
-                  isHighlighted
-                    ? 'border-blue-500 ring-2 ring-blue-200 shadow-md'
-                    : 'border-slate-200'
-                }`}
-              >
-                <div
-                  className="flex flex-col md:flex-row md:items-center justify-between gap-3 px-5 py-4 cursor-pointer hover:bg-slate-50 transition"
-                  onClick={() => setExpandedId(isExpanded ? null : report.id)}
-                >
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <div className="rounded-lg bg-blue-50 text-blue-600 p-2">
-                      <Send className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="text-base font-bold text-slate-900 leading-tight truncate">{report.department}</h3>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        {report.period} &bull; <Clock className="inline h-3 w-3 mb-0.5" /> Sent {fmtDate(report.created_at)}
-                      </p>
-                      {report.employees_flagged.length > 0 && (
-                        <p className="text-xs text-slate-600 mt-1">
-                          <strong>{report.employees_flagged.length}</strong> employee{report.employees_flagged.length === 1 ? '' : 's'} flagged
-                        </p>
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          <table className="min-w-full text-left text-sm whitespace-nowrap">
+            <thead className="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+              <tr>
+                <th className="px-5 py-3">Department</th>
+                <th className="px-5 py-3">Period</th>
+                <th className="px-5 py-3">Date Sent</th>
+                <th className="px-5 py-3 text-center">Flagged</th>
+                <th className="px-5 py-3 text-right">Avg Rating</th>
+                <th className="px-5 py-3 text-center">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {currentVisibleReports.map(report => {
+                const adj = getAdjectival(report.average_rating);
+                const isHighlighted = highlightId === report.id;
+                return (
+                  <tr 
+                    key={report.id} 
+                    ref={(node) => {
+                      if (node) rowRefs.current.set(report.id, node);
+                      else rowRefs.current.delete(report.id);
+                    }}
+                    onClick={() => setExpandedId(report.id)}
+                    className={`cursor-pointer hover:bg-slate-50 transition ${isHighlighted ? 'bg-blue-50/50 ring-1 ring-inset ring-blue-500' : ''}`}
+                  >
+                    <td className="px-5 py-3 font-bold text-slate-900">{report.department}</td>
+                    <td className="px-5 py-3 text-slate-600">{report.period}</td>
+                    <td className="px-5 py-3 text-slate-600">{fmtDate(report.created_at)}</td>
+                    <td className="px-5 py-3 text-center">
+                      {report.employees_flagged.length > 0 ? (
+                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-red-100 text-xs font-bold text-red-700">
+                          {report.employees_flagged.length}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">-</span>
                       )}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-right">
-                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Avg Rating</p>
-                      <p className="text-lg font-bold text-slate-900 leading-none">
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      <span className="font-bold text-slate-900">
                         {report.average_rating ? report.average_rating.toFixed(4) : 'N/A'}
-                      </p>
-                    </div>
-                    <span className={`inline-flex items-center rounded px-2 py-1 text-[10px] font-bold uppercase ${adj.pillClass}`}>
-                      {adj.label}
-                    </span>
-                    <span className={`inline-flex items-center rounded-md border px-2.5 py-1 text-[11px] font-semibold ${STATUS_PILL[report.status]}`}>
-                      {report.status}
-                    </span>
-                    {isExpanded ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
-                  </div>
+                      </span>
+                      <span className={`ml-2 inline-flex items-center rounded px-2 py-0.5 text-[10px] font-bold uppercase ${adj.pillClass}`}>
+                        {adj.label}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-center">
+                      <span className={`inline-flex items-center rounded-md border px-2.5 py-1 text-[11px] font-semibold ${STATUS_PILL[report.status]}`}>
+                        {report.status}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          <div className="flex flex-col sm:flex-row items-center justify-between px-5 py-3 border-t border-slate-200 bg-slate-50 gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-500">Show</span>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => {
+                  setItemsPerPage(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="rounded-md border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 bg-white"
+              >
+                <option value={5}>5</option>
+                <option value={10}>10</option>
+                <option value={15}>15</option>
+                <option value={20}>20</option>
+              </select>
+              <span className="text-sm text-slate-500">entries</span>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center gap-4">
+              <span className="text-sm text-slate-500">
+                Showing {filteredReports.length === 0 ? 0 : startIndex + 1} to {Math.min(startIndex + itemsPerPage, filteredReports.length)} of {filteredReports.length} entries
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                >
+                  <ChevronLeft className="h-4 w-4" /> Prev
+                </button>
+                <div className="px-3 py-1.5 text-sm font-medium text-slate-700">
+                  {currentPage} / {totalPages}
                 </div>
-
-                {isExpanded && (
-                  <div className="border-t border-slate-200 bg-slate-50 px-5 py-4 space-y-4">
-                    {/* Full IPCR table — official Summary-of-Ratings format */}
-                    <div>
-                      <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Summary of Ratings (Official Format)</p>
-                      <IPCRReportView
-                        records={report.records}
-                        department={report.department}
-                        period={report.period}
-                      />
-                    </div>
-
-                    {report.employees_flagged.length > 0 && (
-                      <div>
-                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Flagged Employees</p>
-                        <div className="flex flex-wrap gap-2">
-                          {report.employees_flagged.map((name, idx) => (
-                            <span key={`${report.id}-${idx}`} className="inline-flex items-center rounded-full bg-white border border-slate-200 px-3 py-1 text-xs font-medium text-slate-700">
-                              {name}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    <div>
-                      <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">PM Notes</p>
-                      <p className="text-sm text-slate-700 whitespace-pre-wrap">
-                        {report.pm_notes && report.pm_notes.trim() ? report.pm_notes : <span className="italic text-slate-400">No notes provided.</span>}
-                      </p>
-                    </div>
-
-                    {report.updated_at && report.updated_at !== report.created_at && (
-                      <p className="text-xs text-slate-400">Last updated {fmtDate(report.updated_at)}</p>
-                    )}
-
-                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200">
-                      <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mr-2">Update Status</span>
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); void updateStatus(report.id, 'Pending Review'); }}
-                        disabled={updatingId === report.id || report.status === 'Pending Review'}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-orange-300 bg-white px-3 py-1.5 text-xs font-semibold text-orange-700 hover:bg-orange-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        Pending Review
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); void updateStatus(report.id, 'Reviewed'); }}
-                        disabled={updatingId === report.id || report.status === 'Reviewed'}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-blue-300 bg-white px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 transition disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5" /> Mark Reviewed
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); void updateStatus(report.id, 'Actioned'); }}
-                        disabled={updatingId === report.id || report.status === 'Actioned'}
-                        className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <CheckCircle2 className="h-3.5 w-3.5" /> Mark Actioned
-                      </button>
-                    </div>
-                  </div>
-                )}
+                <button
+                  type="button"
+                  disabled={currentPage === totalPages || totalPages === 0}
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                >
+                  Next <ChevronRight className="h-4 w-4" />
+                </button>
               </div>
-            );
-          })}
+            </div>
+          </div>
         </div>
       )}
     </div>
