@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BarChart2, BookOpen, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Eye, Filter, Search } from 'lucide-react';
 import { getAllEmployees, type Employee } from '../../lib/api/employees';
+import { TrainingEvaluationReport } from './components/TrainingEvaluationReport';
 
 type EmployeeRecord = {
   id: string;
@@ -77,7 +78,12 @@ const employeesData: EmployeeRecord[] = [
 ];
 
 const EmployeeDevelopmentDetail = ({ employee, onBack }: { employee: EmployeeRecord; onBack: () => void }) => {
+  const [selectedSeminar, setSelectedSeminar] = useState<any | null>(null);
   const employeeSeminars = getMockSeminars(employee.id);
+
+  if (selectedSeminar) {
+    return <TrainingEvaluationReport employee={employee} seminar={selectedSeminar} onBack={() => setSelectedSeminar(null)} />;
+  }
 
   return (
     <div className="p-6 md:p-8 pt-24 bg-gray-50 min-h-screen flex flex-col space-y-6">
@@ -139,7 +145,11 @@ const EmployeeDevelopmentDetail = ({ employee, onBack }: { employee: EmployeeRec
                   </td>
                   <td className="py-4 px-6 text-sm flex justify-center">
                     {seminar.evaluationAvailable ? (
-                      <button className="flex items-center space-x-1.5 px-3 py-1.5 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors" type="button">
+                      <button 
+                        onClick={() => setSelectedSeminar(seminar)}
+                        className="flex items-center space-x-1.5 px-3 py-1.5 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors" 
+                        type="button"
+                      >
                         <BarChart2 className="w-4 h-4" />
                         <span>View Report</span>
                       </button>
