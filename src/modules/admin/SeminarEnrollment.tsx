@@ -370,7 +370,7 @@ export const SeminarEnrollment = () => {
                     <p className="text-sm text-gray-500">{seminar.enrolledCount} enrolled · {slotsLeft} slots remaining</p>
                     <button type="button" className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center">
                       <UserPlus className="w-4 h-4 mr-2" />
-                      Add More Employees
+                      Add Employee to Seminar
                     </button>
                   </div>
                 </>
