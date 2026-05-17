@@ -1,84 +1,106 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   APPLICANT PORTAL — CICTrix Design System
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── SHELL & TOPBAR ─────────────────────────────────────────────────────────*/
 .applicant-shell {
   min-height: 100vh;
-  background: #e5e7eb;
+  background: var(--bg-main);
 }
 
 .applicant-topbar {
-  background: var(--color-primary);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-  padding: 0.95rem 1.5rem;
+  background: var(--brand);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+  padding: 0 2rem;
+  height: 64px;
+  display: flex;
+  align-items: center;
 }
 
 .applicant-brand {
   display: flex;
   align-items: center;
-  gap: 0.9rem;
+  gap: 0.875rem;
 }
 
 .applicant-brand-logo {
-  width: 58px;
-  height: 58px;
+  width: 38px;
+  height: 38px;
   object-fit: contain;
-  background: #ffffff;
-  border-radius: 3px;
-  padding: 0.2rem;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  padding: 0.25rem;
 }
 
 .applicant-brand h1 {
   margin: 0;
-  font-size: 2rem;
-  color: #ffffff;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: #FFFFFF;
+  letter-spacing: -0.02em;
 }
 
 .applicant-brand p {
   margin: 0;
-  font-size: var(--font-size-lg);
-  color: var(--color-accent-yellow);
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.65);
   font-weight: 500;
 }
 
+/* ─── APPLICATION TYPE BANNER ────────────────────────────────────────────────*/
 .application-type-banner {
-  background: var(--color-accent-yellow);
-  color: #111827;
-  font-size: var(--font-size-base);
-  padding: 0.85rem 1.5rem;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  padding: 0.625rem 2rem;
+  border-bottom: 1px solid var(--brand-soft-mid);
+  letter-spacing: 0.005em;
 }
 
+/* ─── LANDING PAGE ───────────────────────────────────────────────────────────*/
 .portal-landing {
-  max-width: 1020px;
+  max-width: 680px;
   margin: 0 auto;
-  padding: 2.5rem 1.25rem 3rem;
+  padding: 4rem 1.5rem 5rem;
   text-align: center;
+}
+
+.portal-landing-header {
+  margin-bottom: 2.5rem;
 }
 
 .portal-landing-header h2 {
   margin: 0;
-  font-size: var(--font-size-4xl);
+  font-size: 2.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.03em;
+  line-height: 1.15;
 }
 
 .portal-landing-header p {
-  margin: 0.6rem 0 2rem;
-  color: #4b5563;
-  font-size: var(--font-size-xl);
+  margin: 0.5rem 0 0;
+  color: var(--text-secondary);
+  font-size: 1.0625rem;
 }
 
+/* ─── APPLICATION ENTRY CARD ─────────────────────────────────────────────────*/
 .application-entry-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 14px;
-  padding: 2rem;
-  max-width: 760px;
-  margin: 0 auto;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.07);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-2xl);
+  padding: 2.5rem 2rem;
+  box-shadow: var(--shadow-md);
 }
 
 .entry-icon-wrap {
-  width: 92px;
-  height: 92px;
+  width: 76px;
+  height: 76px;
   border-radius: 50%;
-  margin: 0 auto 1rem;
-  background: #dbeafe;
-  color: var(--color-primary);
+  margin: 0 auto 1.25rem;
+  background: var(--brand-soft);
+  color: var(--brand);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -86,224 +108,285 @@
 
 .application-entry-card h3 {
   margin: 0;
-  font-size: var(--font-size-3xl);
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
 }
 
-.application-entry-card p {
-  margin: 0.45rem 0 1.4rem;
-  color: #4b5563;
-  font-size: var(--font-size-lg);
+.application-entry-card > p {
+  margin: 0.375rem 0 1.75rem;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
 }
 
 .entry-primary-button {
   width: 100%;
-  font-size: var(--font-size-xl);
-  padding-top: 0.95rem;
-  padding-bottom: 0.95rem;
+  font-size: 0.9375rem !important;
+  padding-top: 0.75rem !important;
+  padding-bottom: 0.75rem !important;
 }
 
+/* ─── EMPLOYEE PROMOTION BUTTON ──────────────────────────────────────────────*/
 .employee-promotion-button {
-  margin-top: 1.35rem;
-  border: 1px solid var(--color-accent-yellow);
-  background: #ffffff;
-  border-radius: 10px;
-  padding: 0.8rem 1.5rem;
-  color: #111827;
-  font-size: var(--font-size-base);
+  margin-top: 1.125rem;
+  border: 1.5px solid var(--border-subtle);
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+  padding: 0.6875rem 1.375rem;
+  color: var(--text-primary);
+  font-size: 0.875rem;
   font-weight: 600;
+  font-family: var(--font-family);
   display: inline-flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.5rem;
   cursor: pointer;
-  transition: all var(--transition-base);
+  transition: border-color var(--transition-base), background-color var(--transition-base), color var(--transition-base);
 }
 
 .employee-promotion-button:hover {
-  background: #fefce8;
+  background: var(--brand-soft);
+  border-color: var(--brand);
+  color: var(--brand);
 }
 
+/* ─── NOTES & INFO CARDS ─────────────────────────────────────────────────────*/
 .employee-note-card {
-  max-width: 760px;
-  margin: 1.35rem auto 0.5rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  background: #f8fafc;
-  padding: 1rem;
+  margin: 1rem auto 0.5rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+  padding: 0.875rem 1rem;
 }
 
 .employee-note-card p {
   margin: 0;
-  font-size: var(--font-size-base);
-  color: #334155;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
 }
 
 .mock-mode-banner {
-  max-width: 760px;
-  margin: 1rem auto 0;
-  background: #fef3c7;
-  border: 1px solid #fcd34d;
+  margin: 0.875rem auto 0;
+  background: #FEF9C3;
+  border: 1px solid #FDE68A;
   border-radius: var(--radius-lg);
-  padding: 0.7rem 1rem;
+  padding: 0.625rem 1rem;
 }
 
 .mock-mode-banner p {
   margin: 0;
-  color: #78350f;
+  color: #78350F;
   font-size: var(--font-size-sm);
 }
 
-.wizard-layout {
-  max-width: 1320px;
-  margin: 0 auto;
-  padding: 1.5rem 1.5rem 2.2rem;
-  display: grid;
-  grid-template-columns: 360px 1fr;
-  gap: 1.35rem;
+/* ─── TRACK APPLICATION LINK ─────────────────────────────────────────────────*/
+.track-application-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 1.125rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--brand);
+  text-decoration: none;
+  padding: 0.4375rem 0.875rem;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  transition: background-color var(--transition-base), border-color var(--transition-base);
 }
 
+.track-application-link:hover {
+  background: var(--brand-soft);
+  border-color: var(--brand-soft-mid);
+  color: var(--brand-hover);
+}
+
+/* ─── WIZARD LAYOUT ──────────────────────────────────────────────────────────*/
+.wizard-layout {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 1.5rem;
+}
+
+/* ─── WIZARD SIDEBAR (PROGRESS) ──────────────────────────────────────────────*/
 .wizard-sidebar {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 14px;
-  padding: 1.6rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  padding: 1.75rem 1.5rem;
   height: fit-content;
   position: sticky;
-  top: 1rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  top: 1.25rem;
+  box-shadow: var(--shadow-sm);
 }
 
 .wizard-sidebar h3 {
-  margin: 0 0 1.1rem;
-  font-size: var(--font-size-2xl);
+  margin: 0 0 1.5rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .progress-item {
   display: flex;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
+  gap: 0.875rem;
+  margin-bottom: 0.875rem;
+  align-items: flex-start;
 }
 
 .progress-badge {
-  width: 42px;
-  height: 42px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #e2e8f0;
-  color: #475569;
-  font-size: 1.05rem;
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  border: 1.5px solid var(--border-subtle);
+  font-size: 0.8125rem;
   font-weight: 700;
   flex-shrink: 0;
+  transition: background-color var(--transition-base), color var(--transition-base), border-color var(--transition-base);
 }
 
 .progress-badge.active {
-  background: var(--color-primary);
-  color: #ffffff;
+  background: var(--brand);
+  color: #FFFFFF;
+  border-color: var(--brand);
+  box-shadow: 0 2px 8px rgba(54, 62, 232, 0.25);
 }
 
 .progress-badge.completed {
-  background: var(--color-primary);
-  color: #ffffff;
+  background: var(--brand);
+  color: #FFFFFF;
+  border-color: var(--brand);
 }
 
 .progress-title {
   margin: 0;
-  font-size: var(--font-size-lg);
-  font-weight: 700;
-  color: #0f172a;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+  letter-spacing: -0.01em;
 }
 
 .progress-status {
-  margin: 0.15rem 0 0;
-  color: #475569;
-  font-size: var(--font-size-sm);
+  margin: 0.1875rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
 }
 
 .progress-reminder {
-  margin-top: 1.2rem;
-  border: 1px solid #eab308;
-  border-radius: 10px;
-  background: #fffbeb;
-  padding: 0.9rem;
+  margin-top: 1.5rem;
+  border: 1px solid var(--brand-soft-mid);
+  border-radius: var(--radius-lg);
+  background: var(--brand-soft);
+  padding: 0.875rem 1rem;
 }
 
 .progress-reminder p {
   margin: 0;
-  color: #0f4d8a;
-  font-size: var(--font-size-sm);
+  color: var(--brand);
+  font-size: 0.8rem;
   line-height: 1.5;
 }
 
+/* ─── WIZARD MAIN ────────────────────────────────────────────────────────────*/
 .wizard-main {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 14px;
-  padding: 1.5rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  padding: 2rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.wizard-heading {
+  margin-bottom: 1.75rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .wizard-heading h2 {
   margin: 0;
-  font-size: var(--font-size-3xl);
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
 }
 
 .wizard-heading p {
-  margin: 0.45rem 0 1.2rem;
-  color: #475569;
-  font-size: var(--font-size-base);
+  margin: 0.3125rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
 }
 
 .wizard-content {
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
 }
 
+/* ─── REVIEW PANELS ──────────────────────────────────────────────────────────*/
 .review-panel {
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  background: #f1f5f9;
-  padding: 1.1rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+  padding: 1.25rem 1.375rem;
   margin-bottom: 1rem;
 }
 
 .review-panel h4 {
-  margin: 0 0 0.85rem;
+  margin: 0 0 1rem;
   display: flex;
   align-items: center;
-  gap: 0.45rem;
-  font-size: var(--font-size-xl);
+  gap: 0.5rem;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
 }
 
 .review-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.65rem 1.25rem;
+  gap: 0.75rem 1.5rem;
 }
 
 .review-grid label {
   display: block;
-  font-size: 1.05rem;
-  color: #64748b;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.1875rem;
 }
 
 .review-grid p {
-  margin: 0.1rem 0 0;
-  font-size: var(--font-size-base);
-  font-weight: 700;
-  color: #0f172a;
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
+/* ─── REVIEW DOCUMENTS ───────────────────────────────────────────────────────*/
 .review-documents-list {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 0.5rem;
 }
 
 .review-document-item {
-  border: 1px solid #dbeafe;
-  border-radius: 10px;
-  background: #ffffff;
-  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  padding: 0.75rem 1rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -311,81 +394,92 @@
 
 .doc-name {
   margin: 0;
-  color: #0f172a;
-  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  font-size: 0.875rem;
   font-weight: 600;
 }
 
 .doc-meta {
-  margin: 0.12rem 0 0;
-  color: #64748b;
-  font-size: var(--font-size-sm);
+  margin: 0.125rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
 }
 
 .doc-valid-icon {
-  color: #16a34a;
+  color: var(--status-success);
   flex-shrink: 0;
 }
 
 .review-empty {
   margin: 0;
-  color: #64748b;
+  color: var(--text-muted);
+  font-size: 0.875rem;
 }
 
+/* ─── DECLARATION BOX ────────────────────────────────────────────────────────*/
 .declaration-box {
-  border: 1px solid #eab308;
-  border-radius: 12px;
-  background: #fffbeb;
-  padding: 1rem;
+  border: 1px solid var(--brand-soft-mid);
+  border-radius: var(--radius-lg);
+  background: var(--brand-soft);
+  padding: 1.125rem 1.375rem;
+  margin-bottom: 1rem;
 }
 
 .declaration-box h4 {
-  margin: 0;
-  color: #0f4d8a;
-  font-size: var(--font-size-xl);
+  margin: 0 0 0.5rem;
+  color: var(--brand);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .declaration-box p {
-  margin: 0.5rem 0 0;
-  color: #0f4d8a;
-  font-size: var(--font-size-base);
+  margin: 0;
+  color: var(--brand);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  opacity: 0.85;
 }
 
+/* ─── SUBMIT ERROR ───────────────────────────────────────────────────────────*/
 .submit-error {
-  margin-top: 0.9rem;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+  margin-top: 1rem;
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
   border-radius: var(--radius-lg);
-  padding: 0.7rem 0.9rem;
+  padding: 0.75rem 1rem;
 }
 
 .submit-error p {
-  color: var(--color-error);
+  color: var(--status-error);
   margin: 0;
-  font-size: var(--font-size-sm);
+  font-size: 0.875rem;
   font-weight: 500;
 }
 
+/* ─── WIZARD ACTIONS ─────────────────────────────────────────────────────────*/
 .wizard-actions {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 1rem;
-  border-top: 1px solid #e2e8f0;
-  padding-top: 1rem;
+  margin-top: 1.5rem;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 1.25rem;
+  gap: 0.75rem;
 }
 
+/* ─── EMPLOYEE AUTH DIALOG ───────────────────────────────────────────────────*/
 .employee-auth-dialog {
   text-align: center;
 }
 
 .employee-auth-icon {
-  width: 72px;
-  height: 72px;
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
-  background: var(--color-primary);
-  color: #fbbf24;
-  margin: 0 auto 0.8rem;
+  background: var(--brand-soft);
+  color: var(--brand);
+  margin: 0 auto 1rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -393,13 +487,16 @@
 
 .employee-auth-dialog h3 {
   margin: 0;
-  font-size: var(--font-size-2xl);
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
 }
 
 .employee-auth-dialog > p {
-  margin: 0.5rem 0 1rem;
-  color: #475569;
-  font-size: var(--font-size-base);
+  margin: 0.375rem 0 1.25rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
 }
 
 .employee-auth-form {
@@ -410,65 +507,73 @@
 }
 
 .employee-auth-form label {
-  color: #0f172a;
-  font-weight: 700;
-  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 0.8125rem;
+  letter-spacing: -0.005em;
 }
 
 .employee-auth-form input {
   width: 100%;
-  border: 1px solid #d1d5db;
-  background: #f3f4f6;
-  border-radius: 10px;
-  padding: 0.7rem 0.85rem;
-  font-size: 1.05rem;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg);
+  padding: 0.6875rem 0.9375rem;
+  font-size: 0.9375rem;
+  font-family: var(--font-family);
+  font-weight: 500;
+  color: var(--text-primary);
   outline: none;
+  transition: border-color var(--transition-base), box-shadow var(--transition-base);
 }
 
 .employee-auth-form input:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(11, 61, 145, 0.16);
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(54, 62, 232, 0.10);
 }
 
 .employee-auth-hint {
-  border: 1px solid #bfdbfe;
-  background: #eff6ff;
-  border-radius: 10px;
-  padding: 0.7rem;
-  margin-top: 0.45rem;
+  border: 1px solid var(--brand-soft-mid);
+  background: var(--brand-soft);
+  border-radius: var(--radius-lg);
+  padding: 0.75rem 0.875rem;
+  margin-top: 0.375rem;
 }
 
 .employee-auth-hint p {
   margin: 0;
-  color: #1d4ed8;
-  font-size: 0.96rem;
+  color: var(--brand);
+  font-size: 0.8125rem;
+  line-height: 1.5;
 }
 
 .employee-auth-error {
-  margin: 0.2rem 0 0;
-  color: var(--color-error);
-  font-size: 0.95rem;
+  margin: 0.25rem 0 0;
+  color: var(--status-error);
+  font-size: 0.875rem;
+  font-weight: 500;
 }
 
 .employee-auth-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.6rem;
-  margin-top: 0.4rem;
+  gap: 0.625rem;
+  margin-top: 0.625rem;
 }
 
+/* ─── SUCCESS DIALOG ─────────────────────────────────────────────────────────*/
 .submission-success-card {
   text-align: center;
-  padding: 0.6rem 0.3rem;
+  padding: 0.5rem 0.25rem;
 }
 
 .success-icon-wrap {
-  width: 84px;
-  height: 84px;
+  width: 72px;
+  height: 72px;
   border-radius: 50%;
-  margin: 0 auto 0.9rem;
-  border: 6px solid #dcfce7;
-  color: #16a34a;
+  margin: 0 auto 1rem;
+  background: #DCFCE7;
+  color: var(--status-success);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -476,67 +581,54 @@
 
 .submission-success-card h3 {
   margin: 0;
-  font-size: var(--font-size-2xl);
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
 }
 
-.submission-success-card p {
-  margin: 0.55rem auto 0;
-  font-size: var(--font-size-base);
-  max-width: 420px;
-  color: #475569;
+.submission-success-card > p {
+  margin: 0.5rem auto 0;
+  font-size: 0.9rem;
+  max-width: 380px;
+  color: var(--text-secondary);
 }
 
 .submission-reference-box {
-  margin-top: 1.25rem;
-  background: #f0f4ff;
-  border: 1.5px solid #c7d7f7;
-  border-radius: 10px;
-  padding: 1rem 1.25rem;
+  margin-top: 1.375rem;
+  background: var(--brand-soft);
+  border: 1.5px solid var(--brand-soft-mid);
+  border-radius: var(--radius-lg);
+  padding: 1.125rem 1.375rem;
   text-align: center;
 }
 
 .submission-reference-label {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #6b7280;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--brand);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin: 0 0 0.35rem;
+  letter-spacing: 0.08em;
+  margin: 0 0 0.375rem;
+  opacity: 0.75;
 }
 
 .submission-reference {
   font-size: 1.5rem;
   font-weight: 800;
-  color: #1e3a5f;
+  color: var(--brand);
   letter-spacing: 0.04em;
   margin: 0;
 }
 
 .submission-reference-hint {
-  font-size: 0.8rem;
-  color: #6b7280;
+  font-size: 0.75rem;
+  color: var(--brand);
   margin: 0.5rem 0 0;
+  opacity: 0.65;
 }
 
-.track-application-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin-top: 1rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #1e3a5f;
-  text-decoration: none;
-  padding: 0.4rem 0.75rem;
-  border-radius: 6px;
-  transition: background 0.15s;
-}
-
-.track-application-link:hover {
-  background: #e8edf5;
-  text-decoration: none;
-}
-
+/* ─── RESPONSIVE ─────────────────────────────────────────────────────────────*/
 @media (max-width: 1100px) {
   .wizard-layout {
     grid-template-columns: 1fr;
@@ -549,98 +641,50 @@
 
 @media (max-width: 768px) {
   .applicant-topbar {
-    padding: 0.7rem 0.9rem;
+    padding: 0 1rem;
+    height: 56px;
   }
 
-  .applicant-brand-logo {
-    width: 44px;
-    height: 44px;
-  }
-
-  .applicant-brand h1 {
-    font-size: 1.45rem;
-  }
-
-  .applicant-brand p {
-    font-size: 0.95rem;
-  }
+  .applicant-brand h1 { font-size: 0.9375rem; }
+  .applicant-brand p  { font-size: 0.6875rem; }
 
   .application-type-banner {
-    font-size: 0.95rem;
-    padding: 0.65rem 0.9rem;
+    font-size: 0.8rem;
+    padding: 0.5rem 1rem;
   }
 
   .portal-landing {
-    padding: 1.4rem 0.85rem 2rem;
+    padding: 2.5rem 1.25rem 3rem;
   }
 
   .portal-landing-header h2 {
-    font-size: 2rem;
+    font-size: 1.75rem;
   }
 
-  .portal-landing-header p,
-  .application-entry-card p {
-    font-size: 1.05rem;
-  }
-
-  .application-entry-card h3 {
-    font-size: 1.6rem;
-  }
-
-  .entry-primary-button {
-    font-size: 1.05rem;
-  }
+  .application-entry-card { padding: 2rem 1.25rem; }
 
   .employee-promotion-button {
     width: 100%;
     justify-content: center;
-    font-size: 1rem;
   }
 
-  .employee-note-card p {
-    font-size: 0.98rem;
-  }
-
-  .wizard-layout {
-    padding: 0.85rem;
-  }
+  .wizard-layout { padding: 1rem; gap: 1rem; }
 
   .wizard-main,
-  .wizard-sidebar {
-    padding: 1rem;
-  }
+  .wizard-sidebar { padding: 1.25rem; }
 
-  .wizard-heading h2 {
-    font-size: 1.35rem;
-  }
+  .wizard-heading h2 { font-size: 1.125rem; }
 
-  .wizard-heading p {
-    font-size: 0.95rem;
-  }
-
-  .review-grid {
-    grid-template-columns: 1fr;
-  }
+  .review-grid { grid-template-columns: 1fr; }
 
   .wizard-actions {
     flex-direction: column-reverse;
-    gap: 0.65rem;
+    gap: 0.625rem;
   }
 
-  .wizard-actions .btn {
-    width: 100%;
-  }
+  .wizard-actions .btn { width: 100%; }
 
-  .employee-auth-actions {
-    grid-template-columns: 1fr;
-  }
+  .employee-auth-actions { grid-template-columns: 1fr; }
 
-  .submission-success-card h3 {
-    font-size: 1.5rem;
-  }
-
-  .submission-success-card p {
-    font-size: 1rem;
-  }
+  .submission-success-card h3 { font-size: 1.125rem; }
 }
-

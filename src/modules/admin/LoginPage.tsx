@@ -134,20 +134,55 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
           <span className="admin-login-orb orb-one" />
           <span className="admin-login-orb orb-two" />
           <span className="admin-login-orb orb-three" />
-          <div className="admin-login-logo" aria-hidden="true" />
+
+          {/* Brand mark */}
+          <div style={{
+            width: 52, height: 52, borderRadius: 14,
+            background: 'rgba(255,255,255,0.18)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            marginBottom: '0.25rem',
+          }}>
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+              <rect width="28" height="28" rx="7" fill="white" fillOpacity="0.15"/>
+              <path d="M7 14C7 10.134 10.134 7 14 7C17.866 7 21 10.134 21 14" stroke="white" strokeWidth="2.2" strokeLinecap="round"/>
+              <circle cx="14" cy="14" r="3" fill="white"/>
+              <path d="M14 17V21" stroke="white" strokeWidth="2.2" strokeLinecap="round"/>
+              <path d="M10 20L14 17L18 20" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+
           <h2>HRIS Portal</h2>
-          <p>Human Resource Information System</p>
+          <p style={{ color: 'rgba(255,255,255,0.75)', marginBottom: '0.5rem' }}>
+            Human Resource Information System
+          </p>
+
           <ul>
             <li>Recruitment &amp; Selection</li>
             <li>Learning &amp; Development</li>
             <li>Performance Management</li>
           </ul>
+
+          {/* Bottom badge */}
+          <div style={{
+            marginTop: 'auto',
+            paddingTop: '2rem',
+            display: 'flex', alignItems: 'center', gap: '0.5rem',
+          }}>
+            <div style={{
+              width: 6, height: 6, borderRadius: '50%',
+              background: 'rgba(255,255,255,0.5)',
+            }} />
+            <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.55)', fontWeight: 500 }}>
+              CICT — Secure Admin Access
+            </span>
+          </div>
         </div>
 
         <div className="admin-login-form-panel">
           <div className="admin-login-form-header">
-            <h1>Welcome Back</h1>
-            <p>Please sign in to your account</p>
+            <h1>Welcome back</h1>
+            <p>Sign in to your admin account</p>
           </div>
 
           <form onSubmit={handleLogin} className="admin-login-form">
