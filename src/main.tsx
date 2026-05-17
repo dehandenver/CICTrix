@@ -28,27 +28,19 @@ const purgeLegacyJobPostingLocalStorage = (): void => {
   }
 };
 
-// Avoid split browser storage between localhost and 127.0.0.1 during local dev.
-const shouldRedirectToCanonicalHost = window.location.hostname === 'localhost';
-if (shouldRedirectToCanonicalHost) {
+// Always render the app immediately so the page is never blank.
+purgeLegacyJobPostingLocalStorage();
+void loadJobPostings();
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+);
+
+// After mount, redirect localhost → 127.0.0.1 to keep localStorage consistent
+// across both hostnames in local dev. The app is already painted so no blank flash.
+if (window.location.hostname === 'localhost') {
   const url = new URL(window.location.href);
   url.hostname = '127.0.0.1';
   window.location.replace(url.toString());
-}
-
-if (!shouldRedirectToCanonicalHost) {
-  purgeLegacyJobPostingLocalStorage();
-
-  const renderApp = () => {
-    ReactDOM.createRoot(document.getElementById('root')!).render(
-      <React.StrictMode>
-        <App />
-      </React.StrictMode>,
-    );
-  };
-
-  // Kick off the Supabase fetch but do not block first paint — pages listen
-  // for the 'cictrix:job-postings-updated' event and re-render when ready.
-  void loadJobPostings();
-  renderApp();
 }
