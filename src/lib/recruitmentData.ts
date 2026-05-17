@@ -415,47 +415,25 @@ const mapSupabaseStatusToJobPostingStatus = (raw: string | null | undefined): Jo
 };
 
 const persistJobPostingsToSupabase = async (rows: JobPosting[]): Promise<void> => {
-  // database.types.ts does not yet include job_postings, so the typed client
-  // resolves the row shape to `never`. Cast at the call site rather than fight
-  // the generated types until a regenerate pass adds the table.
-  const client = supabase as unknown as {
-    from: (table: string) => {
-      upsert: (rows: unknown[], options?: { onConflict?: string }) => Promise<{ error: { message: string } | null }>;
-      delete: () => {
-        neq: (column: string, value: string) => Promise<{ error: { message: string } | null }>;
-        not: (column: string, op: string, value: string) => Promise<{ error: { message: string } | null }>;
-      };
-    };
-  };
+  // Upsert-only. The previous version also ran
+  //   .delete().not('id', 'in', keptIds)
+  // to "sync" Supabase to the in-memory list. That nuked rows whenever the
+  // local cache was incomplete (race during initial load, partial refresh, a
+  // second dashboard out of sync) — which is how postings have been silently
+  // vanishing and new postings have inherited orphan applicants by title
+  // collision. Deletions happen explicitly at the call sites
+  // (JobPostingsPage.deleteJobPosting, RSPDashboard.handleDeleteJob).
+  const client = supabase as any;
 
   const supabaseRows = rows.filter((job) => Boolean(job.id)).map(mapJobPostingToSupabaseRow);
+  if (supabaseRows.length === 0) return;
 
   try {
-    if (supabaseRows.length > 0) {
-      const { error: upsertError } = await client
-        .from('job_postings')
-        .upsert(supabaseRows, { onConflict: 'id' });
-      if (upsertError) {
-        console.warn('[RECRUITMENT] Upsert failed:', upsertError);
-      }
-    }
-
-    // Remove rows that are no longer present in the local list.
-    const keptIds = supabaseRows.map((row) => row.id);
-    if (keptIds.length === 0) {
-      await client
-        .from('job_postings')
-        .delete()
-        .neq('id', '00000000-0000-0000-0000-000000000000');
-    } else {
-      const formattedIds = `(${keptIds.map((id) => `"${id}"`).join(',')})`;
-      const { error: deleteError } = await client
-        .from('job_postings')
-        .delete()
-        .not('id', 'in', formattedIds);
-      if (deleteError) {
-        console.warn('[RECRUITMENT] Delete-removed failed:', deleteError);
-      }
+    const { error: upsertError } = await client
+      .from('job_postings')
+      .upsert(supabaseRows, { onConflict: 'id' });
+    if (upsertError) {
+      console.warn('[RECRUITMENT] Upsert failed:', upsertError);
     }
   } catch (err) {
     console.warn('[RECRUITMENT] Error persisting job postings to Supabase:', err);
