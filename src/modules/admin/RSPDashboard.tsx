@@ -31,6 +31,7 @@ import {
 import { QualifiedApplicantsSection } from '../../components/QualifiedApplicantsSection';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { AdminHeader } from '../../components/AdminHeader';
 import { Button } from '../../components/Button';
 import { Sidebar } from '../../components/Sidebar';
 import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
@@ -303,8 +304,6 @@ const persistDashboardJobsToRecruitment = (rows: JobRecord[]) => {
     department: row.department || 'Operations',
     division: 'Operations',
     positionType: 'Civil Service',
-    salaryGrade: 'SG-10',
-    salaryRange: { min: 20000, max: 30000 },
     numberOfPositions: 1,
     employmentStatus: 'Permanent',
     summary: `${row.title} recruitment posting.`,
@@ -936,7 +935,6 @@ export const RSPDashboard = () => {
     item_number: '',
     department: '',
     status: 'Open' as JobStatus,
-    salary_grade: '',
     position_level: '',
     slots: '1',
     employment_type: 'Full-time',
@@ -2312,7 +2310,6 @@ export const RSPDashboard = () => {
       item_number: '',
       department: '',
       status: 'Open',
-      salary_grade: '',
       position_level: '',
       slots: '1',
       employment_type: 'Full-time',
@@ -2335,8 +2332,6 @@ export const RSPDashboard = () => {
       department: row.department || 'Operations',
       division: 'Operations',
       positionType: 'Civil Service',
-      salaryGrade: 'SG-10',
-      salaryRange: { min: 20000, max: 30000 },
       numberOfPositions: 1,
       employmentStatus: 'Permanent',
       summary: `${row.title} recruitment posting.`,
@@ -2381,8 +2376,6 @@ export const RSPDashboard = () => {
       department: row.department || 'Operations',
       division: 'Operations',
       positionType: 'Civil Service',
-      salaryGrade: 'SG-10',
-      salaryRange: { min: 20000, max: 30000 },
       numberOfPositions: 1,
       employmentStatus: 'Permanent',
       summary: `${row.title} recruitment posting.`,
@@ -2985,6 +2978,27 @@ export const RSPDashboard = () => {
   ];
 
   return (
+    <div className="min-h-screen bg-slate-100 text-slate-800">
+      <AdminHeader
+        userName="RSP Admin"
+        divisionLabel="RSP Division"
+        division="rsp"
+        onNotificationClick={(item) => {
+          // Route to the most relevant page for the source of the notification.
+          if (item.source === 'applicant' && item.payload.applicantId) {
+            navigate(`/admin/rsp/applicant/${item.payload.applicantId}`);
+            return;
+          }
+          if (item.source === 'evaluation' && item.payload.applicantId) {
+            navigate(`/admin/rsp/applicant/${item.payload.applicantId}`);
+            return;
+          }
+          if (item.source === 'employee_doc') {
+            navigate('/admin/rsp/reports');
+            return;
+          }
+        }}
+      />
     <div className="admin-layout">
       <Sidebar activeModule="RSP" userRole="rsp" />
 
@@ -5414,25 +5428,14 @@ export const RSPDashboard = () => {
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                    <div>
-                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Item Number <span className="text-red-500">*</span></label>
-                      <input
-                        className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
-                        placeholder="e.g., ITEM-2024-001"
-                        value={newJob.item_number}
-                        onChange={(event) => setNewJob((prev) => ({ ...prev, item_number: event.target.value }))}
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Salary Grade <span className="text-red-500">*</span></label>
-                      <input
-                        className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
-                        placeholder="e.g., SG-11"
-                        value={newJob.salary_grade}
-                        onChange={(event) => setNewJob((prev) => ({ ...prev, salary_grade: event.target.value }))}
-                      />
-                    </div>
+                  <div>
+                    <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Item Number <span className="text-red-500">*</span></label>
+                    <input
+                      className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
+                      placeholder="e.g., ITEM-2024-001"
+                      value={newJob.item_number}
+                      onChange={(event) => setNewJob((prev) => ({ ...prev, item_number: event.target.value }))}
+                    />
                   </div>
 
                   <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -6055,6 +6058,7 @@ export const RSPDashboard = () => {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 };

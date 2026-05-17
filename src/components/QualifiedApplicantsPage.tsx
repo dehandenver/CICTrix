@@ -17,10 +17,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getPreferredDataSourceMode } from '../lib/dataSourceMode';
-import {
-    getEmployeePortalAccounts,
-    updateEmployeePortalEmployee,
-} from '../lib/employeePortalData';
+import { hireApplicant } from '../lib/api/employeesApi';
 import { mockDatabase } from '../lib/mockDatabase';
 import {
     ensureRecruitmentSeedData,
@@ -542,8 +539,6 @@ export const QualifiedApplicantsPage = () => {
         department: String(row?.department ?? row?.office ?? 'Unassigned'),
         division: String(row?.division ?? ''),
         positionType: 'Civil Service',
-        salaryGrade: String(row?.salary_grade ?? ''),
-        salaryRange: { min: 0, max: 0 },
         numberOfPositions: 1,
         employmentStatus: 'Permanent',
         summary: String(row?.description ?? ''),
@@ -620,8 +615,6 @@ export const QualifiedApplicantsPage = () => {
             department: String(row?.department ?? row?.office ?? 'Unassigned'),
             division: String(row?.division ?? ''),
             positionType: 'Civil Service' as const,
-            salaryGrade: String(row?.salary_grade ?? ''),
-            salaryRange: { min: 0, max: 0 },
             numberOfPositions: 1,
             employmentStatus: 'Permanent' as const,
             summary: String(row?.description ?? ''),
@@ -950,20 +943,8 @@ export const QualifiedApplicantsPage = () => {
   );
 
   const selectedHiringMeta = useMemo(() => {
-    const existingAccounts = getEmployeePortalAccounts();
-    const existingAccountsByEmailMap = new Map(
-      existingAccounts
-        .map((account) => [normalizeText(account.employee.email || ''), account] as const)
-        .filter(([email]) => Boolean(email))
-    );
-
-    const isInternal = (row: Applicant) =>
-      row.applicationType === 'promotion' ||
-      Boolean(row.internalApplication?.employeeId) ||
-      existingAccountsByEmailMap.has(normalizeText(row.personalInfo.email || ''));
-
-    const promotions = selectedRowsForHiring.filter(isInternal);
-    const externals = selectedRowsForHiring.filter((row) => !isInternal(row));
+    const promotions = selectedRowsForHiring.filter(r => r.applicationType === 'promotion');
+    const externals = selectedRowsForHiring.filter((row) => row.applicationType !== 'promotion');
 
     return {
       promotions,
@@ -993,283 +974,71 @@ export const QualifiedApplicantsPage = () => {
     try {
       if (!canManageHiring || selectedHireApplicantIds.length === 0) return;
 
-    const selectedRows = qualifiedRows.filter((row) => selectedHireApplicantIds.includes(row.id));
-    if (selectedRows.length === 0) {
-      setShowHireConfirmModal(false);
-      return;
-    }
-
-    const existingNewlyHired = getNewlyHired();
-    // existingApplicantIds is used for deduplication in toAddNewlyHired
-    const existingApplicantIds = new Set(existingNewlyHired.map((item) => item.applicantId));
-    const employeeRecords = getEmployeeRecords();
-    const existingAccounts = getEmployeePortalAccounts();
-    const existingAccountsByEmail = new Map(
-      existingAccounts
-        .map((account) => [normalizeText(account.employee.email || ''), account] as const)
-        .filter(([email]) => Boolean(email))
-    );
-    const occupiedUsernames = new Set(existingAccounts.map((account) => normalizeUsername(account.username)));
-
-    // Allocator skips any employee_number already used in Supabase / local stores so
-    // we never hand out the same EMP-2026-NNN twice. Each call inside the loop reserves.
-    const reservedFromExistingNewlyHired = existingNewlyHired
-      .map((item) => String(item.employeeId ?? '').trim())
-      .filter(Boolean);
-    const { allocate: allocateEmployeeNumber } = await createEmployeeNumberAllocator(reservedFromExistingNewlyHired);
-
-    const nowIso = new Date().toISOString();
-
-    const hiredIdSet = new Set<string>();
-    const toAddNewlyHired: NewlyHired[] = [];
-    const skippedRows: string[] = [];
-
-    selectedRows.forEach((row) => {
-      const fullName = `${row.personalInfo.firstName} ${row.personalInfo.lastName}`.trim();
-      const targetPosition = jobMap.get(row.jobPostingId)?.title ?? 'Unassigned Position';
-      const targetDepartment = jobMap.get(row.jobPostingId)?.department ?? 'Unassigned Department';
-      const targetDivision = jobMap.get(row.jobPostingId)?.division;
-      const employeeIdFromApplication = String(row.internalApplication?.employeeId ?? '').trim();
-      const existingAccountById = existingAccounts.find(
-        (account) => String(account.employee.employeeId ?? '').trim() === employeeIdFromApplication
-      );
-      const existingAccountByEmail = existingAccountsByEmail.get(normalizeText(row.personalInfo.email || ''));
-      const isInternalPromotion =
-        row.applicationType === 'promotion' ||
-        Boolean(row.internalApplication?.employeeId) ||
-        Boolean(existingAccountByEmail);
-      const existingAccount = existingAccountById ?? existingAccountByEmail;
-
-      if (isInternalPromotion && !existingAccount && !employeeIdFromApplication) {
-        skippedRows.push(fullName);
+      const selectedRows = qualifiedRows.filter((row) => selectedHireApplicantIds.includes(row.id));
+      if (selectedRows.length === 0) {
+        setShowHireConfirmModal(false);
         return;
       }
 
-      const employeeNumber = isInternalPromotion
-        ? String(existingAccount?.employee.employeeId ?? employeeIdFromApplication)
-        : allocateEmployeeNumber();
-      const username = existingAccount?.username ?? createUniqueUsername(row, occupiedUsernames);
-      // Reserve the username inside this batch so two new hires with the same name
-      // don't both get the same login.
-      occupiedUsernames.add(normalizeUsername(username));
-      const positionHistoryEntry = {
-        position: targetPosition,
-        department: targetDepartment,
-        division: targetDivision,
-        effectiveDate: nowIso,
-        changeType: isInternalPromotion ? 'promotion' as const : 'hire' as const,
-        sourceApplicantId: row.id,
-        notes: isInternalPromotion
-          ? `Promoted from ${row.internalApplication?.currentPosition || 'current assignment'}`
-          : 'Initial hiring record created from recruitment conversion.',
-      };
+      const hiredIdSet = new Set<string>();
+      const skippedRows: string[] = [];
+      const nowIsoForLocalUpdate = new Date().toISOString();
 
-      if (isInternalPromotion && existingAccount) {
-        updateEmployeePortalEmployee(employeeNumber, {
-          fullName,
-          email: row.personalInfo.email || existingAccount.employee.email,
-          mobileNumber: row.personalInfo.phone || existingAccount.employee.mobileNumber,
-          homeAddress: row.personalInfo.address || existingAccount.employee.homeAddress,
-          currentPosition: targetPosition,
-          currentDepartment: targetDepartment,
-          currentDivision: targetDivision,
-          positionHistory: [
-            ...(existingAccount.employee.positionHistory ?? []),
-            positionHistoryEntry,
+      // Proceed with new backend logic per applicant
+      for (const row of selectedRows) {
+        try {
+          await import('../lib/api/employeesApi').then((m) => m.hireApplicant(row.id));
+          hiredIdSet.add(row.id);
+        } catch (err) {
+          console.error(`Failed to hire applicant ${row.id}`, err);
+          const fullName = `${row.personalInfo.firstName} ${row.personalInfo.lastName}`.trim();
+          skippedRows.push(fullName);
+        }
+      }
+
+      // Update local state arrays that drive the UI immediately
+      const nextApplicants = applicants.map((row) => {
+        if (!hiredIdSet.has(row.id)) return row;
+        return {
+          ...row,
+          status: 'Hired' as unknown as ApplicantStatus,
+          timeline: [
+            ...(Array.isArray(row.timeline) ? row.timeline : []),
+            {
+              event: 'Status updated to Hired',
+              date: nowIsoForLocalUpdate,
+              actor: 'RSP Admin',
+            },
           ],
-        });
-
-        appendRecruitmentAuditLog({
-          action: 'PROMOTION_EXECUTED',
-          applicantId: row.id,
-          applicantName: fullName,
-          details: `Position updated to ${targetPosition} (${targetDepartment}).`,
-          actor: 'RSP Admin',
-        });
-      } else if (isInternalPromotion) {
-        // Internal promotion can proceed using the linked employee ID even if
-        // no employee portal account exists yet.
-        appendRecruitmentAuditLog({
-          action: 'PROMOTION_EXECUTED',
-          applicantId: row.id,
-          applicantName: fullName,
-          details: `Position updated to ${targetPosition} (${targetDepartment}) via employee record fallback (${employeeNumber}).`,
-          actor: 'RSP Admin',
-        });
-      } else {
-        appendRecruitmentAuditLog({
-          action: 'HIRED_EXTERNAL_PENDING_CREDENTIALS',
-          applicantId: row.id,
-          applicantName: fullName,
-          details: `Employee ID ${employeeNumber} reserved. Credentials to be generated in Newly Hired stage.`,
-          actor: 'RSP Admin',
-        });
-      }
-
-      const employeeRecordIndex = employeeRecords.findIndex((record) => record.employeeId === employeeNumber);
-      if (employeeRecordIndex >= 0) {
-        const currentRecord = employeeRecords[employeeRecordIndex];
-        employeeRecords[employeeRecordIndex] = {
-          ...currentRecord,
-          name: fullName,
-          position: targetPosition,
-          department: targetDepartment,
-          division: targetDivision,
-          positionHistory: [...(currentRecord.positionHistory ?? []), positionHistoryEntry],
         };
+      });
+
+      setApplicants(nextApplicants);
+      saveApplicants(nextApplicants);
+
+      setSelectedHireApplicantIds([]);
+      setShowHireConfirmModal(false);
+      
+      if (skippedRows.length > 0) {
+        setToast(
+          `Processed ${hiredIdSet.size} applicant(s). Failed to hire: ${skippedRows.join(', ')}.`
+        );
       } else {
-        employeeRecords.push({
-          id: crypto.randomUUID(),
-          employeeId: employeeNumber,
-          name: fullName,
-          position: targetPosition,
-          department: targetDepartment,
-          division: targetDivision,
-          startDate: nowIso,
-          positionHistory: [positionHistoryEntry],
-        });
+        setToast(
+          hiredIdSet.size === 1
+            ? 'Applicant successfully processed for hiring.'
+            : `${hiredIdSet.size} applicants successfully processed for hiring.`
+        );
       }
 
-      // Always upsert newly hired record into Supabase
-      toAddNewlyHired.push({
-        id: `hire-${row.id}-${Date.now()}`,
-        applicantId: row.id,
-        employeeInfo: {
-          firstName: row.personalInfo.firstName,
-          lastName: row.personalInfo.lastName,
-          email: row.personalInfo.email,
-          phone: row.personalInfo.phone,
-          emergencyContact: {
-            name: '',
-            relationship: '',
-            phone: '',
-          },
-          governmentIds: {},
-        },
-        applicationType: row.applicationType,
-        internalApplication: row.internalApplication
-          ? {
-              employeeId: employeeNumber,
-              previousPosition: row.internalApplication.currentPosition,
-              previousDepartment: row.internalApplication.currentDepartment,
-              previousDivision: row.internalApplication.currentDivision,
-              employeeUsername: username,
-            }
-          : undefined,
-        position: targetPosition,
-        department: targetDepartment,
-        division: targetDivision,
-        employmentType: 'Permanent',
-        dateHired: nowIso,
-        expectedStartDate: nowIso,
-        status: 'Pending Onboarding',
-        onboardingProgress: 0,
-        onboardingChecklist: [
-          {
-            category: 'Documentation',
-            item: 'Sign employment contract',
-            completed: false,
-          },
-          {
-            category: 'Orientation',
-            item: 'Attend orientation',
-            completed: false,
-          },
-        ],
-        documents: [],
-        notes: [
-          {
-            author: 'RSP Admin',
-            content: isInternalPromotion
-              ? `Promoted into ${targetPosition}. Existing employee portal account retained (${username}).`
-              : 'Hired. Credentials pending generation in Newly Hired stage.',
-            date: nowIso,
-          },
-        ],
-        timeline: [
-          {
-            event: isInternalPromotion
-              ? 'Applicant marked as Hired and linked to existing employee account'
-              : 'Applicant marked as Hired and queued for onboarding credentials',
-            date: nowIso,
-            actor: 'RSP Admin',
-          },
-        ],
-        employeeId: employeeNumber,
-      });
-
-      hiredIdSet.add(row.id);
-
-      appendRecruitmentAuditLog({
-        action: 'HIRING_DECISION_CONFIRMED',
-        applicantId: row.id,
-        applicantName: fullName,
-        details: isInternalPromotion
-          ? `Internal promotion to ${targetPosition}.`
-          : `External hire for ${targetPosition}.`,
-        actor: 'RSP Admin',
-      });
-    });
-
-    saveEmployeeRecords(employeeRecords);
-    if (toAddNewlyHired.length > 0) {
-      await saveNewlyHired([...existingNewlyHired, ...toAddNewlyHired]);
-    }
-
-
-    // Always update status in Supabase for hired applicants
-    if (hiredIdSet.size > 0) {
-      try {
-        await (supabase as any).from('applicants').update({ status: 'Hired' }).in('id', Array.from(hiredIdSet));
-      } catch {
-        // Log error, but do not block
+      if (hiredIdSet.size > 0) {
+        // Dispatch event to notify other pages (NewlyHiredPage) to refresh their data
+        window.dispatchEvent(new CustomEvent('cictrix:applicants-updated'));
+        navigate('/admin/rsp/new-hired');
       }
-    }
-
-    const nowIsoForLocalUpdate = new Date().toISOString();
-    const nextApplicants = applicants.map((row) => {
-      if (!hiredIdSet.has(row.id)) return row;
-
-      return {
-        ...row,
-        status: 'Hired' as unknown as ApplicantStatus,
-        timeline: [
-          ...(Array.isArray(row.timeline) ? row.timeline : []),
-          {
-            event: 'Status updated to Hired',
-            date: nowIsoForLocalUpdate,
-            actor: 'RSP Admin',
-          },
-        ],
-      };
-    });
-
-    setApplicants(nextApplicants);
-    saveApplicants(nextApplicants);
-
-    setSelectedHireApplicantIds([]);
-    setShowHireConfirmModal(false);
-    if (skippedRows.length > 0) {
-      setToast(
-        `Processed ${hiredIdSet.size} applicant(s). Skipped ${skippedRows.length} internal applicant(s) with no existing employee account.`
-      );
-    } else {
-      setToast(
-        hiredIdSet.size === 1
-          ? 'Applicant successfully processed for hiring.'
-          : `${hiredIdSet.size} applicants successfully processed for hiring.`
-      );
-    }
-
-    if (hiredIdSet.size > 0) {
-      // Dispatch event to notify other pages (NewlyHiredPage) to refresh their data
-      window.dispatchEvent(new CustomEvent('cictrix:applicants-updated'));
-      navigate('/admin/rsp/new-hired');
-    }
     } catch (error) {
-      console.error('Error during hiring process:', error);
-      const errorMessage = error instanceof Error ? error.message : 'An error occurred during the hiring process.';
-      setToast(`Failed to process hiring: ${errorMessage}`);
+      console.error('Error confirming hires:', error);
+      setToast('An error occurred while confirming hires. Please check logs.');
     } finally {
       setShowHireConfirmModal(false);
     }

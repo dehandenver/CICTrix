@@ -117,6 +117,17 @@ export interface EmployeeDocumentSubmission extends EmployeeDocumentRow {
   department: string;
 }
 
+/** Helper used by callers that show "No employee record found" errors. */
+const buildLookupErrorMessage = (employeeId: string, email?: string): string => {
+  const queriedFor = [
+    employeeId && `employee_id="${employeeId}"`,
+    email && `email="${email}"`,
+  ]
+    .filter(Boolean)
+    .join(' or ');
+  return `No employee record found in Supabase for ${queriedFor}. Make sure this employee exists in the employees table.`;
+};
+
 /**
  * Sanitize a file name for use as a Storage object key.
  * Allows letters, digits, dot, underscore, hyphen — replaces everything else.
@@ -130,9 +141,8 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 /**
  * Resolve a Supabase employee UUID using multiple strategies (in order):
  *   1. If `identifier` is already a UUID, return it.
- *   2. Match `employees.employee_number = identifier`.
- *   3. Match `employees.plantilla_item_number = identifier` (the legacy "ITEM-…" column).
- *   4. If `fallbackEmail` is provided, match `employees.email = fallbackEmail`.
+ *   2. Match `employees.employee_id = identifier`.
+ *   3. If `fallbackEmail` is provided, match `employees.email = fallbackEmail`.
  * Returns null if nothing matches.
  */
 export async function resolveEmployeeUuid(
@@ -156,7 +166,6 @@ export async function resolveEmployeeUuid(
       .maybeSingle();
 
     if (result.error) {
-      // Column might not exist on the schema; that's fine, try the next strategy.
       console.warn(`resolveEmployeeUuid: lookup by ${column} failed`, result.error);
       return null;
     }
@@ -164,11 +173,8 @@ export async function resolveEmployeeUuid(
   };
 
   if (normalized) {
-    const byEmployeeNumber = await tryColumn('employee_number', normalized);
-    if (byEmployeeNumber) return byEmployeeNumber;
-
-    const byItemNumber = await tryColumn('plantilla_item_number', normalized);
-    if (byItemNumber) return byItemNumber;
+    const byEmployeeId = await tryColumn('employee_id', normalized);
+    if (byEmployeeId) return byEmployeeId;
   }
 
   if (normalizedEmail) {
@@ -209,12 +215,9 @@ export async function uploadEmployeeDocument(params: {
 
   const employeeUuid = await resolveEmployeeUuid(employeeId, email);
   if (!employeeUuid) {
-    const queriedFor = [employeeId && `employee_number="${employeeId}"`, email && `email="${email}"`]
-      .filter(Boolean)
-      .join(' or ');
     return {
       success: false,
-      error: `No employee record found in Supabase for ${queriedFor}. Make sure this employee exists in the employees table.`,
+      error: buildLookupErrorMessage(employeeId, email),
     };
   }
 
@@ -375,8 +378,8 @@ export async function listEmployeeDocumentsByType(
   const employeeIds = Array.from(new Set(rows.map((r) => r.employee_id).filter(Boolean)));
 
   const empResult = await (supabase as any)
-    .from('employees')
-    .select('id, employee_number, first_name, last_name, position, department')
+    .from('employees_with_department')
+    .select('id, employee_id, full_name, current_position, department')
     .in('id', employeeIds);
 
   if (empResult.error) {
@@ -390,14 +393,13 @@ export async function listEmployeeDocumentsByType(
 
   return rows.map((row) => {
     const emp = employeeById.get(row.employee_id);
-    const fullName = emp
-      ? [emp.first_name, emp.last_name].filter(Boolean).join(' ').trim() || 'Unknown Employee'
-      : 'Unknown Employee';
     return {
       ...row,
-      employee_number: emp?.employee_number ?? '—',
-      full_name: fullName,
-      position: emp?.position ?? 'Unassigned Position',
+      // `employee_number` field name kept for back-compat with consumers
+      // (RSP Reports detail page) — value comes from the Schema B `employee_id` column.
+      employee_number: emp?.employee_id ?? '—',
+      full_name: emp?.full_name ?? 'Unknown Employee',
+      position: emp?.current_position ?? 'Unassigned Position',
       department: emp?.department ?? 'Unassigned Department',
     } satisfies EmployeeDocumentSubmission;
   });

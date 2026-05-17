@@ -16,30 +16,33 @@ import ChangePositionModal from './ChangePositionModal';
 
 interface Employee {
   id: string;
-  employee_number: string;
-  first_name: string;
-  last_name: string;
-  position: string;
+  employee_id: string;
+  full_name: string;
+  current_position: string;
   department: string;
+  current_department?: string;
   status: string;
   email: string;
-  phone: string;
-  date_hired: string;
-  employment_status: string;
+  mobile_number: string;
+  hire_date: string;
   photo_url?: string;
   date_of_birth?: string;
   place_of_birth?: string;
-  sex?: string;
+  gender?: string;
   civil_status?: string;
+  home_address?: string;
   emergency_contact_name?: string;
-  emergency_contact_relationship?: string;
-  emergency_contact_phone?: string;
-  current_address_street?: string;
-  current_address_barangay?: string;
-  current_address_city?: string;
-  current_address_province?: string;
-  current_address_zipcode?: string;
+  emergency_relationship?: string;
+  emergency_contact_number?: string;
 }
+
+/** Derive 2-letter initials from a full_name string. */
+const getInitials = (name: string): string => {
+  const parts = (name ?? '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '??';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
 
 interface Props {
   employee: Employee;
@@ -84,8 +87,9 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
 
   const fetchEmployeeDetails = async () => {
     try {
+      // Read through the view so `department` (canonical name) is present.
       const { data, error } = await supabase
-        .from('employees')
+        .from('employees_with_department')
         .select('*')
         .eq('id', employee.id)
         .single();
@@ -110,14 +114,17 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
 
       if (error) throw error;
       if (data) {
-        // Transform applicant data to match employee format
+        // Transform applicant data to match Schema B Employee shape
         setFullEmployee({
           ...employee,
-          ...data,
+          full_name: `${data.first_name ?? ''} ${data.last_name ?? ''}`.trim(),
+          current_position: data.position,
           department: data.office,
-          phone: data.contact_number,
+          mobile_number: data.contact_number,
+          email: data.email,
           status: 'Pending Onboarding',
-          employee_number: employee.employee_number,
+          employee_id: employee.employee_id,
+          hire_date: data.created_at,
         });
       }
     } catch (error) {
@@ -155,17 +162,17 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
 
   /**
    * Locate the Employee Portal account for this employee. Portal accounts are
-   * keyed by employee_number / email, so we try the most reliable identifiers
+   * keyed by employee_id / email, so we try the most reliable identifiers
    * in order.
    */
   const findPortalAccountForEmployee = () => {
     const accounts = getEmployeePortalAccounts();
-    const empNumber = String(fullEmployee.employee_number ?? '').trim();
+    const empId = String(fullEmployee.employee_id ?? '').trim();
     const email = String(fullEmployee.email ?? '').trim().toLowerCase();
 
     return (
       accounts.find((account) =>
-        String(account.employee.employeeId ?? '').trim() === empNumber,
+        String(account.employee.employeeId ?? '').trim() === empId,
       ) ??
       accounts.find((account) =>
         String(account.employee.email ?? '').trim().toLowerCase() === email,
@@ -182,7 +189,7 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
       const account = findPortalAccountForEmployee();
       if (!account) {
         setResetError(
-          `No employee-portal account exists for ${fullEmployee.employee_number} / ${fullEmployee.email}. ` +
+          `No employee-portal account exists for ${fullEmployee.employee_id} / ${fullEmployee.email}. ` +
             `Generate credentials from Newly Hired first.`,
         );
         setResetState('error');
@@ -278,11 +285,10 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
         return 'bg-green-100 text-green-800';
       case 'On Leave':
         return 'bg-yellow-100 text-yellow-800';
-      case 'Suspended':
-        return 'bg-red-100 text-red-800';
       case 'Pending Onboarding':
         return 'bg-blue-100 text-blue-800';
-      case 'Separated':
+      case 'Resigned':
+      case 'Terminated':
         return 'bg-gray-100 text-gray-800';
       default:
         return 'bg-gray-100 text-gray-800';
@@ -309,16 +315,16 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
             {/* Photo/Avatar */}
             <div className="w-32 h-32 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
               <span className="text-white font-bold text-5xl">
-                {fullEmployee.first_name[0]}{fullEmployee.last_name[0]}
+                {getInitials(fullEmployee.full_name)}
               </span>
             </div>
 
             {/* Employee Info */}
             <div className="flex-1">
               <h1 className="text-3xl font-bold text-gray-900 mb-1">
-                {fullEmployee.first_name} {fullEmployee.last_name}
+                {fullEmployee.full_name}
               </h1>
-              <p className="text-lg text-gray-600 mb-4">{fullEmployee.position}</p>
+              <p className="text-lg text-gray-600 mb-4">{fullEmployee.current_position}</p>
 
               <div className="flex flex-wrap gap-3 mb-6">
                 <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
@@ -328,7 +334,7 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
                   {fullEmployee.id.startsWith('applicant-') ? 'Pending Onboarding' : fullEmployee.status}
                 </span>
                 <span className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm font-medium font-mono">
-                  {fullEmployee.employee_number}
+                  {fullEmployee.employee_id}
                 </span>
               </div>
             </div>
@@ -396,7 +402,7 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
                       <label className="block text-sm text-gray-600 mb-2">Contact Number</label>
                       <div className="flex items-center gap-2">
                         <Phone className="w-4 h-4 text-gray-400" />
-                        <p className="text-gray-900">{fullEmployee.phone || 'N/A'}</p>
+                        <p className="text-gray-900">{fullEmployee.mobile_number || 'N/A'}</p>
                       </div>
                     </div>
                   </div>
@@ -406,14 +412,11 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
                     <div className="flex items-start gap-2">
                       <MapPin className="w-4 h-4 text-gray-400 mt-1 flex-shrink-0" />
                       <div>
-                        {fullEmployee.current_address_street && (
-                          <p className="text-gray-900">
-                            {fullEmployee.current_address_street}
-                            {fullEmployee.current_address_barangay && `, ${fullEmployee.current_address_barangay}`}
-                            {fullEmployee.current_address_city && `, ${fullEmployee.current_address_city}`}
-                          </p>
+                        {fullEmployee.home_address ? (
+                          <p className="text-gray-900">{fullEmployee.home_address}</p>
+                        ) : (
+                          <p className="text-gray-600">No address on file</p>
                         )}
-                        {!fullEmployee.current_address_street && <p className="text-gray-600">No address on file</p>}
                       </div>
                     </div>
                   </div>
@@ -425,29 +428,25 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
 
                   <div className="grid grid-cols-2 gap-8">
                     <div>
-                      <label className="block text-sm text-gray-600 mb-2">Employee Number</label>
-                      <p className="text-gray-900 font-mono font-semibold">{fullEmployee.employee_number}</p>
+                      <label className="block text-sm text-gray-600 mb-2">Employee ID</label>
+                      <p className="text-gray-900 font-mono font-semibold">{fullEmployee.employee_id}</p>
                     </div>
                     <div>
                       <label className="block text-sm text-gray-600 mb-2">Position</label>
-                      <p className="text-gray-900">{fullEmployee.position}</p>
+                      <p className="text-gray-900">{fullEmployee.current_position}</p>
                     </div>
                     <div>
                       <label className="block text-sm text-gray-600 mb-2">Department</label>
                       <p className="text-gray-900">{fullEmployee.department}</p>
                     </div>
                     <div>
-                      <label className="block text-sm text-gray-600 mb-2">Date Hired</label>
+                      <label className="block text-sm text-gray-600 mb-2">Hire Date</label>
                       <p className="text-gray-900">
-                        {fullEmployee.date_hired ? new Date(fullEmployee.date_hired).toLocaleDateString() : 'N/A'}
+                        {fullEmployee.hire_date ? new Date(fullEmployee.hire_date).toLocaleDateString() : 'N/A'}
                       </p>
                     </div>
                     <div>
-                      <label className="block text-sm text-gray-600 mb-2">Employment Status</label>
-                      <p className="text-gray-900">{fullEmployee.employment_status}</p>
-                    </div>
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-2">Account Status</label>
+                      <label className="block text-sm text-gray-600 mb-2">Status</label>
                       <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(fullEmployee.status, fullEmployee.id)}`}>
                         {fullEmployee.id.startsWith('applicant-') ? 'Pending Onboarding' : fullEmployee.status}
                       </span>
@@ -483,8 +482,8 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
                       </div>
                     )}
                     <div>
-                      <label className="block text-sm text-gray-600 mb-2">Sex</label>
-                      <p className="text-gray-900">{fullEmployee.sex || 'N/A'}</p>
+                      <label className="block text-sm text-gray-600 mb-2">Gender</label>
+                      <p className="text-gray-900">{fullEmployee.gender || 'N/A'}</p>
                     </div>
                     <div>
                       <label className="block text-sm text-gray-600 mb-2">Civil Status</label>
@@ -497,7 +496,7 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
                 </div>
 
                 {/* Emergency Contact */}
-                {(fullEmployee.emergency_contact_name || fullEmployee.emergency_contact_phone) && (
+                {(fullEmployee.emergency_contact_name || fullEmployee.emergency_contact_number) && (
                   <div className="pt-6 border-t border-gray-200">
                     <div className="flex items-center gap-2 mb-6">
                       <AlertCircle className="w-5 h-5 text-red-600" />
@@ -511,13 +510,13 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
                       </div>
                       <div>
                         <label className="block text-sm text-gray-600 mb-2">Relationship</label>
-                        <p className="text-gray-900">{fullEmployee.emergency_contact_relationship || 'N/A'}</p>
+                        <p className="text-gray-900">{fullEmployee.emergency_relationship || 'N/A'}</p>
                       </div>
                       <div>
                         <label className="block text-sm text-gray-600 mb-2">Phone Number</label>
                         <div className="flex items-center gap-2">
                           <Phone className="w-4 h-4 text-gray-400" />
-                          <p className="text-gray-900">{fullEmployee.emergency_contact_phone || 'N/A'}</p>
+                          <p className="text-gray-900">{fullEmployee.emergency_contact_number || 'N/A'}</p>
                         </div>
                       </div>
                     </div>
@@ -769,9 +768,9 @@ export default function EmployeeDetailPage({ employee, onBack, onRefresh }: Prop
                   <p className="text-sm text-slate-700">
                     Generate a new password for{' '}
                     <span className="font-semibold">
-                      {fullEmployee.first_name} {fullEmployee.last_name}
+                      {fullEmployee.full_name}
                     </span>{' '}
-                    ({fullEmployee.employee_number})? The old password will stop working immediately.
+                    ({fullEmployee.employee_id})? The old password will stop working immediately.
                   </p>
                   <div className="flex justify-end gap-2">
                     <button

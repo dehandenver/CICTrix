@@ -264,16 +264,6 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
             <p className="sidebar-user-role">{resolvedRole}</p>
           </div>
         )}
-        <button
-          type="button"
-          className="sidebar-logout"
-          onClick={() => {
-            localStorage.removeItem('cictrix_admin_session');
-            navigate('/admin/login');
-          }}
-        >
-          Log out
-        </button>
       </div>
     </aside>
   );

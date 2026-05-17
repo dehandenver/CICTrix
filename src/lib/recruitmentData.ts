@@ -305,8 +305,6 @@ export const getJobPostingsFromSupabase = async (): Promise<JobPosting[]> => {
         department: row.department || '',
         division: 'Operations',
         positionType: 'Civil Service',
-        salaryGrade: row.salary_grade || 'SG-10',
-        salaryRange: { min: 20000, max: 30000 },
         numberOfPositions: 1,
         employmentStatus: 'Permanent',
         summary: row.summary || `${row.title || ''} recruitment posting.`,
@@ -623,7 +621,7 @@ export const saveNewlyHired = async (rows: NewlyHired[]) => {
 
   // Always sync each newly hired record to Supabase
   for (const hired of rows) {
-    const { id, applicantId, employeeInfo, position, department, division, employmentType, salaryGrade, dateHired, expectedStartDate, supervisor, status, onboardingProgress, deployedDate, employeeId } = hired;
+    const { id, applicantId, employeeInfo, position, department, division, employmentType, dateHired, expectedStartDate, supervisor, status, onboardingProgress, deployedDate, employeeId } = hired;
     try {
       const result = await (supabase as any).from('newly_hired').upsert([
         {
@@ -637,7 +635,6 @@ export const saveNewlyHired = async (rows: NewlyHired[]) => {
           department,
           division,
           employment_type: employmentType,
-          salary_grade: salaryGrade,
           date_hired: dateHired,
           expected_start_date: expectedStartDate,
           supervisor,
@@ -742,8 +739,8 @@ export const createEmployeeNumberAllocator = async (
 
   // Pull from Supabase.
   try {
-    const empRes = await (supabase as any).from('employees').select('employee_number');
-    for (const row of (empRes?.data ?? []) as any[]) addIfPresent(row?.employee_number);
+    const empRes = await (supabase as any).from('employees').select('employee_id');
+    for (const row of (empRes?.data ?? []) as any[]) addIfPresent(row?.employee_id);
   } catch (error) {
     // eslint-disable-next-line no-console
     console.warn('createEmployeeNumberAllocator: employees fetch failed', error);
