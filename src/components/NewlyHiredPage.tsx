@@ -318,6 +318,9 @@ export const NewlyHiredPage = () => {
       await saveNewlyHired(rows);
       setShowCredentialsModal(false);
       clearGeneratedCache();
+      // Clear the selection so the Generate button correctly disables —
+      // the just-saved rows now have employeeId and aren't generatable.
+      setSelectedIds([]);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error('saveAccountDetails: persist failed', error);
@@ -424,14 +427,23 @@ export const NewlyHiredPage = () => {
                   <p className="text-sm text-slate-500">{selectedDepartmentRows.length} newly hired employees</p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={generateCredentials}
-                  disabled={selectedIds.length === 0}
-                  className="rounded-2xl bg-blue-600 px-6 py-3 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <KeyRound className="mr-2 inline h-4 w-4" /> Generate Employee Number & Account
-                </button>
+                {(() => {
+                  // Generatable = selected AND no employeeId yet. Already-
+                  // credentialed selections must not enable the button.
+                  const generatableCount = selectedDepartmentRows
+                    .filter((row) => selectedIds.includes(row.id) && !row.employeeId)
+                    .length;
+                  return (
+                    <button
+                      type="button"
+                      onClick={generateCredentials}
+                      disabled={generatableCount === 0}
+                      className="rounded-2xl bg-blue-600 px-6 py-3 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <KeyRound className="mr-2 inline h-4 w-4" /> Generate Employee Number & Account
+                    </button>
+                  );
+                })()}
               </div>
             </header>
 
