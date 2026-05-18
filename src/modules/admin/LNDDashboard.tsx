@@ -71,6 +71,7 @@ import { getTrainingRequests, summarizeByStatus, type TrainingRequest } from '..
 import { getEmployeeCompetencies, computeLNDSkillGaps } from '../../lib/api/competencies';
 import { getDocumentRequests, summarizeRequests, groupRequestsByDepartment, type DocumentRequest } from '../../lib/api/documentRequests';
 import { EmptyState } from '../../components/EmptyState';
+import EmployeeDirectory from './EmployeeDirectory';
 
 type Priority = 'high' | 'medium' | 'low';
 type RequestStatus = 'approved' | 'pending' | 'rejected';
@@ -81,6 +82,7 @@ type MenuId =
   | 'seminar-enrollment'
   | 'employee-progress'
   | 'documents'
+  | 'employees'
   | 'settings';
 
 type MenuItem = {
@@ -108,6 +110,7 @@ const LND_MENU: MenuItem[] = [
   { id: 'seminar-enrollment', label: 'Seminar Enrollment', sublabel: 'Registrations and slots', icon: ClipboardCheck },
   { id: 'employee-progress', label: 'Employee Development', sublabel: 'Employees and ratings', icon: Users },
   { id: 'documents', label: 'Documents', sublabel: 'Document submissions', icon: FileText },
+  { id: 'employees', label: 'Employees', sublabel: 'Directory and profiles', icon: UsersRound },
   { id: 'settings', label: 'Settings', sublabel: 'Division preferences', icon: Settings },
 ];
 
@@ -1248,6 +1251,8 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
               selectedReportId={selectedReportId}
               onSelectionConsumed={() => setSelectedReportId(null)}
             />
+          ) : activeModule === 'employees' ? (
+            <EmployeeDirectory />
           ) : (
             <PlaceholderPage label={LND_MENU.find((item) => item.id === activeModule)?.label || 'Module'} />
           )}
