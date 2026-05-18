@@ -1,7 +1,6 @@
 import { supabase } from './supabase';
 
 const INTERVIEWER_SESSION_KEY = 'cictrix_interviewer_session';
-const RATER_ASSIGNMENTS_KEY = 'cictrix_rater_assigned_positions';
 
 export type InterviewerSessionInfo = {
   email: string;
@@ -30,22 +29,9 @@ export const getStoredInterviewerSession = (): InterviewerSessionInfo | null => 
   }
 };
 
-const loadLocalAssignments = (): Record<string, string[]> => {
-  try {
-    const raw = localStorage.getItem(RATER_ASSIGNMENTS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? (parsed as Record<string, string[]>) : {};
-  } catch {
-    return {};
-  }
-};
-
-export const getLocallyAssignedPositionsForEmail = (email: string): string[] => {
-  if (!email) return [];
-  const assignments = loadLocalAssignments();
-  return uniqueStrings(assignments[normalizeText(email)] ?? []);
-};
+// Kept for callers that still import this name, but assignments live in
+// Supabase only — there is no local cache to read.
+export const getLocallyAssignedPositionsForEmail = (_email: string): string[] => [];
 
 export const resolveAssignedPositionsForInterviewer = async (
   emailOverride?: string | null
@@ -58,7 +44,6 @@ export const resolveAssignedPositionsForInterviewer = async (
   }
 
   const normalizedEmail = normalizeText(email);
-  const localPositions = getLocallyAssignedPositionsForEmail(email);
 
   try {
     const { data, error } = await supabase.from('raters').select('email,assigned_positions');
@@ -73,15 +58,10 @@ export const resolveAssignedPositionsForInterviewer = async (
           : []
       );
 
-    return {
-      email,
-      positions: uniqueStrings([...positionsFromRows, ...localPositions]),
-    };
-  } catch {
-    return {
-      email,
-      positions: localPositions,
-    };
+    return { email, positions: uniqueStrings(positionsFromRows) };
+  } catch (err) {
+    console.warn('[interviewerAccess] Failed to fetch assigned_positions from Supabase:', err);
+    return { email, positions: [] };
   }
 };
 

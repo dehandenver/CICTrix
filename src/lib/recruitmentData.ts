@@ -10,7 +10,6 @@ import { supabase } from './supabase';
 
 const APPLICANTS_KEY = 'cictrix_qualified_applicants';
 const DELETED_JOB_REPORTS_KEY = 'cictrix_deleted_job_reports';
-const NEWLY_HIRED_KEY = 'cictrix_newly_hired';
 const RATER_ASSIGNMENTS_KEY = 'cictrix_rater_assignments_v2';
 const EVALUATION_PERIODS_KEY = 'cictrix_evaluation_periods';
 const EMPLOYEE_DB_KEY = 'cictrix_employee_records';
@@ -264,7 +263,7 @@ export const ensureRecruitmentSeedData = () => {
   const currentVersion = localStorage.getItem(RECRUITMENT_DATA_VERSION_KEY);
   if (currentVersion !== RECRUITMENT_DATA_VERSION) {
     localStorage.setItem(APPLICANTS_KEY, JSON.stringify([]));
-    localStorage.setItem(NEWLY_HIRED_KEY, JSON.stringify([]));
+    // newly_hired no longer seeded — Supabase is the only store now.
     localStorage.setItem(RATER_ASSIGNMENTS_KEY, JSON.stringify([]));
     localStorage.setItem(EMPLOYEE_DB_KEY, JSON.stringify([]));
     localStorage.setItem(RECRUITMENT_DATA_VERSION_KEY, RECRUITMENT_DATA_VERSION);
@@ -274,7 +273,7 @@ export const ensureRecruitmentSeedData = () => {
   if (!hasSeed) {
     const seed = buildInitialData();
     localStorage.setItem(APPLICANTS_KEY, JSON.stringify(seed.applicants));
-    localStorage.setItem(NEWLY_HIRED_KEY, JSON.stringify(seed.newlyHired));
+    // newly_hired seed dropped — that data only loads from Supabase now.
     localStorage.setItem(RATER_ASSIGNMENTS_KEY, JSON.stringify(seed.assignments));
     localStorage.setItem(EVALUATION_PERIODS_KEY, JSON.stringify(seed.periods));
     localStorage.setItem(EMPLOYEE_DB_KEY, JSON.stringify(seed.employees));
@@ -591,13 +590,66 @@ export const archiveDeletedJobPosting = (input: {
   return report;
 };
 
-export const getNewlyHired = () => safeJsonParse<NewlyHired[]>(localStorage.getItem(NEWLY_HIRED_KEY), []);
+// Newly Hired data lives exclusively in Supabase (newly_hired table).
+// Deprecated: returns []. Callers should use getNewlyHiredFromSupabase()
+// or listen for the 'cictrix:newly-hired-updated' event.
+export const getNewlyHired = (): NewlyHired[] => [];
+
+const dispatchNewlyHiredUpdated = (): void => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('cictrix:newly-hired-updated'));
+  }
+};
+
+const mapNewlyHiredRow = (row: any): NewlyHired => ({
+  id: String(row?.id ?? ''),
+  applicantId: row?.applicant_id ? String(row.applicant_id) : undefined,
+  rankingRank: typeof row?.ranking_rank === 'number' ? row.ranking_rank : 0,
+  rankingScore: typeof row?.ranking_score === 'number' ? row.ranking_score : 0,
+  employeeInfo: {
+    firstName: String(row?.first_name ?? ''),
+    lastName: String(row?.last_name ?? ''),
+    email: String(row?.email ?? ''),
+    phone: String(row?.phone ?? ''),
+    emergencyContact: { name: '', relationship: '', phone: '' },
+    governmentIds: {},
+  },
+  position: String(row?.position ?? ''),
+  department: String(row?.department ?? ''),
+  division: row?.division ? String(row.division) : undefined,
+  employmentType: (row?.employment_type ?? 'Permanent') as NewlyHired['employmentType'],
+  dateHired: String(row?.date_hired ?? new Date().toISOString()),
+  expectedStartDate: String(row?.expected_start_date ?? new Date().toISOString()),
+  supervisor: row?.supervisor ? String(row.supervisor) : undefined,
+  status: (row?.status ?? 'Pending Onboarding') as NewlyHired['status'],
+  onboardingProgress: Number(row?.onboarding_progress ?? 0),
+  onboardingChecklist: [],
+  documents: [],
+  notes: [],
+  timeline: [],
+  deployedDate: row?.deployed_date ? String(row.deployed_date) : undefined,
+  employeeId: row?.employee_id ? String(row.employee_id) : undefined,
+});
+
+export const getNewlyHiredFromSupabase = async (): Promise<NewlyHired[]> => {
+  try {
+    const { data, error } = await (supabase as any)
+      .from('newly_hired')
+      .select('*')
+      .order('date_hired', { ascending: false });
+    if (error) {
+      console.warn('[recruitmentData] newly_hired fetch failed:', error);
+      return [];
+    }
+    return Array.isArray(data) ? data.map(mapNewlyHiredRow) : [];
+  } catch (err) {
+    console.warn('[recruitmentData] newly_hired fetch exception:', err);
+    return [];
+  }
+};
 
 export const saveNewlyHired = async (rows: NewlyHired[]) => {
-  // Newly hired records are now stored only in Supabase database
-  // Do not save to localStorage to avoid quota exceeded errors
-
-  // Always sync each newly hired record to Supabase
+  // Source of truth: Supabase newly_hired table. No localStorage.
   for (const hired of rows) {
     const { id, applicantId, employeeInfo, position, department, division, employmentType, dateHired, expectedStartDate, supervisor, status, onboardingProgress, deployedDate, employeeId } = hired;
     try {
@@ -632,6 +684,7 @@ export const saveNewlyHired = async (rows: NewlyHired[]) => {
       console.error('Supabase upsert newly_hired exception:', err);
     }
   }
+  dispatchNewlyHiredUpdated();
 };
 
 export const getRaterAssignments = () =>
