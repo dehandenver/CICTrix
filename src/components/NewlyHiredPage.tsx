@@ -54,10 +54,18 @@ export const NewlyHiredPage = () => {
         });
       }
 
+      // Treat an applicant as hired if EITHER:
+      // (a) their applicants.status is 'Hired' / 'Accepted', OR
+      // (b) a newly_hired row exists for them.
+      // (b) is the source of truth — older hires (before the Supabase
+      // status-flip fallback) may have a newly_hired row but a stale
+      // applicants.status, and we still want them to show up here.
       const hiredFromDb = (applicantRows || [])
         .filter((row: any) => {
           const normalized = normalizeText(String(row?.status ?? ''));
-          return normalized === 'hired' || normalized === 'accept';
+          if (normalized === 'hired' || normalized === 'accept') return true;
+          const applicantId = String(row?.id ?? '').trim();
+          return Boolean(applicantId && persistedByApplicantId.has(applicantId));
         })
         .map((row: any) => {
           const applicantId = String(row?.id ?? '').trim();
