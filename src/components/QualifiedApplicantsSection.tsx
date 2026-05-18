@@ -182,21 +182,29 @@ const calcOverall = (scores: ApplicantCategoryScores): { value: number | null; p
   return { value: val, pct: ((val / MAX_TOTAL) * 100).toFixed(1) };
 };
 
+// Effective score for a category: the value the user can see on its badge.
+// Falls back from finalScore → initialScore → 0 so interviewer-owned
+// categories (PCPT, Written Exam) still contribute to the total even though
+// RSP never sets a finalScore for them — they come in as initialScore via the
+// interviewer's saved evaluation snapshot.
+const eff = (cat: { finalScore: number | null; initialScore: number }): number =>
+  cat.finalScore ?? cat.initialScore ?? 0;
+
 const calcModalScore = (
   scores: ApplicantCategoryScores,
   apptType: AppointmentType,
 ): number => {
   if (apptType === 'promotional') {
-    return (scores.education.finalScore   ?? 0) +
-           (scores.experience.finalScore  ?? 0) +
-           (scores.performance.finalScore ?? 0) +
-           (scores.potential.finalScore   ?? 0) +
-           (scores.pcpt.finalScore        ?? 0);
+    return eff(scores.education) +
+           eff(scores.experience) +
+           eff(scores.performance) +
+           eff(scores.potential) +
+           eff(scores.pcpt);
   }
-  return (scores.education.finalScore  ?? 0) +
-         (scores.experience.finalScore ?? 0) +
-         (scores.writtenExam.finalScore ?? 0) * 0.30 +
-         (scores.pcpt.finalScore       ?? 0);
+  return eff(scores.education) +
+         eff(scores.experience) +
+         eff(scores.writtenExam) * 0.30 +
+         eff(scores.pcpt);
 };
 
 const pcptRawToConvertedScore = (raw: number) => {
@@ -438,6 +446,10 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
   const previouslySaved = savedScores[applicant.id];
   const previouslySavedApptType: AppointmentType =
     previouslySaved?.appointmentType ?? (isCurrentEmployee ? 'promotional' : 'original');
+  // Promotional applicants (existing employees applying for a higher role)
+  // get evaluated on Performance + Potential in addition to Education +
+  // Experience. Original applicants (new external hires) only need
+  // Education + Experience — they have no past LGU performance record.
   const requiredRspKeysForApptType = (t: AppointmentType): CatKey[] =>
     t === 'promotional'
       ? ['education', 'experience', 'performance', 'potential']
@@ -1155,9 +1167,17 @@ const ApplicantsListView = ({ folder, completedEvaluationIds, savedCatScores, on
                   </button>
                 </div>
               </div>
-              {/* Score badges */}
+              {/* Score badges — show only the categories that actually count
+                  toward this applicant's total. Promotional applicants
+                  (existing employees) are scored on Performance + Potential,
+                  while original applicants (new external hires) are scored on
+                  Written Exam instead. Mirrors calcModalScore. */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem', marginBottom: '0.85rem' }}>
-                {SCORE_BADGES.map(b => {
+                {SCORE_BADGES.filter(b =>
+                  apptType === 'promotional'
+                    ? b.key !== 'writtenExam'
+                    : b.key !== 'performance' && b.key !== 'potential',
+                ).map(b => {
                   const meta = CAT_META[b.key];
                   const val  = cs[b.key].finalScore ?? cs[b.key].initialScore;
                   return (

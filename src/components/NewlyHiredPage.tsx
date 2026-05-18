@@ -11,15 +11,26 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 
 import {
+  createEmployeeNumberAllocator,
   saveNewlyHired,
 } from '../lib/recruitmentData';
 import { supabase } from '../lib/supabase';
+import { createPassword, createUniqueUsername, getEmployeePortalAccounts, upsertEmployeePortalAccount } from '../lib/employeePortalData';
 import type { NewlyHired, NewlyHiredStatus } from '../types/recruitment.types';
 import { Sidebar } from './Sidebar';
-// Fallbacks for missing types/utilities
+
 type ViewMode = 'overview' | 'department';
-type GeneratedCredential = any;
-// Dummy normalizeText if not found
+
+type GeneratedCredential = {
+  id: string;
+  fullName: string;
+  position: string;
+  rankLine: string;
+  employeeNumber: string;
+  username: string;
+  password: string;
+};
+
 const normalizeText = (v: string) => (v || '').trim().toLowerCase();
 
 
@@ -33,74 +44,108 @@ export const NewlyHiredPage = () => {
 
   useEffect(() => {
     const load = async () => {
-      // Hired applicants from Supabase
-      const { data: applicantRows = [] } = await supabase
-        .from('applicants')
-        .select('id, first_name, last_name, email, contact_number, position, office, status, created_at') as any;
+      try {
+        // Hired applicants from Supabase. Use select('*') so we don't blow up
+        // the whole query if any optional column (ranking_rank, ranking_score,
+        // etc.) is missing on the row — that was wiping the page after a
+        // recent edit added columns that don't exist in this table.
+        const result = await (supabase as any)
+          .from('applicants')
+          .select('*');
 
-      // Already-saved newly_hired rows (carries persisted employee_id so credentials survive reloads)
-      const newlyHiredResult = await (supabase as any)
-        .from('newly_hired')
-        .select('applicant_id, employee_id, status, onboarding_progress');
+        const { data: applicantRows = [], error } = result as any;
 
-      const persistedByApplicantId = new Map<string, { employee_id?: string; status?: string; onboarding_progress?: number }>();
-      for (const row of (newlyHiredResult.data || []) as any[]) {
-        const applicantKey = String(row?.applicant_id ?? '').trim();
-        if (!applicantKey) continue;
-        persistedByApplicantId.set(applicantKey, {
-          employee_id: row?.employee_id ?? undefined,
-          status: row?.status ?? undefined,
-          onboarding_progress: row?.onboarding_progress ?? undefined,
+        if (error) {
+          console.error('[NewlyHiredPage] Supabase applicants error:', error);
+        }
+
+        // Already-saved newly_hired rows (carries persisted employee_id so credentials survive reloads)
+        const newlyHiredResult = await (supabase as any)
+          .from('newly_hired')
+          .select('applicant_id, employee_id, status, onboarding_progress');
+
+        const persistedByApplicantId = new Map<string, { employee_id?: string; status?: string; onboarding_progress?: number }>();
+        for (const row of (newlyHiredResult.data || []) as any[]) {
+          const applicantKey = String(row?.applicant_id ?? '').trim();
+          if (!applicantKey) continue;
+          persistedByApplicantId.set(applicantKey, {
+            employee_id: row?.employee_id ?? undefined,
+            status: row?.status ?? undefined,
+            onboarding_progress: row?.onboarding_progress ?? undefined,
+          });
+        }
+
+        // Treat an applicant as hired if EITHER:
+        // (a) their applicants.status is 'Hired' / 'Accepted', OR
+        // (b) a newly_hired row exists for them.
+        // (b) is the source of truth — older hires (before the Supabase
+        // status-flip fallback) may have a newly_hired row but a stale
+        // applicants.status, and we still want them to show up here.
+        const hiredFromDb = (applicantRows || [])
+          .filter((row: any) => {
+            const normalized = normalizeText(String(row?.status ?? ''));
+            const matchesHired = normalized === 'hired' || normalized === 'accept';
+            const applicantId = String(row?.id ?? '').trim();
+            const inNewlyHired = Boolean(applicantId && persistedByApplicantId.has(applicantId));
+            return matchesHired || inNewlyHired;
+          })
+          .map((row: any) => {
+            const applicantId = String(row?.id ?? '').trim();
+            const persisted = applicantId ? persistedByApplicantId.get(applicantId) : undefined;
+            return {
+              id: `hire-${applicantId || crypto.randomUUID()}`,
+              applicantId: applicantId || undefined,
+              employeeId: persisted?.employee_id || undefined,
+              employeeInfo: {
+                firstName: String(row?.first_name ?? '').trim(),
+                lastName: String(row?.last_name ?? '').trim(),
+                email: String(row?.email ?? '').trim(),
+                phone: String(row?.contact_number ?? '').trim(),
+                emergencyContact: {
+                  name: '',
+                  relationship: '',
+                  phone: '',
+                },
+                governmentIds: {},
+              },
+              position: String(row?.position ?? '').trim(),
+              department: String(row?.office ?? '').trim(),
+              employmentType: 'Permanent',
+              dateHired: String(row?.created_at ?? new Date().toISOString()),
+              expectedStartDate: String(row?.created_at ?? new Date().toISOString()),
+              status: (persisted?.status as NewlyHiredStatus | undefined)
+                ?? (persisted?.employee_id ? 'In Onboarding' : 'Pending Onboarding') as NewlyHiredStatus,
+              onboardingProgress: persisted?.onboarding_progress ?? 0,
+              onboardingChecklist: [],
+              documents: [],
+              notes: [],
+              timeline: [
+                {
+                  event: persisted?.employee_id
+                    ? 'Loaded with persisted employee number from newly_hired'
+                    : 'Synced from applicant status',
+                  date: new Date().toISOString(),
+                  actor: 'System',
+                },
+              ],
+            } as NewlyHired;
+          });
+
+        console.log('[NewlyHiredPage] ✓ Load complete:', {
+          totalApplicants: applicantRows?.length ?? 0,
+          totalHiredFromDb: hiredFromDb.length,
+          hiredApplicants: hiredFromDb.map(h => ({
+            id: h.id,
+            name: `${h.employeeInfo.firstName} ${h.employeeInfo.lastName}`.trim(),
+            department: h.department,
+            employeeId: h.employeeId
+          }))
         });
+        setRows(hiredFromDb);
+      } catch (err) {
+        console.error('[NewlyHiredPage] Exception:', err);
+        setRows([]);
       }
-
-      const hiredFromDb = (applicantRows || [])
-        .filter((row: any) => {
-          const normalized = normalizeText(String(row?.status ?? ''));
-          return normalized === 'hired' || normalized === 'accept';
-        })
-        .map((row: any) => {
-          const applicantId = String(row?.id ?? '').trim();
-          const persisted = applicantId ? persistedByApplicantId.get(applicantId) : undefined;
-          return {
-            id: `hire-${applicantId || crypto.randomUUID()}`,
-            applicantId: applicantId || undefined,
-            employeeId: persisted?.employee_id || undefined,
-            employeeInfo: {
-              firstName: String(row?.first_name ?? '').trim(),
-              lastName: String(row?.last_name ?? '').trim(),
-              email: String(row?.email ?? '').trim(),
-              phone: String(row?.contact_number ?? '').trim(),
-              emergencyContact: {
-                name: '',
-                relationship: '',
-                phone: '',
-              },
-              governmentIds: {},
-            },
-            position: String(row?.position ?? '').trim(),
-            department: String(row?.office ?? '').trim(),
-            employmentType: 'Permanent',
-            dateHired: String(row?.created_at ?? new Date().toISOString()),
-            expectedStartDate: String(row?.created_at ?? new Date().toISOString()),
-            status: (persisted?.status as NewlyHiredStatus | undefined)
-              ?? (persisted?.employee_id ? 'In Onboarding' : 'Pending Onboarding') as NewlyHiredStatus,
-            onboardingProgress: persisted?.onboarding_progress ?? 0,
-            onboardingChecklist: [],
-            documents: [],
-            notes: [],
-            timeline: [
-              {
-                event: persisted?.employee_id
-                  ? 'Loaded with persisted employee number from newly_hired'
-                  : 'Synced from applicant status',
-                date: new Date().toISOString(),
-                actor: 'System',
-              },
-            ],
-          } as NewlyHired;
-        });
-      setRows(hiredFromDb);
     };
 
     const syncRows = () => {
@@ -171,9 +216,54 @@ export const NewlyHiredPage = () => {
   };
 
   const generateCredentials = async () => {
-    // Disabled. Backend '/api/employees/from-applicant/:id' creates accounts automatically
-    // during the Qualified Applicants stage. No local generation needed.
-    alert('Credentials are automatically provisioned by the backend now!');
+    if (selectedIds.length === 0) {
+      return;
+    }
+
+    const selectedRows = selectedDepartmentRows.filter((row) => selectedIds.includes(row.id) && !row.employeeId);
+    if (selectedRows.length === 0) {
+      alert('The selected employees already have credentials or cannot be processed.');
+      return;
+    }
+
+    const reservedEmployeeIds = rows.map((row) => row.employeeId).filter(Boolean) as string[];
+    const allocator = await createEmployeeNumberAllocator(reservedEmployeeIds);
+
+    const existingAccounts = getEmployeePortalAccounts();
+    const occupiedUsernames = new Set(existingAccounts.map((account) => account.username.toLowerCase()));
+
+    const credentials = selectedRows.map((row) => {
+      const firstName = row.employeeInfo.firstName || 'employee';
+      const lastName = row.employeeInfo.lastName || 'user';
+      const employeeNumber = allocator.allocate();
+      const username = createUniqueUsername(firstName, lastName, occupiedUsernames);
+      occupiedUsernames.add(username.toLowerCase());
+
+      return {
+        id: row.id,
+        fullName: `${firstName} ${lastName}`.trim(),
+        position: row.position,
+        rankLine: `Rank #${Math.max(1, Number(row.rankingRank ?? 1))} • Score: ${Number(row.rankingScore ?? 0).toFixed(2)}`,
+        employeeNumber,
+        username,
+        password: createPassword(),
+      };
+    });
+
+    setRows((currentRows) =>
+      currentRows.map((row) => {
+        const credential = credentials.find((item) => item.id === row.id);
+        if (!credential) return row;
+        return {
+          ...row,
+          employeeId: credential.employeeNumber,
+          status: 'In Onboarding',
+        };
+      })
+    );
+
+    setGeneratedCredentials(credentials);
+    setShowCredentialsModal(true);
   };
 
   const clearGeneratedCache = () => setGeneratedCredentials([]);
@@ -191,13 +281,34 @@ export const NewlyHiredPage = () => {
     setSaveError(null);
 
     try {
-      // Persist newly_hired rows (carries employee_id so re-loads stay locked).
+      for (const credential of generatedCredentials) {
+        upsertEmployeePortalAccount({
+          id: `portal-${credential.employeeNumber}`,
+          username: credential.username,
+          password: credential.password,
+          employee: {
+            employeeId: credential.employeeNumber,
+            fullName: credential.fullName,
+            email: selectedDepartmentRows.find((row) => row.id === credential.id)?.employeeInfo.email ?? '',
+            dateOfBirth: '',
+            age: 0,
+            gender: 'Other',
+            civilStatus: 'Single',
+            nationality: '',
+            mobileNumber: selectedDepartmentRows.find((row) => row.id === credential.id)?.employeeInfo.phone ?? '',
+            homeAddress: '',
+            emergencyContactName: '',
+            emergencyRelationship: '',
+            emergencyContactNumber: '',
+            sssNumber: '',
+            philhealthNumber: '',
+            pagibigNumber: '',
+            tinNumber: '',
+          },
+        });
+      }
+
       await saveNewlyHired(rows);
-
-      // employees table insertion has been removed. 
-      // The backend endpoint `/api/employees/from-applicant/:id` is now the single source of truth 
-      // for creating the core employee record during the initial 'Hire' action.
-
       setShowCredentialsModal(false);
       clearGeneratedCache();
     } catch (error) {
@@ -394,7 +505,7 @@ export const NewlyHiredPage = () => {
                   disabled={savingCredentials}
                   className="rounded-2xl bg-green-600 px-5 py-2.5 text-base font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
                 >
-                  <Save className="mr-2 inline h-4 w-4" /> {savingCredentials ? 'Saving…' : 'Save Account Details'}
+                  <Save className="mr-2 inline h-4 w-4" /> {savingCredentials ? 'Saving…' : 'Save Credentials'}
                 </button>
                 <button type="button" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" onClick={() => { setShowCredentialsModal(false); clearGeneratedCache(); }}>
                   <X size={20} />
