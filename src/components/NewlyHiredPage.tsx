@@ -45,20 +45,19 @@ export const NewlyHiredPage = () => {
   useEffect(() => {
     const load = async () => {
       try {
-        // Hired applicants from Supabase
-        const result = await supabase
+        // Hired applicants from Supabase. Use select('*') so we don't blow up
+        // the whole query if any optional column (ranking_rank, ranking_score,
+        // etc.) is missing on the row — that was wiping the page after a
+        // recent edit added columns that don't exist in this table.
+        const result = await (supabase as any)
           .from('applicants')
-          .select('id, first_name, last_name, email, contact_number, position, office, status, created_at, ranking_rank, ranking_score');
-        
+          .select('*');
+
         const { data: applicantRows = [], error } = result as any;
 
         if (error) {
-          console.error('[NewlyHiredPage] Supabase error:', error);
+          console.error('[NewlyHiredPage] Supabase applicants error:', error);
         }
-
-        console.log('[NewlyHiredPage] Raw applicant rows:', applicantRows);
-        console.log('[NewlyHiredPage] Query result:', result);
-        console.log('[NewlyHiredPage] Statuses:', applicantRows?.map((r: any) => ({ id: r.id, status: r.status, normalizedStatus: normalizeText(r.status) })));
 
         // Already-saved newly_hired rows (carries persisted employee_id so credentials survive reloads)
         const newlyHiredResult = await (supabase as any)
@@ -88,11 +87,6 @@ export const NewlyHiredPage = () => {
             const matchesHired = normalized === 'hired' || normalized === 'accept';
             const applicantId = String(row?.id ?? '').trim();
             const inNewlyHired = Boolean(applicantId && persistedByApplicantId.has(applicantId));
-            
-            if (matchesHired || inNewlyHired) {
-              console.log(`[NewlyHiredPage] ✓ MATCH: ${row.id} - status="${row.status}" normalized="${normalized}" matchesHired=${matchesHired} inNewlyHired=${inNewlyHired}`);
-            }
-            
             return matchesHired || inNewlyHired;
           })
           .map((row: any) => {
