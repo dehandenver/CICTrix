@@ -1476,13 +1476,39 @@ export const RSPDashboard = () => {
     [rankingPositionCards, activeRankingPosition]
   );
 
+  // Loaded from Supabase newly_hired table; refreshed when saveNewlyHired
+  // dispatches 'cictrix:newly-hired-updated'.
+  const [newlyHiredRows, setNewlyHiredRows] = useState<NewlyHired[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      const rows = await getNewlyHiredFromSupabase();
+      if (!cancelled) setNewlyHiredRows(rows);
+    };
+    void refresh();
+    window.addEventListener('cictrix:newly-hired-updated', refresh as EventListener);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('cictrix:newly-hired-updated', refresh as EventListener);
+    };
+  }, [section]);
+
   const activeRankingRows = useMemo<RankingApplicantRow[]>(() => {
     if (!activeRankingPosition) return [];
 
     const eligibleTitles = new Set(jobs.filter((job) => job.status !== 'Closed').map((job) => job.title));
     if (!eligibleTitles.has(activeRankingPosition)) return [];
 
+    // Already-hired applicants must not show up in the ranking — the user
+    // already picked them. Source of truth is the Supabase newly_hired table.
+    const hiredApplicantIds = new Set(
+      newlyHiredRows
+        .map((row) => String(row.applicantId ?? '').trim())
+        .filter(Boolean),
+    );
+
     const candidates = applicants.filter((applicant) => {
+      if (hiredApplicantIds.has(String(applicant.id))) return false;
       if (!savedScoredApplicantIds.has(applicant.id)) return false;
       if (applicant.position !== activeRankingPosition) return false;
       const normalizedStatus = (applicant.status || '').toLowerCase();
@@ -1492,7 +1518,9 @@ export const RSPDashboard = () => {
         normalizedStatus.includes('disqual') ||
         normalizedStatus.includes('not qualified') ||
         normalizedStatus.includes('reject') ||
-        normalizedStatus.includes('withdrawn');
+        normalizedStatus.includes('withdrawn') ||
+        normalizedStatus.includes('hired') ||
+        normalizedStatus.includes('deployed');
       if (isExplicitlyExcluded) return false;
       return (
         savedScoredApplicantIds.has(applicant.id) ||
@@ -1540,7 +1568,7 @@ export const RSPDashboard = () => {
       .sort((a, b) => b.total - a.total || a.fullName.localeCompare(b.fullName));
 
     return rows;
-  }, [activeRankingPosition, applicants, completedEvaluationIds, activeRankingCard, jobs, savedScoredApplicantIds]);
+  }, [activeRankingPosition, applicants, completedEvaluationIds, activeRankingCard, jobs, savedScoredApplicantIds, newlyHiredRows]);
 
   useEffect(() => {
     const syncSavedScores = () => setSavedScoredApplicantIds(getSavedScoredApplicantIdSet());
@@ -1779,22 +1807,6 @@ export const RSPDashboard = () => {
     }
   }, [activeAssessmentPosition, assessmentPositionCards]);
 
-  // Loaded from Supabase newly_hired table; refreshed when saveNewlyHired
-  // dispatches 'cictrix:newly-hired-updated'.
-  const [newlyHiredRows, setNewlyHiredRows] = useState<NewlyHired[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    const refresh = async () => {
-      const rows = await getNewlyHiredFromSupabase();
-      if (!cancelled) setNewlyHiredRows(rows);
-    };
-    void refresh();
-    window.addEventListener('cictrix:newly-hired-updated', refresh as EventListener);
-    return () => {
-      cancelled = true;
-      window.removeEventListener('cictrix:newly-hired-updated', refresh as EventListener);
-    };
-  }, [section]);
 
   const newlyHiredApplicants = useMemo(() => {
     const applicantsById = new Map(applicants.map((applicant) => [String(applicant.id), applicant] as const));
