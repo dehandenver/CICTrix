@@ -8,7 +8,7 @@ import { QualifiedApplicantsPage } from './components/QualifiedApplicantsPage';
 import { QualifiedApplicantsRSPPage } from './components/QualifiedApplicantsRSPPage';
 import { RaterManagementPage } from './components/RaterManagementPage';
 import SuccessionReadinessEngine from './components/SuccessionReadinessEngine';
-import { findEmployeePortalAccount } from './lib/employeePortalData';
+import { findEmployeePortalAccount, findEmployeePortalAccountFromSupabase } from './lib/employeePortalData';
 import { fetchPortalEmployeeByNumber } from './lib/api/employeePortal';
 import { supabase } from './lib/supabase';
 import { syncThemeWithRoute } from './lib/theme';
@@ -354,15 +354,23 @@ function AppContent() {
   };
 
   const handleEmployeeLogin = async (username: string, password: string) => {
-    // ── Step 1: Verify credentials via localStorage portal accounts ──────────
-    const account = findEmployeePortalAccount(username.trim(), password);
-    if (!account) {
+    const trimmedUsername = username.trim();
+
+    // Step 1: Verify credentials. Try Supabase first (employee_portal_accounts
+    // — the durable source written by RSP) so credentials work across
+    // browsers; fall back to localStorage for environments where the
+    // migration hasn't run yet.
+    let portalAccount = await findEmployeePortalAccountFromSupabase(trimmedUsername, password);
+    if (!portalAccount) {
+      portalAccount = findEmployeePortalAccount(trimmedUsername, password);
+    }
+    if (!portalAccount) {
       throw new Error('Invalid username or password.');
     }
 
-    const employeeNumber = account.employee.employeeId; // e.g. 'EMP-2024-001'
+    const employeeNumber = portalAccount.employee.employeeId;
 
-    // ── Step 2: Fetch the live Supabase row for this employee ─────────────────
+    // Step 2: Fetch the live Supabase employees row for richer profile data.
     const dbResult = await fetchPortalEmployeeByNumber(employeeNumber);
 
     let resolvedEmployee: Employee;
@@ -372,35 +380,32 @@ function AppContent() {
       resolvedEmployee = dbResult.data;
       supabaseId = resolvedEmployee.supabaseId;
     } else {
-      // No matching DB row (demo account or newly onboarded employee).
-      // Fall back to the data stored in the localStorage portal account.
-      console.warn('[App] No Supabase row found for', employeeNumber, '— using localStorage data.');
+      // Demo or newly-onboarded employee — no employees row yet.
+      console.warn('[App] No Supabase employees row found for', employeeNumber, '— using portal account data.');
       resolvedEmployee = {
-        ...account.employee,
-        // Ensure required non-optional fields have safe defaults.
-        dateOfBirth: account.employee.dateOfBirth ?? '',
-        age: account.employee.age ?? 0,
-        gender: account.employee.gender ?? 'Prefer not to say',
-        civilStatus: account.employee.civilStatus ?? 'Single',
-        nationality: account.employee.nationality ?? 'Filipino',
-        mobileNumber: account.employee.mobileNumber ?? '',
-        homeAddress: account.employee.homeAddress ?? '',
-        emergencyContactName: account.employee.emergencyContactName ?? '',
-        emergencyRelationship: account.employee.emergencyRelationship ?? '',
-        emergencyContactNumber: account.employee.emergencyContactNumber ?? '',
-        sssNumber: account.employee.sssNumber ?? '',
-        philhealthNumber: account.employee.philhealthNumber ?? '',
-        pagibigNumber: account.employee.pagibigNumber ?? '',
-        tinNumber: account.employee.tinNumber ?? '',
+        ...portalAccount.employee,
+        dateOfBirth: portalAccount.employee.dateOfBirth ?? '',
+        age: portalAccount.employee.age ?? 0,
+        gender: portalAccount.employee.gender ?? 'Prefer not to say',
+        civilStatus: portalAccount.employee.civilStatus ?? 'Single',
+        nationality: portalAccount.employee.nationality ?? 'Filipino',
+        mobileNumber: portalAccount.employee.mobileNumber ?? '',
+        homeAddress: portalAccount.employee.homeAddress ?? '',
+        emergencyContactName: portalAccount.employee.emergencyContactName ?? '',
+        emergencyRelationship: portalAccount.employee.emergencyRelationship ?? '',
+        emergencyContactNumber: portalAccount.employee.emergencyContactNumber ?? '',
+        sssNumber: portalAccount.employee.sssNumber ?? '',
+        philhealthNumber: portalAccount.employee.philhealthNumber ?? '',
+        pagibigNumber: portalAccount.employee.pagibigNumber ?? '',
+        tinNumber: portalAccount.employee.tinNumber ?? '',
       };
     }
 
-    // ── Step 3: Persist session (now includes supabaseId) ──────────────────────
     const session: EmployeeSession = {
       employeeId: resolvedEmployee.employeeId,
       email: resolvedEmployee.email,
       fullName: resolvedEmployee.fullName,
-      loginUsername: username.trim(),
+      loginUsername: trimmedUsername,
       supabaseId,
     };
 

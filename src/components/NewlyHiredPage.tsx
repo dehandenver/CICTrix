@@ -68,10 +68,17 @@ export const NewlyHiredPage = () => {
         for (const row of (newlyHiredResult.data || []) as any[]) {
           const applicantKey = String(row?.applicant_id ?? '').trim();
           if (!applicantKey) continue;
+          // RSP-confirm-hire writes id=`hire-{appId}-{ts}`; the credential-save
+          // path writes id=`hire-{appId}` — so a single applicant can have two
+          // newly_hired rows. Don't overwrite a row that already carries an
+          // employee_id with one that doesn't, otherwise the Generate button
+          // unlocks after a reload.
+          const existing = persistedByApplicantId.get(applicantKey);
+          if (existing?.employee_id && !row?.employee_id) continue;
           persistedByApplicantId.set(applicantKey, {
-            employee_id: row?.employee_id ?? undefined,
-            status: row?.status ?? undefined,
-            onboarding_progress: row?.onboarding_progress ?? undefined,
+            employee_id: row?.employee_id ?? existing?.employee_id ?? undefined,
+            status: row?.status ?? existing?.status ?? undefined,
+            onboarding_progress: row?.onboarding_progress ?? existing?.onboarding_progress ?? undefined,
           });
         }
 
