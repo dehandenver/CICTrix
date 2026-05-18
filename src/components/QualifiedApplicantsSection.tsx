@@ -182,21 +182,29 @@ const calcOverall = (scores: ApplicantCategoryScores): { value: number | null; p
   return { value: val, pct: ((val / MAX_TOTAL) * 100).toFixed(1) };
 };
 
+// Effective score for a category: the value the user can see on its badge.
+// Falls back from finalScore → initialScore → 0 so interviewer-owned
+// categories (PCPT, Written Exam) still contribute to the total even though
+// RSP never sets a finalScore for them — they come in as initialScore via the
+// interviewer's saved evaluation snapshot.
+const eff = (cat: { finalScore: number | null; initialScore: number }): number =>
+  cat.finalScore ?? cat.initialScore ?? 0;
+
 const calcModalScore = (
   scores: ApplicantCategoryScores,
   apptType: AppointmentType,
 ): number => {
   if (apptType === 'promotional') {
-    return (scores.education.finalScore   ?? 0) +
-           (scores.experience.finalScore  ?? 0) +
-           (scores.performance.finalScore ?? 0) +
-           (scores.potential.finalScore   ?? 0) +
-           (scores.pcpt.finalScore        ?? 0);
+    return eff(scores.education) +
+           eff(scores.experience) +
+           eff(scores.performance) +
+           eff(scores.potential) +
+           eff(scores.pcpt);
   }
-  return (scores.education.finalScore  ?? 0) +
-         (scores.experience.finalScore ?? 0) +
-         (scores.writtenExam.finalScore ?? 0) * 0.30 +
-         (scores.pcpt.finalScore       ?? 0);
+  return eff(scores.education) +
+         eff(scores.experience) +
+         eff(scores.writtenExam) * 0.30 +
+         eff(scores.pcpt);
 };
 
 const pcptRawToConvertedScore = (raw: number) => {
