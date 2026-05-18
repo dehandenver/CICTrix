@@ -2827,14 +2827,31 @@ export const RSPDashboard = () => {
       saveNewlyHired([...existing, ...toAdd]);
     }
 
-    // Persist the status flip and employee creation to the backend
+    // Persist the status flip. Try the FastAPI backend first (which also
+    // creates the employee row); fall back to a direct Supabase UPDATE when
+    // it's unreachable (e.g. on Vercel where no Python backend runs). The
+    // Newly Hired page filters applicants by status === 'hired', so this
+    // flip is what makes the hire show up there.
     const persistOne = async (id: string): Promise<boolean> => {
       try {
         await hireApplicant(id);
         return true;
-      } catch (err) {
-        console.error('[RSPDashboard] hire backend API threw', id, err);
-        return false;
+      } catch (backendErr) {
+        console.warn('[RSPDashboard] hire backend unavailable, falling back to direct Supabase update', backendErr);
+        try {
+          const { error } = await (supabase as any)
+            .from('applicants')
+            .update({ status: 'Hired' })
+            .eq('id', id);
+          if (error) {
+            console.error('[RSPDashboard] Supabase status update failed', id, error);
+            return false;
+          }
+          return true;
+        } catch (err) {
+          console.error('[RSPDashboard] Supabase status update threw', id, err);
+          return false;
+        }
       }
     };
 
@@ -2842,7 +2859,7 @@ export const RSPDashboard = () => {
     const allPersisted = persistResults.every(Boolean);
     if (!allPersisted) {
       console.warn(
-        '[RSPDashboard] not all hire status updates persisted to DB — local Newly Hired entries were saved regardless.',
+        '[RSPDashboard] not all hire status updates persisted — Newly Hired may be incomplete until the next refresh.',
       );
     }
 
