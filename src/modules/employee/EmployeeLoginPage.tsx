@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 interface EmployeeLoginPageProps {
-  onLogin: (username: string, password: string) => void;
+  onLogin: (username: string, password: string) => Promise<void> | void;
   isLoading?: boolean;
 }
 
@@ -35,33 +35,16 @@ export const EmployeeLoginPage: React.FC<EmployeeLoginPageProps> = ({
     setLoading(true);
     try {
       // Call parent onLogin to set session
-      onLogin(username, password);
+      await onLogin(username, password);
       
-      // Give the parent component time to update state
-      // Then check if we have a valid session by attempting to navigate
-      setTimeout(() => {
-        const session = localStorage.getItem('cictrix_employee_session');
-        if (session) {
-          try {
-            const parsedSession = JSON.parse(session);
-            if (parsedSession?.employeeId) {
-              navigate('/employee/dashboard');
-            } else {
-              setError('Invalid credentials. Please try again.');
-              setLoading(false);
-            }
-          } catch {
-            setError('An error occurred. Please try again.');
-            setLoading(false);
-          }
-        } else {
-          setError('Invalid credentials. Please use employee01 / hr2024 for demo.');
-          setLoading(false);
-        }
-      }, 100);
-    } catch (err) {
+      // If we got here but App.tsx didn't navigate, we can still fallback gracefully
+      const session = localStorage.getItem('cictrix_employee_session');
+      if (!session) {
+        setLoading(false);
+      }
+    } catch (err: any) {
       console.error('Login error:', err);
-      setError('An unexpected error occurred. Please try again.');
+      setError(err.message || 'Invalid credentials. Please use employee01 / hr2024 for demo.');
       setLoading(false);
     }
   };

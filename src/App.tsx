@@ -329,33 +329,46 @@ function AppContent() {
   };
 
   const handleEmployeeLogin = async (username: string, password: string) => {
-    // Basic fallback login simulating database check via API or Supabase
+    // Demo fallback logic
+    if (username === 'employee01' && password === 'hr2024') {
+      const session: EmployeeSession = {
+        employeeId: 'EMP-001',
+        email: 'demo@employee.com',
+        fullName: 'Demo Employee',
+        loginUsername: 'employee01',
+      };
+      setEmployeeSession(session);
+      localStorage.setItem(EMPLOYEE_SESSION_KEY, JSON.stringify(session));
+      navigate('/employee/dashboard');
+      return;
+    }
+
+    // Database check via Supabase
     try {
       const { data, error } = await supabase
         .from('employees')
         .select('*')
-        .eq('employee_id', username)
+        .eq('employee_number', username)
         .single();
         
       if (error || !data) {
-        alert('Account not found');
-        return;
+        throw new Error('Account not found. Please check your credentials.');
       }
       
       const empData = data as any;
       const session: EmployeeSession = {
-        employeeId: empData.employee_id,
+        employeeId: empData.employee_number,
         email: empData.email,
-        fullName: empData.full_name,
-        loginUsername: empData.employee_id,
+        fullName: `${empData.first_name || ''} ${empData.last_name || ''}`.trim(),
+        loginUsername: empData.employee_number,
       };
 
       setEmployeeSession(session);
       localStorage.setItem(EMPLOYEE_SESSION_KEY, JSON.stringify(session));
       navigate('/employee/dashboard');
-    } catch (err) {
+    } catch (err: any) {
       console.error("Login failed:", err);
-      alert('Login failed. Please check credentials.');
+      throw new Error(err.message || 'Login failed. Please check credentials.');
     }
   };
 
