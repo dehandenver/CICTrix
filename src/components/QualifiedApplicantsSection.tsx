@@ -438,11 +438,14 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
   const previouslySaved = savedScores[applicant.id];
   const previouslySavedApptType: AppointmentType =
     previouslySaved?.appointmentType ?? (isCurrentEmployee ? 'promotional' : 'original');
-  // All four RSP-owned categories are required for both appointment types.
-  // Previously 'original' only required education + experience, which let
-  // applicants be Finalized with Performance and Potential still blank.
-  const requiredRspKeysForApptType = (_t: AppointmentType): CatKey[] =>
-    ['education', 'experience', 'performance', 'potential'];
+  // Promotional applicants (existing employees applying for a higher role)
+  // get evaluated on Performance + Potential in addition to Education +
+  // Experience. Original applicants (new external hires) only need
+  // Education + Experience — they have no past LGU performance record.
+  const requiredRspKeysForApptType = (t: AppointmentType): CatKey[] =>
+    t === 'promotional'
+      ? ['education', 'experience', 'performance', 'potential']
+      : ['education', 'experience'];
   const isFullySaved = (saved: ApplicantCategoryScores | undefined, t: AppointmentType): boolean => {
     if (!saved) return false;
     return requiredRspKeysForApptType(t).every((k) => {
@@ -1156,9 +1159,17 @@ const ApplicantsListView = ({ folder, completedEvaluationIds, savedCatScores, on
                   </button>
                 </div>
               </div>
-              {/* Score badges */}
+              {/* Score badges — show only the categories that actually count
+                  toward this applicant's total. Promotional applicants
+                  (existing employees) are scored on Performance + Potential,
+                  while original applicants (new external hires) are scored on
+                  Written Exam instead. Mirrors calcModalScore. */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem', marginBottom: '0.85rem' }}>
-                {SCORE_BADGES.map(b => {
+                {SCORE_BADGES.filter(b =>
+                  apptType === 'promotional'
+                    ? b.key !== 'writtenExam'
+                    : b.key !== 'performance' && b.key !== 'potential',
+                ).map(b => {
                   const meta = CAT_META[b.key];
                   const val  = cs[b.key].finalScore ?? cs[b.key].initialScore;
                   return (
