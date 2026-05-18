@@ -438,10 +438,11 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
   const previouslySaved = savedScores[applicant.id];
   const previouslySavedApptType: AppointmentType =
     previouslySaved?.appointmentType ?? (isCurrentEmployee ? 'promotional' : 'original');
-  const requiredRspKeysForApptType = (t: AppointmentType): CatKey[] =>
-    t === 'promotional'
-      ? ['education', 'experience', 'performance', 'potential']
-      : ['education', 'experience'];
+  // All four RSP-owned categories are required for both appointment types.
+  // Previously 'original' only required education + experience, which let
+  // applicants be Finalized with Performance and Potential still blank.
+  const requiredRspKeysForApptType = (_t: AppointmentType): CatKey[] =>
+    ['education', 'experience', 'performance', 'potential'];
   const isFullySaved = (saved: ApplicantCategoryScores | undefined, t: AppointmentType): boolean => {
     if (!saved) return false;
     return requiredRspKeysForApptType(t).every((k) => {
