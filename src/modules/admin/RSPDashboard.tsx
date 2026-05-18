@@ -463,8 +463,6 @@ const verifyRaterAccessState = async (client: any, email: string, expectedIsActi
   }
 };
 
-const RATER_ASSIGNMENTS_KEY = 'cictrix_rater_assigned_positions';
-
 const normalizeEmailKey = (email: string) => email.trim().toLowerCase();
 
 const deriveEvaluationTotalScore = (row: any): number => {
@@ -688,24 +686,8 @@ const normalizeWrittenScore = (value: number): number => {
   return Number((value * 0.3).toFixed(2));
 };
 
-const loadRaterAssignments = (): Record<string, string[]> => {
-  try {
-    const raw = localStorage.getItem(RATER_ASSIGNMENTS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return {};
-    return parsed as Record<string, string[]>;
-  } catch {
-    return {};
-  }
-};
-
-const saveRaterAssignments = (assignments: Record<string, string[]>) => {
-  try {
-    localStorage.setItem(RATER_ASSIGNMENTS_KEY, JSON.stringify(assignments));
-  } catch {
-  }
-};
+// Rater assigned_positions live exclusively in Supabase (raters.assigned_positions).
+// No local cache — every read goes through the DB.
 
 export const RSPDashboard = () => {
   const navigate = useNavigate();
@@ -977,8 +959,10 @@ export const RSPDashboard = () => {
       ensureRecruitmentSeedData();
       setDeletedJobReports(getDeletedJobReports());
 
-      const localAssignments = loadRaterAssignments();
-      setRaterAssignedPositionsByEmail(localAssignments);
+      // Assignments load from Supabase below (raters.assigned_positions).
+      // No localStorage seed — start empty so a stale browser cache can't
+      // leak into the UI before the DB fetch resolves.
+      setRaterAssignedPositionsByEmail({});
 
       // CRITICAL: Always fetch applicants from Supabase (as per user requirement: "all datas must be stored in supabase")
       const primaryClient = supabase; // Always use Supabase for applicants
@@ -1171,25 +1155,18 @@ export const RSPDashboard = () => {
 
       if (ratersRes.status === 'fulfilled' && !ratersRes.value.error && Array.isArray(ratersRes.value.data)) {
         const ratersSource = primaryRaters.length > 0 ? primaryRaters : ratersRes.value.data;
-        const mergedAssignments = { ...localAssignments };
+        const assignmentsFromDb: Record<string, string[]> = {};
 
         ratersSource.forEach((item: any) => {
           const emailKey = normalizeEmailKey(String(item?.email ?? ''));
           if (!emailKey) return;
 
-          // Supabase is the source of truth for assigned_positions. Trust the
-          // DB row even when it returns an empty array — that means an admin
-          // cleared all assignments on another browser and we should reflect
-          // it here, not keep showing stale localStorage entries.
-          if (Array.isArray(item?.assigned_positions)) {
-            mergedAssignments[emailKey] = item.assigned_positions.filter(
-              (value: any) => typeof value === 'string',
-            );
-          }
+          assignmentsFromDb[emailKey] = Array.isArray(item?.assigned_positions)
+            ? item.assigned_positions.filter((value: any) => typeof value === 'string')
+            : [];
         });
 
-        setRaterAssignedPositionsByEmail(mergedAssignments);
-        saveRaterAssignments(mergedAssignments);
+        setRaterAssignedPositionsByEmail(assignmentsFromDb);
 
         const normalized = ratersSource.map((item: any, index: number) => ({
           id: Number(item?.id ?? index + 1),
@@ -2413,12 +2390,13 @@ export const RSPDashboard = () => {
     if (!newRater.name || !newRater.email || !newRater.department) return;
 
     const assignmentKey = normalizeEmailKey(newRater.email);
-    const nextAssignments = {
-      ...raterAssignedPositionsByEmail,
-      [assignmentKey]: [...raterAccessForm.assignedPositions],
-    };
-    setRaterAssignedPositionsByEmail(nextAssignments);
-    saveRaterAssignments(nextAssignments);
+    const nextPositions = [...raterAccessForm.assignedPositions];
+
+    // Optimistic UI update — actual persistence happens via Supabase below.
+    setRaterAssignedPositionsByEmail((prev) => ({
+      ...prev,
+      [assignmentKey]: nextPositions,
+    }));
 
     setRaters((prev) => prev.map((rater) =>
       normalizeEmailKey(rater.email) === assignmentKey
@@ -2428,14 +2406,11 @@ export const RSPDashboard = () => {
 
     try {
       const client = getAccessClient();
-      // Persist assigned_positions to Supabase so assignments survive across
-      // browsers / Vercel sessions. Previously this only wrote to localStorage,
-      // so assignments were invisible anywhere except the originating browser.
       await runRaterEmailUpdate(
         client,
         {
           is_active: true,
-          assigned_positions: [...raterAccessForm.assignedPositions],
+          assigned_positions: nextPositions,
         },
         newRater.email,
       );
@@ -2516,10 +2491,11 @@ export const RSPDashboard = () => {
 
     if (target?.email) {
       const assignmentKey = normalizeEmailKey(target.email);
-      const nextAssignments = { ...raterAssignedPositionsByEmail };
-      delete nextAssignments[assignmentKey];
-      setRaterAssignedPositionsByEmail(nextAssignments);
-      saveRaterAssignments(nextAssignments);
+      setRaterAssignedPositionsByEmail((prev) => {
+        const next = { ...prev };
+        delete next[assignmentKey];
+        return next;
+      });
     }
 
     try {
