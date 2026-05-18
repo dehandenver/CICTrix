@@ -49,28 +49,29 @@ import { Dialog } from '../../components/Dialog';
 import { Input } from '../../components/Input';
 import { LogoutConfirmPopover } from '../../components/LogoutConfirmPopover';
 import { Sidebar } from '../../components/Sidebar';
-import { supabase } from '../../lib/supabase';
-import { getAllEmployees, type Employee } from '../../lib/api/employees';
 import {
-  getEvaluationsWithEmployee,
-  getEvaluationStatusCounts,
-  getPerformanceDistribution,
-  bucketForScore,
-  type PerformanceEvaluation,
-  type EvaluationStatus,
-  type DistributionBucket,
-} from '../../lib/api/performanceEvaluations';
+  computeSkillGapByDepartment,
+  getEmployeeCompetencies,
+} from '../../lib/api/competencies';
 import {
   getDocumentRequests,
-  summarizeRequests,
   groupRequestsByDepartment,
+  summarizeRequests,
   type DocumentRequest,
 } from '../../lib/api/documentRequests';
+import { getAllEmployees, type Employee } from '../../lib/api/employees';
 import {
-  getEmployeeCompetencies,
-  computeSkillGapByDepartment,
-} from '../../lib/api/competencies';
+  bucketForScore,
+  getEvaluationStatusCounts,
+  getEvaluationsWithEmployee,
+  getPerformanceDistribution,
+  type DistributionBucket,
+  type EvaluationStatus,
+  type PerformanceEvaluation,
+} from '../../lib/api/performanceEvaluations';
+import { supabase } from '../../lib/supabase';
 import '../../styles/admin.css';
+import EmployeeDirectory from './EmployeeDirectory';
 import { SummaryOfRatings } from './pm/SummaryOfRatings';
 
 type EvaluationEmployeeRow = { name: string; position: string; status: string };
@@ -114,7 +115,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<
-    'dashboard' | 'evaluation-status' | 'performance-reviews' | 'goals' | 'ipcr' | 'analytics' | 'reports' | 'settings'
+    'dashboard' | 'employees' | 'evaluation-status' | 'performance-reviews' | 'goals' | 'ipcr' | 'analytics' | 'reports' | 'settings'
   >('dashboard');
   const [newCycle, setNewCycle] = useState<{
     title: string;
@@ -587,6 +588,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   if (isDashboardView) {
     const sideNavItems = [
       { key: 'dashboard', label: 'Dashboard', subtitle: '', icon: LayoutDashboard },
+      { key: 'employees', label: 'Employees', subtitle: 'Employee Directory', icon: Users },
       { key: 'evaluation-status', label: 'Employee Evaluation Status', subtitle: 'Track progress', icon: ClipboardList },
       { key: 'performance-reviews', label: 'Performance Reviews', subtitle: 'Upcoming reviews', icon: CalendarCheck2 },
       { key: 'goals', label: 'DPCR', subtitle: 'Individual performance', icon: FileCheck2 },
@@ -939,6 +941,12 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   </section>
                 </div>
               </>
+            )}
+
+            {activeSection === 'employees' && (
+              <div className="relative">
+                <EmployeeDirectory />
+              </div>
             )}
 
             {activeSection === 'evaluation-status' && (
@@ -1807,7 +1815,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
               </>
             )}
 
-            {!['dashboard', 'evaluation-status', 'performance-reviews', 'goals', 'ipcr', 'analytics', 'reports', 'settings'].includes(activeSection) && (
+            {!['dashboard', 'employees', 'evaluation-status', 'performance-reviews', 'goals', 'ipcr', 'analytics', 'reports', 'settings'].includes(activeSection) && (
               <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
                 <h2 className="text-2xl font-bold text-slate-900 capitalize">{activeSection.replace('-', ' ')}</h2>
                 <p className="mt-2 text-slate-600">Section scaffold is ready. Share the next screenshots and I'll match this page exactly.</p>
