@@ -1177,12 +1177,14 @@ export const RSPDashboard = () => {
           const emailKey = normalizeEmailKey(String(item?.email ?? ''));
           if (!emailKey) return;
 
-          const fromRow = Array.isArray(item?.assigned_positions)
-            ? item.assigned_positions.filter((value: any) => typeof value === 'string')
-            : null;
-
-          if (fromRow && fromRow.length > 0) {
-            mergedAssignments[emailKey] = fromRow;
+          // Supabase is the source of truth for assigned_positions. Trust the
+          // DB row even when it returns an empty array — that means an admin
+          // cleared all assignments on another browser and we should reflect
+          // it here, not keep showing stale localStorage entries.
+          if (Array.isArray(item?.assigned_positions)) {
+            mergedAssignments[emailKey] = item.assigned_positions.filter(
+              (value: any) => typeof value === 'string',
+            );
           }
         });
 
@@ -2426,9 +2428,20 @@ export const RSPDashboard = () => {
 
     try {
       const client = getAccessClient();
-      await runRaterEmailUpdate(client, { is_active: true }, newRater.email);
+      // Persist assigned_positions to Supabase so assignments survive across
+      // browsers / Vercel sessions. Previously this only wrote to localStorage,
+      // so assignments were invisible anywhere except the originating browser.
+      await runRaterEmailUpdate(
+        client,
+        {
+          is_active: true,
+          assigned_positions: [...raterAccessForm.assignedPositions],
+        },
+        newRater.email,
+      );
       saveRaterAccessState(newRater.email, true);
-    } catch {
+    } catch (err) {
+      console.warn('[RSPDashboard] Failed to persist rater assigned_positions:', err);
     }
 
     setShowRaterDialog(false);
