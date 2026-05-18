@@ -12,7 +12,6 @@ const APPLICANTS_KEY = 'cictrix_qualified_applicants';
 const DELETED_JOB_REPORTS_KEY = 'cictrix_deleted_job_reports';
 const RATER_ASSIGNMENTS_KEY = 'cictrix_rater_assignments_v2';
 const EVALUATION_PERIODS_KEY = 'cictrix_evaluation_periods';
-const EMPLOYEE_DB_KEY = 'cictrix_employee_records';
 const LEGACY_PORTAL_APPLICANTS_KEY = 'cictrix_applicants';
 const LEGACY_PORTAL_ATTACHMENTS_KEY = 'cictrix_attachments';
 const BACKFILL_EXCLUDED_APPLICANT_IDS_KEY = 'cictrix_backfill_excluded_applicant_ids';
@@ -263,9 +262,8 @@ export const ensureRecruitmentSeedData = () => {
   const currentVersion = localStorage.getItem(RECRUITMENT_DATA_VERSION_KEY);
   if (currentVersion !== RECRUITMENT_DATA_VERSION) {
     localStorage.setItem(APPLICANTS_KEY, JSON.stringify([]));
-    // newly_hired no longer seeded — Supabase is the only store now.
+    // newly_hired and employees no longer seeded — Supabase is the only store.
     localStorage.setItem(RATER_ASSIGNMENTS_KEY, JSON.stringify([]));
-    localStorage.setItem(EMPLOYEE_DB_KEY, JSON.stringify([]));
     localStorage.setItem(RECRUITMENT_DATA_VERSION_KEY, RECRUITMENT_DATA_VERSION);
   }
 
@@ -273,10 +271,9 @@ export const ensureRecruitmentSeedData = () => {
   if (!hasSeed) {
     const seed = buildInitialData();
     localStorage.setItem(APPLICANTS_KEY, JSON.stringify(seed.applicants));
-    // newly_hired seed dropped — that data only loads from Supabase now.
+    // newly_hired and employees seed dropped — those load from Supabase now.
     localStorage.setItem(RATER_ASSIGNMENTS_KEY, JSON.stringify(seed.assignments));
     localStorage.setItem(EVALUATION_PERIODS_KEY, JSON.stringify(seed.periods));
-    localStorage.setItem(EMPLOYEE_DB_KEY, JSON.stringify(seed.employees));
   }
 
   backfillPortalApplicantsToRecruitment();
@@ -697,12 +694,38 @@ export const getEvaluationPeriods = () =>
 export const saveEvaluationPeriods = (rows: EvaluationPeriod[]) =>
   localStorage.setItem(EVALUATION_PERIODS_KEY, JSON.stringify(rows));
 
-export const getEmployeeRecords = () =>
-  safeJsonParse<EmployeeRecord[]>(localStorage.getItem(EMPLOYEE_DB_KEY), []);
-export const saveEmployeeRecords = (rows: EmployeeRecord[]) => {
-  // Employee records are now stored only in Supabase database
-  // Do not save to localStorage to avoid quota exceeded errors
-  // Broadcasting is handled via window events if needed
+// Deprecated: employee records live in Supabase only. Returns [].
+// Use getEmployeeRecordsFromSupabase().
+export const getEmployeeRecords = (): EmployeeRecord[] => [];
+
+export const saveEmployeeRecords = (_rows: EmployeeRecord[]) => {
+  // Persistence happens in src/lib/api/employees.ts via Supabase.
+  // No-op kept so legacy imports don't break.
+};
+
+const mapEmployeeRow = (row: any): EmployeeRecord => ({
+  id: String(row?.id ?? ''),
+  employeeId: String(row?.employee_id ?? ''),
+  name: String(row?.full_name ?? ''),
+  position: String(row?.current_position ?? ''),
+  department: String(row?.current_department ?? ''),
+  division: row?.current_division ? String(row.current_division) : undefined,
+  startDate: String(row?.hire_date ?? row?.created_at ?? ''),
+  positionHistory: Array.isArray(row?.position_history) ? row.position_history : [],
+});
+
+export const getEmployeeRecordsFromSupabase = async (): Promise<EmployeeRecord[]> => {
+  try {
+    const { data, error } = await (supabase as any).from('employees').select('*');
+    if (error) {
+      console.warn('[recruitmentData] employees fetch failed:', error);
+      return [];
+    }
+    return Array.isArray(data) ? data.map(mapEmployeeRow) : [];
+  } catch (err) {
+    console.warn('[recruitmentData] employees fetch exception:', err);
+    return [];
+  }
 };
 
 const isRomanNumeralToken = (word: string) => /^[ivxlcdm]+$/i.test(word);
@@ -784,10 +807,15 @@ export const createEmployeeNumberAllocator = async (
     console.warn('createEmployeeNumberAllocator: newly_hired fetch failed', error);
   }
 
-  // Pull from local stores so legacy data is honored.
+  // Pull employee_id values from the Supabase employees table so number
+  // allocation does not collide with existing employees.
   try {
-    for (const record of getEmployeeRecords()) addIfPresent(record.employeeId);
-  } catch { /* ignore */ }
+    const empRes = await (supabase as any).from('employees').select('employee_id');
+    for (const row of (empRes?.data ?? []) as any[]) addIfPresent(row?.employee_id);
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn('createEmployeeNumberAllocator: employees fetch failed', error);
+  }
   try {
     const raw = localStorage.getItem('cictrix_employee_portal_accounts');
     if (raw) {

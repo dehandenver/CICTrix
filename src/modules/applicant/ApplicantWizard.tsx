@@ -18,7 +18,7 @@ import {
     findEmployeePortalAccount,
     getEmployeePortalAccounts,
 } from '../../lib/employeePortalData';
-import { getEmployeeRecords, syncApplicantSubmissionToRecruitment } from '../../lib/recruitmentData';
+import { getEmployeeRecordsFromSupabase, syncApplicantSubmissionToRecruitment } from '../../lib/recruitmentData';
 import { ATTACHMENTS_BUCKET, supabase } from '../../lib/supabase';
 import '../../styles/wizard.css';
 import type { ApplicantFormData, UploadedFile, ValidationErrors } from '../../types/applicant.types';
@@ -384,7 +384,7 @@ const handleNextToReview = () => {
     setEmployeeAuthError('');
   };
 
-  const handleEmployeeAuthSubmit = (event: React.FormEvent) => {
+  const handleEmployeeAuthSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
     const enteredIdentifier = employeeNumber.trim();
@@ -412,7 +412,10 @@ const handleNextToReview = () => {
       return;
     }
 
-    const employeeRecord = getEmployeeRecords().find(
+    // Look up the employee in Supabase (source of truth) to get the most
+    // up-to-date position/department, falling back to the portal account's
+    // cached fields if no row exists yet.
+    const employeeRecord = (await getEmployeeRecordsFromSupabase()).find(
       (record) => String(record.employeeId ?? '').trim() === String(matchedAccount?.employee?.employeeId ?? '').trim()
     );
     const [firstName, ...remainingParts] = String(matchedAccount?.employee?.fullName ?? '').trim().split(/\s+/);

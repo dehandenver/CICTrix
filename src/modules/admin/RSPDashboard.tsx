@@ -47,7 +47,7 @@ import {
     ensureRecruitmentSeedData,
     getAuthoritativeJobPostings,
     getDeletedJobReports,
-    getEmployeeRecords,
+    getEmployeeRecordsFromSupabase,
     getJobPostingsFromSupabase,
     getNewlyHiredFromSupabase,
     getApplicants as getRecruitmentApplicants,
@@ -69,7 +69,7 @@ import {
 import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
 import { sendEmail } from '../../lib/email';
 import '../../styles/admin.css';
-import type { JobPosting, NewlyHired } from '../../types/recruitment.types';
+import type { EmployeeRecord, JobPosting, NewlyHired } from '../../types/recruitment.types';
 
 type JobStatus = 'Open' | 'Reviewing' | 'Closed';
 type Section = 'dashboard' | 'jobs' | 'qualified' | 'new-hired' | 'raters' | 'accounts' | 'reports' | 'settings';
@@ -1908,12 +1908,25 @@ export const RSPDashboard = () => {
     [applicants, credentialedApplicantIds, employeeNumberFromNewlyHired]
   );
 
+  // Loaded from Supabase employees table on mount. Used as the fallback
+  // source for the employee directory when no portal account is found.
+  const [supabaseEmployeeRecords, setSupabaseEmployeeRecords] = useState<EmployeeRecord[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const rows = await getEmployeeRecordsFromSupabase();
+      if (!cancelled) setSupabaseEmployeeRecords(rows);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const fallbackEmployeeDirectorySource = useMemo(() => {
-    const employeeRecords = getEmployeeRecords();
     const seenEmployeeIds = new Set<string>();
-    
-    // Add employees from recruitment records
-    const records = employeeRecords.reduce<ApplicantRecord[]>((acc, record) => {
+
+    // Add employees from the Supabase employees table.
+    const records = supabaseEmployeeRecords.reduce<ApplicantRecord[]>((acc, record) => {
         const employeeId = String(record.employeeId ?? '').trim();
         if (!employeeId) return acc;
 
@@ -1936,7 +1949,7 @@ export const RSPDashboard = () => {
         return acc;
       }, []);
 
-    // Also add any portal accounts that aren't in recruitment records
+    // Also add any portal accounts that aren't in the employees table.
     portalAccounts.forEach((account) => {
       const employeeId = String(account.employee.employeeId ?? '').trim();
       if (!employeeId || seenEmployeeIds.has(employeeId)) return;
@@ -1956,7 +1969,7 @@ export const RSPDashboard = () => {
     });
 
     return records;
-  }, [portalAccountByEmployeeId, portalAccounts]);
+  }, [portalAccountByEmployeeId, portalAccounts, supabaseEmployeeRecords]);
 
   const directoryEmployeesSource = useMemo(
     () => {

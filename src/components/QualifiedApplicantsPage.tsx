@@ -26,10 +26,7 @@ import {
     formatPHDateTime,
     getApplicants,
     getAuthoritativeJobPostings,
-    getEmployeeRecords,
-    getNewlyHired,
     saveApplicants,
-    saveEmployeeRecords,
     saveNewlyHired,
 } from '../lib/recruitmentData';
 import { sendEmail } from '../lib/email';
