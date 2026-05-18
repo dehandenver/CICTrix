@@ -13,7 +13,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   saveNewlyHired,
 } from '../lib/recruitmentData';
-import { getDepartmentIdByName } from '../lib/api/departments';
 import { supabase } from '../lib/supabase';
 import type { NewlyHired, NewlyHiredStatus } from '../types/recruitment.types';
 import { Sidebar } from './Sidebar';
@@ -195,45 +194,9 @@ export const NewlyHiredPage = () => {
       // Persist newly_hired rows (carries employee_id so re-loads stay locked).
       await saveNewlyHired(rows);
 
-      // Mirror each generated credential into the Supabase `employees` table so
-      // the employee can be located by document upload / RSP reports.
-      // Writes Schema B columns (employee_id, full_name, current_position, etc.)
-      // and uses department_id (FK from migration 006) so the trigger syncs
-      // current_department text automatically.
-      for (const credential of generatedCredentials) {
-        const row = rows.find((r) => r.id === credential.id);
-        if (!row) continue;
-
-        const departmentId = await getDepartmentIdByName(row.department);
-        if (!departmentId) {
-          throw new Error(`Unknown department "${row.department}". Add it to the departments lookup first.`);
-        }
-
-        const fullName = `${row.employeeInfo.firstName ?? ''} ${row.employeeInfo.lastName ?? ''}`.trim();
-
-        const insertResult = await (supabase as any)
-          .from('employees')
-          .upsert(
-            [
-              {
-                employee_id: credential.employeeNumber,
-                full_name: fullName,
-                email: row.employeeInfo.email || `${credential.username}.${credential.employeeNumber.toLowerCase()}@employee.local`,
-                mobile_number: row.employeeInfo.phone || null,
-                current_position: row.position,
-                department_id: departmentId,
-                hire_date: row.dateHired || new Date().toISOString().slice(0, 10),
-                status: 'Active',
-              },
-            ],
-            { onConflict: 'employee_id' },
-          );
-
-        if (insertResult.error) {
-          console.error('saveAccountDetails: employees upsert failed', insertResult.error);
-          throw new Error(insertResult.error.message || 'Failed to save employee row.');
-        }
-      }
+      // employees table insertion has been removed. 
+      // The backend endpoint `/api/employees/from-applicant/:id` is now the single source of truth 
+      // for creating the core employee record during the initial 'Hire' action.
 
       setShowCredentialsModal(false);
       clearGeneratedCache();

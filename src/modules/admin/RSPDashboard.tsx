@@ -58,6 +58,7 @@ import {
 } from '../../lib/recruitmentData';
 import { runSingleFlight, invalidateCacheKey } from '../../lib/singleFlight';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
+import { hireApplicant } from '../../lib/api/employeesApi';
 import {
     EMPLOYEE_DOCUMENTS_UPDATED_EVENT,
     downloadEmployeeDocument,
@@ -2786,38 +2787,13 @@ export const RSPDashboard = () => {
       saveNewlyHired([...existing, ...toAdd]);
     }
 
-    // Persist the status flip to the backend (relative /api → Vite proxy on :8000).
-    // If the backend is unavailable, fall back to Supabase. We verify Supabase
-    // succeeded by reading back the row(s); RLS can return error:null with 0 rows.
+    // Persist the status flip and employee creation to the backend
     const persistOne = async (id: string): Promise<boolean> => {
       try {
-        const res = await fetch(`/api/applicants/${id}/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ applicant_id: id, status: 'hired' }),
-        });
-        if (res.ok) return true;
-        console.warn('[RSPDashboard] hire backend PATCH failed', id, res.status);
-      } catch (err) {
-        console.warn('[RSPDashboard] hire backend PATCH threw', id, err);
-      }
-      try {
-        const { data: updated, error } = await (supabase as any)
-          .from('applicants')
-          .update({ status: 'Hired' })
-          .eq('id', id)
-          .select('id, status');
-        if (error) {
-          console.error('[RSPDashboard] hire supabase update error', id, error);
-          return false;
-        }
-        if (!Array.isArray(updated) || updated.length === 0) {
-          console.error('[RSPDashboard] hire supabase update returned 0 rows for', id, '— likely RLS blocking UPDATE');
-          return false;
-        }
+        await hireApplicant(id);
         return true;
       } catch (err) {
-        console.error('[RSPDashboard] hire supabase update threw', id, err);
+        console.error('[RSPDashboard] hire backend API threw', id, err);
         return false;
       }
     };

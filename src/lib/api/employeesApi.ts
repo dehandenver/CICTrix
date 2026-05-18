@@ -24,6 +24,7 @@ export type EmployeeRow = {
   pagibig_number: string | null;
   tin_number: string | null;
   current_position: string | null;
+  department_id: string | null;
   current_department: string | null;
   current_division: string | null;
   status: 'Active' | 'On Leave' | 'Resigned' | 'Terminated';
