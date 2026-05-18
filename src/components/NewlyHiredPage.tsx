@@ -11,15 +11,26 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 
 import {
+  createEmployeeNumberAllocator,
   saveNewlyHired,
 } from '../lib/recruitmentData';
 import { supabase } from '../lib/supabase';
+import { createPassword, createUniqueUsername, getEmployeePortalAccounts, upsertEmployeePortalAccount } from '../lib/employeePortalData';
 import type { NewlyHired, NewlyHiredStatus } from '../types/recruitment.types';
 import { Sidebar } from './Sidebar';
-// Fallbacks for missing types/utilities
+
 type ViewMode = 'overview' | 'department';
-type GeneratedCredential = any;
-// Dummy normalizeText if not found
+
+type GeneratedCredential = {
+  id: string;
+  fullName: string;
+  position: string;
+  rankLine: string;
+  employeeNumber: string;
+  username: string;
+  password: string;
+};
+
 const normalizeText = (v: string) => (v || '').trim().toLowerCase();
 
 
@@ -36,7 +47,7 @@ export const NewlyHiredPage = () => {
       // Hired applicants from Supabase
       const { data: applicantRows = [] } = await supabase
         .from('applicants')
-        .select('id, first_name, last_name, email, contact_number, position, office, status, created_at') as any;
+        .select('id, first_name, last_name, email, contact_number, position, office, status, created_at, ranking_rank, ranking_score') as any;
 
       // Already-saved newly_hired rows (carries persisted employee_id so credentials survive reloads)
       const newlyHiredResult = await (supabase as any)
@@ -179,9 +190,54 @@ export const NewlyHiredPage = () => {
   };
 
   const generateCredentials = async () => {
-    // Disabled. Backend '/api/employees/from-applicant/:id' creates accounts automatically
-    // during the Qualified Applicants stage. No local generation needed.
-    alert('Credentials are automatically provisioned by the backend now!');
+    if (selectedIds.length === 0) {
+      return;
+    }
+
+    const selectedRows = selectedDepartmentRows.filter((row) => selectedIds.includes(row.id) && !row.employeeId);
+    if (selectedRows.length === 0) {
+      alert('The selected employees already have credentials or cannot be processed.');
+      return;
+    }
+
+    const reservedEmployeeIds = rows.map((row) => row.employeeId).filter(Boolean) as string[];
+    const allocator = await createEmployeeNumberAllocator(reservedEmployeeIds);
+
+    const existingAccounts = getEmployeePortalAccounts();
+    const occupiedUsernames = new Set(existingAccounts.map((account) => account.username.toLowerCase()));
+
+    const credentials = selectedRows.map((row) => {
+      const firstName = row.employeeInfo.firstName || 'employee';
+      const lastName = row.employeeInfo.lastName || 'user';
+      const employeeNumber = allocator.allocate();
+      const username = createUniqueUsername(firstName, lastName, occupiedUsernames);
+      occupiedUsernames.add(username.toLowerCase());
+
+      return {
+        id: row.id,
+        fullName: `${firstName} ${lastName}`.trim(),
+        position: row.position,
+        rankLine: `Rank #${Math.max(1, Number(row.rankingRank ?? 1))} • Score: ${Number(row.rankingScore ?? 0).toFixed(2)}`,
+        employeeNumber,
+        username,
+        password: createPassword(),
+      };
+    });
+
+    setRows((currentRows) =>
+      currentRows.map((row) => {
+        const credential = credentials.find((item) => item.id === row.id);
+        if (!credential) return row;
+        return {
+          ...row,
+          employeeId: credential.employeeNumber,
+          status: 'In Onboarding',
+        };
+      })
+    );
+
+    setGeneratedCredentials(credentials);
+    setShowCredentialsModal(true);
   };
 
   const clearGeneratedCache = () => setGeneratedCredentials([]);
@@ -199,13 +255,34 @@ export const NewlyHiredPage = () => {
     setSaveError(null);
 
     try {
-      // Persist newly_hired rows (carries employee_id so re-loads stay locked).
+      for (const credential of generatedCredentials) {
+        upsertEmployeePortalAccount({
+          id: `portal-${credential.employeeNumber}`,
+          username: credential.username,
+          password: credential.password,
+          employee: {
+            employeeId: credential.employeeNumber,
+            fullName: credential.fullName,
+            email: selectedDepartmentRows.find((row) => row.id === credential.id)?.employeeInfo.email ?? '',
+            dateOfBirth: '',
+            age: 0,
+            gender: '',
+            civilStatus: '',
+            nationality: '',
+            mobileNumber: selectedDepartmentRows.find((row) => row.id === credential.id)?.employeeInfo.phone ?? '',
+            homeAddress: '',
+            emergencyContactName: '',
+            emergencyRelationship: '',
+            emergencyContactNumber: '',
+            sssNumber: '',
+            philhealthNumber: '',
+            pagibigNumber: '',
+            tinNumber: '',
+          },
+        });
+      }
+
       await saveNewlyHired(rows);
-
-      // employees table insertion has been removed. 
-      // The backend endpoint `/api/employees/from-applicant/:id` is now the single source of truth 
-      // for creating the core employee record during the initial 'Hire' action.
-
       setShowCredentialsModal(false);
       clearGeneratedCache();
     } catch (error) {
