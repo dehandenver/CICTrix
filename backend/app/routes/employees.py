@@ -149,7 +149,7 @@ async def hire_from_applicant(
             "sex": app_data.get("gender"),
             "position": position_name,
             "department": department_name,
-            "employment_status": "Permanent",
+            "employment_status": "Regular",
             "date_hired": today_str,
             "status": "Active",
             "user_account_id": None
