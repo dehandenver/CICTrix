@@ -49,7 +49,7 @@ import {
     getDeletedJobReports,
     getEmployeeRecords,
     getJobPostingsFromSupabase,
-    getNewlyHired,
+    getNewlyHiredFromSupabase,
     getApplicants as getRecruitmentApplicants,
     saveDeletedJobReports,
     saveJobPostings,
@@ -1779,7 +1779,22 @@ export const RSPDashboard = () => {
     }
   }, [activeAssessmentPosition, assessmentPositionCards]);
 
-  const newlyHiredRows = useMemo(() => getNewlyHired(), [section, applicants]);
+  // Loaded from Supabase newly_hired table; refreshed when saveNewlyHired
+  // dispatches 'cictrix:newly-hired-updated'.
+  const [newlyHiredRows, setNewlyHiredRows] = useState<NewlyHired[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      const rows = await getNewlyHiredFromSupabase();
+      if (!cancelled) setNewlyHiredRows(rows);
+    };
+    void refresh();
+    window.addEventListener('cictrix:newly-hired-updated', refresh as EventListener);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('cictrix:newly-hired-updated', refresh as EventListener);
+    };
+  }, [section]);
 
   const newlyHiredApplicants = useMemo(() => {
     const applicantsById = new Map(applicants.map((applicant) => [String(applicant.id), applicant] as const));
@@ -2702,7 +2717,9 @@ export const RSPDashboard = () => {
       ])
     );
 
-    const existing = getNewlyHired();
+    // Fetch fresh from Supabase to avoid creating duplicates if a concurrent
+    // session already added one of these applicants.
+    const existing = await getNewlyHiredFromSupabase();
     const existingApplicantIds = new Set(existing.map((item) => item.applicantId));
     const now = new Date();
     const startDate = new Date(now);
