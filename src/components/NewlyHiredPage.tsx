@@ -49,6 +49,9 @@ export const NewlyHiredPage = () => {
         .from('applicants')
         .select('id, first_name, last_name, email, contact_number, position, office, status, created_at, ranking_rank, ranking_score') as any;
 
+      console.log('[NewlyHiredPage] Raw applicant rows:', applicantRows);
+      console.log('[NewlyHiredPage] Statuses:', applicantRows?.map((r: any) => ({ id: r.id, status: r.status, normalizedStatus: normalizeText(r.status) })));
+
       // Already-saved newly_hired rows (carries persisted employee_id so credentials survive reloads)
       const newlyHiredResult = await (supabase as any)
         .from('newly_hired')
@@ -74,9 +77,15 @@ export const NewlyHiredPage = () => {
       const hiredFromDb = (applicantRows || [])
         .filter((row: any) => {
           const normalized = normalizeText(String(row?.status ?? ''));
-          if (normalized === 'hired' || normalized === 'accept') return true;
+          const matchesHired = normalized === 'hired' || normalized === 'accept';
           const applicantId = String(row?.id ?? '').trim();
-          return Boolean(applicantId && persistedByApplicantId.has(applicantId));
+          const inNewlyHired = Boolean(applicantId && persistedByApplicantId.has(applicantId));
+          
+          if (matchesHired || inNewlyHired) {
+            console.log(`[NewlyHiredPage] ✓ MATCH: ${row.id} - status="${row.status}" normalized="${normalized}" matchesHired=${matchesHired} inNewlyHired=${inNewlyHired}`);
+          }
+          
+          return matchesHired || inNewlyHired;
         })
         .map((row: any) => {
           const applicantId = String(row?.id ?? '').trim();
@@ -119,6 +128,17 @@ export const NewlyHiredPage = () => {
             ],
           } as NewlyHired;
         });
+
+      console.log('[NewlyHiredPage] ✓ Load complete:', {
+        totalApplicants: applicantRows?.length ?? 0,
+        totalHiredFromDb: hiredFromDb.length,
+        hiredApplicants: hiredFromDb.map(h => ({
+          id: h.id,
+          name: `${h.employeeInfo.firstName} ${h.employeeInfo.lastName}`.trim(),
+          department: h.department,
+          employeeId: h.employeeId
+        }))
+      });
       setRows(hiredFromDb);
     };
 
@@ -479,7 +499,7 @@ export const NewlyHiredPage = () => {
                   disabled={savingCredentials}
                   className="rounded-2xl bg-green-600 px-5 py-2.5 text-base font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
                 >
-                  <Save className="mr-2 inline h-4 w-4" /> {savingCredentials ? 'Saving…' : 'Save Account Details'}
+                  <Save className="mr-2 inline h-4 w-4" /> {savingCredentials ? 'Saving…' : 'Save Credentials'}
                 </button>
                 <button type="button" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" onClick={() => { setShowCredentialsModal(false); clearGeneratedCache(); }}>
                   <X size={20} />
