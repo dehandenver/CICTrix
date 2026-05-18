@@ -226,11 +226,6 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-header">
-        <h2>HRIS Admin</h2>
-        {activeModule && <span className="sidebar-module">{activeModule}</span>}
-      </div>
-      
       <nav className="sidebar-nav">
         {filteredMenuItems.map((item) => {
           const Icon = item.icon;

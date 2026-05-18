@@ -238,7 +238,8 @@ const StatCard = ({ label, value, icon: Icon, color, sublabel }: StatCardProps) 
   }[color];
 
   return (
-    <article className="rounded-2xl border border-gray-200 bg-white p-5 transition hover:shadow-md">
+    <article className="rounded-2xl border border-gray-200 bg-white p-5 transition hover:shadow-md overflow-hidden relative">
+      <div className="absolute top-0 left-0 right-0 h-1" style={{background: 'linear-gradient(90deg, #C8D1FF, #363EE8)'}}></div>
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm font-medium text-gray-500">{label}</p>

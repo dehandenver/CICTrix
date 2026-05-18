@@ -282,7 +282,8 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                 )}
 
                 <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+                  <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm overflow-hidden relative">
+                    <div className="absolute top-0 left-0 right-0 h-1" style={{background: 'linear-gradient(90deg, #C8D1FF, #363EE8)'}}></div>
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm text-slate-600">Evaluations in Progress</p>
@@ -293,7 +294,8 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                       </div>
                     </div>
                   </div>
-                  <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+                  <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm overflow-hidden relative">
+                    <div className="absolute top-0 left-0 right-0 h-1" style={{background: 'linear-gradient(90deg, #C8D1FF, #363EE8)'}}></div>
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm text-slate-600">Completed Evaluations</p>
@@ -304,7 +306,8 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                       </div>
                     </div>
                   </div>
-                  <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+                  <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm overflow-hidden relative">
+                    <div className="absolute top-0 left-0 right-0 h-1" style={{background: 'linear-gradient(90deg, #C8D1FF, #363EE8)'}}></div>
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-sm text-slate-600">Performance Alerts</p>
