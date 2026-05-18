@@ -5,6 +5,7 @@
 export interface Employee {
   // Profile Information
   employeeId: string;
+  supabaseId?: string;
   fullName: string;
   email: string;
 
@@ -30,8 +31,11 @@ export interface Employee {
   philhealthNumber: string;
   pagibigNumber: string;
   tinNumber: string;
+  gsisNumber?: string;
 
   // Work Information
+  employmentStatus?: 'Regular' | 'Probationary' | 'Contractual' | 'Casual';
+  dateHired?: string;
   currentPosition?: string;
   currentDepartment?: string;
   currentDivision?: string;
@@ -54,6 +58,7 @@ export interface Employee {
 
 export interface EmployeeSession {
   employeeId: string;
+  supabaseId?: string;
   email: string;
   fullName: string;
   loginUsername?: string; // For mock demo lookups (e.g., 'employee01')

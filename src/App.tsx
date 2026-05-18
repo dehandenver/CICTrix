@@ -8,8 +8,8 @@ import { QualifiedApplicantsPage } from './components/QualifiedApplicantsPage';
 import { QualifiedApplicantsRSPPage } from './components/QualifiedApplicantsRSPPage';
 import { RaterManagementPage } from './components/RaterManagementPage';
 import SuccessionReadinessEngine from './components/SuccessionReadinessEngine';
-import {
-} from './lib/employeePortalData';
+import { findEmployeePortalAccount } from './lib/employeePortalData';
+import { fetchPortalEmployeeByNumber } from './lib/api/employeePortal';
 import { supabase } from './lib/supabase';
 import { syncThemeWithRoute } from './lib/theme';
 import { LNDDashboard } from './modules/admin/LNDDashboard';
@@ -195,6 +195,8 @@ function AppContent() {
   const [adminSession, setAdminSession] = useState<{ email: string; role: Role } | null>(() => loadAdminSession());
   const [interviewerSession, setInterviewerSession] = useState<InterviewerSession | null>(() => loadInterviewerSession());
   const [employeeSession, setEmployeeSession] = useState<EmployeeSession | null>(() => loadEmployeeSession());
+  // Full Employee object passed to EmployeePage — hydrated from Supabase at login.
+  const [currentEmployee, setCurrentEmployee] = useState<Employee | null>(null);
   const [activeModule, setActiveModule] = useState<AdminModule>('dashboard');
   const [revokedInterviewerDialogOpen, setRevokedInterviewerDialogOpen] = useState(false);
 
@@ -206,15 +208,38 @@ function AppContent() {
     return 'dashboard';
   };
 
-  // Temporarily stubbed - We shouldn't need full employee resolving sync without hook in App at top level
-  const resolveEmployeeFromSession = (session: EmployeeSession | null) => {
-    if (!session) return null;
-    return {
-      employeeId: session.employeeId,
-      fullName: session.fullName,
-      email: session.email,
-    } as any;
-  };
+  // Restore currentEmployee from session on page reload (supabaseId available → re-fetch).
+  useEffect(() => {
+    const session = loadEmployeeSession();
+    if (!session) return;
+    if (session.supabaseId) {
+      // We have the UUID — full fetch happens inside EmployeePage on mount.
+      // Build a minimal stub so the routes render immediately while EmployeePage
+      // re-fetches the live data.
+      setCurrentEmployee({
+        employeeId: session.employeeId,
+        fullName: session.fullName,
+        email: session.email,
+        supabaseId: session.supabaseId,
+        // Required by the Employee type — safe defaults.
+        dateOfBirth: '',
+        age: 0,
+        gender: 'Prefer not to say',
+        civilStatus: 'Single',
+        nationality: 'Filipino',
+        mobileNumber: '',
+        homeAddress: '',
+        emergencyContactName: '',
+        emergencyRelationship: '',
+        emergencyContactNumber: '',
+        sssNumber: '',
+        philhealthNumber: '',
+        pagibigNumber: '',
+        tinNumber: '',
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (adminSession?.role !== 'super-admin' || !location.pathname.startsWith('/admin')) {
@@ -329,51 +354,65 @@ function AppContent() {
   };
 
   const handleEmployeeLogin = async (username: string, password: string) => {
-    // Demo fallback logic
-    if (username === 'employee01' && password === 'hr2024') {
-      const session: EmployeeSession = {
-        employeeId: 'EMP-001',
-        email: 'demo@employee.com',
-        fullName: 'Demo Employee',
-        loginUsername: 'employee01',
-      };
-      setEmployeeSession(session);
-      localStorage.setItem(EMPLOYEE_SESSION_KEY, JSON.stringify(session));
-      navigate('/employee/dashboard');
-      return;
+    // ── Step 1: Verify credentials via localStorage portal accounts ──────────
+    const account = findEmployeePortalAccount(username.trim(), password);
+    if (!account) {
+      throw new Error('Invalid username or password.');
     }
 
-    // Database check via Supabase
-    try {
-      const { data, error } = await supabase
-        .from('employees')
-        .select('*')
-        .eq('employee_number', username)
-        .single();
-        
-      if (error || !data) {
-        throw new Error('Account not found. Please check your credentials.');
-      }
-      
-      const empData = data as any;
-      const session: EmployeeSession = {
-        employeeId: empData.employee_number,
-        email: empData.email,
-        fullName: `${empData.first_name || ''} ${empData.last_name || ''}`.trim(),
-        loginUsername: empData.employee_number,
-      };
+    const employeeNumber = account.employee.employeeId; // e.g. 'EMP-2024-001'
 
-      setEmployeeSession(session);
-      localStorage.setItem(EMPLOYEE_SESSION_KEY, JSON.stringify(session));
-      navigate('/employee/dashboard');
-    } catch (err: any) {
-      console.error("Login failed:", err);
-      throw new Error(err.message || 'Login failed. Please check credentials.');
+    // ── Step 2: Fetch the live Supabase row for this employee ─────────────────
+    const dbResult = await fetchPortalEmployeeByNumber(employeeNumber);
+
+    let resolvedEmployee: Employee;
+    let supabaseId: string | undefined;
+
+    if (dbResult.ok) {
+      resolvedEmployee = dbResult.data;
+      supabaseId = resolvedEmployee.supabaseId;
+    } else {
+      // No matching DB row (demo account or newly onboarded employee).
+      // Fall back to the data stored in the localStorage portal account.
+      console.warn('[App] No Supabase row found for', employeeNumber, '— using localStorage data.');
+      resolvedEmployee = {
+        ...account.employee,
+        // Ensure required non-optional fields have safe defaults.
+        dateOfBirth: account.employee.dateOfBirth ?? '',
+        age: account.employee.age ?? 0,
+        gender: account.employee.gender ?? 'Prefer not to say',
+        civilStatus: account.employee.civilStatus ?? 'Single',
+        nationality: account.employee.nationality ?? 'Filipino',
+        mobileNumber: account.employee.mobileNumber ?? '',
+        homeAddress: account.employee.homeAddress ?? '',
+        emergencyContactName: account.employee.emergencyContactName ?? '',
+        emergencyRelationship: account.employee.emergencyRelationship ?? '',
+        emergencyContactNumber: account.employee.emergencyContactNumber ?? '',
+        sssNumber: account.employee.sssNumber ?? '',
+        philhealthNumber: account.employee.philhealthNumber ?? '',
+        pagibigNumber: account.employee.pagibigNumber ?? '',
+        tinNumber: account.employee.tinNumber ?? '',
+      };
     }
+
+    // ── Step 3: Persist session (now includes supabaseId) ──────────────────────
+    const session: EmployeeSession = {
+      employeeId: resolvedEmployee.employeeId,
+      email: resolvedEmployee.email,
+      fullName: resolvedEmployee.fullName,
+      loginUsername: username.trim(),
+      supabaseId,
+    };
+
+    setCurrentEmployee(resolvedEmployee);
+    setEmployeeSession(session);
+    localStorage.setItem(EMPLOYEE_SESSION_KEY, JSON.stringify(session));
+    navigate('/employee/dashboard');
   };
 
   const handleEmployeeLogout = () => {
     setEmployeeSession(null);
+    setCurrentEmployee(null);
     localStorage.removeItem(EMPLOYEE_SESSION_KEY);
     navigate('/employee/login');
   };
@@ -442,9 +481,9 @@ function AppContent() {
             path="/employee/dashboard"
             element={
               <EmployeeRoute session={employeeSession}>
-                {resolveEmployeeFromSession(employeeSession) ? (
+                {currentEmployee ? (
                   <EmployeePage
-                    currentUser={resolveEmployeeFromSession(employeeSession) as Employee}
+                    currentUser={currentEmployee}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -459,9 +498,9 @@ function AppContent() {
             path="/employee/profile"
             element={
               <EmployeeRoute session={employeeSession}>
-                {resolveEmployeeFromSession(employeeSession) ? (
+                {currentEmployee ? (
                   <EmployeePage
-                    currentUser={resolveEmployeeFromSession(employeeSession) as Employee}
+                    currentUser={currentEmployee}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -476,9 +515,9 @@ function AppContent() {
             path="/employee/documents/requirements"
             element={
               <EmployeeRoute session={employeeSession}>
-                {resolveEmployeeFromSession(employeeSession) ? (
+                {currentEmployee ? (
                   <EmployeePage
-                    currentUser={resolveEmployeeFromSession(employeeSession) as Employee}
+                    currentUser={currentEmployee}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -493,9 +532,9 @@ function AppContent() {
             path="/employee/documents/submission"
             element={
               <EmployeeRoute session={employeeSession}>
-                {resolveEmployeeFromSession(employeeSession) ? (
+                {currentEmployee ? (
                   <EmployeePage
-                    currentUser={resolveEmployeeFromSession(employeeSession) as Employee}
+                    currentUser={currentEmployee}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -510,9 +549,9 @@ function AppContent() {
             path="/employee/account"
             element={
               <EmployeeRoute session={employeeSession}>
-                {resolveEmployeeFromSession(employeeSession) ? (
+                {currentEmployee ? (
                   <EmployeePage
-                    currentUser={resolveEmployeeFromSession(employeeSession) as Employee}
+                    currentUser={currentEmployee}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (

@@ -15,7 +15,7 @@ import {
     User,
     X,
 } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
     APPLICATION_DOC_TYPES,
@@ -35,6 +35,10 @@ import {
   updateEmployeePortalEmployee,
 } from '../../lib/employeePortalData';
 import { Employee } from '../../types/employee.types';
+import {
+  fetchPortalEmployeeById,
+  patchPortalEmployee,
+} from '../../lib/api/employeePortal';
 
 interface EmployeePageProps {
   currentUser: Employee;
@@ -294,9 +298,20 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   const [governmentDraft, setGovernmentDraft] = useState<GovernmentDraft>(getGovernmentDraft(currentUser));
   const [personalDraft, setPersonalDraft] = useState<PersonalDetailsDraft>(getPersonalDetailsDraft(currentUser));
 
+  // DB-hydration state — true while the initial Supabase fetch is in-flight.
+  const [profileLoading, setProfileLoading] = useState(false);
+  // Save feedback banners for profile edits.
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  // Track whether the initial DB fetch has completed, to suppress the
+  // profileSyncVersion watcher from overwriting freshly-fetched data.
+  const dbHydrated = useRef(false);
+
   const profileSyncVersion = `${currentUser.employeeId}|${currentUser.updatedAt ?? ''}`;
 
   useEffect(() => {
+    // Suppress the sync when the DB hydration has already applied fresher data.
+    if (dbHydrated.current) return;
     setProfile(currentUser);
     setContactDraft(getContactDraft(currentUser));
     setEmergencyDraft(getEmergencyDraft(currentUser));
@@ -304,6 +319,28 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
     setPersonalDraft(getPersonalDetailsDraft(currentUser));
     setEditingSection(null);
   }, [profileSyncVersion]);
+
+  // ── DB hydration (mount-only) ──────────────────────────────────────────────
+  // Fetch the live Supabase row once on mount using the internal UUID.
+  // This overwrites any stub data that App.tsx passed via `currentUser`.
+  useEffect(() => {
+    if (!currentUser.supabaseId) return; // No DB row available (demo account)
+    setProfileLoading(true);
+    fetchPortalEmployeeById(currentUser.supabaseId).then((result) => {
+      if (result.ok) {
+        const live = result.data;
+        dbHydrated.current = true;
+        setProfile(live);
+        setContactDraft(getContactDraft(live));
+        setEmergencyDraft(getEmergencyDraft(live));
+        setGovernmentDraft(getGovernmentDraft(live));
+        setPersonalDraft(getPersonalDetailsDraft(live));
+      }
+      setProfileLoading(false);
+    });
+    // Intentionally empty deps — run only on mount, regardless of prop changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // HR-created document requests drive the Submission Bin tab.
   const hrRequests = useMemo(
@@ -391,9 +428,12 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   }, [employeeDocuments]);
 
   const refreshEmployeeDocuments = async () => {
-    if (!currentUser?.employeeId && !currentUser?.email) return;
+    // Prefer the internal Supabase UUID (resolves the UUID FK correctly).
+    // Fall back to the text employeeId for demo accounts without a DB row.
+    const idToUse = currentUser.supabaseId ?? currentUser.employeeId;
+    if (!idToUse && !currentUser?.email) return;
     const rows = await listEmployeeDocumentsForEmployee(
-      currentUser.employeeId,
+      idToUse,
       currentUser.email,
     );
     setEmployeeDocuments(rows);
@@ -477,11 +517,28 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
     dispatchEmployeeDocumentsUpdated();
   };
 
-  const persistProfilePatch = (patch: Partial<Employee>) => {
+  const persistProfilePatch = async (patch: Partial<Employee>) => {
     const nowIso = new Date().toISOString();
+    // Optimistic local update.
     const nextProfile = { ...profile, ...patch, updatedAt: nowIso };
     setProfile(nextProfile);
-    updateEmployeePortalEmployee(profile.employeeId, patch);
+    setSaveError(null);
+    setSaveSuccess(null);
+
+    if (currentUser.supabaseId) {
+      // Write to Supabase.
+      const result = await patchPortalEmployee(currentUser.supabaseId, patch);
+      if (result.ok === false) {
+        setSaveError(result.error ?? 'Failed to save changes. Please try again.');
+        // Rollback optimistic update.
+        setProfile(profile);
+        return;
+      }
+      setSaveSuccess('Changes saved successfully.');
+    } else {
+      // Fallback: demo account — persist to localStorage only.
+      updateEmployeePortalEmployee(profile.employeeId, patch);
+    }
   };
 
   const startEditing = (section: Exclude<EditableSection, null>) => {
@@ -509,7 +566,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   };
 
   const saveContactInfo = () => {
-    persistProfilePatch({
+    void persistProfilePatch({
       email: contactDraft.email.trim(),
       mobileNumber: contactDraft.mobileNumber.trim(),
       homeAddress: contactDraft.homeAddress.trim(),
@@ -518,7 +575,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   };
 
   const saveEmergencyInfo = () => {
-    persistProfilePatch({
+    void persistProfilePatch({
       emergencyContactName: emergencyDraft.emergencyContactName.trim(),
       emergencyRelationship: emergencyDraft.emergencyRelationship.trim(),
       emergencyContactNumber: emergencyDraft.emergencyContactNumber.trim(),
@@ -527,7 +584,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   };
 
   const saveGovernmentInfo = () => {
-    persistProfilePatch({
+    void persistProfilePatch({
       sssNumber: governmentDraft.sssNumber.trim(),
       philhealthNumber: governmentDraft.philhealthNumber.trim(),
       pagibigNumber: governmentDraft.pagibigNumber.trim(),
@@ -543,7 +600,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
       ? (trimmedGender as Employee['gender'])
       : 'Prefer not to say';
 
-    persistProfilePatch({
+    void persistProfilePatch({
       fullName: personalDraft.fullName.trim(),
       dateOfBirth: personalDraft.dateOfBirth.trim(),
       placeOfBirth: personalDraft.placeOfBirth.trim(),
@@ -633,6 +690,32 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
       <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
         {activeTab === 'personal' && (
           <div className="space-y-5">
+            {/* Loading skeleton */}
+            {profileLoading && (
+              <div className="rounded-xl border border-slate-200 bg-white p-5 animate-pulse">
+                <div className="h-5 w-48 rounded bg-slate-200 mb-4" />
+                <div className="space-y-3">
+                  {[1, 2, 3, 4].map((n) => (
+                    <div key={n} className="grid grid-cols-[210px_1fr] gap-3">
+                      <div className="h-4 rounded bg-slate-200" />
+                      <div className="h-8 rounded bg-slate-100" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Save feedback banners */}
+            {saveError && (
+              <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+                {saveError}
+              </p>
+            )}
+            {saveSuccess && (
+              <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">
+                {saveSuccess}
+              </p>
+            )}
             <section className="rounded-xl border border-slate-200 bg-white p-5">
               <div className="mb-4 flex items-center justify-between">
                 <div>
