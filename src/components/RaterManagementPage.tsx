@@ -286,7 +286,13 @@ export const RaterManagementPage = () => {
           // so ALL jobs vanished from the interviewer dashboard after assignment).
           const assignedPositions = uniqueStrings(
             Array.isArray(row?.assigned_positions)
-              ? row.assigned_positions.filter((value: unknown) => typeof value === 'string')
+              ? row.assigned_positions
+                  .filter((value: unknown): value is string => typeof value === 'string')
+                  .filter((value: string) => {
+                    // Strip leftover RLS test sentinels that were never real positions.
+                    const normalized = value.trim().toLowerCase();
+                    return normalized !== 'rls_test' && normalized !== 'rls test';
+                  })
               : [],
           );
 
