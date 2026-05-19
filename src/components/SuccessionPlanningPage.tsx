@@ -1,365 +1,739 @@
 import { useState } from 'react';
-import { Network, Search, Briefcase, Plus, Users, User, ArrowRight, UserCheck, AlertTriangle, AlertCircle, RefreshCw, X, ChevronRight, Check } from 'lucide-react';
+import {
+  Briefcase,
+  Plus,
+  Users,
+  AlertTriangle,
+  CalendarClock,
+  Award,
+  Clock,
+  BookOpen,
+  Upload,
+  Settings,
+  FileText,
+  UserCheck,
+  CheckCircle2,
+  XCircle,
+  X,
+} from 'lucide-react';
 import { Button } from './Button';
 
-export const SuccessionPlanningPage = () => {
-  const [selectedPosition, setSelectedPosition] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'planning' | 'critical' | 'registry'>('planning');
+type TabKey = 'planning' | 'critical' | 'registry';
 
-  const mockCriticalPositions = [
-    'Chief Information Officer',
-    'HR Director',
-    'Senior Systems Analyst',
-    'Finance Manager'
+type CriticalPosition = {
+  id: string;
+  title: string;
+  department: string;
+  incumbent: string;
+  experienceYears: number;
+  trainingHours: number;
+  eligibility: string;
+  courses: string[];
+  footer: string;
+};
+
+type PositionForm = {
+  title: string;
+  department: string;
+  incumbent: string;
+  incumbentStatus: 'Active' | 'On Leave' | 'Retiring';
+  statusDetail: string;
+  yearsExperience: string;
+  trainingHours: string;
+  civilServiceEligibility: string;
+  courses: string;
+  includeInPlanning: boolean;
+};
+
+const blankPositionForm = (): PositionForm => ({
+  title: 'New Position',
+  department: 'Administration',
+  incumbent: 'Vacant',
+  incumbentStatus: 'Active',
+  statusDetail: 'Newly created',
+  yearsExperience: '3',
+  trainingHours: '40',
+  civilServiceEligibility: 'Career Service Professional (R.A. 1080)',
+  courses: 'BS Psychology\nBS Human Resource Development Management',
+  includeInPlanning: true,
+});
+
+const DEPARTMENTS = [
+  'Human Resources',
+  'Administration',
+  'Information Technology',
+  'Finance',
+  'Operations',
+];
+
+const INITIAL_POSITIONS: CriticalPosition[] = [
+  {
+    id: 'hr-officer-iv',
+    title: 'HR Officer IV',
+    department: 'Human Resources',
+    incumbent: 'Atty. Elena R. Mercado',
+    experienceYears: 3,
+    trainingHours: 80,
+    eligibility: 'Career Service Professional (R.A. 1080)',
+    courses: ['BS Psychology', 'BS Human Resource Development Management', 'AB Behavioral Science'],
+    footer: 'Retirement effective 2026-08-31',
+  },
+  {
+    id: 'municipal-administrator',
+    title: 'Municipal Administrator',
+    department: 'Administration',
+    incumbent: 'Mr. Roberto S. Lim',
+    experienceYears: 5,
+    trainingHours: 120,
+    eligibility: 'Career Service Professional (R.A. 1080)',
+    courses: ['Master in Public Administration', 'MA Local Governance', 'MS Public Management'],
+    footer: 'Currently in role',
+  },
+  {
+    id: 'it-division-chief',
+    title: 'IT Division Chief',
+    department: 'Information Technology',
+    incumbent: 'Engr. Roberto P. Aquino',
+    experienceYears: 8,
+    trainingHours: 96,
+    eligibility: 'Career Service Professional (R.A. 1080)',
+    courses: ['BS Computer Science', 'BS Information Technology', 'MS Information Systems'],
+    footer: 'Medical leave until 2026-06-15',
+  },
+  {
+    id: 'finance-director',
+    title: 'Finance Director',
+    department: 'Finance',
+    incumbent: 'Mr. Antonio V. delos Reyes',
+    experienceYears: 10,
+    trainingHours: 140,
+    eligibility: 'Career Service Professional (R.A. 1080)',
+    courses: ['BS Accountancy', 'BS Management Accounting', 'CPA'],
+    footer: 'Retirement effective 2027-01-15',
+  },
+  {
+    id: 'drrm-officer',
+    title: 'DRRM Officer',
+    department: 'Operations',
+    incumbent: 'Mr. Felipe S. Garcia',
+    experienceYears: 5,
+    trainingHours: 80,
+    eligibility: 'Career Service Professional (R.A. 1080)',
+    courses: ['BS Disaster Risk Management', 'BS Environmental Science', 'BS Geology'],
+    footer: 'Currently in role',
+  },
+  {
+    id: 'new-position-1',
+    title: 'New Position',
+    department: 'Administration',
+    incumbent: 'Vacant',
+    experienceYears: 3,
+    trainingHours: 40,
+    eligibility: 'Career Service Professional (R.A. 1080)',
+    courses: [],
+    footer: 'Newly created',
+  },
+];
+
+export const SuccessionPlanningPage = () => {
+  const [activeTab, setActiveTab] = useState<TabKey>('planning');
+  const [replacementType, setReplacementType] = useState<'permanent' | 'temporary'>('permanent');
+  const [department, setDepartment] = useState<string>('');
+  const [criticalPosition, setCriticalPosition] = useState<string>('');
+  const [positions, setPositions] = useState<CriticalPosition[]>(INITIAL_POSITIONS);
+  const [registryFilter, setRegistryFilter] = useState<'all' | 'designated' | 'promoted' | 'vacated'>('all');
+
+  const [addPositionOpen, setAddPositionOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [positionForm, setPositionForm] = useState<PositionForm>(blankPositionForm());
+
+  const positionTitlesInDept = positions
+    .filter(p => !department || p.department === department)
+    .map(p => p.title);
+
+  const openAddPosition = () => {
+    setEditingId(null);
+    setPositionForm(blankPositionForm());
+    setAddPositionOpen(true);
+  };
+
+  const openEditPosition = (id: string) => {
+    const p = positions.find(x => x.id === id);
+    if (!p) return;
+    setEditingId(id);
+    setPositionForm({
+      title: p.title,
+      department: p.department,
+      incumbent: p.incumbent,
+      incumbentStatus: 'Active',
+      statusDetail: p.footer,
+      yearsExperience: String(p.experienceYears),
+      trainingHours: String(p.trainingHours),
+      civilServiceEligibility: p.eligibility,
+      courses: p.courses.join('\n'),
+      includeInPlanning: true,
+    });
+    setAddPositionOpen(true);
+  };
+
+  const closeAddPosition = () => setAddPositionOpen(false);
+
+  const updateForm = <K extends keyof PositionForm>(key: K, value: PositionForm[K]) => {
+    setPositionForm(prev => ({ ...prev, [key]: value }));
+  };
+
+  const savePosition = () => {
+    const courses = positionForm.courses
+      .split('\n')
+      .map(c => c.trim())
+      .filter(Boolean);
+
+    const next: CriticalPosition = {
+      id: editingId ?? `pos-${Date.now()}`,
+      title: positionForm.title || 'New Position',
+      department: positionForm.department,
+      incumbent: positionForm.incumbent,
+      experienceYears: Number(positionForm.yearsExperience) || 0,
+      trainingHours: Number(positionForm.trainingHours) || 0,
+      eligibility: positionForm.civilServiceEligibility,
+      courses,
+      footer: positionForm.statusDetail,
+    };
+
+    setPositions(prev => {
+      if (editingId) return prev.map(p => (p.id === editingId ? next : p));
+      return [...prev, next];
+    });
+    setAddPositionOpen(false);
+  };
+
+  const deletePosition = () => {
+    if (!editingId) return;
+    setPositions(prev => prev.filter(p => p.id !== editingId));
+    setAddPositionOpen(false);
+  };
+
+  const tabs: { key: TabKey; label: string }[] = [
+    { key: 'planning', label: 'Succession Planning' },
+    { key: 'critical', label: 'Critical Positions' },
+    { key: 'registry', label: 'Successor Registry' },
   ];
 
   return (
     <div className="space-y-6">
-      {/* Tabs */}
-      <div className="flex border-b border-gray-200">
-        <button
-          className={`flex items-center gap-2 px-6 py-4 font-semibold text-sm transition-colors ${
-            activeTab === 'planning'
-              ? 'border-b-2 border-blue-600 text-blue-600'
-              : 'text-gray-500 hover:text-gray-700'
-          }`}
-          onClick={() => setActiveTab('planning')}
-        >
-          <Network size={18} />
-          Succession Planning
-        </button>
-        <button
-          className={`flex items-center gap-2 px-6 py-4 font-semibold text-sm transition-colors ${
-            activeTab === 'critical'
-              ? 'border-b-2 border-blue-600 text-blue-600'
-              : 'text-gray-500 hover:text-gray-700'
-          }`}
-          onClick={() => setActiveTab('critical')}
-        >
-          <AlertCircle size={18} />
-          Critical Positions
-        </button>
-        <button
-          className={`flex items-center gap-2 px-6 py-4 font-semibold text-sm transition-colors ${
-            activeTab === 'registry'
-              ? 'border-b-2 border-blue-600 text-blue-600'
-              : 'text-gray-500 hover:text-gray-700'
-          }`}
-          onClick={() => setActiveTab('registry')}
-        >
-          <Users size={18} />
-          Successor Registry
-        </button>
+      {/* Page header with right-aligned tab pills */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Succession Planning</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Dynamic competency-based system. Standards come from the Critical Position table.
+          </p>
+        </div>
+        <div className="inline-flex bg-gray-100 rounded-lg p-1 self-start">
+          {tabs.map(t => (
+            <button
+              key={t.key}
+              onClick={() => setActiveTab(t.key)}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === t.key
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {activeTab === 'planning' && (
-        <div className="space-y-6">
-          {/* Main Selectors (Permanent/Temporary, Department, Position) */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-6 gap-4">
+        <>
+          {/* Stats row */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard
+              icon={<AlertTriangle size={18} />}
+              iconBg="bg-red-50 text-red-500"
+              tag="Active standards"
+              value={positions.length}
+              label="Critical Positions"
+            />
+            <StatCard
+              icon={<CalendarClock size={18} />}
+              iconBg="bg-orange-50 text-orange-500"
+              tag="From standards"
+              value={2}
+              label="Retiring Soon"
+            />
+            <StatCard
+              icon={<Award size={18} />}
+              iconBg="bg-green-50 text-green-600"
+              tag="Score ≥ 90"
+              value={1}
+              label="Ready Now"
+            />
+            <StatCard
+              icon={<Users size={18} />}
+              iconBg="bg-blue-50 text-blue-600"
+              tag="Score ≥ 60"
+              value={4}
+              label="Successor Pool"
+            />
+          </div>
+
+          {/* Replacement selector card */}
+          <div className="rounded-xl border border-gray-200 bg-white p-6">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
               <div>
-                <h3 className="text-gray-500 font-semibold tracking-wide text-sm uppercase mb-1">Permanent Replacement</h3>
-                <p className="text-gray-400 text-sm">
-                  Cross-department • Non-negotiables: required trainings, years of experience, and civil service eligibility.
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  {replacementType === 'permanent' ? 'Permanent Replacement' : 'Temporary Replacement'}
+                </h3>
+                <p className="text-sm text-gray-500 mt-1 max-w-2xl">
+                  {replacementType === 'permanent'
+                    ? 'Cross-department · Non-negotiables: required trainings, years of experience, and civil service eligibility.'
+                    : 'Within-department · Interim coverage while the incumbent is on leave or detail.'}
                 </p>
               </div>
-              <div className="flex bg-gray-50 rounded-lg p-1 border border-gray-200 shrink-0">
-                <button className="px-4 py-1.5 bg-white text-gray-900 rounded-md shadow-sm text-sm font-medium border border-gray-200">Permanent</button>
-                <button className="px-4 py-1.5 text-gray-500 text-sm font-medium rounded-md hover:text-gray-700">Temporary</button>
+              <div className="inline-flex bg-gray-50 border border-gray-200 rounded-lg p-1 shrink-0">
+                <button
+                  onClick={() => setReplacementType('permanent')}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition ${
+                    replacementType === 'permanent'
+                      ? 'bg-white text-gray-900 shadow-sm border border-gray-200'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Permanent
+                </button>
+                <button
+                  onClick={() => setReplacementType('temporary')}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition ${
+                    replacementType === 'temporary'
+                      ? 'bg-white text-gray-900 shadow-sm border border-gray-200'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  Temporary
+                </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div>
-                <label className="flex items-center gap-2 text-sm font-semibold text-gray-500 mb-2 uppercase">
-                  <Briefcase size={16} /> Department
+                <label className="flex items-center gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  <Briefcase size={14} /> Department
                 </label>
-                <div className="relative">
-                  <select className="w-full appearance-none rounded-lg border border-gray-300 py-2.5 pl-4 pr-10 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-gray-900 bg-white">
-                    <option>Human Resources</option>
-                  </select>
-                  <ChevronRight size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 rotate-90 pointer-events-none" />
-                </div>
+                <select
+                  value={department}
+                  onChange={(e) => { setDepartment(e.target.value); setCriticalPosition(''); }}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2.5 bg-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="">Select department...</option>
+                  {DEPARTMENTS.map(d => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
               </div>
               <div>
-                <label className="flex items-center gap-2 text-sm font-semibold text-gray-500 mb-2 uppercase">
-                  <Briefcase size={16} /> Critical Position
+                <label className="flex items-center gap-2 text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  <Briefcase size={14} /> Critical Position
                 </label>
-                <div className="relative">
-                  <select 
-                    className="w-full appearance-none rounded-lg border border-gray-300 py-2.5 pl-4 pr-10 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-gray-900 bg-white"
-                    value={selectedPosition}
-                    onChange={(e) => setSelectedPosition(e.target.value)}
-                  >
-                    <option value="">Select critical position...</option>
-                    {mockCriticalPositions.map(pos => (
-                      <option key={pos} value={pos}>{pos}</option>
-                    ))}
-                  </select>
-                  <ChevronRight size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 rotate-90 pointer-events-none" />
-                </div>
+                <select
+                  value={criticalPosition}
+                  onChange={(e) => setCriticalPosition(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2.5 bg-white outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                >
+                  <option value="">Select critical position...</option>
+                  {positionTitlesInDept.map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="rounded-xl border border-gray-200 bg-white p-5">
-              <h3 className="text-gray-500 text-sm font-semibold mb-2">Total Critical Positions</h3>
-              <p className="text-3xl font-bold text-gray-900">42</p>
+          {/* Selection results */}
+          <div className="rounded-xl border border-gray-200 bg-white p-12 text-center">
+            <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gray-50 text-gray-400 mb-3">
+              <Briefcase size={22} />
             </div>
-            <div className="rounded-xl border border-gray-200 bg-white p-5">
-              <h3 className="text-gray-500 text-sm font-semibold mb-2">Positions with Successors</h3>
-              <p className="text-3xl font-bold text-gray-900">28</p>
-            </div>
-            <div className="rounded-xl border border-gray-200 bg-white p-5">
-              <h3 className="text-gray-500 text-sm font-semibold mb-2">Positions at Risk</h3>
-              <p className="text-3xl font-bold text-red-600">14</p>
-            </div>
-            <div className="rounded-xl border border-gray-200 bg-white p-5">
-              <h3 className="text-gray-500 text-sm font-semibold mb-2">Readiness Index</h3>
-              <p className="text-3xl font-bold text-green-600">67%</p>
-            </div>
-            
-            
-            {selectedPosition ? (
-              <div className="col-span-full border border-gray-200 rounded-xl bg-white p-6 my-8">
-                <div className="flex justify-between items-center mb-6">
-                   <div>
-                     <h2 className="text-xl font-bold text-gray-900">{selectedPosition}</h2>
-                     <p className="text-gray-500 text-sm">Human Resources • Critical Level: High</p>
-                   </div>
-                   <Button>View Full Succession Plan</Button>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  {/* Mock 9-Box Distribution */}
-                  <div className="border border-gray-100 rounded-lg p-5 bg-gray-50">
-                    <h3 className="font-semibold text-gray-700 mb-4">Talent Distribution (9-Box)</h3>
-                    <div className="grid grid-cols-3 gap-2 aspect-square text-xs font-semibold text-center">
-                      <div className="bg-green-100 text-green-800 rounded flex flex-col items-center justify-center p-2">
-                        <span>Stars</span>
-                        <span className="text-xl mt-1">2</span>
-                      </div>
-                      <div className="bg-green-50 text-green-700 rounded flex flex-col items-center justify-center p-2">
-                        <span>High Potential</span>
-                        <span className="text-xl mt-1">1</span>
-                      </div>
-                      <div className="bg-blue-50 text-blue-700 rounded flex flex-col items-center justify-center p-2">
-                        <span>Consistent Stars</span>
-                        <span className="text-xl mt-1">0</span>
-                      </div>
-                      
-                      <div className="bg-yellow-100 text-yellow-800 rounded flex flex-col items-center justify-center p-2">
-                        <span>Key Players</span>
-                        <span className="text-xl mt-1">3</span>
-                      </div>
-                      <div className="bg-gray-100 text-gray-700 rounded flex flex-col items-center justify-center p-2">
-                        <span>Core Employees</span>
-                        <span className="text-xl mt-1">5</span>
-                      </div>
-                      <div className="bg-yellow-50 text-yellow-700 rounded flex flex-col items-center justify-center p-2">
-                        <span>High Performers</span>
-                        <span className="text-xl mt-1">1</span>
-                      </div>
-
-                      <div className="bg-red-100 text-red-800 rounded flex flex-col items-center justify-center p-2">
-                        <span>Risk</span>
-                        <span className="text-xl mt-1">0</span>
-                      </div>
-                      <div className="bg-orange-50 text-orange-700 rounded flex flex-col items-center justify-center p-2">
-                        <span>Inconsistent</span>
-                        <span className="text-xl mt-1">2</span>
-                      </div>
-                      <div className="bg-blue-100 text-blue-800 rounded flex flex-col items-center justify-center p-2">
-                        <span>Solid Pros.</span>
-                        <span className="text-xl mt-1">4</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Mock Identified Successors */}
-                  <div>
-                    <h3 className="font-semibold text-gray-700 mb-4">Identified Successors</h3>
-                    <div className="space-y-3">
-                      <div className="p-3 border border-green-200 bg-green-50 rounded-lg flex justify-between items-center">
-                         <div className="flex items-center gap-3">
-                           <div className="h-10 w-10 bg-green-200 text-green-800 rounded-full flex items-center justify-center font-bold">AJ</div>
-                           <div>
-                             <p className="font-bold text-gray-900 leading-tight">Ashley Johnson</p>
-                             <p className="text-xs text-gray-600">Senior Recruiter • Ready Now</p>
-                           </div>
-                         </div>
-                         <div className="text-right">
-                           <p className="text-sm font-bold text-green-700">92% Match</p>
-                         </div>
-                      </div>
-                      
-                      <div className="p-3 border border-yellow-200 bg-yellow-50 rounded-lg flex justify-between items-center">
-                         <div className="flex items-center gap-3">
-                           <div className="h-10 w-10 bg-yellow-200 text-yellow-800 rounded-full flex items-center justify-center font-bold">MR</div>
-                           <div>
-                             <p className="font-bold text-gray-900 leading-tight">Michael Ross</p>
-                             <p className="text-xs text-gray-600">Compensation Specialist • 1-2 Years</p>
-                           </div>
-                         </div>
-                         <div className="text-right">
-                           <p className="text-sm font-bold text-yellow-700">78% Match</p>
-                         </div>
-                      </div>
-
-                      <div className="p-3 border border-gray-200 bg-white rounded-lg flex justify-between items-center border-dashed">
-                         <div className="flex items-center gap-3 text-gray-400">
-                           <div className="h-10 w-10 bg-gray-100 rounded-full flex items-center justify-center">
-                             <Plus size={20} />
-                           </div>
-                           <p className="font-medium text-sm">Add Successor</p>
-                         </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="col-span-full border border-gray-200 rounded-xl bg-white p-8 text-center text-gray-500 my-8">
-                Select a critical position to view succession details or go to Critical Positions to manage them.
-              </div>
-            )}
+            <p className="text-sm text-gray-500">
+              {criticalPosition
+                ? `Showing succession candidates for ${criticalPosition}.`
+                : 'Select a department and critical position to view successor candidates.'}
+            </p>
           </div>
-        </div>
+        </>
       )}
 
       {activeTab === 'critical' && (
-        <div className="space-y-6">
-          <div className="flex flex-wrap gap-4 items-center justify-between">
-            <div className="flex gap-4 flex-1 max-w-2xl">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                <input
-                  type="text"
-                  placeholder="Search positions..."
-                  className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                />
-              </div>
-              <select className="border border-gray-300 rounded-lg px-4 py-2 bg-white">
-                <option>All Departments</option>
-                <option>Information Technology</option>
-                <option>Human Resources</option>
-              </select>
-              <select className="border border-gray-300 rounded-lg px-4 py-2 bg-white">
-                <option>Status: All</option>
-                <option>At Risk</option>
-                <option>Covered</option>
-              </select>
+        <>
+          {/* Management header card */}
+          <div className="rounded-xl border border-gray-200 bg-white p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">Critical Position Management</h3>
+              <p className="text-sm text-gray-500 mt-1">
+                Define qualification standards. Only positions marked critical appear in succession planning.
+              </p>
             </div>
-            <Button className="flex items-center gap-2">
-              <Plus size={18} /> Identify Critical Position
-            </Button>
+            <div className="flex gap-2 shrink-0">
+              <Button variant="secondary" className="flex items-center gap-2">
+                <Upload size={16} /> Import Standards
+              </Button>
+              <Button onClick={openAddPosition} className="flex items-center gap-2">
+                <Plus size={16} /> Add Position
+              </Button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-             {/* Stub cards. Real cards will come next */}
-             {[1,2,3,4,5,6].map(i => (
-                <div key={i} className="border border-gray-200 rounded-xl bg-white p-5 hover:border-blue-500 transition-colors cursor-pointer">
-                  <div className="flex justify-between items-start mb-4">
-                    <span className="bg-red-100 text-red-700 text-xs font-semibold px-2 py-1 rounded-full flex items-center gap-1">
-                      <AlertTriangle size={12} /> High Risk
-                    </span>
-                    <button className="text-gray-400 hover:text-gray-600">...</button>
-                  </div>
-                  <h4 className="text-xl font-bold text-gray-900 mb-1">Chief Information Officer</h4>
-                  <p className="text-gray-500 text-sm mb-4">Information Technology</p>
-                  
-                  <div className="space-y-3 mb-6">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Current Occupant</span>
-                      <span className="font-semibold">Juan Dela Cruz</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Expected Vacancy</span>
-                      <span className="font-semibold text-yellow-600">Retiring in 6 mos</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Readiness Gap</span>
-                      <span className="font-semibold text-red-600">Significant</span>
-                    </div>
-                  </div>
-
-                  <div className="pt-4 border-t border-gray-100 flex justify-between items-center text-sm">
-                    <span className="text-gray-500">No Ready Successors (0)</span>
-                    <button className="text-blue-600 font-semibold hover:underline">Manage &rarr;</button>
-                  </div>
-                </div>
-             ))}
+          {/* Position cards grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {positions.map(p => (
+              <PositionCard key={p.id} position={p} onEdit={() => openEditPosition(p.id)} />
+            ))}
           </div>
-        </div>
+        </>
       )}
 
       {activeTab === 'registry' && (
-        <div className="space-y-6">
-          <div className="flex flex-wrap gap-4 items-center justify-between">
-            <div className="flex gap-4 flex-1 max-w-2xl">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                <input
-                  type="text"
-                  placeholder="Search successors..."
-                  className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                />
-              </div>
-              <select className="border border-gray-300 rounded-lg px-4 py-2 bg-white">
-                <option>Filter by Readiness</option>
-                <option>Ready Now (1-2 yrs)</option>
-                <option>Ready Later (3-5 yrs)</option>
-              </select>
+        <>
+          {/* Registry header */}
+          <div className="rounded-xl border border-gray-200 bg-white p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900">Successor Registry</h3>
+              <p className="text-sm text-gray-500 mt-1">
+                Repository of designated successors. Promote when the incumbent retires, resigns, or vacates the post.
+              </p>
             </div>
-            <Button variant="secondary" className="flex items-center gap-2 border-gray-300">
-              <RefreshCw size={18} /> Run Readiness Engine
+            <Button variant="secondary" className="flex items-center gap-2 shrink-0">
+              <FileText size={16} /> Print / Export
             </Button>
           </div>
 
-          <div className="border border-gray-200 rounded-xl bg-white overflow-hidden text-sm">
-             <table className="w-full text-left">
-               <thead className="bg-gray-50 border-b border-gray-200">
-                 <tr>
-                   <th className="px-6 py-4 font-semibold text-gray-600">Name</th>
-                   <th className="px-6 py-4 font-semibold text-gray-600">Current Position</th>
-                   <th className="px-6 py-4 font-semibold text-gray-600">Target Critical Role</th>
-                   <th className="px-6 py-4 font-semibold text-gray-600">Readiness Score</th>
-                   <th className="px-6 py-4 font-semibold text-gray-600">Status</th>
-                   <th className="px-6 py-4 font-semibold text-gray-600">Actions</th>
-                 </tr>
-               </thead>
-               <tbody className="divide-y divide-gray-100">
-                 <tr className="hover:bg-gray-50">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">MR</div>
-                        <span className="font-semibold text-gray-900">Maria Rodriguez</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-gray-500">IT Division Head</td>
-                    <td className="px-6 py-4 font-semibold">Chief Information Officer</td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <div className="h-2 w-24 bg-gray-200 rounded-full overflow-hidden">
-                          <div className="h-full bg-green-500 w-[85%]"></div>
-                        </div>
-                        <span className="font-semibold text-green-600">85%</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs font-semibold">Ready Now</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <button className="text-blue-600 hover:text-blue-800 font-semibold">View Plan</button>
-                    </td>
-                 </tr>
-                 {/* Adding more rows would go here */}
-               </tbody>
-             </table>
+          {/* Registry stats */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <StatCard
+              icon={<UserCheck size={18} />}
+              iconBg="bg-blue-50 text-blue-600"
+              tag="Awaiting vacancy"
+              value={0}
+              label="Designated"
+            />
+            <StatCard
+              icon={<CheckCircle2 size={18} />}
+              iconBg="bg-green-50 text-green-600"
+              tag="Already filled"
+              value={0}
+              label="Promoted"
+            />
+            <StatCard
+              icon={<XCircle size={18} />}
+              iconBg="bg-red-50 text-red-500"
+              tag="Superseded / removed"
+              value={0}
+              label="Vacated"
+            />
+          </div>
+
+          {/* Filter pills */}
+          <div className="flex gap-2">
+            {(['all', 'designated', 'promoted', 'vacated'] as const).map(f => (
+              <button
+                key={f}
+                onClick={() => setRegistryFilter(f)}
+                className={`px-4 py-1.5 text-sm font-medium rounded-full transition ${
+                  registryFilter === f
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
+              </button>
+            ))}
+          </div>
+
+          {/* Empty state */}
+          <div className="rounded-xl border border-gray-200 bg-white py-16 px-6 text-center text-sm text-gray-500">
+            No successors recorded yet. Assign one from the Succession Planning tab.
+          </div>
+        </>
+      )}
+
+      {addPositionOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={closeAddPosition}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between p-6 pb-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">
+                  {editingId ? 'Edit Critical Position' : 'Add Critical Position'}
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Update qualification standards. Changes apply immediately.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeAddPosition}
+                className="text-gray-400 hover:text-gray-600"
+                aria-label="Close"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="px-6 pb-4 overflow-y-auto space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField label="Position Title">
+                  <input
+                    type="text"
+                    value={positionForm.title}
+                    onChange={(e) => updateForm('title', e.target.value)}
+                    className="form-input"
+                  />
+                </FormField>
+                <FormField label="Department">
+                  <input
+                    type="text"
+                    value={positionForm.department}
+                    onChange={(e) => updateForm('department', e.target.value)}
+                    className="form-input"
+                  />
+                </FormField>
+                <FormField label="Incumbent">
+                  <input
+                    type="text"
+                    value={positionForm.incumbent}
+                    onChange={(e) => updateForm('incumbent', e.target.value)}
+                    className="form-input"
+                  />
+                </FormField>
+                <FormField label="Incumbent Status">
+                  <select
+                    value={positionForm.incumbentStatus}
+                    onChange={(e) => updateForm('incumbentStatus', e.target.value as PositionForm['incumbentStatus'])}
+                    className="form-input bg-white"
+                  >
+                    <option value="Active">Active</option>
+                    <option value="On Leave">On Leave</option>
+                    <option value="Retiring">Retiring</option>
+                  </select>
+                </FormField>
+              </div>
+
+              <FormField label="Status Detail">
+                <input
+                  type="text"
+                  value={positionForm.statusDetail}
+                  onChange={(e) => updateForm('statusDetail', e.target.value)}
+                  className="form-input"
+                />
+              </FormField>
+
+              <FormField label="Required Years of Experience">
+                <input
+                  type="number"
+                  min={0}
+                  value={positionForm.yearsExperience}
+                  onChange={(e) => updateForm('yearsExperience', e.target.value)}
+                  className="form-input"
+                />
+              </FormField>
+
+              <FormField label="Required Training Hours">
+                <input
+                  type="number"
+                  min={0}
+                  value={positionForm.trainingHours}
+                  onChange={(e) => updateForm('trainingHours', e.target.value)}
+                  className="form-input"
+                />
+              </FormField>
+
+              <FormField label="Required Civil Service Eligibility">
+                <input
+                  type="text"
+                  value={positionForm.civilServiceEligibility}
+                  onChange={(e) => updateForm('civilServiceEligibility', e.target.value)}
+                  className="form-input"
+                />
+              </FormField>
+
+              <FormField label="Required Courses (one per line)">
+                <textarea
+                  rows={4}
+                  value={positionForm.courses}
+                  onChange={(e) => updateForm('courses', e.target.value)}
+                  className="form-input font-mono text-sm resize-y"
+                />
+              </FormField>
+
+              <div>
+                <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-2">
+                  Critical Status
+                </p>
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={positionForm.includeInPlanning}
+                    onChange={(e) => updateForm('includeInPlanning', e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700">
+                    Include this position in succession planning
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-gray-200">
+              {editingId ? (
+                <button
+                  type="button"
+                  onClick={deletePosition}
+                  className="text-sm font-semibold text-red-600 hover:text-red-700"
+                >
+                  Delete position
+                </button>
+              ) : (
+                <span />
+              )}
+              <div className="flex gap-3">
+                <Button variant="secondary" onClick={closeAddPosition}>Cancel</Button>
+                <Button onClick={savePosition}>Save changes</Button>
+              </div>
+            </div>
           </div>
         </div>
       )}
+
+      <style>{`
+        .form-input {
+          width: 100%;
+          border-radius: 0.5rem;
+          border: 1px solid #d1d5db;
+          padding: 0.5rem 0.75rem;
+          outline: none;
+        }
+        .form-input:focus {
+          border-color: #3b82f6;
+          box-shadow: 0 0 0 1px #3b82f6;
+        }
+      `}</style>
     </div>
   );
 };
+
+type StatCardProps = {
+  icon: React.ReactNode;
+  iconBg: string;
+  tag: string;
+  value: number | string;
+  label: string;
+};
+
+const StatCard = ({ icon, iconBg, tag, value, label }: StatCardProps) => (
+  <div className="rounded-xl border border-gray-200 bg-white p-5">
+    <div className="flex items-start justify-between mb-3">
+      <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${iconBg}`}>
+        {icon}
+      </div>
+      <span className="text-xs text-gray-500">{tag}</span>
+    </div>
+    <p className="text-3xl font-bold text-gray-900 leading-tight">{value}</p>
+    <p className="text-sm text-gray-500 mt-1">{label}</p>
+  </div>
+);
+
+type PositionCardProps = {
+  position: CriticalPosition;
+  onEdit: () => void;
+};
+
+const PositionCard = ({ position, onEdit }: PositionCardProps) => (
+  <div className="rounded-xl border border-gray-200 bg-white p-5">
+    <div className="flex items-start justify-between mb-1">
+      <div className="flex items-center gap-2">
+        <h4 className="text-base font-bold text-gray-900">{position.title}</h4>
+        <span className="bg-red-50 text-red-600 text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide">
+          Critical
+        </span>
+      </div>
+      <button className="text-xs font-medium text-gray-600 border border-gray-200 rounded-md px-2.5 py-1 hover:bg-gray-50">
+        Unmark
+      </button>
+    </div>
+    <p className="text-sm text-gray-500 mb-4">
+      {position.department} · Incumbent: {position.incumbent}
+    </p>
+
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+      <InfoPill icon={<Clock size={14} />} label="Experience:" value={`${position.experienceYears} yrs`} />
+      <InfoPill
+        icon={<Award size={14} />}
+        label="Eligibility:"
+        value={position.eligibility}
+      />
+      <InfoPill icon={<BookOpen size={14} />} label="Training Hours:" value={`${position.trainingHours} hrs`} />
+    </div>
+
+    <div className="mb-3">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+        <BookOpen size={13} /> Required Course
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {position.courses.length === 0 ? (
+          <span className="text-xs text-gray-400 italic">No courses specified</span>
+        ) : (
+          position.courses.map(c => (
+            <span key={c} className="text-xs text-gray-700 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-md">
+              {c}
+            </span>
+          ))
+        )}
+      </div>
+    </div>
+
+    <div className="flex items-center justify-between pt-3 border-t border-gray-100 text-xs">
+      <span className="text-gray-500">{position.footer}</span>
+      <button
+        onClick={onEdit}
+        className="flex items-center gap-1 text-blue-600 font-medium hover:text-blue-700"
+      >
+        <Settings size={12} /> Click to edit
+      </button>
+    </div>
+  </div>
+);
+
+type InfoPillProps = {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+};
+
+const InfoPill = ({ icon, label, value }: InfoPillProps) => (
+  <div className="flex items-start gap-2 bg-gray-50 border border-gray-100 rounded-md px-3 py-2 text-xs">
+    <span className="text-gray-400 mt-0.5">{icon}</span>
+    <span className="text-gray-500">{label}</span>
+    <span className="text-gray-900 font-medium">{value}</span>
+  </div>
+);
+
+type FormFieldProps = {
+  label: string;
+  children: React.ReactNode;
+};
+
+const FormField = ({ label, children }: FormFieldProps) => (
+  <div>
+    <label className="block text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1.5">
+      {label}
+    </label>
+    {children}
+  </div>
+);
