@@ -29,6 +29,7 @@ import {
     X,
 } from 'lucide-react';
 import { QualifiedApplicantsSection } from '../../components/QualifiedApplicantsSection';
+import { SuccessionPlanningPage } from '../../components/SuccessionPlanningPage';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AdminHeader } from '../../components/AdminHeader';
@@ -72,7 +73,7 @@ import '../../styles/admin.css';
 import type { EmployeeRecord, JobPosting, NewlyHired } from '../../types/recruitment.types';
 
 type JobStatus = 'Open' | 'Reviewing' | 'Closed';
-type Section = 'dashboard' | 'jobs' | 'qualified' | 'new-hired' | 'raters' | 'accounts' | 'reports' | 'settings';
+type Section = 'dashboard' | 'jobs' | 'qualified' | 'new-hired' | 'raters' | 'accounts' | 'succession' | 'reports' | 'settings';
 type BulkRecipientMode = 'all' | 'department' | 'selected';
 type EmployeeDocumentTemplateId = (typeof BULK_REQUEST_TEMPLATES)[number]['id'];
 type EmployeeDirectoryCardStatus = 'Active' | 'Inactive' | 'Mixed';
@@ -261,6 +262,7 @@ const resolveSection = (pathname: string, search: string): Section => {
   if (pathname === '/admin/rsp/new-hired') return 'new-hired';
   if (pathname === '/admin/rsp/raters' || pathname === '/admin/raters') return 'raters';
   if (pathname === '/admin/rsp/accounts') return 'accounts';
+  if (pathname === '/admin/rsp/succession') return 'succession';
   if (pathname === '/admin/rsp/reports') return 'reports';
   if (pathname === '/admin/rsp/settings' || pathname === '/admin/settings') return 'settings';
 
@@ -2309,6 +2311,7 @@ export const RSPDashboard = () => {
     if (target === 'new-hired') navigate('/admin/rsp/new-hired');
     if (target === 'raters') navigate('/admin/rsp/raters');
     if (target === 'accounts') navigate('/admin/rsp/accounts');
+    if (target === 'succession') navigate('/admin/rsp/succession');
     if (target === 'reports') navigate('/admin/rsp/reports');
     if (target === 'settings') navigate('/admin/rsp/settings');
   };
@@ -3046,6 +3049,7 @@ export const RSPDashboard = () => {
             {section === 'raters' && 'Assign raters and define their evaluation access for specific job positions'}
             {section === 'accounts' && 'Manage employee accounts and information'}
             {section === 'reports' && 'Generate official government reports and access employee documents'}
+            {section === 'succession' && 'Build and manage the pipeline for critical roles and leadership continuity'}
             {section === 'settings' && 'Manage your personal information and account details'}
           </p>
         </div>
@@ -4536,6 +4540,10 @@ export const RSPDashboard = () => {
               </section>
               )}
             </>
+          )}
+
+          {section === 'succession' && (
+            <SuccessionPlanningPage />
           )}
 
           {section === 'settings' && (

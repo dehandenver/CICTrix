@@ -1,4 +1,4 @@
-import { BookOpen, FileText, LayoutDashboard, Settings, TrendingUp, UserCog, Users } from 'lucide-react';
+import { BookOpen, FileText, LayoutDashboard, Settings, TrendingUp, UserCog, Users, Network } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { getApplicantsFromSupabase, getApplicants } from '../lib/recruitmentData';
@@ -189,9 +189,17 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
     {
       path: '/admin/rsp/accounts',
       icon: Users,
-      label: 'Employees',
+      label: 'Employee Accounts',
       sublabel: 'All employees',
       isActive: location.pathname === '/admin/rsp/accounts',
+      roles: ['rsp'] as AdminRole[],
+    },
+    {
+      path: '/admin/rsp/succession',
+      icon: Network,
+      label: 'Succession Planning',
+      sublabel: 'Backup employees per position',
+      isActive: location.pathname === '/admin/rsp/succession' || location.pathname.startsWith('/admin/rsp/succession/'),
       roles: ['rsp'] as AdminRole[],
     },
     {

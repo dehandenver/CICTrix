@@ -657,6 +657,22 @@ function AppContent() {
             }
           />
           <Route
+            path="/admin/rsp/succession"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <RSPDashboard />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/rsp/succession/*"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <RSPDashboard />
+              </AdminRoute>
+            }
+          />
+          <Route
             path="/admin/rsp/reports"
             element={
               <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
