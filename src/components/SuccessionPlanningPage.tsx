@@ -135,13 +135,136 @@ const INITIAL_POSITIONS: CriticalPosition[] = [
   },
 ];
 
+type SuccessorStatus = 'designated' | 'promoted' | 'vacated';
+
+type Successor = {
+  id: string;
+  name: string;
+  initials: string;
+  currentPosition: string;
+  targetPositionId: string;
+  readinessScore: number;
+  readiness: 'Ready Now' | '1-2 Years' | '3-5 Years';
+  status: SuccessorStatus;
+};
+
+const INITIAL_SUCCESSORS: Successor[] = [
+  {
+    id: 's-1',
+    name: 'Ashley Johnson',
+    initials: 'AJ',
+    currentPosition: 'Senior Recruiter',
+    targetPositionId: 'hr-officer-iv',
+    readinessScore: 92,
+    readiness: 'Ready Now',
+    status: 'designated',
+  },
+  {
+    id: 's-2',
+    name: 'Michael Ross',
+    initials: 'MR',
+    currentPosition: 'Compensation Specialist',
+    targetPositionId: 'hr-officer-iv',
+    readinessScore: 78,
+    readiness: '1-2 Years',
+    status: 'designated',
+  },
+  {
+    id: 's-3',
+    name: 'Maria Rodriguez',
+    initials: 'MR',
+    currentPosition: 'IT Division Head',
+    targetPositionId: 'it-division-chief',
+    readinessScore: 85,
+    readiness: 'Ready Now',
+    status: 'designated',
+  },
+  {
+    id: 's-4',
+    name: 'Joseph Tan',
+    initials: 'JT',
+    currentPosition: 'Senior Systems Analyst',
+    targetPositionId: 'it-division-chief',
+    readinessScore: 71,
+    readiness: '1-2 Years',
+    status: 'designated',
+  },
+  {
+    id: 's-5',
+    name: 'Carmela Reyes',
+    initials: 'CR',
+    currentPosition: 'Assistant Administrator',
+    targetPositionId: 'municipal-administrator',
+    readinessScore: 88,
+    readiness: 'Ready Now',
+    status: 'designated',
+  },
+  {
+    id: 's-6',
+    name: 'Daniel Lim',
+    initials: 'DL',
+    currentPosition: 'Budget Officer',
+    targetPositionId: 'finance-director',
+    readinessScore: 74,
+    readiness: '1-2 Years',
+    status: 'designated',
+  },
+  {
+    id: 's-7',
+    name: 'Patricia Santos',
+    initials: 'PS',
+    currentPosition: 'Senior Accountant',
+    targetPositionId: 'finance-director',
+    readinessScore: 63,
+    readiness: '3-5 Years',
+    status: 'designated',
+  },
+  {
+    id: 's-8',
+    name: 'Ramon Cruz',
+    initials: 'RC',
+    currentPosition: 'Emergency Response Lead',
+    targetPositionId: 'drrm-officer',
+    readinessScore: 91,
+    readiness: 'Ready Now',
+    status: 'promoted',
+  },
+  {
+    id: 's-9',
+    name: 'Jose Bautista',
+    initials: 'JB',
+    currentPosition: 'Field Operations Supervisor',
+    targetPositionId: 'drrm-officer',
+    readinessScore: 67,
+    readiness: '1-2 Years',
+    status: 'vacated',
+  },
+];
+
 export const SuccessionPlanningPage = () => {
   const [activeTab, setActiveTab] = useState<TabKey>('planning');
   const [replacementType, setReplacementType] = useState<'permanent' | 'temporary'>('permanent');
   const [department, setDepartment] = useState<string>('');
   const [criticalPosition, setCriticalPosition] = useState<string>('');
   const [positions, setPositions] = useState<CriticalPosition[]>(INITIAL_POSITIONS);
-  const [registryFilter, setRegistryFilter] = useState<'all' | 'designated' | 'promoted' | 'vacated'>('all');
+  const [successors] = useState<Successor[]>(INITIAL_SUCCESSORS);
+  const [registryFilter, setRegistryFilter] = useState<'all' | SuccessorStatus>('all');
+
+  const selectedPositionObj = positions.find(p => p.title === criticalPosition);
+  const successorsForSelected = selectedPositionObj
+    ? successors.filter(s => s.targetPositionId === selectedPositionObj.id)
+    : [];
+
+  const designatedCount = successors.filter(s => s.status === 'designated').length;
+  const promotedCount = successors.filter(s => s.status === 'promoted').length;
+  const vacatedCount = successors.filter(s => s.status === 'vacated').length;
+  const readyNowCount = successors.filter(s => s.readinessScore >= 90 && s.status === 'designated').length;
+  const successorPoolCount = successors.filter(s => s.readinessScore >= 60 && s.status === 'designated').length;
+  const retiringSoonCount = positions.filter(p => /retirement/i.test(p.footer)).length;
+
+  const filteredRegistry = registryFilter === 'all'
+    ? successors
+    : successors.filter(s => s.status === registryFilter);
 
   const [addPositionOpen, setAddPositionOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -261,21 +384,21 @@ export const SuccessionPlanningPage = () => {
               icon={<CalendarClock size={18} />}
               iconBg="bg-orange-50 text-orange-500"
               tag="From standards"
-              value={2}
+              value={retiringSoonCount}
               label="Retiring Soon"
             />
             <StatCard
               icon={<Award size={18} />}
               iconBg="bg-green-50 text-green-600"
               tag="Score ≥ 90"
-              value={1}
+              value={readyNowCount}
               label="Ready Now"
             />
             <StatCard
               icon={<Users size={18} />}
               iconBg="bg-blue-50 text-blue-600"
               tag="Score ≥ 60"
-              value={4}
+              value={successorPoolCount}
               label="Successor Pool"
             />
           </div>
@@ -352,16 +475,41 @@ export const SuccessionPlanningPage = () => {
           </div>
 
           {/* Selection results */}
-          <div className="rounded-xl border border-gray-200 bg-white p-12 text-center">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gray-50 text-gray-400 mb-3">
-              <Briefcase size={22} />
+          {criticalPosition && selectedPositionObj ? (
+            <div className="rounded-xl border border-gray-200 bg-white p-6">
+              <div className="flex items-start justify-between mb-5">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">{selectedPositionObj.title}</h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {selectedPositionObj.department} · Incumbent: {selectedPositionObj.incumbent}
+                  </p>
+                </div>
+                <span className="text-xs text-gray-500">
+                  {successorsForSelected.length} candidate{successorsForSelected.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              {successorsForSelected.length === 0 ? (
+                <div className="py-10 text-center text-sm text-gray-500">
+                  No successor candidates assigned to this position yet.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {successorsForSelected.map(s => (
+                    <SuccessorRow key={s.id} successor={s} />
+                  ))}
+                </div>
+              )}
             </div>
-            <p className="text-sm text-gray-500">
-              {criticalPosition
-                ? `Showing succession candidates for ${criticalPosition}.`
-                : 'Select a department and critical position to view successor candidates.'}
-            </p>
-          </div>
+          ) : (
+            <div className="rounded-xl border border-gray-200 bg-white p-12 text-center">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gray-50 text-gray-400 mb-3">
+                <Briefcase size={22} />
+              </div>
+              <p className="text-sm text-gray-500">
+                Select a department and critical position to view successor candidates.
+              </p>
+            </div>
+          )}
         </>
       )}
 
@@ -415,21 +563,21 @@ export const SuccessionPlanningPage = () => {
               icon={<UserCheck size={18} />}
               iconBg="bg-blue-50 text-blue-600"
               tag="Awaiting vacancy"
-              value={0}
+              value={designatedCount}
               label="Designated"
             />
             <StatCard
               icon={<CheckCircle2 size={18} />}
               iconBg="bg-green-50 text-green-600"
               tag="Already filled"
-              value={0}
+              value={promotedCount}
               label="Promoted"
             />
             <StatCard
               icon={<XCircle size={18} />}
               iconBg="bg-red-50 text-red-500"
               tag="Superseded / removed"
-              value={0}
+              value={vacatedCount}
               label="Vacated"
             />
           </div>
@@ -451,10 +599,65 @@ export const SuccessionPlanningPage = () => {
             ))}
           </div>
 
-          {/* Empty state */}
-          <div className="rounded-xl border border-gray-200 bg-white py-16 px-6 text-center text-sm text-gray-500">
-            No successors recorded yet. Assign one from the Succession Planning tab.
-          </div>
+          {/* Registry table */}
+          {filteredRegistry.length === 0 ? (
+            <div className="rounded-xl border border-gray-200 bg-white py-16 px-6 text-center text-sm text-gray-500">
+              No successors in this category.
+            </div>
+          ) : (
+            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-gray-50 border-b border-gray-200 text-gray-600">
+                  <tr>
+                    <th className="px-5 py-3 font-semibold">Name</th>
+                    <th className="px-5 py-3 font-semibold">Current Position</th>
+                    <th className="px-5 py-3 font-semibold">Target Critical Role</th>
+                    <th className="px-5 py-3 font-semibold">Readiness</th>
+                    <th className="px-5 py-3 font-semibold">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {filteredRegistry.map(s => {
+                    const target = positions.find(p => p.id === s.targetPositionId);
+                    return (
+                      <tr key={s.id} className="hover:bg-gray-50">
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-3">
+                            <div className="h-8 w-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">
+                              {s.initials}
+                            </div>
+                            <span className="font-semibold text-gray-900">{s.name}</span>
+                          </div>
+                        </td>
+                        <td className="px-5 py-3 text-gray-600">{s.currentPosition}</td>
+                        <td className="px-5 py-3 text-gray-900 font-medium">
+                          {target?.title ?? '—'}
+                        </td>
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-2">
+                            <div className="h-1.5 w-24 bg-gray-200 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full ${
+                                  s.readinessScore >= 85 ? 'bg-green-500'
+                                  : s.readinessScore >= 70 ? 'bg-yellow-500'
+                                  : 'bg-orange-500'
+                                }`}
+                                style={{ width: `${s.readinessScore}%` }}
+                              />
+                            </div>
+                            <span className="text-xs font-semibold text-gray-700">{s.readinessScore}%</span>
+                          </div>
+                        </td>
+                        <td className="px-5 py-3">
+                          <StatusBadge status={s.status} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </>
       )}
 
@@ -737,3 +940,46 @@ const FormField = ({ label, children }: FormFieldProps) => (
     {children}
   </div>
 );
+
+const readinessStyle = (score: number) => {
+  if (score >= 85) return { bar: 'bg-green-500', text: 'text-green-700', pill: 'bg-green-100 text-green-700' };
+  if (score >= 70) return { bar: 'bg-yellow-500', text: 'text-yellow-700', pill: 'bg-yellow-100 text-yellow-700' };
+  return { bar: 'bg-orange-500', text: 'text-orange-700', pill: 'bg-orange-100 text-orange-700' };
+};
+
+const SuccessorRow = ({ successor }: { successor: Successor }) => {
+  const s = readinessStyle(successor.readinessScore);
+  return (
+    <div className="flex items-center justify-between border border-gray-200 rounded-lg px-4 py-3 hover:border-blue-300 transition">
+      <div className="flex items-center gap-3">
+        <div className="h-10 w-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm">
+          {successor.initials}
+        </div>
+        <div>
+          <p className="font-semibold text-gray-900 leading-tight">{successor.name}</p>
+          <p className="text-xs text-gray-500">{successor.currentPosition} · {successor.readiness}</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-4">
+        <div className="hidden sm:flex items-center gap-2">
+          <div className="h-1.5 w-24 bg-gray-200 rounded-full overflow-hidden">
+            <div className={`h-full ${s.bar}`} style={{ width: `${successor.readinessScore}%` }} />
+          </div>
+        </div>
+        <span className={`text-sm font-bold ${s.text}`}>{successor.readinessScore}% Match</span>
+      </div>
+    </div>
+  );
+};
+
+const StatusBadge = ({ status }: { status: SuccessorStatus }) => {
+  const map: Record<SuccessorStatus, { label: string; cls: string }> = {
+    designated: { label: 'Designated', cls: 'bg-blue-100 text-blue-700' },
+    promoted: { label: 'Promoted', cls: 'bg-green-100 text-green-700' },
+    vacated: { label: 'Vacated', cls: 'bg-red-100 text-red-700' },
+  };
+  const { label, cls } = map[status];
+  return (
+    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${cls}`}>{label}</span>
+  );
+};
