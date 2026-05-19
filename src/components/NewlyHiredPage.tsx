@@ -26,6 +26,8 @@ import {
 import { supabase } from '../lib/supabase';
 import type { NewlyHired, NewlyHiredStatus } from '../types/recruitment.types';
 import { Sidebar } from './Sidebar';
+import { TopNav } from './TopNav';
+
 // Fallbacks for missing types/utilities
 type ViewMode = 'overview' | 'department';
 type GeneratedCredential = any;
@@ -401,10 +403,11 @@ export const NewlyHiredPage = () => {
   };
 
   return (
-    <div className="admin-layout">
+    <div className="bg-slate-50 min-h-screen font-sans">
       <Sidebar activeModule="RSP" userRole="rsp" />
 
-      <main className="admin-content bg-slate-100 !p-0">
+      <main className="ml-64 min-h-screen overflow-y-auto">
+        <TopNav />
         {mode === 'overview' && (
           <>
             <header className="border-b border-slate-200 bg-white px-8 py-6">

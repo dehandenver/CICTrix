@@ -30,6 +30,8 @@ import { Button } from '../../components/Button';
 import { Dialog } from '../../components/Dialog';
 import { Input } from '../../components/Input';
 import { Sidebar } from '../../components/Sidebar';
+import { TopNav } from '../../components/TopNav';
+
 import { supabase } from '../../lib/supabase';
 import '../../styles/admin.css';
 
@@ -194,54 +196,37 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
   if (isDashboardView) {
     const sideNavItems = [
-      { key: 'dashboard', label: 'Dashboard', subtitle: '', icon: LayoutDashboard },
-      { key: 'evaluation-status', label: 'Employee Evaluation Status', subtitle: 'Track progress', icon: ClipboardList },
-      { key: 'performance-reviews', label: 'Performance Reviews', subtitle: 'Upcoming reviews', icon: CalendarCheck2 },
-      { key: 'goals', label: 'Goals & Objectives', subtitle: 'Track progress', icon: Target },
-      { key: 'ipcr', label: 'IPCR', subtitle: 'Individual performance', icon: FileCheck2 },
-      { key: 'analytics', label: 'Analytics', subtitle: 'Performance insights', icon: BarChart3 },
-      { key: 'reports', label: 'Department Reports', subtitle: 'Adjectival ratings', icon: FileText },
-      { key: 'settings', label: 'Settings', subtitle: '', icon: Settings },
+      { key: 'dashboard',           label: 'Dashboard',                   subtitle: '',                       icon: LayoutDashboard, fixed: false },
+      { key: 'evaluation-status',   label: 'Employee Evaluation Status',   subtitle: 'Track progress',         icon: ClipboardList,   fixed: false },
+      { key: 'performance-reviews', label: 'Performance Reviews',          subtitle: 'Upcoming reviews',       icon: CalendarCheck2,  fixed: false },
+      { key: 'goals',               label: 'Goals & Objectives',           subtitle: 'Track progress',         icon: Target,          fixed: false },
+      { key: 'ipcr',                label: 'IPCR',                         subtitle: 'Individual performance', icon: FileCheck2,      fixed: false },
+      { key: 'analytics',           label: 'Analytics',                    subtitle: 'Performance insights',   icon: BarChart3,       fixed: false },
+      { key: 'reports',             label: 'Reports',                      subtitle: '',                       icon: FileText,        fixed: true  },
+      { key: 'settings',            label: 'Settings',                     subtitle: '',                       icon: Settings,        fixed: true  },
     ] as const;
 
-    return (
-      <div className="min-h-screen bg-slate-100 text-slate-800">
-        <header className="sticky top-0 z-40 border-b border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between px-6 py-3">
-            <div className="flex items-center gap-4">
-              <div className="h-10 w-10 rounded-xl bg-blue-600 text-white grid place-content-center text-lg font-bold">HR</div>
-              <div>
-                <h1 className="text-lg font-bold leading-none">Government HRIS</h1>
-                <p className="text-xs text-slate-500">Human Resource Information System</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-4 text-slate-500">
-              <button className="rounded-full p-2 hover:bg-slate-100" type="button"><HelpCircle className="h-5 w-5" /></button>
-              <button className="rounded-full p-2 hover:bg-slate-100 relative" type="button">
-                <Bell className="h-5 w-5" />
-                <span className="absolute right-2 top-1 inline-block h-2 w-2 rounded-full bg-red-500" />
-              </button>
-              <div className="h-8 w-px bg-slate-200" />
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-blue-600 text-white grid place-content-center">
-                  <UserCircle2 className="h-6 w-6" />
-                </div>
-                <div className="leading-tight">
-                  <p className="text-sm font-semibold text-slate-800">interviewer</p>
-                  <p className="text-xs text-slate-500">PM Division</p>
-                </div>
-              </div>
-              <button type="button" className="ml-2 inline-flex items-center gap-2 text-red-600 font-semibold text-sm">
-                <LogOut className="h-4 w-4" /> Logout
-              </button>
-            </div>
-          </div>
-        </header>
+    const mainNavItems  = sideNavItems.filter((i) => !i.fixed);
+    const fixedNavItems = sideNavItems.filter((i) => i.fixed);
 
-        <div className="flex">
-          <aside className="w-64 shrink-0 border-r border-slate-200 bg-white px-3 py-4 min-h-[calc(100vh-70px)]">
-            <nav className="space-y-1.5">
-              {sideNavItems.map((item) => {
+    return (
+      <div className="bg-slate-50 font-sans text-slate-800 h-screen flex flex-col">
+        <TopNav />
+        <div className="flex flex-1 overflow-hidden">
+          <aside className="w-64 shrink-0 border-r border-slate-200 bg-white flex flex-col select-none overflow-hidden">
+            {/* Brand strip */}
+            <div className="flex items-center gap-2.5 px-4 py-3.5 border-b border-slate-200">
+              <div className="h-7 w-7 rounded-lg bg-[#363EE8] flex items-center justify-center flex-shrink-0">
+                <TrendingUp className="h-4 w-4 text-white" />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-[0.8125rem] font-bold text-[#050D65] leading-tight tracking-tight">Performance Mgmt</span>
+                <span className="text-[0.625rem] font-semibold text-[#363EE8] uppercase tracking-widest">PM Portal</span>
+              </div>
+            </div>
+            <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-0.5">
+              <p className="text-[0.6rem] font-bold text-slate-400 uppercase tracking-widest px-2 pb-1.5">Navigation</p>
+              {mainNavItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeSection === item.key;
                 return (
@@ -249,26 +234,50 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                     type="button"
                     key={item.key}
                     onClick={() => setActiveSection(item.key)}
-                    className={`w-full rounded-lg px-3 py-2.5 text-left transition ${
-                      isActive ? 'bg-blue-600 text-white shadow-md' : 'hover:bg-slate-100 text-slate-700'
+                    className={`w-full rounded-lg px-2.5 py-2.5 text-left transition-colors select-none ${
+                      isActive ? 'bg-[#EEF2FF] text-[#363EE8] font-semibold' : 'hover:bg-slate-50 text-slate-600 font-medium'
                     }`}
                   >
-                    <div className="flex items-start gap-3">
-                      <Icon className={`mt-0.5 h-5 w-5 ${isActive ? 'text-white' : 'text-slate-500'}`} />
-                      <div>
-                        <p className="text-sm font-semibold leading-tight">{item.label}</p>
+                    <div className="flex items-start gap-2.5">
+                      <Icon className={`mt-0.5 h-4 w-4 flex-shrink-0 ${isActive ? 'text-[#363EE8]' : 'text-slate-400'}`} />
+                      <div className="min-w-0">
+                        <p className="text-[0.8125rem] leading-tight truncate">{item.label}</p>
                         {item.subtitle ? (
-                          <p className={`text-xs ${isActive ? 'text-blue-100' : 'text-slate-500'}`}>{item.subtitle}</p>
+                          <p className={`text-[0.6875rem] mt-0.5 ${isActive ? 'text-[#363EE8]/70 font-normal' : 'text-slate-400 font-normal'}`}>{item.subtitle}</p>
                         ) : null}
                       </div>
                     </div>
                   </button>
                 );
               })}
+              {fixedNavItems.length > 0 && (
+                <>
+                  <div className="my-1.5 mx-2 h-px bg-slate-100" />
+                  {fixedNavItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = activeSection === item.key;
+                    return (
+                      <button
+                        type="button"
+                        key={item.key}
+                        onClick={() => setActiveSection(item.key)}
+                        className={`w-full rounded-lg px-2.5 py-2 text-left transition-colors select-none ${
+                          isActive ? 'bg-[#EEF2FF] text-[#363EE8] font-semibold' : 'hover:bg-slate-50 text-slate-400 font-medium'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Icon className={`h-4 w-4 flex-shrink-0 ${isActive ? 'text-[#363EE8]' : 'text-slate-400'}`} />
+                          <p className="text-[0.78125rem] leading-tight">{item.label}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </>
+              )}
             </nav>
           </aside>
 
-          <main className="flex-1 p-6">
+          <main className="flex-1 overflow-auto p-8">
             {activeSection === 'dashboard' && (
               <>
                 <p className="text-sm text-slate-500 mb-2">Performance Management <span className="mx-1">/</span> Dashboard</p>
@@ -716,9 +725,10 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   }
 
   return (
-    <div className="flex h-screen bg-slate-50">
+    <div className="bg-slate-50 min-h-screen">
       <Sidebar />
-      <main className="flex-1 overflow-auto">
+      <main className="ml-64 min-h-screen overflow-y-auto">
+        <TopNav />
         <div className="p-8">
           <div className="flex items-center justify-between mb-8">
             <h1 className="text-3xl font-bold text-slate-900">Performance Management System</h1>

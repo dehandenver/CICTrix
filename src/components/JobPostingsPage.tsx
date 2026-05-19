@@ -31,6 +31,8 @@ import { isMockModeEnabled, supabase } from '../lib/supabase';
 import { JobPosting } from '../types/recruitment.types';
 import { RecruitmentNavigationGuide } from './RecruitmentNavigationGuide';
 import { Sidebar } from './Sidebar';
+import { TopNav } from './TopNav';
+
 
 const ITEMS_PER_PAGE = 3;
 
@@ -879,22 +881,23 @@ export const JobPostingsPage = () => {
   };
 
   return (
-    <div className="admin-layout">
+    <div className="bg-slate-50 min-h-screen font-sans">
       <Sidebar activeModule="RSP" userRole="rsp" />
-      <main className="admin-content bg-slate-50">
-        <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="mb-2 text-base font-semibold text-blue-600">RSP Dashboard <span className="mx-2 text-slate-400">&gt;</span> <span className="text-slate-900">Job Postings</span></p>
-            <h1 className="text-2xl font-bold text-slate-900">Job Postings Management</h1>
-            <p className="text-sm text-slate-600">Manage and monitor all job positions and their applicants</p>
-          </div>
-          <div className="flex gap-2">
-            <button className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white" onClick={openCreateModal}>
-              <Plus className="h-4 w-4" />
-              Add New Position
-            </button>
-          </div>
-        </header>
+      <main className="ml-64 min-h-screen overflow-y-auto">
+        <TopNav />
+        <div className="p-8">
+          <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h1 className="text-2xl font-bold text-[#040E6B]">Job Postings Management</h1>
+              <p className="text-sm text-slate-500">Manage and monitor all job positions and their applicants</p>
+            </div>
+            <div className="flex gap-2">
+              <button className="inline-flex items-center gap-2 rounded-xl bg-[#363EE8] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#363EE8]/90 transition" onClick={openCreateModal}>
+                <Plus className="h-4 w-4" />
+                Add New Position
+              </button>
+            </div>
+          </header>
 
         {viewingApplicantsFor && (() => {
           const job = viewingApplicantsFor;
@@ -1187,6 +1190,7 @@ export const JobPostingsPage = () => {
         </section>
         </>
         )}
+        </div>
       </main>
 
       <RecruitmentNavigationGuide open={showGuide} onClose={() => setShowGuide(false)} />

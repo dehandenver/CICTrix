@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { QualifiedApplicantsSection } from './QualifiedApplicantsSection';
 import { Sidebar } from './Sidebar';
+import { TopNav } from './TopNav';
+
 import { ATTACHMENTS_BUCKET, supabase } from '../lib/supabase';
 import { runSingleFlight } from '../lib/singleFlight';
 import { buildEvaluationSnapshotMap, subscribeToEvaluationChanges, type EvaluationSnapshot } from '../lib/evaluationScores';
@@ -145,24 +147,30 @@ export const QualifiedApplicantsRSPPage = () => {
 
   if (loading) {
     return (
-      <div className="admin-layout">
+      <div className="bg-slate-50 min-h-screen">
         <Sidebar activeModule="RSP" userRole="rsp" />
-        <main className="admin-content bg-slate-50" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
-          <p>Loading qualified applicants...</p>
+        <main className="ml-64 min-h-screen overflow-y-auto">
+          <TopNav />
+          <div className="flex items-center justify-center py-12">
+            <p className="text-slate-600 font-medium font-sans">Loading qualified applicants...</p>
+          </div>
         </main>
       </div>
     );
   }
 
   return (
-    <div className="admin-layout">
+    <div className="flex h-screen bg-slate-50">
       <Sidebar activeModule="RSP" userRole="rsp" />
-      <main className="admin-content bg-slate-50">
-        <QualifiedApplicantsSection
-          applicants={applicants}
-          completedEvaluationIds={completedEvaluationIds}
-          evaluationsByApplicant={evaluationsByApplicant}
-        />
+      <main className="flex-1 overflow-auto">
+        <TopNav />
+        <div className="p-8">
+          <QualifiedApplicantsSection
+            applicants={applicants}
+            completedEvaluationIds={completedEvaluationIds}
+            evaluationsByApplicant={evaluationsByApplicant}
+          />
+        </div>
       </main>
     </div>
   );

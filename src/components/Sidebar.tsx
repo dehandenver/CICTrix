@@ -1,5 +1,24 @@
-import { BookOpen, FileText, LayoutDashboard, Settings, TrendingUp, UserCog, Users } from 'lucide-react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import {
+  BarChart3,
+  BookOpen,
+  Briefcase,
+  Calendar,
+  ChevronDown,
+  ChevronRight,
+  ClipboardList,
+  FileCheck2,
+  FileText,
+  LayoutDashboard,
+  Settings,
+  Target,
+  TrendingUp,
+  UserCheck,
+  UserCog,
+  UserPlus,
+  Users,
+  type LucideIcon,
+} from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { getApplicantsFromSupabase, getApplicants } from '../lib/recruitmentData';
 import '../styles/sidebar.css';
@@ -11,33 +30,146 @@ interface SidebarProps {
   userRole?: AdminRole;
 }
 
-interface MenuItem {
-  path: string;
-  icon: any;
+interface SubItem {
   label: string;
-  sublabel: string;
-  isActive: boolean;
-  roles: AdminRole[];
+  path: string;
+  icon: LucideIcon;
+  fixed?: boolean;
   badge?: string;
 }
 
+interface NavSection {
+  id: string;
+  label: string;
+  sublabel?: string;
+  icon: LucideIcon;
+  isSection: true;
+  items: SubItem[];
+  matchPaths: string[];
+}
+
+interface NavLink {
+  id: string;
+  label: string;
+  path: string;
+  icon: LucideIcon;
+  isSection: false;
+  matchPaths: string[];
+}
+
+type NavEntry = NavSection | NavLink;
+
+const RSP_ITEMS: SubItem[] = [
+  { label: 'RSP Dashboard',        path: '/admin?module=rsp',      icon: LayoutDashboard },
+  { label: 'Job Posts',             path: '/admin/rsp/jobs',         icon: Briefcase },
+  { label: 'Qualified Applicants',  path: '/admin/rsp/qualified',    icon: UserCheck },
+  { label: 'Newly Hired',           path: '/admin/rsp/new-hired',    icon: UserPlus },
+  { label: 'Rater Management',      path: '/admin/rsp/raters',       icon: UserCog },
+  { label: 'Employee Accounts',     path: '/admin/rsp/accounts',     icon: Users },
+  { label: 'Reports',               path: '/admin/rsp/reports',      icon: FileText,  fixed: true },
+  { label: 'Settings',              path: '/admin/rsp/settings',     icon: Settings,  fixed: true },
+];
+
+const LND_ITEMS: SubItem[] = [
+  { label: 'L&D Dashboard',      path: '/admin/lnd',                 icon: LayoutDashboard },
+  { label: 'Training Courses',   path: '/admin/lnd/manage',          icon: BookOpen },
+  { label: 'Seminar Enrollment', path: '/admin/lnd/manage',          icon: Calendar },
+  { label: 'Employee Development', path: '/admin/lnd/manage',        icon: TrendingUp },
+  { label: 'Reports',            path: '/admin/lnd/manage',          icon: FileText,  fixed: true },
+  { label: 'Settings',           path: '/admin/lnd/settings',        icon: Settings,  fixed: true },
+];
+
+const PM_ITEMS: SubItem[] = [
+  { label: 'PM Dashboard',                path: '/admin/pm',         icon: LayoutDashboard },
+  { label: 'Employee Evaluation Status',  path: '/admin/pm',         icon: ClipboardList },
+  { label: 'Performance Reviews',         path: '/admin/pm',         icon: FileCheck2 },
+  { label: 'Goals & Objectives',          path: '/admin/pm',         icon: Target },
+  { label: 'IPCR',                         path: '/admin/pm',         icon: FileText },
+  { label: 'Analytics',                   path: '/admin/pm',         icon: BarChart3 },
+  { label: 'Reports',                     path: '/admin/pm/manage',  icon: FileText,  fixed: true },
+  { label: 'Settings',                    path: '/admin/pm/settings', icon: Settings, fixed: true },
+];
+
+const SUPER_ADMIN_NAV: NavEntry[] = [
+  {
+    id: 'dashboard',
+    label: 'Dashboard',
+    icon: LayoutDashboard,
+    path: '/admin?module=dashboard',
+    isSection: false,
+    matchPaths: ['/admin'],
+  },
+  {
+    id: 'rsp',
+    label: 'RSP',
+    sublabel: 'Recruitment, Selection & Placement',
+    icon: Users,
+    isSection: true,
+    items: RSP_ITEMS,
+    matchPaths: ['/admin/rsp'],
+  },
+  {
+    id: 'lnd',
+    label: 'L&D Management',
+    sublabel: 'Learning & Development',
+    icon: BookOpen,
+    isSection: true,
+    items: LND_ITEMS,
+    matchPaths: ['/admin/lnd'],
+  },
+  {
+    id: 'pm',
+    label: 'Performance Management',
+    sublabel: 'Performance Management',
+    icon: TrendingUp,
+    isSection: true,
+    items: PM_ITEMS,
+    matchPaths: ['/admin/pm'],
+  },
+];
+
+const RSP_ROLE_NAV: NavEntry[] = [
+  { id: 'dashboard',   label: 'Dashboard',             icon: LayoutDashboard, path: '/admin/rsp',           isSection: false, matchPaths: ['/admin/rsp'] },
+  { id: 'jobs',        label: 'Job Posts',              icon: Briefcase,       path: '/admin/rsp/jobs',      isSection: false, matchPaths: ['/admin/rsp/jobs'] },
+  { id: 'qualified',   label: 'Qualified Applicants',  icon: UserCheck,       path: '/admin/rsp/qualified', isSection: false, matchPaths: ['/admin/rsp/qualified'] },
+  { id: 'new-hired',   label: 'Newly Hired',            icon: UserPlus,        path: '/admin/rsp/new-hired', isSection: false, matchPaths: ['/admin/rsp/new-hired'] },
+  { id: 'raters',      label: 'Rater Management',       icon: UserCog,         path: '/admin/rsp/raters',    isSection: false, matchPaths: ['/admin/rsp/raters'] },
+  { id: 'accounts',    label: 'Employee Accounts',      icon: Users,           path: '/admin/rsp/accounts',  isSection: false, matchPaths: ['/admin/rsp/accounts'] },
+  { id: 'reports',     label: 'Reports',                icon: FileText,        path: '/admin/rsp/reports',   isSection: false, matchPaths: ['/admin/rsp/reports'] },
+  { id: 'settings',    label: 'Settings',               icon: Settings,        path: '/admin/rsp/settings',  isSection: false, matchPaths: ['/admin/rsp/settings'] },
+];
+
+const isSectionActive = (section: NavSection, pathname: string, search: string): boolean => {
+  const module = new URLSearchParams(search).get('module');
+  if (section.id === 'rsp' && (module === 'rsp' || pathname.startsWith('/admin/rsp'))) return true;
+  if (section.id === 'lnd' && (module === 'lnd' || pathname.startsWith('/admin/lnd'))) return true;
+  if (section.id === 'pm'  && (module === 'pm'  || pathname.startsWith('/admin/pm')))  return true;
+  return false;
+};
+
+const isItemActive = (item: SubItem, pathname: string, search: string): boolean => {
+  const module = new URLSearchParams(search).get('module');
+  if (item.path.includes('?module=')) {
+    const itemModule = new URLSearchParams(item.path.split('?')[1]).get('module');
+    return module === itemModule && pathname === '/admin';
+  }
+  return pathname === item.path;
+};
+
 export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
   const location = useLocation();
-  const navigate = useNavigate();
   const [qualifiedCount, setQualifiedCount] = useState(0);
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
 
-  // Function to update qualified applicant count
   const updateQualifiedCount = async () => {
     try {
-      // Try Supabase first (source of truth)
       const applicants = await getApplicantsFromSupabase();
       const count = applicants.filter((a) => {
         const s = (a.status || '').toLowerCase();
         return s.includes('qualified') || s.includes('recommend') || s.includes('hired');
       }).length;
       setQualifiedCount(count);
-    } catch (err) {
-      // Fallback to localStorage
+    } catch {
       try {
         const applicants = getApplicants();
         const count = applicants.filter((a) => {
@@ -52,13 +184,24 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
   };
 
   useEffect(() => {
-    // Initial load
     void updateQualifiedCount();
-
-    // Listen for applicant updates
     window.addEventListener('cictrix:applicants-updated', updateQualifiedCount);
     return () => window.removeEventListener('cictrix:applicants-updated', updateQualifiedCount);
   }, []);
+
+  // Auto-expand active sections on navigation
+  useEffect(() => {
+    const active = new Set<string>();
+    const module = new URLSearchParams(location.search).get('module');
+    if (module === 'rsp' || location.pathname.startsWith('/admin/rsp')) active.add('rsp');
+    if (module === 'lnd' || location.pathname.startsWith('/admin/lnd')) active.add('lnd');
+    if (module === 'pm'  || location.pathname.startsWith('/admin/pm'))  active.add('pm');
+    setExpandedSections((prev) => {
+      const next = new Set(prev);
+      active.forEach((id) => next.add(id));
+      return next;
+    });
+  }, [location.pathname, location.search]);
 
   const sessionRaw = localStorage.getItem('cictrix_admin_session');
   let session: { email: string; role: AdminRole } | null = null;
@@ -68,207 +211,172 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
     session = null;
   }
   const resolvedRole = userRole ?? session?.role;
-  const activeAdminModule = new URLSearchParams(location.search).get('module') ?? 'dashboard';
   const isSuperAdmin = resolvedRole === 'super-admin';
-  const isRspRole = resolvedRole === 'rsp';
+  const isRspRole   = resolvedRole === 'rsp';
 
-  const getPath = (module: 'dashboard' | 'rsp' | 'lnd' | 'pm' | 'settings', defaultPath: string) =>
-    isSuperAdmin ? `/admin?module=${module}` : defaultPath;
-  
-  const menuItems: MenuItem[] = [
-    {
-      path: getPath('dashboard', '/admin'),
-      icon: LayoutDashboard,
-      label: 'Dashboard',
-      sublabel: 'Overview',
-      isActive: isSuperAdmin
-        ? location.pathname === '/admin' && activeAdminModule === 'dashboard'
-        : location.pathname === '/admin',
-      roles: ['super-admin']
-    },
-    {
-      path: getPath('rsp', '/admin/rsp'),
-      icon: Users,
-      label: 'RSP',
-      sublabel: 'Recruitment, Selection & Placement',
-      isActive: isSuperAdmin
-        ? location.pathname === '/admin' && activeAdminModule === 'rsp'
-        : location.pathname === '/admin/rsp' || location.pathname === '/admin/jobs' || location.pathname === '/admin/raters',
-      roles: ['super-admin', 'rsp']
-    },
-    {
-      path: getPath('lnd', '/admin/lnd'),
-      icon: BookOpen,
-      label: 'L&D Management',
-      sublabel: 'Learning & Development',
-      isActive: isSuperAdmin
-        ? location.pathname === '/admin' && activeAdminModule === 'lnd'
-        : location.pathname === '/admin/lnd' || location.pathname === '/admin/lnd/manage',
-      roles: ['super-admin', 'lnd']
-    },
-    {
-      path: getPath('pm', '/admin/pm'),
-      icon: TrendingUp,
-      label: 'Performance Management',
-      sublabel: 'Performance Management',
-      isActive: isSuperAdmin
-        ? location.pathname === '/admin' && activeAdminModule === 'pm'
-        : location.pathname === '/admin/pm' || location.pathname === '/admin/pm/manage',
-      roles: ['super-admin', 'pm']
-    },
-    {
-      path: '/admin/users',
-      icon: UserCog,
-      label: 'User Management',
-      sublabel: '',
-      isActive: location.pathname === '/admin/users',
-      roles: ['super-admin']
-    },
-    {
-      path: '/admin/reports',
-      icon: FileText,
-      label: 'Reports',
-      sublabel: '',
-      isActive: location.pathname === '/admin/reports',
-      roles: ['super-admin']
-    },
-    {
-      path: getPath('settings', '/admin/settings'),
-      icon: Settings,
-      label: 'Settings',
-      sublabel: '',
-      isActive: isSuperAdmin
-        ? location.pathname === '/admin' && activeAdminModule === 'settings'
-        : location.pathname === '/admin/settings',
-      roles: ['super-admin']
-    }
-  ];
+  const toggleSection = (id: string) => {
+    setExpandedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) { next.delete(id); } else { next.add(id); }
+      return next;
+    });
+  };
 
-  const rspMenuItems: MenuItem[] = [
-    {
-      path: '/admin/rsp',
-      icon: LayoutDashboard,
-      label: 'Dashboard',
-      sublabel: '',
-      isActive: location.pathname === '/admin/rsp',
-      roles: ['rsp'] as AdminRole[],
-    },
-    {
-      path: '/admin/rsp/jobs',
-      icon: FileText,
-      label: 'Job Posts',
-      sublabel: 'Manage positions',
-      isActive: location.pathname === '/admin/rsp/jobs',
-      roles: ['rsp'] as AdminRole[],
-    },
-    {
-      path: '/admin/rsp/qualified',
-      icon: Users,
-      label: 'Qualified Applicants',
-      sublabel: 'Ready for interview',
-      isActive: location.pathname === '/admin/rsp/qualified',
-      roles: ['rsp'] as AdminRole[],
-      badge: qualifiedCount > 0 ? qualifiedCount.toString() : undefined,
-    },
-    {
-      path: '/admin/rsp/new-hired',
-      icon: Users,
-      label: 'Newly Hired',
-      sublabel: 'Generate credentials',
-      isActive: location.pathname === '/admin/rsp/new-hired',
-      roles: ['rsp'] as AdminRole[],
-    },
-    {
-      path: '/admin/rsp/raters',
-      icon: UserCog,
-      label: 'Rater Management',
-      sublabel: 'Access control',
-      isActive: location.pathname === '/admin/rsp/raters',
-      roles: ['rsp'] as AdminRole[],
-    },
-    {
-      path: '/admin/rsp/accounts',
-      icon: Users,
-      label: 'Employee Accounts',
-      sublabel: 'All employees',
-      isActive: location.pathname === '/admin/rsp/accounts',
-      roles: ['rsp'] as AdminRole[],
-    },
-    {
-      path: '/admin/rsp/reports',
-      icon: FileText,
-      label: 'Reports',
-      sublabel: '',
-      isActive: location.pathname === '/admin/rsp/reports',
-      roles: ['rsp'] as AdminRole[],
-    },
-    {
-      path: '/admin/rsp/settings',
-      icon: Settings,
-      label: 'Settings',
-      sublabel: '',
-      isActive: location.pathname === '/admin/rsp/settings',
-      roles: ['rsp'] as AdminRole[],
-    },
-  ];
+  const nav = isSuperAdmin ? SUPER_ADMIN_NAV : isRspRole ? RSP_ROLE_NAV : SUPER_ADMIN_NAV;
 
-  const sourceMenu = isRspRole ? rspMenuItems : menuItems;
+  const renderSuperAdminNav = () => (
+    <nav className="sidebar-nav">
+      {/* Brand section label */}
+      <div className="sidebar-section-group-label">NAVIGATION</div>
 
-  const filteredMenuItems = sourceMenu.filter(item => {
-    // If no role defined for the item, don't show it
-    if (!item.roles || item.roles.length === 0) return false;
-    // If user has no role, don't show anything
-    if (!resolvedRole) return false;
-    // Check if user's role is in the allowed roles
-    const allowed = item.roles.includes(resolvedRole);
-    return allowed;
-  });
+      {nav.map((entry) => {
+        if (!entry.isSection) {
+          // Direct link (Dashboard)
+          const link = entry as NavLink;
+          const module = new URLSearchParams(location.search).get('module');
+          const isActive = location.pathname === '/admin' && (module === 'dashboard' || !module);
+          const Icon = link.icon;
+          return (
+            <Link
+              key={link.id}
+              to={link.path}
+              className={`sidebar-nav-item ${isActive ? 'active' : ''}`}
+            >
+              <Icon size={16} />
+              <span className="sidebar-nav-title">{link.label}</span>
+            </Link>
+          );
+        }
+
+        // Section with sub-items
+        const section = entry as NavSection;
+        const isExpanded = expandedSections.has(section.id);
+        const sectionActive = isSectionActive(section, location.pathname, location.search);
+        const Icon = section.icon;
+
+        const mainItems = section.items.filter((i) => !i.fixed);
+        const fixedItems = section.items.filter((i) => i.fixed);
+
+        return (
+          <div key={section.id} className="sidebar-section-group">
+            <button
+              type="button"
+              onClick={() => toggleSection(section.id)}
+              className={`sidebar-section-header ${sectionActive ? 'active' : ''}`}
+            >
+              <div className="sidebar-section-header-left">
+                <Icon size={16} />
+                <div className="sidebar-section-header-text">
+                  <span className="sidebar-nav-title">{section.label}</span>
+                  {section.sublabel && (
+                    <span className="sidebar-nav-subtitle">{section.sublabel}</span>
+                  )}
+                </div>
+              </div>
+              {isExpanded
+                ? <ChevronDown size={14} className="sidebar-chevron" />
+                : <ChevronRight size={14} className="sidebar-chevron" />
+              }
+            </button>
+
+            {isExpanded && (
+              <div className="sidebar-section-items">
+                {mainItems.map((item) => {
+                  const ItemIcon = item.icon;
+                  const active = isItemActive(item, location.pathname, location.search);
+                  return (
+                    <Link
+                      key={item.label}
+                      to={item.path}
+                      className={`sidebar-sub-item ${active ? 'active' : ''}`}
+                    >
+                      <ItemIcon size={14} />
+                      <span>{item.label}</span>
+                      {item.badge && (
+                        <span className="sidebar-sub-badge">{item.badge}</span>
+                      )}
+                    </Link>
+                  );
+                })}
+
+                {fixedItems.length > 0 && (
+                  <>
+                    <div className="sidebar-fixed-divider" />
+                    {fixedItems.map((item) => {
+                      const ItemIcon = item.icon;
+                      const active = isItemActive(item, location.pathname, location.search);
+                      return (
+                        <Link
+                          key={item.label}
+                          to={item.path}
+                          className={`sidebar-sub-item sidebar-sub-item--fixed ${active ? 'active' : ''}`}
+                        >
+                          <ItemIcon size={14} />
+                          <span>{item.label}</span>
+                        </Link>
+                      );
+                    })}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </nav>
+  );
+
+  const renderRspNav = () => (
+    <nav className="sidebar-nav">
+      <div className="sidebar-section-group-label">RSP PORTAL</div>
+      {RSP_ROLE_NAV.map((rawEntry) => {
+        if (rawEntry.isSection) return null;
+        const entry = rawEntry as NavLink;
+        const Icon = entry.icon;
+        const isActive = location.pathname === entry.path;
+        return (
+          <Link
+            key={entry.id}
+            to={entry.path}
+            className={`sidebar-nav-item ${isActive ? 'active' : ''}`}
+          >
+            <Icon size={16} />
+            <div className="sidebar-nav-text">
+              <span className="sidebar-nav-title">{entry.label}</span>
+            </div>
+            {entry.id === 'qualified' && qualifiedCount > 0 && (
+              <span className="sidebar-sub-badge">{qualifiedCount}</span>
+            )}
+          </Link>
+        );
+      })}
+    </nav>
+  );
 
   return (
     <aside className="sidebar">
-      <nav className="sidebar-nav">
-        {filteredMenuItems.map((item) => {
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={`sidebar-nav-item ${item.isActive ? 'active' : ''}`}
-            >
-              <Icon size={18} />
-              <div className="sidebar-nav-text flex-1 flex items-center justify-between">
-                <div>
-                  <span className="sidebar-nav-title">{item.label}</span>
-                  {item.sublabel ? <span className="sidebar-nav-subtitle flex">{item.sublabel}</span> : null}
-                </div>
-                {item.badge && (
-                  <span className="ml-2 bg-blue-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                    {item.badge}
-                  </span>
-                )}
-              </div>
-            </Link>
-          );
-        })}
-      </nav>
-      
+      {/* Sidebar brand header */}
+      <div className="sidebar-brand">
+        <div className="sidebar-brand-icon">
+          <LayoutDashboard size={16} />
+        </div>
+        <div className="sidebar-brand-text">
+          <span className="sidebar-brand-name">ABYAN HRIS</span>
+          <span className="sidebar-brand-sub">
+            {isSuperAdmin ? 'Super Admin' : isRspRole ? 'RSP Portal' : 'Admin Portal'}
+          </span>
+        </div>
+      </div>
+
+      {isSuperAdmin ? renderSuperAdminNav() : renderRspNav()}
+
       <div className="sidebar-footer">
         {session && (
           <div className="sidebar-user">
             <p className="sidebar-user-email">{session.email}</p>
-            <p className="sidebar-user-role">{resolvedRole}</p>
+            <p className="sidebar-user-role">{resolvedRole?.replace('-', ' ')}</p>
           </div>
         )}
-        <button
-          type="button"
-          className="sidebar-logout"
-          onClick={() => {
-            localStorage.removeItem('cictrix_admin_session');
-            navigate('/admin/login');
-          }}
-        >
-          Log out
-        </button>
       </div>
     </aside>
   );

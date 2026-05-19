@@ -1,6 +1,7 @@
 import { AlertCircle, Award, Building2, GraduationCap, TrendingUp, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Sidebar } from '../../components/Sidebar';
+import { TopNav } from '../../components/TopNav';
 import { supabase } from '../../lib/supabase';
 import '../../styles/admin.css';
 
@@ -74,9 +75,10 @@ export const SuperAdminDashboard = () => {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50">
+    <div className="bg-slate-50 min-h-screen">
       <Sidebar />
-      <main className="flex-1 overflow-auto">
+      <main className="ml-64 min-h-screen overflow-y-auto">
+        <TopNav />
         <div className="p-8">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-slate-900">Super Admin Dashboard</h1>
@@ -85,7 +87,7 @@ export const SuperAdminDashboard = () => {
 
           {/* Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-10">
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm overflow-hidden">
+            <div className="relative bg-white border border-slate-200 rounded-2xl p-5 shadow-sm overflow-hidden">
               <div className="absolute top-0 left-0 right-0 h-1" style={{background: 'linear-gradient(90deg, #C8D1FF, #363EE8)'}}></div>
               <div className="flex items-center justify-between">
                 <div>
@@ -101,7 +103,7 @@ export const SuperAdminDashboard = () => {
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm overflow-hidden">
+            <div className="relative bg-white border border-slate-200 rounded-2xl p-5 shadow-sm overflow-hidden">
               <div className="absolute top-0 left-0 right-0 h-1" style={{background: 'linear-gradient(90deg, #C8D1FF, #363EE8)'}}></div>
               <div className="flex items-center justify-between">
                 <div>
@@ -117,7 +119,7 @@ export const SuperAdminDashboard = () => {
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm overflow-hidden">
+            <div className="relative bg-white border border-slate-200 rounded-2xl p-5 shadow-sm overflow-hidden">
               <div className="absolute top-0 left-0 right-0 h-1" style={{background: 'linear-gradient(90deg, #C8D1FF, #363EE8)'}}></div>
               <div className="flex items-center justify-between">
                 <div>
@@ -133,7 +135,7 @@ export const SuperAdminDashboard = () => {
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm overflow-hidden">
+            <div className="relative bg-white border border-slate-200 rounded-2xl p-5 shadow-sm overflow-hidden">
               <div className="absolute top-0 left-0 right-0 h-1" style={{background: 'linear-gradient(90deg, #C8D1FF, #363EE8)'}}></div>
               <div className="flex items-center justify-between">
                 <div>

@@ -28,6 +28,8 @@ import {
 import { EmployeeDevelopment } from './EmployeeDevelopment';
 import { SeminarEnrollment } from './SeminarEnrollment';
 import { TrainingCourses } from './TrainingCourses';
+import { TopNav } from '../../components/TopNav';
+
 
 type Priority = 'high' | 'medium' | 'low';
 type RequestStatus = 'approved' | 'pending' | 'rejected';
@@ -141,52 +143,24 @@ const statusColor = (status: RequestStatus) => {
   return 'bg-red-100 text-red-700';
 };
 
-const TopNav = () => {
-  return (
-    <header className="fixed inset-x-0 top-0 z-50 h-16 border-b border-gray-200 bg-white shadow-sm">
-      <div className="flex h-full items-center justify-between px-5">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 text-sm font-bold text-white">
-            HR
-          </div>
-          <div>
-            <p className="text-sm font-bold text-gray-900">Government HRIS</p>
-            <p className="text-xs text-gray-500">Human Resource Information System</p>
-          </div>
-        </div>
 
-        <div className="flex items-center gap-2">
-          <button className="rounded-lg p-2 text-gray-600 transition hover:bg-gray-100 hover:text-gray-900" type="button" aria-label="Help">
-            <HelpCircle className="h-5 w-5" />
-          </button>
-          <button className="relative rounded-lg p-2 text-gray-600 transition hover:bg-gray-100 hover:text-gray-900" type="button" aria-label="Notifications">
-            <Bell className="h-5 w-5" />
-            <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-500" />
-          </button>
-          <span className="mx-2 h-6 w-px bg-gray-200" />
-          <div className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-gray-50">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-blue-700 text-white">
-              <User className="h-4 w-4" />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-gray-900">Alex Gonzales</p>
-              <p className="text-xs text-gray-500">L&D Division</p>
-            </div>
-          </div>
-          <button className="ml-2 inline-flex items-center gap-1 rounded-lg px-2 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50" type="button">
-            <LogOut className="h-4 w-4" />
-            Logout
-          </button>
-        </div>
-      </div>
-    </header>
-  );
-};
 
 const Sidebar = ({ activeModule, onSelect }: { activeModule: MenuId; onSelect: (id: MenuId) => void }) => {
   return (
-    <aside className="fixed left-0 top-16 z-40 h-[calc(100vh-4rem)] w-64 overflow-y-auto border-r border-gray-200 bg-white">
-      <nav className="space-y-1 p-3">
+    <aside className="w-64 shrink-0 border-r border-slate-200 bg-white flex flex-col select-none overflow-hidden">
+      {/* Brand strip */}
+      <div className="flex items-center gap-2.5 px-4 py-3.5 border-b border-slate-200">
+        <div className="h-7 w-7 rounded-lg bg-[#363EE8] flex items-center justify-center flex-shrink-0">
+          <BookOpen className="h-4 w-4 text-white" />
+        </div>
+        <div className="flex flex-col min-w-0">
+          <span className="text-[0.8125rem] font-bold text-[#050D65] leading-tight tracking-tight">L&D Management</span>
+          <span className="text-[0.625rem] font-semibold text-[#363EE8] uppercase tracking-widest">Learning & Development</span>
+        </div>
+      </div>
+
+      <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-0.5">
+        <p className="text-[0.6rem] font-bold text-slate-400 uppercase tracking-widest px-2 pb-1.5">Navigation</p>
         {LND_MENU.map((item) => {
           const Icon = item.icon;
           const isActive = activeModule === item.id;
@@ -196,16 +170,18 @@ const Sidebar = ({ activeModule, onSelect }: { activeModule: MenuId; onSelect: (
               type="button"
               onClick={() => onSelect(item.id)}
               className={[
-                'flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition',
+                'flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2.5 text-left transition-colors select-none',
                 isActive
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-gray-700 hover:bg-gray-50',
+                  ? 'bg-[#EEF2FF] text-[#363EE8] font-semibold'
+                  : 'text-slate-600 hover:bg-slate-50 font-medium',
               ].join(' ')}
             >
-              <Icon className={isActive ? 'mt-0.5 h-5 w-5 text-white' : 'mt-0.5 h-5 w-5 text-gray-500'} />
-              <span className="flex flex-col">
-                <span className="text-sm font-semibold">{item.label}</span>
-                <span className={isActive ? 'text-xs text-blue-100' : 'text-xs text-gray-500'}>{item.sublabel}</span>
+              <Icon className={`mt-0.5 h-4 w-4 flex-shrink-0 ${isActive ? 'text-[#363EE8]' : 'text-slate-400'}`} />
+              <span className="flex flex-col min-w-0">
+                <span className="text-[0.8125rem] leading-tight truncate">{item.label}</span>
+                {item.sublabel && (
+                  <span className={`text-[0.6875rem] mt-0.5 ${isActive ? 'text-[#363EE8]/70 font-normal' : 'text-slate-400 font-normal'}`}>{item.sublabel}</span>
+                )}
               </span>
             </button>
           );
@@ -432,11 +408,11 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
   const [activeModule, setActiveModule] = useState<MenuId>('dashboard');
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="flex h-screen bg-slate-50 font-sans flex-col text-slate-800">
       <TopNav />
-      <div className="flex pt-16">
+      <div className="flex flex-1 overflow-hidden">
         <Sidebar activeModule={activeModule} onSelect={setActiveModule} />
-        <main className="ml-64 flex-1">
+        <main className="flex-1 overflow-auto">
           {activeModule === 'dashboard' ? (
             <LndDashboardContent />
           ) : activeModule === 'training-courses' ? (
@@ -450,7 +426,6 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
           )}
         </main>
       </div>
-      {!isDashboardView ? null : null}
     </div>
   );
 };

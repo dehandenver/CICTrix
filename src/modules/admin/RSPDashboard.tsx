@@ -33,6 +33,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../../components/Button';
 import { Sidebar } from '../../components/Sidebar';
+import { TopNav } from '../../components/TopNav';
+
 import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import {
     createPassword,
@@ -2985,10 +2987,11 @@ export const RSPDashboard = () => {
   ];
 
   return (
-    <div className="admin-layout">
+    <div className="bg-slate-50 min-h-screen font-sans">
       <Sidebar activeModule="RSP" userRole="rsp" />
 
-      <main className="admin-content !p-0">
+      <main className="ml-64 min-h-screen overflow-y-auto">
+        <TopNav />
         <div className="border-b border-[var(--border-color)] bg-white px-8 py-6">
           <h1 className={`!mb-1 font-bold ${section === 'new-hired' || section === 'reports' ? '!text-xl' : '!text-2xl'}`}>{sectionTitle}</h1>
           <p className={`!mb-0 text-[var(--text-secondary)] ${section === 'new-hired' || section === 'reports' ? '!text-sm' : '!text-base'}`}>
