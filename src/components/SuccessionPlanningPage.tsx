@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   Briefcase,
   Plus,
@@ -832,7 +832,7 @@ export const SuccessionPlanningPage = () => {
 };
 
 type StatCardProps = {
-  icon: React.ReactNode;
+  icon: ReactNode;
   iconBg: string;
   tag: string;
   value: number | string;
@@ -914,7 +914,7 @@ const PositionCard = ({ position, onEdit }: PositionCardProps) => (
 );
 
 type InfoPillProps = {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   value: string;
 };
@@ -929,7 +929,7 @@ const InfoPill = ({ icon, label, value }: InfoPillProps) => (
 
 type FormFieldProps = {
   label: string;
-  children: React.ReactNode;
+  children: ReactNode;
 };
 
 const FormField = ({ label, children }: FormFieldProps) => (
