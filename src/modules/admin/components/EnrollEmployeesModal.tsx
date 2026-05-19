@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { UserPlus, X, Search, ChevronDown, Building2 } from 'lucide-react';
+import { supabase } from '../../../lib/supabase';
 
 export type Employee = {
   id: string;
@@ -15,17 +16,6 @@ interface EnrollEmployeesModalProps {
   onEnroll: (selectedEmployeeIds: string[], status: 'Confirmed' | 'Pending') => void;
 }
 
-const mockEmployees: Employee[] = [
-  { id: '1', name: 'Santos, Maria G.', position: 'Systems Analyst II', department: 'IT Department' },
-  { id: '2', name: 'Dela Cruz, Juan P.', position: 'Programmer III', department: 'IT Department' },
-  { id: '3', name: 'Reyes, Ana T.', position: 'IT Officer I', department: 'IT Department' },
-  { id: '4', name: 'Aguilar, Ricardo M.', position: 'Network Administrator', department: 'IT Department' },
-  { id: '5', name: 'Bautista, Lourdes S.', position: 'Systems Developer II', department: 'IT Department' },
-  { id: '6', name: 'Padilla, Romeo F.', position: 'IT Support Specialist', department: 'IT Department' },
-  { id: '7', name: 'Garcia, Elena V.', position: 'Database Administrator', department: 'IT Department' },
-  { id: '8', name: 'Torres, Mark J.', position: 'Cybersecurity Analyst', department: 'IT Department' },
-];
-
 export const EnrollEmployeesModal: React.FC<EnrollEmployeesModalProps> = ({
   isOpen,
   onClose,
@@ -36,11 +26,54 @@ export const EnrollEmployeesModal: React.FC<EnrollEmployeesModalProps> = ({
   const [selectedDepartment, setSelectedDepartment] = useState('All Departments');
   const [enrollAs, setEnrollAs] = useState<'Confirmed' | 'Pending'>('Confirmed');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
-  const departments = ['All Departments', 'IT Department', 'HR Division', 'Operations', 'MIS', 'Records', 'Budget', 'General Services'];
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    setIsLoading(true);
+    setFetchError(null);
+    (async () => {
+      const { data, error } = await (supabase as any)
+        .from('employees')
+        .select('id, first_name, last_name, position, department, status')
+        .eq('status', 'Active')
+        .order('last_name', { ascending: true });
+
+      if (cancelled) return;
+      if (error) {
+        console.error('Error fetching employees for enrollment modal:', error);
+        setFetchError(error.message ?? 'Failed to load employees');
+        setEmployees([]);
+      } else {
+        const mapped: Employee[] = (data ?? []).map((row: any) => {
+          const last = (row.last_name ?? '').trim();
+          const first = (row.first_name ?? '').trim();
+          const name = last && first ? `${last}, ${first}` : last || first || 'Unnamed Employee';
+          return {
+            id: row.id,
+            name,
+            position: row.position ?? '—',
+            department: row.department ?? '—',
+          };
+        });
+        setEmployees(mapped);
+      }
+      setIsLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [isOpen]);
+
+  const departments = useMemo(() => {
+    const uniq = new Set<string>();
+    employees.forEach((emp) => { if (emp.department && emp.department !== '—') uniq.add(emp.department); });
+    return ['All Departments', ...Array.from(uniq).sort()];
+  }, [employees]);
 
   const filteredEmployees = useMemo(() => {
-    return mockEmployees.filter((emp) => {
+    return employees.filter((emp) => {
       const matchesSearch =
         emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         emp.position.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -48,7 +81,7 @@ export const EnrollEmployeesModal: React.FC<EnrollEmployeesModalProps> = ({
       const matchesDept = selectedDepartment === 'All Departments' || emp.department === selectedDepartment;
       return matchesSearch && matchesDept;
     });
-  }, [searchQuery, selectedDepartment]);
+  }, [employees, searchQuery, selectedDepartment]);
 
   const allSelected = filteredEmployees.length > 0 && selectedIds.size === filteredEmployees.length;
 
@@ -173,7 +206,15 @@ export const EnrollEmployeesModal: React.FC<EnrollEmployeesModalProps> = ({
 
         {/* Employee List */}
         <div className="overflow-y-auto flex-1 min-h-[300px]">
-          {filteredEmployees.map((emp) => (
+          {isLoading && (
+            <div className="p-10 text-center text-gray-500 text-sm">Loading employees…</div>
+          )}
+          {!isLoading && fetchError && (
+            <div className="p-10 text-center text-red-600 text-sm">
+              Failed to load employees: {fetchError}
+            </div>
+          )}
+          {!isLoading && !fetchError && filteredEmployees.map((emp) => (
             <div
               key={emp.id}
               className="grid grid-cols-12 gap-4 px-5 py-4 border-b border-gray-100 hover:bg-gray-50 transition-colors items-center cursor-pointer"
@@ -197,7 +238,7 @@ export const EnrollEmployeesModal: React.FC<EnrollEmployeesModalProps> = ({
               </div>
             </div>
           ))}
-          {filteredEmployees.length === 0 && (
+          {!isLoading && !fetchError && filteredEmployees.length === 0 && (
             <div className="p-10 text-center text-gray-500">
               No employees found matching your filters.
             </div>
