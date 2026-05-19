@@ -45,8 +45,50 @@ export const SuccessionPlanningPage = () => {
       </div>
 
       {activeTab === 'planning' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="rounded-xl border border-gray-200 bg-white p-5">
+        <div className="space-y-6">
+          {/* Main Selectors (Permanent/Temporary, Department, Position) */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-6 gap-4">
+              <div>
+                <h3 className="text-gray-500 font-semibold tracking-wide text-sm uppercase mb-1">Permanent Replacement</h3>
+                <p className="text-gray-400 text-sm">
+                  Cross-department • Non-negotiables: required trainings, years of experience, and civil service eligibility.
+                </p>
+              </div>
+              <div className="flex bg-gray-50 rounded-lg p-1 border border-gray-200 shrink-0">
+                <button className="px-4 py-1.5 bg-white text-gray-900 rounded-md shadow-sm text-sm font-medium border border-gray-200">Permanent</button>
+                <button className="px-4 py-1.5 text-gray-500 text-sm font-medium rounded-md hover:text-gray-700">Temporary</button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-500 mb-2 uppercase">
+                  <Briefcase size={16} /> Department
+                </label>
+                <div className="relative">
+                  <select className="w-full appearance-none rounded-lg border border-gray-300 py-2.5 pl-4 pr-10 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-gray-900 bg-white">
+                    <option>Human Resources</option>
+                  </select>
+                  <ChevronRight size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 rotate-90 pointer-events-none" />
+                </div>
+              </div>
+              <div>
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-500 mb-2 uppercase">
+                  <Briefcase size={16} /> Critical Position
+                </label>
+                <div className="relative">
+                  <select className="w-full appearance-none rounded-lg border border-gray-300 py-2.5 pl-4 pr-10 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-gray-500 bg-white">
+                    <option>Select critical position...</option>
+                  </select>
+                  <ChevronRight size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 rotate-90 pointer-events-none" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="rounded-xl border border-gray-200 bg-white p-5">
             <h3 className="text-gray-500 text-sm font-semibold mb-2">Total Critical Positions</h3>
             <p className="text-3xl font-bold text-gray-900">42</p>
           </div>
