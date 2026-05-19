@@ -4,6 +4,7 @@ import { Button } from './Button';
 
 export const SuccessionPlanningPage = () => {
   const [selectedPosition, setSelectedPosition] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'planning' | 'critical' | 'registry'>('planning');
 
   const mockCriticalPositions = [
     'Chief Information Officer',
