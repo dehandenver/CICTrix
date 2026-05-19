@@ -89,24 +89,25 @@ export const SuccessionPlanningPage = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="rounded-xl border border-gray-200 bg-white p-5">
-            <h3 className="text-gray-500 text-sm font-semibold mb-2">Total Critical Positions</h3>
-            <p className="text-3xl font-bold text-gray-900">42</p>
-          </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-5">
-            <h3 className="text-gray-500 text-sm font-semibold mb-2">Positions with Successors</h3>
-            <p className="text-3xl font-bold text-gray-900">28</p>
-          </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-5">
-            <h3 className="text-gray-500 text-sm font-semibold mb-2">Positions at Risk</h3>
-            <p className="text-3xl font-bold text-red-600">14</p>
-          </div>
-          <div className="rounded-xl border border-gray-200 bg-white p-5">
-            <h3 className="text-gray-500 text-sm font-semibold mb-2">Readiness Index</h3>
-            <p className="text-3xl font-bold text-green-600">67%</p>
-          </div>
-          
-          <div className="col-span-full border border-gray-200 rounded-xl bg-white p-8 text-center text-gray-500 my-8">
-            Select a critical position to view succession details or go to Critical Positions to manage them.
+              <h3 className="text-gray-500 text-sm font-semibold mb-2">Total Critical Positions</h3>
+              <p className="text-3xl font-bold text-gray-900">42</p>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-white p-5">
+              <h3 className="text-gray-500 text-sm font-semibold mb-2">Positions with Successors</h3>
+              <p className="text-3xl font-bold text-gray-900">28</p>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-white p-5">
+              <h3 className="text-gray-500 text-sm font-semibold mb-2">Positions at Risk</h3>
+              <p className="text-3xl font-bold text-red-600">14</p>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-white p-5">
+              <h3 className="text-gray-500 text-sm font-semibold mb-2">Readiness Index</h3>
+              <p className="text-3xl font-bold text-green-600">67%</p>
+            </div>
+            
+            <div className="col-span-full border border-gray-200 rounded-xl bg-white p-8 text-center text-gray-500 my-8">
+              Select a critical position to view succession details or go to Critical Positions to manage them.
+            </div>
           </div>
         </div>
       )}
