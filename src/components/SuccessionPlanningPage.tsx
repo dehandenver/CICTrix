@@ -3,7 +3,14 @@ import { Network, Search, Briefcase, Plus, Users, User, ArrowRight, UserCheck, A
 import { Button } from './Button';
 
 export const SuccessionPlanningPage = () => {
-  const [activeTab, setActiveTab] = useState<'planning' | 'critical' | 'registry'>('planning');
+  const [selectedPosition, setSelectedPosition] = useState<string>('');
+
+  const mockCriticalPositions = [
+    'Chief Information Officer',
+    'HR Director',
+    'Senior Systems Analyst',
+    'Finance Manager'
+  ];
 
   return (
     <div className="space-y-6">
@@ -78,8 +85,15 @@ export const SuccessionPlanningPage = () => {
                   <Briefcase size={16} /> Critical Position
                 </label>
                 <div className="relative">
-                  <select className="w-full appearance-none rounded-lg border border-gray-300 py-2.5 pl-4 pr-10 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-gray-500 bg-white">
-                    <option>Select critical position...</option>
+                  <select 
+                    className="w-full appearance-none rounded-lg border border-gray-300 py-2.5 pl-4 pr-10 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-gray-900 bg-white"
+                    value={selectedPosition}
+                    onChange={(e) => setSelectedPosition(e.target.value)}
+                  >
+                    <option value="">Select critical position...</option>
+                    {mockCriticalPositions.map(pos => (
+                      <option key={pos} value={pos}>{pos}</option>
+                    ))}
                   </select>
                   <ChevronRight size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 rotate-90 pointer-events-none" />
                 </div>
@@ -105,9 +119,110 @@ export const SuccessionPlanningPage = () => {
               <p className="text-3xl font-bold text-green-600">67%</p>
             </div>
             
-            <div className="col-span-full border border-gray-200 rounded-xl bg-white p-8 text-center text-gray-500 my-8">
-              Select a critical position to view succession details or go to Critical Positions to manage them.
-            </div>
+            
+            {selectedPosition ? (
+              <div className="col-span-full border border-gray-200 rounded-xl bg-white p-6 my-8">
+                <div className="flex justify-between items-center mb-6">
+                   <div>
+                     <h2 className="text-xl font-bold text-gray-900">{selectedPosition}</h2>
+                     <p className="text-gray-500 text-sm">Human Resources • Critical Level: High</p>
+                   </div>
+                   <Button>View Full Succession Plan</Button>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {/* Mock 9-Box Distribution */}
+                  <div className="border border-gray-100 rounded-lg p-5 bg-gray-50">
+                    <h3 className="font-semibold text-gray-700 mb-4">Talent Distribution (9-Box)</h3>
+                    <div className="grid grid-cols-3 gap-2 aspect-square text-xs font-semibold text-center">
+                      <div className="bg-green-100 text-green-800 rounded flex flex-col items-center justify-center p-2">
+                        <span>Stars</span>
+                        <span className="text-xl mt-1">2</span>
+                      </div>
+                      <div className="bg-green-50 text-green-700 rounded flex flex-col items-center justify-center p-2">
+                        <span>High Potential</span>
+                        <span className="text-xl mt-1">1</span>
+                      </div>
+                      <div className="bg-blue-50 text-blue-700 rounded flex flex-col items-center justify-center p-2">
+                        <span>Consistent Stars</span>
+                        <span className="text-xl mt-1">0</span>
+                      </div>
+                      
+                      <div className="bg-yellow-100 text-yellow-800 rounded flex flex-col items-center justify-center p-2">
+                        <span>Key Players</span>
+                        <span className="text-xl mt-1">3</span>
+                      </div>
+                      <div className="bg-gray-100 text-gray-700 rounded flex flex-col items-center justify-center p-2">
+                        <span>Core Employees</span>
+                        <span className="text-xl mt-1">5</span>
+                      </div>
+                      <div className="bg-yellow-50 text-yellow-700 rounded flex flex-col items-center justify-center p-2">
+                        <span>High Performers</span>
+                        <span className="text-xl mt-1">1</span>
+                      </div>
+
+                      <div className="bg-red-100 text-red-800 rounded flex flex-col items-center justify-center p-2">
+                        <span>Risk</span>
+                        <span className="text-xl mt-1">0</span>
+                      </div>
+                      <div className="bg-orange-50 text-orange-700 rounded flex flex-col items-center justify-center p-2">
+                        <span>Inconsistent</span>
+                        <span className="text-xl mt-1">2</span>
+                      </div>
+                      <div className="bg-blue-100 text-blue-800 rounded flex flex-col items-center justify-center p-2">
+                        <span>Solid Pros.</span>
+                        <span className="text-xl mt-1">4</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Mock Identified Successors */}
+                  <div>
+                    <h3 className="font-semibold text-gray-700 mb-4">Identified Successors</h3>
+                    <div className="space-y-3">
+                      <div className="p-3 border border-green-200 bg-green-50 rounded-lg flex justify-between items-center">
+                         <div className="flex items-center gap-3">
+                           <div className="h-10 w-10 bg-green-200 text-green-800 rounded-full flex items-center justify-center font-bold">AJ</div>
+                           <div>
+                             <p className="font-bold text-gray-900 leading-tight">Ashley Johnson</p>
+                             <p className="text-xs text-gray-600">Senior Recruiter • Ready Now</p>
+                           </div>
+                         </div>
+                         <div className="text-right">
+                           <p className="text-sm font-bold text-green-700">92% Match</p>
+                         </div>
+                      </div>
+                      
+                      <div className="p-3 border border-yellow-200 bg-yellow-50 rounded-lg flex justify-between items-center">
+                         <div className="flex items-center gap-3">
+                           <div className="h-10 w-10 bg-yellow-200 text-yellow-800 rounded-full flex items-center justify-center font-bold">MR</div>
+                           <div>
+                             <p className="font-bold text-gray-900 leading-tight">Michael Ross</p>
+                             <p className="text-xs text-gray-600">Compensation Specialist • 1-2 Years</p>
+                           </div>
+                         </div>
+                         <div className="text-right">
+                           <p className="text-sm font-bold text-yellow-700">78% Match</p>
+                         </div>
+                      </div>
+
+                      <div className="p-3 border border-gray-200 bg-white rounded-lg flex justify-between items-center border-dashed">
+                         <div className="flex items-center gap-3 text-gray-400">
+                           <div className="h-10 w-10 bg-gray-100 rounded-full flex items-center justify-center">
+                             <Plus size={20} />
+                           </div>
+                           <p className="font-medium text-sm">Add Successor</p>
+                         </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="col-span-full border border-gray-200 rounded-xl bg-white p-8 text-center text-gray-500 my-8">
+                Select a critical position to view succession details or go to Critical Positions to manage them.
+              </div>
+            )}
           </div>
         </div>
       )}
