@@ -1,32 +1,36 @@
 import {
-    Bell,
-    Calendar,
-    CheckCircle2,
-    Clock,
-    Eye,
-    EyeOff,
-    FileText,
-    Home,
-    Lock,
-    LogOut,
-    Pencil,
-    Save,
-    Upload,
-    User,
-    X,
+  Bell,
+  Calendar,
+  CheckCircle2,
+  Clock,
+  Eye,
+  EyeOff,
+  FileText,
+  Home,
+  Lock,
+  LogOut,
+  Pencil,
+  Save,
+  Upload,
+  User,
+  X,
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import {
-    APPLICATION_DOC_TYPES,
-    EMPLOYEE_DOCUMENTS_UPDATED_EVENT,
-    dispatchEmployeeDocumentsUpdated,
-    listEmployeeDocumentsForEmployee,
-    uploadEmployeeDocument,
-    type ApplicationDocumentType,
-    type EmployeeDocumentRow,
-} from '../../lib/employeeDocuments';
 import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
+import {
+  fetchPortalEmployeeById,
+  patchPortalEmployee,
+} from '../../lib/api/employeePortal';
+import {
+  APPLICATION_DOC_TYPES,
+  EMPLOYEE_DOCUMENTS_UPDATED_EVENT,
+  dispatchEmployeeDocumentsUpdated,
+  listEmployeeDocumentsForEmployee,
+  uploadEmployeeDocument,
+  type ApplicationDocumentType,
+  type EmployeeDocumentRow,
+} from '../../lib/employeeDocuments';
 import {
   changeEmployeePortalPassword,
   changeEmployeePortalUsername,
@@ -35,10 +39,6 @@ import {
   updateEmployeePortalEmployee,
 } from '../../lib/employeePortalData';
 import { Employee } from '../../types/employee.types';
-import {
-  fetchPortalEmployeeById,
-  patchPortalEmployee,
-} from '../../lib/api/employeePortal';
 
 interface EmployeePageProps {
   currentUser: Employee;
@@ -800,6 +800,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
                   <FieldRow label="Gender" value={profile.gender || '--'} />
                   <FieldRow label="Address" value={profile.homeAddress} />
                   <FieldRow label="Position" value="Employee" />
+                  <FieldRow label="Department" value="Health Office" />
                 </>
               )}
             </section>
