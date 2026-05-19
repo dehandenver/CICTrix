@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import {
   Briefcase,
   Plus,
@@ -15,64 +15,21 @@ import {
   CheckCircle2,
   XCircle,
   X,
-  User,
-  GraduationCap,
-  Sparkles,
-  TrendingUp,
-  Check,
 } from 'lucide-react';
 import { Button } from './Button';
 
 type TabKey = 'planning' | 'critical' | 'registry';
-
-type Competency = { name: string; required: number };
 
 type CriticalPosition = {
   id: string;
   title: string;
   department: string;
   incumbent: string;
-  incumbentStatus: 'Active' | 'On Leave' | 'Retiring';
-  incumbentStatusDetail: string;
   experienceYears: number;
   trainingHours: number;
   eligibility: string;
   courses: string[];
-  competencies: Competency[];
   footer: string;
-};
-
-type CandidateLevel = 'Ready Now' | 'Ready Soon' | 'Not Ready';
-
-type Candidate = {
-  id: string;
-  rank: number;
-  positionId: string;
-  name: string;
-  initials: string;
-  currentPosition: string;
-  department: string;
-  course: string;
-  matchPercent: number;
-  yearsExperience: number;
-  ipcr: number;
-  scorePercent: number;
-  level: CandidateLevel;
-  missingNotes?: string[];
-  competencyScores: Record<string, number>;
-  readinessBreakdown: {
-    competencyGap: { current: number; max: number };
-    trainingAlignment: { current: number; max: number };
-    yearsExperience: { current: number; max: number };
-    ipcrPerformance: { current: number; max: number };
-  };
-  eligibilityCheck: {
-    trainings: { current: number; required: number; pass: boolean };
-    trainingHours: { current: number; required: number; pass: boolean };
-    experience: { current: number; required: number; pass: boolean };
-    eligibility: { value: string; pass: boolean };
-  };
-  recommendations: string[];
 };
 
 type PositionForm = {
@@ -115,17 +72,10 @@ const INITIAL_POSITIONS: CriticalPosition[] = [
     title: 'HR Officer IV',
     department: 'Human Resources',
     incumbent: 'Atty. Elena R. Mercado',
-    incumbentStatus: 'Retiring',
-    incumbentStatusDetail: 'Retirement effective 2026-08-31',
     experienceYears: 3,
     trainingHours: 80,
     eligibility: 'Career Service Professional (R.A. 1080)',
     courses: ['BS Psychology', 'BS Human Resource Development Management', 'AB Behavioral Science'],
-    competencies: [
-      { name: 'HR Policy Implementation', required: 85 },
-      { name: 'Labor Relations', required: 80 },
-      { name: 'Talent Development', required: 75 },
-    ],
     footer: 'Retirement effective 2026-08-31',
   },
   {
@@ -133,17 +83,10 @@ const INITIAL_POSITIONS: CriticalPosition[] = [
     title: 'Municipal Administrator',
     department: 'Administration',
     incumbent: 'Mr. Roberto S. Lim',
-    incumbentStatus: 'Active',
-    incumbentStatusDetail: 'Currently in role',
     experienceYears: 5,
     trainingHours: 120,
     eligibility: 'Career Service Professional (R.A. 1080)',
     courses: ['Master in Public Administration', 'MA Local Governance', 'MS Public Management'],
-    competencies: [
-      { name: 'Public Administration', required: 90 },
-      { name: 'Budget Management', required: 85 },
-      { name: 'Policy Analysis', required: 80 },
-    ],
     footer: 'Currently in role',
   },
   {
@@ -151,18 +94,10 @@ const INITIAL_POSITIONS: CriticalPosition[] = [
     title: 'IT Division Chief',
     department: 'Information Technology',
     incumbent: 'Engr. Roberto P. Aquino',
-    incumbentStatus: 'On Leave',
-    incumbentStatusDetail: 'Medical leave until 2026-06-15',
     experienceYears: 8,
-    trainingHours: 100,
+    trainingHours: 96,
     eligibility: 'Career Service Professional (R.A. 1080)',
-    courses: ['BS Computer Science', 'BS Information Technology', 'BS Information Systems'],
-    competencies: [
-      { name: 'Digital Literacy for Gov Services', required: 90 },
-      { name: 'Project Management in Public Setting', required: 85 },
-      { name: 'Data and Records Management', required: 80 },
-      { name: 'Technical Writing for Gov Docs', required: 70 },
-    ],
+    courses: ['BS Computer Science', 'BS Information Technology', 'MS Information Systems'],
     footer: 'Medical leave until 2026-06-15',
   },
   {
@@ -170,17 +105,10 @@ const INITIAL_POSITIONS: CriticalPosition[] = [
     title: 'Finance Director',
     department: 'Finance',
     incumbent: 'Mr. Antonio V. delos Reyes',
-    incumbentStatus: 'Retiring',
-    incumbentStatusDetail: 'Retirement effective 2027-01-15',
     experienceYears: 10,
     trainingHours: 140,
     eligibility: 'Career Service Professional (R.A. 1080)',
     courses: ['BS Accountancy', 'BS Management Accounting', 'CPA'],
-    competencies: [
-      { name: 'Government Accounting', required: 90 },
-      { name: 'Audit & Compliance', required: 85 },
-      { name: 'Budget Forecasting', required: 80 },
-    ],
     footer: 'Retirement effective 2027-01-15',
   },
   {
@@ -188,17 +116,10 @@ const INITIAL_POSITIONS: CriticalPosition[] = [
     title: 'DRRM Officer',
     department: 'Operations',
     incumbent: 'Mr. Felipe S. Garcia',
-    incumbentStatus: 'Active',
-    incumbentStatusDetail: 'Currently in role',
     experienceYears: 5,
     trainingHours: 80,
     eligibility: 'Career Service Professional (R.A. 1080)',
     courses: ['BS Disaster Risk Management', 'BS Environmental Science', 'BS Geology'],
-    competencies: [
-      { name: 'Disaster Risk Assessment', required: 85 },
-      { name: 'Emergency Operations', required: 80 },
-      { name: 'Community Coordination', required: 75 },
-    ],
     footer: 'Currently in role',
   },
   {
@@ -206,13 +127,10 @@ const INITIAL_POSITIONS: CriticalPosition[] = [
     title: 'New Position',
     department: 'Administration',
     incumbent: 'Vacant',
-    incumbentStatus: 'Active',
-    incumbentStatusDetail: 'Newly created',
     experienceYears: 3,
     trainingHours: 40,
     eligibility: 'Career Service Professional (R.A. 1080)',
     courses: [],
-    competencies: [],
     footer: 'Newly created',
   },
 ];
@@ -228,21 +146,9 @@ type Successor = {
   readinessScore: number;
   readiness: 'Ready Now' | '1-2 Years' | '3-5 Years';
   status: SuccessorStatus;
-  assignedDate: string;
 };
 
 const INITIAL_SUCCESSORS: Successor[] = [
-  {
-    id: 's-itdc',
-    name: 'Miguel Antonio Tan',
-    initials: 'MT',
-    currentPosition: 'Senior IT Specialist',
-    targetPositionId: 'it-division-chief',
-    readinessScore: 94,
-    readiness: 'Ready Now',
-    status: 'designated',
-    assignedDate: '2026-05-19',
-  },
   {
     id: 's-1',
     name: 'Ashley Johnson',
@@ -252,7 +158,6 @@ const INITIAL_SUCCESSORS: Successor[] = [
     readinessScore: 92,
     readiness: 'Ready Now',
     status: 'designated',
-    assignedDate: '2026-04-12',
   },
   {
     id: 's-2',
@@ -263,7 +168,16 @@ const INITIAL_SUCCESSORS: Successor[] = [
     readinessScore: 78,
     readiness: '1-2 Years',
     status: 'designated',
-    assignedDate: '2026-03-22',
+  },
+  {
+    id: 's-3',
+    name: 'Maria Rodriguez',
+    initials: 'MR',
+    currentPosition: 'IT Division Head',
+    targetPositionId: 'it-division-chief',
+    readinessScore: 85,
+    readiness: 'Ready Now',
+    status: 'designated',
   },
   {
     id: 's-4',
@@ -274,7 +188,6 @@ const INITIAL_SUCCESSORS: Successor[] = [
     readinessScore: 71,
     readiness: '1-2 Years',
     status: 'designated',
-    assignedDate: '2026-02-08',
   },
   {
     id: 's-5',
@@ -285,7 +198,6 @@ const INITIAL_SUCCESSORS: Successor[] = [
     readinessScore: 88,
     readiness: 'Ready Now',
     status: 'designated',
-    assignedDate: '2026-01-30',
   },
   {
     id: 's-6',
@@ -296,7 +208,6 @@ const INITIAL_SUCCESSORS: Successor[] = [
     readinessScore: 74,
     readiness: '1-2 Years',
     status: 'designated',
-    assignedDate: '2025-12-15',
   },
   {
     id: 's-7',
@@ -307,7 +218,6 @@ const INITIAL_SUCCESSORS: Successor[] = [
     readinessScore: 63,
     readiness: '3-5 Years',
     status: 'designated',
-    assignedDate: '2025-11-04',
   },
   {
     id: 's-8',
@@ -318,7 +228,6 @@ const INITIAL_SUCCESSORS: Successor[] = [
     readinessScore: 91,
     readiness: 'Ready Now',
     status: 'promoted',
-    assignedDate: '2025-09-18',
   },
   {
     id: 's-9',
@@ -329,421 +238,6 @@ const INITIAL_SUCCESSORS: Successor[] = [
     readinessScore: 67,
     readiness: '1-2 Years',
     status: 'vacated',
-    assignedDate: '2025-08-02',
-  },
-];
-
-const blankAnalysis = {
-  competencyScores: {},
-  readinessBreakdown: {
-    competencyGap: { current: 0, max: 40 },
-    trainingAlignment: { current: 0, max: 20 },
-    yearsExperience: { current: 0, max: 15 },
-    ipcrPerformance: { current: 0, max: 25 },
-  },
-  eligibilityCheck: {
-    trainings: { current: 0, required: 2, pass: false },
-    trainingHours: { current: 0, required: 100, pass: false },
-    experience: { current: 0, required: 8, pass: false },
-    eligibility: { value: '—', pass: false },
-  },
-  recommendations: [],
-};
-
-const CANDIDATES: Candidate[] = [
-  // === IT Division Chief — the Figma example ===
-  {
-    id: 'c-itdc-1',
-    rank: 1,
-    positionId: 'it-division-chief',
-    name: 'Miguel Antonio Tan',
-    initials: 'MT',
-    currentPosition: 'Senior IT Specialist',
-    department: 'Information Technology',
-    course: 'MS Information Technology',
-    matchPercent: 100,
-    yearsExperience: 10,
-    ipcr: 4.7,
-    scorePercent: 94,
-    level: 'Ready Now',
-    competencyScores: {
-      'Digital Literacy for Gov Services': 92,
-      'Project Management in Public Setting': 88,
-      'Data and Records Management': 82,
-      'Technical Writing for Gov Docs': 75,
-    },
-    readinessBreakdown: {
-      competencyGap: { current: 35, max: 40 },
-      trainingAlignment: { current: 20, max: 20 },
-      yearsExperience: { current: 15, max: 15 },
-      ipcrPerformance: { current: 24, max: 25 },
-    },
-    eligibilityCheck: {
-      trainings: { current: 2, required: 2, pass: true },
-      trainingHours: { current: 136, required: 100, pass: true },
-      experience: { current: 10, required: 8, pass: true },
-      eligibility: { value: 'Career Service Professional (R.A. 1080)', pass: true },
-    },
-    recommendations: ['All standards met. Ready for advancement.'],
-  },
-  {
-    id: 'c-itdc-2',
-    rank: 2,
-    positionId: 'it-division-chief',
-    name: 'Juan Carlos Reyes',
-    initials: 'JR',
-    currentPosition: 'IT Officer III',
-    department: 'Information Technology',
-    course: 'BS Computer Science',
-    matchPercent: 96,
-    yearsExperience: 8,
-    ipcr: 4.2,
-    scorePercent: 89,
-    level: 'Ready Soon',
-    missingNotes: ['Needs 100 training hours (has 96)'],
-    competencyScores: {
-      'Digital Literacy for Gov Services': 88,
-      'Project Management in Public Setting': 82,
-      'Data and Records Management': 78,
-      'Technical Writing for Gov Docs': 72,
-    },
-    readinessBreakdown: {
-      competencyGap: { current: 32, max: 40 },
-      trainingAlignment: { current: 19, max: 20 },
-      yearsExperience: { current: 15, max: 15 },
-      ipcrPerformance: { current: 21, max: 25 },
-    },
-    eligibilityCheck: {
-      trainings: { current: 2, required: 2, pass: true },
-      trainingHours: { current: 96, required: 100, pass: false },
-      experience: { current: 8, required: 8, pass: true },
-      eligibility: { value: 'Career Service Professional (R.A. 1080)', pass: true },
-    },
-    recommendations: ['Complete remaining 4 training hours to reach 100-hour requirement.'],
-  },
-  {
-    id: 'c-itdc-3',
-    rank: 3,
-    positionId: 'it-division-chief',
-    name: 'Diana Ramos',
-    initials: 'DR',
-    currentPosition: 'Network Engineer',
-    department: 'Information Technology',
-    course: 'BS Information Technology',
-    matchPercent: 95,
-    yearsExperience: 9,
-    ipcr: 4.4,
-    scorePercent: 79,
-    level: 'Ready Soon',
-    missingNotes: [
-      'Missing required training(s): PMP-FUND',
-      'Needs 100 training hours (has 48)',
-      'Requires Career Service Professional (R.A. 1080) (has Civil Service Sub-Professional)',
-    ],
-    competencyScores: {
-      'Digital Literacy for Gov Services': 86,
-      'Project Management in Public Setting': 78,
-      'Data and Records Management': 76,
-      'Technical Writing for Gov Docs': 68,
-    },
-    readinessBreakdown: {
-      competencyGap: { current: 30, max: 40 },
-      trainingAlignment: { current: 12, max: 20 },
-      yearsExperience: { current: 15, max: 15 },
-      ipcrPerformance: { current: 22, max: 25 },
-    },
-    eligibilityCheck: {
-      trainings: { current: 1, required: 2, pass: false },
-      trainingHours: { current: 48, required: 100, pass: false },
-      experience: { current: 9, required: 8, pass: true },
-      eligibility: { value: 'Civil Service Sub-Professional', pass: false },
-    },
-    recommendations: [
-      'Enroll in PMP-FUND training.',
-      'Upgrade civil service eligibility to Professional level.',
-    ],
-  },
-  {
-    id: 'c-itdc-4',
-    rank: 4,
-    positionId: 'it-division-chief',
-    name: 'Patricia Bautista',
-    initials: 'PB',
-    currentPosition: 'Senior Budget Officer',
-    department: 'Finance',
-    course: 'MS Accountancy',
-    matchPercent: 25,
-    yearsExperience: 11,
-    ipcr: 4.6,
-    scorePercent: 53,
-    level: 'Not Ready',
-    missingNotes: ['Missing required training(s): PMP-FUND, DIGI-GOV'],
-    ...blankAnalysis,
-  },
-  {
-    id: 'c-itdc-5',
-    rank: 5,
-    positionId: 'it-division-chief',
-    name: 'Maria Elena Santos',
-    initials: 'MS',
-    currentPosition: 'Senior HR Specialist',
-    department: 'Human Resources',
-    course: 'Master in Public Administration',
-    matchPercent: 25,
-    yearsExperience: 12,
-    ipcr: 4.6,
-    scorePercent: 48,
-    level: 'Not Ready',
-    missingNotes: ['Missing required training(s): PMP-FUND, DIGI-GOV'],
-    ...blankAnalysis,
-  },
-  {
-    id: 'c-itdc-6',
-    rank: 6,
-    positionId: 'it-division-chief',
-    name: 'Felipe S. Garcia',
-    initials: 'FG',
-    currentPosition: 'DRRM Officer',
-    department: 'Operations',
-    course: 'BS Environmental Science',
-    matchPercent: 24,
-    yearsExperience: 14,
-    ipcr: 4.5,
-    scorePercent: 47,
-    level: 'Not Ready',
-    missingNotes: ['Missing required training(s): PMP-FUND, DIGI-GOV', 'Needs 100 training hours (has 72)'],
-    ...blankAnalysis,
-  },
-  {
-    id: 'c-itdc-11',
-    rank: 11,
-    positionId: 'it-division-chief',
-    name: 'Carlos Domingo',
-    initials: 'CD',
-    currentPosition: 'Senior Administrative Officer',
-    department: 'Administration',
-    course: 'Master in Public Administration',
-    matchPercent: 0,
-    yearsExperience: 13,
-    ipcr: 4.5,
-    scorePercent: 40,
-    level: 'Not Ready',
-    missingNotes: ['Missing required training(s): PMP-FUND, DIGI-GOV', 'Needs 100 training hours (has 80)'],
-    ...blankAnalysis,
-  },
-  {
-    id: 'c-itdc-12',
-    rank: 12,
-    positionId: 'it-division-chief',
-    name: 'Ramon F. Aguilar',
-    initials: 'RA',
-    currentPosition: 'HR Specialist',
-    department: 'Human Resources',
-    course: 'BS Human Resource Development Management',
-    matchPercent: 21,
-    yearsExperience: 5,
-    ipcr: 4.0,
-    scorePercent: 37,
-    level: 'Not Ready',
-    missingNotes: [
-      'Missing required training(s): PMP-FUND, DIGI-GOV',
-      'Needs 100 training hours (has 24)',
-      'Needs 8 yrs (has 5)',
-      'Requires Career Service Professional (R.A. 1080) (has Civil Service Sub-Professional)',
-    ],
-    ...blankAnalysis,
-  },
-
-  // === HR Officer IV — smaller list ===
-  {
-    id: 'c-hr-1',
-    rank: 1,
-    positionId: 'hr-officer-iv',
-    name: 'Ashley Johnson',
-    initials: 'AJ',
-    currentPosition: 'Senior Recruiter',
-    department: 'Human Resources',
-    course: 'BS Human Resource Development Management',
-    matchPercent: 98,
-    yearsExperience: 6,
-    ipcr: 4.6,
-    scorePercent: 92,
-    level: 'Ready Now',
-    competencyScores: {
-      'HR Policy Implementation': 90,
-      'Labor Relations': 85,
-      'Talent Development': 82,
-    },
-    readinessBreakdown: {
-      competencyGap: { current: 34, max: 40 },
-      trainingAlignment: { current: 20, max: 20 },
-      yearsExperience: { current: 15, max: 15 },
-      ipcrPerformance: { current: 23, max: 25 },
-    },
-    eligibilityCheck: {
-      trainings: { current: 2, required: 2, pass: true },
-      trainingHours: { current: 96, required: 80, pass: true },
-      experience: { current: 6, required: 3, pass: true },
-      eligibility: { value: 'Career Service Professional (R.A. 1080)', pass: true },
-    },
-    recommendations: ['All standards met. Ready for advancement.'],
-  },
-  {
-    id: 'c-hr-2',
-    rank: 2,
-    positionId: 'hr-officer-iv',
-    name: 'Michael Ross',
-    initials: 'MR',
-    currentPosition: 'Compensation Specialist',
-    department: 'Human Resources',
-    course: 'BS Psychology',
-    matchPercent: 82,
-    yearsExperience: 4,
-    ipcr: 4.1,
-    scorePercent: 78,
-    level: 'Ready Soon',
-    missingNotes: ['Needs 80 training hours (has 64)'],
-    competencyScores: {
-      'HR Policy Implementation': 80,
-      'Labor Relations': 76,
-      'Talent Development': 72,
-    },
-    readinessBreakdown: {
-      competencyGap: { current: 30, max: 40 },
-      trainingAlignment: { current: 16, max: 20 },
-      yearsExperience: { current: 14, max: 15 },
-      ipcrPerformance: { current: 20, max: 25 },
-    },
-    eligibilityCheck: {
-      trainings: { current: 2, required: 2, pass: true },
-      trainingHours: { current: 64, required: 80, pass: false },
-      experience: { current: 4, required: 3, pass: true },
-      eligibility: { value: 'Career Service Professional (R.A. 1080)', pass: true },
-    },
-    recommendations: ['Complete 16 more training hours to meet the 80-hour requirement.'],
-  },
-
-  // === Municipal Administrator ===
-  {
-    id: 'c-ma-1',
-    rank: 1,
-    positionId: 'municipal-administrator',
-    name: 'Carmela Reyes',
-    initials: 'CR',
-    currentPosition: 'Assistant Administrator',
-    department: 'Administration',
-    course: 'Master in Public Administration',
-    matchPercent: 94,
-    yearsExperience: 9,
-    ipcr: 4.5,
-    scorePercent: 88,
-    level: 'Ready Now',
-    competencyScores: {
-      'Public Administration': 92,
-      'Budget Management': 88,
-      'Policy Analysis': 84,
-    },
-    readinessBreakdown: {
-      competencyGap: { current: 33, max: 40 },
-      trainingAlignment: { current: 20, max: 20 },
-      yearsExperience: { current: 15, max: 15 },
-      ipcrPerformance: { current: 22, max: 25 },
-    },
-    eligibilityCheck: {
-      trainings: { current: 3, required: 2, pass: true },
-      trainingHours: { current: 144, required: 120, pass: true },
-      experience: { current: 9, required: 5, pass: true },
-      eligibility: { value: 'Career Service Professional (R.A. 1080)', pass: true },
-    },
-    recommendations: ['All standards met. Ready for advancement.'],
-  },
-
-  // === Finance Director ===
-  {
-    id: 'c-fd-1',
-    rank: 1,
-    positionId: 'finance-director',
-    name: 'Daniel Lim',
-    initials: 'DL',
-    currentPosition: 'Budget Officer',
-    department: 'Finance',
-    course: 'BS Accountancy',
-    matchPercent: 80,
-    yearsExperience: 7,
-    ipcr: 4.3,
-    scorePercent: 74,
-    level: 'Ready Soon',
-    missingNotes: ['Needs 10 yrs (has 7)'],
-    competencyScores: {
-      'Government Accounting': 84,
-      'Audit & Compliance': 80,
-      'Budget Forecasting': 76,
-    },
-    readinessBreakdown: {
-      competencyGap: { current: 30, max: 40 },
-      trainingAlignment: { current: 20, max: 20 },
-      yearsExperience: { current: 11, max: 15 },
-      ipcrPerformance: { current: 21, max: 25 },
-    },
-    eligibilityCheck: {
-      trainings: { current: 3, required: 2, pass: true },
-      trainingHours: { current: 152, required: 140, pass: true },
-      experience: { current: 7, required: 10, pass: false },
-      eligibility: { value: 'Career Service Professional (R.A. 1080)', pass: true },
-    },
-    recommendations: ['Continue building experience to reach 10-year requirement.'],
-  },
-  {
-    id: 'c-fd-2',
-    rank: 2,
-    positionId: 'finance-director',
-    name: 'Patricia Santos',
-    initials: 'PS',
-    currentPosition: 'Senior Accountant',
-    department: 'Finance',
-    course: 'BS Management Accounting',
-    matchPercent: 60,
-    yearsExperience: 5,
-    ipcr: 4.0,
-    scorePercent: 63,
-    level: 'Not Ready',
-    missingNotes: ['Needs 10 yrs (has 5)', 'Needs 140 training hours (has 96)'],
-    ...blankAnalysis,
-  },
-
-  // === DRRM Officer ===
-  {
-    id: 'c-drrm-1',
-    rank: 1,
-    positionId: 'drrm-officer',
-    name: 'Ramon Cruz',
-    initials: 'RC',
-    currentPosition: 'Emergency Response Lead',
-    department: 'Operations',
-    course: 'BS Disaster Risk Management',
-    matchPercent: 96,
-    yearsExperience: 7,
-    ipcr: 4.6,
-    scorePercent: 91,
-    level: 'Ready Now',
-    competencyScores: {
-      'Disaster Risk Assessment': 90,
-      'Emergency Operations': 86,
-      'Community Coordination': 82,
-    },
-    readinessBreakdown: {
-      competencyGap: { current: 34, max: 40 },
-      trainingAlignment: { current: 20, max: 20 },
-      yearsExperience: { current: 15, max: 15 },
-      ipcrPerformance: { current: 23, max: 25 },
-    },
-    eligibilityCheck: {
-      trainings: { current: 2, required: 2, pass: true },
-      trainingHours: { current: 96, required: 80, pass: true },
-      experience: { current: 7, required: 5, pass: true },
-      eligibility: { value: 'Career Service Professional (R.A. 1080)', pass: true },
-    },
-    recommendations: ['All standards met. Ready for advancement.'],
   },
 ];
 
@@ -753,36 +247,13 @@ export const SuccessionPlanningPage = () => {
   const [department, setDepartment] = useState<string>('');
   const [criticalPosition, setCriticalPosition] = useState<string>('');
   const [positions, setPositions] = useState<CriticalPosition[]>(INITIAL_POSITIONS);
-  const [successors, setSuccessors] = useState<Successor[]>(INITIAL_SUCCESSORS);
-
-  const promoteSuccessor = (id: string) => {
-    setSuccessors(prev => prev.map(s => s.id === id ? { ...s, status: 'promoted' } : s));
-  };
-
-  const removeSuccessor = (id: string) => {
-    setSuccessors(prev => prev.map(s => s.id === id ? { ...s, status: 'vacated' } : s));
-  };
+  const [successors] = useState<Successor[]>(INITIAL_SUCCESSORS);
   const [registryFilter, setRegistryFilter] = useState<'all' | SuccessorStatus>('all');
-  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
 
   const selectedPositionObj = positions.find(p => p.title === criticalPosition);
-  const candidatesForSelected = selectedPositionObj
-    ? CANDIDATES.filter(c => c.positionId === selectedPositionObj.id).sort((a, b) => a.rank - b.rank)
+  const successorsForSelected = selectedPositionObj
+    ? successors.filter(s => s.targetPositionId === selectedPositionObj.id)
     : [];
-  const eligibleCount = candidatesForSelected.filter(c => c.level === 'Ready Now').length;
-  const notQualifiedCount = candidatesForSelected.filter(c => c.level !== 'Ready Now').length;
-
-  useEffect(() => {
-    if (!selectedPositionObj) {
-      setSelectedCandidateId(null);
-      return;
-    }
-    const topEligible = candidatesForSelected.find(c => c.level === 'Ready Now') ?? candidatesForSelected[0];
-    setSelectedCandidateId(topEligible?.id ?? null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPositionObj?.id]);
-
-  const selectedCandidate = candidatesForSelected.find(c => c.id === selectedCandidateId) ?? null;
 
   const designatedCount = successors.filter(s => s.status === 'designated').length;
   const promotedCount = successors.filter(s => s.status === 'promoted').length;
@@ -817,8 +288,8 @@ export const SuccessionPlanningPage = () => {
       title: p.title,
       department: p.department,
       incumbent: p.incumbent,
-      incumbentStatus: p.incumbentStatus,
-      statusDetail: p.incumbentStatusDetail,
+      incumbentStatus: 'Active',
+      statusDetail: p.footer,
       yearsExperience: String(p.experienceYears),
       trainingHours: String(p.trainingHours),
       civilServiceEligibility: p.eligibility,
@@ -840,19 +311,15 @@ export const SuccessionPlanningPage = () => {
       .map(c => c.trim())
       .filter(Boolean);
 
-    const existing = editingId ? positions.find(p => p.id === editingId) : null;
     const next: CriticalPosition = {
       id: editingId ?? `pos-${Date.now()}`,
       title: positionForm.title || 'New Position',
       department: positionForm.department,
       incumbent: positionForm.incumbent,
-      incumbentStatus: positionForm.incumbentStatus,
-      incumbentStatusDetail: positionForm.statusDetail,
       experienceYears: Number(positionForm.yearsExperience) || 0,
       trainingHours: Number(positionForm.trainingHours) || 0,
       eligibility: positionForm.civilServiceEligibility,
       courses,
-      competencies: existing?.competencies ?? [],
       footer: positionForm.statusDetail,
     };
 
@@ -1007,38 +474,32 @@ export const SuccessionPlanningPage = () => {
             </div>
           </div>
 
-          {/* Position detail + candidate analysis */}
+          {/* Selection results */}
           {criticalPosition && selectedPositionObj ? (
-            <>
-              <PositionDetailCard position={selectedPositionObj} />
-
-              <EligibleCandidatesTable
-                candidates={candidatesForSelected}
-                eligibleCount={eligibleCount}
-                notQualifiedCount={notQualifiedCount}
-                selectedId={selectedCandidateId}
-                onSelect={setSelectedCandidateId}
-              />
-
-              {selectedCandidate && (
-                <>
-                  <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4">
-                    <CompetencyGapCard
-                      competencies={selectedPositionObj.competencies}
-                      scores={selectedCandidate.competencyScores}
-                    />
-                    <ReadinessRingCard candidate={selectedCandidate} />
-                  </div>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <ReadinessBreakdownCard candidate={selectedCandidate} />
-                    <DevelopmentRecommendationsCard candidate={selectedCandidate} />
-                  </div>
-
-                  <EligibilityCheckCard candidate={selectedCandidate} />
-                </>
+            <div className="rounded-xl border border-gray-200 bg-white p-6">
+              <div className="flex items-start justify-between mb-5">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">{selectedPositionObj.title}</h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    {selectedPositionObj.department} · Incumbent: {selectedPositionObj.incumbent}
+                  </p>
+                </div>
+                <span className="text-xs text-gray-500">
+                  {successorsForSelected.length} candidate{successorsForSelected.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              {successorsForSelected.length === 0 ? (
+                <div className="py-10 text-center text-sm text-gray-500">
+                  No successor candidates assigned to this position yet.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {successorsForSelected.map(s => (
+                    <SuccessorRow key={s.id} successor={s} />
+                  ))}
+                </div>
               )}
-            </>
+            </div>
           ) : (
             <div className="rounded-xl border border-gray-200 bg-white p-12 text-center">
               <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gray-50 text-gray-400 mb-3">
@@ -1144,17 +605,15 @@ export const SuccessionPlanningPage = () => {
               No successors in this category.
             </div>
           ) : (
-            <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
+            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
               <table className="w-full text-sm text-left">
-                <thead className="bg-gray-50 border-b border-gray-200 text-xs text-gray-600 uppercase tracking-wide">
+                <thead className="bg-gray-50 border-b border-gray-200 text-gray-600">
                   <tr>
-                    <th className="px-5 py-3 font-semibold">Position</th>
-                    <th className="px-5 py-3 font-semibold">Incumbent</th>
-                    <th className="px-5 py-3 font-semibold">Designated Successor</th>
+                    <th className="px-5 py-3 font-semibold">Name</th>
+                    <th className="px-5 py-3 font-semibold">Current Position</th>
+                    <th className="px-5 py-3 font-semibold">Target Critical Role</th>
                     <th className="px-5 py-3 font-semibold">Readiness</th>
-                    <th className="px-5 py-3 font-semibold">Assigned</th>
                     <th className="px-5 py-3 font-semibold">Status</th>
-                    <th className="px-5 py-3 font-semibold text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -1163,52 +622,34 @@ export const SuccessionPlanningPage = () => {
                     return (
                       <tr key={s.id} className="hover:bg-gray-50">
                         <td className="px-5 py-3">
-                          <p className="font-semibold text-gray-900">{target?.title ?? '—'}</p>
-                          <p className="text-xs text-gray-500">{target?.department ?? ''}</p>
+                          <div className="flex items-center gap-3">
+                            <div className="h-8 w-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">
+                              {s.initials}
+                            </div>
+                            <span className="font-semibold text-gray-900">{s.name}</span>
+                          </div>
+                        </td>
+                        <td className="px-5 py-3 text-gray-600">{s.currentPosition}</td>
+                        <td className="px-5 py-3 text-gray-900 font-medium">
+                          {target?.title ?? '—'}
                         </td>
                         <td className="px-5 py-3">
-                          <p className="text-gray-900">{target?.incumbent ?? '—'}</p>
-                          <p className="text-xs text-gray-500">{target?.incumbentStatus ?? ''}</p>
+                          <div className="flex items-center gap-2">
+                            <div className="h-1.5 w-24 bg-gray-200 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full ${
+                                  s.readinessScore >= 85 ? 'bg-green-500'
+                                  : s.readinessScore >= 70 ? 'bg-yellow-500'
+                                  : 'bg-orange-500'
+                                }`}
+                                style={{ width: `${s.readinessScore}%` }}
+                              />
+                            </div>
+                            <span className="text-xs font-semibold text-gray-700">{s.readinessScore}%</span>
+                          </div>
                         </td>
-                        <td className="px-5 py-3">
-                          <p className="font-semibold text-gray-900">{s.name}</p>
-                          <p className="text-xs text-gray-500">{s.currentPosition}</p>
-                        </td>
-                        <td className="px-5 py-3">
-                          <p className={`text-sm font-semibold ${
-                            s.readinessScore >= 90 ? 'text-green-700'
-                            : s.readinessScore >= 75 ? 'text-blue-700'
-                            : 'text-yellow-700'
-                          }`}>
-                            {s.readiness}
-                          </p>
-                          <p className="text-xs text-gray-500">{s.readinessScore}%</p>
-                        </td>
-                        <td className="px-5 py-3 text-gray-700">{s.assignedDate}</td>
                         <td className="px-5 py-3">
                           <StatusBadge status={s.status} />
-                        </td>
-                        <td className="px-5 py-3">
-                          <div className="flex items-center gap-2 justify-end">
-                            {s.status === 'designated' ? (
-                              <>
-                                <button
-                                  onClick={() => promoteSuccessor(s.id)}
-                                  className="inline-flex items-center gap-1 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-md"
-                                >
-                                  <TrendingUp size={13} /> Promote
-                                </button>
-                                <button
-                                  onClick={() => removeSuccessor(s.id)}
-                                  className="text-xs font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 px-3 py-1.5 rounded-md"
-                                >
-                                  Remove
-                                </button>
-                              </>
-                            ) : (
-                              <span className="text-xs text-gray-400">—</span>
-                            )}
-                          </div>
                         </td>
                       </tr>
                     );
@@ -1391,7 +832,7 @@ export const SuccessionPlanningPage = () => {
 };
 
 type StatCardProps = {
-  icon: ReactNode;
+  icon: React.ReactNode;
   iconBg: string;
   tag: string;
   value: number | string;
@@ -1473,7 +914,7 @@ const PositionCard = ({ position, onEdit }: PositionCardProps) => (
 );
 
 type InfoPillProps = {
-  icon: ReactNode;
+  icon: React.ReactNode;
   label: string;
   value: string;
 };
@@ -1488,7 +929,7 @@ const InfoPill = ({ icon, label, value }: InfoPillProps) => (
 
 type FormFieldProps = {
   label: string;
-  children: ReactNode;
+  children: React.ReactNode;
 };
 
 const FormField = ({ label, children }: FormFieldProps) => (
@@ -1540,373 +981,5 @@ const StatusBadge = ({ status }: { status: SuccessorStatus }) => {
   const { label, cls } = map[status];
   return (
     <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${cls}`}>{label}</span>
-  );
-};
-
-const incumbentBadge = (status: CriticalPosition['incumbentStatus']) => {
-  switch (status) {
-    case 'Active': return 'bg-green-100 text-green-700';
-    case 'On Leave': return 'bg-yellow-100 text-yellow-700';
-    case 'Retiring': return 'bg-orange-100 text-orange-700';
-  }
-};
-
-const PositionDetailCard = ({ position }: { position: CriticalPosition }) => (
-  <div className="rounded-xl border border-gray-200 bg-white p-6 space-y-5">
-    <div className="flex items-start justify-between">
-      <div className="flex items-start gap-3">
-        <div className="h-10 w-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-          <User size={20} />
-        </div>
-        <div>
-          <h3 className="text-lg font-bold text-gray-900 leading-tight">{position.incumbent}</h3>
-          <p className="text-sm text-gray-500">Current Incumbent · {position.incumbentStatusDetail}</p>
-        </div>
-      </div>
-      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${incumbentBadge(position.incumbentStatus)}`}>
-        {position.incumbentStatus}
-      </span>
-    </div>
-
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-      <DetailPill icon={<Clock size={14} />} label="Min Experience:" value={`${position.experienceYears} yrs`} />
-      <DetailPill icon={<Briefcase size={14} />} label="Department:" value={position.department} />
-      <DetailPill icon={<Award size={14} />} label="Required Eligibility:" value={position.eligibility} />
-      <DetailPill icon={<BookOpen size={14} />} label="Min Training Hours:" value={`${position.trainingHours} hrs`} />
-    </div>
-
-    {position.courses.length > 0 && (
-      <div>
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Required Courses</p>
-        <div className="flex flex-wrap gap-2">
-          {position.courses.map(c => (
-            <span key={c} className="text-xs text-gray-700 bg-gray-50 border border-gray-200 px-3 py-1 rounded-full">
-              {c}
-            </span>
-          ))}
-        </div>
-      </div>
-    )}
-
-    {position.competencies.length > 0 && (
-      <div>
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Required Competencies</p>
-        <div className="flex flex-wrap gap-2">
-          {position.competencies.map(c => (
-            <span key={c.name} className="text-xs text-gray-700 bg-gray-50 border border-gray-200 px-3 py-1 rounded-full">
-              {c.name} · {c.required}
-            </span>
-          ))}
-        </div>
-      </div>
-    )}
-  </div>
-);
-
-const DetailPill = ({ icon, label, value }: { icon: ReactNode; label: string; value: string }) => (
-  <div className="flex items-center gap-2 bg-gray-50 border border-gray-100 rounded-md px-3 py-2 text-xs">
-    <span className="text-gray-400">{icon}</span>
-    <span className="text-gray-500">{label}</span>
-    <span className="text-gray-900 font-medium truncate">{value}</span>
-  </div>
-);
-
-const levelStyle = (level: CandidateLevel) => {
-  switch (level) {
-    case 'Ready Now': return 'bg-green-50 text-green-700';
-    case 'Ready Soon': return 'bg-blue-50 text-blue-700';
-    case 'Not Ready': return 'bg-red-50 text-red-700';
-  }
-};
-
-type EligibleCandidatesTableProps = {
-  candidates: Candidate[];
-  eligibleCount: number;
-  notQualifiedCount: number;
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-};
-
-const EligibleCandidatesTable = ({
-  candidates,
-  eligibleCount,
-  notQualifiedCount,
-  selectedId,
-  onSelect,
-}: EligibleCandidatesTableProps) => (
-  <div className="rounded-xl border border-gray-200 bg-white">
-    <div className="flex items-start justify-between p-6 pb-4">
-      <div>
-        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Eligible Candidates</h3>
-        <p className="text-sm text-gray-500 mt-1">
-          {eligibleCount} eligible · {notQualifiedCount} not qualified
-        </p>
-      </div>
-      <button
-        disabled
-        className="text-xs font-medium text-gray-400 bg-gray-50 border border-gray-200 rounded-md px-3 py-1.5 cursor-not-allowed flex items-center gap-1.5"
-      >
-        <CheckCircle2 size={14} /> Assign as Successor (0)
-      </button>
-    </div>
-    {candidates.length === 0 ? (
-      <div className="px-6 py-10 text-center text-sm text-gray-500">
-        No candidates evaluated for this position yet.
-      </div>
-    ) : (
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm text-left">
-          <thead className="bg-gray-50 border-y border-gray-200 text-xs text-gray-600 uppercase">
-            <tr>
-              <th className="px-5 py-3 font-semibold w-10"></th>
-              <th className="px-2 py-3 font-semibold w-10">#</th>
-              <th className="px-2 py-3 font-semibold">Employee</th>
-              <th className="px-4 py-3 font-semibold">Course</th>
-              <th className="px-3 py-3 font-semibold">Match</th>
-              <th className="px-3 py-3 font-semibold">Yrs</th>
-              <th className="px-3 py-3 font-semibold">IPCR</th>
-              <th className="px-3 py-3 font-semibold">Score</th>
-              <th className="px-4 py-3 font-semibold">Level</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {candidates.map(c => {
-              const isSelected = c.id === selectedId;
-              return (
-                <tr
-                  key={c.id}
-                  onClick={() => onSelect(c.id)}
-                  className={`cursor-pointer ${isSelected ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
-                >
-                  <td className="px-5 py-3">
-                    <input
-                      type="checkbox"
-                      readOnly
-                      checked={false}
-                      className="h-4 w-4 rounded border-gray-300"
-                    />
-                  </td>
-                  <td className="px-2 py-3 text-gray-500 font-medium">#{c.rank}</td>
-                  <td className="px-2 py-3">
-                    <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold shrink-0">
-                        {c.initials}
-                      </div>
-                      <div>
-                        <p className="font-semibold text-gray-900 leading-tight">{c.name}</p>
-                        <p className="text-xs text-gray-500">{c.currentPosition} · {c.department}</p>
-                        {c.missingNotes && c.missingNotes.length > 0 && (
-                          <p className="text-xs text-red-600 mt-0.5">
-                            {c.missingNotes.join(' · ')}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-gray-700">{c.course}</td>
-                  <td className="px-3 py-3 text-gray-900 font-medium">{c.matchPercent}%</td>
-                  <td className="px-3 py-3 text-gray-700">{c.yearsExperience}</td>
-                  <td className="px-3 py-3 text-gray-700">{c.ipcr.toFixed(1)}</td>
-                  <td className="px-3 py-3 text-gray-900 font-medium">{c.scorePercent}%</td>
-                  <td className="px-4 py-3">
-                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${levelStyle(c.level)}`}>
-                      {c.level}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    )}
-  </div>
-);
-
-type CompetencyGapCardProps = {
-  competencies: Competency[];
-  scores: Record<string, number>;
-};
-
-const competencyBadge = (current: number, required: number) => {
-  const delta = current - required;
-  if (delta >= 5) return { label: `Above (+${delta})`, color: 'bg-green-100 text-green-700', bar: 'bg-green-500' };
-  if (delta >= 0) return { label: `Meets (+${delta})`, color: 'bg-orange-100 text-orange-700', bar: 'bg-orange-400' };
-  return { label: `Needs Dev (${delta})`, color: 'bg-pink-100 text-pink-700', bar: 'bg-pink-500' };
-};
-
-const CompetencyGapCard = ({ competencies, scores }: CompetencyGapCardProps) => (
-  <div className="rounded-xl border border-gray-200 bg-white p-6">
-    <div className="flex items-center gap-2 mb-4">
-      <Sparkles size={16} className="text-blue-600" />
-      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Competency Gap Analysis</h3>
-    </div>
-    {competencies.length === 0 ? (
-      <p className="text-sm text-gray-500">No competencies defined for this position.</p>
-    ) : (
-      <div className="space-y-4">
-        {competencies.map(c => {
-          const current = scores[c.name] ?? 0;
-          const badge = competencyBadge(current, c.required);
-          const pct = Math.min(100, (current / c.required) * 100);
-          return (
-            <div key={c.name}>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-sm font-medium text-gray-900">{c.name}</span>
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${badge.color}`}>
-                  {badge.label}
-                </span>
-              </div>
-              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                <div className={`h-full ${badge.bar}`} style={{ width: `${pct}%` }} />
-              </div>
-              <div className="flex justify-between text-xs text-gray-500 mt-1">
-                <span>Current: {current}</span>
-                <span>Required: {c.required}</span>
-              </div>
-            </div>
-          );
-        })}
-
-        <div className="flex items-center gap-4 pt-2 text-xs">
-          <span className="flex items-center gap-1.5 text-gray-600">
-            <span className="h-2 w-2 rounded-full bg-green-500" /> Above
-          </span>
-          <span className="flex items-center gap-1.5 text-gray-600">
-            <span className="h-2 w-2 rounded-full bg-orange-400" /> Meets
-          </span>
-          <span className="flex items-center gap-1.5 text-gray-600">
-            <span className="h-2 w-2 rounded-full bg-pink-500" /> Needs Dev
-          </span>
-        </div>
-      </div>
-    )}
-  </div>
-);
-
-const ReadinessRingCard = ({ candidate }: { candidate: Candidate }) => {
-  const pct = candidate.scorePercent;
-  const circumference = 2 * Math.PI * 54;
-  const dashOffset = circumference * (1 - pct / 100);
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white p-6 flex flex-col items-center text-center">
-      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide self-start">Readiness</h3>
-      <div className="relative my-4">
-        <svg width="140" height="140" viewBox="0 0 140 140">
-          <circle cx="70" cy="70" r="54" fill="none" stroke="#e5e7eb" strokeWidth="12" />
-          <circle
-            cx="70" cy="70" r="54" fill="none" stroke="#3b82f6" strokeWidth="12"
-            strokeLinecap="round"
-            strokeDasharray={circumference}
-            strokeDashoffset={dashOffset}
-            transform="rotate(-90 70 70)"
-          />
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-3xl font-bold text-gray-900">{pct}%</span>
-          <span className="text-xs text-gray-500">overall</span>
-        </div>
-      </div>
-      <span className={`text-xs font-semibold px-3 py-1 rounded-full ${levelStyle(candidate.level)}`}>
-        {candidate.level}
-      </span>
-      <p className="text-sm text-gray-600 mt-3">{candidate.name}</p>
-    </div>
-  );
-};
-
-const ReadinessBreakdownCard = ({ candidate }: { candidate: Candidate }) => {
-  const rows: { label: string; current: number; max: number }[] = [
-    { label: 'Competency Gap Score', ...candidate.readinessBreakdown.competencyGap },
-    { label: 'Training Alignment', ...candidate.readinessBreakdown.trainingAlignment },
-    { label: 'Years of Experience', ...candidate.readinessBreakdown.yearsExperience },
-    { label: 'IPCR Performance', ...candidate.readinessBreakdown.ipcrPerformance },
-  ];
-  const total = rows.reduce((s, r) => s + (r.max > 0 ? (r.current / r.max) : 0), 0) / rows.length * 100;
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white p-6">
-      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">
-        Readiness Breakdown
-      </h3>
-      <div className="space-y-4">
-        {rows.map(r => {
-          const pct = r.max === 0 ? 0 : Math.min(100, (r.current / r.max) * 100);
-          return (
-            <div key={r.label}>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-sm text-gray-700">{r.label}</span>
-                <span className="text-sm font-semibold text-gray-900">
-                  {r.current}<span className="text-gray-400">/{r.max}</span>
-                </span>
-              </div>
-              <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-500" style={{ width: `${pct}%` }} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="flex items-center justify-between pt-4 mt-4 border-t border-gray-200">
-        <span className="text-sm font-semibold text-gray-900">Total</span>
-        <span className="text-sm font-bold text-gray-900">{Math.round(total)}%</span>
-      </div>
-    </div>
-  );
-};
-
-const DevelopmentRecommendationsCard = ({ candidate }: { candidate: Candidate }) => (
-  <div className="rounded-xl border border-gray-200 bg-white p-6">
-    <div className="flex items-center gap-2 mb-4">
-      <TrendingUp size={16} className="text-blue-600" />
-      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-        Development Recommendations
-      </h3>
-    </div>
-    {candidate.recommendations.length === 0 ? (
-      <p className="text-sm text-gray-500">No recommendations available.</p>
-    ) : (
-      <ul className="space-y-2">
-        {candidate.recommendations.map((r, i) => (
-          <li key={i} className="flex items-start gap-2 bg-blue-50 text-blue-900 text-sm px-3 py-2 rounded-md">
-            <Clock size={14} className="mt-0.5 shrink-0 text-blue-600" />
-            <span>{r}</span>
-          </li>
-        ))}
-      </ul>
-    )}
-  </div>
-);
-
-const EligibilityCheckCard = ({ candidate }: { candidate: Candidate }) => {
-  const e = candidate.eligibilityCheck;
-  const items: { label: string; value: string; pass: boolean; icon: ReactNode }[] = [
-    { label: 'Trainings', value: `${e.trainings.current} / ${e.trainings.required}`, pass: e.trainings.pass, icon: <GraduationCap size={14} /> },
-    { label: 'Training Hours', value: `${e.trainingHours.current} / ${e.trainingHours.required} hrs`, pass: e.trainingHours.pass, icon: <BookOpen size={14} /> },
-    { label: 'Experience', value: `${e.experience.current} / ${e.experience.required} yrs`, pass: e.experience.pass, icon: <Clock size={14} /> },
-    { label: 'Eligibility', value: e.eligibility.value, pass: e.eligibility.pass, icon: <Award size={14} /> },
-  ];
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white p-6">
-      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">
-        Eligibility Check
-      </h3>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {items.map(it => (
-          <div key={it.label} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="flex items-center gap-1.5 text-xs text-gray-500">
-                {it.icon} {it.label}
-              </span>
-              {it.pass ? (
-                <Check size={16} className="text-green-600" />
-              ) : (
-                <X size={16} className="text-red-500" />
-              )}
-            </div>
-            <p className="text-sm font-semibold text-gray-900 truncate">{it.value}</p>
-          </div>
-        ))}
-      </div>
-    </div>
   );
 };
