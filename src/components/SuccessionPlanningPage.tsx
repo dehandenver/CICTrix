@@ -228,9 +228,21 @@ type Successor = {
   readinessScore: number;
   readiness: 'Ready Now' | '1-2 Years' | '3-5 Years';
   status: SuccessorStatus;
+  assignedDate: string;
 };
 
 const INITIAL_SUCCESSORS: Successor[] = [
+  {
+    id: 's-itdc',
+    name: 'Miguel Antonio Tan',
+    initials: 'MT',
+    currentPosition: 'Senior IT Specialist',
+    targetPositionId: 'it-division-chief',
+    readinessScore: 94,
+    readiness: 'Ready Now',
+    status: 'designated',
+    assignedDate: '2026-05-19',
+  },
   {
     id: 's-1',
     name: 'Ashley Johnson',
@@ -240,6 +252,7 @@ const INITIAL_SUCCESSORS: Successor[] = [
     readinessScore: 92,
     readiness: 'Ready Now',
     status: 'designated',
+    assignedDate: '2026-04-12',
   },
   {
     id: 's-2',
@@ -250,16 +263,7 @@ const INITIAL_SUCCESSORS: Successor[] = [
     readinessScore: 78,
     readiness: '1-2 Years',
     status: 'designated',
-  },
-  {
-    id: 's-3',
-    name: 'Maria Rodriguez',
-    initials: 'MR',
-    currentPosition: 'IT Division Head',
-    targetPositionId: 'it-division-chief',
-    readinessScore: 85,
-    readiness: 'Ready Now',
-    status: 'designated',
+    assignedDate: '2026-03-22',
   },
   {
     id: 's-4',
@@ -270,6 +274,7 @@ const INITIAL_SUCCESSORS: Successor[] = [
     readinessScore: 71,
     readiness: '1-2 Years',
     status: 'designated',
+    assignedDate: '2026-02-08',
   },
   {
     id: 's-5',
@@ -280,6 +285,7 @@ const INITIAL_SUCCESSORS: Successor[] = [
     readinessScore: 88,
     readiness: 'Ready Now',
     status: 'designated',
+    assignedDate: '2026-01-30',
   },
   {
     id: 's-6',
@@ -290,6 +296,7 @@ const INITIAL_SUCCESSORS: Successor[] = [
     readinessScore: 74,
     readiness: '1-2 Years',
     status: 'designated',
+    assignedDate: '2025-12-15',
   },
   {
     id: 's-7',
@@ -300,6 +307,7 @@ const INITIAL_SUCCESSORS: Successor[] = [
     readinessScore: 63,
     readiness: '3-5 Years',
     status: 'designated',
+    assignedDate: '2025-11-04',
   },
   {
     id: 's-8',
@@ -310,6 +318,7 @@ const INITIAL_SUCCESSORS: Successor[] = [
     readinessScore: 91,
     readiness: 'Ready Now',
     status: 'promoted',
+    assignedDate: '2025-09-18',
   },
   {
     id: 's-9',
@@ -320,6 +329,7 @@ const INITIAL_SUCCESSORS: Successor[] = [
     readinessScore: 67,
     readiness: '1-2 Years',
     status: 'vacated',
+    assignedDate: '2025-08-02',
   },
 ];
 
@@ -743,7 +753,15 @@ export const SuccessionPlanningPage = () => {
   const [department, setDepartment] = useState<string>('');
   const [criticalPosition, setCriticalPosition] = useState<string>('');
   const [positions, setPositions] = useState<CriticalPosition[]>(INITIAL_POSITIONS);
-  const [successors] = useState<Successor[]>(INITIAL_SUCCESSORS);
+  const [successors, setSuccessors] = useState<Successor[]>(INITIAL_SUCCESSORS);
+
+  const promoteSuccessor = (id: string) => {
+    setSuccessors(prev => prev.map(s => s.id === id ? { ...s, status: 'promoted' } : s));
+  };
+
+  const removeSuccessor = (id: string) => {
+    setSuccessors(prev => prev.map(s => s.id === id ? { ...s, status: 'vacated' } : s));
+  };
   const [registryFilter, setRegistryFilter] = useState<'all' | SuccessorStatus>('all');
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
 
@@ -1126,15 +1144,17 @@ export const SuccessionPlanningPage = () => {
               No successors in this category.
             </div>
           ) : (
-            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+            <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
               <table className="w-full text-sm text-left">
-                <thead className="bg-gray-50 border-b border-gray-200 text-gray-600">
+                <thead className="bg-gray-50 border-b border-gray-200 text-xs text-gray-600 uppercase tracking-wide">
                   <tr>
-                    <th className="px-5 py-3 font-semibold">Name</th>
-                    <th className="px-5 py-3 font-semibold">Current Position</th>
-                    <th className="px-5 py-3 font-semibold">Target Critical Role</th>
+                    <th className="px-5 py-3 font-semibold">Position</th>
+                    <th className="px-5 py-3 font-semibold">Incumbent</th>
+                    <th className="px-5 py-3 font-semibold">Designated Successor</th>
                     <th className="px-5 py-3 font-semibold">Readiness</th>
+                    <th className="px-5 py-3 font-semibold">Assigned</th>
                     <th className="px-5 py-3 font-semibold">Status</th>
+                    <th className="px-5 py-3 font-semibold text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -1143,34 +1163,52 @@ export const SuccessionPlanningPage = () => {
                     return (
                       <tr key={s.id} className="hover:bg-gray-50">
                         <td className="px-5 py-3">
-                          <div className="flex items-center gap-3">
-                            <div className="h-8 w-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold">
-                              {s.initials}
-                            </div>
-                            <span className="font-semibold text-gray-900">{s.name}</span>
-                          </div>
-                        </td>
-                        <td className="px-5 py-3 text-gray-600">{s.currentPosition}</td>
-                        <td className="px-5 py-3 text-gray-900 font-medium">
-                          {target?.title ?? '—'}
+                          <p className="font-semibold text-gray-900">{target?.title ?? '—'}</p>
+                          <p className="text-xs text-gray-500">{target?.department ?? ''}</p>
                         </td>
                         <td className="px-5 py-3">
-                          <div className="flex items-center gap-2">
-                            <div className="h-1.5 w-24 bg-gray-200 rounded-full overflow-hidden">
-                              <div
-                                className={`h-full ${
-                                  s.readinessScore >= 85 ? 'bg-green-500'
-                                  : s.readinessScore >= 70 ? 'bg-yellow-500'
-                                  : 'bg-orange-500'
-                                }`}
-                                style={{ width: `${s.readinessScore}%` }}
-                              />
-                            </div>
-                            <span className="text-xs font-semibold text-gray-700">{s.readinessScore}%</span>
-                          </div>
+                          <p className="text-gray-900">{target?.incumbent ?? '—'}</p>
+                          <p className="text-xs text-gray-500">{target?.incumbentStatus ?? ''}</p>
                         </td>
+                        <td className="px-5 py-3">
+                          <p className="font-semibold text-gray-900">{s.name}</p>
+                          <p className="text-xs text-gray-500">{s.currentPosition}</p>
+                        </td>
+                        <td className="px-5 py-3">
+                          <p className={`text-sm font-semibold ${
+                            s.readinessScore >= 90 ? 'text-green-700'
+                            : s.readinessScore >= 75 ? 'text-blue-700'
+                            : 'text-yellow-700'
+                          }`}>
+                            {s.readiness}
+                          </p>
+                          <p className="text-xs text-gray-500">{s.readinessScore}%</p>
+                        </td>
+                        <td className="px-5 py-3 text-gray-700">{s.assignedDate}</td>
                         <td className="px-5 py-3">
                           <StatusBadge status={s.status} />
+                        </td>
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-2 justify-end">
+                            {s.status === 'designated' ? (
+                              <>
+                                <button
+                                  onClick={() => promoteSuccessor(s.id)}
+                                  className="inline-flex items-center gap-1 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-md"
+                                >
+                                  <TrendingUp size={13} /> Promote
+                                </button>
+                                <button
+                                  onClick={() => removeSuccessor(s.id)}
+                                  className="text-xs font-semibold text-gray-700 border border-gray-200 hover:bg-gray-50 px-3 py-1.5 rounded-md"
+                                >
+                                  Remove
+                                </button>
+                              </>
+                            ) : (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
