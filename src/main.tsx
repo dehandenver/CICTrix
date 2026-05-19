@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { loadJobPostings } from './lib/recruitmentData';
+import { syncHiredApplicantStatus } from './lib/hiredApplicantSync';
 import { initTheme } from './lib/theme';
 import './styles/interviewer.css';
 
@@ -50,5 +51,12 @@ if (!shouldRedirectToCanonicalHost) {
   // Kick off the Supabase fetch but do not block first paint — pages listen
   // for the 'cictrix:job-postings-updated' event and re-render when ready.
   void loadJobPostings();
+
+  // One-shot backfill: flip applicants.status to 'Hired' for anyone who has
+  // a newly_hired row but stale status. Fixes orphans from before the
+  // Supabase status-flip fallback landed. Gated to once per tab session so
+  // it doesn't run on every navigation.
+  void syncHiredApplicantStatus();
+
   renderApp();
 }

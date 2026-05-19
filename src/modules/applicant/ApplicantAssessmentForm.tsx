@@ -178,37 +178,56 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
       <div className="grid gap-md md:grid-cols-2">
         {isPromotion && (
           <>
+            {/* readOnly is gated on isEmployee. When the applicant came in
+                through the "I'm a current employee" auth flow these are
+                pre-filled from the verified portal account and locked.
+                When they pick Promotional without authenticating, we let
+                them fill the fields manually instead of leaving an empty
+                input that can't be edited. */}
             <Input
               label="Employee ID"
+              placeholder={isEmployee ? '' : 'Enter your employee ID'}
               value={formData.employee_id}
+              onChange={isEmployee ? undefined : (e) => onChange('employee_id', e.target.value)}
               error={errors.employee_id}
-              readOnly
+              readOnly={isEmployee}
+              required
             />
 
             <Input
               label="Employee Portal Username"
+              placeholder={isEmployee ? '' : 'Enter your portal username'}
               value={formData.employee_username}
-              readOnly
+              onChange={isEmployee ? undefined : (e) => onChange('employee_username', e.target.value)}
+              readOnly={isEmployee}
             />
 
             <Input
               label="Current Position"
+              placeholder={isEmployee ? '' : 'Enter your current position'}
               value={formData.current_position}
+              onChange={isEmployee ? undefined : (e) => onChange('current_position', e.target.value)}
               error={errors.current_position}
-              readOnly
+              readOnly={isEmployee}
+              required
             />
 
             <Input
               label="Current Department"
+              placeholder={isEmployee ? '' : 'Enter your current department'}
               value={formData.current_department}
+              onChange={isEmployee ? undefined : (e) => onChange('current_department', e.target.value)}
               error={errors.current_department}
-              readOnly
+              readOnly={isEmployee}
+              required
             />
 
             <Input
               label="Current Division"
-              value={formData.current_division || 'Not specified'}
-              readOnly
+              placeholder={isEmployee ? '' : 'Enter your current division (optional)'}
+              value={isEmployee ? (formData.current_division || 'Not specified') : formData.current_division}
+              onChange={isEmployee ? undefined : (e) => onChange('current_division', e.target.value)}
+              readOnly={isEmployee}
             />
           </>
         )}
