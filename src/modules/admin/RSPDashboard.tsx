@@ -764,8 +764,8 @@ export const RSPDashboard = () => {
       ).trim();
       const empEmail = String((selectedEmployeeDetails as any).email ?? '').trim().toLowerCase();
       const fullName = ('name' in selectedEmployeeDetails)
-        ? (selectedEmployeeDetails.name || '').trim()
-        : `${selectedEmployeeDetails.first_name || ''} ${selectedEmployeeDetails.last_name || ''}`.trim();
+        ? String((selectedEmployeeDetails as any).name ?? '').trim()
+        : `${(selectedEmployeeDetails as any).first_name ?? ''} ${(selectedEmployeeDetails as any).last_name ?? ''}`.trim();
       const nameParts = fullName.split(' ');
       const firstName = nameParts[0] || '';
       const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
@@ -2084,7 +2084,7 @@ export const RSPDashboard = () => {
 
   const employeeDirectoryOfficeOptions = useMemo(
     () =>
-      Array.from(new Set(directoryEmployeesSource.map((employee) => employee.department || 'Unassigned Office'))).sort((a, b) =>
+      Array.from(new Set(directoryEmployeesSource.map((employee) => (employee as any).department || 'Unassigned Office'))).sort((a, b) =>
         a.localeCompare(b)
       ),
     [directoryEmployeesSource]
@@ -2219,7 +2219,7 @@ export const RSPDashboard = () => {
 
   useEffect(() => {
     if (!selectedEmployeeDetails) return;
-    const currentDepartment = selectedEmployeeDetails.department || 'IT Department';
+    const currentDepartment = (selectedEmployeeDetails as any).department || 'IT Department';
     const currentPosition = selectedEmployeeDetails.position || '';
     setPositionChangeForm((prev) => ({
       ...prev,
@@ -2234,7 +2234,7 @@ export const RSPDashboard = () => {
     return directoryEmployeesSource.map((employee) => ({
       id: employee.id,
       name: employee.full_name,
-      department: employee.department || 'Unassigned Office',
+      department: (employee as any).department || 'Unassigned Office',
     }));
   }, [directoryEmployeesSource]);
 
@@ -6001,9 +6001,9 @@ export const RSPDashboard = () => {
                   <p className="!mb-0 text-sm text-slate-700">
                     Generate a new password for{' '}
                     <span className="font-semibold">
-                      {'name' in selectedEmployeeDetails 
-                        ? (selectedEmployeeDetails.name || 'Unnamed Employee')
-                        : `${selectedEmployeeDetails.first_name || ''} ${selectedEmployeeDetails.last_name || ''}`.trim()}
+                      {'name' in selectedEmployeeDetails
+                        ? (String((selectedEmployeeDetails as any).name ?? '') || 'Unnamed Employee')
+                        : `${(selectedEmployeeDetails as any).first_name ?? ''} ${(selectedEmployeeDetails as any).last_name ?? ''}`.trim()}
                     </span>
                     {employeeNumberById.get(selectedEmployeeDetails.id)
                       ? ` (${employeeNumberById.get(selectedEmployeeDetails.id)})`
