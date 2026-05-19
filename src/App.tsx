@@ -4,6 +4,8 @@ import { Dialog } from './components/Dialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { JobPostingsPage } from './components/JobPostingsPage';
 import { NewlyHiredPage } from './components/NewlyHiredPage';
+import { NotFoundPage } from './components/NotFoundPage';
+import { UnauthorizedPage } from './components/UnauthorizedPage';
 import { QualifiedApplicantsRSPPage } from './components/QualifiedApplicantsRSPPage';
 import { RaterManagementPage } from './components/RaterManagementPage';
 import SuccessionReadinessEngine from './components/SuccessionReadinessEngine';
@@ -666,7 +668,8 @@ function AppContent() {
               </AdminRoute>
             }
           />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="/unauthorized" element={<UnauthorizedPage />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
 
         <Dialog open={isInterviewerRoute && revokedInterviewerDialogOpen} onClose={handleRevokedInterviewerAcknowledge}>
