@@ -19,6 +19,7 @@ import { LNDDashboard } from './modules/admin/LNDDashboard';
 import { LoginPage } from './modules/admin/LoginPage';
 import { PMDashboard } from './modules/admin/PMDashboard';
 import { RSPDashboard } from './modules/admin/RSPDashboard.tsx';
+import EmployeeDirectory from './modules/admin/EmployeeDirectory';
 import { SettingsPage } from './modules/admin/SettingsPage';
 import { SuperAdminDashboard } from './modules/admin/SuperAdminDashboard';
 import { ApplicantWizard } from './modules/applicant/ApplicantWizard';
@@ -594,6 +595,14 @@ function AppContent() {
             element={
               <AdminRoute session={adminSession} allowedRoles={['rsp']}>
                 <RSPDashboard />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/lnd/employees"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['lnd']}>
+                <EmployeeDirectory />
               </AdminRoute>
             }
           />

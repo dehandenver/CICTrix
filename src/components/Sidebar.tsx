@@ -58,12 +58,13 @@ const RSP_ROLE_NAV: NavLink[] = [
 
 // L&D Admin: isolated CRUD portal — not accessible by other roles
 const LND_ROLE_NAV: NavLink[] = [
-  { id: 'dashboard',   label: 'L&D Dashboard',       icon: LayoutDashboard, path: '/admin/lnd'          },
-  { id: 'courses',     label: 'Training Courses',     icon: BookOpen,        path: '/admin/lnd/manage'   },
-  { id: 'seminars',    label: 'Seminar Enrollment',   icon: Calendar,        path: '/admin/lnd/manage'   },
-  { id: 'development', label: 'Employee Development', icon: TrendingUp,      path: '/admin/lnd/manage'   },
-  { id: 'reports',     label: 'Reports',              icon: FileText,        path: '/admin/lnd/manage'   },
-  { id: 'settings',    label: 'Settings',             icon: Settings,        path: '/admin/lnd/settings' },
+  { id: 'dashboard',       label: 'L&D Dashboard',       icon: LayoutDashboard, path: '/admin/lnd'          },
+  { id: 'courses',         label: 'Training Courses',     icon: BookOpen,        path: '/admin/lnd/manage'   },
+  { id: 'seminars',        label: 'Seminar Enrollment',   icon: Calendar,        path: '/admin/lnd/manage'   },
+  { id: 'development',     label: 'Employee Development', icon: TrendingUp,      path: '/admin/lnd/manage'   },
+  { id: 'employee-directory', label: 'Employee Directory', icon: Users,           path: '/admin/lnd/employees' },
+  { id: 'reports',         label: 'Reports',              icon: FileText,        path: '/admin/lnd/manage'   },
+  { id: 'settings',        label: 'Settings',             icon: Settings,        path: '/admin/lnd/settings' },
 ];
 
 // PM Admin: isolated CRUD portal — not accessible by other roles

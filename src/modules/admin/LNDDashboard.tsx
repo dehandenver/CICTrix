@@ -26,6 +26,7 @@ import {
     YAxis,
 } from 'recharts';
 import { EmployeeDevelopment } from './EmployeeDevelopment';
+import EmployeeDirectory from './EmployeeDirectory';
 import { SeminarEnrollment } from './SeminarEnrollment';
 import { TrainingCourses } from './TrainingCourses';
 import { TopNav } from '../../components/TopNav';
@@ -40,6 +41,7 @@ type MenuId =
   | 'training-courses'
   | 'seminar-enrollment'
   | 'employee-progress'
+  | 'employee-directory'
   | 'settings';
 
 type MenuItem = {
@@ -129,6 +131,7 @@ const LND_MENU: MenuItem[] = [
   { id: 'training-courses', label: 'Training Courses', sublabel: 'Courses and sessions', icon: BookOpen },
   { id: 'seminar-enrollment', label: 'Seminar Enrollment', sublabel: 'Registrations and slots', icon: ClipboardCheck },
   { id: 'employee-progress', label: 'Employee Development', sublabel: 'Employees and ratings', icon: Users },
+  { id: 'employee-directory', label: 'Employee Directory', sublabel: 'Manage employee profiles', icon: Users },
   { id: 'settings', label: 'Settings', sublabel: 'Division preferences', icon: Settings },
 ];
 
@@ -440,6 +443,8 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
           <SeminarEnrollment />
         ) : activeModule === 'employee-progress' ? (
           <EmployeeDevelopment />
+        ) : activeModule === 'employee-directory' ? (
+          <EmployeeDirectory />
         ) : (
           <PlaceholderPage label={LND_MENU.find((item) => item.id === activeModule)?.label || 'Module'} />
         )}
