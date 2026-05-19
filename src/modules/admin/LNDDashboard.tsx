@@ -599,7 +599,11 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
     const result = await updateDocumentRequestStatus(reviewingRequest.id, status);
     setReviewDecisionPending(null);
     if (!result.success) {
+<<<<<<< HEAD
       alert((result as any).error);
+=======
+      alert('error' in result ? result.error : 'Unknown error');
+>>>>>>> 2132bc8159f159589c6f121fdd0dff781ae3216f
       return;
     }
     setReviewingRequest(null);
@@ -706,7 +710,11 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
       source: 'LND'
     });
     if (!res.success) {
+<<<<<<< HEAD
       alert(`Failed to send request: ${(res as any).error}`);
+=======
+      alert(`Failed to send request: ${'error' in res ? res.error : 'Unknown error'}`);
+>>>>>>> 2132bc8159f159589c6f121fdd0dff781ae3216f
       return;
     }
     window.dispatchEvent(new CustomEvent('EMPLOYEE_DOCUMENTS_UPDATED'));
