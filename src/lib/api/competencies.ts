@@ -104,3 +104,35 @@ export function computeLNDSkillGaps(rows: EmployeeCompetencyRow[]) {
     })
     .sort((a, b) => b.gap - a.gap);
 }
+
+/**
+ * Fetch unique training streams (categories) from the Competency Dictionary Table.
+ * Used for populating training category dropdowns in Training Courses and Seminar Enrollment.
+ */
+export async function getTrainingStreams(): Promise<string[]> {
+  try {
+    const { data, error } = await supabase
+      .from('competency_dictionary')
+      .select('training_stream')
+      .not('training_stream', 'is', null)
+      .order('training_stream', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching training streams:', error);
+      return [];
+    }
+
+    // Extract unique training_stream values
+    const streams = new Set<string>();
+    (data ?? []).forEach((row: any) => {
+      if (row.training_stream && typeof row.training_stream === 'string') {
+        streams.add(row.training_stream.trim());
+      }
+    });
+
+    return Array.from(streams).sort();
+  } catch (error) {
+    console.error('Error fetching training streams:', error);
+    return [];
+  }
+}

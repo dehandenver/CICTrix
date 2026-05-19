@@ -1,5 +1,6 @@
 import { BookOpen, Calendar, ChevronDown, ChevronLeft, Clock, Filter, MapPin, Plus, Users, X } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { getTrainingStreams } from '../../lib/api/competencies';
 
 export type CourseStatus = 'Ongoing' | 'Upcoming' | 'Completed';
 
@@ -34,26 +35,14 @@ const statusBadge = (status: CourseStatus) => {
 
 const STATUS_OPTIONS: CourseStatus[] = ['Ongoing', 'Upcoming', 'Completed'];
 
-const CATEGORY_OPTIONS = [
-  'Leadership',
-  'Technical',
-  'Soft Skills',
-  'Compliance',
-  'Communication',
-  'Project Management',
-  'Data & Analytics',
-  'Digital Transformation',
-  'Customer Service',
-  'Other',
-];
-
 type AddCourseModalProps = {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (course: Course) => void;
+  categoryOptions: string[];
 };
 
-const AddCourseModal = ({ isOpen, onClose, onSubmit }: AddCourseModalProps) => {
+const AddCourseModal = ({ isOpen, onClose, onSubmit, categoryOptions }: AddCourseModalProps) => {
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('');
   const [status, setStatus] = useState<CourseStatus>('Upcoming');
@@ -138,7 +127,7 @@ const AddCourseModal = ({ isOpen, onClose, onSubmit }: AddCourseModalProps) => {
               <label className={labelClass}>Category</label>
               <select required value={category} onChange={(e) => setCategory(e.target.value)} className={inputClass}>
                 <option value="" disabled>Select category</option>
-                {CATEGORY_OPTIONS.map((cat) => (
+                {categoryOptions.map((cat) => (
                   <option key={cat} value={cat}>{cat}</option>
                 ))}
               </select>
@@ -248,7 +237,16 @@ export const TrainingCourses = ({ courses, onAddCourse }: TrainingCoursesProps) 
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
   const itemsPerPage = 10;
+
+  // Fetch training streams (categories) from Supabase
+  useEffect(() => {
+    (async () => {
+      const streams = await getTrainingStreams();
+      setCategoryOptions(streams.length > 0 ? streams : []);
+    })();
+  }, []);
 
   const filteredCourses =
     statusFilter === 'All Statuses'
@@ -418,6 +416,7 @@ export const TrainingCourses = ({ courses, onAddCourse }: TrainingCoursesProps) 
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSubmit={onAddCourse}
+        categoryOptions={categoryOptions}
       />
     </div>
   );
