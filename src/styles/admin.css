@@ -1041,6 +1041,8 @@
 /* ─── PRINT ──────────────────────────────────────────────────────────────────*/
 @media print {
   body * { visibility: hidden !important; }
+  
+  /* ─── Assessment Form Report Prints ─── */
   .assessment-print-overlay,
   .assessment-print-overlay * { visibility: visible !important; }
   .assessment-print-overlay {
@@ -1057,5 +1059,26 @@
   }
   .assessment-print-scroll { max-height: none !important; overflow: visible !important; }
   .assessment-print-no    { display: none !important; }
-  .assessment-form-card   { page-break-inside: avoid; break-inside: avoid; }
+  .assessment-form-card   { page-break-after: always; break-after: page; page-break-inside: avoid; break-inside: avoid; border: none !important; box-shadow: none !important; padding: 0 !important; }
+  .assessment-form-card:last-child { page-break-after: avoid; break-after: avoid; }
+
+  /* ─── Hired Credentials Slip Prints ─── */
+  .credentials-print-overlay,
+  .credentials-print-overlay * { visibility: visible !important; }
+  .credentials-print-overlay {
+    position: static !important;
+    inset: auto !important;
+    background: #fff !important;
+    padding: 0 !important;
+    display: block !important;
+  }
+  .credentials-print-modal {
+    width: 100% !important; max-width: 100% !important;
+    max-height: none !important; overflow: visible !important;
+    border-radius: 0 !important; box-shadow: none !important;
+  }
+  .credentials-print-scroll { max-height: none !important; overflow: visible !important; }
+  .credentials-print-no    { display: none !important; }
+  .credentials-print-card   { page-break-after: always; break-after: page; page-break-inside: avoid; break-inside: avoid; border: 2px dashed #363ee8 !important; padding: 3rem !important; margin: 0 auto 3rem auto !important; }
+  .credentials-print-card:last-child { page-break-after: avoid; break-after: avoid; }
 }

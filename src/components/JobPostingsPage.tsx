@@ -1115,72 +1115,129 @@ export const JobPostingsPage = () => {
             {filteredJobs.length === 0 ? 'Position 0 to 0 of 0' : `Position ${(page - 1) * ITEMS_PER_PAGE + 1} to ${Math.min(page * ITEMS_PER_PAGE, filteredJobs.length)} of ${filteredJobs.length}`}
           </p>
 
-          <div className="grid grid-cols-[48px_minmax(0,1fr)_48px] items-start gap-3">
+          <div className="grid grid-cols-[48px_minmax(0,1fr)_48px] items-center gap-3">
             <button className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-300 bg-slate-100 text-slate-500 disabled:opacity-40" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
               <ChevronLeft className="h-5 w-5" />
             </button>
 
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-              {currentPageJobs.map((job) => {
-                const liveCount = applicantCountsByJob.get(job.id) ?? { applicants: 0, qualified: 0 };
-                const officeLabel = job.division || `${job.department} Department`;
-                const statusLabel = STATUS_LABELS[job.status];
+            <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm flex-1">
+              <table className="w-full border-collapse text-left text-sm font-sans">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th scope="col" className="px-6 py-4 font-semibold text-[#040E6B]">Job Position & Code</th>
+                    <th scope="col" className="px-6 py-4 font-semibold text-[#040E6B]">Department / Division</th>
+                    <th scope="col" className="px-6 py-4 font-semibold text-[#040E6B]">Date Posted</th>
+                    <th scope="col" className="px-6 py-4 font-semibold text-[#040E6B]">Applicants</th>
+                    <th scope="col" className="px-6 py-4 font-semibold text-[#040E6B]">Status</th>
+                    <th scope="col" className="px-6 py-4 font-semibold text-[#040E6B] text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {currentPageJobs.map((job) => {
+                    const liveCount = applicantCountsByJob.get(job.id) ?? { applicants: 0, qualified: 0 };
+                    const officeLabel = job.division || `${job.department} Department`;
+                    const statusLabel = STATUS_LABELS[job.status];
 
-                return (
-                  <article key={job.id} className="rounded-xl border border-slate-200 bg-white p-4">
-                    <div className="mb-3 flex items-start justify-between gap-3">
-                      <h3 className="!mb-0 text-2xl font-semibold text-slate-900">{normalizeRomanNumeralsInText(job.title)}</h3>
-                      <span className={`rounded-full px-3 py-0.5 text-xs font-semibold ${STATUS_COLORS[job.status]}`}>{statusLabel}</span>
-                    </div>
-
-                    <p className="!mb-2 text-sm text-slate-500">Item No. {job.jobCode}</p>
-
-                    <div className="space-y-1.5 text-sm text-slate-700">
-                      <p className="!mb-0 flex items-center gap-2.5"><MapPin className="h-4 w-4 shrink-0 text-slate-400" /> <span>{officeLabel}</span></p>
-                      <p className="!mb-0 flex items-center gap-2.5"><Calendar className="h-4 w-4 shrink-0 text-slate-400" /> <span>Posted {formatPHDate(job.postedDate)}</span></p>
-                      <p className="!mb-0 flex items-center gap-2.5"><Users className="h-4 w-4 shrink-0 text-slate-400" /> <span><span className="font-bold text-slate-900">{liveCount.applicants}</span> Applicants</span></p>
-                    </div>
-
-                    <div className="mt-4 space-y-2">
-                      <button
-                        type="button"
-                        className="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-base font-semibold text-white"
+                    return (
+                      <tr
+                        key={job.id}
+                        className="group hover:bg-slate-50/80 transition-colors duration-150 cursor-pointer"
                         onClick={() => {
                           setViewingApplicantsFor(job);
                           setJobApplicantsSearch('');
                         }}
                       >
-                        View Applicants <ChevronRight className="ml-2 inline h-4 w-4" />
-                      </button>
+                        {/* Job Position & Code */}
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 transition-colors group-hover:bg-[#363EE8]/10 group-hover:text-[#363EE8]">
+                              <Briefcase size={20} />
+                            </div>
+                            <div>
+                              <div className="font-bold text-slate-800 group-hover:text-[#363EE8] transition-colors">
+                                {normalizeRomanNumeralsInText(job.title)}
+                              </div>
+                              <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                                Item No. {job.jobCode}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
 
-                      {job.status === 'Active' && (
-                        <button
-                          type="button"
-                          onClick={() => closeApplication(job)}
-                          className="w-full rounded-xl border border-orange-300 bg-white px-4 py-2.5 text-base font-medium text-orange-600"
-                        >
-                          <Lock className="mr-2 inline h-4 w-4" /> Close Application
-                        </button>
-                      )}
+                        {/* Office */}
+                        <td className="px-6 py-4 text-slate-600">
+                          <div className="font-medium">{officeLabel}</div>
+                        </td>
 
-                      <button
-                        type="button"
-                        onClick={() => void deleteJobPosting(job)}
-                        className="w-full rounded-xl border border-rose-300 bg-white px-4 py-2.5 text-base font-medium text-rose-600"
-                      >
-                        <Trash2 className="mr-2 inline h-4 w-4" /> Delete
-                      </button>
-                    </div>
-                  </article>
-                );
-              })}
+                        {/* Posted Date */}
+                        <td className="px-6 py-4 text-slate-600">
+                          <div className="font-medium">{formatPHDate(job.postedDate)}</div>
+                        </td>
 
-              {currentPageJobs.length === 0 && (
-                <div className="col-span-full rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">
-                  <Briefcase className="mx-auto h-10 w-10 text-slate-400" />
-                  <p className="mt-2 font-medium">No job postings found for the selected filters.</p>
-                </div>
-              )}
+                        {/* Applicants Count */}
+                        <td className="px-6 py-4">
+                          <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                            <Users size={13} className="text-slate-500" />
+                            {liveCount.applicants} Applicants
+                          </span>
+                        </td>
+
+                        {/* Status */}
+                        <td className="px-6 py-4">
+                          <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${STATUS_COLORS[job.status]}`}>
+                            {statusLabel}
+                          </span>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setViewingApplicantsFor(job);
+                                setJobApplicantsSearch('');
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-[#363EE8]/20 bg-[#363EE8]/5 px-3.5 py-2 text-xs font-bold text-[#363EE8] hover:bg-[#363EE8]/10 transition-all active:scale-[0.98]"
+                            >
+                              View Applicants
+                            </button>
+
+                            {job.status === 'Active' && (
+                              <button
+                                type="button"
+                                onClick={() => closeApplication(job)}
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-orange-200 bg-white px-3.5 py-2 text-xs font-bold text-orange-600 hover:bg-orange-50 transition-all active:scale-[0.98]"
+                              >
+                                <Lock size={13} className="shrink-0" /> Close
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => void deleteJobPosting(job)}
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-white px-3.5 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 transition-all active:scale-[0.98]"
+                            >
+                              <Trash2 size={13} className="shrink-0" /> Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                  {currentPageJobs.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-16 text-center">
+                        <div className="flex flex-col items-center justify-center text-slate-400">
+                          <Briefcase size={48} className="mb-4 text-slate-300" />
+                          <p className="font-semibold text-slate-500">No job postings found for the selected filters.</p>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
 
             <button className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-300 bg-slate-100 text-slate-500 disabled:opacity-40" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={page === totalPages}>

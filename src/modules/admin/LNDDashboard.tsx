@@ -148,7 +148,7 @@ const statusColor = (status: RequestStatus) => {
 
 const Sidebar = ({ activeModule, onSelect }: { activeModule: MenuId; onSelect: (id: MenuId) => void }) => {
   return (
-    <aside className="w-64 shrink-0 border-r border-slate-200 bg-white flex flex-col select-none overflow-hidden">
+    <aside className="fixed left-0 top-0 bottom-0 h-screen w-64 border-r border-slate-200 bg-white flex flex-col select-none overflow-hidden z-40">
       {/* Brand strip */}
       <div className="flex items-center gap-2.5 px-4 py-3.5 border-b border-slate-200">
         <div className="h-7 w-7 rounded-lg bg-[#363EE8] flex items-center justify-center flex-shrink-0">
