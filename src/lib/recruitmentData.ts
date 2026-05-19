@@ -708,7 +708,7 @@ const mapEmployeeRow = (row: any): EmployeeRecord => ({
   employeeId: String(row?.employee_id ?? ''),
   name: String(row?.full_name ?? ''),
   position: String(row?.current_position ?? ''),
-  department: String(row?.current_department ?? ''),
+  department: String(row?.department ?? row?.current_department ?? ''),
   division: row?.current_division ? String(row.current_division) : undefined,
   startDate: String(row?.hire_date ?? row?.created_at ?? ''),
   positionHistory: Array.isArray(row?.position_history) ? row.position_history : [],
@@ -716,7 +716,7 @@ const mapEmployeeRow = (row: any): EmployeeRecord => ({
 
 export const getEmployeeRecordsFromSupabase = async (): Promise<EmployeeRecord[]> => {
   try {
-    const { data, error } = await (supabase as any).from('employees').select('*');
+    const { data, error } = await (supabase as any).from('employees_with_department').select('*');
     if (error) {
       console.warn('[recruitmentData] employees fetch failed:', error);
       return [];
@@ -793,7 +793,7 @@ export const createEmployeeNumberAllocator = async (
 
   // Pull from Supabase.
   try {
-    const empRes = await (supabase as any).from('employees').select('employee_id');
+    const empRes = await (supabase as any).from('employees_with_department').select('employee_id');
     for (const row of (empRes?.data ?? []) as any[]) addIfPresent(row?.employee_id);
   } catch (error) {
     // eslint-disable-next-line no-console
@@ -810,7 +810,7 @@ export const createEmployeeNumberAllocator = async (
   // Pull employee_id values from the Supabase employees table so number
   // allocation does not collide with existing employees.
   try {
-    const empRes = await (supabase as any).from('employees').select('employee_id');
+    const empRes = await (supabase as any).from('employees_with_department').select('employee_id');
     for (const row of (empRes?.data ?? []) as any[]) addIfPresent(row?.employee_id);
   } catch (error) {
     // eslint-disable-next-line no-console

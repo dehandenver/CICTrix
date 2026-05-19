@@ -37,10 +37,10 @@ export const EnrollEmployeesModal: React.FC<EnrollEmployeesModalProps> = ({
     setFetchError(null);
     (async () => {
       const { data, error } = await (supabase as any)
-        .from('employees')
-        .select('id, first_name, last_name, position, department, status')
+        .from('employees_with_department')
+        .select('id, full_name, current_position, department, status')
         .eq('status', 'Active')
-        .order('last_name', { ascending: true });
+        .order('full_name', { ascending: true });
 
       if (cancelled) return;
       if (error) {
@@ -49,13 +49,11 @@ export const EnrollEmployeesModal: React.FC<EnrollEmployeesModalProps> = ({
         setEmployees([]);
       } else {
         const mapped: Employee[] = (data ?? []).map((row: any) => {
-          const last = (row.last_name ?? '').trim();
-          const first = (row.first_name ?? '').trim();
-          const name = last && first ? `${last}, ${first}` : last || first || 'Unnamed Employee';
+          const name = (row.full_name ?? '').trim() || 'Unnamed Employee';
           return {
             id: row.id,
             name,
-            position: row.position ?? '—',
+            position: row.current_position ?? '—',
             department: row.department ?? '—',
           };
         });

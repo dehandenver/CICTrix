@@ -185,7 +185,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
       source: 'PM'
     });
     if (!res.success) {
-      alert(`Failed to send request: ${res.error}`);
+      alert(`Failed to send request: ${(res as any).error}`);
       return;
     }
     window.dispatchEvent(new CustomEvent('EMPLOYEE_DOCUMENTS_UPDATED'));
@@ -210,10 +210,10 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     let cancelled = false;
     (async () => {
       const { data, error } = await (supabase as any)
-        .from('employees')
-        .select('id, first_name, last_name, position, department, status')
+        .from('employees_with_department')
+        .select('id, full_name, current_position, department, status')
         .eq('status', 'Active')
-        .order('last_name', { ascending: true });
+        .order('full_name', { ascending: true });
       if (cancelled) return;
       if (error) {
         console.error('Error loading employees for document request modal:', error);
@@ -221,13 +221,11 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
         return;
       }
       const mapped: EmployeeOption[] = (data ?? []).map((row: any) => {
-        const last = (row.last_name ?? '').trim();
-        const first = (row.first_name ?? '').trim();
-        const name = last && first ? `${last}, ${first}` : last || first || 'Unnamed Employee';
+        const name = (row.full_name ?? '').trim() || 'Unnamed Employee';
         return {
           id: row.id,
           name,
-          position: row.position ?? '—',
+          position: row.current_position ?? '—',
           department: row.department ?? '—',
         };
       });
@@ -406,7 +404,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     const result = await updateDocumentRequestStatus(reviewingRequest.id, status);
     setReviewDecisionPending(null);
     if (!result.success) {
-      alert(result.error);
+      alert((result as any).error);
       return;
     }
     setReviewingRequest(null);

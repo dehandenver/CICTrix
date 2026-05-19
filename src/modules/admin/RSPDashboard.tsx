@@ -763,9 +763,13 @@ export const RSPDashboard = () => {
           ?? '',
       ).trim();
       const empEmail = String((selectedEmployeeDetails as any).email ?? '').trim().toLowerCase();
-      const firstName = String((selectedEmployeeDetails as any).first_name ?? '').trim();
-      const lastName = String((selectedEmployeeDetails as any).last_name ?? '').trim();
-      const fullNameNormalized = `${firstName} ${lastName}`.trim().toLowerCase();
+      const fullName = ('name' in selectedEmployeeDetails)
+        ? (selectedEmployeeDetails.name || '').trim()
+        : `${selectedEmployeeDetails.first_name || ''} ${selectedEmployeeDetails.last_name || ''}`.trim();
+      const nameParts = fullName.split(' ');
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+      const fullNameNormalized = fullName.toLowerCase();
 
       const accounts = getEmployeePortalAccounts();
 
@@ -2080,7 +2084,7 @@ export const RSPDashboard = () => {
 
   const employeeDirectoryOfficeOptions = useMemo(
     () =>
-      Array.from(new Set(directoryEmployeesSource.map((employee) => employee.office || 'Unassigned Office'))).sort((a, b) =>
+      Array.from(new Set(directoryEmployeesSource.map((employee) => employee.department || 'Unassigned Office'))).sort((a, b) =>
         a.localeCompare(b)
       ),
     [directoryEmployeesSource]
@@ -2215,7 +2219,7 @@ export const RSPDashboard = () => {
 
   useEffect(() => {
     if (!selectedEmployeeDetails) return;
-    const currentDepartment = selectedEmployeeDetails.office || 'IT Department';
+    const currentDepartment = selectedEmployeeDetails.department || 'IT Department';
     const currentPosition = selectedEmployeeDetails.position || '';
     setPositionChangeForm((prev) => ({
       ...prev,
@@ -2230,7 +2234,7 @@ export const RSPDashboard = () => {
     return directoryEmployeesSource.map((employee) => ({
       id: employee.id,
       name: employee.full_name,
-      department: employee.office || 'Unassigned Office',
+      department: employee.department || 'Unassigned Office',
     }));
   }, [directoryEmployeesSource]);
 
@@ -5997,7 +6001,9 @@ export const RSPDashboard = () => {
                   <p className="!mb-0 text-sm text-slate-700">
                     Generate a new password for{' '}
                     <span className="font-semibold">
-                      {selectedEmployeeDetails.full_name || `${(selectedEmployeeDetails as any).first_name ?? ''} ${(selectedEmployeeDetails as any).last_name ?? ''}`.trim()}
+                      {'name' in selectedEmployeeDetails 
+                        ? (selectedEmployeeDetails.name || 'Unnamed Employee')
+                        : `${selectedEmployeeDetails.first_name || ''} ${selectedEmployeeDetails.last_name || ''}`.trim()}
                     </span>
                     {employeeNumberById.get(selectedEmployeeDetails.id)
                       ? ` (${employeeNumberById.get(selectedEmployeeDetails.id)})`

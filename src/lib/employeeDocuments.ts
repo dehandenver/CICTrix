@@ -162,7 +162,7 @@ export async function resolveEmployeeUuid(
   const tryColumn = async (column: string, value: string): Promise<string | null> => {
     if (!value) return null;
     const result = await (supabase as any)
-      .from('employees')
+      .from('employees_with_department')
       .select('id')
       .eq(column, value)
       .limit(1)
