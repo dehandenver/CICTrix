@@ -43,7 +43,7 @@ import {
   X,
   XCircle
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../../components/Button';
 import { Dialog } from '../../components/Dialog';
 import { Input } from '../../components/Input';
@@ -57,9 +57,12 @@ import {
   getDocumentRequests,
   groupRequestsByDepartment,
   summarizeRequests,
+  updateDocumentRequestStatus,
   type DocumentRequest,
 } from '../../lib/api/documentRequests';
+import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
 import { getAllEmployees, type Employee } from '../../lib/api/employees';
+import { createDocumentRequest } from '../../lib/employeeDocuments';
 import {
   bucketForScore,
   getEvaluationStatusCounts,
@@ -71,6 +74,9 @@ import {
 } from '../../lib/api/performanceEvaluations';
 import { supabase } from '../../lib/supabase';
 import '../../styles/admin.css';
+
+type EmployeeOption = { id: string; name: string; position: string; department: string };
+
 import EmployeeDirectory from './EmployeeDirectory';
 import { SummaryOfRatings } from './pm/SummaryOfRatings';
 
@@ -131,8 +137,9 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
   // Request Document modal state (individual employee requests)
   const [showRequestModal, setShowRequestModal] = useState(false);
-  const [requestEmployee, setRequestEmployee] = useState<{ name: string; role: string; dept: string; initials: string } | null>(null);
+  const [requestEmployee, setRequestEmployee] = useState<{ id?: string; name: string; role: string; dept: string; initials: string } | null>(null);
   const [requestDocType, setRequestDocType] = useState('');
+  const [requestDescription, setRequestDescription] = useState('');
   const [requestDueDate, setRequestDueDate] = useState('');
 
   const documentTypes = [
@@ -144,9 +151,10 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     'Updated Resume/CV',
   ];
 
-  const openRequestModal = (employee?: { name: string; role: string; dept: string; initials: string }) => {
+  const openRequestModal = (employee?: { id?: string; name: string; role: string; dept: string; initials: string }) => {
     setRequestEmployee(employee || null);
     setRequestDocType('');
+    setRequestDescription('');
     setRequestDueDate('');
     setShowRequestModal(true);
   };
@@ -155,16 +163,33 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     setShowRequestModal(false);
     setRequestEmployee(null);
     setRequestDocType('');
+    setRequestDescription('');
     setRequestDueDate('');
   };
 
-  const handleSendRequest = () => {
+  const handleSendRequest = async () => {
     if (!requestDocType || !requestDueDate) {
       alert('Please select a document type and due date.');
       return;
     }
-    // TODO: integrate with Supabase to persist the request
-    alert(`Request sent for "${requestDocType}" due ${requestDueDate}${requestEmployee ? ` to ${requestEmployee.name}` : ''}.`);
+    if (!requestEmployee?.id) {
+      alert('Cannot send request: Employee ID is missing.');
+      return;
+    }
+    const res = await createDocumentRequest({
+      employeeId: requestEmployee.id,
+      documentName: requestDocType,
+      description: requestDescription || `Please submit your ${requestDocType}`,
+      dueDate: requestDueDate,
+      requestedBy: 'PM Admin',
+      source: 'PM'
+    });
+    if (!res.success) {
+      alert(`Failed to send request: ${res.error}`);
+      return;
+    }
+    window.dispatchEvent(new CustomEvent('EMPLOYEE_DOCUMENTS_UPDATED'));
+    alert(`Request sent for "${requestDocType}" due ${requestDueDate}${requestEmployee.name ? ` to ${requestEmployee.name}` : ''}.`);
     closeRequestModal();
   };
 
@@ -176,7 +201,58 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const [bulkCalendarMonth, setBulkCalendarMonth] = useState(new Date().getMonth());
   const [bulkCalendarYear, setBulkCalendarYear] = useState(new Date().getFullYear());
   const [bulkSendTo, setBulkSendTo] = useState<'all' | 'department' | 'selected'>('all');
-  const totalEmployees = 24;
+  const [activeEmployees, setActiveEmployees] = useState<EmployeeOption[]>([]);
+  const [bulkSelectedDepartment, setBulkSelectedDepartment] = useState<string>('');
+  const [bulkSelectedEmployees, setBulkSelectedEmployees] = useState<string[]>([]);
+  const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await (supabase as any)
+        .from('employees')
+        .select('id, first_name, last_name, position, department, status')
+        .eq('status', 'Active')
+        .order('last_name', { ascending: true });
+      if (cancelled) return;
+      if (error) {
+        console.error('Error loading employees for document request modal:', error);
+        setActiveEmployees([]);
+        return;
+      }
+      const mapped: EmployeeOption[] = (data ?? []).map((row: any) => {
+        const last = (row.last_name ?? '').trim();
+        const first = (row.first_name ?? '').trim();
+        const name = last && first ? `${last}, ${first}` : last || first || 'Unnamed Employee';
+        return {
+          id: row.id,
+          name,
+          position: row.position ?? '—',
+          department: row.department ?? '—',
+        };
+      });
+      setActiveEmployees(mapped);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const filteredBulkEmployees = useMemo(() => {
+    const term = employeeSearchTerm.trim().toLowerCase();
+    if (!term) return [];
+    return activeEmployees.filter((emp) =>
+      emp.name.toLowerCase().includes(term) ||
+      emp.position.toLowerCase().includes(term) ||
+      emp.department.toLowerCase().includes(term)
+    );
+  }, [activeEmployees, employeeSearchTerm]);
+
+  const toggleBulkEmployee = (id: string) => {
+    setBulkSelectedEmployees((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const totalEmployees = activeEmployees.length;
 
   const openBulkRequestModal = () => {
     setBulkDocName('');
@@ -185,20 +261,68 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     setBulkSendTo('all');
     setBulkCalendarMonth(new Date().getMonth());
     setBulkCalendarYear(new Date().getFullYear());
+    setBulkSelectedEmployees([]);
+    setEmployeeSearchTerm('');
     setShowBulkRequestModal(true);
   };
 
   const closeBulkRequestModal = () => {
     setShowBulkRequestModal(false);
+    setBulkSelectedEmployees([]);
+    setEmployeeSearchTerm('');
   };
 
-  const handleBulkSendRequest = () => {
+  const handleBulkSendRequest = async () => {
     if (!bulkDocName || !bulkDescription || !bulkDueDate) {
       alert('Please fill in all required fields.');
       return;
     }
-    // TODO: integrate with Supabase to persist the bulk request
-    alert(`Bulk request for "${bulkDocName}" sent to ${totalEmployees} employees, due ${bulkDueDate.toLocaleDateString()}.`);
+    
+    let targetEmployees: string[] = [];
+    if (bulkSendTo === 'all') {
+      targetEmployees = activeEmployees.map((e) => e.id);
+    } else if (bulkSendTo === 'department') {
+      if (!bulkSelectedDepartment) {
+        alert('Please select a department.');
+        return;
+      }
+      targetEmployees = activeEmployees.filter((e) => e.department === bulkSelectedDepartment).map((e) => e.id);
+    } else if (bulkSendTo === 'selected') {
+      targetEmployees = bulkSelectedEmployees;
+      if (targetEmployees.length === 0) {
+        alert('Please select at least one employee.');
+        return;
+      }
+    }
+
+    if (targetEmployees.length === 0) {
+      alert('No employees match the selected criteria.');
+      return;
+    }
+
+    const dueDateStr = bulkDueDate.toISOString().split('T')[0];
+    
+    const results = await Promise.all(
+      targetEmployees.map((id) =>
+        createDocumentRequest({
+          employeeId: id,
+          documentName: bulkDocName,
+          description: bulkDescription,
+          dueDate: dueDateStr,
+          requestedBy: 'PM Admin',
+          source: 'PM'
+        })
+      )
+    );
+
+    const errors = results.filter((r) => !r.success);
+    if (errors.length > 0) {
+      console.error(errors);
+      alert(`Failed to send ${errors.length} requests. Check console for details.`);
+    }
+
+    window.dispatchEvent(new CustomEvent('EMPLOYEE_DOCUMENTS_UPDATED'));
+    alert(`Bulk request for "${bulkDocName}" sent to ${targetEmployees.length - errors.length} employees, due ${bulkDueDate.toLocaleDateString()}.`);
     closeBulkRequestModal();
   };
 
@@ -268,6 +392,26 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const [retirements, setRetirements] = useState<Array<{ name: string; role: string; date: string; monthsAway: number }>>([]);
   const [documentRequests, setDocumentRequests] = useState<DocumentRequest[]>([]);
   const [documentRequestsLoading, setDocumentRequestsLoading] = useState(false);
+  const [reviewingRequest, setReviewingRequest] = useState<DocumentRequest | null>(null);
+  const [reviewDecisionPending, setReviewDecisionPending] = useState<'Approved' | 'Rejected' | null>(null);
+
+  const refreshDocumentRequests = async () => {
+    const result = await getDocumentRequests({ source: 'PM' });
+    if (result.success) setDocumentRequests(result.data);
+  };
+
+  const handleReviewDecision = async (status: 'Approved' | 'Rejected') => {
+    if (!reviewingRequest) return;
+    setReviewDecisionPending(status);
+    const result = await updateDocumentRequestStatus(reviewingRequest.id, status);
+    setReviewDecisionPending(null);
+    if (!result.success) {
+      alert(result.error);
+      return;
+    }
+    setReviewingRequest(null);
+    await refreshDocumentRequests();
+  };
 
   const reviewsData = evaluations.filter(e => e.status === 'Approved');
   const reviewTotalPages = Math.max(1, Math.ceil(reviewsData.length / reviewRowsPerPage));
@@ -433,7 +577,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     let cancelled = false;
     (async () => {
       setDocumentRequestsLoading(true);
-      const result = await getDocumentRequests();
+      const result = await getDocumentRequests({ source: 'PM' });
       if (cancelled) return;
       setDocumentRequests(result.data);
       setDocumentRequestsLoading(false);
@@ -1702,7 +1846,9 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                                     className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition border ${config.actionClass}`}
                                     onClick={() => {
                                       if (config.action === 'Request') {
-                                        openRequestModal({ name: row.employee_name ?? '', role: '', dept: row.department ?? '', initials });
+                                        openRequestModal({ id: row.employee_id, name: row.employee_name ?? '', role: '', dept: row.department ?? '', initials });
+                                      } else if (config.action === 'View') {
+                                        setReviewingRequest(row);
                                       }
                                     }}
                                   >
@@ -1869,6 +2015,20 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                       <option key={type} value={type}>{type}</option>
                     ))}
                   </select>
+                </div>
+
+                {/* Description */}
+                <div>
+                  <label className="block text-sm font-semibold text-slate-800 mb-1.5">
+                    Description <span className="text-slate-400 font-normal">(Optional)</span>
+                  </label>
+                  <textarea
+                    value={requestDescription}
+                    onChange={(e) => setRequestDescription(e.target.value)}
+                    placeholder="e.g. Please upload your signed Q3 Performance Review."
+                    rows={2}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none resize-none"
+                  />
                 </div>
 
                 {/* Due Date */}
@@ -2121,17 +2281,54 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                         <div className="rounded-lg border border-blue-500 bg-white overflow-hidden shadow-sm">
                           <div className="flex items-center px-3 py-2.5 border-b border-slate-200">
                             <Search className="h-4 w-4 text-slate-400 mr-2" />
-                            <input 
-                              type="text" 
-                              placeholder="Search by name, position, or department..." 
+                            <input
+                              type="text"
+                              value={employeeSearchTerm}
+                              onChange={(e) => setEmployeeSearchTerm(e.target.value)}
+                              placeholder="Search by name, position, or department..."
                               className="w-full text-sm text-slate-700 outline-none bg-transparent placeholder-slate-400"
                             />
                           </div>
-                          <div className="flex flex-col items-center justify-center py-8 text-center bg-slate-50/30">
-                            <Search className="h-8 w-8 text-slate-300 mb-2 opacity-50" />
-                            <p className="text-sm font-medium text-slate-600">Start typing to search for employees</p>
-                            <p className="text-xs text-slate-400 mt-1">Search by name, position, or department</p>
-                          </div>
+                          {employeeSearchTerm.trim() === '' ? (
+                            <div className="flex flex-col items-center justify-center py-8 text-center bg-slate-50/30">
+                              <Search className="h-8 w-8 text-slate-300 mb-2 opacity-50" />
+                              <p className="text-sm font-medium text-slate-600">Start typing to search for employees</p>
+                              <p className="text-xs text-slate-400 mt-1">Search by name, position, or department</p>
+                            </div>
+                          ) : filteredBulkEmployees.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-8 text-center bg-slate-50/30">
+                              <Search className="h-8 w-8 text-slate-300 mb-2 opacity-50" />
+                              <p className="text-sm font-medium text-slate-600">No employees match "{employeeSearchTerm}"</p>
+                              <p className="text-xs text-slate-400 mt-1">Try a different name, position, or department</p>
+                            </div>
+                          ) : (
+                            <ul className="max-h-64 overflow-y-auto divide-y divide-slate-100">
+                              {filteredBulkEmployees.map((emp) => {
+                                const checked = bulkSelectedEmployees.includes(emp.id);
+                                return (
+                                  <li key={emp.id}>
+                                    <label className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-slate-50">
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={() => toggleBulkEmployee(emp.id)}
+                                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                      />
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-sm font-medium text-slate-800 truncate">{emp.name}</p>
+                                        <p className="text-xs text-slate-500 truncate">{emp.position} &middot; {emp.department}</p>
+                                      </div>
+                                    </label>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          )}
+                          {bulkSelectedEmployees.length > 0 && (
+                            <div className="px-3 py-2 bg-blue-50 border-t border-blue-100 text-xs text-blue-700 font-medium">
+                              {bulkSelectedEmployees.length} selected
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
@@ -2170,6 +2367,42 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
             </div>
           </div>
         )}
+
+        <DocumentPreviewModal
+          open={!!reviewingRequest}
+          fileUrl={reviewingRequest?.file_url ?? ''}
+          fileName={reviewingRequest?.file_name ?? reviewingRequest?.document_name ?? 'Document'}
+          fileType={reviewingRequest?.file_type ?? undefined}
+          title={reviewingRequest?.document_name ?? 'Review Document'}
+          subtitle={
+            reviewingRequest
+              ? `${reviewingRequest.employee_name ?? 'Employee'} • ${reviewingRequest.department ?? 'Unassigned'} • Status: ${reviewingRequest.status}`
+              : undefined
+          }
+          onClose={() => { if (!reviewDecisionPending) setReviewingRequest(null); }}
+          actions={
+            reviewingRequest?.status === 'Submitted' ? (
+              <>
+                <button
+                  type="button"
+                  disabled={!!reviewDecisionPending}
+                  onClick={() => void handleReviewDecision('Rejected')}
+                  className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
+                >
+                  {reviewDecisionPending === 'Rejected' ? 'Rejecting…' : 'Reject'}
+                </button>
+                <button
+                  type="button"
+                  disabled={!!reviewDecisionPending}
+                  onClick={() => void handleReviewDecision('Approved')}
+                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  {reviewDecisionPending === 'Approved' ? 'Approving…' : 'Approve'}
+                </button>
+              </>
+            ) : null
+          }
+        />
       </div>
     );
   }

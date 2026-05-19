@@ -30,7 +30,23 @@ import {
   uploadEmployeeDocument,
   type ApplicationDocumentType,
   type EmployeeDocumentRow,
+  type RequestSource,
 } from '../../lib/employeeDocuments';
+
+const SOURCE_BADGE_STYLES: Record<RequestSource, string> = {
+  HR: 'bg-slate-100 text-slate-700 ring-1 ring-slate-200',
+  PM: 'bg-blue-100 text-blue-700 ring-1 ring-blue-200',
+  LND: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200',
+};
+
+const SOURCE_BADGE_LABEL: Record<RequestSource, string> = {
+  HR: 'HR',
+  PM: 'PM',
+  LND: 'L&D',
+};
+
+const resolveSource = (source: RequestSource | null | undefined): RequestSource =>
+  source === 'PM' || source === 'LND' ? source : 'HR';
 import {
   changeEmployeePortalPassword,
   changeEmployeePortalUsername,
@@ -1141,7 +1157,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
             <section className="rounded-xl border border-slate-200 bg-white p-6">
               <h2 className="text-xl font-bold text-slate-900">Submission Bin</h2>
               <p className="mt-1 text-sm text-slate-500">
-                HR may request additional documents from time to time. Upload the requested documents by the due date.
+                HR, PM, or L&amp;D may request additional documents from time to time. Upload the requested documents by the due date.
               </p>
 
               {/* Pending Submissions */}
@@ -1162,6 +1178,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
                   const isUploading = uploadingId === request.id;
                   const days = daysUntil(request.due_date);
                   const overdue = days !== null && days < 0;
+                  const source = resolveSource(request.request_source);
 
                   return (
                     <article
@@ -1172,6 +1189,9 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <h4 className="font-semibold text-slate-900">{request.document_name}</h4>
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${SOURCE_BADGE_STYLES[source]}`}>
+                              {SOURCE_BADGE_LABEL[source]}
+                            </span>
                             <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
                               <Clock className="h-3 w-3" />
                               {request.status === 'Rejected' ? 'Needs Resubmission' : 'Pending'}
@@ -1231,6 +1251,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
                 )}
                 {submittedRequests.map((request) => {
                   const isUploading = uploadingId === request.id;
+                  const source = resolveSource(request.request_source);
 
                   return (
                     <article
@@ -1241,6 +1262,9 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <h4 className="font-semibold text-slate-900">{request.document_name}</h4>
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${SOURCE_BADGE_STYLES[source]}`}>
+                              {SOURCE_BADGE_LABEL[source]}
+                            </span>
                             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
                               <CheckCircle2 className="h-3 w-3" />
                               {request.status === 'Approved' ? 'Approved' : 'Submitted'}

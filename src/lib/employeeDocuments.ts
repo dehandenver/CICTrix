@@ -92,6 +92,8 @@ export type EmployeeDocumentStatus = 'Pending' | 'Submitted' | 'Approved' | 'Rej
  */
 export type EmployeeDocumentCategory = 'application' | 'compliance' | 'hr_request';
 
+export type RequestSource = 'HR' | 'PM' | 'LND';
+
 export interface EmployeeDocumentRow {
   id: string;
   employee_id: string;
@@ -103,6 +105,7 @@ export interface EmployeeDocumentRow {
   file_type: string | null;
   status: EmployeeDocumentStatus;
   category: EmployeeDocumentCategory;
+  request_source: RequestSource | null;
   due_date: string | null;
   requested_by: string | null;
   description: string | null;
@@ -311,8 +314,9 @@ export async function createDocumentRequest(params: {
   description: string;
   dueDate: string;
   requestedBy: string;
+  source?: RequestSource;
 }): Promise<{ success: true; row: EmployeeDocumentRow } | { success: false; error: string }> {
-  const { employeeId, email, documentName, description, dueDate, requestedBy } = params;
+  const { employeeId, email, documentName, description, dueDate, requestedBy, source = 'HR' } = params;
 
   if (!documentName.trim()) {
     return { success: false, error: 'Document name is required.' };
@@ -331,6 +335,7 @@ export async function createDocumentRequest(params: {
     document_type: 'Other Relevant Documents',
     document_name: documentName.trim(),
     category: 'hr_request' as EmployeeDocumentCategory,
+    request_source: source,
     status: 'Pending' as EmployeeDocumentStatus,
     description: description.trim() || null,
     due_date: dueDate || null,

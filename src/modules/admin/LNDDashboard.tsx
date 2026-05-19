@@ -35,7 +35,10 @@ import {
   YAxis,
 } from 'recharts';
 import { AdminHeader } from '../../components/AdminHeader';
-import { getAllEmployees } from '../../lib/api/employees';
+import { getAllEmployees, type Employee } from '../../lib/api/employees';
+import { supabase } from '../../lib/supabase';
+
+type EmployeeOption = { id: string; name: string; position: string; department: string };
 import { EmployeeDevelopment } from './EmployeeDevelopment';
 import { PMReports } from './PMReports';
 import { SeminarEnrollment } from './SeminarEnrollment';
@@ -55,6 +58,7 @@ type DocumentRow = {
   action: 'Request' | 'View';
   actionClass: string;
   icon: any;
+  request: DocumentRequest;
 };
 
 /** Derive 2-letter initials from a full_name string. */
@@ -67,7 +71,9 @@ const getDocRowInitials = (name: string): string => {
 
 import { EmptyState } from '../../components/EmptyState';
 import { computeLNDSkillGaps, getEmployeeCompetencies } from '../../lib/api/competencies';
-import { getDocumentRequests, type DocumentRequest } from '../../lib/api/documentRequests';
+import { getDocumentRequests, updateDocumentRequestStatus, type DocumentRequest } from '../../lib/api/documentRequests';
+import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
+import { createDocumentRequest } from '../../lib/employeeDocuments';
 import { getActivePrograms, getTopProgramsByEnrollment, type TrainingProgram } from '../../lib/api/trainingPrograms';
 import { getTrainingRequests, summarizeByStatus } from '../../lib/api/trainingRequests';
 import { getMonthlySessionCounts, getUpcomingSessions } from '../../lib/api/trainingSessions';
@@ -474,8 +480,9 @@ interface LNDDocumentsProps {
 const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSelectionConsumed }: LNDDocumentsProps) => {
   // Individual request modal state
   const [showRequestModal, setShowRequestModal] = useState(false);
-  const [requestEmployee, setRequestEmployee] = useState<{ name: string; role: string; dept: string; initials: string } | null>(null);
+  const [requestEmployee, setRequestEmployee] = useState<{ id?: string; name: string; role: string; dept: string; initials: string } | null>(null);
   const [requestDocType, setRequestDocType] = useState('');
+  const [requestDescription, setRequestDescription] = useState('');
   const [requestDueDate, setRequestDueDate] = useState('');
 
   // Bulk request modal state
@@ -486,16 +493,126 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
   const [bulkCalendarMonth, setBulkCalendarMonth] = useState(new Date().getMonth());
   const [bulkCalendarYear, setBulkCalendarYear] = useState(new Date().getFullYear());
   const [bulkSendTo, setBulkSendTo] = useState<'all' | 'department' | 'selected'>('all');
-  const totalEmployees = 24;
+  const [activeEmployees, setActiveEmployees] = useState<EmployeeOption[]>([]);
+  const [bulkSelectedDepartment, setBulkSelectedDepartment] = useState<string>('');
+  const [bulkSelectedEmployees, setBulkSelectedEmployees] = useState<string[]>([]);
+  const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await (supabase as any)
+        .from('employees')
+        .select('id, first_name, last_name, position, department, status')
+        .eq('status', 'Active')
+        .order('last_name', { ascending: true });
+      if (cancelled) return;
+      if (error) {
+        console.error('Error loading employees for document request modal:', error);
+        setActiveEmployees([]);
+        return;
+      }
+      const mapped: EmployeeOption[] = (data ?? []).map((row: any) => {
+        const last = (row.last_name ?? '').trim();
+        const first = (row.first_name ?? '').trim();
+        const name = last && first ? `${last}, ${first}` : last || first || 'Unnamed Employee';
+        return {
+          id: row.id,
+          name,
+          position: row.position ?? '—',
+          department: row.department ?? '—',
+        };
+      });
+      setActiveEmployees(mapped);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const filteredBulkEmployees = useMemo(() => {
+    const term = employeeSearchTerm.trim().toLowerCase();
+    if (!term) return [];
+    return activeEmployees.filter((emp) =>
+      emp.name.toLowerCase().includes(term) ||
+      emp.position.toLowerCase().includes(term) ||
+      emp.department.toLowerCase().includes(term)
+    );
+  }, [activeEmployees, employeeSearchTerm]);
+
+  const toggleBulkEmployee = (id: string) => {
+    setBulkSelectedEmployees((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const totalEmployees = activeEmployees.length;
 
   const [documentsLoading, setDocumentsLoading] = useState(true);
   const [dbDocumentRows, setDbDocumentRows] = useState<DocumentRow[]>([]);
+  const [reviewingRequest, setReviewingRequest] = useState<DocumentRequest | null>(null);
+  const [reviewDecisionPending, setReviewDecisionPending] = useState<'Approved' | 'Rejected' | null>(null);
+
+  const refreshLNDDocumentRequests = async () => {
+    const result = await getDocumentRequests({ source: 'LND' });
+    if (!result.success || !Array.isArray(result.data)) {
+      setDbDocumentRows([]);
+      return;
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const mapped: DocumentRow[] = (result.data as DocumentRequest[]).map((req, idx) => {
+      let statusLabel: string = req.status;
+      if (statusLabel === 'Pending' && req.due_date) {
+        const due = new Date(req.due_date);
+        if (!Number.isNaN(due.getTime()) && due < today) statusLabel = 'Overdue';
+      }
+      let statusClass = 'border-slate-200 bg-slate-50 text-slate-600';
+      if (statusLabel === 'Approved') statusClass = 'border-emerald-200 bg-emerald-50 text-emerald-600';
+      if (statusLabel === 'Pending') statusClass = 'border-orange-200 bg-orange-50 text-orange-600';
+      if (statusLabel === 'Submitted') statusClass = 'border-blue-200 bg-blue-50 text-blue-600';
+      if (statusLabel === 'Overdue' || statusLabel === 'Rejected') statusClass = 'border-red-200 bg-red-50 text-red-600';
+      const action: 'Request' | 'View' = req.status === 'Submitted' || req.status === 'Approved' ? 'View' : 'Request';
+      const actionClass = action === 'View'
+        ? 'border-purple-200 text-purple-600 hover:bg-purple-50'
+        : 'bg-blue-600 text-white hover:bg-blue-700 border-transparent';
+      const icon = action === 'View' ? Eye : ClipboardList;
+      return {
+        no: idx + 1,
+        initials: getDocRowInitials(req.employee_name ?? ''),
+        name: req.employee_name ?? 'Unnamed',
+        role: 'Employee',
+        dept: req.department ?? 'Unassigned Department',
+        docType: req.document_type || '—',
+        dateReq: new Date(req.uploaded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        dateSub: req.status !== 'Pending' ? new Date(req.uploaded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '',
+        status: statusLabel,
+        statusClass,
+        action,
+        actionClass,
+        icon,
+        request: req,
+      };
+    });
+    setDbDocumentRows(mapped);
+  };
+
+  const handleLNDReviewDecision = async (status: 'Approved' | 'Rejected') => {
+    if (!reviewingRequest) return;
+    setReviewDecisionPending(status);
+    const result = await updateDocumentRequestStatus(reviewingRequest.id, status);
+    setReviewDecisionPending(null);
+    if (!result.success) {
+      alert(result.error);
+      return;
+    }
+    setReviewingRequest(null);
+    await refreshLNDDocumentRequests();
+  };
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const result = await getDocumentRequests();
+        const result = await getDocumentRequests({ source: 'LND' });
         if (cancelled) return;
         
         if (!result.success || !Array.isArray(result.data) || result.data.length === 0) {
@@ -541,6 +658,7 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
             action,
             actionClass,
             icon,
+            request: req,
           };
         });
         setDbDocumentRows(mapped);
@@ -556,9 +674,10 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
   }, []);
 
   // ── Individual request helpers ──────────────────────────────────────
-  const openRequestModal = (employee?: { name: string; role: string; dept: string; initials: string }) => {
+  const openRequestModal = (employee?: { id?: string; name: string; role: string; dept: string; initials: string }) => {
     setRequestEmployee(employee || null);
     setRequestDocType('');
+    setRequestDescription('');
     setRequestDueDate('');
     setShowRequestModal(true);
   };
@@ -567,15 +686,33 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
     setShowRequestModal(false);
     setRequestEmployee(null);
     setRequestDocType('');
+    setRequestDescription('');
     setRequestDueDate('');
   };
 
-  const handleSendRequest = () => {
+  const handleSendRequest = async () => {
     if (!requestDocType || !requestDueDate) {
       alert('Please select a document type and due date.');
       return;
     }
-    alert(`Request sent for "${requestDocType}" due ${requestDueDate}${requestEmployee ? ` to ${requestEmployee.name}` : ''}.`);
+    if (!requestEmployee?.id) {
+      alert('Cannot send request: Employee ID is missing.');
+      return;
+    }
+    const res = await createDocumentRequest({
+      employeeId: requestEmployee.id,
+      documentName: requestDocType,
+      description: requestDescription || `Please submit your ${requestDocType}`,
+      dueDate: requestDueDate,
+      requestedBy: 'LND Admin',
+      source: 'LND'
+    });
+    if (!res.success) {
+      alert(`Failed to send request: ${res.error}`);
+      return;
+    }
+    window.dispatchEvent(new CustomEvent('EMPLOYEE_DOCUMENTS_UPDATED'));
+    alert(`Request sent for "${requestDocType}" due ${requestDueDate}${requestEmployee.name ? ` to ${requestEmployee.name}` : ''}.`);
     closeRequestModal();
   };
 
@@ -587,19 +724,68 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
     setBulkSendTo('all');
     setBulkCalendarMonth(new Date().getMonth());
     setBulkCalendarYear(new Date().getFullYear());
+    setBulkSelectedEmployees([]);
+    setEmployeeSearchTerm('');
     setShowBulkRequestModal(true);
   };
 
   const closeBulkRequestModal = () => {
     setShowBulkRequestModal(false);
+    setBulkSelectedEmployees([]);
+    setEmployeeSearchTerm('');
   };
 
-  const handleBulkSendRequest = () => {
+  const handleBulkSendRequest = async () => {
     if (!bulkDocName || !bulkDescription || !bulkDueDate) {
       alert('Please fill in all required fields.');
       return;
     }
-    alert(`Bulk request for "${bulkDocName}" sent to ${dbDocumentRows.length} employees, due ${bulkDueDate.toLocaleDateString()}.`);
+    
+    let targetEmployees: string[] = [];
+    if (bulkSendTo === 'all') {
+      targetEmployees = activeEmployees.map((e) => e.id);
+    } else if (bulkSendTo === 'department') {
+      if (!bulkSelectedDepartment) {
+        alert('Please select a department.');
+        return;
+      }
+      targetEmployees = activeEmployees.filter((e) => e.department === bulkSelectedDepartment).map((e) => e.id);
+    } else if (bulkSendTo === 'selected') {
+      targetEmployees = bulkSelectedEmployees;
+      if (targetEmployees.length === 0) {
+        alert('Please select at least one employee.');
+        return;
+      }
+    }
+
+    if (targetEmployees.length === 0) {
+      alert('No employees match the selected criteria.');
+      return;
+    }
+
+    const dueDateStr = bulkDueDate.toISOString().split('T')[0];
+    
+    const results = await Promise.all(
+      targetEmployees.map((id) =>
+        createDocumentRequest({
+          employeeId: id,
+          documentName: bulkDocName,
+          description: bulkDescription,
+          dueDate: dueDateStr,
+          requestedBy: 'LND Admin',
+          source: 'LND'
+        })
+      )
+    );
+
+    const errors = results.filter((r) => !r.success);
+    if (errors.length > 0) {
+      console.error(errors);
+      alert(`Failed to send ${errors.length} requests. Check console for details.`);
+    }
+
+    window.dispatchEvent(new CustomEvent('EMPLOYEE_DOCUMENTS_UPDATED'));
+    alert(`Bulk request for "${bulkDocName}" sent to ${targetEmployees.length - errors.length} employees, due ${bulkDueDate.toLocaleDateString()}.`);
     closeBulkRequestModal();
   };
 
@@ -826,7 +1012,9 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
                           className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition border ${row.actionClass}`}
                           onClick={() => {
                             if (row.action === 'Request') {
-                              openRequestModal({ name: row.name, role: row.role, dept: row.dept, initials: row.initials });
+                              openRequestModal({ id: row.request.employee_id, name: row.name, role: row.role, dept: row.dept, initials: row.initials });
+                            } else if (row.action === 'View') {
+                              setReviewingRequest(row.request);
                             }
                           }}
                         >
@@ -909,6 +1097,20 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
                     <option key={type} value={type}>{type}</option>
                   ))}
                 </select>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-800 mb-1.5">
+                  Description <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <textarea
+                  value={requestDescription}
+                  onChange={(e) => setRequestDescription(e.target.value)}
+                  placeholder="e.g. Please upload your Certificate of Training."
+                  rows={2}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none resize-none"
+                />
               </div>
 
               <div>
@@ -1125,7 +1327,10 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
                   </button>
                   {bulkSendTo === 'department' && (
                     <div className="animate-in fade-in slide-in-from-top-1 duration-200">
-                      <select className="w-full rounded-lg border border-blue-500 px-3 py-2.5 text-sm text-slate-700 outline-none focus:ring-1 focus:ring-blue-500 shadow-sm">
+                      <select 
+                        value={bulkSelectedDepartment} 
+                        onChange={(e) => setBulkSelectedDepartment(e.target.value)} 
+                        className="w-full rounded-lg border border-blue-500 px-3 py-2.5 text-sm text-slate-700 outline-none focus:ring-1 focus:ring-blue-500 shadow-sm">
                         <option value="">Select department...</option>
                         <option value="IT Department">IT Department</option>
                         <option value="Finance Department">Finance Department</option>
@@ -1160,17 +1365,54 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
                       <div className="rounded-lg border border-blue-500 bg-white overflow-hidden shadow-sm">
                         <div className="flex items-center px-3 py-2.5 border-b border-slate-200">
                           <Search className="h-4 w-4 text-slate-400 mr-2" />
-                          <input 
-                            type="text" 
-                            placeholder="Search by name, position, or department..." 
+                          <input
+                            type="text"
+                            value={employeeSearchTerm}
+                            onChange={(e) => setEmployeeSearchTerm(e.target.value)}
+                            placeholder="Search by name, position, or department..."
                             className="w-full text-sm text-slate-700 outline-none bg-transparent placeholder-slate-400"
                           />
                         </div>
-                        <div className="flex flex-col items-center justify-center py-8 text-center bg-slate-50/30">
-                          <Search className="h-8 w-8 text-slate-300 mb-2 opacity-50" />
-                          <p className="text-sm font-medium text-slate-600">Start typing to search for employees</p>
-                          <p className="text-xs text-slate-400 mt-1">Search by name, position, or department</p>
-                        </div>
+                        {employeeSearchTerm.trim() === '' ? (
+                          <div className="flex flex-col items-center justify-center py-8 text-center bg-slate-50/30">
+                            <Search className="h-8 w-8 text-slate-300 mb-2 opacity-50" />
+                            <p className="text-sm font-medium text-slate-600">Start typing to search for employees</p>
+                            <p className="text-xs text-slate-400 mt-1">Search by name, position, or department</p>
+                          </div>
+                        ) : filteredBulkEmployees.length === 0 ? (
+                          <div className="flex flex-col items-center justify-center py-8 text-center bg-slate-50/30">
+                            <Search className="h-8 w-8 text-slate-300 mb-2 opacity-50" />
+                            <p className="text-sm font-medium text-slate-600">No employees match "{employeeSearchTerm}"</p>
+                            <p className="text-xs text-slate-400 mt-1">Try a different name, position, or department</p>
+                          </div>
+                        ) : (
+                          <ul className="max-h-64 overflow-y-auto divide-y divide-slate-100">
+                            {filteredBulkEmployees.map((emp) => {
+                              const checked = bulkSelectedEmployees.includes(emp.id);
+                              return (
+                                <li key={emp.id}>
+                                  <label className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-slate-50">
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() => toggleBulkEmployee(emp.id)}
+                                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-sm font-medium text-slate-800 truncate">{emp.name}</p>
+                                      <p className="text-xs text-slate-500 truncate">{emp.position} &middot; {emp.department}</p>
+                                    </div>
+                                  </label>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                        {bulkSelectedEmployees.length > 0 && (
+                          <div className="px-3 py-2 bg-blue-50 border-t border-blue-100 text-xs text-blue-700 font-medium">
+                            {bulkSelectedEmployees.length} selected
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1209,6 +1451,42 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
           </div>
         </div>
       )}
+
+      <DocumentPreviewModal
+        open={!!reviewingRequest}
+        fileUrl={reviewingRequest?.file_url ?? ''}
+        fileName={reviewingRequest?.file_name ?? reviewingRequest?.document_name ?? 'Document'}
+        fileType={reviewingRequest?.file_type ?? undefined}
+        title={reviewingRequest?.document_name ?? 'Review Document'}
+        subtitle={
+          reviewingRequest
+            ? `${reviewingRequest.employee_name ?? 'Employee'} • ${reviewingRequest.department ?? 'Unassigned'} • Status: ${reviewingRequest.status}`
+            : undefined
+        }
+        onClose={() => { if (!reviewDecisionPending) setReviewingRequest(null); }}
+        actions={
+          reviewingRequest?.status === 'Submitted' ? (
+            <>
+              <button
+                type="button"
+                disabled={!!reviewDecisionPending}
+                onClick={() => void handleLNDReviewDecision('Rejected')}
+                className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
+              >
+                {reviewDecisionPending === 'Rejected' ? 'Rejecting…' : 'Reject'}
+              </button>
+              <button
+                type="button"
+                disabled={!!reviewDecisionPending}
+                onClick={() => void handleLNDReviewDecision('Approved')}
+                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {reviewDecisionPending === 'Approved' ? 'Approving…' : 'Approve'}
+              </button>
+            </>
+          ) : null
+        }
+      />
     </>
   );
 };

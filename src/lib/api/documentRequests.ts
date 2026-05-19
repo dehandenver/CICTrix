@@ -11,6 +11,7 @@
  */
 
 import { supabase as supabaseClient } from '../../lib/supabase';
+import { dispatchEmployeeDocumentsUpdated, type RequestSource } from '../employeeDocuments';
 
 const supabase = supabaseClient as any;
 
@@ -22,21 +23,30 @@ export interface DocumentRequest {
   document_type: string;
   document_name: string;
   status: DocRequestStatus;
+  request_source: RequestSource | null;
   due_date: string | null;
   requested_by: string | null;
   description: string | null;
   uploaded_at: string;
+  file_url: string | null;
+  file_name: string | null;
+  file_type: string | null;
   employee_name?: string | null;
   department?: string | null;
 }
 
-export async function getDocumentRequests() {
+export async function getDocumentRequests(filters?: { source?: RequestSource }) {
   try {
-    const { data: rows, error } = await supabase
+    let query = supabase
       .from('employee_documents')
-      .select('id, employee_id, document_type, document_name, status, due_date, requested_by, description, uploaded_at')
-      .eq('category', 'hr_request')
-      .order('due_date', { ascending: true, nullsFirst: false });
+      .select('id, employee_id, document_type, document_name, status, request_source, due_date, requested_by, description, uploaded_at, file_url, file_name, file_type')
+      .eq('category', 'hr_request');
+
+    if (filters?.source) {
+      query = query.eq('request_source', filters.source);
+    }
+
+    const { data: rows, error } = await query.order('due_date', { ascending: true, nullsFirst: false });
 
     if (error) throw error;
 
@@ -89,6 +99,33 @@ export function summarizeRequests(rows: DocumentRequest[]) {
     }
   }
   return { total, pending, overdue, approved };
+}
+
+/**
+ * Approve or reject a submitted document request. Fires the portal refresh
+ * event so any open Submission Bin re-renders (Rejected rows automatically
+ * fall back into the employee's pendingRequests list).
+ */
+export async function updateDocumentRequestStatus(
+  id: string,
+  status: 'Approved' | 'Rejected',
+): Promise<{ success: true; row: DocumentRequest } | { success: false; error: string }> {
+  if (!id) return { success: false, error: 'Missing request id.' };
+
+  const { data, error } = await supabase
+    .from('employee_documents')
+    .update({ status })
+    .eq('id', id)
+    .select('id, employee_id, document_type, document_name, status, request_source, due_date, requested_by, description, uploaded_at, file_url, file_name, file_type')
+    .single();
+
+  if (error) {
+    console.error('updateDocumentRequestStatus: update failed', error);
+    return { success: false, error: error.message ?? 'Could not update the request status.' };
+  }
+
+  dispatchEmployeeDocumentsUpdated();
+  return { success: true, row: data as DocumentRequest };
 }
 
 /** Group requests by department for the Documents table. */
