@@ -75,11 +75,11 @@ export const SuperAdminDashboard = () => {
   };
 
   return (
-    <div className="bg-slate-50 min-h-screen">
-      <Sidebar />
-      <main className="ml-64 min-h-screen overflow-y-auto">
-        <TopNav />
-        <div className="p-8">
+    <div className="flex h-screen bg-slate-50 font-sans flex-col overflow-hidden">
+      <TopNav />
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar userRole="super-admin" />
+        <main className="flex-1 overflow-auto p-8 bg-slate-50">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-slate-900">Super Admin Dashboard</h1>
             <p className="text-slate-500 mt-2">Comprehensive overview of all HRIS divisions</p>
@@ -371,8 +371,8 @@ export const SuperAdminDashboard = () => {
               <button className="h-14 rounded-xl bg-white/15 hover:bg-white/20 transition" type="button" />
             </div>
           </div>
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 };

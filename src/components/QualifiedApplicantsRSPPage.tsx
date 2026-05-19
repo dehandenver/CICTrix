@@ -26,6 +26,13 @@ export interface ApplicantRecord {
 export type InterviewerEvaluation = EvaluationSnapshot;
 
 export const QualifiedApplicantsRSPPage = () => {
+  const sessionRaw = localStorage.getItem('cictrix_admin_session');
+  let session = null;
+  try {
+    session = sessionRaw ? JSON.parse(sessionRaw) : null;
+  } catch {}
+  const isSuperAdmin = session?.role === 'super-admin';
+
   const [applicants, setApplicants] = useState<ApplicantRecord[]>([]);
   const [completedEvaluationIds, setCompletedEvaluationIds] = useState<Set<string>>(new Set());
   const [evaluationsByApplicant, setEvaluationsByApplicant] = useState<Record<string, InterviewerEvaluation>>({});
@@ -147,31 +154,31 @@ export const QualifiedApplicantsRSPPage = () => {
 
   if (loading) {
     return (
-      <div className="bg-slate-50 min-h-screen">
-        <Sidebar activeModule="RSP" userRole="rsp" />
-        <main className="ml-64 min-h-screen overflow-y-auto">
-          <TopNav />
-          <div className="flex items-center justify-center py-12">
-            <p className="text-slate-600 font-medium font-sans">Loading qualified applicants...</p>
-          </div>
-        </main>
+      <div className="flex h-screen bg-slate-50 font-sans flex-col overflow-hidden">
+        <TopNav />
+        <div className="flex flex-1 overflow-hidden">
+          <Sidebar userRole={isSuperAdmin ? 'super-admin' : 'rsp'} />
+          <main className="flex-1 overflow-auto bg-slate-50 p-8 flex items-center justify-center">
+            <p className="text-slate-600 font-medium">Loading qualified applicants...</p>
+          </main>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen bg-slate-50">
-      <Sidebar activeModule="RSP" userRole="rsp" />
-      <main className="flex-1 overflow-auto">
-        <TopNav />
-        <div className="p-8">
+    <div className="flex h-screen bg-slate-50 font-sans flex-col overflow-hidden">
+      <TopNav />
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar userRole={isSuperAdmin ? 'super-admin' : 'rsp'} />
+        <main className="flex-1 overflow-auto bg-slate-50 p-8">
           <QualifiedApplicantsSection
             applicants={applicants}
             completedEvaluationIds={completedEvaluationIds}
             evaluationsByApplicant={evaluationsByApplicant}
           />
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 };

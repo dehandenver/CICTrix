@@ -715,6 +715,13 @@ export const RSPDashboard = () => {
   const location = useLocation();
   const section = resolveSection(location.pathname, location.search);
 
+  const sessionRaw = localStorage.getItem('cictrix_admin_session');
+  let session = null;
+  try {
+    session = sessionRaw ? JSON.parse(sessionRaw) : null;
+  } catch {}
+  const isSuperAdmin = session?.role === 'super-admin';
+
   const [jobs, setJobs] = useState<JobRecord[]>([]);
   const [applicants, setApplicants] = useState<ApplicantRecord[]>([]);
   const [raters, setRaters] = useState<RaterRecord[]>([]);
@@ -2988,7 +2995,7 @@ export const RSPDashboard = () => {
 
   return (
     <div className="bg-slate-50 min-h-screen font-sans">
-      <Sidebar activeModule="RSP" userRole="rsp" />
+      <Sidebar activeModule="RSP" userRole={isSuperAdmin ? 'super-admin' : 'rsp'} />
 
       <main className="ml-64 min-h-screen overflow-y-auto">
         <TopNav />

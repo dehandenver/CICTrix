@@ -69,6 +69,13 @@ const FALLBACK_CYCLES: EvaluationCycle[] = [
 ];
 
 export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: boolean }) => {
+  const sessionRaw = localStorage.getItem('cictrix_admin_session');
+  let session = null;
+  try {
+    session = sessionRaw ? JSON.parse(sessionRaw) : null;
+  } catch {}
+  const isSuperAdmin = session?.role === 'super-admin';
+
   const [stats, setStats] = useState<PerformanceStats>({
     activeCycle: 'None',
     pendingReviews: 0
@@ -213,69 +220,73 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
       <div className="bg-slate-50 font-sans text-slate-800 h-screen flex flex-col">
         <TopNav />
         <div className="flex flex-1 overflow-hidden">
-          <aside className="w-64 shrink-0 border-r border-slate-200 bg-white flex flex-col select-none overflow-hidden">
-            {/* Brand strip */}
-            <div className="flex items-center gap-2.5 px-4 py-3.5 border-b border-slate-200">
-              <div className="h-7 w-7 rounded-lg bg-[#363EE8] flex items-center justify-center flex-shrink-0">
-                <TrendingUp className="h-4 w-4 text-white" />
+          {isSuperAdmin ? (
+            <Sidebar userRole="super-admin" />
+          ) : (
+            <aside className="w-64 shrink-0 border-r border-slate-200 bg-white flex flex-col select-none overflow-hidden">
+              {/* Brand strip */}
+              <div className="flex items-center gap-2.5 px-4 py-3.5 border-b border-slate-200">
+                <div className="h-7 w-7 rounded-lg bg-[#363EE8] flex items-center justify-center flex-shrink-0">
+                  <TrendingUp className="h-4 w-4 text-white" />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-[0.8125rem] font-bold text-[#050D65] leading-tight tracking-tight">Performance Mgmt</span>
+                  <span className="text-[0.625rem] font-semibold text-[#363EE8] uppercase tracking-widest">PM Portal</span>
+                </div>
               </div>
-              <div className="flex flex-col min-w-0">
-                <span className="text-[0.8125rem] font-bold text-[#050D65] leading-tight tracking-tight">Performance Mgmt</span>
-                <span className="text-[0.625rem] font-semibold text-[#363EE8] uppercase tracking-widest">PM Portal</span>
-              </div>
-            </div>
-            <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-0.5">
-              <p className="text-[0.6rem] font-bold text-slate-400 uppercase tracking-widest px-2 pb-1.5">Navigation</p>
-              {mainNavItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = activeSection === item.key;
-                return (
-                  <button
-                    type="button"
-                    key={item.key}
-                    onClick={() => setActiveSection(item.key)}
-                    className={`w-full rounded-lg px-2.5 py-2.5 text-left transition-colors select-none ${
-                      isActive ? 'bg-[#EEF2FF] text-[#363EE8] font-semibold' : 'hover:bg-slate-50 text-slate-600 font-medium'
-                    }`}
-                  >
-                    <div className="flex items-start gap-2.5">
-                      <Icon className={`mt-0.5 h-4 w-4 flex-shrink-0 ${isActive ? 'text-[#363EE8]' : 'text-slate-400'}`} />
-                      <div className="min-w-0">
-                        <p className="text-[0.8125rem] leading-tight truncate">{item.label}</p>
-                        {item.subtitle ? (
-                          <p className={`text-[0.6875rem] mt-0.5 ${isActive ? 'text-[#363EE8]/70 font-normal' : 'text-slate-400 font-normal'}`}>{item.subtitle}</p>
-                        ) : null}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-              {fixedNavItems.length > 0 && (
-                <>
-                  <div className="my-1.5 mx-2 h-px bg-slate-100" />
-                  {fixedNavItems.map((item) => {
-                    const Icon = item.icon;
-                    const isActive = activeSection === item.key;
-                    return (
-                      <button
-                        type="button"
-                        key={item.key}
-                        onClick={() => setActiveSection(item.key)}
-                        className={`w-full rounded-lg px-2.5 py-2 text-left transition-colors select-none ${
-                          isActive ? 'bg-[#EEF2FF] text-[#363EE8] font-semibold' : 'hover:bg-slate-50 text-slate-400 font-medium'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <Icon className={`h-4 w-4 flex-shrink-0 ${isActive ? 'text-[#363EE8]' : 'text-slate-400'}`} />
-                          <p className="text-[0.78125rem] leading-tight">{item.label}</p>
+              <nav className="flex-1 overflow-y-auto px-2.5 py-3 space-y-0.5">
+                <p className="text-[0.6rem] font-bold text-slate-400 uppercase tracking-widest px-2 pb-1.5">Navigation</p>
+                {mainNavItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeSection === item.key;
+                  return (
+                    <button
+                      type="button"
+                      key={item.key}
+                      onClick={() => setActiveSection(item.key)}
+                      className={`w-full rounded-lg px-2.5 py-2.5 text-left transition-colors select-none ${
+                        isActive ? 'bg-[#EEF2FF] text-[#363EE8] font-semibold' : 'hover:bg-slate-50 text-slate-600 font-medium'
+                      }`}
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <Icon className={`mt-0.5 h-4 w-4 flex-shrink-0 ${isActive ? 'text-[#363EE8]' : 'text-slate-400'}`} />
+                        <div className="min-w-0">
+                          <p className="text-[0.8125rem] leading-tight truncate">{item.label}</p>
+                          {item.subtitle ? (
+                            <p className={`text-[0.6875rem] mt-0.5 ${isActive ? 'text-[#363EE8]/70 font-normal' : 'text-slate-400 font-normal'}`}>{item.subtitle}</p>
+                          ) : null}
                         </div>
-                      </button>
-                    );
-                  })}
-                </>
-              )}
-            </nav>
-          </aside>
+                      </div>
+                    </button>
+                  );
+                })}
+                {fixedNavItems.length > 0 && (
+                  <>
+                    <div className="my-1.5 mx-2 h-px bg-slate-100" />
+                    {fixedNavItems.map((item) => {
+                      const Icon = item.icon;
+                      const isActive = activeSection === item.key;
+                      return (
+                        <button
+                          type="button"
+                          key={item.key}
+                          onClick={() => setActiveSection(item.key)}
+                          className={`w-full rounded-lg px-2.5 py-2 text-left transition-colors select-none ${
+                            isActive ? 'bg-[#EEF2FF] text-[#363EE8] font-semibold' : 'hover:bg-slate-50 text-slate-600 font-medium'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <Icon className={`h-4 w-4 flex-shrink-0 ${isActive ? 'text-[#363EE8]' : 'text-slate-400'}`} />
+                            <p className="text-[0.78125rem] leading-tight">{item.label}</p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </>
+                )}
+              </nav>
+            </aside>
+          )}
 
           <main className="flex-1 overflow-auto p-8">
             {activeSection === 'dashboard' && (

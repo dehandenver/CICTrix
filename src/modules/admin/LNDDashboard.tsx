@@ -29,6 +29,7 @@ import { EmployeeDevelopment } from './EmployeeDevelopment';
 import { SeminarEnrollment } from './SeminarEnrollment';
 import { TrainingCourses } from './TrainingCourses';
 import { TopNav } from '../../components/TopNav';
+import { Sidebar as GlobalSidebar } from '../../components/Sidebar';
 
 
 type Priority = 'high' | 'medium' | 'low';
@@ -406,6 +407,27 @@ const LndDashboardContent = () => {
 
 export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boolean }) => {
   const [activeModule, setActiveModule] = useState<MenuId>('dashboard');
+
+  const sessionRaw = localStorage.getItem('cictrix_admin_session');
+  let session = null;
+  try {
+    session = sessionRaw ? JSON.parse(sessionRaw) : null;
+  } catch {}
+  const isSuperAdmin = session?.role === 'super-admin';
+
+  if (isSuperAdmin) {
+    return (
+      <div className="flex h-screen bg-slate-50 font-sans flex-col overflow-hidden">
+        <TopNav />
+        <div className="flex flex-1 overflow-hidden">
+          <GlobalSidebar userRole="super-admin" />
+          <main className="flex-1 overflow-auto bg-slate-50">
+            <LndDashboardContent />
+          </main>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans flex-col text-slate-800">
