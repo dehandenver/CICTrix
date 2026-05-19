@@ -185,7 +185,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
       source: 'PM'
     });
     if (!res.success) {
-      alert(`Failed to send request: ${res.error}`);
+      alert(`Failed to send request: ${'error' in res ? res.error : 'Unknown error'}`);
       return;
     }
     window.dispatchEvent(new CustomEvent('EMPLOYEE_DOCUMENTS_UPDATED'));
@@ -406,7 +406,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     const result = await updateDocumentRequestStatus(reviewingRequest.id, status);
     setReviewDecisionPending(null);
     if (!result.success) {
-      alert(result.error);
+      alert('error' in result ? result.error : 'Unknown error');
       return;
     }
     setReviewingRequest(null);
