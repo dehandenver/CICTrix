@@ -238,7 +238,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
   const filteredBulkEmployees = useMemo(() => {
     const term = employeeSearchTerm.trim().toLowerCase();
-    if (!term) return [];
+    if (!term) return activeEmployees;
     return activeEmployees.filter((emp) =>
       emp.name.toLowerCase().includes(term) ||
       emp.position.toLowerCase().includes(term) ||
@@ -2289,13 +2289,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                               className="w-full text-sm text-slate-700 outline-none bg-transparent placeholder-slate-400"
                             />
                           </div>
-                          {employeeSearchTerm.trim() === '' ? (
-                            <div className="flex flex-col items-center justify-center py-8 text-center bg-slate-50/30">
-                              <Search className="h-8 w-8 text-slate-300 mb-2 opacity-50" />
-                              <p className="text-sm font-medium text-slate-600">Start typing to search for employees</p>
-                              <p className="text-xs text-slate-400 mt-1">Search by name, position, or department</p>
-                            </div>
-                          ) : filteredBulkEmployees.length === 0 ? (
+                          {filteredBulkEmployees.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-8 text-center bg-slate-50/30">
                               <Search className="h-8 w-8 text-slate-300 mb-2 opacity-50" />
                               <p className="text-sm font-medium text-slate-600">No employees match "{employeeSearchTerm}"</p>
