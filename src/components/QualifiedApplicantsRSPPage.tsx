@@ -154,31 +154,31 @@ export const QualifiedApplicantsRSPPage = () => {
 
   if (loading) {
     return (
-      <div className="flex h-screen bg-slate-50 font-sans flex-col overflow-hidden">
-        <TopNav />
-        <div className="flex flex-1 overflow-hidden">
-          <Sidebar userRole={isSuperAdmin ? 'super-admin' : 'rsp'} />
-          <main className="flex-1 overflow-auto bg-slate-50 p-8 flex items-center justify-center">
+      <div className="bg-slate-50 min-h-screen font-sans">
+        <Sidebar userRole={isSuperAdmin ? 'super-admin' : 'rsp'} />
+        <main className="ml-64 min-h-screen overflow-y-auto bg-slate-50">
+          <TopNav />
+          <div className="flex items-center justify-center p-8">
             <p className="text-slate-600 font-medium">Loading qualified applicants...</p>
-          </main>
-        </div>
+          </div>
+        </main>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans flex-col overflow-hidden">
-      <TopNav />
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar userRole={isSuperAdmin ? 'super-admin' : 'rsp'} />
-        <main className="flex-1 overflow-auto bg-slate-50 p-8">
+    <div className="bg-slate-50 min-h-screen font-sans">
+      <Sidebar userRole={isSuperAdmin ? 'super-admin' : 'rsp'} />
+      <main className="ml-64 min-h-screen overflow-y-auto bg-slate-50">
+        <TopNav />
+        <div className="p-8">
           <QualifiedApplicantsSection
             applicants={applicants}
             completedEvaluationIds={completedEvaluationIds}
             evaluationsByApplicant={evaluationsByApplicant}
           />
-        </main>
-      </div>
+        </div>
+      </main>
     </div>
   );
 };

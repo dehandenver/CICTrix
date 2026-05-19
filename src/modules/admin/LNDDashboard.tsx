@@ -417,37 +417,33 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
 
   if (isSuperAdmin) {
     return (
-      <div className="flex h-screen bg-slate-50 font-sans flex-col overflow-hidden">
-        <TopNav />
-        <div className="flex flex-1 overflow-hidden">
-          <GlobalSidebar userRole="super-admin" />
-          <main className="flex-1 overflow-auto bg-slate-50">
-            <LndDashboardContent />
-          </main>
-        </div>
+      <div className="bg-slate-50 min-h-screen font-sans">
+        <GlobalSidebar userRole="super-admin" />
+        <main className="ml-64 min-h-screen overflow-y-auto bg-slate-50">
+          <TopNav />
+          <LndDashboardContent />
+        </main>
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans flex-col text-slate-800">
-      <TopNav />
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar activeModule={activeModule} onSelect={setActiveModule} />
-        <main className="flex-1 overflow-auto">
-          {activeModule === 'dashboard' ? (
-            <LndDashboardContent />
-          ) : activeModule === 'training-courses' ? (
-            <TrainingCourses />
-          ) : activeModule === 'seminar-enrollment' ? (
-            <SeminarEnrollment />
-          ) : activeModule === 'employee-progress' ? (
-            <EmployeeDevelopment />
-          ) : (
-            <PlaceholderPage label={LND_MENU.find((item) => item.id === activeModule)?.label || 'Module'} />
-          )}
-        </main>
-      </div>
+    <div className="bg-slate-50 min-h-screen font-sans text-slate-800">
+      <Sidebar activeModule={activeModule} onSelect={setActiveModule} />
+      <main className="ml-64 min-h-screen overflow-y-auto">
+        <TopNav />
+        {activeModule === 'dashboard' ? (
+          <LndDashboardContent />
+        ) : activeModule === 'training-courses' ? (
+          <TrainingCourses />
+        ) : activeModule === 'seminar-enrollment' ? (
+          <SeminarEnrollment />
+        ) : activeModule === 'employee-progress' ? (
+          <EmployeeDevelopment />
+        ) : (
+          <PlaceholderPage label={LND_MENU.find((item) => item.id === activeModule)?.label || 'Module'} />
+        )}
+      </main>
     </div>
   );
 };
