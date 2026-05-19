@@ -14,8 +14,13 @@ import {
   Trash2,
   User,
   UserPlus,
+  Users,
+  X,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
+import { supabase as supabaseClient } from '../../lib/supabase';
+
+const supabase = supabaseClient as any;
 
 type SeminarStatus = 'Upcoming' | 'Ongoing' | 'Completed';
 type EnrollmentStatus = 'Confirmed' | 'Pending';
@@ -184,10 +189,158 @@ const statusBadge = (status: SeminarStatus | EnrollmentStatus) => {
   return 'bg-gray-100 text-gray-700';
 };
 
+const MOCK_EMPLOYEES = [
+  { id: 'emp-1', name: 'Atty. Love Faith Hayco-Mallorca', position: 'HR Division Chief', department: 'HR Division' },
+  { id: 'emp-2', name: 'Ronnel Kirk A. Pabil', position: 'Operations Supervisor', department: 'Operations' },
+  { id: 'emp-3', name: 'Christine L. Flores', position: 'IT Supervisor', department: 'MIS' },
+  { id: 'emp-4', name: 'Jerome P. Castillo', position: 'Systems Analyst', department: 'MIS' },
+  { id: 'emp-5', name: 'Mae T. Navarro', position: 'Data Encoder', department: 'Records' },
+  { id: 'emp-6', name: 'Lynette O. Ramos', position: 'Administrative Officer I', department: 'HR Division' },
+  { id: 'emp-7', name: 'Patrick D. Alba', position: 'IT Assistant', department: 'MIS' },
+  { id: 'emp-8', name: 'Sofia Ramirez', position: 'Municipal Budget Officer', department: 'Budget' },
+  { id: 'emp-9', name: 'Leah Torres', position: 'Administrative Aide VI', department: 'General Services' },
+  { id: 'emp-10', name: 'Rodrigo Duterte', position: 'Admin Officer III', department: 'Administration' },
+  { id: 'emp-11', name: 'Denver Celeste', position: 'Information Technology Specialist', department: 'MIS' },
+  { id: 'emp-12', name: 'Angelika Jean Jungco Ocana', position: 'Accountant', department: 'Finance' },
+];
+
 export const SeminarEnrollment = () => {
+  const [seminars, setSeminars] = useState<Seminar[]>(seminarsData);
   const [expandedSeminarId, setExpandedSeminarId] = useState('1');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Upcoming' | 'Ongoing' | 'Completed' | 'Cancelled'>('All');
+
+  // Modal States
+  const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
+  const [selectedSeminarForEnroll, setSelectedSeminarForEnroll] = useState<Seminar | null>(null);
+  const [enrollSearchQuery, setEnrollSearchQuery] = useState('');
+  const [enrollDeptFilter, setEnrollDeptFilter] = useState('All');
+  const [enrollAsStatus, setEnrollAsStatus] = useState<'Confirmed' | 'Pending'>('Confirmed');
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<Set<string>>(new Set());
+  const [allEmployees, setAllEmployees] = useState<any[]>(MOCK_EMPLOYEES);
+
+  useEffect(() => {
+    const loadSupabaseEmployees = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('applicants')
+          .select('id, first_name, last_name, position, office')
+          .eq('status', 'Hired');
+          
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          const loaded = data.map((d: any) => ({
+            id: `supabase-${d.id}`,
+            name: `${d.first_name} ${d.last_name}`,
+            position: d.position || 'Employee',
+            department: d.office || 'Unassigned',
+          }));
+          
+          setAllEmployees((prev) => {
+            const existingNames = new Set(prev.map(p => p.name.toLowerCase()));
+            const filteredLoaded = loaded.filter((l: any) => !existingNames.has(l.name.toLowerCase()));
+            return [...prev, ...filteredLoaded];
+          });
+        }
+      } catch (err) {
+        console.warn('loadSupabaseEmployees: DB loading bypassed locally', err);
+      }
+    };
+    
+    void loadSupabaseEmployees();
+  }, []);
+
+  const openEnrollModal = (seminar: Seminar) => {
+    setSelectedSeminarForEnroll(seminar);
+    setEnrollSearchQuery('');
+    setEnrollDeptFilter('All');
+    setEnrollAsStatus('Confirmed');
+    setSelectedEmployeeIds(new Set());
+    setIsEnrollModalOpen(true);
+  };
+
+  const closeEnrollModal = () => {
+    setIsEnrollModalOpen(false);
+    setSelectedSeminarForEnroll(null);
+  };
+
+  const handleToggleSelect = (empId: string) => {
+    setSelectedEmployeeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(empId)) {
+        next.delete(empId);
+      } else {
+        next.add(empId);
+      }
+      return next;
+    });
+  };
+
+  const availableEmployees = useMemo(() => {
+    if (!selectedSeminarForEnroll) return [];
+    const enrolledNames = new Set(selectedSeminarForEnroll.enrollees.map(e => e.name.toLowerCase()));
+    return allEmployees.filter(emp => !enrolledNames.has(emp.name.toLowerCase()));
+  }, [selectedSeminarForEnroll, allEmployees]);
+
+  const filteredAvailableEmployees = useMemo(() => {
+    const q = enrollSearchQuery.toLowerCase();
+    return availableEmployees.filter(emp => {
+      const matchesSearch = emp.name.toLowerCase().includes(q) || 
+                            emp.position.toLowerCase().includes(q) || 
+                            emp.department.toLowerCase().includes(q);
+      const matchesDept = enrollDeptFilter === 'All' || emp.department === enrollDeptFilter;
+      return matchesSearch && matchesDept;
+    });
+  }, [availableEmployees, enrollSearchQuery, enrollDeptFilter]);
+
+  const uniqueDepartments = useMemo(() => {
+    const depts = new Set<string>();
+    allEmployees.forEach(emp => {
+      if (emp.department) depts.add(emp.department);
+    });
+    return Array.from(depts).sort();
+  }, [allEmployees]);
+
+  const handleSelectAll = () => {
+    if (selectedEmployeeIds.size === filteredAvailableEmployees.length) {
+      setSelectedEmployeeIds(new Set());
+    } else {
+      setSelectedEmployeeIds(new Set(filteredAvailableEmployees.map(e => e.id)));
+    }
+  };
+
+  const handleEnrollSubmit = () => {
+    if (!selectedSeminarForEnroll) return;
+    
+    const nextSeminars = seminars.map((s) => {
+      if (s.id !== selectedSeminarForEnroll.id) return s;
+      
+      const newEnrollees = [...s.enrollees];
+      allEmployees.forEach((emp) => {
+        if (selectedEmployeeIds.has(emp.id)) {
+          newEnrollees.push({
+            id: `E-${Date.now()}-${emp.id}`,
+            name: emp.name,
+            position: emp.position,
+            department: emp.department,
+            enrollmentStatus: enrollAsStatus,
+            addedBy: 'L&D Admin',
+            dateAdded: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }),
+          });
+        }
+      });
+      
+      return {
+        ...s,
+        enrollees: newEnrollees,
+        enrolledCount: newEnrollees.length,
+      };
+    });
+    
+    setSeminars(nextSeminars);
+    closeEnrollModal();
+  };
 
   const toggleExpand = (id: string) => {
     setExpandedSeminarId((current) => (current === id ? '' : id));
@@ -195,7 +348,7 @@ export const SeminarEnrollment = () => {
 
   const filteredSeminars = useMemo(() => {
     const query = searchQuery.toLowerCase();
-    return seminarsData.filter((seminar) => {
+    return seminars.filter((seminar) => {
       const matchesSearch =
         seminar.title.toLowerCase().includes(query) ||
         seminar.category.toLowerCase().includes(query) ||
@@ -203,7 +356,7 @@ export const SeminarEnrollment = () => {
       const matchesStatus = statusFilter === 'All' || seminar.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
-  }, [searchQuery, statusFilter]);
+  }, [seminars, searchQuery, statusFilter]);
 
   return (
     <div className="p-6 md:p-8 pt-24 bg-gray-50 min-h-screen">
@@ -225,19 +378,19 @@ export const SeminarEnrollment = () => {
 
       <div className="flex items-center space-x-6 border-b border-gray-200 pb-4 mb-6 text-sm">
         <div>
-          <span className="font-semibold text-gray-900 text-lg mr-1">3</span>
+          <span className="font-semibold text-gray-900 text-lg mr-1">{seminars.length}</span>
           <span className="text-gray-500">Total Seminars</span>
         </div>
         <div>
-          <span className="font-semibold text-blue-600 text-lg mr-1">3</span>
+          <span className="font-semibold text-blue-600 text-lg mr-1">{seminars.filter(s => s.status === 'Upcoming').length}</span>
           <span className="text-gray-500">Upcoming</span>
         </div>
         <div>
-          <span className="font-semibold text-green-600 text-lg mr-1">0</span>
+          <span className="font-semibold text-green-600 text-lg mr-1">{seminars.filter(s => s.status === 'Ongoing').length}</span>
           <span className="text-gray-500">Ongoing</span>
         </div>
         <div>
-          <span className="font-semibold text-purple-600 text-lg mr-1">9</span>
+          <span className="font-semibold text-purple-600 text-lg mr-1">{seminars.reduce((acc, s) => acc + s.enrolledCount, 0)}</span>
           <span className="text-gray-500">Total Enrolled</span>
         </div>
       </div>
@@ -303,7 +456,16 @@ export const SeminarEnrollment = () => {
                       <p className="text-xs text-gray-400 text-right mt-1">{slotsLeft} slots left</p>
                     </div>
 
-                    <button type="button" className="text-xs bg-green-100 text-green-700 px-2.5 py-1.5 rounded-md font-medium hover:bg-green-200">+ Add Employee</button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openEnrollModal(seminar);
+                      }}
+                      className="text-xs bg-green-100 text-green-700 px-2.5 py-1.5 rounded-md font-medium hover:bg-green-200"
+                    >
+                      + Add Employee
+                    </button>
                     <button type="button" className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500"><Edit2 className="w-4 h-4" /></button>
                     <button type="button" className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500"><Trash2 className="w-4 h-4" /></button>
                     <button type="button" className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500">
@@ -368,7 +530,11 @@ export const SeminarEnrollment = () => {
 
                   <div className="flex items-center justify-between p-4 border-t border-gray-100 bg-white">
                     <p className="text-sm text-gray-500">{seminar.enrolledCount} enrolled · {slotsLeft} slots remaining</p>
-                    <button type="button" className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center">
+                    <button
+                      type="button"
+                      onClick={() => openEnrollModal(seminar)}
+                      className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center"
+                    >
                       <UserPlus className="w-4 h-4 mr-2" />
                       Add More Employees
                     </button>
@@ -379,6 +545,181 @@ export const SeminarEnrollment = () => {
           );
         })}
       </div>
+
+      {/* Enroll Employees Modal */}
+      {isEnrollModalOpen && selectedSeminarForEnroll && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 select-none">
+          <div className="relative w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[85vh] transition-all">
+            
+            {/* Modal Header */}
+            <div className="bg-[#10B981] text-white p-6 relative">
+              <button
+                type="button"
+                onClick={closeEnrollModal}
+                className="absolute top-4 right-4 text-white/80 hover:text-white transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+              <div className="flex items-center gap-3">
+                <UserPlus className="w-6 h-6 text-white" />
+                <h2 className="text-xl font-bold">Enroll Employees</h2>
+              </div>
+              <p className="text-sm text-white/95 mt-1 font-medium">{selectedSeminarForEnroll.title}</p>
+            </div>
+
+            {/* Filter / Search Bar */}
+            <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex flex-col gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="relative md:col-span-2">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3.5" />
+                  <input
+                    type="text"
+                    value={enrollSearchQuery}
+                    onChange={(e) => setEnrollSearchQuery(e.target.value)}
+                    placeholder="Search by name, position, or department..."
+                    className="w-full border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+                  />
+                </div>
+                <div className="relative">
+                  <select
+                    value={enrollDeptFilter}
+                    onChange={(e) => setEnrollDeptFilter(e.target.value)}
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent appearance-none bg-white font-medium text-slate-700"
+                  >
+                    <option value="All">All Departments</option>
+                    {uniqueDepartments.map(dept => (
+                      <option key={dept} value={dept}>{dept}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-3.5 pointer-events-none" />
+                </div>
+              </div>
+
+              {/* Enroll As Status & Select All */}
+              <div className="flex items-center justify-between text-sm">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Enroll As:</span>
+                  <div className="inline-flex p-0.5 bg-slate-100 rounded-lg">
+                    <button
+                      type="button"
+                      onClick={() => setEnrollAsStatus('Confirmed')}
+                      className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${
+                        enrollAsStatus === 'Confirmed'
+                          ? 'bg-[#10B981] text-white shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Confirmed
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEnrollAsStatus('Pending')}
+                      className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${
+                        enrollAsStatus === 'Pending'
+                          ? 'bg-[#F59E0B] text-white shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Pending
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-4 text-xs font-medium">
+                  <span className="text-slate-400 font-bold">{filteredAvailableEmployees.length} available</span>
+                  {filteredAvailableEmployees.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleSelectAll}
+                      className="text-[#363EE8] hover:text-[#363EE8]/80 font-bold transition-colors"
+                    >
+                      {selectedEmployeeIds.size === filteredAvailableEmployees.length ? 'Deselect All' : 'Select All'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Employees Table List */}
+            <div className="flex-1 overflow-y-auto min-h-[250px] max-h-[40vh]">
+              {filteredAvailableEmployees.length === 0 ? (
+                <div className="flex flex-col items-center justify-center p-12 text-slate-400 text-center">
+                  <Users className="w-12 h-12 text-slate-300 mb-3" />
+                  <p className="text-sm font-medium">No employees found matching your filters.</p>
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                      <th className="py-3 px-6 w-12">Select</th>
+                      <th className="py-3 px-4">Employee</th>
+                      <th className="py-3 px-6 text-right">Department</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredAvailableEmployees.map((emp) => {
+                      const isSelected = selectedEmployeeIds.has(emp.id);
+                      return (
+                        <tr
+                          key={emp.id}
+                          onClick={() => handleToggleSelect(emp.id)}
+                          className={`border-b border-slate-50 hover:bg-slate-50/50 cursor-pointer transition-colors ${
+                            isSelected ? 'bg-emerald-50/30' : ''
+                          }`}
+                        >
+                          <td className="py-4 px-6" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleToggleSelect(emp.id)}
+                              className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 w-4 h-4 cursor-pointer"
+                            />
+                          </td>
+                          <td className="py-4 px-4">
+                            <p className="font-semibold text-slate-800 text-sm leading-tight">{emp.name}</p>
+                            <p className="text-xs text-slate-400 mt-1">{emp.position}</p>
+                          </td>
+                          <td className="py-4 px-6 text-right">
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 bg-slate-100 rounded-full px-2.5 py-1">
+                              <Building2 className="w-3 h-3 text-slate-400" />
+                              {emp.department}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-5 border-t border-slate-100 bg-slate-50 flex items-center justify-between flex-shrink-0">
+              <button
+                type="button"
+                onClick={closeEnrollModal}
+                className="px-5 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 text-sm font-semibold hover:bg-slate-50 hover:text-slate-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleEnrollSubmit}
+                disabled={selectedEmployeeIds.size === 0}
+                className={`px-5 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all flex items-center gap-2 ${
+                  selectedEmployeeIds.size === 0
+                    ? 'bg-[#A7F3D0] text-white cursor-not-allowed'
+                    : 'bg-[#10B981] hover:bg-[#059669] text-white'
+                }`}
+              >
+                <UserPlus className="w-4 h-4" />
+                <span>Enroll Employees</span>
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
   );
 };
