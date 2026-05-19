@@ -1,31 +1,45 @@
 import {
-    Award,
-    BookOpen,
-    Building2,
-    Calendar,
-    ChevronLeft,
-    ChevronRight,
-    ChevronUp,
-    ClipboardCheck,
-    ClipboardList,
-    Eye,
-    FileText,
-    Info,
-    LayoutDashboard,
-    LineChart as LineChartIcon,
-    Plus,
-    Search,
-    Send,
-    Settings,
-    Target,
-    Upload,
-    Users,
-    UsersRound,
-    X,
+  Award,
+  BookOpen,
+  Building2,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  ClipboardCheck,
+  ClipboardList,
+  Eye,
+  FileText,
+  Info,
+  LayoutDashboard,
+  LineChart as LineChartIcon,
+  Plus,
+  Search,
+  Send,
+  Settings,
+  Target,
+  Upload,
+  Users,
+  UsersRound,
+  X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import {
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart as RechartsLineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { AdminHeader } from '../../components/AdminHeader';
-import { getAllEmployees, type Employee } from '../../lib/api/employees';
+import { getAllEmployees } from '../../lib/api/employees';
+import { EmployeeDevelopment } from './EmployeeDevelopment';
+import { PMReports } from './PMReports';
+import { SeminarEnrollment } from './SeminarEnrollment';
+import { TrainingCourses, type Course } from './TrainingCourses';
 
 type DocumentRow = {
   no: number;
@@ -50,27 +64,13 @@ const getDocRowInitials = (name: string): string => {
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 };
-import {
-    CartesianGrid,
-    Legend,
-    Line,
-    LineChart as RechartsLineChart,
-    ResponsiveContainer,
-    Tooltip,
-    XAxis,
-    YAxis,
-} from 'recharts';
-import { EmployeeDevelopment } from './EmployeeDevelopment';
-import { PMReports } from './PMReports';
-import { SeminarEnrollment } from './SeminarEnrollment';
-import { type Course, TrainingCourses } from './TrainingCourses';
 
-import { getActivePrograms, getTopProgramsByEnrollment, type TrainingProgram } from '../../lib/api/trainingPrograms';
-import { getUpcomingSessions, getMonthlySessionCounts } from '../../lib/api/trainingSessions';
-import { getTrainingRequests, summarizeByStatus, type TrainingRequest } from '../../lib/api/trainingRequests';
-import { getEmployeeCompetencies, computeLNDSkillGaps } from '../../lib/api/competencies';
-import { getDocumentRequests, summarizeRequests, groupRequestsByDepartment, type DocumentRequest } from '../../lib/api/documentRequests';
 import { EmptyState } from '../../components/EmptyState';
+import { computeLNDSkillGaps, getEmployeeCompetencies } from '../../lib/api/competencies';
+import { getDocumentRequests, type DocumentRequest } from '../../lib/api/documentRequests';
+import { getActivePrograms, getTopProgramsByEnrollment, type TrainingProgram } from '../../lib/api/trainingPrograms';
+import { getTrainingRequests, summarizeByStatus } from '../../lib/api/trainingRequests';
+import { getMonthlySessionCounts, getUpcomingSessions } from '../../lib/api/trainingSessions';
 import EmployeeDirectory from './EmployeeDirectory';
 
 type Priority = 'high' | 'medium' | 'low';

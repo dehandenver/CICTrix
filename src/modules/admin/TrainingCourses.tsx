@@ -1,4 +1,4 @@
-import { BookOpen, Calendar, ChevronDown, ChevronLeft, Clock, Filter, MapPin, Plus, Users, X } from 'lucide-react';
+import { BookOpen, ChevronDown, ChevronLeft, Filter, Plus, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { getTrainingStreams } from '../../lib/api/competencies';
 
