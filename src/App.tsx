@@ -534,7 +534,7 @@ function AppContent() {
           <Route
             path="/admin/rsp"
             element={
-              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+              <AdminRoute session={adminSession} allowedRoles={['rsp']}>
                 <RSPDashboard />
               </AdminRoute>
             }
@@ -542,7 +542,7 @@ function AppContent() {
           <Route
             path="/admin/rsp/jobs"
             element={
-              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+              <AdminRoute session={adminSession} allowedRoles={['rsp']}>
                 <JobPostingsPage />
               </AdminRoute>
             }
@@ -550,7 +550,7 @@ function AppContent() {
           <Route
             path="/admin/rsp/qualified"
             element={
-              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+              <AdminRoute session={adminSession} allowedRoles={['rsp']}>
                 <QualifiedApplicantsRSPPage />
               </AdminRoute>
             }
@@ -558,7 +558,7 @@ function AppContent() {
           <Route
             path="/admin/rsp/applicant/:id"
             element={
-              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+              <AdminRoute session={adminSession} allowedRoles={['rsp']}>
                 <ApplicantDetailsPage />
               </AdminRoute>
             }
@@ -566,7 +566,7 @@ function AppContent() {
           <Route
             path="/admin/rsp/qualified/:jobId"
             element={
-              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+              <AdminRoute session={adminSession} allowedRoles={['rsp']}>
                 <QualifiedApplicantsRSPPage />
               </AdminRoute>
             }
@@ -574,7 +574,7 @@ function AppContent() {
           <Route
             path="/admin/rsp/new-hired"
             element={
-              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+              <AdminRoute session={adminSession} allowedRoles={['rsp']}>
                 <NewlyHiredPage />
               </AdminRoute>
             }
@@ -582,7 +582,7 @@ function AppContent() {
           <Route
             path="/admin/rsp/raters"
             element={
-              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+              <AdminRoute session={adminSession} allowedRoles={['rsp']}>
                 <RaterManagementPage />
               </AdminRoute>
             }
@@ -590,7 +590,7 @@ function AppContent() {
           <Route
             path="/admin/rsp/accounts"
             element={
-              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+              <AdminRoute session={adminSession} allowedRoles={['rsp']}>
                 <RSPDashboard />
               </AdminRoute>
             }
@@ -598,7 +598,7 @@ function AppContent() {
           <Route
             path="/admin/rsp/reports"
             element={
-              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+              <AdminRoute session={adminSession} allowedRoles={['rsp']}>
                 <RSPDashboard />
               </AdminRoute>
             }
@@ -606,7 +606,7 @@ function AppContent() {
           <Route
             path="/admin/rsp/settings"
             element={
-              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+              <AdminRoute session={adminSession} allowedRoles={['rsp']}>
                 <SettingsPage />
               </AdminRoute>
             }
@@ -621,7 +621,7 @@ function AppContent() {
           <Route
             path="/admin/lnd"
             element={
-              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'lnd']}>
+              <AdminRoute session={adminSession} allowedRoles={['lnd']}>
                 <LNDDashboard isDashboardView={true} />
               </AdminRoute>
             }
@@ -629,7 +629,7 @@ function AppContent() {
           <Route
             path="/admin/lnd/manage"
             element={
-              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'lnd']}>
+              <AdminRoute session={adminSession} allowedRoles={['lnd']}>
                 <LNDDashboard isDashboardView={false} />
               </AdminRoute>
             }
@@ -637,7 +637,7 @@ function AppContent() {
           <Route
             path="/admin/lnd/settings"
             element={
-              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'lnd']}>
+              <AdminRoute session={adminSession} allowedRoles={['lnd']}>
                 <SettingsPage />
               </AdminRoute>
             }
@@ -645,7 +645,7 @@ function AppContent() {
           <Route
             path="/admin/pm"
             element={
-              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'pm']}>
+              <AdminRoute session={adminSession} allowedRoles={['pm']}>
                 <PMDashboard isDashboardView={true} />
               </AdminRoute>
             }
@@ -653,7 +653,7 @@ function AppContent() {
           <Route
             path="/admin/pm/manage"
             element={
-              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'pm']}>
+              <AdminRoute session={adminSession} allowedRoles={['pm']}>
                 <PMDashboard isDashboardView={false} />
               </AdminRoute>
             }
@@ -661,7 +661,7 @@ function AppContent() {
           <Route
             path="/admin/pm/settings"
             element={
-              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'pm']}>
+              <AdminRoute session={adminSession} allowedRoles={['pm']}>
                 <SettingsPage />
               </AdminRoute>
             }
