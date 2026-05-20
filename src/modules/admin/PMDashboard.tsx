@@ -1748,9 +1748,8 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   }
 
                   const grouped = groupRequestsByDepartment(documentRequests);
-                  const depts = Object.keys(grouped).sort();
 
-                  if (depts.length === 0) {
+                  if (grouped.length === 0) {
                     return (
                       <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-12 text-center flex flex-col items-center">
                         <FileText className="h-12 w-12 text-slate-300 mb-4" />
@@ -1760,8 +1759,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                     );
                   }
 
-                  return depts.map(dept => {
-                    const reqs = grouped[dept];
+                  return grouped.map(({ department: dept, requests: reqs }) => {
                     const pendingCount = reqs.filter(r => r.status === 'Pending').length;
                     const submittedCount = reqs.filter(r => r.status === 'Submitted').length;
                     const reviewCount = reqs.filter(r => r.status === 'Under Review').length;

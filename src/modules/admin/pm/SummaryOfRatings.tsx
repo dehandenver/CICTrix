@@ -616,7 +616,7 @@ export const SummaryOfRatings = () => {
                   onChange={(e) => setModalDept(e.target.value)}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
                 >
-                  {deptOptions.map(opt => (
+                  {DEPT_OPTIONS.map(opt => (
                     <option key={opt} value={opt}>{opt}</option>
                   ))}
                 </select>
