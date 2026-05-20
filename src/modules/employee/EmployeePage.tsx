@@ -10,10 +10,16 @@ import {
   Lock,
   LogOut,
   Pencil,
+  RefreshCw,
   Save,
   Upload,
   User,
   X,
+  Plus,
+  Trash2,
+  AlertCircle,
+  FileSpreadsheet,
+  Check,
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -22,6 +28,16 @@ import {
   fetchPortalEmployeeById,
   patchPortalEmployee,
 } from '../../lib/api/employeePortal';
+import {
+  getActivePerformanceCycle,
+  getCompetenciesList,
+  getEmployeeIPCR,
+  saveOrSubmitEmployeeIPCR,
+  getEmployeeRawDetails,
+  getLatestEmployeeIPCR,
+  getEmployeeEvaluations,
+  type IPCRRowDraft,
+} from '../../lib/api/performanceEvaluations';
 import {
   APPLICATION_DOC_TYPES,
   EMPLOYEE_DOCUMENTS_UPDATED_EVENT,
@@ -189,6 +205,215 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const [employeeDocuments, setEmployeeDocuments] = useState<EmployeeDocumentRow[]>([]);
   const [previewDocument, setPreviewDocument] = useState<EmployeeDocumentRow | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // IPCR performance self-evaluation states
+  const [activeCycle, setActiveCycle] = useState<any | null>(null);
+  const [competencies, setCompetencies] = useState<Array<{ competency_id: number; competency_standard: string }>>([]);
+  const [employeeRawDetails, setEmployeeRawDetails] = useState<any | null>(null);
+  const [ipcrRows, setIpcrRows] = useState<IPCRRowDraft[]>([]);
+  const [ipcrEvaluation, setIpcrEvaluation] = useState<any | null>(null);
+  const [isEditingIPCR, setIsEditingIPCR] = useState(false);
+  const [ipcrLoading, setIpcrLoading] = useState(false);
+  const [ipcrSaving, setIpcrSaving] = useState(false);
+  const [ipcrError, setIpcrError] = useState<string | null>(null);
+  const [ipcrSuccess, setIpcrSuccess] = useState<string | null>(null);
+  const [ipcrRatingPeriod, setIpcrRatingPeriod] = useState<string>('');
+  const [employeeEvaluations, setEmployeeEvaluations] = useState<any[]>([]);
+
+  const calculateRowAverage = (q: number | null, e: number | null, t: number | null): number => {
+    const ratings = [q, e, t].filter((r): r is number => typeof r === 'number' && r !== null);
+    if (ratings.length === 0) return 0;
+    const sum = ratings.reduce((acc, val) => acc + val, 0);
+    return Number((sum / ratings.length).toFixed(2));
+  };
+
+  const loadIPCRData = async () => {
+    if (!currentUser.supabaseId) return;
+    setIpcrLoading(true);
+    setIpcrError(null);
+    try {
+      const rawDetailsRes = await getEmployeeRawDetails(currentUser.supabaseId);
+      let employeeNum = currentUser.employeeId;
+      let rawData = null;
+      if (rawDetailsRes.success && rawDetailsRes.data) {
+        rawData = rawDetailsRes.data;
+        setEmployeeRawDetails(rawData);
+        if (rawData.employee_number) {
+          employeeNum = rawData.employee_number;
+        }
+      }
+
+      const cycleRes = await getActivePerformanceCycle();
+      let cycle = null;
+      if (cycleRes.success && cycleRes.data) {
+        cycle = cycleRes.data;
+        setActiveCycle(cycle);
+      }
+
+      const compRes = await getCompetenciesList();
+      if (compRes.success && compRes.data) {
+        setCompetencies(compRes.data);
+      }
+
+      const ipcrRes = await getLatestEmployeeIPCR(
+        currentUser.supabaseId,
+        employeeNum,
+        cycle ? cycle.id : null
+      );
+      if (ipcrRes.success && ipcrRes.data) {
+        setIpcrRows(ipcrRes.data.rows);
+        setIpcrEvaluation(ipcrRes.data.evaluation);
+        setIpcrRatingPeriod(ipcrRes.data.ratingPeriod);
+      } else {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = now.getMonth();
+        const fallbackPeriod = month < 6 ? `January–June ${year}` : `July–December ${year}`;
+        setIpcrRatingPeriod(fallbackPeriod);
+      }
+
+      const evalsRes = await getEmployeeEvaluations(currentUser.supabaseId);
+      if (evalsRes.success) {
+        setEmployeeEvaluations(evalsRes.data);
+      }
+    } catch (err) {
+      console.error('Failed to load IPCR data:', err);
+      setIpcrError('Failed to load IPCR performance data. Please try again.');
+    } finally {
+      setIpcrLoading(false);
+    }
+  };
+
+  const loadIPCRPeriod = async (period: string, cycleId: number | null) => {
+    if (!currentUser.supabaseId) return;
+    setIpcrLoading(true);
+    setIpcrError(null);
+    try {
+      let employeeNum = currentUser.employeeId;
+      if (employeeRawDetails && employeeRawDetails.employee_number) {
+        employeeNum = employeeRawDetails.employee_number;
+      }
+      
+      const ipcrRes = await getEmployeeIPCR(
+        employeeNum,
+        period,
+        currentUser.supabaseId,
+        cycleId
+      );
+      if (ipcrRes.success && ipcrRes.data) {
+        setIpcrRows(ipcrRes.data.rows);
+        setIpcrEvaluation(ipcrRes.data.evaluation);
+        setIpcrRatingPeriod(period);
+      }
+    } catch (err) {
+      console.error('Failed to load IPCR for period:', err);
+      setIpcrError('Failed to load IPCR for the selected period.');
+    } finally {
+      setIpcrLoading(false);
+    }
+  };
+
+  const updateRowField = (index: number, field: keyof IPCRRowDraft, value: any) => {
+    setIpcrRows((prev) => {
+      const next = [...prev];
+      const updatedRow = { ...next[index], [field]: value };
+      
+      if (field === 'q_rating' || field === 'e_rating' || field === 't_rating') {
+        updatedRow.ave_rating = calculateRowAverage(
+          field === 'q_rating' ? value : updatedRow.q_rating,
+          field === 'e_rating' ? value : updatedRow.e_rating,
+          field === 't_rating' ? value : updatedRow.t_rating
+        );
+      }
+
+      if (field === 'competency_id') {
+        const compId = Number(value);
+        const found = competencies.find(c => c.competency_id === compId);
+        updatedRow.mapped_competency_standard = found ? found.competency_standard : '';
+        updatedRow.competency_id = compId;
+      }
+
+      next[index] = updatedRow;
+      return next;
+    });
+  };
+
+  const addIPCRRow = () => {
+    const newRow: IPCRRowDraft = {
+      function_type: 'CORE',
+      target_text: '',
+      accomplishment_text: '',
+      q_rating: null,
+      e_rating: null,
+      t_rating: null,
+      ave_rating: 0,
+      competency_id: competencies[0]?.competency_id || 0,
+      mapped_competency_standard: competencies[0]?.competency_standard || '',
+      remarks: ''
+    };
+    setIpcrRows((prev) => [...prev, newRow]);
+  };
+
+  const deleteIPCRRow = (index: number) => {
+    setIpcrRows((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleSaveIPCR = async (status: 'Self Evaluation' | 'Supervisor Review') => {
+    if (!currentUser.supabaseId) return;
+    
+    if (!ipcrRatingPeriod.trim()) {
+      setIpcrError('You must enter a Rating Period before saving or submitting.');
+      return;
+    }
+    
+    if (status === 'Supervisor Review') {
+      if (ipcrRows.length === 0) {
+        setIpcrError('You must add at least one Major Final Output (MFO) before submitting.');
+        return;
+      }
+      for (let i = 0; i < ipcrRows.length; i++) {
+        const row = ipcrRows[i];
+        if (!row.target_text.trim()) {
+          setIpcrError(`Row #${i + 1} has empty success indicators/targets.`);
+          return;
+        }
+        if (!row.competency_id) {
+          setIpcrError(`Row #${i + 1} does not have a mapped competency.`);
+          return;
+        }
+      }
+    }
+
+    setIpcrSaving(true);
+    setIpcrError(null);
+    setIpcrSuccess(null);
+
+    const finalCycleId = (activeCycle && (ipcrRatingPeriod === activeCycle.title || ipcrRatingPeriod === activeCycle.period))
+      ? activeCycle.id
+      : null;
+
+    const result = await saveOrSubmitEmployeeIPCR({
+      employeeUuid: currentUser.supabaseId,
+      employeeNum: employeeRawDetails?.employee_number || currentUser.employeeId,
+      positionId: employeeRawDetails?.position_id || null,
+      position: employeeRawDetails?.position || currentUser.currentPosition || null,
+      plantillaNum: employeeRawDetails?.plantilla_num || null,
+      ratingPeriod: ipcrRatingPeriod || 'Annual 2026',
+      cycleId: finalCycleId,
+      status,
+      rows: ipcrRows
+    });
+
+    setIpcrSaving(false);
+    if (!result.success) {
+      setIpcrError(result.error || 'Failed to save IPCR. Please try again.');
+    } else {
+      setIpcrSuccess(status === 'Supervisor Review' ? 'IPCR submitted for review!' : 'IPCR draft saved successfully.');
+      setIsEditingIPCR(false);
+      await loadIPCRData();
+    }
+  };
 
   // Account & Security tab — username + password change forms
   const portalAccountAtMount = useMemo(
@@ -398,6 +623,12 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
     return 'personal';
   }, [location.pathname]);
 
+  useEffect(() => {
+    if (activeTab === 'submission') {
+      void loadIPCRData();
+    }
+  }, [activeTab, currentUser?.supabaseId]);
+
   // Re-lock the Account & Security tab whenever the user navigates away.
   // Coming back forces another password confirmation.
   useEffect(() => {
@@ -453,6 +684,18 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
       currentUser.email,
     );
     setEmployeeDocuments(rows);
+  };
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refreshEmployeeDocuments();
+      await loadIPCRData();
+    } catch (err) {
+      console.error('Failed to refresh employee documents:', err);
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   useEffect(() => {
@@ -1136,6 +1379,439 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
 
         {activeTab === 'submission' && (
           <div className="space-y-4">
+            {/* IPCR SUBMISSION BIN SECTION */}
+            <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-col justify-between gap-4 border-b border-slate-100 pb-4 mb-5 sm:flex-row sm:items-start">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                    <FileSpreadsheet className="h-5 w-5 text-blue-600" />
+                    Individual Performance Commitment and Review (IPCR)
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500 font-medium">
+                    {ipcrRatingPeriod
+                      ? `Evaluation Period: ${ipcrRatingPeriod}`
+                      : activeCycle
+                        ? `Evaluation Period: ${activeCycle.title || activeCycle.period} (${formatPortalDate(activeCycle.start_date)} to ${formatPortalDate(activeCycle.end_date)})`
+                        : 'No active performance evaluation cycle.'}
+                  </p>
+                </div>
+                {!isEditingIPCR && (
+                  <div className="flex items-center gap-2">
+                    {(!ipcrEvaluation || ipcrEvaluation.status === 'Self Evaluation' || ipcrEvaluation.status === 'Rejected') ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (ipcrRows.length === 0) {
+                            addIPCRRow();
+                          }
+                          setIsEditingIPCR(true);
+                        }}
+                        className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 shadow-sm transition-colors"
+                      >
+                        <Pencil className="h-4 w-4" />
+                        {ipcrEvaluation ? 'Edit IPCR' : 'Create IPCR'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIpcrEvaluation(null);
+                          setIpcrRows([]);
+                          const now = new Date();
+                          const year = now.getFullYear();
+                          const month = now.getMonth();
+                          const nextPeriod = month < 6 ? `July–December ${year}` : `January–June ${year + 1}`;
+                          setIpcrRatingPeriod(nextPeriod);
+                          addIPCRRow();
+                          setIsEditingIPCR(true);
+                        }}
+                        className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 shadow-sm transition-colors"
+                      >
+                        <Plus className="h-4 w-4" />
+                        New Period IPCR
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {ipcrError && (
+                <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>{ipcrError}</span>
+                </div>
+              )}
+
+              {ipcrSuccess && (
+                <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 flex items-center gap-2">
+                  <Check className="h-4 w-4 shrink-0" />
+                  <span>{ipcrSuccess}</span>
+                </div>
+              )}
+
+              {ipcrLoading ? (
+                <div className="py-8 text-center text-slate-500 animate-pulse">
+                  Loading IPCR details...
+                </div>
+              ) : isEditingIPCR ? (
+                /* EDITING VIEW */
+                <div className="space-y-6">
+                   {/* Employee Metadata Info Card */}
+                  <div className="grid grid-cols-1 md:grid-cols-5 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200 text-sm">
+                    <div>
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Employee Details</span>
+                      <span className="font-semibold text-slate-800 block mt-1">{currentUser.fullName}</span>
+                      <span className="text-slate-500 text-xs block">ID: {employeeRawDetails?.employee_number || currentUser.employeeId}</span>
+                    </div>
+                    <div>
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Position & Department</span>
+                      <span className="font-semibold text-slate-800 block mt-1">{employeeRawDetails?.position || currentUser.currentPosition || 'Employee'}</span>
+                      <span className="text-slate-500 text-xs block">{employeeRawDetails?.department || 'Health Office'}</span>
+                    </div>
+                    <div>
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Plantilla & Supervisor ID</span>
+                      <span className="font-semibold text-slate-800 block mt-1">Plantilla: {employeeRawDetails?.plantilla_num || 'N/A'}</span>
+                      <span className="text-slate-500 text-xs block">Supervisor ID: {employeeRawDetails?.reports_to || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Rating Period</span>
+                      <input
+                        type="text"
+                        value={ipcrRatingPeriod}
+                        onChange={(e) => setIpcrRatingPeriod(e.target.value)}
+                        placeholder="e.g., January–June 2026"
+                        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 bg-white text-sm text-slate-800 font-semibold focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+                    <div className="flex flex-col justify-between">
+                      <div>
+                        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Overall Score</span>
+                        <span className="text-lg font-bold text-blue-600 block mt-1">
+                          {ipcrRows.length > 0
+                            ? (ipcrRows.map(r => r.ave_rating).filter(Boolean).reduce((a, b) => a + b, 0) / ipcrRows.map(r => r.ave_rating).filter(Boolean).length || 0).toFixed(2)
+                            : '0.00'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Rejected Rejection Alert */}
+                  {ipcrEvaluation?.status === 'Rejected' && ipcrEvaluation.rejection_reason && (
+                    <div className="p-4 rounded-lg border border-red-200 bg-red-50 text-sm text-red-800">
+                      <span className="font-bold block mb-1">Supervisor Rejection Reason:</span>
+                      <p>{ipcrEvaluation.rejection_reason}</p>
+                    </div>
+                  )}
+
+                  {/* MFO / IPCR Table */}
+                  <div className="overflow-x-auto rounded-lg border border-slate-200">
+                    <table className="min-w-full divide-y divide-slate-200">
+                      <thead className="bg-slate-50">
+                        <tr>
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider w-[130px]">Type</th>
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider w-[240px]">MFO & Competency Map</th>
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">Success Indicators (Target)</th>
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">Accomplishments</th>
+                          <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-slate-700 uppercase tracking-wider w-[180px]">Ratings (Q / E / T)</th>
+                          <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-slate-700 uppercase tracking-wider w-[75px]">Ave</th>
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider w-[120px]">Remarks</th>
+                          <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-slate-700 uppercase tracking-wider w-[50px]">Delete</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-slate-200">
+                        {ipcrRows.map((row, index) => (
+                          <tr key={index} className="hover:bg-slate-50/50">
+                            <td className="px-3 py-3 align-top">
+                              <select
+                                value={row.function_type}
+                                onChange={(e) => updateRowField(index, 'function_type', e.target.value)}
+                                className="w-full text-xs rounded-lg border border-slate-300 bg-white p-1.5 focus:border-blue-500 focus:outline-none"
+                              >
+                                <option value="CORE">CORE</option>
+                                <option value="SUPPORT">SUPPORT</option>
+                              </select>
+                            </td>
+                            <td className="px-3 py-3 align-top space-y-2">
+                              {/* Mapped Competency Selector */}
+                              <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Select Mapped Competency</label>
+                              <select
+                                value={row.competency_id || ''}
+                                onChange={(e) => updateRowField(index, 'competency_id', Number(e.target.value))}
+                                className="w-full text-xs rounded-lg border border-slate-300 bg-white p-1.5 focus:border-blue-500 focus:outline-none"
+                              >
+                                <option value="" disabled>-- Select Competency --</option>
+                                {competencies.map(c => (
+                                  <option key={c.competency_id} value={c.competency_id}>
+                                    {c.competency_standard}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="px-3 py-3 align-top">
+                              <textarea
+                                value={row.target_text}
+                                onChange={(e) => updateRowField(index, 'target_text', e.target.value)}
+                                placeholder="Enter Major Final Output, Success Indicators, and Target Measures..."
+                                className="w-full text-xs rounded-lg border border-slate-300 bg-white p-1.5 focus:border-blue-500 focus:outline-none min-h-[70px] resize-y"
+                              />
+                            </td>
+                            <td className="px-3 py-3 align-top">
+                              <textarea
+                                value={row.accomplishment_text}
+                                onChange={(e) => updateRowField(index, 'accomplishment_text', e.target.value)}
+                                placeholder="Enter Actual Accomplishments..."
+                                className="w-full text-xs rounded-lg border border-slate-300 bg-white p-1.5 focus:border-blue-500 focus:outline-none min-h-[70px] resize-y"
+                              />
+                            </td>
+                            <td className="px-3 py-3 align-top">
+                              <div className="flex gap-1 justify-center">
+                                {/* Q */}
+                                <div className="text-center">
+                                  <span className="text-[10px] text-slate-500 font-semibold uppercase block mb-1">Q</span>
+                                  <select
+                                    value={row.q_rating !== null ? row.q_rating : ''}
+                                    onChange={(e) => updateRowField(index, 'q_rating', e.target.value ? Number(e.target.value) : null)}
+                                    className="text-xs rounded-md border border-slate-300 bg-white p-1 focus:outline-none focus:border-blue-500 w-[45px]"
+                                  >
+                                    <option value="">—</option>
+                                    {[5, 4, 3, 2, 1].map(n => <option key={n} value={n}>{n}</option>)}
+                                  </select>
+                                </div>
+                                {/* E */}
+                                <div className="text-center">
+                                  <span className="text-[10px] text-slate-500 font-semibold uppercase block mb-1">E</span>
+                                  <select
+                                    value={row.e_rating !== null ? row.e_rating : ''}
+                                    onChange={(e) => updateRowField(index, 'e_rating', e.target.value ? Number(e.target.value) : null)}
+                                    className="text-xs rounded-md border border-slate-300 bg-white p-1 focus:outline-none focus:border-blue-500 w-[45px]"
+                                  >
+                                    <option value="">—</option>
+                                    {[5, 4, 3, 2, 1].map(n => <option key={n} value={n}>{n}</option>)}
+                                  </select>
+                                </div>
+                                {/* T */}
+                                <div className="text-center">
+                                  <span className="text-[10px] text-slate-500 font-semibold uppercase block mb-1">T</span>
+                                  <select
+                                    value={row.t_rating !== null ? row.t_rating : ''}
+                                    onChange={(e) => updateRowField(index, 't_rating', e.target.value ? Number(e.target.value) : null)}
+                                    className="text-xs rounded-md border border-slate-300 bg-white p-1 focus:outline-none focus:border-blue-500 w-[45px]"
+                                  >
+                                    <option value="">—</option>
+                                    {[5, 4, 3, 2, 1].map(n => <option key={n} value={n}>{n}</option>)}
+                                  </select>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-3 py-3 text-center align-top pt-8">
+                              <span className="text-xs font-bold text-slate-800">
+                                {row.ave_rating ? row.ave_rating.toFixed(2) : '0.00'}
+                              </span>
+                            </td>
+                            <td className="px-3 py-3 align-top">
+                              <input
+                                type="text"
+                                value={row.remarks}
+                                onChange={(e) => updateRowField(index, 'remarks', e.target.value)}
+                                placeholder="Remarks..."
+                                className="w-full text-xs rounded-lg border border-slate-300 bg-white p-1.5 focus:border-blue-500 focus:outline-none"
+                              />
+                            </td>
+                            <td className="px-3 py-3 text-center align-top pt-6">
+                              <button
+                                type="button"
+                                onClick={() => deleteIPCRRow(index)}
+                                className="p-1 rounded-md text-red-500 hover:bg-red-50 hover:text-red-700"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Table Actions & Scale Legend */}
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pt-2 border-t border-slate-200">
+                    <button
+                      type="button"
+                      onClick={addIPCRRow}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors shadow-sm"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Add MFO Row
+                    </button>
+                    <div className="text-[10px] text-slate-500 bg-slate-50 border border-slate-100 rounded-md p-2 max-w-lg">
+                      <span className="font-bold">Rating Legend:</span> 5 - Outstanding (O), 4 - Very Satisfactory (VS), 3 - Satisfactory (S), 2 - Unsatisfactory (US), 1 - Poor (P)
+                    </div>
+                  </div>
+
+                  {/* Form Submission Controls */}
+                  <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingIPCR(false)}
+                      disabled={ipcrSaving}
+                      className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleSaveIPCR('Self Evaluation')}
+                      disabled={ipcrSaving}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors disabled:opacity-50"
+                    >
+                      {ipcrSaving ? 'Saving...' : 'Save Draft'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleSaveIPCR('Supervisor Review')}
+                      disabled={ipcrSaving}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white transition-colors disabled:opacity-50"
+                    >
+                      {ipcrSaving ? 'Submitting...' : 'Submit to Supervisor'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* PREVIEW / READ-ONLY VIEW */
+                <div className="space-y-5">
+                  {!ipcrEvaluation ? (
+                    /* EMPTY STATE */
+                    <div className="text-center py-8 bg-slate-50 rounded-xl border border-dashed border-slate-300">
+                      <FileSpreadsheet className="h-10 w-10 text-slate-400 mx-auto mb-2" />
+                      <h4 className="font-bold text-slate-700 text-sm">No IPCR Created Yet</h4>
+                      <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
+                        Get started by defining your Major Final Outputs (MFOs), success indicators, and actual accomplishments for this evaluation cycle.
+                      </p>
+                    </div>
+                  ) : (
+                    /* SUMMARY STATE */
+                    <div className="space-y-5">
+                      {/* Period Selector Dropdown */}
+                      {employeeEvaluations.length > 0 && (
+                        <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm">
+                          <span className="font-semibold text-slate-700">Select Rating Period to View/Edit:</span>
+                          <select
+                            value={ipcrRatingPeriod}
+                            onChange={(e) => {
+                              const selectedVal = e.target.value;
+                              const found = employeeEvaluations.find(ev => ev.period === selectedVal);
+                              if (found) {
+                                void loadIPCRPeriod(found.period, found.cycle_id);
+                              }
+                            }}
+                            className="rounded-lg border border-slate-300 px-3 py-1.5 bg-white font-semibold text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                          >
+                            {employeeEvaluations.map((ev) => (
+                              <option key={ev.id} value={ev.period || ''}>
+                                {ev.period || 'Unknown Period'} ({ev.status === 'Self Evaluation' ? 'Draft' : ev.status})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      {/* Summary Metrics Row */}
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200 text-sm">
+                        <div>
+                          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">IPCR Status</span>
+                          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold mt-2 ${
+                            ipcrEvaluation.status === 'Approved'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : ipcrEvaluation.status === 'Supervisor Review'
+                              ? 'bg-blue-100 text-blue-800'
+                              : ipcrEvaluation.status === 'Rejected'
+                              ? 'bg-rose-100 text-rose-800'
+                              : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {ipcrEvaluation.status === 'Self Evaluation' ? 'Draft' : ipcrEvaluation.status}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Overall Score</span>
+                          <span className="text-xl font-bold text-slate-800 block mt-1">
+                            {ipcrEvaluation.final_score ? Number(ipcrEvaluation.final_score).toFixed(2) : '0.00'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Submitted At</span>
+                          <span className="font-semibold text-slate-800 block mt-1">
+                            {ipcrEvaluation.submitted_at ? formatPortalDate(ipcrEvaluation.submitted_at) : 'Not Submitted'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Approved At</span>
+                          <span className="font-semibold text-slate-800 block mt-1">
+                            {ipcrEvaluation.approved_at ? formatPortalDate(ipcrEvaluation.approved_at) : 'Not Approved'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Rejection alert */}
+                      {ipcrEvaluation.status === 'Rejected' && ipcrEvaluation.rejection_reason && (
+                        <div className="p-4 rounded-lg border border-red-200 bg-red-50 text-sm text-red-800">
+                          <span className="font-bold block mb-1">Supervisor Rejection Comments:</span>
+                          <p>{ipcrEvaluation.rejection_reason}</p>
+                        </div>
+                      )}
+
+                      {/* Committed MFO Table Collapsible/View */}
+                      <div className="border border-slate-200 rounded-lg overflow-hidden">
+                        <div className="bg-slate-50 px-4 py-3 border-b border-slate-200">
+                          <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Committed Performance Rows ({ipcrRows.length})</h3>
+                        </div>
+                        {ipcrRows.length === 0 ? (
+                          <p className="p-4 text-xs text-slate-500 text-center">No rows recorded in this IPCR.</p>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-slate-200">
+                              <thead className="bg-slate-50">
+                                <tr>
+                                  <th scope="col" className="px-4 py-2.5 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-[100px]">Type</th>
+                                  <th scope="col" className="px-4 py-2.5 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-[200px]">Mapped Competency</th>
+                                  <th scope="col" className="px-4 py-2.5 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Targets & Measures</th>
+                                  <th scope="col" className="px-4 py-2.5 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Accomplishments</th>
+                                  <th scope="col" className="px-4 py-2.5 text-center text-xs font-bold text-slate-600 uppercase tracking-wider w-[120px]">Q / E / T</th>
+                                  <th scope="col" className="px-4 py-2.5 text-center text-xs font-bold text-slate-600 uppercase tracking-wider w-[70px]">Ave</th>
+                                  <th scope="col" className="px-4 py-2.5 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-[120px]">Remarks</th>
+                                </tr>
+                              </thead>
+                              <tbody className="bg-white divide-y divide-slate-200 text-xs">
+                                {ipcrRows.map((row, idx) => (
+                                  <tr key={idx} className="hover:bg-slate-50/50">
+                                    <td className="px-4 py-3 align-top font-semibold text-slate-600">{row.function_type}</td>
+                                    <td className="px-4 py-3 align-top text-slate-700 font-medium">{row.mapped_competency_standard || '—'}</td>
+                                    <td className="px-4 py-3 align-top whitespace-pre-line text-slate-700">{row.target_text}</td>
+                                    <td className="px-4 py-3 align-top whitespace-pre-line text-slate-700">{row.accomplishment_text || '—'}</td>
+                                    <td className="px-4 py-3 align-top text-center">
+                                      <div className="flex justify-center gap-2">
+                                        <span>{row.q_rating || '—'}</span>
+                                        <span className="text-slate-300">/</span>
+                                        <span>{row.e_rating || '—'}</span>
+                                        <span className="text-slate-300">/</span>
+                                        <span>{row.t_rating || '—'}</span>
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-3 align-top text-center font-bold text-slate-800">
+                                      {row.ave_rating ? row.ave_rating.toFixed(2) : '0.00'}
+                                    </td>
+                                    <td className="px-4 py-3 align-top text-slate-600">{row.remarks || '—'}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+
             {pendingRequests.length > 0 && (
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800">
                 HR has requested additional documents. Please review and submit the required documents by the due date.
@@ -1155,10 +1831,23 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
             )}
 
             <section className="rounded-xl border border-slate-200 bg-white p-6">
-              <h2 className="text-xl font-bold text-slate-900">Submission Bin</h2>
-              <p className="mt-1 text-sm text-slate-500">
-                HR, PM, or L&amp;D may request additional documents from time to time. Upload the requested documents by the due date.
-              </p>
+              <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Submission Bin</h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    HR, PM, or L&amp;D may request additional documents from time to time. Upload the requested documents by the due date.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRefresh}
+                  disabled={isRefreshing}
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 active:bg-slate-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm self-start sm:self-auto"
+                >
+                  <RefreshCw className={`h-4 w-4 text-slate-500 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  {isRefreshing ? 'Refreshing...' : 'Refresh'}
+                </button>
+              </div>
 
               {/* Pending Submissions */}
               <div className="mt-6 flex items-center gap-2">

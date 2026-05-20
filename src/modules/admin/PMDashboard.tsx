@@ -1762,9 +1762,9 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   return grouped.map(({ department: dept, requests: reqs }) => {
                     const pendingCount = reqs.filter(r => r.status === 'Pending').length;
                     const submittedCount = reqs.filter(r => r.status === 'Submitted').length;
-                    const reviewCount = reqs.filter(r => r.status === 'Under Review').length;
+                    const reviewCount = reqs.filter(r => (r.status as string) === 'Under Review').length;
                     const approvedCount = reqs.filter(r => r.status === 'Approved').length;
-                    const overdueCount = reqs.filter(r => r.status === 'Overdue').length;
+                    const overdueCount = reqs.filter(r => (r.status as string) === 'Overdue').length;
 
                     return (
                       <div key={dept} className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden mb-4">
@@ -1829,8 +1829,8 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                                   <FileText className="h-4 w-4 text-slate-400" />
                                   {row.document_type}
                                 </div>
-                                <div className="col-span-2 text-slate-600 pt-1.5">{new Date(row.created_at).toLocaleDateString()}</div>
-                                <div className="col-span-2 text-slate-600 pt-1.5">{row.date_submitted ? new Date(row.date_submitted).toLocaleDateString() : '—'}</div>
+                                <div className="col-span-2 text-slate-600 pt-1.5">{new Date(row.uploaded_at).toLocaleDateString()}</div>
+                                <div className="col-span-2 text-slate-600 pt-1.5">{row.status !== 'Pending' ? new Date(row.uploaded_at).toLocaleDateString() : '—'}</div>
                                 <div className="col-span-1 flex justify-center pt-1.5">
                                   <span className={`inline-block rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${config.class}`}>
                                     {row.status}
