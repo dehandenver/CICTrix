@@ -1,81 +1,31 @@
-import { BookOpen, Calendar, ChevronDown, ChevronLeft, Filter, MapPin, Users, Plus, X } from 'lucide-react';
-import { useState, useMemo } from 'react';
+import { BookOpen, ChevronDown, ChevronLeft, Filter, Plus, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { getTrainingStreams } from '../../lib/api/competencies';
 
-type CourseStatus = 'Ongoing' | 'Upcoming' | 'Completed';
+export type CourseStatus = 'Ongoing' | 'Upcoming' | 'Completed';
 
-type Course = {
+export type Course = {
   id: string;
   title: string;
+  category: string;
   status: CourseStatus;
   instructor: string;
-  dateString: string;
+  instructorTitle: string;
+  startDate: string;
+  endDate: string;
+  startTime: string;
+  endTime: string;
   location: string;
   attendees: number;
   capacity: number;
+  description: string;
+  learningObjectives: string;
 };
 
-const initialCoursesData: Course[] = [
-  {
-    id: '1',
-    title: 'Communication Skills Workshop',
-    status: 'Ongoing',
-    instructor: 'Prof. Ana Reyes',
-    dateString: 'Feb 1, 2025 - Feb 3, 2025',
-    location: 'Training Room B, 3rd Floor',
-    attendees: 6,
-    capacity: 25,
-  },
-  {
-    id: '2',
-    title: 'Leadership Development Program',
-    status: 'Ongoing',
-    instructor: 'Dr. Maria Santos',
-    dateString: 'Feb 5, 2025 - Feb 9, 2025',
-    location: 'Main Conference Hall, 2nd Floor',
-    attendees: 15,
-    capacity: 30,
-  },
-  {
-    id: '3',
-    title: 'Data Privacy and Security Training',
-    status: 'Upcoming',
-    instructor: 'Atty. Juan dela Cruz',
-    dateString: 'Feb 12, 2025 - Feb 14, 2025',
-    location: 'Training Room A, 3rd Floor',
-    attendees: 10,
-    capacity: 50,
-  },
-  {
-    id: '4',
-    title: 'Digital Transformation Seminar',
-    status: 'Upcoming',
-    instructor: 'Mr. Roberto Cruz',
-    dateString: 'Feb 20, 2025 - Feb 21, 2025',
-    location: 'Main Conference Hall, 2nd Floor',
-    attendees: 5,
-    capacity: 20,
-  },
-  {
-    id: '5',
-    title: 'Customer Service Excellence',
-    status: 'Upcoming',
-    instructor: 'Ms. Patricia Gonzales',
-    dateString: 'Mar 1, 2025 - Mar 3, 2025',
-    location: 'Training Room A, 3rd Floor',
-    attendees: 8,
-    capacity: 40,
-  },
-  {
-    id: '6',
-    title: 'Project Management Fundamentals',
-    status: 'Completed',
-    instructor: 'Engr. Carlos Mendoza',
-    dateString: 'Jan 15, 2025 - Jan 19, 2025',
-    location: 'Main Conference Hall, 2nd Floor',
-    attendees: 7,
-    capacity: 35,
-  },
-];
+type TrainingCoursesProps = {
+  courses: Course[];
+  onAddCourse: (course: Course) => void;
+};
 
 const statusBadge = (status: CourseStatus) => {
   if (status === 'Ongoing') return 'bg-blue-100 text-blue-700';
@@ -83,14 +33,17 @@ const statusBadge = (status: CourseStatus) => {
   return 'bg-gray-100 text-gray-700';
 };
 
-export const TrainingCourses = () => {
-  const [courses, setCourses] = useState<Course[]>(initialCoursesData);
-  const [statusFilter, setStatusFilter] = useState('All Statuses');
-  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+const STATUS_OPTIONS: CourseStatus[] = ['Ongoing', 'Upcoming', 'Completed'];
 
-  // Form Fields State
-  const [courseTitle, setCourseTitle] = useState('');
+type AddCourseModalProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: (course: Course) => void;
+  categoryOptions: string[];
+};
+
+const AddCourseModal = ({ isOpen, onClose, onSubmit, categoryOptions }: AddCourseModalProps) => {
+  const [title, setTitle] = useState('');
   const [category, setCategory] = useState('');
   const [status, setStatus] = useState<CourseStatus>('Upcoming');
   const [instructor, setInstructor] = useState('');
@@ -104,19 +57,10 @@ export const TrainingCourses = () => {
   const [description, setDescription] = useState('');
   const [learningObjectives, setLearningObjectives] = useState('');
 
-  const filteredCourses = useMemo(() => {
-    if (statusFilter === 'All Statuses') return courses;
-    return courses.filter((c) => c.status === statusFilter);
-  }, [courses, statusFilter]);
+  if (!isOpen) return null;
 
-  const handleOpenModal = () => {
-    setIsModalOpen(true);
-  };
-
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
-    // Reset Form
-    setCourseTitle('');
+  const resetForm = () => {
+    setTitle('');
     setCategory('');
     setStatus('Upcoming');
     setInstructor('');
@@ -131,366 +75,349 @@ export const TrainingCourses = () => {
     setLearningObjectives('');
   };
 
-  const formatDateString = (start: string, end: string) => {
-    if (!start) return 'TBA';
-    const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' };
-    const startFormatted = new Date(start).toLocaleDateString('en-US', options);
-    if (!end) return startFormatted;
-    const endFormatted = new Date(end).toLocaleDateString('en-US', options);
-    return `${startFormatted} - ${endFormatted}`;
-  };
-
-  const handleAddCourseSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!courseTitle.trim()) return;
-
     const newCourse: Course = {
-      id: String(courses.length + 1),
-      title: courseTitle,
-      status: status,
-      instructor: instructor || 'TBA',
-      dateString: formatDateString(startDate, endDate),
-      location: venue || 'TBA',
+      id: Date.now().toString(),
+      title,
+      category,
+      status,
+      instructor,
+      instructorTitle,
+      startDate,
+      endDate,
+      startTime,
+      endTime,
+      location: venue,
       attendees: 0,
-      capacity: Number(totalSlots) || 30,
+      capacity: Number(totalSlots) || 0,
+      description,
+      learningObjectives,
     };
-
-    setCourses((prev) => [newCourse, ...prev]);
-    handleCloseModal();
+    onSubmit(newCourse);
+    resetForm();
+    onClose();
   };
+
+  const inputClass =
+    'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500';
+  const labelClass = 'block text-xs font-semibold uppercase tracking-wide text-gray-600 mb-1.5';
 
   return (
-    <div className="p-6 md:p-8 pt-24 bg-gray-50 min-h-screen">
-      <div className="flex items-center justify-between mb-8 pb-4 border-b border-gray-200">
-        <div className="flex items-center">
-          <button type="button" className="mr-4 text-gray-500 hover:bg-gray-100 p-2 rounded-lg transition-colors">
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-6 py-4 rounded-t-2xl">
+          <h2 className="text-lg font-bold text-gray-900">Add New Course</h2>
+          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          {/* Title */}
+          <div>
+            <label className={labelClass}>Course Title</label>
+            <input type="text" required value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Leadership Development Program" className={inputClass} />
+          </div>
+
+          {/* Category & Status */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className={labelClass}>Category</label>
+              <select required value={category} onChange={(e) => setCategory(e.target.value)} className={inputClass}>
+                <option value="" disabled>Select category</option>
+                {categoryOptions.map((cat) => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>Status</label>
+              <select value={status} onChange={(e) => setStatus(e.target.value as CourseStatus)} className={inputClass}>
+                {STATUS_OPTIONS.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Instructor & Instructor Title */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className={labelClass}>Instructor</label>
+              <input type="text" required value={instructor} onChange={(e) => setInstructor(e.target.value)} placeholder="e.g. Dr. Maria Santos" className={inputClass} />
+            </div>
+            <div>
+              <label className={labelClass}>Instructor Title</label>
+              <input type="text" value={instructorTitle} onChange={(e) => setInstructorTitle(e.target.value)} placeholder="e.g. Professor, Department Head" className={inputClass} />
+            </div>
+          </div>
+
+          {/* Start Date & End Date */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className={labelClass}>Start Date</label>
+              <input type="date" required value={startDate} onChange={(e) => setStartDate(e.target.value)} className={inputClass} />
+            </div>
+            <div>
+              <label className={labelClass}>End Date</label>
+              <input type="date" required value={endDate} onChange={(e) => setEndDate(e.target.value)} className={inputClass} />
+            </div>
+          </div>
+
+          {/* Start Time & End Time */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className={labelClass}>Start Time</label>
+              <input type="time" required value={startTime} onChange={(e) => setStartTime(e.target.value)} className={inputClass} />
+            </div>
+            <div>
+              <label className={labelClass}>End Time</label>
+              <input type="time" required value={endTime} onChange={(e) => setEndTime(e.target.value)} className={inputClass} />
+            </div>
+          </div>
+
+          {/* Venue & Total Slots */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className={labelClass}>Venue</label>
+              <input type="text" required value={venue} onChange={(e) => setVenue(e.target.value)} placeholder="e.g. Training Room A, 3rd Floor" className={inputClass} />
+            </div>
+            <div>
+              <label className={labelClass}>Total Slots</label>
+              <input type="number" required min="1" value={totalSlots} onChange={(e) => setTotalSlots(e.target.value)} placeholder="e.g. 30" className={inputClass} />
+            </div>
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className={labelClass}>Description</label>
+            <textarea required rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Brief description of the course..." className={inputClass} />
+          </div>
+
+          {/* Learning Objectives */}
+          <div>
+            <label className={labelClass}>Learning Objectives</label>
+            <textarea required rows={3} value={learningObjectives} onChange={(e) => setLearningObjectives(e.target.value)} placeholder="List key learning objectives..." className={inputClass} />
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose} className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+              Cancel
+            </button>
+            <button type="submit" className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors">
+              Add Course
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+const formatDate = (dateStr: string) => {
+  if (!dateStr) return '';
+  const date = new Date(dateStr + 'T00:00:00');
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const formatTime = (timeStr: string) => {
+  if (!timeStr) return '';
+  const [hours, minutes] = timeStr.split(':');
+  const h = parseInt(hours, 10);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  return `${h12}:${minutes} ${ampm}`;
+};
+
+export const TrainingCourses = ({ courses, onAddCourse }: TrainingCoursesProps) => {
+  const [statusFilter, setStatusFilter] = useState<string>('All Statuses');
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
+  const itemsPerPage = 10;
+
+  // Fetch training streams (categories) from Supabase
+  useEffect(() => {
+    (async () => {
+      const streams = await getTrainingStreams();
+      setCategoryOptions(streams.length > 0 ? streams : []);
+    })();
+  }, []);
+
+  const filteredCourses =
+    statusFilter === 'All Statuses'
+      ? courses
+      : courses.filter((c) => c.status === statusFilter);
+
+  const totalPages = Math.ceil(filteredCourses.length / itemsPerPage);
+  const paginatedCourses = filteredCourses.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  return (
+    <div className="p-6 md:p-8 pt-24 bg-white min-h-screen">
+      <div className="flex items-center justify-between mb-8 pb-4 border-b border-gray-100">
+        <div className="flex items-center gap-4">
+          <button type="button" className="text-gray-500 hover:bg-gray-100 p-2 rounded-lg transition-colors">
             <ChevronLeft className="w-5 h-5" />
           </button>
           <div>
-            <h1 className="text-2xl font-bold text-[#040E6B]">Training Courses</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Training Courses</h1>
             <p className="text-sm text-gray-500 mt-1">Browse and manage all training courses</p>
           </div>
-        </div>
 
-        <div className="flex items-center space-x-3">
-          {/* Status Filter */}
-          <div className="relative">
+          {/* Filter button — repositioned next to the header */}
+          <div className="relative ml-2">
             <button
               type="button"
-              onClick={() => setIsFilterDropdownOpen((prev) => !prev)}
-              className="flex items-center space-x-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm"
+              onClick={() => setIsFilterOpen(!isFilterOpen)}
+              className="flex items-center space-x-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
             >
               <Filter className="w-4 h-4 text-gray-400" />
               <span>{statusFilter}</span>
               <ChevronDown className="w-4 h-4 text-gray-400 ml-1" />
             </button>
-
-            {isFilterDropdownOpen && (
-              <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-100 rounded-xl shadow-lg py-1 z-30">
-                {['All Statuses', 'Ongoing', 'Upcoming', 'Completed'].map((opt) => (
+            {isFilterOpen && (
+              <div className="absolute left-0 top-full mt-1 z-20 w-44 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
+                <button
+                  type="button"
+                  onClick={() => { setStatusFilter('All Statuses'); setIsFilterOpen(false); setCurrentPage(1); }}
+                  className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-50 ${statusFilter === 'All Statuses' ? 'font-semibold text-blue-600' : 'text-gray-700'}`}
+                >
+                  All Statuses
+                </button>
+                {STATUS_OPTIONS.map((s) => (
                   <button
-                    key={opt}
+                    key={s}
                     type="button"
-                    onClick={() => {
-                      setStatusFilter(opt);
-                      setIsFilterDropdownOpen(false);
-                    }}
-                    className={[
-                      'w-full text-left px-4 py-2 text-sm transition-colors hover:bg-slate-50 font-medium',
-                      statusFilter === opt ? 'text-blue-600 bg-blue-50/50 font-bold' : 'text-slate-700',
-                    ].join(' ')}
+                    onClick={() => { setStatusFilter(s); setIsFilterOpen(false); setCurrentPage(1); }}
+                    className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-50 ${statusFilter === s ? 'font-semibold text-blue-600' : 'text-gray-700'}`}
                   >
-                    {opt}
+                    {s}
                   </button>
                 ))}
               </div>
             )}
           </div>
+        </div>
 
-          {/* Add New Course Button */}
+        {/* Add New Course button — positioned at the top right */}
+        <button
+          type="button"
+          onClick={() => setIsModalOpen(true)}
+          className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+        >
+          <Plus className="h-4 w-4" />
+          Add New Course
+        </button>
+      </div>
+
+      {filteredCourses.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-24 text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 text-blue-500">
+            <BookOpen className="h-7 w-7" />
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">No courses found</h3>
+          <p className="mt-1 text-sm text-gray-500">
+            {statusFilter !== 'All Statuses'
+              ? `No ${statusFilter.toLowerCase()} courses. Try a different filter or add a new course.`
+              : 'Get started by adding your first training course.'}
+          </p>
           <button
             type="button"
-            onClick={handleOpenModal}
-            className="flex items-center space-x-2 bg-[#363EE8] hover:bg-[#363EE8]/90 text-white px-4 py-2.5 rounded-lg text-sm font-bold shadow-sm transition-colors"
+            onClick={() => setIsModalOpen(true)}
+            className="mt-4 flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
           >
-            <Plus className="w-4 h-4" />
-            <span>Add New Course</span>
+            <Plus className="h-4 w-4" />
+            Add New Course
           </button>
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredCourses.map((course) => (
-          <div
-            key={course.id}
-            className={[
-              'bg-white border border-gray-200 rounded-xl p-6 flex flex-col hover:border-[#363EE8] hover:shadow-md transition-all cursor-pointer shadow-sm',
-              course.id === '1' ? 'border-[#363EE8]/40' : '',
-            ].join(' ')}
-          >
-            <div className="flex justify-between items-start mb-3">
-              <h3 className="text-base font-bold text-gray-900 pr-4 leading-tight">{course.title}</h3>
-              <BookOpen className="w-5 h-5 text-[#363EE8] flex-shrink-0" />
-            </div>
-
-            <div className="mb-5">
-              <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${statusBadge(course.status)}`}>
-                {course.status}
-              </span>
-            </div>
-
-            <div className="space-y-3 mb-6">
-              <div className="flex items-center text-sm text-gray-600">
-                <Users className="w-4 h-4 mr-3 text-gray-400" />
-                {course.instructor}
-              </div>
-              <div className="flex items-center text-sm text-gray-600">
-                <Calendar className="w-4 h-4 mr-3 text-gray-400" />
-                {course.dateString}
-              </div>
-              <div className="flex items-center text-sm text-gray-600">
-                <MapPin className="w-4 h-4 mr-3 text-gray-400" />
-                {course.location}
-              </div>
-            </div>
-
-            <div className="mt-auto pt-4 border-t border-gray-100 flex items-center justify-between">
-              <span className="text-sm text-gray-500">Attendees</span>
-              <span className="text-sm font-semibold text-[#363EE8]">
-                {course.attendees}/{course.capacity}
-              </span>
-            </div>
+      ) : (
+        <div className="w-full">
+          <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm bg-white">
+            <table className="w-full text-left text-sm text-gray-600">
+              <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 border-b border-gray-200">
+                <tr>
+                  <th className="px-6 py-4 font-semibold">Course Title</th>
+                  <th className="px-6 py-4 font-semibold">Status</th>
+                  <th className="px-6 py-4 font-semibold">Instructor</th>
+                  <th className="px-6 py-4 font-semibold">Schedule</th>
+                  <th className="px-6 py-4 font-semibold">Location</th>
+                  <th className="px-6 py-4 font-semibold text-right">Attendees</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {paginatedCourses.map((course) => (
+                  <tr key={course.id} className="hover:bg-gray-50 transition-colors cursor-pointer group">
+                    <td className="px-6 py-4 max-w-xs">
+                      <p className="font-bold text-gray-900 truncate group-hover:text-blue-600 transition-colors">{course.title}</p>
+                      {course.category && <p className="text-xs text-gray-500 mt-1">{course.category}</p>}
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${statusBadge(course.status)}`}>
+                        {course.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="font-medium text-gray-900">{course.instructor}</p>
+                      {course.instructorTitle && <p className="text-xs text-gray-500 mt-0.5">{course.instructorTitle}</p>}
+                    </td>
+                    <td className="px-6 py-4">
+                      <p className="font-medium text-gray-700">{formatDate(course.startDate)} – {formatDate(course.endDate)}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{formatTime(course.startTime)} – {formatTime(course.endTime)}</p>
+                    </td>
+                    <td className="px-6 py-4 text-gray-700">
+                      {course.location}
+                    </td>
+                    <td className="px-6 py-4 text-right whitespace-nowrap">
+                      <span className="font-medium text-blue-600 text-base">{course.attendees}</span>
+                      <span className="text-gray-400 text-xs ml-1">/ {course.capacity}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        ))}
-      </div>
 
-      {/* Add New Course Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto select-none">
-          <div className="relative w-full max-w-2xl rounded-2xl bg-white shadow-2xl overflow-hidden flex flex-col my-8 max-h-[90vh] transition-all">
-            
-            {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="text-lg font-bold text-slate-800">Add New Course</h2>
-              <button
-                type="button"
-                onClick={handleCloseModal}
-                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-50 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <form onSubmit={handleAddCourseSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
-              
-              {/* Course Title */}
-              <div>
-                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                  Course Title
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={courseTitle}
-                  onChange={(e) => setCourseTitle(e.target.value)}
-                  placeholder="e.g. Leadership Development Program"
-                  className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none"
-                />
-              </div>
-
-              {/* Category & Status */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                    Category
-                  </label>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none bg-white font-medium text-slate-700"
-                  >
-                    <option value="">Select category</option>
-                    <option value="Leadership & Management">Leadership & Management</option>
-                    <option value="Communication Skills">Communication Skills</option>
-                    <option value="Data & Technology">Data & Technology</option>
-                    <option value="Health & Safety">Health & Safety</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                    Status
-                  </label>
-                  <select
-                    value={status}
-                    onChange={(e) => setStatus(e.target.value as CourseStatus)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none bg-white font-medium text-slate-700"
-                  >
-                    <option value="Upcoming">Upcoming</option>
-                    <option value="Ongoing">Ongoing</option>
-                    <option value="Completed">Completed</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Instructor & Instructor Title */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                    Instructor
-                  </label>
-                  <input
-                    type="text"
-                    value={instructor}
-                    onChange={(e) => setInstructor(e.target.value)}
-                    placeholder="e.g. Dr. Maria Santos"
-                    className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                    Instructor Title
-                  </label>
-                  <input
-                    type="text"
-                    value={instructorTitle}
-                    onChange={(e) => setInstructorTitle(e.target.value)}
-                    placeholder="e.g. Professor, Department Head"
-                    className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Start Date & End Date */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                    Start Date
-                  </label>
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                    End Date
-                  </label>
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Start Time & End Time */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                    Start Time
-                  </label>
-                  <input
-                    type="time"
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                    End Time
-                  </label>
-                  <input
-                    type="time"
-                    value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Venue & Total Slots */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                    Venue
-                  </label>
-                  <input
-                    type="text"
-                    value={venue}
-                    onChange={(e) => setVenue(e.target.value)}
-                    placeholder="e.g. Training Room A, 3rd Floor"
-                    className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                    Total Slots
-                  </label>
-                  <input
-                    type="number"
-                    value={totalSlots}
-                    onChange={(e) => setTotalSlots(e.target.value)}
-                    placeholder="e.g. 30"
-                    className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Description */}
-              <div>
-                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                  Description
-                </label>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Brief description of the course..."
-                  rows={3}
-                  className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none resize-none"
-                />
-              </div>
-
-              {/* Learning Objectives */}
-              <div>
-                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                  Learning Objectives
-                </label>
-                <textarea
-                  value={learningObjectives}
-                  onChange={(e) => setLearningObjectives(e.target.value)}
-                  placeholder="List key learning objectives..."
-                  rows={3}
-                  className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-600 focus:border-transparent outline-none resize-none"
-                />
-              </div>
-
-              {/* Modal Footer */}
-              <div className="pt-4 border-t border-slate-100 flex items-center justify-end space-x-3">
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-6 px-2">
+              <span className="text-sm text-gray-500">
+                Showing <span className="font-medium text-gray-900">{(currentPage - 1) * itemsPerPage + 1}</span> to <span className="font-medium text-gray-900">{Math.min(currentPage * itemsPerPage, filteredCourses.length)}</span> of <span className="font-medium text-gray-900">{filteredCourses.length}</span> results
+              </span>
+              <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={handleCloseModal}
-                  className="px-5 py-2.5 rounded-lg border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 hover:text-slate-800 transition-colors bg-white shadow-sm"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
                 >
-                  Cancel
+                  Previous
                 </button>
                 <button
-                  type="submit"
-                  className="px-5 py-2.5 rounded-lg bg-[#363EE8] hover:bg-[#363EE8]/90 text-white text-sm font-bold shadow-sm transition-colors"
+                  type="button"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
                 >
-                  Add Course
+                  Next
                 </button>
               </div>
-
-            </form>
-          </div>
+            </div>
+          )}
         </div>
       )}
 
+      <AddCourseModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSubmit={onAddCourse}
+        categoryOptions={categoryOptions}
+      />
     </div>
   );
 };
