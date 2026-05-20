@@ -31,6 +31,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   render(): ReactNode {
     const { error } = this.state;
+    const currentLocation = window.location.href;
     if (!error) {
       return this.props.children;
     }
@@ -64,6 +65,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           </h1>
           <p style={{ margin: '0 0 20px', color: '#475569', lineHeight: 1.5 }}>
             This is often caused by an outdated cached version of the app. Click <strong>Reload (clear cache)</strong> below to fetch the latest version.
+          </p>
+          <p style={{ margin: '0 0 20px', color: '#64748b', lineHeight: 1.5, fontSize: '13px' }}>
+            Current URL: <strong>{currentLocation}</strong>
           </p>
           <pre
             style={{

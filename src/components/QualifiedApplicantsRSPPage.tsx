@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { QualifiedApplicantsSection } from './QualifiedApplicantsSection';
 import { Sidebar } from './Sidebar';
+import { TopNav } from './TopNav';
+
 import { ATTACHMENTS_BUCKET, supabase } from '../lib/supabase';
 import { runSingleFlight } from '../lib/singleFlight';
 import { buildEvaluationSnapshotMap, subscribeToEvaluationChanges, type EvaluationSnapshot } from '../lib/evaluationScores';
@@ -24,6 +26,13 @@ export interface ApplicantRecord {
 export type InterviewerEvaluation = EvaluationSnapshot;
 
 export const QualifiedApplicantsRSPPage = () => {
+  const sessionRaw = localStorage.getItem('cictrix_admin_session');
+  let session = null;
+  try {
+    session = sessionRaw ? JSON.parse(sessionRaw) : null;
+  } catch {}
+  const isSuperAdmin = session?.role === 'super-admin';
+
   const [applicants, setApplicants] = useState<ApplicantRecord[]>([]);
   const [completedEvaluationIds, setCompletedEvaluationIds] = useState<Set<string>>(new Set());
   const [evaluationsByApplicant, setEvaluationsByApplicant] = useState<Record<string, InterviewerEvaluation>>({});
@@ -145,24 +154,30 @@ export const QualifiedApplicantsRSPPage = () => {
 
   if (loading) {
     return (
-      <div className="admin-layout">
-        <Sidebar activeModule="RSP" userRole="rsp" />
-        <main className="admin-content bg-slate-50" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
-          <p>Loading qualified applicants...</p>
+      <div className="bg-slate-50 min-h-screen font-sans">
+        <Sidebar userRole={isSuperAdmin ? 'super-admin' : 'rsp'} />
+        <main className="ml-64 min-h-screen overflow-y-auto bg-slate-50">
+          <TopNav />
+          <div className="flex items-center justify-center p-8">
+            <p className="text-slate-600 font-medium">Loading qualified applicants...</p>
+          </div>
         </main>
       </div>
     );
   }
 
   return (
-    <div className="admin-layout">
-      <Sidebar activeModule="RSP" userRole="rsp" />
-      <main className="admin-content bg-slate-50">
-        <QualifiedApplicantsSection
-          applicants={applicants}
-          completedEvaluationIds={completedEvaluationIds}
-          evaluationsByApplicant={evaluationsByApplicant}
-        />
+    <div className="bg-slate-50 min-h-screen font-sans">
+      <Sidebar userRole={isSuperAdmin ? 'super-admin' : 'rsp'} />
+      <main className="ml-64 min-h-screen overflow-y-auto bg-slate-50">
+        <TopNav />
+        <div className="p-8">
+          <QualifiedApplicantsSection
+            applicants={applicants}
+            completedEvaluationIds={completedEvaluationIds}
+            evaluationsByApplicant={evaluationsByApplicant}
+          />
+        </div>
       </main>
     </div>
   );

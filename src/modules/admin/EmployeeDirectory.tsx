@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Search, FileText, ChevronRight, Users } from 'lucide-react';
-import { getAllEmployees } from '../../lib/api/employees';
+import { Search, FileText, ChevronRight, Users, Briefcase, MapPin } from 'lucide-react';
+import { supabase as supabaseClient } from '../../lib/supabase';
+
+// Bypass auto-generated Supabase types resolving to `never`. Same escape hatch
+// used elsewhere in the codebase.
+const supabase = supabaseClient as any;
 import EmployeeListByPosition from './components/EmployeeListByPosition';
 import EmployeeDetailPage from './components/EmployeeDetailPage';
 
@@ -44,60 +48,88 @@ export default function EmployeeDirectory() {
     try {
       setLoading(true);
       
-      const { success, data, error } = await getAllEmployees({ status: 'Active' });
+      // For now, fetch only from hired applicants table (employees table doesn't exist yet)
+      const { data: hiredApplicantsData, error: hireError } = await supabase
+        .from('applicants')
+        .select('position, office')
+        .eq('status', 'Hired');
 
-      if (!success) throw error;
+      console.log('🔍 Fetching hired applicants...');
+      console.log('Hired applicants data:', hiredApplicantsData);
+      console.log('Error:', hireError);
+
+      if (hireError) throw hireError;
 
       // Group hired applicants by position
       const positionMap = new Map<string, Position>();
       
-      (data || []).forEach((emp: any) => {
-        const position = emp.current_position || 'Unassigned Position';
-        const office = emp.department || emp.current_department || 'Unassigned Office';
-        const key = `${position}-${office}`;
+      (hiredApplicantsData || []).forEach((app) => {
+        const key = `${app.position}-${app.office}`;
         if (!positionMap.has(key)) {
           positionMap.set(key, {
             id: key,
-            name: position,
-            department: office,
+            name: app.position,
+            department: app.office,
             employee_count: 0,
-            employees: []
           });
         }
         const pos = positionMap.get(key)!;
         pos.employee_count += 1;
-        pos.employees!.push({
-          id: emp.id,
-          employee_id: emp.employee_id || 'N/A',
-          full_name: emp.full_name || 'Unnamed',
-          current_position: position,
-          department: office,
-          status: emp.status || 'Active',
-          email: emp.email || '',
-          mobile_number: emp.mobile_number || '',
-          hire_date: emp.hire_date || '',
-          photo_url: emp.photo_url || ''
-        });
       });
 
       const posArray = Array.from(positionMap.values()).sort((a, b) =>
         a.name.localeCompare(b.name)
       );
 
+      console.log('📊 Positions found:', posArray);
       setPositions(posArray);
     } catch (error) {
-      console.error('Error fetching positions:', error);
+      console.error('❌ Error fetching positions:', error);
     } finally {
       setLoading(false);
     }
   };
 
-
   const handlePositionClick = async (position: Position) => {
-    setSelectedPosition(position);
-    setViewMode('position-list');
-  };
+    try {
+      // Fetch hired applicants for this position
+      const { data: hiredApplicants, error: appError } = await supabase
+        .from('applicants')
+        .select('id, first_name, last_name, email, contact_number, position, office, status, created_at')
+        .eq('status', 'Hired')
+        .eq('position', position.name)
+        .eq('office', position.department);
 
+      console.log('📋 Fetching position details:', position.name);
+      console.log('Hired applicants:', hiredApplicants);
+      console.log('Error:', appError);
+
+      if (appError) throw appError;
+
+      // Transform hired applicants to match Employee type
+      const transformedApplicants: Employee[] = (hiredApplicants || []).map((app) => ({
+        id: `applicant-${app.id}`,
+        employee_number: `NEW-${app.id.substring(0, 8).toUpperCase()}`,
+        first_name: app.first_name,
+        last_name: app.last_name,
+        position: app.position,
+        department: app.office,
+        status: 'Pending Onboarding',
+        email: app.email,
+        phone: app.contact_number,
+        date_hired: app.created_at,
+        employment_status: 'Probationary',
+      }));
+
+      setSelectedPosition({
+        ...position,
+        employees: transformedApplicants,
+      });
+      setViewMode('position-list');
+    } catch (error) {
+      console.error('❌ Error fetching employees:', error);
+    }
+  };
 
   const handleEmployeeClick = (employee: Employee) => {
     setSelectedEmployee(employee);
@@ -169,32 +201,78 @@ export default function EmployeeDirectory() {
               <p className="text-gray-600">No positions found matching your search.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredPositions.map((position) => (
-                <button
-                  key={position.id}
-                  onClick={() => handlePositionClick(position)}
-                  className="group bg-white rounded-lg border border-gray-200 p-6 hover:border-blue-400 hover:shadow-md transition-all text-left"
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                      <Users className="w-6 h-6 text-blue-600" />
-                    </div>
-                    <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-blue-600 transition-colors" />
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">{position.name}</h3>
-                  <div className="flex items-center gap-1 mb-3 text-gray-600">
-                    <Users size={16} />
-                    <span className="text-sm">{position.employee_count} employee{position.employee_count !== 1 ? 's' : ''}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-gray-500">
-                    <div className="w-4 h-4 rounded-full bg-blue-100 flex items-center justify-center">
-                      <div className="w-1.5 h-1.5 bg-blue-600 rounded-full" />
-                    </div>
-                    <span className="text-sm">{position.department}</span>
-                  </div>
-                </button>
-              ))}
+            <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <table className="w-full border-collapse text-left text-sm font-sans">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th scope="col" className="px-6 py-4 font-semibold text-[#040E6B]">Position Title</th>
+                    <th scope="col" className="px-6 py-4 font-semibold text-[#040E6B]">Department / Division</th>
+                    <th scope="col" className="px-6 py-4 font-semibold text-[#040E6B]">Employees Assigned</th>
+                    <th scope="col" className="px-6 py-4 font-semibold text-[#040E6B]">Status</th>
+                    <th scope="col" className="px-6 py-4 font-semibold text-[#040E6B] text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredPositions.map((position) => (
+                    <tr
+                      key={position.id}
+                      onClick={() => handlePositionClick(position)}
+                      className="group hover:bg-slate-50/80 transition-colors duration-150 cursor-pointer"
+                    >
+                      {/* Position Title */}
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 transition-colors group-hover:bg-[#363EE8]/10 group-hover:text-[#363EE8]">
+                            <Briefcase size={20} />
+                          </div>
+                          <div>
+                            <div className="font-bold text-slate-800 group-hover:text-[#363EE8] transition-colors">
+                              {position.name}
+                            </div>
+                            <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                              CICTRIX POSITION
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Department */}
+                      <td className="px-6 py-4 text-slate-600 font-medium">
+                        {position.department}
+                      </td>
+
+                      {/* Employee Count */}
+                      <td className="px-6 py-4">
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                          <Users size={13} className="text-slate-500" />
+                          {position.employee_count} employee{position.employee_count !== 1 ? 's' : ''}
+                        </span>
+                      </td>
+
+                      {/* Status */}
+                      <td className="px-6 py-4">
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                          Active
+                        </span>
+                      </td>
+
+                      {/* Actions */}
+                      <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handlePositionClick(position)}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-[#363EE8]/20 bg-[#363EE8]/5 px-3.5 py-2 text-xs font-bold text-[#363EE8] hover:bg-[#363EE8]/10 transition-all active:scale-[0.98]"
+                          >
+                            Open Directory
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>

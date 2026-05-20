@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
-import { BarChart2, BookOpen, Calendar, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Eye, Filter, Search } from 'lucide-react';
-import { getAllEmployees, type Employee } from '../../lib/api/employees';
-import { TrainingEvaluationReport } from './components/TrainingEvaluationReport';
+import { useMemo, useState, useEffect } from 'react';
+import { ChevronDown, ChevronLeft, ChevronRight, Eye, Filter, Search, Award, Printer, BookOpen, Mail, Phone, Building2 } from 'lucide-react';
+import { supabase as supabaseClient } from '../../lib/supabase';
+
+const supabase = supabaseClient as any;
 
 type EmployeeRecord = {
   id: string;
@@ -12,196 +13,69 @@ type EmployeeRecord = {
   totalSeminars: number;
 };
 
-/** Derive 2-letter initials from a full_name string. */
-const getInitials = (name: string): string => {
-  const parts = (name ?? '').trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '??';
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-};
-
-const mockSeminarsPool = [
-  { id: 1, title: 'Leadership Development Program', instructor: 'Dr. Maria Santos', date: 'Feb 5-9, 2025', duration: '40 hours', status: 'Completed', evaluationAvailable: true },
-  { id: 2, title: 'Digital Transformation Seminar', instructor: 'Mr. Roberto Cruz', date: 'Feb 20-21, 2025', duration: '16 hours', status: 'Upcoming', evaluationAvailable: false },
-  { id: 3, title: 'Project Management Fundamentals', instructor: 'Engr. Carlos Mendoza', date: 'Jan 15-19, 2025', duration: '40 hours', status: 'Completed', evaluationAvailable: true },
-  { id: 4, title: 'Data Privacy & Cyber Security', instructor: 'Mr. Alex Villanueva', date: 'Mar 10-11, 2025', duration: '16 hours', status: 'Upcoming', evaluationAvailable: false },
-  { id: 5, title: 'Advanced Excel & Data Analysis', instructor: 'Ms. Clara Reyes', date: 'Nov 12-14, 2024', duration: '24 hours', status: 'Completed', evaluationAvailable: true },
-  { id: 6, title: 'Effective Communication Skills', instructor: 'Dr. Patricia Lee', date: 'Oct 5-6, 2024', duration: '16 hours', status: 'Completed', evaluationAvailable: true },
-  { id: 7, title: 'Strategic Planning Workshop', instructor: 'Mr. David Chua', date: 'Aug 20-22, 2024', duration: '24 hours', status: 'Completed', evaluationAvailable: true },
-  { id: 8, title: 'Basic First Aid & Disaster Preparedness', instructor: 'Red Cross PH', date: 'Jul 15, 2024', duration: '8 hours', status: 'Completed', evaluationAvailable: false },
-  { id: 9, title: 'Public Service Ethics and Values', instructor: 'Atty. Mark Reyes', date: 'Dec 1-2, 2024', duration: '16 hours', status: 'Completed', evaluationAvailable: true },
-  { id: 10, title: 'Agile Methodology Fundamentals', instructor: 'Engr. Sarah Gomez', date: 'Apr 10-12, 2025', duration: '24 hours', status: 'Upcoming', evaluationAvailable: false },
-];
-
-const getMockSeminars = (employeeId: string) => {
-  let hash = 0;
-  for (let i = 0; i < employeeId.length; i++) {
-    hash = employeeId.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  hash = Math.abs(hash);
-
-  const numSeminars = (hash % 4) + 1; // 1 to 4 seminars
-  const seminars = [];
-  for (let i = 0; i < numSeminars; i++) {
-    const index = (hash + (i * 7)) % mockSeminarsPool.length;
-    seminars.push(mockSeminarsPool[index]);
-  }
-  
-  // Deduplicate seminars based on ID just in case
-  const uniqueSeminars = Array.from(new Map(seminars.map(s => [s.id, s])).values());
-  return uniqueSeminars.sort((a, b) => b.id - a.id);
-};
-
-const toEmployeeRecord = (emp: Employee): EmployeeRecord => {
-  const seminars = getMockSeminars(emp.id);
-  return {
-    id: emp.id,
-    name: emp.full_name ?? 'Unnamed',
-    initials: getInitials(emp.full_name ?? ''),
-    position: emp.current_position ?? 'Unassigned Position',
-    department: emp.department ?? emp.current_department ?? 'Unassigned Department',
-    totalSeminars: seminars.length,
-  };
-};
-
 const employeesData: EmployeeRecord[] = [
-  { id: '1', name: 'Juan dela Cruz', initials: 'JdC', position: 'IT Manager', department: 'IT Department', totalSeminars: getMockSeminars('1').length },
-  { id: '2', name: 'Maria Reyes', initials: 'MR', position: 'Finance Manager', department: 'Finance Department', totalSeminars: getMockSeminars('2').length },
-  { id: '3', name: 'Carlos Santos', initials: 'CS', position: 'HR Supervisor', department: 'HR Department', totalSeminars: getMockSeminars('3').length },
-  { id: '4', name: 'Ana Garcia', initials: 'AG', position: 'Operations Manager', department: 'Operations', totalSeminars: getMockSeminars('4').length },
-  { id: '5', name: 'Roberto Cruz', initials: 'RC', position: 'Admin Officer III', department: 'Admin Department', totalSeminars: getMockSeminars('5').length },
-  { id: '6', name: 'Elena Mercado', initials: 'EM', position: 'IT Supervisor', department: 'IT Department', totalSeminars: getMockSeminars('6').length },
-  { id: '7', name: 'Diego Fernandez', initials: 'DF', position: 'Budget Officer II', department: 'Finance Department', totalSeminars: getMockSeminars('7').length },
-  { id: '8', name: 'Sofia Martinez', initials: 'SM', position: 'HR Officer II', department: 'HR Department', totalSeminars: getMockSeminars('8').length },
-  { id: '9', name: 'Miguel Torres', initials: 'MT', position: 'Operations Supervisor', department: 'Operations', totalSeminars: getMockSeminars('9').length },
-  { id: '10', name: 'Carmen Lopez', initials: 'CL', position: 'Legal Officer I', department: 'Legal Department', totalSeminars: getMockSeminars('10').length },
+  { id: '1', name: 'Juan dela Cruz', initials: 'JdC', position: 'IT Manager', department: 'IT Department', totalSeminars: 3 },
+  { id: '2', name: 'Maria Reyes', initials: 'MR', position: 'Finance Manager', department: 'Finance Department', totalSeminars: 2 },
+  { id: '3', name: 'Carlos Santos', initials: 'CS', position: 'HR Supervisor', department: 'HR Department', totalSeminars: 3 },
+  { id: '4', name: 'Ana Garcia', initials: 'AG', position: 'Operations Manager', department: 'Operations', totalSeminars: 2 },
+  { id: '5', name: 'Roberto Cruz', initials: 'RC', position: 'Admin Officer III', department: 'Admin Department', totalSeminars: 2 },
+  { id: '6', name: 'Elena Mercado', initials: 'EM', position: 'IT Supervisor', department: 'IT Department', totalSeminars: 2 },
+  { id: '7', name: 'Diego Fernandez', initials: 'DF', position: 'Budget Officer II', department: 'Finance Department', totalSeminars: 1 },
+  { id: '8', name: 'Sofia Martinez', initials: 'SM', position: 'HR Officer II', department: 'HR Department', totalSeminars: 1 },
+  { id: '9', name: 'Miguel Torres', initials: 'MT', position: 'Operations Supervisor', department: 'Operations', totalSeminars: 2 },
+  { id: '10', name: 'Carmen Lopez', initials: 'CL', position: 'Legal Officer I', department: 'Legal Department', totalSeminars: 1 },
+  { id: '11', name: 'A-jay Buenjemia', initials: 'AB', position: 'Information Technology Specialist', department: 'Information Technology', totalSeminars: 2 },
 ];
-
-const EmployeeDevelopmentDetail = ({ employee, onBack }: { employee: EmployeeRecord; onBack: () => void }) => {
-  const [selectedSeminar, setSelectedSeminar] = useState<any | null>(null);
-  const employeeSeminars = getMockSeminars(employee.id);
-
-  if (selectedSeminar) {
-    return <TrainingEvaluationReport employee={employee} seminar={selectedSeminar} onBack={() => setSelectedSeminar(null)} />;
-  }
-
-  return (
-    <div className="p-6 md:p-8 pt-24 bg-gray-50 min-h-screen flex flex-col space-y-6">
-      <div className="flex items-start">
-        <button 
-          onClick={onBack}
-          type="button" 
-          className="mr-4 mt-1 text-gray-500 hover:bg-gray-200 p-2 rounded-lg transition-colors"
-        >
-          <ChevronLeft className="w-5 h-5" />
-        </button>
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">{employee.name}</h1>
-          <p className="text-sm text-gray-500 mt-1">{employee.position} &bull; {employee.department}</p>
-        </div>
-      </div>
-
-      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mt-4">
-        <div className="p-6 flex items-center justify-between border-b border-gray-100">
-          <h2 className="text-base font-bold text-gray-900">Attended Seminars & Trainings</h2>
-          <span className="text-sm text-gray-500">Total: {employeeSeminars.length}</span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[800px]">
-            <thead className="bg-gray-50/50 border-b border-gray-200">
-              <tr>
-                <th className="py-4 px-6 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Seminar Title</th>
-                <th className="py-4 px-6 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Instructor</th>
-                <th className="py-4 px-6 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Date</th>
-                <th className="py-4 px-6 text-[11px] font-bold text-gray-500 uppercase tracking-wider">Duration</th>
-                <th className="py-4 px-6 text-[11px] font-bold text-gray-500 uppercase tracking-wider text-center">Status</th>
-                <th className="py-4 px-6 text-[11px] font-bold text-gray-500 uppercase tracking-wider text-center">Evaluation</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {employeeSeminars.map((seminar) => (
-                <tr key={seminar.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="py-4 px-6 text-sm">
-                    <div className="flex items-center space-x-3 text-gray-900 font-medium">
-                      <BookOpen className="w-4 h-4 text-blue-600 shrink-0" />
-                      <span>{seminar.title}</span>
-                    </div>
-                  </td>
-                  <td className="py-4 px-6 text-sm text-gray-600">{seminar.instructor}</td>
-                  <td className="py-4 px-6 text-sm text-gray-600">{seminar.date}</td>
-                  <td className="py-4 px-6 text-sm text-gray-600">{seminar.duration}</td>
-                  <td className="py-4 px-6 text-sm text-center">
-                    {seminar.status === 'Completed' ? (
-                      <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full bg-green-100 text-green-700 text-xs font-medium">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Completed</span>
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full bg-orange-100 text-orange-700 text-xs font-medium">
-                        <Calendar className="w-3.5 h-3.5" />
-                        <span>Upcoming</span>
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-4 px-6 text-sm flex justify-center">
-                    {seminar.evaluationAvailable ? (
-                      <button 
-                        onClick={() => setSelectedSeminar(seminar)}
-                        className="flex items-center space-x-1.5 px-3 py-1.5 border border-blue-200 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors" 
-                        type="button"
-                      >
-                        <BarChart2 className="w-4 h-4" />
-                        <span>View Report</span>
-                      </button>
-                    ) : (
-                      <span className="text-gray-400 italic text-sm">Not available</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 export const EmployeeDevelopment = () => {
+  const [viewMode, setViewMode] = useState<'list' | 'profile' | 'report'>('list');
+  const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRecord | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('All Departments');
-  const [dbEmployees, setDbEmployees] = useState<EmployeeRecord[] | null>(null);
-  const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRecord | null>(null);
+  const [employees, setEmployees] = useState<EmployeeRecord[]>(employeesData);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const result = await getAllEmployees({ status: 'Active' });
-      if (cancelled) return;
-      if (result.success && Array.isArray(result.data) && result.data.length > 0) {
-        setDbEmployees((result.data as Employee[]).map(toEmployeeRecord));
-      } else {
-        // DB empty or error — fall back to hardcoded demo data.
-        setDbEmployees(null);
+    const loadHiredApplicants = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('applicants')
+          .select('id, first_name, last_name, position, office')
+          .eq('status', 'Hired');
+          
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          const loaded = data.map((d: any) => ({
+            id: `supabase-${d.id}`,
+            name: `${d.first_name} ${d.last_name}`,
+            initials: `${d.first_name[0] || 'E'}${d.last_name[0] || 'M'}`,
+            position: d.position || 'Employee',
+            department: d.office || 'Unassigned',
+            totalSeminars: 2,
+          }));
+          
+          setEmployees((prev) => {
+            const existingNames = new Set(prev.map(p => p.name.toLowerCase()));
+            const filteredLoaded = loaded.filter((l: any) => !existingNames.has(l.name.toLowerCase()));
+            return [...prev, ...filteredLoaded];
+          });
+        }
+      } catch (err) {
+        console.warn('loadHiredApplicants: Bypassed db load locally', err);
       }
-    })();
-    return () => {
-      cancelled = true;
     };
+    
+    void loadHiredApplicants();
   }, []);
 
-  // Real data when present; hardcoded demo array as fallback for empty DB.
-  const sourceEmployees: EmployeeRecord[] =
-    dbEmployees && dbEmployees.length > 0 ? dbEmployees : employeesData;
-
   const departments = useMemo(
-    () => ['All Departments', ...Array.from(new Set(sourceEmployees.map((employee) => employee.department)))],
-    [sourceEmployees]
+    () => ['All Departments', ...Array.from(new Set(employees.map((employee) => employee.department)))],
+    [employees]
   );
 
   const filteredEmployees = useMemo(() => {
     const query = searchQuery.toLowerCase();
-    return sourceEmployees.filter((employee) => {
+    return employees.filter((employee) => {
       const matchesSearch =
         employee.name.toLowerCase().includes(query) ||
         employee.position.toLowerCase().includes(query) ||
@@ -210,16 +84,40 @@ export const EmployeeDevelopment = () => {
         departmentFilter === 'All Departments' || employee.department === departmentFilter;
       return matchesSearch && matchesDepartment;
     });
-  }, [searchQuery, departmentFilter, sourceEmployees]);
+  }, [employees, searchQuery, departmentFilter]);
 
-  if (selectedEmployee) {
-    return <EmployeeDevelopmentDetail employee={selectedEmployee} onBack={() => setSelectedEmployee(null)} />;
+  const handleViewProfile = (employee: EmployeeRecord) => {
+    setSelectedEmployee(employee);
+    setViewMode('profile');
+  };
+
+  if (viewMode === 'report' && selectedEmployee) {
+    return (
+      <TrainingEvaluationReport
+        employee={selectedEmployee}
+        onBack={() => setViewMode('profile')}
+      />
+    );
+  }
+
+  if (viewMode === 'profile' && selectedEmployee) {
+    return (
+      <EmployeeProfileView
+        employee={selectedEmployee}
+        onBack={() => setViewMode('list')}
+        onViewReport={() => setViewMode('report')}
+      />
+    );
   }
 
   return (
     <div className="p-6 md:p-8 pt-24 bg-gray-50 min-h-screen flex flex-col space-y-6">
       <div className="flex items-start">
-        <button type="button" className="mr-4 mt-1 text-gray-500 hover:bg-gray-200 p-2 rounded-lg transition-colors">
+        <button
+          type="button"
+          onClick={() => setViewMode('list')}
+          className="mr-4 mt-1 text-gray-500 hover:bg-gray-200 p-2 rounded-lg transition-colors"
+        >
           <ChevronLeft className="w-5 h-5" />
         </button>
         <div>
@@ -246,7 +144,7 @@ export const EmployeeDevelopment = () => {
             <select
               value={departmentFilter}
               onChange={(event) => setDepartmentFilter(event.target.value)}
-              className="pl-9 pr-8 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 appearance-none bg-white focus:outline-none focus:border-blue-500"
+              className="pl-9 pr-8 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 appearance-none bg-white focus:outline-none focus:border-blue-500 border-r-0"
             >
               {departments.map((department) => (
                 <option key={department}>{department}</option>
@@ -272,7 +170,7 @@ export const EmployeeDevelopment = () => {
               <th className="py-4 px-6 text-xs font-bold text-gray-500 uppercase tracking-wider">Position</th>
               <th className="py-4 px-6 text-xs font-bold text-gray-500 uppercase tracking-wider">Department</th>
               <th className="py-4 px-6 text-xs font-bold text-gray-500 uppercase tracking-wider">Total Seminars</th>
-              <th className="py-4 px-6 text-xs font-bold text-gray-500 uppercase tracking-wider">Actions</th>
+              <th className="py-4 px-6 text-xs font-bold text-gray-500 uppercase tracking-wider text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -293,10 +191,10 @@ export const EmployeeDevelopment = () => {
                     {employee.totalSeminars}
                   </div>
                 </td>
-                <td className="py-4 px-6 text-sm text-gray-700">
-                  <button 
-                    onClick={() => setSelectedEmployee(employee)}
-                    className="flex items-center space-x-2 px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors bg-white" 
+                <td className="py-4 px-6 text-sm text-gray-700 text-right">
+                  <button
+                    onClick={() => handleViewProfile(employee)}
+                    className="inline-flex items-center space-x-2 px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors bg-white shadow-sm"
                     type="button"
                   >
                     <Eye className="w-4 h-4 text-gray-500" />
@@ -310,17 +208,487 @@ export const EmployeeDevelopment = () => {
       </div>
 
       <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-center justify-between shadow-sm mt-2">
-        <span className="text-sm text-gray-500">Showing 1 to 10 of 15 employees</span>
+        <span className="text-sm text-gray-500">Showing 1 to {filteredEmployees.length} of {employees.length} employees</span>
         <div className="flex items-center space-x-2">
           <button className="flex items-center px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 bg-white" type="button">
             <ChevronLeft className="w-4 h-4 mr-1" /> Previous
           </button>
           <button className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center text-sm font-medium" type="button">1</button>
-          <button className="w-8 h-8 rounded-lg text-gray-700 hover:bg-gray-100 flex items-center justify-center text-sm font-medium" type="button">2</button>
           <button className="flex items-center px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 bg-white" type="button">
             Next <ChevronRight className="w-4 h-4 ml-1" />
           </button>
         </div>
+      </div>
+    </div>
+  );
+};
+
+const EmployeeProfileView = ({ employee, onBack, onViewReport }: { employee: EmployeeRecord; onBack: () => void; onViewReport: () => void }) => {
+  return (
+    <div className="p-6 md:p-8 pt-24 bg-gray-50 min-h-screen">
+      <div className="flex items-start mb-6">
+        <button
+          type="button"
+          onClick={onBack}
+          className="mr-4 text-gray-500 hover:bg-gray-200 p-2 rounded-lg transition-colors"
+        >
+          <ChevronLeft className="w-5 h-5" />
+        </button>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">{employee.name}</h1>
+          <p className="text-sm text-gray-500 mt-1">{employee.position} • {employee.department}</p>
+        </div>
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden p-6">
+        <div className="flex items-center justify-between border-b border-gray-100 pb-4 mb-6">
+          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+            <Award className="w-5 h-5 text-blue-600" />
+            <span>Attended Seminars & Trainings</span>
+          </h2>
+          <span className="text-sm text-gray-500 font-semibold">Total: 2</span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm border-collapse">
+            <thead>
+              <tr className="border-b border-gray-100 bg-slate-50 text-slate-500 font-bold uppercase text-[11px] tracking-wider">
+                <th className="py-3.5 px-4">Seminar Title</th>
+                <th className="py-3.5 px-4">Instructor</th>
+                <th className="py-3.5 px-4">Date</th>
+                <th className="py-3.5 px-4">Duration</th>
+                <th className="py-3.5 px-4">Status</th>
+                <th className="py-3.5 px-4 text-right">Evaluation</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              <tr className="hover:bg-gray-50/50">
+                <td className="py-4 px-4 font-semibold text-gray-900 flex items-center gap-3">
+                  <BookOpen className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                  <span>Basic First Aid & Disaster Preparedness</span>
+                </td>
+                <td className="py-4 px-4 text-slate-600">Red Cross PH</td>
+                <td className="py-4 px-4 text-slate-600">Jul 15, 2024</td>
+                <td className="py-4 px-4 text-slate-600">8 hours</td>
+                <td className="py-4 px-4">
+                  <span className="bg-green-50 text-green-700 px-3 py-1 rounded-full text-xs font-semibold inline-flex items-center">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1.5" />
+                    Completed
+                  </span>
+                </td>
+                <td className="py-4 px-4 text-right text-gray-400 italic text-xs">Not available</td>
+              </tr>
+              <tr className="hover:bg-gray-50/50">
+                <td className="py-4 px-4 font-semibold text-gray-900 flex items-center gap-3">
+                  <BookOpen className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                  <span>Advanced Excel & Data Analysis</span>
+                </td>
+                <td className="py-4 px-4 text-slate-600">Ms. Clara Reyes</td>
+                <td className="py-4 px-4 text-slate-600">Nov 12-14, 2024</td>
+                <td className="py-4 px-4 text-slate-600">24 hours</td>
+                <td className="py-4 px-4">
+                  <span className="bg-green-50 text-green-700 px-3 py-1 rounded-full text-xs font-semibold inline-flex items-center">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 mr-1.5" />
+                    Completed
+                  </span>
+                </td>
+                <td className="py-4 px-4 text-right">
+                  <button
+                    onClick={onViewReport}
+                    className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-[#EBF0FF] hover:bg-[#D7E2FF] text-[#363EE8] rounded-lg text-xs font-bold transition-all shadow-sm border border-[#C5D4FF]"
+                    type="button"
+                  >
+                    <Award className="w-3.5 h-3.5" />
+                    <span>View Report</span>
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const TrainingEvaluationReport = ({ employee, onBack }: { employee: EmployeeRecord; onBack: () => void }) => {
+  return (
+    <div className="p-6 md:p-8 pt-24 bg-gray-50 min-h-screen">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center">
+          <button
+            type="button"
+            onClick={onBack}
+            className="mr-4 text-gray-500 hover:bg-gray-200 p-2 rounded-lg transition-colors"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Training Evaluation Report</h1>
+            <p className="text-sm text-gray-500 mt-1">{employee.name} — Advanced Excel & Data Analysis</p>
+          </div>
+        </div>
+
+        <button
+          onClick={() => window.print()}
+          className="flex items-center space-x-2 bg-[#363EE8] hover:bg-[#363EE8]/90 text-white px-4 py-2.5 rounded-lg font-bold shadow-sm transition-all text-xs"
+          type="button"
+        >
+          <Printer className="w-4 h-4" />
+          <span>Print Report</span>
+        </button>
+      </div>
+
+      <div className="bg-white shadow-xl rounded-2xl max-w-4xl mx-auto p-8 border border-slate-200 mt-6 printable-report">
+        
+        {/* Philippines Republic & City Header */}
+        <div className="flex flex-col items-center text-center border-b-2 border-[#363EE8] pb-6 mb-6">
+          <div className="w-16 h-16 rounded-full bg-[#363EE8] flex items-center justify-center text-white font-black text-2xl mb-2 shadow-sm border border-[#1E25B6]">
+            IL
+          </div>
+          <h2 className="text-md font-bold text-slate-800 tracking-wide uppercase">Iloilo City</h2>
+          <p className="text-xs text-slate-500">Republic of the Philippines</p>
+          
+          <div className="w-full mt-4 border-t border-slate-100 pt-4">
+            <h3 className="text-sm font-bold text-[#040E6B] tracking-wider uppercase">
+              Office of the City Human Resource Management Officer
+            </h3>
+            <p className="text-xs text-slate-500 mt-1">
+              Ground Floor, Iloilo City Hall, Plaza Libertad, Iloilo City, 5000 Philippines
+            </p>
+            <p className="text-[10px] text-slate-400 mt-0.5 font-medium">
+              Tel. No: 333-11-11 Loc. #71 | Email: add_ica.hrmo@gmail.com
+            </p>
+          </div>
+        </div>
+
+        {/* Evaluation Summary Document Title */}
+        <div className="text-center mb-8">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+            Office of the City Human Resource Management Officer
+          </h3>
+          <h1 className="text-2xl font-black text-[#040E6B] mt-1 tracking-tight">
+            Evaluation Summary
+          </h1>
+        </div>
+
+        {/* Training Details Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 border border-slate-200/60 rounded-xl p-5 mb-8 text-sm">
+          <div className="space-y-2.5">
+            <div className="text-slate-600">
+              <span className="font-bold text-slate-400 text-xs uppercase tracking-wider block">Training Program</span>
+              <span className="font-bold text-[#040E6B] text-base">ADVANCED EXCEL & DATA ANALYSIS</span>
+            </div>
+            <div className="text-slate-600">
+              <span className="font-bold text-slate-400 text-xs uppercase tracking-wider block">Date</span>
+              <span className="font-bold text-slate-800">Nov 12-14, 2024</span>
+            </div>
+            <div className="text-slate-600">
+              <span className="font-bold text-slate-400 text-xs uppercase tracking-wider block">Venue</span>
+              <span className="font-semibold text-slate-800">2nd Floor LEDIP Conference Room, Iloilo City Hall</span>
+            </div>
+          </div>
+          <div className="space-y-2.5 md:border-l md:border-slate-200 md:pl-6">
+            <div className="text-slate-600">
+              <span className="font-bold text-slate-400 text-xs uppercase tracking-wider block">Total Participants</span>
+              <span className="font-bold text-slate-800 text-lg">33</span>
+            </div>
+            <div className="text-slate-600">
+              <span className="font-bold text-slate-400 text-xs uppercase tracking-wider block">Total Respondents</span>
+              <span className="font-bold text-slate-800 text-lg">29</span>
+            </div>
+            <div className="text-slate-600">
+              <span className="font-bold text-slate-400 text-xs uppercase tracking-wider block">Evaluation Scale</span>
+              <span className="text-[10px] text-[#040E6B] font-bold bg-white border border-slate-200 rounded-lg px-2.5 py-1 mt-1 inline-block shadow-sm">
+                5 - Strongly Agree | 4 - Agree | 3 - Neutral | 2 - Disagree | 1 - Strongly Disagree
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Section A */}
+        <div className="mb-10">
+          <h2 className="text-lg font-bold text-[#040E6B] border-b border-slate-200 pb-2 mb-4">
+            A. CONTENT & OBJECTIVES
+          </h2>
+          <div className="overflow-x-auto border border-slate-100 rounded-xl mb-6 shadow-sm">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase">
+                  <th className="p-3 w-1/2">Question</th>
+                  <th className="p-3 text-center">5</th>
+                  <th className="p-3 text-center">4</th>
+                  <th className="p-3 text-center">3</th>
+                  <th className="p-3 text-center">2</th>
+                  <th className="p-3 text-center">1</th>
+                  <th className="p-3 text-center">Total</th>
+                  <th className="p-3 text-center text-[#363EE8]">Average</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-700">
+                {[
+                  "1. The content and objectives of the activity is useful and interesting.",
+                  "2. The objectives of the activity were clearly identify and met.",
+                  "3. The methodology (lecture, presentation, etc.) used were appropriate and effective for learning and understanding the topic.",
+                  "4. The activity is useful to my work and the organization.",
+                  "5. The activity helped me gain skills I needed to address a specific performance gap.",
+                  "6. Topics discussed in the activity met my expectations."
+                ].map((q, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50/50">
+                    <td className="p-3 font-medium text-slate-800">{q}</td>
+                    <td className="p-3 text-center">17</td>
+                    <td className="p-3 text-center">9</td>
+                    <td className="p-3 text-center">1</td>
+                    <td className="p-3 text-center">1</td>
+                    <td className="p-3 text-center">1</td>
+                    <td className="p-3 text-center">29</td>
+                    <td className="p-3 text-center font-bold text-[#363EE8]">4.38</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          
+          {/* Chart A */}
+          <div className="grid grid-cols-1 gap-2 max-w-xl mx-auto">
+            <div className="space-y-2.5 p-5 bg-slate-50 border border-slate-200/60 rounded-xl shadow-sm">
+              <p className="text-xs font-bold text-[#040E6B] uppercase tracking-wider mb-4 text-center">
+                Content & Objectives
+              </p>
+              {[6, 5, 4, 3, 2, 1].map(num => (
+                <div key={num} className="flex items-center gap-4">
+                  <span className="text-xs font-bold text-slate-500 w-4 text-right">{num}.</span>
+                  <div className="flex-1 bg-slate-200/70 h-5.5 rounded-full overflow-hidden relative shadow-inner">
+                    <div className="bg-[#363EE8] h-full rounded-full flex items-center justify-end pr-4 transition-all" style={{ width: '87.6%' }}>
+                      <span className="text-[10px] font-bold text-white">4.38</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Section B */}
+        <div className="mb-10">
+          <h2 className="text-lg font-bold text-[#040E6B] border-b border-slate-200 pb-2 mb-1">
+            B. RESOURCE PERSON
+          </h2>
+          <p className="text-xs font-extrabold text-[#363EE8] tracking-wide mb-4">
+            MS. MICHELL MARTH ALEJANDRIA DELA CRUZ
+          </p>
+          <div className="overflow-x-auto border border-slate-100 rounded-xl mb-6 shadow-sm">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase">
+                  <th className="p-3 w-1/2">Question</th>
+                  <th className="p-3 text-center">5</th>
+                  <th className="p-3 text-center">4</th>
+                  <th className="p-3 text-center">3</th>
+                  <th className="p-3 text-center">2</th>
+                  <th className="p-3 text-center">1</th>
+                  <th className="p-3 text-center">Total</th>
+                  <th className="p-3 text-center text-[#363EE8]">Average</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-700">
+                {[
+                  "1. The resource person displayed an in-depth knowledge of the topic.",
+                  "2. The resource person was able to build rapport with the participants.",
+                  "3. Resource person clearly articulated the concepts in the activity.",
+                  "4. The resource person was able to facilitate the sessions effectively."
+                ].map((q, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50/50">
+                    <td className="p-3 font-medium text-slate-800">{q}</td>
+                    <td className="p-3 text-center">17</td>
+                    <td className="p-3 text-center">9</td>
+                    <td className="p-3 text-center">1</td>
+                    <td className="p-3 text-center">1</td>
+                    <td className="p-3 text-center">1</td>
+                    <td className="p-3 text-center">29</td>
+                    <td className="p-3 text-center font-bold text-[#363EE8]">4.38</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Chart B */}
+          <div className="grid grid-cols-1 gap-2 max-w-xl mx-auto">
+            <div className="space-y-2.5 p-5 bg-slate-50 border border-slate-200/60 rounded-xl shadow-sm">
+              <p className="text-xs font-bold text-[#040E6B] uppercase tracking-wider text-center">
+                Resource Person
+              </p>
+              <p className="text-[10px] font-bold text-[#363EE8] uppercase tracking-widest text-center mb-4">
+                MS. MICHELL MARTH ALEJANDRIA DELA CRUZ
+              </p>
+              {[4, 3, 2, 1].map(num => (
+                <div key={num} className="flex items-center gap-4">
+                  <span className="text-xs font-bold text-slate-500 w-4 text-right">{num}.</span>
+                  <div className="flex-1 bg-slate-200/70 h-5.5 rounded-full overflow-hidden relative shadow-inner">
+                    <div className="bg-[#363EE8] h-full rounded-full flex items-center justify-end pr-4 transition-all" style={{ width: '87.6%' }}>
+                      <span className="text-[10px] font-bold text-white">4.38</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Section C */}
+        <div className="mb-10">
+          <h2 className="text-lg font-bold text-[#040E6B] border-b border-slate-200 pb-2 mb-1">
+            C. RESOURCE PERSON
+          </h2>
+          <p className="text-xs font-extrabold text-[#363EE8] tracking-wide mb-4">
+            MS. MICHELL MARTH ALEJANDRIA DELA CRUZ
+          </p>
+          <div className="overflow-x-auto border border-slate-100 rounded-xl mb-6 shadow-sm">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase">
+                  <th className="p-3 w-1/2">Question</th>
+                  <th className="p-3 text-center">5</th>
+                  <th className="p-3 text-center">4</th>
+                  <th className="p-3 text-center">3</th>
+                  <th className="p-3 text-center">2</th>
+                  <th className="p-3 text-center">1</th>
+                  <th className="p-3 text-center">Total</th>
+                  <th className="p-3 text-center text-[#363EE8]">Average</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-700">
+                {[
+                  "1. The resource person displayed an in-depth knowledge of the topic.",
+                  "2. The resource person was able to build rapport with the participants.",
+                  "3. Resource person clearly articulated the concepts in the activity.",
+                  "4. The resource person was able to facilitate the sessions effectively."
+                ].map((q, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50/50">
+                    <td className="p-3 font-medium text-slate-800">{q}</td>
+                    <td className="p-3 text-center">17</td>
+                    <td className="p-3 text-center">9</td>
+                    <td className="p-3 text-center">1</td>
+                    <td className="p-3 text-center">1</td>
+                    <td className="p-3 text-center">1</td>
+                    <td className="p-3 text-center">29</td>
+                    <td className="p-3 text-center font-bold text-[#363EE8]">4.38</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Chart C */}
+          <div className="grid grid-cols-1 gap-2 max-w-xl mx-auto">
+            <div className="space-y-2.5 p-5 bg-slate-50 border border-slate-200/60 rounded-xl shadow-sm">
+              <p className="text-xs font-bold text-[#040E6B] uppercase tracking-wider text-center">
+                Resource Person
+              </p>
+              <p className="text-[10px] font-bold text-[#363EE8] uppercase tracking-widest text-center mb-4">
+                MS. MICHELL MARTH ALEJANDRIA DELA CRUZ
+              </p>
+              {[4, 3, 2, 1].map(num => (
+                <div key={num} className="flex items-center gap-4">
+                  <span className="text-xs font-bold text-slate-500 w-4 text-right">{num}.</span>
+                  <div className="flex-1 bg-slate-200/70 h-5.5 rounded-full overflow-hidden relative shadow-inner">
+                    <div className="bg-[#363EE8] h-full rounded-full flex items-center justify-end pr-4 transition-all" style={{ width: '87.6%' }}>
+                      <span className="text-[10px] font-bold text-white">4.38</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Section D */}
+        <div className="mb-10">
+          <h2 className="text-lg font-bold text-[#040E6B] border-b border-slate-200 pb-2 mb-4">
+            D. PROGRAM ADMINISTRATION
+          </h2>
+          <div className="overflow-x-auto border border-slate-100 rounded-xl mb-6 shadow-sm">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase">
+                  <th className="p-3 w-1/2">Question</th>
+                  <th className="p-3 text-center">5</th>
+                  <th className="p-3 text-center">4</th>
+                  <th className="p-3 text-center">3</th>
+                  <th className="p-3 text-center">2</th>
+                  <th className="p-3 text-center">1</th>
+                  <th className="p-3 text-center">Total</th>
+                  <th className="p-3 text-center text-[#363EE8]">Average</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-700">
+                {[
+                  "1. The session delivered the information I expected to receive.",
+                  "2. The duration of the activity was just right to tackle all the topics in an average pacing.",
+                  "3. The facilitators are prompt and always willing to help the participants.",
+                  "4. The quality of the physical/virtual amenities are excellent."
+                ].map((q, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50/50">
+                    <td className="p-3 font-medium text-slate-800">{q}</td>
+                    <td className="p-3 text-center">17</td>
+                    <td className="p-3 text-center">9</td>
+                    <td className="p-3 text-center">1</td>
+                    <td className="p-3 text-center">1</td>
+                    <td className="p-3 text-center">1</td>
+                    <td className="p-3 text-center">29</td>
+                    <td className="p-3 text-center font-bold text-[#363EE8]">4.38</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Chart D */}
+          <div className="grid grid-cols-1 gap-2 max-w-xl mx-auto">
+            <div className="space-y-2.5 p-5 bg-slate-50 border border-slate-200/60 rounded-xl shadow-sm">
+              <p className="text-xs font-bold text-[#040E6B] uppercase tracking-wider text-center mb-4">
+                Program Administration
+              </p>
+              {[4, 3, 2, 1].map(num => (
+                <div key={num} className="flex items-center gap-4">
+                  <span className="text-xs font-bold text-slate-500 w-4 text-right">{num}.</span>
+                  <div className="flex-1 bg-slate-200/70 h-5.5 rounded-full overflow-hidden relative shadow-inner">
+                    <div className="bg-[#363EE8] h-full rounded-full flex items-center justify-end pr-4 transition-all" style={{ width: '87.6%' }}>
+                      <span className="text-[10px] font-bold text-white">4.38</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Narrative Responses */}
+        <div className="border-t-2 border-slate-100 pt-8 mt-8">
+          <h2 className="text-lg font-bold text-[#040E6B] mb-6">
+            Narrative Responses
+          </h2>
+          <div className="space-y-5">
+            <div className="bg-slate-50 border border-slate-100 rounded-xl p-5 shadow-sm">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+                What aspects of the training did you find most valuable?
+              </h3>
+              <p className="text-sm font-semibold text-slate-800 italic leading-relaxed pl-3 border-l-4 border-[#363EE8]">
+                "The resource persons were very knowledgeable and approachable."
+              </p>
+            </div>
+            <div className="bg-slate-50 border border-slate-100 rounded-xl p-5 shadow-sm">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+                What suggestions do you have for improving future training programs?
+              </h3>
+              <p className="text-sm font-semibold text-slate-800 italic leading-relaxed pl-3 border-l-4 border-[#363EE8]">
+                "Consider providing training materials in digital format as well."
+              </p>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
   );

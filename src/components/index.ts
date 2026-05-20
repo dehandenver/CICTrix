@@ -6,4 +6,4 @@ export { Dialog } from './Dialog';
 export { FileUpload } from './FileUpload';
 export { Input } from './Input';
 export { Select } from './Select';
-
+export { TopNav } from './TopNav';
