@@ -1,32 +1,52 @@
 import {
-    Bell,
-    Calendar,
-    CheckCircle2,
-    Clock,
-    Eye,
-    EyeOff,
-    FileText,
-    Home,
-    Lock,
-    LogOut,
-    Pencil,
-    Save,
-    Upload,
-    User,
-    X,
+  Bell,
+  Calendar,
+  CheckCircle2,
+  Clock,
+  Eye,
+  EyeOff,
+  FileText,
+  Home,
+  Lock,
+  LogOut,
+  Pencil,
+  Save,
+  Upload,
+  User,
+  X,
 } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import {
-    APPLICATION_DOC_TYPES,
-    EMPLOYEE_DOCUMENTS_UPDATED_EVENT,
-    dispatchEmployeeDocumentsUpdated,
-    listEmployeeDocumentsForEmployee,
-    uploadEmployeeDocument,
-    type ApplicationDocumentType,
-    type EmployeeDocumentRow,
-} from '../../lib/employeeDocuments';
 import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
+import {
+  fetchPortalEmployeeById,
+  patchPortalEmployee,
+} from '../../lib/api/employeePortal';
+import {
+  APPLICATION_DOC_TYPES,
+  EMPLOYEE_DOCUMENTS_UPDATED_EVENT,
+  dispatchEmployeeDocumentsUpdated,
+  listEmployeeDocumentsForEmployee,
+  uploadEmployeeDocument,
+  type ApplicationDocumentType,
+  type EmployeeDocumentRow,
+  type RequestSource,
+} from '../../lib/employeeDocuments';
+
+const SOURCE_BADGE_STYLES: Record<RequestSource, string> = {
+  HR: 'bg-slate-100 text-slate-700 ring-1 ring-slate-200',
+  PM: 'bg-blue-100 text-blue-700 ring-1 ring-blue-200',
+  LND: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200',
+};
+
+const SOURCE_BADGE_LABEL: Record<RequestSource, string> = {
+  HR: 'HR',
+  PM: 'PM',
+  LND: 'L&D',
+};
+
+const resolveSource = (source: RequestSource | null | undefined): RequestSource =>
+  source === 'PM' || source === 'LND' ? source : 'HR';
 import {
   changeEmployeePortalPassword,
   changeEmployeePortalUsername,
@@ -294,9 +314,20 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   const [governmentDraft, setGovernmentDraft] = useState<GovernmentDraft>(getGovernmentDraft(currentUser));
   const [personalDraft, setPersonalDraft] = useState<PersonalDetailsDraft>(getPersonalDetailsDraft(currentUser));
 
+  // DB-hydration state — true while the initial Supabase fetch is in-flight.
+  const [profileLoading, setProfileLoading] = useState(false);
+  // Save feedback banners for profile edits.
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  // Track whether the initial DB fetch has completed, to suppress the
+  // profileSyncVersion watcher from overwriting freshly-fetched data.
+  const dbHydrated = useRef(false);
+
   const profileSyncVersion = `${currentUser.employeeId}|${currentUser.updatedAt ?? ''}`;
 
   useEffect(() => {
+    // Suppress the sync when the DB hydration has already applied fresher data.
+    if (dbHydrated.current) return;
     setProfile(currentUser);
     setContactDraft(getContactDraft(currentUser));
     setEmergencyDraft(getEmergencyDraft(currentUser));
@@ -304,6 +335,28 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
     setPersonalDraft(getPersonalDetailsDraft(currentUser));
     setEditingSection(null);
   }, [profileSyncVersion]);
+
+  // ── DB hydration (mount-only) ──────────────────────────────────────────────
+  // Fetch the live Supabase row once on mount using the internal UUID.
+  // This overwrites any stub data that App.tsx passed via `currentUser`.
+  useEffect(() => {
+    if (!currentUser.supabaseId) return; // No DB row available (demo account)
+    setProfileLoading(true);
+    fetchPortalEmployeeById(currentUser.supabaseId).then((result) => {
+      if (result.ok) {
+        const live = result.data;
+        dbHydrated.current = true;
+        setProfile(live);
+        setContactDraft(getContactDraft(live));
+        setEmergencyDraft(getEmergencyDraft(live));
+        setGovernmentDraft(getGovernmentDraft(live));
+        setPersonalDraft(getPersonalDetailsDraft(live));
+      }
+      setProfileLoading(false);
+    });
+    // Intentionally empty deps — run only on mount, regardless of prop changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // HR-created document requests drive the Submission Bin tab.
   const hrRequests = useMemo(
@@ -391,9 +444,12 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   }, [employeeDocuments]);
 
   const refreshEmployeeDocuments = async () => {
-    if (!currentUser?.employeeId && !currentUser?.email) return;
+    // Prefer the internal Supabase UUID (resolves the UUID FK correctly).
+    // Fall back to the text employeeId for demo accounts without a DB row.
+    const idToUse = currentUser.supabaseId ?? currentUser.employeeId;
+    if (!idToUse && !currentUser?.email) return;
     const rows = await listEmployeeDocumentsForEmployee(
-      currentUser.employeeId,
+      idToUse,
       currentUser.email,
     );
     setEmployeeDocuments(rows);
@@ -477,11 +533,28 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
     dispatchEmployeeDocumentsUpdated();
   };
 
-  const persistProfilePatch = (patch: Partial<Employee>) => {
+  const persistProfilePatch = async (patch: Partial<Employee>) => {
     const nowIso = new Date().toISOString();
+    // Optimistic local update.
     const nextProfile = { ...profile, ...patch, updatedAt: nowIso };
     setProfile(nextProfile);
-    updateEmployeePortalEmployee(profile.employeeId, patch);
+    setSaveError(null);
+    setSaveSuccess(null);
+
+    if (currentUser.supabaseId) {
+      // Write to Supabase.
+      const result = await patchPortalEmployee(currentUser.supabaseId, patch);
+      if (result.ok === false) {
+        setSaveError(result.error ?? 'Failed to save changes. Please try again.');
+        // Rollback optimistic update.
+        setProfile(profile);
+        return;
+      }
+      setSaveSuccess('Changes saved successfully.');
+    } else {
+      // Fallback: demo account — persist to localStorage only.
+      updateEmployeePortalEmployee(profile.employeeId, patch);
+    }
   };
 
   const startEditing = (section: Exclude<EditableSection, null>) => {
@@ -509,7 +582,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   };
 
   const saveContactInfo = () => {
-    persistProfilePatch({
+    void persistProfilePatch({
       email: contactDraft.email.trim(),
       mobileNumber: contactDraft.mobileNumber.trim(),
       homeAddress: contactDraft.homeAddress.trim(),
@@ -518,7 +591,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   };
 
   const saveEmergencyInfo = () => {
-    persistProfilePatch({
+    void persistProfilePatch({
       emergencyContactName: emergencyDraft.emergencyContactName.trim(),
       emergencyRelationship: emergencyDraft.emergencyRelationship.trim(),
       emergencyContactNumber: emergencyDraft.emergencyContactNumber.trim(),
@@ -527,7 +600,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   };
 
   const saveGovernmentInfo = () => {
-    persistProfilePatch({
+    void persistProfilePatch({
       sssNumber: governmentDraft.sssNumber.trim(),
       philhealthNumber: governmentDraft.philhealthNumber.trim(),
       pagibigNumber: governmentDraft.pagibigNumber.trim(),
@@ -543,7 +616,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
       ? (trimmedGender as Employee['gender'])
       : 'Prefer not to say';
 
-    persistProfilePatch({
+    void persistProfilePatch({
       fullName: personalDraft.fullName.trim(),
       dateOfBirth: personalDraft.dateOfBirth.trim(),
       placeOfBirth: personalDraft.placeOfBirth.trim(),
@@ -633,6 +706,32 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
       <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
         {activeTab === 'personal' && (
           <div className="space-y-5">
+            {/* Loading skeleton */}
+            {profileLoading && (
+              <div className="rounded-xl border border-slate-200 bg-white p-5 animate-pulse">
+                <div className="h-5 w-48 rounded bg-slate-200 mb-4" />
+                <div className="space-y-3">
+                  {[1, 2, 3, 4].map((n) => (
+                    <div key={n} className="grid grid-cols-[210px_1fr] gap-3">
+                      <div className="h-4 rounded bg-slate-200" />
+                      <div className="h-8 rounded bg-slate-100" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Save feedback banners */}
+            {saveError && (
+              <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+                {saveError}
+              </p>
+            )}
+            {saveSuccess && (
+              <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">
+                {saveSuccess}
+              </p>
+            )}
             <section className="rounded-xl border border-slate-200 bg-white p-5">
               <div className="mb-4 flex items-center justify-between">
                 <div>
@@ -717,6 +816,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
                   <FieldRow label="Gender" value={profile.gender || '--'} />
                   <FieldRow label="Address" value={profile.homeAddress} />
                   <FieldRow label="Position" value="Employee" />
+                  <FieldRow label="Department" value="Health Office" />
                 </>
               )}
             </section>
@@ -1057,7 +1157,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
             <section className="rounded-xl border border-slate-200 bg-white p-6">
               <h2 className="text-xl font-bold text-slate-900">Submission Bin</h2>
               <p className="mt-1 text-sm text-slate-500">
-                HR may request additional documents from time to time. Upload the requested documents by the due date.
+                HR, PM, or L&amp;D may request additional documents from time to time. Upload the requested documents by the due date.
               </p>
 
               {/* Pending Submissions */}
@@ -1078,6 +1178,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
                   const isUploading = uploadingId === request.id;
                   const days = daysUntil(request.due_date);
                   const overdue = days !== null && days < 0;
+                  const source = resolveSource(request.request_source);
 
                   return (
                     <article
@@ -1088,6 +1189,9 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <h4 className="font-semibold text-slate-900">{request.document_name}</h4>
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${SOURCE_BADGE_STYLES[source]}`}>
+                              {SOURCE_BADGE_LABEL[source]}
+                            </span>
                             <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
                               <Clock className="h-3 w-3" />
                               {request.status === 'Rejected' ? 'Needs Resubmission' : 'Pending'}
@@ -1147,6 +1251,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
                 )}
                 {submittedRequests.map((request) => {
                   const isUploading = uploadingId === request.id;
+                  const source = resolveSource(request.request_source);
 
                   return (
                     <article
@@ -1157,6 +1262,9 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <h4 className="font-semibold text-slate-900">{request.document_name}</h4>
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${SOURCE_BADGE_STYLES[source]}`}>
+                              {SOURCE_BADGE_LABEL[source]}
+                            </span>
                             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
                               <CheckCircle2 className="h-3 w-3" />
                               {request.status === 'Approved' ? 'Approved' : 'Submitted'}

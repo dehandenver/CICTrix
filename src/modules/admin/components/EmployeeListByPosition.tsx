@@ -11,18 +11,24 @@ interface Position {
 
 interface Employee {
   id: string;
-  employee_number: string;
-  first_name: string;
-  last_name: string;
-  position: string;
+  employee_id: string;
+  full_name: string;
+  current_position: string;
   department: string;
   status: string;
   email: string;
-  phone: string;
-  date_hired: string;
-  employment_status: string;
+  mobile_number: string;
+  hire_date: string;
   photo_url?: string;
 }
+
+/** Derive 2-letter initials from a full_name string. */
+const getInitials = (name: string): string => {
+  const parts = (name ?? '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '??';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
 
 interface Props {
   position: Position;
@@ -36,11 +42,11 @@ export default function EmployeeListByPosition({ position, onEmployeeClick, onBa
   const sortedEmployees = [...(position.employees || [])].sort((a, b) => {
     switch (sortBy) {
       case 'name':
-        return `${a.first_name} ${a.last_name}`.localeCompare(`${b.first_name} ${b.last_name}`);
+        return (a.full_name ?? '').localeCompare(b.full_name ?? '');
       case 'number':
-        return a.employee_number.localeCompare(b.employee_number);
+        return (a.employee_id ?? '').localeCompare(b.employee_id ?? '');
       case 'status':
-        return a.status.localeCompare(b.status);
+        return (a.status ?? '').localeCompare(b.status ?? '');
       default:
         return 0;
     }
@@ -139,26 +145,26 @@ export default function EmployeeListByPosition({ position, onEmployeeClick, onBa
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
                         <span className="text-white font-semibold text-sm">
-                          {employee.first_name[0]}{employee.last_name[0]}
+                          {getInitials(employee.full_name)}
                         </span>
                       </div>
                       <div>
                         <p className="font-medium text-gray-900">
-                          {employee.first_name} {employee.last_name}
+                          {employee.full_name}
                         </p>
                         <p className="text-sm text-gray-500">{employee.email}</p>
                       </div>
                     </div>
                   </td>
 
-                  {/* Employee Number */}
+                  {/* Employee ID */}
                   <td className="px-6 py-4 text-sm text-gray-900 font-mono">
-                    {employee.employee_number}
+                    {employee.employee_id}
                   </td>
 
                   {/* Position */}
                   <td className="px-6 py-4 text-sm text-gray-900">
-                    {employee.position}
+                    {employee.current_position}
                   </td>
 
                   {/* Department */}

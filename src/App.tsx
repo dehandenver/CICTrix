@@ -9,10 +9,8 @@ import { UnauthorizedPage } from './components/UnauthorizedPage';
 import { QualifiedApplicantsRSPPage } from './components/QualifiedApplicantsRSPPage';
 import { RaterManagementPage } from './components/RaterManagementPage';
 import SuccessionReadinessEngine from './components/SuccessionReadinessEngine';
-import {
-  findEmployeeByEmployeeId,
-  findEmployeePortalAccount,
-} from './lib/employeePortalData';
+import { findEmployeePortalAccount, findEmployeePortalAccountFromSupabase } from './lib/employeePortalData';
+import { fetchPortalEmployeeByNumber } from './lib/api/employeePortal';
 import { supabase } from './lib/supabase';
 import { syncThemeWithRoute } from './lib/theme';
 import { LNDDashboard } from './modules/admin/LNDDashboard';
@@ -137,16 +135,9 @@ const loadEmployeeSession = (): EmployeeSession | null => {
       return null;
     }
 
-    const account =
-      (parsed.loginUsername ? findEmployeePortalAccount(parsed.loginUsername) : null) ??
-      findEmployeeByEmployeeId(parsed.employeeId);
-
-    if (account) {
-      return parsed;
-    }
-
-    localStorage.removeItem(EMPLOYEE_SESSION_KEY);
-    return null;
+    // Since we rely on online checks, we will permit parsed for now
+    // and rely on guarded routes or deeper fetches to validate it further.
+    return parsed;
   } catch {
     localStorage.removeItem(EMPLOYEE_SESSION_KEY);
     return null;
@@ -206,6 +197,8 @@ function AppContent() {
   const [adminSession, setAdminSession] = useState<{ email: string; role: Role } | null>(() => loadAdminSession());
   const [interviewerSession, setInterviewerSession] = useState<InterviewerSession | null>(() => loadInterviewerSession());
   const [employeeSession, setEmployeeSession] = useState<EmployeeSession | null>(() => loadEmployeeSession());
+  // Full Employee object passed to EmployeePage — hydrated from Supabase at login.
+  const [currentEmployee, setCurrentEmployee] = useState<Employee | null>(null);
   const [activeModule, setActiveModule] = useState<AdminModule>('dashboard');
   const [revokedInterviewerDialogOpen, setRevokedInterviewerDialogOpen] = useState(false);
 
@@ -217,18 +210,38 @@ function AppContent() {
     return 'dashboard';
   };
 
-  const resolveEmployeeFromSession = (session: EmployeeSession | null) => {
-    if (!session) return null;
-
-    if (session.loginUsername) {
-      const byUsername = findEmployeePortalAccount(session.loginUsername);
-      if (byUsername) {
-        return byUsername.employee;
-      }
+  // Restore currentEmployee from session on page reload (supabaseId available → re-fetch).
+  useEffect(() => {
+    const session = loadEmployeeSession();
+    if (!session) return;
+    if (session.supabaseId) {
+      // We have the UUID — full fetch happens inside EmployeePage on mount.
+      // Build a minimal stub so the routes render immediately while EmployeePage
+      // re-fetches the live data.
+      setCurrentEmployee({
+        employeeId: session.employeeId,
+        fullName: session.fullName,
+        email: session.email,
+        supabaseId: session.supabaseId,
+        // Required by the Employee type — safe defaults.
+        dateOfBirth: '',
+        age: 0,
+        gender: 'Prefer not to say',
+        civilStatus: 'Single',
+        nationality: 'Filipino',
+        mobileNumber: '',
+        homeAddress: '',
+        emergencyContactName: '',
+        emergencyRelationship: '',
+        emergencyContactNumber: '',
+        sssNumber: '',
+        philhealthNumber: '',
+        pagibigNumber: '',
+        tinNumber: '',
+      });
     }
-
-    return findEmployeeByEmployeeId(session.employeeId)?.employee ?? null;
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (adminSession?.role !== 'super-admin' || !location.pathname.startsWith('/admin')) {
@@ -342,24 +355,71 @@ function AppContent() {
     localStorage.setItem(INTERVIEWER_SESSION_KEY, JSON.stringify(session));
   };
 
-  const handleEmployeeLogin = (username: string, password: string) => {
-    const account = findEmployeePortalAccount(username, password);
-    if (account) {
-      const session: EmployeeSession = {
-        employeeId: account.employee.employeeId,
-        email: account.employee.email,
-        fullName: account.employee.fullName,
-        loginUsername: account.username,
-      };
+  const handleEmployeeLogin = async (username: string, password: string) => {
+    const trimmedUsername = username.trim();
 
-      setEmployeeSession(session);
-      localStorage.setItem(EMPLOYEE_SESSION_KEY, JSON.stringify(session));
-      navigate('/employee/dashboard');
+    // Step 1: Verify credentials. Try Supabase first (employee_portal_accounts
+    // — the durable source written by RSP) so credentials work across
+    // browsers; fall back to localStorage for environments where the
+    // migration hasn't run yet.
+    let portalAccount = await findEmployeePortalAccountFromSupabase(trimmedUsername, password);
+    if (!portalAccount) {
+      portalAccount = findEmployeePortalAccount(trimmedUsername, password);
     }
+    if (!portalAccount) {
+      throw new Error('Invalid username or password.');
+    }
+
+    const employeeNumber = portalAccount.employee.employeeId;
+
+    // Step 2: Fetch the live Supabase employees row for richer profile data.
+    const dbResult = await fetchPortalEmployeeByNumber(employeeNumber);
+
+    let resolvedEmployee: Employee;
+    let supabaseId: string | undefined;
+
+    if (dbResult.ok) {
+      resolvedEmployee = dbResult.data;
+      supabaseId = resolvedEmployee.supabaseId;
+    } else {
+      // Demo or newly-onboarded employee — no employees row yet.
+      console.warn('[App] No Supabase employees row found for', employeeNumber, '— using portal account data.');
+      resolvedEmployee = {
+        ...portalAccount.employee,
+        dateOfBirth: portalAccount.employee.dateOfBirth ?? '',
+        age: portalAccount.employee.age ?? 0,
+        gender: portalAccount.employee.gender ?? 'Prefer not to say',
+        civilStatus: portalAccount.employee.civilStatus ?? 'Single',
+        nationality: portalAccount.employee.nationality ?? 'Filipino',
+        mobileNumber: portalAccount.employee.mobileNumber ?? '',
+        homeAddress: portalAccount.employee.homeAddress ?? '',
+        emergencyContactName: portalAccount.employee.emergencyContactName ?? '',
+        emergencyRelationship: portalAccount.employee.emergencyRelationship ?? '',
+        emergencyContactNumber: portalAccount.employee.emergencyContactNumber ?? '',
+        sssNumber: portalAccount.employee.sssNumber ?? '',
+        philhealthNumber: portalAccount.employee.philhealthNumber ?? '',
+        pagibigNumber: portalAccount.employee.pagibigNumber ?? '',
+        tinNumber: portalAccount.employee.tinNumber ?? '',
+      };
+    }
+
+    const session: EmployeeSession = {
+      employeeId: resolvedEmployee.employeeId,
+      email: resolvedEmployee.email,
+      fullName: resolvedEmployee.fullName,
+      loginUsername: trimmedUsername,
+      supabaseId,
+    };
+
+    setCurrentEmployee(resolvedEmployee);
+    setEmployeeSession(session);
+    localStorage.setItem(EMPLOYEE_SESSION_KEY, JSON.stringify(session));
+    navigate('/employee/dashboard');
   };
 
   const handleEmployeeLogout = () => {
     setEmployeeSession(null);
+    setCurrentEmployee(null);
     localStorage.removeItem(EMPLOYEE_SESSION_KEY);
     navigate('/employee/login');
   };
@@ -428,9 +488,9 @@ function AppContent() {
             path="/employee/dashboard"
             element={
               <EmployeeRoute session={employeeSession}>
-                {resolveEmployeeFromSession(employeeSession) ? (
+                {currentEmployee ? (
                   <EmployeePage
-                    currentUser={resolveEmployeeFromSession(employeeSession) as Employee}
+                    currentUser={currentEmployee}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -445,9 +505,9 @@ function AppContent() {
             path="/employee/profile"
             element={
               <EmployeeRoute session={employeeSession}>
-                {resolveEmployeeFromSession(employeeSession) ? (
+                {currentEmployee ? (
                   <EmployeePage
-                    currentUser={resolveEmployeeFromSession(employeeSession) as Employee}
+                    currentUser={currentEmployee}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -462,9 +522,9 @@ function AppContent() {
             path="/employee/documents/requirements"
             element={
               <EmployeeRoute session={employeeSession}>
-                {resolveEmployeeFromSession(employeeSession) ? (
+                {currentEmployee ? (
                   <EmployeePage
-                    currentUser={resolveEmployeeFromSession(employeeSession) as Employee}
+                    currentUser={currentEmployee}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -479,9 +539,9 @@ function AppContent() {
             path="/employee/documents/submission"
             element={
               <EmployeeRoute session={employeeSession}>
-                {resolveEmployeeFromSession(employeeSession) ? (
+                {currentEmployee ? (
                   <EmployeePage
-                    currentUser={resolveEmployeeFromSession(employeeSession) as Employee}
+                    currentUser={currentEmployee}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -496,9 +556,9 @@ function AppContent() {
             path="/employee/account"
             element={
               <EmployeeRoute session={employeeSession}>
-                {resolveEmployeeFromSession(employeeSession) ? (
+                {currentEmployee ? (
                   <EmployeePage
-                    currentUser={resolveEmployeeFromSession(employeeSession) as Employee}
+                    currentUser={currentEmployee}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -603,6 +663,22 @@ function AppContent() {
             element={
               <AdminRoute session={adminSession} allowedRoles={['lnd']}>
                 <EmployeeDirectory />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/rsp/succession"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <RSPDashboard />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/rsp/succession/*"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <RSPDashboard />
               </AdminRoute>
             }
           />

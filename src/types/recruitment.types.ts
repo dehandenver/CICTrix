@@ -8,8 +8,6 @@ export interface JobPosting {
   department: string;
   division?: string;
   positionType: PositionType;
-  salaryGrade?: string;
-  salaryRange?: { min: number; max: number };
   numberOfPositions: number;
   employmentStatus: EmploymentStatus;
   summary: string;
@@ -123,7 +121,6 @@ export interface NewlyHired {
   department: string;
   division?: string;
   employmentType: string;
-  salaryGrade?: string;
   dateHired: string;
   expectedStartDate: string;
   supervisor?: string;

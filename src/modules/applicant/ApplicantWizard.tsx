@@ -18,7 +18,7 @@ import {
     findEmployeePortalAccount,
     getEmployeePortalAccounts,
 } from '../../lib/employeePortalData';
-import { getEmployeeRecords, syncApplicantSubmissionToRecruitment } from '../../lib/recruitmentData';
+import { getEmployeeRecordsFromSupabase, syncApplicantSubmissionToRecruitment } from '../../lib/recruitmentData';
 import { ATTACHMENTS_BUCKET, supabase } from '../../lib/supabase';
 import '../../styles/wizard.css';
 import type { ApplicantFormData, UploadedFile, ValidationErrors } from '../../types/applicant.types';
@@ -28,6 +28,46 @@ import { AttachmentsUploadForm, REQUIRED_DOCUMENTS } from './AttachmentsUploadFo
 
 const ATTACHMENT_PREVIEW_CACHE_KEY = 'cictrix_attachment_previews';
 const APPOINTMENT_TYPE_STORAGE_KEY = 'cictrix_rsp_score_setup';
+
+// Per-tab wizard state. Survives a page refresh but clears when the tab is
+// closed — UI state only, not a data layer. `files` are not persisted (File
+// objects aren't serializable); after refresh the user re-uploads on step 2.
+const WIZARD_STATE_KEY = 'cictrix_wizard_state';
+
+interface PersistedWizardState {
+  entryMode?: 'landing' | 'wizard';
+  applicationType?: 'job' | 'promotion';
+  currentStep?: 1 | 2 | 3;
+  formData?: ApplicantFormData;
+  authenticatedEmployeeAccount?: EmployeePortalAccount | null;
+}
+
+const loadWizardState = (): PersistedWizardState => {
+  try {
+    const raw = sessionStorage.getItem(WIZARD_STATE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? (parsed as PersistedWizardState) : {};
+  } catch {
+    return {};
+  }
+};
+
+const saveWizardState = (state: PersistedWizardState): void => {
+  try {
+    sessionStorage.setItem(WIZARD_STATE_KEY, JSON.stringify(state));
+  } catch {
+    // sessionStorage may be unavailable (private mode); not fatal.
+  }
+};
+
+const clearWizardState = (): void => {
+  try {
+    sessionStorage.removeItem(WIZARD_STATE_KEY);
+  } catch {
+    // ignore
+  }
+};
 const MAX_PREVIEWABLE_FILE_BYTES = 10 * 1024 * 1024;
 
 type CachedPreviewFile = {
@@ -86,10 +126,16 @@ const saveApplicantAppointmentType = (applicantId: string, applicationType: 'job
 };
 
 export const ApplicantWizard: React.FC = () => {
-  const [entryMode, setEntryMode] = useState<'landing' | 'wizard'>('landing');
-  const [applicationType, setApplicationType] = useState<'job' | 'promotion'>('job');
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
-  const [formData, setFormData] = useState<ApplicantFormData>(INITIAL_FORM_DATA);
+  // Hydrate from sessionStorage so a refresh keeps the user on the same step
+  // with the same form values, instead of bouncing back to the landing page.
+  const persisted = (() => {
+    try { return loadWizardState(); } catch { return {} as PersistedWizardState; }
+  })();
+
+  const [entryMode, setEntryMode] = useState<'landing' | 'wizard'>(persisted.entryMode ?? 'landing');
+  const [applicationType, setApplicationType] = useState<'job' | 'promotion'>(persisted.applicationType ?? 'job');
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(persisted.currentStep ?? 1);
+  const [formData, setFormData] = useState<ApplicantFormData>(persisted.formData ?? INITIAL_FORM_DATA);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [fileError, setFileError] = useState('');
@@ -102,8 +148,21 @@ export const ApplicantWizard: React.FC = () => {
   const [employeePassword, setEmployeePassword] = useState('');
   const [showEmployeePassword, setShowEmployeePassword] = useState(false);
   const [employeeAuthError, setEmployeeAuthError] = useState('');
-  const [authenticatedEmployeeAccount, setAuthenticatedEmployeeAccount] = useState<EmployeePortalAccount | null>(null);
+  const [authenticatedEmployeeAccount, setAuthenticatedEmployeeAccount] = useState<EmployeePortalAccount | null>(
+    persisted.authenticatedEmployeeAccount ?? null,
+  );
   const isGeneratingItemNumberRef = useRef(false);
+
+  // Persist the wizard state whenever the user advances or edits.
+  useEffect(() => {
+    saveWizardState({
+      entryMode,
+      applicationType,
+      currentStep,
+      formData,
+      authenticatedEmployeeAccount,
+    });
+  }, [entryMode, applicationType, currentStep, formData, authenticatedEmployeeAccount]);
 
   const handleFormChange = (field: keyof ApplicantFormData, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -329,6 +388,9 @@ const handleNextToReview = () => {
     setEmployeePassword('');
     setShowEmployeePassword(false);
     setEmployeeAuthError('');
+    // Wipe the per-tab wizard cache so a brand-new application starts fresh
+    // (refresh after submit should not resume the just-submitted form).
+    clearWizardState();
   };
 
   const handleSubmit = async () => {
@@ -384,7 +446,7 @@ const handleNextToReview = () => {
     setEmployeeAuthError('');
   };
 
-  const handleEmployeeAuthSubmit = (event: React.FormEvent) => {
+  const handleEmployeeAuthSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
     const enteredIdentifier = employeeNumber.trim();
@@ -412,7 +474,10 @@ const handleNextToReview = () => {
       return;
     }
 
-    const employeeRecord = getEmployeeRecords().find(
+    // Look up the employee in Supabase (source of truth) to get the most
+    // up-to-date position/department, falling back to the portal account's
+    // cached fields if no row exists yet.
+    const employeeRecord = (await getEmployeeRecordsFromSupabase()).find(
       (record) => String(record.employeeId ?? '').trim() === String(matchedAccount?.employee?.employeeId ?? '').trim()
     );
     const [firstName, ...remainingParts] = String(matchedAccount?.employee?.fullName ?? '').trim().split(/\s+/);

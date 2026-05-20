@@ -6,10 +6,11 @@ Reference for local development access to frontend pages and backend API endpoin
 
 | Service / Portal | Live URL | Description / Access |
 |---|---|---|
-| **Applicant Portal (Home)** | [https://cic-trix.vercel.app/](https://cic-trix.vercel.app/) | Public access |
-| **Admin Portal** | [https://cic-trix.vercel.app/admin/login](https://cic-trix.vercel.app/admin/login) | Super Admin, RSP, LND, PM |
-| **Employee Portal** | [https://cic-trix.vercel.app/employee/login](https://cic-trix.vercel.app/employee/login) | Employee credentials |
-| **Interviewer Portal** | [https://cic-trix.vercel.app/interviewer/login](https://cic-trix.vercel.app/interviewer/login) | Set up via Admin portal |
+| **1. Applicant Portal (Home)** | [https://cic-trix.vercel.app/](https://cic-trix.vercel.app/) | Public — submit a new application |
+| **2. Interviewer Portal** | [https://cic-trix.vercel.app/interviewer/login](https://cic-trix.vercel.app/interviewer/login) | Set up via Admin portal |
+| **3. Employee Portal** | [https://cic-trix.vercel.app/employee/login](https://cic-trix.vercel.app/employee/login) | Employee credentials |
+| **4. Admin Portal** | [https://cic-trix.vercel.app/admin/login](https://cic-trix.vercel.app/admin/login) | Super Admin, RSP, LND, PM |
+| **5. Application Status Tracker** | [https://cic-trix.vercel.app/track](https://cic-trix.vercel.app/track) | Public — look up application status by applicant ID |
 | **Backend API** | [https://cic-trix.vercel.app/api](https://cic-trix.vercel.app/api) | Production API endpoints |
 | **API Docs (Swagger)** | [https://cic-trix.vercel.app/api/docs](https://cic-trix.vercel.app/api/docs) | Production API Documentation |
 
@@ -22,9 +23,14 @@ Reference for local development access to frontend pages and backend API endpoin
 
 ## Public Access
 
-### Applicant Portal
+### Applicant Portal (Module 1)
 - URL: [http://localhost:5173/](http://localhost:5173/)
 - Description: Applicant registration and assessment workflow
+- Access: Public (no login required)
+
+### Application Status Tracker (Module 5)
+- URL: [http://localhost:5173/track](http://localhost:5173/track)
+- Description: Look up an existing application's progress by applicant ID / item number
 - Access: Public (no login required)
 
 ## Employee Access
@@ -152,10 +158,11 @@ npm run dev
 
 | Module | Startup Command | Then Open |
 |---|---|---|
-| **Applicant** | `npm run dev` | [http://localhost:5173/applicant/login](http://localhost:5173/applicant/login) |
-| **Employee** | `npm run dev` | [http://localhost:5173/employee/login](http://localhost:5173/employee/login) |
-| **Interviewer / Rater** | `npm run dev` | [http://localhost:5173/interviewer/login](http://localhost:5173/interviewer/login) |
-| **Admin (All Roles)** | `npm run dev` | [http://localhost:5173/admin/login](http://localhost:5173/admin/login) |
+| **1. Applicant** | `npm run dev` | [http://localhost:5173/](http://localhost:5173/) |
+| **2. Interviewer / Rater** | `npm run dev` | [http://localhost:5173/interviewer/login](http://localhost:5173/interviewer/login) |
+| **3. Employee** | `npm run dev` | [http://localhost:5173/employee/login](http://localhost:5173/employee/login) |
+| **4. Admin (All Roles)** | `npm run dev` | [http://localhost:5173/admin/login](http://localhost:5173/admin/login) |
+| **5. Application Status Tracker** | `npm run dev` | [http://localhost:5173/track](http://localhost:5173/track) |
 | **API Documentation** | `cd backend && python -m uvicorn main:app --reload --port 8000` | [http://localhost:8000/docs](http://localhost:8000/docs) |
 
 ### Quick Access Shortcuts (Copy & Paste Ready)
@@ -170,10 +177,11 @@ npm run dev
 ```
 
 **Then navigate to:**
-- Applicant Module: `http://localhost:5173/applicant/login`
-- Employee Dashboard: `http://localhost:5173/employee/login`
-- Interviewer Dashboard: `http://localhost:5173/interviewer/login`
-- Admin Dashboard: `http://localhost:5173/admin/login`
+- Applicant Module (1): `http://localhost:5173/`
+- Interviewer Dashboard (2): `http://localhost:5173/interviewer/login`
+- Employee Dashboard (3): `http://localhost:5173/employee/login`
+- Admin Dashboard (4): `http://localhost:5173/admin/login`
+- Application Status Tracker (5): `http://localhost:5173/track`
 
 ### Optional: Auto-start on Windows login
 
