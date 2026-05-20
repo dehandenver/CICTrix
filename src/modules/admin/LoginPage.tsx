@@ -3,8 +3,6 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { scheduleTransientUiReset } from '../../utils/uiReset';
-import iloiloSeal from '../../assets/iloilo-seal.jpg';
-import abyanLogo from '../../assets/abyan-logo.png';
 
 type Role = 'super-admin' | 'rsp' | 'lnd' | 'pm';
 
@@ -168,53 +166,74 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
           {/* Top-left wordmark */}
           <div className="relative z-10 flex w-full flex-col p-12">
             <div className="flex items-center gap-3">
-              <img
-                src={abyanLogo}
-                alt="ABYAN Logo"
-                className="h-10 w-auto object-contain"
-                style={{ filter: 'brightness(0) invert(1) opacity(0.92)' }}
-              />
-              <div className="flex flex-col leading-tight">
-                <span className="text-base font-bold tracking-tight" style={{ color: 'rgba(255,255,255,0.96)' }}>
-                  ABYAN
-                </span>
-                <span className="text-[11px] font-medium" style={{ color: 'rgba(255,255,255,0.65)' }}>
-                  Human Resource Information System
-                </span>
+              <div
+                className="flex h-10 w-10 items-center justify-center rounded-xl"
+                style={{
+                  backgroundColor: 'rgba(255,255,255,0.15)',
+                  boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.25)',
+                  backdropFilter: 'blur(8px)',
+                }}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#FFFFFF"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-5 w-5"
+                  aria-hidden="true"
+                >
+                  <path d="M3 12l9-9 9 9" />
+                  <path d="M5 10v10h14V10" />
+                  <path d="M10 20v-6h4v6" />
+                </svg>
               </div>
+              <span
+                className="text-sm font-semibold tracking-wide"
+                style={{ color: 'rgba(255,255,255,0.92)' }}
+              >
+                CICTrix
+              </span>
             </div>
 
             {/* Centered hero block */}
             <div className="m-auto w-full max-w-md text-center">
               <div
-                className="mx-auto mb-8 flex h-28 w-28 items-center justify-center rounded-full overflow-hidden"
+                className="mx-auto mb-8 flex h-20 w-20 items-center justify-center rounded-3xl"
                 style={{
                   backgroundColor: 'rgba(255,255,255,0.16)',
                   boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.28)',
                   backdropFilter: 'blur(8px)',
                 }}
               >
-                <img src={iloiloSeal} alt="Iloilo City Seal" className="h-28 w-28 object-contain" />
+                <Lock className="h-9 w-9" strokeWidth={1.6} style={{ color: '#FFFFFF' }} />
               </div>
               <h1
-                className="text-2xl font-bold tracking-tight"
-                style={{ lineHeight: 1.2, color: '#FFFFFF' }}
+                className="text-4xl font-bold tracking-tight"
+                style={{ lineHeight: 1.1, color: '#FFFFFF' }}
               >
-                Office of the City Human Resource Management Officer-Iloilo
+                HRIS Portal
               </h1>
               <p
-                className="mt-3 text-sm font-medium"
+                className="mt-3 text-base font-medium"
                 style={{ color: 'rgba(255,255,255,0.82)' }}
               >
                 Human Resource Information System
               </p>
-              <ul className="mt-10 space-y-3 text-center text-sm">
+              <ul className="mt-10 space-y-3 text-left text-sm">
                 {['Recruitment & Selection', 'Learning & Development', 'Performance Management'].map(
                   (item) => (
                     <li
                       key={item}
+                      className="flex items-center gap-3"
                       style={{ color: 'rgba(255,255,255,0.88)' }}
                     >
+                      <span
+                        className="h-1.5 w-1.5 rounded-full"
+                        style={{ backgroundColor: 'rgba(255,255,255,0.75)' }}
+                        aria-hidden="true"
+                      />
                       {item}
                     </li>
                   ),
@@ -226,7 +245,7 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
               className="text-xs font-medium"
               style={{ color: 'rgba(255,255,255,0.55)' }}
             >
-              &copy; {new Date().getFullYear()} ABYAN. All rights reserved.
+              &copy; {new Date().getFullYear()} CICTrix Resorts. All rights reserved.
             </p>
           </div>
         </aside>
@@ -236,11 +255,10 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
           <div className="w-full max-w-md">
             {/* Mobile-only mini brand */}
             <div className="mb-8 flex items-center gap-2 lg:hidden">
-              <img
-                src={abyanLogo}
-                alt="ABYAN Logo"
-                className="h-9 w-auto object-contain"
-              />
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#363EE8]">
+                <Lock className="h-4 w-4 text-white" strokeWidth={2} />
+              </div>
+              <span className="text-sm font-semibold text-slate-900">CICTrix HRIS</span>
             </div>
 
             <div className="mb-8">

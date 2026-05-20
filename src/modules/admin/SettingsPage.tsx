@@ -22,13 +22,6 @@ interface UserProfile {
 }
 
 export const SettingsPage = () => {
-  const sessionRaw = localStorage.getItem('cictrix_admin_session');
-  let session = null;
-  try {
-    session = sessionRaw ? JSON.parse(sessionRaw) : null;
-  } catch {}
-  const userRole = session?.role || 'rsp';
-
   const [activeTab, setActiveTab] = useState('profile');
   const [profile, setProfile] = useState<UserProfile>({
     first_name: 'Juan',
@@ -184,7 +177,7 @@ export const SettingsPage = () => {
 
   return (
     <div className="admin-layout">
-      <Sidebar activeModule="Settings" userRole={userRole} />
+      <Sidebar activeModule="Settings" userRole="rsp" />
       <main className="admin-content">
         <div className="admin-header">
           <h1>Settings</h1>

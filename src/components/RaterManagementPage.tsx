@@ -16,8 +16,6 @@ import { getAuthoritativeJobPostings } from '../lib/recruitmentData';
 import { isMockModeEnabled, supabase } from '../lib/supabase';
 import { RaterManagementNavigationGuide } from './RaterManagementNavigationGuide';
 import { Sidebar } from './Sidebar';
-import { TopNav } from './TopNav';
-
 
 type RaterStatus = 'Active' | 'Inactive';
 type ClientSource = 'preferred' | 'fallback';
@@ -643,11 +641,10 @@ export const RaterManagementPage = () => {
   };
 
   return (
-    <div className="bg-slate-50 min-h-screen font-sans">
+    <div className="admin-layout">
       <Sidebar activeModule="RSP" userRole="rsp" />
-      <main className="ml-64 min-h-screen overflow-y-auto">
-        <TopNav />
-        <div className="p-8">
+      <main className="admin-content bg-gray-50">
+        <div className="min-h-screen bg-gray-50 p-6 md:p-8">
           <div className="mb-6 flex items-center justify-between gap-4 text-sm text-gray-500">
             <div className="flex space-x-2">
               <span className="cursor-pointer text-blue-600">RSP</span>

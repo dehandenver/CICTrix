@@ -29,12 +29,12 @@ import {
     X,
 } from 'lucide-react';
 import { QualifiedApplicantsSection } from '../../components/QualifiedApplicantsSection';
+import { SuccessionPlanningPage } from '../../components/SuccessionPlanningPage';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { AdminHeader } from '../../components/AdminHeader';
 import { Button } from '../../components/Button';
 import { Sidebar } from '../../components/Sidebar';
-import { TopNav } from '../../components/TopNav';
-
 import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import {
     createPassword,
@@ -48,9 +48,9 @@ import {
     ensureRecruitmentSeedData,
     getAuthoritativeJobPostings,
     getDeletedJobReports,
-    getEmployeeRecords,
+    getEmployeeRecordsFromSupabase,
     getJobPostingsFromSupabase,
-    getNewlyHired,
+    getNewlyHiredFromSupabase,
     getApplicants as getRecruitmentApplicants,
     saveDeletedJobReports,
     saveJobPostings,
@@ -59,6 +59,7 @@ import {
 } from '../../lib/recruitmentData';
 import { runSingleFlight, invalidateCacheKey } from '../../lib/singleFlight';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
+import { hireApplicant } from '../../lib/api/employeesApi';
 import {
     EMPLOYEE_DOCUMENTS_UPDATED_EVENT,
     downloadEmployeeDocument,
@@ -69,10 +70,10 @@ import {
 import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
 import { sendEmail } from '../../lib/email';
 import '../../styles/admin.css';
-import type { JobPosting, NewlyHired } from '../../types/recruitment.types';
+import type { EmployeeRecord, JobPosting, NewlyHired } from '../../types/recruitment.types';
 
 type JobStatus = 'Open' | 'Reviewing' | 'Closed';
-type Section = 'dashboard' | 'jobs' | 'qualified' | 'new-hired' | 'raters' | 'accounts' | 'reports' | 'settings';
+type Section = 'dashboard' | 'jobs' | 'qualified' | 'new-hired' | 'raters' | 'accounts' | 'succession' | 'reports' | 'settings';
 type BulkRecipientMode = 'all' | 'department' | 'selected';
 type EmployeeDocumentTemplateId = (typeof BULK_REQUEST_TEMPLATES)[number]['id'];
 type EmployeeDirectoryCardStatus = 'Active' | 'Inactive' | 'Mixed';
@@ -261,6 +262,7 @@ const resolveSection = (pathname: string, search: string): Section => {
   if (pathname === '/admin/rsp/new-hired') return 'new-hired';
   if (pathname === '/admin/rsp/raters' || pathname === '/admin/raters') return 'raters';
   if (pathname === '/admin/rsp/accounts') return 'accounts';
+  if (pathname === '/admin/rsp/succession') return 'succession';
   if (pathname === '/admin/rsp/reports') return 'reports';
   if (pathname === '/admin/rsp/settings' || pathname === '/admin/settings') return 'settings';
 
@@ -305,8 +307,6 @@ const persistDashboardJobsToRecruitment = (rows: JobRecord[]) => {
     department: row.department || 'Operations',
     division: 'Operations',
     positionType: 'Civil Service',
-    salaryGrade: 'SG-10',
-    salaryRange: { min: 20000, max: 30000 },
     numberOfPositions: 1,
     employmentStatus: 'Permanent',
     summary: `${row.title} recruitment posting.`,
@@ -465,8 +465,6 @@ const verifyRaterAccessState = async (client: any, email: string, expectedIsActi
     throw new Error('Rater access update did not persist for all matching rows.');
   }
 };
-
-const RATER_ASSIGNMENTS_KEY = 'cictrix_rater_assigned_positions';
 
 const normalizeEmailKey = (email: string) => email.trim().toLowerCase();
 
@@ -691,36 +689,13 @@ const normalizeWrittenScore = (value: number): number => {
   return Number((value * 0.3).toFixed(2));
 };
 
-const loadRaterAssignments = (): Record<string, string[]> => {
-  try {
-    const raw = localStorage.getItem(RATER_ASSIGNMENTS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return {};
-    return parsed as Record<string, string[]>;
-  } catch {
-    return {};
-  }
-};
-
-const saveRaterAssignments = (assignments: Record<string, string[]>) => {
-  try {
-    localStorage.setItem(RATER_ASSIGNMENTS_KEY, JSON.stringify(assignments));
-  } catch {
-  }
-};
+// Rater assigned_positions live exclusively in Supabase (raters.assigned_positions).
+// No local cache — every read goes through the DB.
 
 export const RSPDashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const section = resolveSection(location.pathname, location.search);
-
-  const sessionRaw = localStorage.getItem('cictrix_admin_session');
-  let session = null;
-  try {
-    session = sessionRaw ? JSON.parse(sessionRaw) : null;
-  } catch {}
-  const isSuperAdmin = session?.role === 'super-admin';
 
   const [jobs, setJobs] = useState<JobRecord[]>([]);
   const [applicants, setApplicants] = useState<ApplicantRecord[]>([]);
@@ -788,9 +763,13 @@ export const RSPDashboard = () => {
           ?? '',
       ).trim();
       const empEmail = String((selectedEmployeeDetails as any).email ?? '').trim().toLowerCase();
-      const firstName = String((selectedEmployeeDetails as any).first_name ?? '').trim();
-      const lastName = String((selectedEmployeeDetails as any).last_name ?? '').trim();
-      const fullNameNormalized = `${firstName} ${lastName}`.trim().toLowerCase();
+      const fullName = ('name' in selectedEmployeeDetails)
+        ? String((selectedEmployeeDetails as any).name ?? '').trim()
+        : `${(selectedEmployeeDetails as any).first_name ?? ''} ${(selectedEmployeeDetails as any).last_name ?? ''}`.trim();
+      const nameParts = fullName.split(' ');
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+      const fullNameNormalized = fullName.toLowerCase();
 
       const accounts = getEmployeePortalAccounts();
 
@@ -945,7 +924,6 @@ export const RSPDashboard = () => {
     item_number: '',
     department: '',
     status: 'Open' as JobStatus,
-    salary_grade: '',
     position_level: '',
     slots: '1',
     employment_type: 'Full-time',
@@ -988,8 +966,10 @@ export const RSPDashboard = () => {
       ensureRecruitmentSeedData();
       setDeletedJobReports(getDeletedJobReports());
 
-      const localAssignments = loadRaterAssignments();
-      setRaterAssignedPositionsByEmail(localAssignments);
+      // Assignments load from Supabase below (raters.assigned_positions).
+      // No localStorage seed — start empty so a stale browser cache can't
+      // leak into the UI before the DB fetch resolves.
+      setRaterAssignedPositionsByEmail({});
 
       // CRITICAL: Always fetch applicants from Supabase (as per user requirement: "all datas must be stored in supabase")
       const primaryClient = supabase; // Always use Supabase for applicants
@@ -1182,23 +1162,18 @@ export const RSPDashboard = () => {
 
       if (ratersRes.status === 'fulfilled' && !ratersRes.value.error && Array.isArray(ratersRes.value.data)) {
         const ratersSource = primaryRaters.length > 0 ? primaryRaters : ratersRes.value.data;
-        const mergedAssignments = { ...localAssignments };
+        const assignmentsFromDb: Record<string, string[]> = {};
 
         ratersSource.forEach((item: any) => {
           const emailKey = normalizeEmailKey(String(item?.email ?? ''));
           if (!emailKey) return;
 
-          const fromRow = Array.isArray(item?.assigned_positions)
+          assignmentsFromDb[emailKey] = Array.isArray(item?.assigned_positions)
             ? item.assigned_positions.filter((value: any) => typeof value === 'string')
-            : null;
-
-          if (fromRow && fromRow.length > 0) {
-            mergedAssignments[emailKey] = fromRow;
-          }
+            : [];
         });
 
-        setRaterAssignedPositionsByEmail(mergedAssignments);
-        saveRaterAssignments(mergedAssignments);
+        setRaterAssignedPositionsByEmail(assignmentsFromDb);
 
         const normalized = ratersSource.map((item: any, index: number) => ({
           id: Number(item?.id ?? index + 1),
@@ -1457,12 +1432,44 @@ export const RSPDashboard = () => {
     return scored.reduce((sum, applicant) => sum + applicant.total_score, 0) / scored.length;
   }, [qualifiedApplicants]);
 
+  // Loaded from Supabase newly_hired table; refreshed when saveNewlyHired
+  // dispatches 'cictrix:newly-hired-updated'. Used by both
+  // rankingPositionCards (card counts) and activeRankingRows (list) to
+  // exclude applicants the admin has already confirmed for hire.
+  const [newlyHiredRows, setNewlyHiredRows] = useState<NewlyHired[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      const rows = await getNewlyHiredFromSupabase();
+      if (!cancelled) setNewlyHiredRows(rows);
+    };
+    void refresh();
+    window.addEventListener('cictrix:newly-hired-updated', refresh as EventListener);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('cictrix:newly-hired-updated', refresh as EventListener);
+    };
+  }, [section]);
+
+  const hiredApplicantIds = useMemo(
+    () =>
+      new Set(
+        newlyHiredRows
+          .map((row) => String(row.applicantId ?? '').trim())
+          .filter(Boolean),
+      ),
+    [newlyHiredRows],
+  );
+
   const rankingPositionCards = useMemo<RankingPositionCard[]>(() => {
     const reportEligibleJobs = jobs.filter((job) => job.status !== 'Closed');
     const reportEligibleTitleSet = new Set(reportEligibleJobs.map((job) => job.title));
     const qualifiedByPosition = new Map<string, number>();
 
     applicants.forEach((applicant) => {
+      // Already-hired applicants must not inflate the qualified-count badge
+      // on position cards. Source of truth is Supabase newly_hired.
+      if (hiredApplicantIds.has(String(applicant.id))) return;
       if (!savedScoredApplicantIds.has(applicant.id)) return;
       const normalizedStatus = (applicant.status || '').toLowerCase();
       // Negative outcomes always exclude.
@@ -1470,7 +1477,9 @@ export const RSPDashboard = () => {
         normalizedStatus.includes('disqual') ||
         normalizedStatus.includes('not qualified') ||
         normalizedStatus.includes('reject') ||
-        normalizedStatus.includes('withdrawn');
+        normalizedStatus.includes('withdrawn') ||
+        normalizedStatus.includes('hired') ||
+        normalizedStatus.includes('deployed');
       if (isExplicitlyExcluded) return;
       // RSP-saved scores OR an explicit qualified status OR completed evaluation
       // all count as eligible for ranking. The first condition is the new path so
@@ -1501,7 +1510,7 @@ export const RSPDashboard = () => {
     });
 
     return Array.from(unique.values()).sort((a, b) => b.qualifiedCount - a.qualifiedCount || a.position.localeCompare(b.position));
-  }, [applicants, completedEvaluationIds, jobs, savedScoredApplicantIds]);
+  }, [applicants, completedEvaluationIds, jobs, savedScoredApplicantIds, hiredApplicantIds]);
 
   const activeRankingCard = useMemo(
     () => rankingPositionCards.find((card) => card.position === activeRankingPosition) || null,
@@ -1515,6 +1524,7 @@ export const RSPDashboard = () => {
     if (!eligibleTitles.has(activeRankingPosition)) return [];
 
     const candidates = applicants.filter((applicant) => {
+      if (hiredApplicantIds.has(String(applicant.id))) return false;
       if (!savedScoredApplicantIds.has(applicant.id)) return false;
       if (applicant.position !== activeRankingPosition) return false;
       const normalizedStatus = (applicant.status || '').toLowerCase();
@@ -1524,7 +1534,9 @@ export const RSPDashboard = () => {
         normalizedStatus.includes('disqual') ||
         normalizedStatus.includes('not qualified') ||
         normalizedStatus.includes('reject') ||
-        normalizedStatus.includes('withdrawn');
+        normalizedStatus.includes('withdrawn') ||
+        normalizedStatus.includes('hired') ||
+        normalizedStatus.includes('deployed');
       if (isExplicitlyExcluded) return false;
       return (
         savedScoredApplicantIds.has(applicant.id) ||
@@ -1572,7 +1584,7 @@ export const RSPDashboard = () => {
       .sort((a, b) => b.total - a.total || a.fullName.localeCompare(b.fullName));
 
     return rows;
-  }, [activeRankingPosition, applicants, completedEvaluationIds, activeRankingCard, jobs, savedScoredApplicantIds]);
+  }, [activeRankingPosition, applicants, completedEvaluationIds, activeRankingCard, jobs, savedScoredApplicantIds, hiredApplicantIds]);
 
   useEffect(() => {
     const syncSavedScores = () => setSavedScoredApplicantIds(getSavedScoredApplicantIdSet());
@@ -1811,7 +1823,6 @@ export const RSPDashboard = () => {
     }
   }, [activeAssessmentPosition, assessmentPositionCards]);
 
-  const newlyHiredRows = useMemo(() => getNewlyHired(), [section, applicants]);
 
   const newlyHiredApplicants = useMemo(() => {
     const applicantsById = new Map(applicants.map((applicant) => [String(applicant.id), applicant] as const));
@@ -1903,12 +1914,25 @@ export const RSPDashboard = () => {
     [applicants, credentialedApplicantIds, employeeNumberFromNewlyHired]
   );
 
+  // Loaded from Supabase employees table on mount. Used as the fallback
+  // source for the employee directory when no portal account is found.
+  const [supabaseEmployeeRecords, setSupabaseEmployeeRecords] = useState<EmployeeRecord[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const rows = await getEmployeeRecordsFromSupabase();
+      if (!cancelled) setSupabaseEmployeeRecords(rows);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const fallbackEmployeeDirectorySource = useMemo(() => {
-    const employeeRecords = getEmployeeRecords();
     const seenEmployeeIds = new Set<string>();
-    
-    // Add employees from recruitment records
-    const records = employeeRecords.reduce<ApplicantRecord[]>((acc, record) => {
+
+    // Add employees from the Supabase employees table.
+    const records = supabaseEmployeeRecords.reduce<ApplicantRecord[]>((acc, record) => {
         const employeeId = String(record.employeeId ?? '').trim();
         if (!employeeId) return acc;
 
@@ -1931,7 +1955,7 @@ export const RSPDashboard = () => {
         return acc;
       }, []);
 
-    // Also add any portal accounts that aren't in recruitment records
+    // Also add any portal accounts that aren't in the employees table.
     portalAccounts.forEach((account) => {
       const employeeId = String(account.employee.employeeId ?? '').trim();
       if (!employeeId || seenEmployeeIds.has(employeeId)) return;
@@ -1951,7 +1975,7 @@ export const RSPDashboard = () => {
     });
 
     return records;
-  }, [portalAccountByEmployeeId, portalAccounts]);
+  }, [portalAccountByEmployeeId, portalAccounts, supabaseEmployeeRecords]);
 
   const directoryEmployeesSource = useMemo(
     () => {
@@ -2060,7 +2084,7 @@ export const RSPDashboard = () => {
 
   const employeeDirectoryOfficeOptions = useMemo(
     () =>
-      Array.from(new Set(directoryEmployeesSource.map((employee) => employee.office || 'Unassigned Office'))).sort((a, b) =>
+      Array.from(new Set(directoryEmployeesSource.map((employee) => (employee as any).department || 'Unassigned Office'))).sort((a, b) =>
         a.localeCompare(b)
       ),
     [directoryEmployeesSource]
@@ -2195,7 +2219,7 @@ export const RSPDashboard = () => {
 
   useEffect(() => {
     if (!selectedEmployeeDetails) return;
-    const currentDepartment = selectedEmployeeDetails.office || 'IT Department';
+    const currentDepartment = (selectedEmployeeDetails as any).department || 'IT Department';
     const currentPosition = selectedEmployeeDetails.position || '';
     setPositionChangeForm((prev) => ({
       ...prev,
@@ -2210,7 +2234,7 @@ export const RSPDashboard = () => {
     return directoryEmployeesSource.map((employee) => ({
       id: employee.id,
       name: employee.full_name,
-      department: employee.office || 'Unassigned Office',
+      department: (employee as any).department || 'Unassigned Office',
     }));
   }, [directoryEmployeesSource]);
 
@@ -2291,6 +2315,7 @@ export const RSPDashboard = () => {
     if (target === 'new-hired') navigate('/admin/rsp/new-hired');
     if (target === 'raters') navigate('/admin/rsp/raters');
     if (target === 'accounts') navigate('/admin/rsp/accounts');
+    if (target === 'succession') navigate('/admin/rsp/succession');
     if (target === 'reports') navigate('/admin/rsp/reports');
     if (target === 'settings') navigate('/admin/rsp/settings');
   };
@@ -2321,7 +2346,6 @@ export const RSPDashboard = () => {
       item_number: '',
       department: '',
       status: 'Open',
-      salary_grade: '',
       position_level: '',
       slots: '1',
       employment_type: 'Full-time',
@@ -2344,8 +2368,6 @@ export const RSPDashboard = () => {
       department: row.department || 'Operations',
       division: 'Operations',
       positionType: 'Civil Service',
-      salaryGrade: 'SG-10',
-      salaryRange: { min: 20000, max: 30000 },
       numberOfPositions: 1,
       employmentStatus: 'Permanent',
       summary: `${row.title} recruitment posting.`,
@@ -2390,8 +2412,6 @@ export const RSPDashboard = () => {
       department: row.department || 'Operations',
       division: 'Operations',
       positionType: 'Civil Service',
-      salaryGrade: 'SG-10',
-      salaryRange: { min: 20000, max: 30000 },
       numberOfPositions: 1,
       employmentStatus: 'Permanent',
       summary: `${row.title} recruitment posting.`,
@@ -2427,12 +2447,13 @@ export const RSPDashboard = () => {
     if (!newRater.name || !newRater.email || !newRater.department) return;
 
     const assignmentKey = normalizeEmailKey(newRater.email);
-    const nextAssignments = {
-      ...raterAssignedPositionsByEmail,
-      [assignmentKey]: [...raterAccessForm.assignedPositions],
-    };
-    setRaterAssignedPositionsByEmail(nextAssignments);
-    saveRaterAssignments(nextAssignments);
+    const nextPositions = [...raterAccessForm.assignedPositions];
+
+    // Optimistic UI update — actual persistence happens via Supabase below.
+    setRaterAssignedPositionsByEmail((prev) => ({
+      ...prev,
+      [assignmentKey]: nextPositions,
+    }));
 
     setRaters((prev) => prev.map((rater) =>
       normalizeEmailKey(rater.email) === assignmentKey
@@ -2442,9 +2463,17 @@ export const RSPDashboard = () => {
 
     try {
       const client = getAccessClient();
-      await runRaterEmailUpdate(client, { is_active: true }, newRater.email);
+      await runRaterEmailUpdate(
+        client,
+        {
+          is_active: true,
+          assigned_positions: nextPositions,
+        },
+        newRater.email,
+      );
       saveRaterAccessState(newRater.email, true);
-    } catch {
+    } catch (err) {
+      console.warn('[RSPDashboard] Failed to persist rater assigned_positions:', err);
     }
 
     setShowRaterDialog(false);
@@ -2519,10 +2548,11 @@ export const RSPDashboard = () => {
 
     if (target?.email) {
       const assignmentKey = normalizeEmailKey(target.email);
-      const nextAssignments = { ...raterAssignedPositionsByEmail };
-      delete nextAssignments[assignmentKey];
-      setRaterAssignedPositionsByEmail(nextAssignments);
-      saveRaterAssignments(nextAssignments);
+      setRaterAssignedPositionsByEmail((prev) => {
+        const next = { ...prev };
+        delete next[assignmentKey];
+        return next;
+      });
     }
 
     try {
@@ -2729,7 +2759,9 @@ export const RSPDashboard = () => {
       ])
     );
 
-    const existing = getNewlyHired();
+    // Fetch fresh from Supabase to avoid creating duplicates if a concurrent
+    // session already added one of these applicants.
+    const existing = await getNewlyHiredFromSupabase();
     const existingApplicantIds = new Set(existing.map((item) => item.applicantId));
     const now = new Date();
     const startDate = new Date(now);
@@ -2802,39 +2834,31 @@ export const RSPDashboard = () => {
       saveNewlyHired([...existing, ...toAdd]);
     }
 
-    // Persist the status flip to the backend (relative /api → Vite proxy on :8000).
-    // If the backend is unavailable, fall back to Supabase. We verify Supabase
-    // succeeded by reading back the row(s); RLS can return error:null with 0 rows.
+    // Persist the status flip. Try the FastAPI backend first (which also
+    // creates the employee row); fall back to a direct Supabase UPDATE when
+    // it's unreachable (e.g. on Vercel where no Python backend runs). The
+    // Newly Hired page filters applicants by status === 'hired', so this
+    // flip is what makes the hire show up there.
     const persistOne = async (id: string): Promise<boolean> => {
       try {
-        const res = await fetch(`/api/applicants/${id}/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ applicant_id: id, status: 'hired' }),
-        });
-        if (res.ok) return true;
-        console.warn('[RSPDashboard] hire backend PATCH failed', id, res.status);
-      } catch (err) {
-        console.warn('[RSPDashboard] hire backend PATCH threw', id, err);
-      }
-      try {
-        const { data: updated, error } = await (supabase as any)
-          .from('applicants')
-          .update({ status: 'Hired' })
-          .eq('id', id)
-          .select('id, status');
-        if (error) {
-          console.error('[RSPDashboard] hire supabase update error', id, error);
-          return false;
-        }
-        if (!Array.isArray(updated) || updated.length === 0) {
-          console.error('[RSPDashboard] hire supabase update returned 0 rows for', id, '— likely RLS blocking UPDATE');
-          return false;
-        }
+        await hireApplicant(id);
         return true;
-      } catch (err) {
-        console.error('[RSPDashboard] hire supabase update threw', id, err);
-        return false;
+      } catch (backendErr) {
+        console.warn('[RSPDashboard] hire backend unavailable, falling back to direct Supabase update', backendErr);
+        try {
+          const { error } = await (supabase as any)
+            .from('applicants')
+            .update({ status: 'Hired' })
+            .eq('id', id);
+          if (error) {
+            console.error('[RSPDashboard] Supabase status update failed', id, error);
+            return false;
+          }
+          return true;
+        } catch (err) {
+          console.error('[RSPDashboard] Supabase status update threw', id, err);
+          return false;
+        }
       }
     };
 
@@ -2842,7 +2866,7 @@ export const RSPDashboard = () => {
     const allPersisted = persistResults.every(Boolean);
     if (!allPersisted) {
       console.warn(
-        '[RSPDashboard] not all hire status updates persisted to DB — local Newly Hired entries were saved regardless.',
+        '[RSPDashboard] not all hire status updates persisted — Newly Hired may be incomplete until the next refresh.',
       );
     }
 
@@ -2994,11 +3018,31 @@ export const RSPDashboard = () => {
   ];
 
   return (
-    <div className="bg-slate-50 min-h-screen font-sans">
-      <Sidebar activeModule="RSP" userRole={isSuperAdmin ? 'super-admin' : 'rsp'} />
+    <div className="min-h-screen bg-slate-100 text-slate-800">
+      <AdminHeader
+        userName="RSP Admin"
+        divisionLabel="RSP Division"
+        division="rsp"
+        onNotificationClick={(item) => {
+          // Route to the most relevant page for the source of the notification.
+          if (item.source === 'applicant' && item.payload.applicantId) {
+            navigate(`/admin/rsp/applicant/${item.payload.applicantId}`);
+            return;
+          }
+          if (item.source === 'evaluation' && item.payload.applicantId) {
+            navigate(`/admin/rsp/applicant/${item.payload.applicantId}`);
+            return;
+          }
+          if (item.source === 'employee_doc') {
+            navigate('/admin/rsp/reports');
+            return;
+          }
+        }}
+      />
+    <div className="admin-layout">
+      <Sidebar activeModule="RSP" userRole="rsp" />
 
-      <main className="ml-64 min-h-screen overflow-y-auto">
-        <TopNav />
+      <main className="admin-content !p-0">
         <div className="border-b border-[var(--border-color)] bg-white px-8 py-6">
           <h1 className={`!mb-1 font-bold ${section === 'new-hired' || section === 'reports' ? '!text-xl' : '!text-2xl'}`}>{sectionTitle}</h1>
           <p className={`!mb-0 text-[var(--text-secondary)] ${section === 'new-hired' || section === 'reports' ? '!text-sm' : '!text-base'}`}>
@@ -3009,6 +3053,7 @@ export const RSPDashboard = () => {
             {section === 'raters' && 'Assign raters and define their evaluation access for specific job positions'}
             {section === 'accounts' && 'Manage employee accounts and information'}
             {section === 'reports' && 'Generate official government reports and access employee documents'}
+            {section === 'succession' && 'Build and manage the pipeline for critical roles and leadership continuity'}
             {section === 'settings' && 'Manage your personal information and account details'}
           </p>
         </div>
@@ -3579,13 +3624,14 @@ export const RSPDashboard = () => {
                       </button>
                     </div>
                   </section>
+
                   <div className="flex items-center justify-center text-lg font-semibold text-slate-700">
                     {employeeDirectoryCards.cards.length === 0
                       ? 'Position 0 to 0 of 0'
                       : `Position ${safeEmployeeDirectoryPage * EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE + 1} to ${Math.min((safeEmployeeDirectoryPage + 1) * EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE, employeeDirectoryCards.cards.length)} of ${employeeDirectoryCards.cards.length}`}
                   </div>
 
-                  <section className="grid grid-cols-[56px_minmax(0,1fr)_56px] items-center gap-4">
+                  <section className="grid grid-cols-[56px_minmax(0,1fr)_56px] items-start gap-4">
                     <button
                       type="button"
                       onClick={() => setEmployeeDirectoryPage((current) => Math.max(0, current - 1))}
@@ -3595,87 +3641,37 @@ export const RSPDashboard = () => {
                       <ChevronLeft size={24} />
                     </button>
 
-                    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm flex-1">
-                      <table className="w-full border-collapse text-left text-sm font-sans">
-                        <thead className="bg-slate-50 border-b border-slate-200">
-                          <tr>
-                            <th scope="col" className="px-6 py-4 font-semibold text-[#040E6B]">Position Title</th>
-                            <th scope="col" className="px-6 py-4 font-semibold text-[#040E6B]">Department / Division</th>
-                            <th scope="col" className="px-6 py-4 font-semibold text-[#040E6B]">Employees</th>
-                            <th scope="col" className="px-6 py-4 font-semibold text-[#040E6B]">Breakdown</th>
-                            <th scope="col" className="px-6 py-4 font-semibold text-[#040E6B]">Status</th>
-                            <th scope="col" className="px-6 py-4 font-semibold text-[#040E6B] text-right">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {paginatedEmployeeDirectoryCards.map((card) => (
-                            <tr
-                              key={`${card.position}-${card.office}`}
-                              onClick={() => openPositionEmployees(card.position, card.office)}
-                              className="group hover:bg-slate-50/80 transition-colors duration-150 cursor-pointer"
-                            >
-                              <td className="px-6 py-4">
-                                <div className="flex items-center gap-3">
-                                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 transition-colors group-hover:bg-[#363EE8]/10 group-hover:text-[#363EE8]">
-                                    <Briefcase size={20} />
-                                  </div>
-                                  <div>
-                                    <div className="font-bold text-slate-800 group-hover:text-[#363EE8] transition-colors">
-                                      {card.position}
-                                    </div>
-                                    <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                                      RSP POSITION
-                                    </div>
-                                  </div>
-                                </div>
-                              </td>
-
-                              <td className="px-6 py-4 text-slate-600 font-medium">
-                                {card.office}
-                              </td>
-
-                              <td className="px-6 py-4">
-                                <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                                  <Users size={13} className="text-slate-500" />
-                                  {card.count} employee{card.count === 1 ? '' : 's'}
-                                </span>
-                              </td>
-
-                              <td className="px-6 py-4">
-                                <div className="text-xs font-semibold text-emerald-600">{card.activeCount} active</div>
-                                <div className="text-xs text-slate-400">{card.inactiveCount} inactive</div>
-                              </td>
-
-                              <td className="px-6 py-4">
-                                <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${card.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : card.status === 'Inactive' ? 'bg-slate-200 text-slate-700' : 'bg-blue-100 text-blue-700'}`}>
-                                  {card.status}
-                                </span>
-                              </td>
-
-                              <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
-                                <button
-                                  type="button"
-                                  onClick={() => openPositionEmployees(card.position, card.office)}
-                                  className="inline-flex items-center gap-1.5 rounded-xl border border-[#363EE8]/20 bg-[#363EE8]/5 px-3.5 py-2 text-xs font-bold text-[#363EE8] hover:bg-[#363EE8]/10 transition-all active:scale-[0.98]"
-                                >
-                                  View Employees
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-
-                          {employeeDirectoryCards.cards.length === 0 && (
-                            <tr>
-                              <td colSpan={6} className="px-6 py-16 text-center">
-                                <div className="flex flex-col items-center justify-center text-slate-400">
-                                  <Briefcase size={48} className="mb-4 text-slate-300" />
-                                  <p className="font-semibold text-slate-500">No positions found for the selected filters.</p>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
+                    <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+                      {paginatedEmployeeDirectoryCards.map((card) => (
+                        <button
+                          key={`${card.position}-${card.office}`}
+                          type="button"
+                          onClick={() => openPositionEmployees(card.position, card.office)}
+                          className="rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                        >
+                          <div className="mb-3 flex items-start justify-between gap-3">
+                            <span className={`rounded-full px-3 py-1 text-sm font-semibold ${card.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : card.status === 'Inactive' ? 'bg-slate-200 text-slate-700' : 'bg-blue-100 text-blue-700'}`}>
+                              {card.status}
+                            </span>
+                            <ChevronRight size={18} className="text-slate-400" />
+                          </div>
+                          <h3 className="!mb-2 text-2xl font-bold text-slate-900">{card.position}</h3>
+                          <div className="space-y-2 text-base text-slate-600">
+                            <p className="!mb-0 inline-flex items-center gap-2"><MapPin size={16} className="text-slate-400" /> {card.office}</p>
+                            <p className="!mb-0 inline-flex items-center gap-2"><Users size={16} className="text-slate-400" /> {card.count} employee{card.count === 1 ? '' : 's'}</p>
+                            <p className="!mb-0 inline-flex items-center gap-2"><UserCheck size={16} className="text-slate-400" /> {card.activeCount} active • {card.inactiveCount} inactive</p>
+                          </div>
+                          <div className="mt-5 rounded-xl bg-blue-600 px-4 py-3 text-center text-base font-semibold text-white">
+                            View Employees
+                          </div>
+                        </button>
+                      ))}
+                      {employeeDirectoryCards.cards.length === 0 && (
+                        <div className="col-span-full rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">
+                          <Briefcase className="mx-auto h-10 w-10 text-slate-400" />
+                          <p className="mt-2 font-medium">No positions found for the selected filters.</p>
+                        </div>
+                      )}
                     </div>
 
                     <button
@@ -4550,6 +4546,10 @@ export const RSPDashboard = () => {
             </>
           )}
 
+          {section === 'succession' && (
+            <SuccessionPlanningPage />
+          )}
+
           {section === 'settings' && (
             <section className="grid grid-cols-1 gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
               <div className="rounded-2xl border border-[var(--border-color)] bg-white p-3">
@@ -5201,73 +5201,70 @@ export const RSPDashboard = () => {
                           <span className={`rounded-md px-2 py-1 text-base font-semibold uppercase ${badgeClass}`}>{bucket === 'other' ? applicant.status : bucket}</span>
                         </div>
 
-                        <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+                        <div className="rounded-xl border-2 border-black bg-white p-5">
                           {/* Header */}
-                          <div className="flex flex-col md:flex-row items-center justify-between gap-6 border-b border-slate-200 pb-6 mb-6">
-                            <div className="flex flex-col md:flex-row items-center gap-4 text-center md:text-left">
-                              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-50 border border-blue-200 text-center font-bold text-[#363EE8] shadow-sm shrink-0">
-                                <span className="text-xs font-semibold tracking-wider font-sans">ILOILO</span>
+                          <div className="mb-4 rounded-md border-2 border-black p-5 text-center">
+                            <div className="mb-2 flex items-center justify-between">
+                              <div className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-black text-center font-bold text-black">
+                                SEAL
                               </div>
                               <div>
-                                <p className="!mb-0.5 text-xs font-bold tracking-widest text-[#363EE8] uppercase">Republic of the Philippines</p>
-                                <p className="!mb-0.5 text-lg font-bold text-[#040E6B] tracking-tight uppercase">CITY GOVERNMENT OF ILOILO</p>
-                                <p className="!mb-0 text-xs font-medium text-slate-400">Human Resource Management Office</p>
+                                <p className="!mb-1 text-sm text-black font-bold">Republic of the Philippines</p>
+                                <p className="!mb-1 text-base font-bold text-black">CITY GOVERNMENT OF ILOILO</p>
+                                <p className="!mb-0 text-sm text-black">Iloilo City</p>
+                              </div>
+                              <div className="border-2 border-black p-3 text-center">
+                                <p className="!mb-1 text-xs font-bold text-black">CONTROL</p>
+                                <p className="!mb-0 text-base font-bold text-black">NO.</p>
+                                <p className="!mb-0 text-lg font-bold text-black">0001</p>
                               </div>
                             </div>
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-center shrink-0">
-                              <p className="!mb-0.5 text-[10px] font-bold tracking-widest text-slate-400 uppercase">CONTROL NO.</p>
-                              <p className="!mb-0 text-base font-bold text-[#363EE8] font-mono">0001</p>
-                            </div>
+                            <p className="!mb-1 text-base font-bold text-black">HUMAN RESOURCE MANAGEMENT OFFICE</p>
+                            <p className="!mb-0 text-sm text-black">APPLICANT ASSESSMENT REPORT</p>
                           </div>
 
-                          <p className="text-center font-bold text-[#040E6B] text-lg uppercase tracking-wider mb-6">Applicant Assessment Report</p>
-
-                          {/* Position, Name and Qualification */}
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                              <p className="!mb-1 text-[10px] font-bold tracking-wider text-slate-400 uppercase">POSITION</p>
-                              <p className="!mb-0 text-sm font-semibold text-[#040E6B]">{activeAssessmentCard.position}</p>
+                          {/* Position and Qualification */}
+                          <div className="mb-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
+                            <div className="rounded-md border-2 border-black p-3">
+                              <p className="!mb-1 text-sm font-semibold text-black">POSITION:</p>
+                              <p className="!mb-0 text-base font-semibold text-black">{activeAssessmentCard.position}</p>
                             </div>
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                              <p className="!mb-1 text-[10px] font-bold tracking-wider text-slate-400 uppercase">APPLICANT NAME</p>
-                              <p className="!mb-0 text-sm font-bold text-[#040E6B]">{applicant.full_name.toUpperCase()}</p>
-                            </div>
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 flex flex-col justify-center">
-                              <p className="!mb-1.5 text-[10px] font-bold tracking-wider text-slate-400 uppercase">QUALIFICATION STATUS</p>
-                              <div className="flex items-center gap-4">
-                                <label className="flex items-center gap-2 text-xs font-semibold text-[#040E6B] cursor-default">
-                                  <input type="checkbox" checked={bucket !== 'disqualified'} readOnly className="h-4 w-4 rounded border-slate-300 text-[#363EE8] focus:ring-[#363EE8]" />
-                                  <span>Qualified</span>
-                                </label>
-                                <label className="flex items-center gap-2 text-xs font-semibold text-[#040E6B] cursor-default">
-                                  <input type="checkbox" checked={bucket === 'disqualified'} readOnly className="h-4 w-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500" />
-                                  <span className={bucket === 'disqualified' ? 'text-rose-600' : ''}>Disqualified</span>
-                                </label>
+                            <div className="rounded-md border-2 border-black p-3">
+                              <p className="!mb-1 text-sm font-semibold text-black">QUALIFICATION:</p>
+                              <div className="flex items-center gap-3">
+                                <input type="checkbox" checked={bucket !== 'disqualified'} readOnly className="h-4 w-4" />
+                                <span className="text-sm font-semibold text-black">Qualified</span>
+                                <input type="checkbox" checked={bucket === 'disqualified'} readOnly className="h-4 w-4 ml-4" />
+                                <span className="text-sm font-semibold text-black">Disqualified</span>
                               </div>
                             </div>
                           </div>
 
-                          {/* Pre-Assessment Checklist */}
+                          {/* Applicant Name */}
+                          <div className="mb-3 rounded-md border-2 border-black p-3">
+                            <p className="!mb-1 text-sm font-semibold text-black">NAME OF APPLICANT:</p>
+                            <p className="!mb-0 text-base font-semibold text-black">{applicant.full_name.toUpperCase()}</p>
+                          </div>
+
+                          {/* Pre-Assessment */}
                           {bucket !== 'disqualified' && (
-                            <div className="rounded-xl border border-slate-200 overflow-hidden mb-6">
-                              <div className="bg-[#EEF2FF] px-4 py-2.5 border-b border-slate-200">
-                                <p className="!mb-0 text-xs font-bold text-[#040E6B] tracking-wider uppercase">Pre-Assessment Checklist</p>
-                              </div>
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-4 bg-white text-xs text-slate-600">
-                                <label className="flex items-center gap-2.5">
-                                  <input type="checkbox" checked={true} readOnly className="h-4 w-4 rounded border-slate-300 text-[#363EE8]" />
+                            <div className="mb-3 rounded-md border-2 border-black">
+                              <p className="!mb-0 border-b-2 border-black bg-gray-200 px-3 py-2 text-base font-semibold text-black">PRE-ASSESSMENT</p>
+                              <div className="space-y-2 px-3 py-3 text-sm text-black">
+                                <label className="flex items-center gap-2">
+                                  <input type="checkbox" checked={true} readOnly />
                                   <span>Education (College Degree: Bachelor's or equivalent in relevant field)</span>
                                 </label>
-                                <label className="flex items-center gap-2.5">
-                                  <input type="checkbox" checked={true} readOnly className="h-4 w-4 rounded border-slate-300 text-[#363EE8]" />
+                                <label className="flex items-center gap-2">
+                                  <input type="checkbox" checked={true} readOnly />
                                   <span>Training (Training hours/certificates of specific trainings)</span>
                                 </label>
-                                <label className="flex items-center gap-2.5">
-                                  <input type="checkbox" checked={true} readOnly className="h-4 w-4 rounded border-slate-300 text-[#363EE8]" />
+                                <label className="flex items-center gap-2">
+                                  <input type="checkbox" checked={true} readOnly />
                                   <span>Experience (Years/months of relevant work experience)</span>
                                 </label>
-                                <label className="flex items-center gap-2.5">
-                                  <input type="checkbox" checked={true} readOnly className="h-4 w-4 rounded border-slate-300 text-[#363EE8]" />
+                                <label className="flex items-center gap-2">
+                                  <input type="checkbox" checked={true} readOnly />
                                   <span>Eligibility (CS Professional / Appropriate RA 1080)</span>
                                 </label>
                               </div>
@@ -5275,103 +5272,101 @@ export const RSPDashboard = () => {
                           )}
 
                           {/* Point-Based Assessment */}
-                          <div className="rounded-xl border border-slate-200 overflow-hidden mb-6">
-                            <div className="bg-[#EEF2FF] px-4 py-2.5 border-b border-slate-200">
-                              <p className="!mb-0 text-xs font-bold text-[#040E6B] tracking-wider uppercase">Point-Based Assessment</p>
-                            </div>
-                            <table className="w-full border-collapse text-left text-sm font-sans">
-                              <thead className="bg-slate-50 border-b border-slate-200">
+                          <div className="mb-3 rounded-md border-2 border-black overflow-hidden">
+                            <p className="!mb-0 border-b-2 border-black bg-gray-200 px-3 py-2 text-base font-semibold text-black">POINT-BASED ASSESSMENT</p>
+                            <table className="w-full border-collapse text-sm text-black">
+                              <thead>
                                 <tr>
-                                  <th scope="col" className="px-4 py-3 font-semibold text-[#040E6B]">ASSESSMENT CRITERIA</th>
-                                  <th scope="col" className="px-4 py-3 font-semibold text-[#040E6B] text-center w-28">Max Points</th>
-                                  <th scope="col" className="px-4 py-3 font-semibold text-[#040E6B] text-center w-36">Actual Score</th>
+                                  <th className="border-b-2 border-black px-3 py-2 text-left font-semibold">ASSESSMENT DATA</th>
+                                  <th className="border-b-2 border-black border-l-2 px-3 py-2 text-center font-semibold w-20">Points</th>
+                                  <th className="border-b-2 border-black border-l-2 px-3 py-2 text-center font-semibold w-24">Actual Score</th>
                                 </tr>
                               </thead>
-                              <tbody className="divide-y divide-slate-100 text-slate-700">
+                              <tbody>
                                 {/* Education */}
-                                <tr className="bg-slate-50/50">
-                                  <td colSpan={3} className="px-4 py-2 font-bold text-xs text-[#040E6B] tracking-wider uppercase">EDUCATION</td>
+                                <tr>
+                                  <td colSpan={3} className="border-b-2 border-black px-3 py-2 font-semibold bg-gray-100">EDUCATION</td>
                                 </tr>
                                 <tr>
-                                  <td className="px-4 py-2.5 pl-6 text-slate-600">Education Level Attainment</td>
-                                  <td className="px-4 py-2.5 text-center text-slate-400 font-medium">20</td>
-                                  <td className="px-4 py-2.5 text-center font-bold text-[#363EE8]">{educationScore !== null ? educationScore.toFixed(2) : 'N/A'}</td>
+                                  <td className="border-b border-black px-3 py-2">Education Level Attainment</td>
+                                  <td className="border-b border-l-2 border-black px-3 py-2 text-center">20</td>
+                                  <td className="border-b border-l-2 border-black px-3 py-2 text-center font-semibold">{educationScore !== null ? educationScore.toFixed(2) : 'N/A'}</td>
                                 </tr>
                                 {/* Experience */}
-                                <tr className="bg-slate-50/50">
-                                  <td colSpan={3} className="px-4 py-2 font-bold text-xs text-[#040E6B] tracking-wider uppercase">EXPERIENCE</td>
+                                <tr>
+                                  <td colSpan={3} className="border-b-2 border-black px-3 py-2 font-semibold bg-gray-100">EXPERIENCE</td>
                                 </tr>
                                 <tr>
-                                  <td className="px-4 py-2.5 pl-6 text-slate-600">Relevant Work Experience</td>
-                                  <td className="px-4 py-2.5 text-center text-slate-400 font-medium">20</td>
-                                  <td className="px-4 py-2.5 text-center font-bold text-[#363EE8]">{experienceScore !== null ? experienceScore.toFixed(2) : 'N/A'}</td>
+                                  <td className="border-b border-black px-3 py-2">Relevant Work Experience</td>
+                                  <td className="border-b border-l-2 border-black px-3 py-2 text-center">20</td>
+                                  <td className="border-b border-l-2 border-black px-3 py-2 text-center font-semibold">{experienceScore !== null ? experienceScore.toFixed(2) : 'N/A'}</td>
                                 </tr>
-                                {/* Written Exam */}
+                                {/* Written Exam (Original only) */}
                                 {appointmentType === 'original' && (
                                   <>
-                                    <tr className="bg-slate-50/50">
-                                      <td colSpan={3} className="px-4 py-2 font-bold text-xs text-[#040E6B] tracking-wider uppercase">WRITTEN EXAMINATION</td>
+                                    <tr>
+                                      <td colSpan={3} className="border-b-2 border-black px-3 py-2 font-semibold bg-gray-100">WRITTEN EXAMINATION</td>
                                     </tr>
                                     <tr>
-                                      <td className="px-4 py-2.5 pl-6 text-slate-600">Written Examination Score</td>
-                                      <td className="px-4 py-2.5 text-center text-slate-400 font-medium">20</td>
-                                      <td className="px-4 py-2.5 text-center font-bold text-[#363EE8]">{writtenExamScore !== null ? writtenExamScore.toFixed(2) : 'N/A'}</td>
+                                      <td className="border-b border-black px-3 py-2">Written Exam</td>
+                                      <td className="border-b border-l-2 border-black px-3 py-2 text-center">20</td>
+                                      <td className="border-b border-l-2 border-black px-3 py-2 text-center font-semibold">{writtenExamScore !== null ? writtenExamScore.toFixed(2) : 'N/A'}</td>
                                     </tr>
                                   </>
                                 )}
-                                {/* Oral Exam */}
+                                {/* Oral Exam (Original only) */}
                                 {appointmentType === 'original' && (
                                   <>
-                                    <tr className="bg-slate-50/50">
-                                      <td colSpan={3} className="px-4 py-2 font-bold text-xs text-[#040E6B] tracking-wider uppercase">ORAL EXAMINATION</td>
+                                    <tr>
+                                      <td colSpan={3} className="border-b-2 border-black px-3 py-2 font-semibold bg-gray-100">ORAL EXAMINATION</td>
                                     </tr>
                                     <tr>
-                                      <td className="px-4 py-2.5 pl-6 text-slate-600">Oral Interview / Exam Progress</td>
-                                      <td className="px-4 py-2.5 text-center text-slate-400 font-medium">20</td>
-                                      <td className="px-4 py-2.5 text-center font-bold text-[#363EE8]">{oralExamScore !== null ? oralExamScore.toFixed(2) : 'N/A'}</td>
+                                      <td className="border-b border-black px-3 py-2">Oral Exam</td>
+                                      <td className="border-b border-l-2 border-black px-3 py-2 text-center">20</td>
+                                      <td className="border-b border-l-2 border-black px-3 py-2 text-center font-semibold">{oralExamScore !== null ? oralExamScore.toFixed(2) : 'N/A'}</td>
                                     </tr>
                                   </>
                                 )}
-                                {/* Performance */}
+                                {/* Performance (Promotional only) */}
                                 {appointmentType === 'promotional' && (
                                   <>
-                                    <tr className="bg-slate-50/50">
-                                      <td colSpan={3} className="px-4 py-2 font-bold text-xs text-[#040E6B] tracking-wider uppercase">PERFORMANCE</td>
+                                    <tr>
+                                      <td colSpan={3} className="border-b-2 border-black px-3 py-2 font-semibold bg-gray-100">PERFORMANCE</td>
                                     </tr>
                                     <tr>
-                                      <td className="px-4 py-2.5 pl-6 text-slate-600">Performance Rating (Last 2 Semesters)</td>
-                                      <td className="px-4 py-2.5 text-center text-slate-400 font-medium">20</td>
-                                      <td className="px-4 py-2.5 text-center font-bold text-[#363EE8]">{performanceScore !== null ? performanceScore.toFixed(2) : 'N/A'}</td>
+                                      <td className="border-b border-black px-3 py-2">Performance Rating (Last 2 Semesters)</td>
+                                      <td className="border-b border-l-2 border-black px-3 py-2 text-center">20</td>
+                                      <td className="border-b border-l-2 border-black px-3 py-2 text-center font-semibold">{performanceScore !== null ? performanceScore.toFixed(2) : 'N/A'}</td>
                                     </tr>
                                   </>
                                 )}
-                                {/* PCPT */}
-                                <tr className="bg-slate-50/50">
-                                  <td colSpan={3} className="px-4 py-2 font-bold text-xs text-[#040E6B] tracking-wider uppercase">PSYCHOSOCIAL / COMPETENCY</td>
+                                {/* PCPT (both) */}
+                                <tr>
+                                  <td colSpan={3} className="border-b-2 border-black px-3 py-2 font-semibold bg-gray-100">PSYCHOSOCIAL / COMPETENCY</td>
                                 </tr>
                                 <tr>
-                                  <td className="px-4 py-2.5 pl-6 text-slate-600">PCPT Assessment Score</td>
-                                  <td className="px-4 py-2.5 text-center text-slate-400 font-medium">20</td>
-                                  <td className="px-4 py-2.5 text-center font-bold text-[#363EE8]">{pcptScore !== null ? pcptScore.toFixed(2) : 'N/A'}</td>
+                                  <td className="border-b border-black px-3 py-2">PCPT Assessment</td>
+                                  <td className="border-b border-l-2 border-black px-3 py-2 text-center">20</td>
+                                  <td className="border-b border-l-2 border-black px-3 py-2 text-center font-semibold">{pcptScore !== null ? pcptScore.toFixed(2) : 'N/A'}</td>
                                 </tr>
-                                {/* Potential */}
+                                {/* Potential (Promotional only) */}
                                 {appointmentType === 'promotional' && (
                                   <>
-                                    <tr className="bg-slate-50/50">
-                                      <td colSpan={3} className="px-4 py-2 font-bold text-xs text-[#040E6B] tracking-wider uppercase">POTENTIAL</td>
+                                    <tr>
+                                      <td colSpan={3} className="border-b-2 border-black px-3 py-2 font-semibold bg-gray-100">POTENTIAL</td>
                                     </tr>
                                     <tr>
-                                      <td className="px-4 py-2.5 pl-6 text-slate-600">Potential Assessment Rating</td>
-                                      <td className="px-4 py-2.5 text-center text-slate-400 font-medium">20</td>
-                                      <td className="px-4 py-2.5 text-center font-bold text-[#363EE8]">{potentialScore !== null ? potentialScore.toFixed(2) : 'N/A'}</td>
+                                      <td className="border-b-2 border-black px-3 py-2">Potential Assessment</td>
+                                      <td className="border-b-2 border-l-2 border-black px-3 py-2 text-center">20</td>
+                                      <td className="border-b-2 border-l-2 border-black px-3 py-2 text-center font-semibold">{potentialScore !== null ? potentialScore.toFixed(2) : 'N/A'}</td>
                                     </tr>
                                   </>
                                 )}
-                                {/* Total Score */}
-                                <tr className="bg-[#EEF2FF] font-bold text-[#040E6B] border-t border-slate-200">
-                                  <td className="px-4 py-3 text-right">TOTAL EVALUATION SCORE:</td>
-                                  <td className="px-4 py-3 text-center">100</td>
-                                  <td className="px-4 py-3 text-center text-[#363EE8] text-base">{totalScore.toFixed(2)}</td>
+                                {/* Total */}
+                                <tr className="bg-gray-100">
+                                  <td className="border-b-2 border-black px-3 py-2 text-right font-bold">TOTAL SCORE:</td>
+                                  <td className="border-b-2 border-l-2 border-black px-3 py-2 text-center font-bold">100</td>
+                                  <td className="border-b-2 border-l-2 border-black px-3 py-2 text-center font-bold text-lg">{totalScore.toFixed(2)}</td>
                                 </tr>
                               </tbody>
                             </table>
@@ -5379,18 +5374,16 @@ export const RSPDashboard = () => {
 
                           {/* Recommendation */}
                           {bucket !== 'disqualified' && (
-                            <div className="rounded-xl border border-slate-200 overflow-hidden mb-6">
-                              <div className="bg-[#EEF2FF] px-4 py-2.5 border-b border-slate-200">
-                                <p className="!mb-0 text-xs font-bold text-[#040E6B] tracking-wider uppercase">Recommendation</p>
-                              </div>
-                              <div className="flex gap-6 p-4 bg-white text-xs font-semibold text-[#040E6B]">
-                                <label className="flex items-center gap-2 cursor-default">
-                                  <input type="checkbox" checked={bucket === 'hired'} readOnly className="h-4 w-4 rounded border-slate-300 text-[#363EE8]" />
-                                  <span>Recommended for Appointment</span>
+                            <div className="mb-3 rounded-md border-2 border-black">
+                              <p className="!mb-0 border-b-2 border-black bg-gray-200 px-3 py-2 text-base font-semibold text-black">RECOMMENDATION</p>
+                              <div className="space-y-2 px-3 py-3 text-sm text-black">
+                                <label className="flex items-center gap-2">
+                                  <input type="checkbox" checked={bucket === 'hired'} readOnly />
+                                  <span className="font-semibold">For Hiring/Appointment</span>
                                 </label>
-                                <label className="flex items-center gap-2 cursor-default">
-                                  <input type="checkbox" checked={bucket === 'qualified'} readOnly className="h-4 w-4 rounded border-slate-300 text-[#363EE8]" />
-                                  <span>Under Consideration</span>
+                                <label className="flex items-center gap-2">
+                                  <input type="checkbox" checked={bucket === 'qualified'} readOnly />
+                                  <span>For Consideration</span>
                                 </label>
                               </div>
                             </div>
@@ -5398,41 +5391,38 @@ export const RSPDashboard = () => {
 
                           {/* Remarks for Disqualified */}
                           {bucket === 'disqualified' && (
-                            <div className="rounded-xl border border-slate-200 overflow-hidden mb-6">
-                              <div className="bg-rose-50 px-4 py-2.5 border-b border-rose-100">
-                                <p className="!mb-0 text-xs font-bold text-rose-700 tracking-wider uppercase">Remarks</p>
-                              </div>
-                              <div className="p-4 bg-white text-xs text-rose-600 italic font-medium">
+                            <div className="mb-3 rounded-md border-2 border-black">
+                              <p className="!mb-0 border-b-2 border-black bg-gray-200 px-3 py-2 text-base font-semibold text-black">REMARKS:</p>
+                              <div className="px-3 py-3 text-sm text-black italic">
                                 Did not meet minimum qualifications. Pre-assessment completed only.
                               </div>
                             </div>
                           )}
 
                           {/* Signatures */}
-                          <div className="mt-8 border-t border-slate-200 pt-6">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-center text-xs text-slate-500">
-                              <div className="flex flex-col items-center">
-                                <p className="!mb-12 font-medium uppercase tracking-wider text-slate-400">Assessed by:</p>
-                                <div className="w-48 border-b border-slate-300"></div>
-                                <p className="!mt-1.5 !mb-0 font-bold text-[#040E6B]">RSP Officer</p>
-                                <p className="!mb-0 text-[10px] text-slate-400">HR Assessment Committee</p>
-                                <p className="!mb-0 text-[10px] text-slate-400">Date: __________</p>
+                          <div className="space-y-3 text-sm text-black">
+                            <div className="border-t-2 border-black pt-3"></div>
+                            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                              <div>
+                                <p className="!mb-6 font-semibold">Assessed by:</p>
+                                <div className="border-b-2 border-black"></div>
+                                <p className="!mt-1 !mb-0 text-xs font-semibold">RSP Officer</p>
+                                <p className="!mb-0 text-xs">Date: __________</p>
                               </div>
                               {bucket !== 'disqualified' && (
-                                <div className="flex flex-col items-center">
-                                  <p className="!mb-12 font-medium uppercase tracking-wider text-slate-400">Interviewed by:</p>
-                                  <div className="w-48 border-b border-slate-300"></div>
-                                  <p className="!mt-1.5 !mb-0 font-bold text-[#040E6B]">Dr. Maria Santos</p>
-                                  <p className="!mb-0 text-[10px] text-slate-400">Interview Board Panel</p>
-                                  <p className="!mb-0 text-[10px] text-slate-400">Date: __________</p>
+                                <div>
+                                  <p className="!mb-6 font-semibold">Interviewed by:</p>
+                                  <div className="border-b-2 border-black"></div>
+                                  <p className="!mt-1 !mb-0 text-xs font-semibold">Dr. Maria Santos</p>
+                                  <p className="!mb-0 text-xs">Interview Panel</p>
+                                  <p className="!mb-0 text-xs">Date: __________</p>
                                 </div>
                               )}
-                              <div className="flex flex-col items-center">
-                                <p className="!mb-12 font-medium uppercase tracking-wider text-slate-400">Reviewed by:</p>
-                                <div className="w-48 border-b border-slate-300"></div>
-                                <p className="!mt-1.5 !mb-0 font-bold text-[#040E6B]">HRMO Chief</p>
-                                <p className="!mb-0 text-[10px] text-slate-400">City HR Director</p>
-                                <p className="!mb-0 text-[10px] text-slate-400">Date: __________</p>
+                              <div>
+                                <p className="!mb-6 font-semibold">Reviewed by:</p>
+                                <div className="border-b-2 border-black"></div>
+                                <p className="!mt-1 !mb-0 text-xs font-semibold">HRMO Chief</p>
+                                <p className="!mb-0 text-xs">Date: __________</p>
                               </div>
                             </div>
                           </div>
@@ -5483,25 +5473,14 @@ export const RSPDashboard = () => {
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                    <div>
-                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Item Number <span className="text-red-500">*</span></label>
-                      <input
-                        className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
-                        placeholder="e.g., ITEM-2024-001"
-                        value={newJob.item_number}
-                        onChange={(event) => setNewJob((prev) => ({ ...prev, item_number: event.target.value }))}
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Salary Grade <span className="text-red-500">*</span></label>
-                      <input
-                        className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
-                        placeholder="e.g., SG-11"
-                        value={newJob.salary_grade}
-                        onChange={(event) => setNewJob((prev) => ({ ...prev, salary_grade: event.target.value }))}
-                      />
-                    </div>
+                  <div>
+                    <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Item Number <span className="text-red-500">*</span></label>
+                    <input
+                      className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
+                      placeholder="e.g., ITEM-2024-001"
+                      value={newJob.item_number}
+                      onChange={(event) => setNewJob((prev) => ({ ...prev, item_number: event.target.value }))}
+                    />
                   </div>
 
                   <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -6022,7 +6001,9 @@ export const RSPDashboard = () => {
                   <p className="!mb-0 text-sm text-slate-700">
                     Generate a new password for{' '}
                     <span className="font-semibold">
-                      {selectedEmployeeDetails.full_name || `${(selectedEmployeeDetails as any).first_name ?? ''} ${(selectedEmployeeDetails as any).last_name ?? ''}`.trim()}
+                      {'name' in selectedEmployeeDetails
+                        ? (String((selectedEmployeeDetails as any).name ?? '') || 'Unnamed Employee')
+                        : `${(selectedEmployeeDetails as any).first_name ?? ''} ${(selectedEmployeeDetails as any).last_name ?? ''}`.trim()}
                     </span>
                     {employeeNumberById.get(selectedEmployeeDetails.id)
                       ? ` (${employeeNumberById.get(selectedEmployeeDetails.id)})`
@@ -6124,6 +6105,7 @@ export const RSPDashboard = () => {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 };

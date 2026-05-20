@@ -1763,12 +1763,12 @@ export function ApplicantDetailsPage() {
       {showScoresModal && (
         <div className="fixed inset-0 z-[260] bg-black/80 p-4" onClick={() => setShowScoresModal(false)}>
           <div className="mx-auto h-[96vh] w-full max-w-[1450px] overflow-y-auto rounded-2xl bg-white" onClick={(event) => event.stopPropagation()}>
-            <div className="sticky top-0 z-10 flex items-center justify-between bg-[#363EE8] px-8 py-5 text-white shadow-md">
+            <div className="sticky top-0 z-10 flex items-center justify-between bg-blue-700 px-8 py-5 text-white">
               <div>
-                <h2 className="text-3xl font-bold text-white">Applicant Evaluation & Scoring</h2>
-                <p className="text-lg text-white/90 font-medium">{fullName} — {applicant.position || '--'}</p>
+                <h2 className="text-3xl font-bold">Applicant Evaluation & Scoring</h2>
+                <p className="text-lg text-blue-100">{fullName} - {applicant.position || '--'}</p>
               </div>
-              <button type="button" onClick={() => setShowScoresModal(false)} className="rounded-lg p-2 text-white hover:bg-white/10 transition-colors">
+              <button type="button" onClick={() => setShowScoresModal(false)} className="rounded-lg p-2 text-white/90 hover:bg-white/10">
                 <X size={36} />
               </button>
             </div>
@@ -1804,29 +1804,29 @@ export function ApplicantDetailsPage() {
                     type="button"
                     onClick={() => !isScoreFinalized && !isForcedPromotionalAppointment && setAppointmentType('original')}
                     disabled={isScoreFinalized || isForcedPromotionalAppointment}
-                    className={`rounded-2xl border p-5 text-center transition-all ${
+                    className={`rounded-2xl border p-4 text-center transition ${
                       appointmentType === 'original'
-                        ? 'border-2 border-[#363EE8] bg-[#363EE8] !text-white font-bold shadow-md'
-                        : 'border-slate-200 bg-slate-50 text-[#040E6B] hover:bg-slate-100'
+                        ? 'border-2 border-blue-400 bg-white shadow-sm'
+                        : 'border border-slate-300 bg-slate-100'
                     } ${(isScoreFinalized || isForcedPromotionalAppointment) ? 'cursor-not-allowed opacity-80' : ''}`}
                   >
-                    <p className={`text-xl font-bold ${appointmentType === 'original' ? '!text-white' : 'text-[#040E6B]'}`}>Original Appointment</p>
-                    <p className={`text-base mt-1 ${appointmentType === 'original' ? 'text-white/95' : 'text-slate-500'}`}>Education • Experience • Written Exam • Oral Exam* • PCPT*</p>
-                    <p className={`text-sm mt-1 ${appointmentType === 'original' ? 'text-white/80' : 'text-slate-400'}`}>*Interviewer-provided</p>
+                    <p className={`text-xl font-semibold ${appointmentType === 'original' ? 'text-blue-700' : 'text-slate-500'}`}>Original Appointment</p>
+                    <p className="text-base text-slate-500">Education • Experience • Written Exam • Oral Exam* • PCPT*</p>
+                    <p className="text-sm text-slate-500">*Interviewer-provided</p>
                   </button>
                   <button
                     type="button"
                     onClick={() => !isScoreFinalized && setAppointmentType('promotional')}
                     disabled={isScoreFinalized || isForcedPromotionalAppointment}
-                    className={`rounded-2xl border p-5 text-center transition-all ${
+                    className={`rounded-2xl border p-4 text-center transition ${
                       appointmentType === 'promotional'
-                        ? 'border-2 border-[#363EE8] bg-[#363EE8] !text-white font-bold shadow-md'
-                        : 'border-slate-200 bg-slate-50 text-[#040E6B] hover:bg-slate-100'
+                        ? 'border-2 border-blue-400 bg-white shadow-sm'
+                        : 'border border-slate-300 bg-slate-100'
                     } ${(isScoreFinalized || isForcedPromotionalAppointment) ? 'cursor-not-allowed opacity-80' : ''}`}
                   >
-                    <p className={`text-xl font-bold ${appointmentType === 'promotional' ? '!text-white' : 'text-[#040E6B]'}`}>Promotional Appointment</p>
-                    <p className={`text-base mt-1 ${appointmentType === 'promotional' ? 'text-white/95' : 'text-slate-500'}`}>Education • Experience • Performance • PCPT* • Potential</p>
-                    <p className={`text-sm mt-1 ${appointmentType === 'promotional' ? 'text-white/80' : 'text-slate-400'}`}>*Interviewer-provided</p>
+                    <p className={`text-xl font-semibold ${appointmentType === 'promotional' ? 'text-blue-700' : 'text-slate-500'}`}>Promotional Appointment</p>
+                    <p className="text-base text-slate-500">Education • Experience • Performance • PCPT* • Potential</p>
+                    <p className="text-sm text-slate-500">*Interviewer-provided</p>
                   </button>
                 </div>
               </section>
@@ -1839,10 +1839,10 @@ export function ApplicantDetailsPage() {
                       type="button"
                       onClick={() => !isScoreFinalized && setPositionType('rank-file')}
                       disabled={isScoreFinalized}
-                      className={`rounded-2xl border px-6 py-4 text-center text-base font-semibold transition-all ${
+                      className={`rounded-2xl border px-6 py-4 text-center text-base font-semibold transition ${
                         positionType === 'rank-file'
-                          ? 'border-[#363EE8] bg-[#363EE8] !text-white font-bold shadow-md'
-                          : 'border-slate-200 bg-slate-50 text-[#040E6B] hover:bg-slate-100'
+                          ? 'border-2 border-blue-500 bg-blue-600 text-white'
+                          : 'border border-slate-300 bg-white text-slate-700'
                       } ${isScoreFinalized ? 'cursor-not-allowed opacity-70' : ''}`}
                     >
                       Rank and File
@@ -1851,10 +1851,10 @@ export function ApplicantDetailsPage() {
                       type="button"
                       onClick={() => !isScoreFinalized && setPositionType('executive')}
                       disabled={isScoreFinalized}
-                      className={`rounded-2xl border px-6 py-4 text-center text-base font-semibold transition-all ${
+                      className={`rounded-2xl border px-6 py-4 text-center text-base font-semibold transition ${
                         positionType === 'executive'
-                          ? 'border-[#363EE8] bg-[#363EE8] !text-white font-bold shadow-md'
-                          : 'border-slate-200 bg-slate-50 text-[#040E6B] hover:bg-slate-100'
+                          ? 'border-2 border-blue-500 bg-blue-600 text-white'
+                          : 'border border-slate-300 bg-white text-slate-700'
                       } ${isScoreFinalized ? 'cursor-not-allowed opacity-70' : ''}`}
                     >
                       Executive / Managerial
