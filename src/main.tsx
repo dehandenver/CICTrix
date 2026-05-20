@@ -40,7 +40,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 
 // After mount, redirect localhost → 127.0.0.1 to keep localStorage consistent
 // across both hostnames in local dev. The app is already painted so no blank flash.
-if (window.location.hostname === 'localhost') {
+const shouldRedirectToCanonicalHost = window.location.hostname === 'localhost';
+if (shouldRedirectToCanonicalHost) {
   const url = new URL(window.location.href);
   url.hostname = '127.0.0.1';
   window.location.replace(url.toString());

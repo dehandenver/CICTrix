@@ -18,16 +18,14 @@ interface Position {
 
 interface Employee {
   id: string;
-  employee_number: string;
-  first_name: string;
-  last_name: string;
-  position: string;
+  employee_id: string;
+  full_name: string;
+  current_position: string;
   department: string;
   status: string;
   email: string;
-  phone: string;
-  date_hired: string;
-  employment_status: string;
+  mobile_number: string;
+  hire_date: string;
   photo_url?: string;
 }
 
