@@ -1,7 +1,7 @@
 import { AlertCircle, Award, Building2, GraduationCap, TrendingUp, Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { AdminHeader } from '../../components/AdminHeader';
 import { Sidebar } from '../../components/Sidebar';
+import { TopNav } from '../../components/TopNav';
 import { supabase } from '../../lib/supabase';
 import '../../styles/admin.css';
 
@@ -75,11 +75,10 @@ export const SuperAdminDashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-800">
-      <AdminHeader userName="Super Admin" divisionLabel="System Administrator" />
-      <div className="flex">
-      <Sidebar />
-      <main className="flex-1 overflow-auto">
+    <div className="bg-slate-50 min-h-screen font-sans">
+      <Sidebar userRole="super-admin" />
+      <main className="ml-64 min-h-screen overflow-y-auto bg-slate-50">
+        <TopNav />
         <div className="p-8">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-slate-900">Super Admin Dashboard</h1>
@@ -88,7 +87,8 @@ export const SuperAdminDashboard = () => {
 
           {/* Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-10">
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+            <div className="relative bg-white border border-slate-200 rounded-2xl p-5 shadow-sm overflow-hidden">
+              <div className="absolute top-0 left-0 right-0 h-1" style={{background: 'linear-gradient(90deg, #C8D1FF, #363EE8)'}}></div>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-slate-500">Total Applicants</p>
@@ -103,7 +103,8 @@ export const SuperAdminDashboard = () => {
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+            <div className="relative bg-white border border-slate-200 rounded-2xl p-5 shadow-sm overflow-hidden">
+              <div className="absolute top-0 left-0 right-0 h-1" style={{background: 'linear-gradient(90deg, #C8D1FF, #363EE8)'}}></div>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-slate-500">Active Trainings</p>
@@ -118,7 +119,8 @@ export const SuperAdminDashboard = () => {
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+            <div className="relative bg-white border border-slate-200 rounded-2xl p-5 shadow-sm overflow-hidden">
+              <div className="absolute top-0 left-0 right-0 h-1" style={{background: 'linear-gradient(90deg, #C8D1FF, #363EE8)'}}></div>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-slate-500">Evaluation Status</p>
@@ -133,7 +135,8 @@ export const SuperAdminDashboard = () => {
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+            <div className="relative bg-white border border-slate-200 rounded-2xl p-5 shadow-sm overflow-hidden">
+              <div className="absolute top-0 left-0 right-0 h-1" style={{background: 'linear-gradient(90deg, #C8D1FF, #363EE8)'}}></div>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-slate-500">Department Summary</p>
@@ -292,27 +295,39 @@ export const SuperAdminDashboard = () => {
                 <span className="text-slate-400">∿</span>
               </div>
               <div className="space-y-4">
-                <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                <button
+                  type="button"
+                  onClick={() => window.open('/admin/activity/job-posted', '_blank')}
+                  className="w-full text-left rounded-xl border border-blue-200 bg-blue-50 p-4 hover:shadow-md transition-all cursor-pointer"
+                >
                   <div className="border-l-4 border-blue-600 pl-4">
                     <p className="text-sm font-semibold text-blue-900">New Job Position Posted</p>
                     <p className="text-xs text-blue-700">IT Officer II - Item #ITMO2-2025-001</p>
-                    <p className="text-xs text-blue-500 mt-1">2 hours ago</p>
+                    <p className="text-xs text-gray-500 mt-1">2 hours ago</p>
                   </div>
-                </div>
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.open('/admin/activity/training-completed', '_blank')}
+                  className="w-full text-left rounded-xl border border-emerald-200 bg-emerald-50 p-4 hover:shadow-md transition-all cursor-pointer"
+                >
                   <div className="border-l-4 border-emerald-600 pl-4">
                     <p className="text-sm font-semibold text-emerald-900">Training Program Completed</p>
                     <p className="text-xs text-emerald-700">Project Management Fundamentals - 32 participants</p>
-                    <p className="text-xs text-emerald-500 mt-1">5 hours ago</p>
+                    <p className="text-xs text-gray-500 mt-1">5 hours ago</p>
                   </div>
-                </div>
-                <div className="rounded-xl border border-orange-200 bg-orange-50 p-4">
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.open('/admin/activity/evaluation-updated', '_blank')}
+                  className="w-full text-left rounded-xl border border-orange-200 bg-orange-50 p-4 hover:shadow-md transition-all cursor-pointer"
+                >
                   <div className="border-l-4 border-orange-600 pl-4">
                     <p className="text-sm font-semibold text-orange-900">Performance Evaluation Updated</p>
                     <p className="text-xs text-orange-700">Q1 2025 evaluations - 42 in progress</p>
-                    <p className="text-xs text-orange-500 mt-1">1 day ago</p>
+                    <p className="text-xs text-gray-500 mt-1">1 day ago</p>
                   </div>
-                </div>
+                </button>
               </div>
             </div>
 
@@ -358,7 +373,6 @@ export const SuperAdminDashboard = () => {
           </div>
         </div>
       </main>
-      </div>
     </div>
   );
 };

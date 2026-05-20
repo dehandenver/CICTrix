@@ -1,0 +1,35 @@
+{
+  "name": "saas-onboarding-ui",
+  "version": "1.0.0",
+  "description": "A modern SaaS onboarding UI for an HR management platform.",
+  "main": "src/main.tsx",
+  "scripts": {
+    "start": "vite",
+    "build": "vite build",
+    "serve": "vite preview",
+    "lint": "eslint . --ext .ts,.tsx"
+  },
+  "keywords": [
+    "SaaS",
+    "onboarding",
+    "HR",
+    "management",
+    "React",
+    "Tailwind CSS"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "tailwindcss": "^2.2.19",
+    "vite": "^2.6.4"
+  },
+  "devDependencies": {
+    "@types/react": "^17.0.0",
+    "@types/react-dom": "^17.0.0",
+    "typescript": "^4.4.4",
+    "eslint": "^7.32.0",
+    "eslint-plugin-react": "^7.27.1"
+  }
+}

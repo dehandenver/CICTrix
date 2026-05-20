@@ -29,7 +29,17 @@ const purgeLegacyJobPostingLocalStorage = (): void => {
   }
 };
 
-// Avoid split browser storage between localhost and 127.0.0.1 during local dev.
+// Always render the app immediately so the page is never blank.
+purgeLegacyJobPostingLocalStorage();
+void loadJobPostings();
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+);
+
+// After mount, redirect localhost → 127.0.0.1 to keep localStorage consistent
+// across both hostnames in local dev. The app is already painted so no blank flash.
 const shouldRedirectToCanonicalHost = window.location.hostname === 'localhost';
 if (shouldRedirectToCanonicalHost) {
   const url = new URL(window.location.href);
