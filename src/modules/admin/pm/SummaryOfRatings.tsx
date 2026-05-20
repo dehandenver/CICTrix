@@ -1,5 +1,6 @@
 import { AlertCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronUp, Info, Printer, Search, Send, X } from 'lucide-react';
-import React, { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { getIPCRRecordsFromGapView } from '../../../lib/api/competencyGapAnalysis';
 import { supabase as supabaseClient } from '../../../lib/supabase';
 
 // Bypass auto-generated Supabase types resolving to `never`.
@@ -14,6 +15,7 @@ export interface IPCRRatingRecord {
   numericalRating: number | null;
   remarks: string;
   submissionStatus: 'SUBMITTED' | 'PENDING' | 'OVERDUE';
+  competencies?: { name: string; possessed: number; required: number; isGap: boolean }[];
 }
 
 export type Adjectival = 'Outstanding' | 'Very Satisfactory' | 'Satisfactory' | 'Unsatisfactory' | 'Poor' | 'Non-Submission';
@@ -91,32 +93,40 @@ export function groupByDept(records: IPCRRatingRecord[]) {
   return groups;
 }
 
-const MOCK_RECORDS: IPCRRatingRecord[] = [
-  { id: '1', department: 'IT Department', name: 'Santos, Maria G.', position: 'IT Officer II', period: 'JANUARY–JUNE 2025', numericalRating: 4.97, remarks: '', submissionStatus: 'SUBMITTED' },
-  { id: '2', department: 'IT Department', name: 'Dela Cruz, Juan P.', position: 'Systems Analyst', period: 'JANUARY–JUNE 2025', numericalRating: 4.80, remarks: '', submissionStatus: 'SUBMITTED' },
-  { id: '3', department: 'IT Department', name: 'Reyes, Ana T.', position: 'Network Administrator', period: 'JANUARY–JUNE 2025', numericalRating: 3.80, remarks: '', submissionStatus: 'SUBMITTED' },
-  { id: '4', department: 'IT Department', name: 'Aguilar, Ricardo M.', position: 'IT Support Specialist', period: 'JANUARY–JUNE 2025', numericalRating: 4.96, remarks: 'IPCR', submissionStatus: 'SUBMITTED' },
-  { id: '5', department: 'IT Department', name: 'Bautista, Lourdes S.', position: 'Database Administrator', period: 'JANUARY–JUNE 2025', numericalRating: 4.91, remarks: 'Detailed to CMO', submissionStatus: 'SUBMITTED' },
-  { id: '6', department: 'IT Department', name: 'Fernandez, Carlos D.', position: 'Web Developer', period: 'JANUARY–JUNE 2025', numericalRating: 4.60, remarks: '', submissionStatus: 'SUBMITTED' },
-  { id: '7', department: 'IT Department', name: 'Gomez, Patricia L.', position: 'UI/UX Designer', period: 'JANUARY–JUNE 2025', numericalRating: null, remarks: 'On Leave', submissionStatus: 'PENDING' },
-  { id: '8', department: 'Finance Department', name: 'Lim, Ricardo', position: 'Accountant', period: 'JANUARY–JUNE 2025', numericalRating: 3.20, remarks: '', submissionStatus: 'SUBMITTED' },
-  { id: '9', department: 'Finance Department', name: 'Sy, Henry', position: 'Financial Analyst', period: 'JANUARY–JUNE 2025', numericalRating: null, remarks: 'Needs Improvement', submissionStatus: 'OVERDUE' },
-];
-
-const DEPT_OPTIONS = ['All Departments', 'IT Department', 'Finance Department'];
-const REPORT_PERIOD = 'January–June 2025';
+export const REPORT_PERIOD = 'January–June 2025';
 
 export const SummaryOfRatings = () => {
+  const [records, setRecords] = useState<IPCRRatingRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('All Departments');
-  const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({
-    'IT Department': true,
-    'Finance Department': true,
-  });
+  const [deptOptions, setDeptOptions] = useState<string[]>(['All Departments']);
+  const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    getIPCRRecordsFromGapView(REPORT_PERIOD)
+      .then(data => {
+        setRecords(data);
+        const depts = Array.from(new Set(data.map(r => r.department)));
+        setDeptOptions(['All Departments', ...depts]);
+        const initialExpanded: Record<string, boolean> = {};
+        depts.forEach(d => initialExpanded[d] = true);
+        setExpandedDepts(initialExpanded);
+      })
+      .catch(err => console.error("Error loading PM records:", err))
+      .finally(() => setIsLoading(false));
+  }, []);
 
   // Pagination states keyed by department
   const [pages, setPages] = useState<Record<string, number>>({});
   const rowsPerPage = 5;
+
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+
+  const toggleRow = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
+  };
 
   // L&D modal state
   const [showLNDModal, setShowLNDModal] = useState(false);
@@ -128,21 +138,21 @@ export const SummaryOfRatings = () => {
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; title: string; message: string } | null>(null);
 
   const filteredRecords = useMemo(() => {
-    return MOCK_RECORDS.filter(r => {
+    return records.filter(r => {
       const matchSearch = r.name.toLowerCase().includes(searchTerm.toLowerCase()) || r.department.toLowerCase().includes(searchTerm.toLowerCase());
       const matchDept = selectedDept === 'All Departments' || r.department === selectedDept;
       return matchSearch && matchDept;
     });
-  }, [searchTerm, selectedDept]);
+  }, [records, searchTerm, selectedDept]);
 
   const kpis = useMemo(() => computeKPIs(filteredRecords), [filteredRecords]);
   const deptGroups = useMemo(() => groupByDept(filteredRecords), [filteredRecords]);
 
   // Modal-scoped data: ignores the page-level filter so the dropdown can switch independently.
   const modalDeptRecords = useMemo(() => {
-    if (modalDept === 'All Departments') return MOCK_RECORDS;
-    return MOCK_RECORDS.filter(r => r.department === modalDept);
-  }, [modalDept]);
+    if (modalDept === 'All Departments') return records;
+    return records.filter(r => r.department === modalDept);
+  }, [records, modalDept]);
 
   const modalAvg = useMemo(() => {
     const rated = modalDeptRecords.filter(r => r.numericalRating !== null);
@@ -364,7 +374,8 @@ export const SummaryOfRatings = () => {
                     {visibleRecords.map((row, idx) => {
                       const adj = getAdjectival(row.numericalRating);
                       return (
-                        <div key={row.id} className="grid grid-cols-12 items-stretch hover:bg-slate-50 transition min-h-[48px]">
+                        <div key={row.id} className="flex flex-col">
+                        <div className="grid grid-cols-12 items-stretch hover:bg-slate-50 transition min-h-[48px]">
                           <div className="col-span-1 px-2 py-3 text-sm text-slate-600 border-r border-slate-100 flex items-center justify-center">
                             {startIndex + idx + 1}
                           </div>
@@ -389,7 +400,17 @@ export const SummaryOfRatings = () => {
                             </div>
                           </div>
                           <div className="col-span-1 px-2 py-3 text-xs text-slate-500 italic border-r border-slate-100 flex items-center justify-center text-center">
-                            {row.remarks}
+                            {row.remarks === 'Training Recommended' ? (
+                              <button
+                                onClick={(e) => toggleRow(row.id, e)}
+                                className="inline-flex items-center gap-1 text-[10px] font-semibold text-rose-600 hover:text-rose-800 bg-rose-50 px-2 py-1 rounded border border-rose-200 transition"
+                              >
+                                {row.remarks}
+                                <ChevronDown className={`h-3 w-3 transition-transform duration-200 ${expandedRows[row.id] ? 'rotate-180' : ''}`} />
+                              </button>
+                            ) : (
+                              row.remarks || '—'
+                            )}
                           </div>
                           <div className="col-span-2 px-4 py-3 flex items-center justify-center">
                             <span className={`inline-flex items-center rounded-sm border px-3 py-1 text-xs font-bold uppercase tracking-wider ${row.submissionStatus === 'SUBMITTED' ? 'border-emerald-200 bg-emerald-50 text-emerald-600' :
@@ -399,6 +420,42 @@ export const SummaryOfRatings = () => {
                               {row.submissionStatus}
                             </span>
                           </div>
+                        </div>
+                        {/* Sub Row */}
+                        {expandedRows[row.id] && row.competencies && (
+                          <div className="bg-slate-50 border-t border-slate-100 p-4 pl-12 shadow-inner">
+                            <h4 className="text-xs font-bold text-slate-700 mb-3 uppercase tracking-wider">Competency Gap Evaluation</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                              {row.competencies.map((comp, cIdx) => (
+                                <div key={cIdx} className={`rounded-lg p-3 border ${comp.isGap ? 'bg-rose-50 border-rose-200' : 'bg-white border-slate-200'}`}>
+                                  <div className="flex items-start justify-between mb-2">
+                                    <span className="text-xs font-bold text-slate-800 leading-tight pr-2">{comp.name}</span>
+                                    {comp.isGap ? (
+                                      <AlertCircle className="h-4 w-4 text-rose-500 shrink-0" />
+                                    ) : (
+                                      <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-4 mt-2">
+                                    <div>
+                                      <span className="block text-[10px] text-slate-500 uppercase tracking-wider">Required</span>
+                                      <span className="text-sm font-semibold text-slate-700">{comp.required}</span>
+                                    </div>
+                                    <div>
+                                      <span className="block text-[10px] text-slate-500 uppercase tracking-wider">Possessed</span>
+                                      <span className={`text-sm font-bold ${comp.isGap ? 'text-rose-600' : 'text-emerald-600'}`}>{comp.possessed}</span>
+                                    </div>
+                                    {comp.isGap && (
+                                      <div className="ml-auto">
+                                        <span className="inline-flex rounded bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700 uppercase">Gap Identified</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                         </div>
                       )
                     })}
@@ -559,7 +616,7 @@ export const SummaryOfRatings = () => {
                   onChange={(e) => setModalDept(e.target.value)}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
                 >
-                  {DEPT_OPTIONS.map(opt => (
+                  {deptOptions.map(opt => (
                     <option key={opt} value={opt}>{opt}</option>
                   ))}
                 </select>
