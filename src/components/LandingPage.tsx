@@ -220,11 +220,6 @@ export const LandingPage = () => {
           Authoritative welcome with clear CTAs
           ═════════════════════════════════════════════════════════════ */}
       <section className="relative overflow-hidden bg-gradient-to-br from-[#003D82] via-[#004A99] to-[#001A3D] px-4 sm:px-6 lg:px-8 py-16 sm:py-24 lg:py-32">
-        {/* Subtle background pattern */}
-        <div className="absolute inset-0 opacity-5">
-          <div className="absolute inset-0 bg-[url('data:image/svg+xml;utf8,<svg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"><path d="M0 0h60v60H0z" fill="none"/><circle cx="30" cy="30" r="2" fill="white"/></svg>')]" />
-        </div>
-
         <div className="relative mx-auto max-w-7xl">
           <div className="grid grid-cols-1 gap-12 lg:grid-cols-2 lg:gap-8 items-center">
             {/* Left: Hero Text */}
