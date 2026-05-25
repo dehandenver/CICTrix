@@ -92,15 +92,11 @@ const DEPARTMENTS = [
   'Legal & Compliance Division',
 ];
 
-// HRMO INFO
+// ABOUT / INFO
 const HRMO_INFO = {
-  vision: 'A world-class human resource management system delivering excellence in public service through meritocratic hiring, strategic performance management, and continuous capability building.',
-  mission: 'To attract, develop, and retain the best-qualified public servants through transparent, ethical, and competency-based processes aligned with national development goals.',
-  values: [
-    { title: 'Meritocracy', icon: Target, desc: 'Excellence through merit, fitness, and competence' },
-    { title: 'Transparency', icon: Info, desc: 'Open, fair, and accountable recruitment' },
-    { title: 'Excellence', icon: Zap, desc: 'Continuous improvement and capability development' },
-  ],
+  vision: 'A modern applicant-centric HRIS that makes applying for jobs simple, transparent, and fast.',
+  mission: 'Enable candidates to discover, apply, and track job opportunities while giving recruiters streamlined tools to manage applications and communicate updates.',
+  values: [],
 };
 
 export const LandingPageNew = () => {
@@ -126,32 +122,28 @@ export const LandingPageNew = () => {
       {/* ═══════════════════════════════════════════════════════════════════
           NAVIGATION BAR - HIGH CONTRAST (Dark Navy with White Text)
           ═══════════════════════════════════════════════════════════════════ */}
-      <nav className="sticky top-0 z-50 bg-slate-900 shadow-lg border-b-4 border-amber-600">
+      <nav className="sticky top-0 z-50 bg-white shadow-sm border-b">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between py-4">
-            {/* Left: Logo & Branding */}
             <div className="flex items-center gap-4">
-              <div className="h-12 w-12 rounded-lg bg-white flex items-center justify-center border-2 border-amber-600 shadow-md">
-                <img
-                  src={abyanLogo}
-                  alt="Government Seal"
-                  className="h-10 w-10 object-contain"
-                />
+              <div className="h-12 w-12 rounded-lg bg-white flex items-center justify-center border-2 border-[#C8D1FF] shadow-sm">
+                <img src={abyanLogo} alt="Abyan Logo" className="h-10 w-10 object-contain" />
               </div>
-              <div className="hidden sm:block">
-                <h1 className="text-xl font-bold text-white">HRMO Portal</h1>
-                <p className="text-xs text-blue-100">Human Resource Management Office</p>
+              <div className="hidden sm:flex flex-col">
+                <div className="flex items-baseline gap-3">
+                  <h1 className="text-xl font-extrabold text-[#040E6B]">ABYAN</h1>
+                  <span className="text-sm text-gray-500">Human Resource Information System</span>
+                </div>
               </div>
             </div>
 
-            {/* Middle: Navigation Links */}
             <div className="hidden md:flex items-center gap-8">
               <button
                 onClick={() => setActiveView('jobs')}
                 className={`text-sm font-semibold transition ${
                   activeView === 'jobs'
-                    ? 'text-white border-b-2 border-amber-600 pb-2'
-                    : 'text-blue-100 hover:text-white'
+                    ? 'text-[#363EE8] border-b-2 border-[#363EE8] pb-2'
+                    : 'text-[#040E6B] hover:text-[#363EE8]'
                 }`}
               >
                 Available Jobs
@@ -160,27 +152,22 @@ export const LandingPageNew = () => {
                 onClick={() => setActiveView('about')}
                 className={`text-sm font-semibold transition ${
                   activeView === 'about'
-                    ? 'text-white border-b-2 border-amber-600 pb-2'
-                    : 'text-blue-100 hover:text-white'
+                    ? 'text-[#363EE8] border-b-2 border-[#363EE8] pb-2'
+                    : 'text-[#040E6B] hover:text-[#363EE8]'
                 }`}
               >
-                About Us
+                About
               </button>
-              <a
-                href="#"
-                className="text-sm font-semibold text-blue-100 hover:text-white transition flex items-center gap-1"
-              >
+              <a href="#" className="text-sm font-semibold text-[#040E6B] hover:text-[#363EE8] transition flex items-center gap-1">
                 <Phone size={14} /> Support
               </a>
             </div>
 
-            {/* Right: Portal Login Button - High Visibility */}
             <button
-              onClick={() => setShowLoginModal(true)}
-              className="inline-flex items-center gap-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white px-5 py-2.5 text-sm font-bold transition focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-2 focus:ring-offset-slate-900"
+              onClick={() => document.getElementById('vacant-jobs')?.scrollIntoView({ behavior: 'smooth' })}
+              className="inline-flex items-center gap-2 rounded-lg bg-[#363EE8] hover:bg-[#2f35d0] text-white px-5 py-2.5 text-sm font-bold transition focus:outline-none focus:ring-2 focus:ring-[#C8D1FF] focus:ring-offset-2"
             >
-              <LogIn size={16} />
-              <span className="hidden sm:inline">Portal Login</span>
+              Apply Now
             </button>
           </div>
         </div>
@@ -192,14 +179,23 @@ export const LandingPageNew = () => {
       {activeView === 'jobs' && (
         <main className="px-4 sm:px-6 lg:px-8 py-12">
           <div className="mx-auto max-w-7xl">
-            {/* Header */}
+            {/* Hero */}
             <div className="mb-12">
-              <h2 className="text-4xl font-bold text-slate-900 mb-3">
-                Public Career Opportunities & Job Vacancies
-              </h2>
-              <p className="text-lg text-slate-700 max-w-3xl">
-                Browse available government positions. All vacancies comply with Civil Service Commission (CSC) publication requirements and equal opportunity employment principles.
-              </p>
+              <section className="rounded-xl overflow-hidden">
+                <div className="bg-gradient-to-r from-[#C8D1FF] to-[#363EE8] text-white rounded-xl p-12">
+                  <h2 className="text-5xl font-extrabold mb-2">Welcome ka-Abyan!</h2>
+                  <p className="text-xl font-semibold mb-4">Abyan HRIS</p>
+                  <p className="text-lg max-w-3xl mb-6 text-white/90">Create an applicant profile, browse current vacancies, and submit applications securely. Track your application status every step of the way.</p>
+                  <div>
+                    <button
+                      onClick={() => document.getElementById('vacant-jobs')?.scrollIntoView({ behavior: 'smooth' })}
+                      className="inline-flex items-center gap-2 rounded-lg bg-white text-[#363EE8] px-6 py-3 font-bold shadow"
+                    >
+                      View Vacant Jobs
+                    </button>
+                  </div>
+                </div>
+              </section>
             </div>
 
             {/* Search & Filter Card */}
@@ -235,87 +231,35 @@ export const LandingPageNew = () => {
               </div>
             </div>
 
-            {/* Job Listings Table - Light Header, High Contrast */}
-            <div className="overflow-x-auto rounded-xl border-2 border-slate-200 bg-white shadow-lg">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b-2 border-slate-200 bg-slate-100">
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-900 uppercase tracking-wide">
-                      Position Title
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-900 uppercase tracking-wide">
-                      Office
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-900 uppercase tracking-wide">
-                      Item #
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-900 uppercase tracking-wide">
-                      SG / Salary
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-900 uppercase tracking-wide">
-                      Closing Date
-                    </th>
-                    <th className="px-6 py-4 text-center text-xs font-bold text-slate-900 uppercase tracking-wide">
-                      Action
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredJobs.map((job) => (
-                    <tr key={job.id} className="border-b border-slate-200 hover:bg-slate-50 transition">
-                      <td className="px-6 py-4">
-                        <div>
-                          <p className="font-bold text-slate-900">{job.title}</p>
-                          <p className="text-xs text-slate-600 mt-1">
-                            {job.type === 'Plantilla' ? (
-                              <span className="inline-flex items-center gap-1 bg-slate-900/10 text-slate-900 px-2 py-1 rounded text-xs font-semibold">
-                                ● Plantilla
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 bg-amber-600/10 text-amber-900 px-2 py-1 rounded text-xs font-semibold">
-                                ● Contractual
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-700 font-medium">
-                        {job.office}
-                      </td>
-                      <td className="px-6 py-4 text-sm font-mono text-slate-900 font-bold">
-                        {job.itemNumber}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm">
-                          <p className="font-bold text-slate-900">{job.salaryGrade}</p>
-                          <p className="text-xs text-slate-600">{job.salary}</p>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm font-medium text-slate-900">
-                        <div className="flex items-center gap-2">
-                          <Calendar size={14} className="text-amber-600" />
-                          {job.closing}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <Link
-                          to="/apply"
-                          className="inline-flex items-center gap-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 text-sm font-bold transition focus:outline-none focus:ring-2 focus:ring-amber-600 focus:ring-offset-2"
-                        >
-                          <Briefcase size={14} />
-                          View & Apply
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            {/* Vacant Jobs Section - Grid of Cards */}
+            <section id="vacant-jobs" className="mt-8">
+              <h3 className="text-2xl font-bold text-[#040E6B] mb-6">Currently Vacant Jobs</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredJobs.map((job) => (
+                  <div key={job.id} className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+                    <div className="mb-3">
+                      <p className="text-lg font-bold text-[#040E6B]">{job.title}</p>
+                      <p className="text-sm text-gray-600">{job.office}</p>
+                    </div>
+                    <div className="text-sm text-[#040E6B] mb-4">
+                      <p className="font-semibold">{job.salaryGrade} • {job.salary}</p>
+                      <p className="text-xs text-gray-500 mt-1">Closing: {job.closing}</p>
+                    </div>
+                    <div className="flex items-center justify-between mt-4">
+                      <span className="text-xs text-gray-500">{job.type}</span>
+                      <Link to="/apply" className="inline-flex items-center gap-2 rounded-lg bg-[#363EE8] hover:bg-[#2f35d0] text-white px-4 py-2 text-sm font-bold">
+                        <Briefcase size={14} /> Apply
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
 
-            {/* Compliance Callout */}
-            <div className="mt-8 rounded-xl bg-blue-50 border-l-4 border-slate-900 px-6 py-4 shadow-md">
-              <p className="text-sm text-slate-800 leading-relaxed">
-                <strong className="text-slate-900">CSC Compliance Statement:</strong> All positions listed herein are posted in accordance with Civil Service Commission Memorandum Circular No. 6, Series 2019 (Publication Requirements), for a minimum of thirty (30) calendar days. The HRMO is an Equal Opportunity Employer committed to merit-based, transparent, and inclusive recruitment.
+            {/* Applicant Notice */}
+            <div className="mt-8 rounded-xl bg-[#F8FAFF] border-l-4 border-[#363EE8] px-6 py-4 shadow-sm">
+              <p className="text-sm text-[#040E6B] leading-relaxed">
+                <strong className="text-[#040E6B]">Applicant Notice:</strong> Your personal data will be used only for recruitment purposes. By applying you consent to processing of your information according to our privacy policy.
               </p>
             </div>
 
@@ -432,23 +376,10 @@ export const LandingPageNew = () => {
 
             {/* Citizen's Charter */}
             <div className="rounded-xl bg-blue-50 border-2 border-slate-900 p-8 shadow-md">
-              <h3 className="text-2xl font-bold text-slate-900 mb-4 flex items-center gap-2">
-                <FileText size={24} />
-                Citizen's Charter
-              </h3>
-              <p className="text-slate-800 mb-6">
-                The HRMO is committed to providing excellent, efficient, and equitable service to all stakeholders. Our Citizen's Charter outlines our service standards, performance targets, and customer feedback mechanisms.
-              </p>
-              <button className="inline-flex items-center gap-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 font-bold transition focus:outline-none focus:ring-2 focus:ring-amber-600 focus:ring-offset-2">
-                <ExternalLink size={16} />
-                Download Citizen's Charter
-              </button>
-            </div>
-
-            {/* Contact Information */}
-            <div className="mt-12 rounded-xl bg-white border-2 border-slate-200 p-8 shadow-md">
-              <h3 className="text-2xl font-bold text-slate-900 mb-6">Contact Information</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="mb-12">
+                <h2 className="text-4xl font-bold text-[#040E6B] mb-4">About Abyan HRIS</h2>
+                <p className="text-lg text-gray-600">Abyan HRIS is an applicant-focused human resources information system designed to simplify hiring workflows, centralize vacancy postings, and streamline application tracking for candidates and recruiters.</p>
+              </div>
                 <div className="flex items-start gap-4">
                   <Phone size={20} className="text-slate-900 flex-shrink-0 mt-1" />
                   <div>

@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -478,10 +479,10 @@ body {
 
 :root {
   /* Brand Palette (Logo-based) */
-  --color-primary: #0b3d91; /* Deep blue */
-  --color-primary-dark: #0a2f6e;
-  --color-primary-hover: #0a2f6e;
-  --color-primary-light: #e6eef9;
+  --color-primary: #363EE8; /* Abyan Vibrant Blue */
+  --color-primary-dark: #040E6B; /* Abyan Dark Blue */
+  --color-primary-hover: #2f35d0;
+  --color-primary-light: #C8D1FF; /* Gradient start */
   --color-accent-yellow: #f5c12a;
   --color-accent-red: #d6453d;
   --color-secondary: #6b7280;
@@ -516,7 +517,7 @@ body {
   --spacing-3xl: 4rem;
   
   /* Typography */
-  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+  --font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
   --font-size-base: 1rem;
@@ -568,7 +569,7 @@ body {
   font-size: var(--font-size-base);
   line-height: var(--line-height-normal);
   color: var(--color-text-primary);
-  background: linear-gradient(135deg, #fff7e0 0%, #f1f5ff 100%);
+  background: var(--color-background);
   min-height: 100vh;
   text-rendering: optimizeLegibility;
 }
