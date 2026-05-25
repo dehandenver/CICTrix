@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Briefcase,
   Users,
@@ -21,6 +21,7 @@ import {
   FileText,
 } from 'lucide-react';
 import abyanLogo from '../assets/abyan-logo.png';
+import { getJobPostingsFromSupabase } from '../lib/recruitmentData';
 
 /* ═══════════════════════════════════════════════════════════════════
    LIGHT MODE FIRST - HIGH CONTRAST WCAG AA COMPLIANT
@@ -30,58 +31,6 @@ import abyanLogo from '../assets/abyan-logo.png';
    Text on Dark:          text-white (pure white for max contrast)
    Accent:                bg-amber-600 (gold for CTAs)
 ═══════════════════════════════════════════════════════════════════ */
-
-// JOB VACANCIES - REALISTIC GOVERNMENT POSITIONS
-const JOB_VACANCIES = [
-  {
-    id: 1,
-    title: 'Administrative Officer V',
-    office: 'Human Resource Management Office',
-    itemNumber: 'PS-2026-005',
-    salaryGrade: 'SG 19',
-    salary: '₱66,530 - ₱72,460',
-    eligibility: 'CS Professional (Second Level Exam or equivalent)',
-    education: 'Bachelor\'s Degree in any field',
-    closing: 'June 30, 2026',
-    type: 'Plantilla',
-  },
-  {
-    id: 2,
-    title: 'Information Technology Officer I',
-    office: 'ICT & Systems Division',
-    itemNumber: 'PS-2026-012',
-    salaryGrade: 'SG 15',
-    salary: '₱43,926 - ₱48,207',
-    eligibility: 'CS Professional with IT specialization',
-    education: 'Bachelor\'s Degree in IT/CS/Related Field',
-    closing: 'June 15, 2026',
-    type: 'Plantilla',
-  },
-  {
-    id: 3,
-    title: 'Planning Officer II',
-    office: 'Strategic Planning Unit',
-    itemNumber: 'CON-2026-008',
-    salaryGrade: 'SG 17',
-    salary: '₱54,840 - ₱59,808',
-    eligibility: 'CS Professional or Licensed Engineer',
-    education: 'Bachelor\'s Degree in Urban Planning/Governance',
-    closing: 'July 5, 2026',
-    type: 'Contractual',
-  },
-  {
-    id: 4,
-    title: 'Legal Officer IV',
-    office: 'Legal & Compliance Division',
-    itemNumber: 'PS-2026-003',
-    salaryGrade: 'SG 21',
-    salary: '₱82,833 - ₱89,833',
-    eligibility: 'Attorney with valid PRC license',
-    education: 'Juris Doctor (J.D.) with Bar Admission',
-    closing: 'June 25, 2026',
-    type: 'Plantilla',
-  },
-];
 
 // DEPARTMENTS FOR FILTER
 const DEPARTMENTS = [
@@ -103,6 +52,20 @@ const HRMO_INFO = {
   ],
 };
 
+// TYPE DEFINITION FOR DISPLAY
+interface JobDisplay {
+  id: string;
+  title: string;
+  office: string;
+  itemNumber: string;
+  salaryGrade: string;
+  salary: string;
+  eligibility: string;
+  education: string;
+  closing: string;
+  type: string;
+}
+
 export const LandingPage = () => {
   const [activeView, setActiveView] = useState<'jobs' | 'about'>('jobs');
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -112,8 +75,54 @@ export const LandingPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [jobVacancies, setJobVacancies] = useState<JobDisplay[]>([]);
+  const [loadingJobs, setLoadingJobs] = useState(true);
+  const [departmentOptions, setDepartmentOptions] = useState<string[]>(['All Departments']);
 
-  const filteredJobs = JOB_VACANCIES.filter((job) => {
+  // Fetch active job postings from Supabase on component mount
+  useEffect(() => {
+    const fetchJobs = async () => {
+      try {
+        setLoadingJobs(true);
+        const postings = await getJobPostingsFromSupabase();
+        
+        // Filter for only ACTIVE jobs and transform to display format
+        const activeJobs: JobDisplay[] = postings
+          .filter(job => job.status === 'Active')
+          .map((job, index) => ({
+            id: job.id || `job-${index}`,
+            title: job.title,
+            office: job.department || 'Unassigned',
+            itemNumber: job.jobCode || `ITEM-${index + 1}`,
+            salaryGrade: 'SG 15-21', // Default, can be customized in job posting
+            salary: '₱40,000 - ₱100,000', // Default range
+            eligibility: job.qualifications?.certifications?.join(', ') || 'CS Professional',
+            education: job.qualifications?.education || "Bachelor's Degree",
+            closing: job.applicationDeadline 
+              ? new Date(job.applicationDeadline).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })
+              : 'TBD',
+            type: job.employmentStatus === 'Contractual' ? 'Contractual' : 'Plantilla',
+          }));
+        
+        setJobVacancies(activeJobs);
+        
+        // Build department options from fetched jobs
+        const uniqueDepts = new Set(activeJobs.map(j => j.office));
+        setDepartmentOptions(['All Departments', ...Array.from(uniqueDepts).sort()]);
+      } catch (error) {
+        console.error('[LandingPage] Failed to fetch jobs:', error);
+        // Show empty state or fallback data if fetch fails
+        setJobVacancies([]);
+        setDepartmentOptions(['All Departments']);
+      } finally {
+        setLoadingJobs(false);
+      }
+    };
+
+    fetchJobs();
+  }, []);
+
+  const filteredJobs = jobVacancies.filter((job) => {
     const matchesDept = selectedDepartment === 'All Departments' || job.office === selectedDepartment;
     const matchesSearch =
       job.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -336,7 +345,7 @@ export const LandingPage = () => {
                     onChange={(e) => setSelectedDepartment(e.target.value)}
                     className="w-full pl-10 pr-4 py-3 border-2 border-slate-300 rounded-lg text-slate-900 bg-white transition focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 cursor-pointer font-medium"
                   >
-                    {DEPARTMENTS.map((dept) => (
+                    {departmentOptions.map((dept) => (
                       <option key={dept} value={dept}>
                         {dept}
                       </option>
@@ -347,6 +356,20 @@ export const LandingPage = () => {
             </div>
 
             {/* Job Listings Table - Light Header, High Contrast */}
+            {loadingJobs ? (
+              <div className="rounded-xl border-2 border-slate-200 bg-white shadow-lg p-12 text-center">
+                <div className="flex items-center justify-center gap-3">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-amber-600 border-t-slate-200"></div>
+                  <p className="text-lg font-semibold text-slate-700">Loading available positions...</p>
+                </div>
+              </div>
+            ) : filteredJobs.length === 0 ? (
+              <div className="rounded-xl border-2 border-slate-200 bg-white shadow-lg p-12 text-center">
+                <AlertCircle size={48} className="mx-auto mb-4 text-slate-400" />
+                <p className="text-lg font-semibold text-slate-700">No positions available</p>
+                <p className="text-slate-600 mt-2">Check back soon for new opportunities or adjust your search filters.</p>
+              </div>
+            ) : (
             <div className="overflow-x-auto rounded-xl border-2 border-slate-200 bg-white shadow-lg">
               <table className="w-full">
                 <thead>
@@ -422,6 +445,7 @@ export const LandingPage = () => {
                 </tbody>
               </table>
             </div>
+            )}
 
             {/* Compliance Callout */}
             <div className="mt-8 rounded-xl bg-blue-50 border-l-4 border-slate-900 px-6 py-4 shadow-md">
