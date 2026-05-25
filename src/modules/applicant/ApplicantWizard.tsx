@@ -743,7 +743,6 @@ const handleNextToReview = () => {
                       setApplicationType(next);
                       handleFormChange('application_type', next);
                     }}
-                    isDepartmentLocked={isFromJobPosting}
                   />
                 </div>
               </>
