@@ -297,10 +297,15 @@ export const LandingPage = () => {
                 </div>
               </div>
 
-              {/* CTA to Start Application */}
+              {/* CTA to Start Application - Scrolls to Vacant Positions */}
               <div className="text-center">
                 <button
-                  onClick={() => setShowLoginModal(true)}
+                  onClick={() => {
+                    const vacantPositionsSection = document.getElementById('vacant-positions');
+                    if (vacantPositionsSection) {
+                      vacantPositionsSection.scrollIntoView({ behavior: 'smooth' });
+                    }
+                  }}
                   className="inline-flex items-center gap-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white px-8 py-4 text-lg font-bold shadow-lg transition focus:outline-none focus:ring-2 focus:ring-amber-600 focus:ring-offset-2"
                 >
                   <LogIn size={20} />
@@ -312,15 +317,16 @@ export const LandingPage = () => {
             {/* ═══════════════════════════════════════════════════════════════════
                 PUBLIC VACANT POSITIONS SECTION (Below Process Roadmap)
                 ═══════════════════════════════════════════════════════════════════ */}
-            {/* Header */}
-            <div className="mb-12 mt-16 pt-12 border-t-2 border-slate-200">
-              <h2 className="text-3xl font-bold text-slate-900 mb-3">
-                Public Career Opportunities & Job Vacancies
-              </h2>
-              <p className="text-lg text-slate-700 max-w-3xl">
-                Browse available government positions below. All vacancies comply with Civil Service Commission (CSC) publication requirements and equal opportunity employment principles. Ready to apply? Start with Step 1 above.
-              </p>
-            </div>
+            <div id="vacant-positions" className="mt-16 pt-8 scroll-mt-20">
+              {/* Header */}
+              <div className="mb-12">
+                <h2 className="text-4xl font-bold text-slate-900 mb-3">
+                  Available Vacant Positions
+                </h2>
+                <p className="text-lg text-slate-700 max-w-3xl">
+                  Browse available government positions below. All vacancies comply with Civil Service Commission (CSC) publication requirements and equal opportunity employment principles.
+                </p>
+              </div>
 
             {/* Search & Filter Card */}
             <div className="mb-8 bg-white rounded-xl shadow-md border border-slate-200 p-6">
@@ -355,7 +361,7 @@ export const LandingPage = () => {
               </div>
             </div>
 
-            {/* Job Listings Table - Light Header, High Contrast */}
+            {/* Job Listings Table - Official Government Layout */}
             {loadingJobs ? (
               <div className="rounded-xl border-2 border-slate-200 bg-white shadow-lg p-12 text-center">
                 <div className="flex items-center justify-center gap-3">
@@ -375,19 +381,16 @@ export const LandingPage = () => {
                 <thead>
                   <tr className="border-b-2 border-slate-200 bg-slate-100">
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-900 uppercase tracking-wide">
-                      Position Title
+                      Position Title & Item Number
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-900 uppercase tracking-wide">
-                      Office
+                      Office / Division
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-900 uppercase tracking-wide">
-                      Item #
+                      Salary Grade & Salary
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-slate-900 uppercase tracking-wide">
-                      SG / Salary
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-900 uppercase tracking-wide">
-                      Closing Date
+                      Qualification Standards
                     </th>
                     <th className="px-6 py-4 text-center text-xs font-bold text-slate-900 uppercase tracking-wide">
                       Action
@@ -397,47 +400,56 @@ export const LandingPage = () => {
                 <tbody>
                   {filteredJobs.map((job) => (
                     <tr key={job.id} className="border-b border-slate-200 hover:bg-slate-50 transition">
+                      {/* Position Title & Item Number Column */}
                       <td className="px-6 py-4">
                         <div>
-                          <p className="font-bold text-slate-900">{job.title}</p>
-                          <p className="text-xs text-slate-600 mt-1">
+                          <p className="font-bold text-slate-900 text-sm mb-1">{job.title}</p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-mono text-slate-700 bg-slate-100 px-2.5 py-1 rounded border border-slate-300">
+                              {job.itemNumber}
+                            </span>
                             {job.type === 'Plantilla' ? (
-                              <span className="inline-flex items-center gap-1 bg-slate-900/10 text-slate-900 px-2 py-1 rounded text-xs font-semibold">
+                              <span className="inline-flex items-center gap-1 bg-slate-900/10 text-slate-900 px-2.5 py-1 rounded text-xs font-semibold">
                                 ● Plantilla
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 bg-amber-600/10 text-amber-900 px-2 py-1 rounded text-xs font-semibold">
+                              <span className="inline-flex items-center gap-1 bg-amber-600/10 text-amber-900 px-2.5 py-1 rounded text-xs font-semibold">
                                 ● Contractual
                               </span>
                             )}
-                          </p>
+                          </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-sm text-slate-700 font-medium">
-                        {job.office}
+
+                      {/* Office / Division Column */}
+                      <td className="px-6 py-4">
+                        <p className="text-sm text-slate-900 font-medium">{job.office}</p>
                       </td>
-                      <td className="px-6 py-4 text-sm font-mono text-slate-900 font-bold">
-                        {job.itemNumber}
-                      </td>
+
+                      {/* Salary Grade & Salary Column */}
                       <td className="px-6 py-4">
                         <div className="text-sm">
                           <p className="font-bold text-slate-900">{job.salaryGrade}</p>
-                          <p className="text-xs text-slate-600">{job.salary}</p>
+                          <p className="text-xs text-slate-600 mt-0.5">{job.salary}</p>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-sm font-medium text-slate-900">
-                        <div className="flex items-center gap-2">
-                          <Calendar size={14} className="text-amber-600" />
-                          {job.closing}
+
+                      {/* Qualification Standards Column */}
+                      <td className="px-6 py-4">
+                        <div className="text-sm">
+                          <p className="text-slate-900 mb-1"><span className="font-semibold">Eligibility:</span> {job.eligibility}</p>
+                          <p className="text-xs text-slate-600"><span className="font-semibold">Education:</span> {job.education}</p>
                         </div>
                       </td>
+
+                      {/* Action Column */}
                       <td className="px-6 py-4 text-center">
                         <Link
                           to="/apply"
-                          className="inline-flex items-center gap-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 text-sm font-bold transition focus:outline-none focus:ring-2 focus:ring-amber-600 focus:ring-offset-2"
+                          className="inline-flex items-center gap-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white px-5 py-2.5 text-sm font-bold transition focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-2"
                         >
                           <Briefcase size={14} />
-                          View & Apply
+                          <span>Apply / View</span>
                         </Link>
                       </td>
                     </tr>
