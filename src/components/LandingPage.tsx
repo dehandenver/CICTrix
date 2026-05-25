@@ -19,6 +19,9 @@ import {
   AlertCircle,
   MapPin,
   Mail,
+  Search,
+  Filter,
+  Calendar,
 } from 'lucide-react';
 import abyanLogo from '../assets/abyan-logo.png';
 
@@ -69,6 +72,59 @@ const OPERATIONAL_METRICS = [
   { label: 'Filled Positions', value: '71.4%', icon: BarChart3 },
 ];
 
+// JOB VACANCIES - REALISTIC GOVERNMENT POSITIONS
+const JOB_VACANCIES = [
+  {
+    id: 1,
+    title: 'Administrative Officer V',
+    office: 'Human Resource Management Office',
+    itemNumber: 'PS-2026-005',
+    salaryGrade: 'SG 19',
+    eligibility: 'CS Professional (Second Level Exam or equivalent)',
+    closing: 'June 30, 2026',
+    type: 'Plantilla',
+  },
+  {
+    id: 2,
+    title: 'Information Technology Officer I',
+    office: 'ICT & Systems Division',
+    itemNumber: 'PS-2026-012',
+    salaryGrade: 'SG 15',
+    eligibility: 'Bachelor\'s Degree in IT, CS Professional',
+    closing: 'June 15, 2026',
+    type: 'Plantilla',
+  },
+  {
+    id: 3,
+    title: 'Planning Officer II',
+    office: 'Strategic Planning Unit',
+    itemNumber: 'CON-2026-008',
+    salaryGrade: 'SG 17',
+    eligibility: 'Bachelor\'s Degree in Urban Planning/Governance',
+    closing: 'July 5, 2026',
+    type: 'Contractual',
+  },
+  {
+    id: 4,
+    title: 'Legal Officer IV',
+    office: 'Legal & Compliance Division',
+    itemNumber: 'PS-2026-003',
+    salaryGrade: 'SG 21',
+    eligibility: 'Attorney with valid PRC license',
+    closing: 'June 25, 2026',
+    type: 'Plantilla',
+  },
+];
+
+// DEPARTMENTS FOR FILTER
+const DEPARTMENTS = [
+  'All Departments',
+  'Human Resource Management Office',
+  'ICT & Systems Division',
+  'Strategic Planning Unit',
+  'Legal & Compliance Division',
+];
+
 export const LandingPage = () => {
   const [currentAnnouncement, setCurrentAnnouncement] = useState(0);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -76,6 +132,8 @@ export const LandingPage = () => {
   const [emailOrId, setEmailOrId] = useState('');
   const [password, setPassword] = useState('');
   const [selectedPortal, setSelectedPortal] = useState('employee');
+  const [selectedDepartment, setSelectedDepartment] = useState('All Departments');
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -173,10 +231,16 @@ export const LandingPage = () => {
                   Home
                 </a>
                 <a
+                  href="#vacancies"
+                  className="text-sm font-semibold text-[#475569] hover:text-[#0f172a] transition"
+                >
+                  Careers/Vacancies
+                </a>
+                <a
                   href="#"
                   className="text-sm font-semibold text-[#475569] hover:text-[#0f172a] transition"
                 >
-                  Transparency
+                  Transparency Seal
                 </a>
                 <a
                   href="#"
@@ -521,6 +585,171 @@ export const LandingPage = () => {
                 </div>
               );
             })}
+          </div>
+        </div>
+      </section>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          PUBLIC JOB VACANCIES & CAREERS SECTION
+          Bulletin board for available government positions
+          ═══════════════════════════════════════════════════════════════════ */}
+      <section id="vacancies" className="bg-white px-4 sm:px-6 lg:px-8 py-16">
+        <div className="mx-auto max-w-7xl">
+          <div className="mb-12">
+            <h2 className="text-3xl font-bold text-[#0f172a] mb-3">
+              Available Positions & Career Opportunities
+            </h2>
+            <p className="text-lg text-[#64748b] max-w-2xl">
+              Browse open plantilla and contractual positions. Equal Opportunity Employer in compliance with Civil Service Commission requirements.
+            </p>
+          </div>
+
+          {/* Search & Filter Bar */}
+          <div className="mb-8 space-y-4 sm:space-y-0 sm:flex gap-4">
+            {/* Search Box */}
+            <div className="flex-1 relative">
+              <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#64748b]" />
+              <input
+                type="text"
+                placeholder="Search by position title..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 border-2 border-[#e2e8f0] rounded-lg text-[#0f172a] placeholder-[#cbd5e1] transition focus:border-[#0f172a] focus:outline-none focus:ring-2 focus:ring-[#0f172a]/10"
+              />
+            </div>
+
+            {/* Department Filter */}
+            <div className="sm:w-64 relative">
+              <Filter size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#64748b] pointer-events-none" />
+              <select
+                value={selectedDepartment}
+                onChange={(e) => setSelectedDepartment(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 border-2 border-[#e2e8f0] rounded-lg text-[#0f172a] bg-white transition focus:border-[#0f172a] focus:outline-none focus:ring-2 focus:ring-[#0f172a]/10 cursor-pointer"
+              >
+                {DEPARTMENTS.map((dept) => (
+                  <option key={dept} value={dept}>
+                    {dept}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Job Listings Table */}
+          <div className="overflow-x-auto rounded-xl border-2 border-[#e2e8f0] bg-white">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b-2 border-[#e2e8f0] bg-[#f8fafc]">
+                  <th className="px-6 py-4 text-left text-xs font-bold text-[#0f172a] uppercase tracking-wide">
+                    Position Title
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-[#0f172a] uppercase tracking-wide">
+                    Office/Department
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-[#0f172a] uppercase tracking-wide">
+                    Item #
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-[#0f172a] uppercase tracking-wide">
+                    Salary Grade
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-bold text-[#0f172a] uppercase tracking-wide">
+                    Eligibility
+                  </th>
+                  <th className="px-6 py-4 text-center text-xs font-bold text-[#0f172a] uppercase tracking-wide">
+                    Action
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {JOB_VACANCIES.filter((job) => {
+                  const matchesDept =
+                    selectedDepartment === 'All Departments' ||
+                    job.office === selectedDepartment;
+                  const matchesSearch =
+                    job.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    job.office.toLowerCase().includes(searchQuery.toLowerCase());
+                  return matchesDept && matchesSearch;
+                }).map((job) => (
+                  <tr
+                    key={job.id}
+                    className="border-b border-[#e2e8f0] hover:bg-[#f8fafc] transition"
+                  >
+                    <td className="px-6 py-4">
+                      <div>
+                        <p className="font-bold text-[#0f172a]">{job.title}</p>
+                        <p className="text-xs text-[#64748b] mt-1">
+                          {job.type === 'Plantilla' ? (
+                            <span className="inline-flex items-center gap-1 bg-[#0f172a]/10 text-[#0f172a] px-2 py-1 rounded text-xs font-semibold">
+                              Plantilla
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 bg-[#d97706]/10 text-[#d97706] px-2 py-1 rounded text-xs font-semibold">
+                              Contractual
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-[#64748b]">
+                      {job.office}
+                    </td>
+                    <td className="px-6 py-4 text-sm font-mono text-[#0f172a]">
+                      {job.itemNumber}
+                    </td>
+                    <td className="px-6 py-4 text-sm font-bold text-[#1e3a8a]">
+                      {job.salaryGrade}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-[#64748b] max-w-xs">
+                      {job.eligibility}
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <Link
+                        to="/apply"
+                        className="inline-flex items-center gap-2 rounded-lg bg-[#0f172a] hover:bg-[#1e3a8a] text-white px-4 py-2 text-sm font-bold transition focus:outline-none focus:ring-2 focus:ring-[#d97706] focus:ring-offset-2"
+                      >
+                        <Briefcase size={14} />
+                        Apply
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Compliance Callout */}
+          <div className="mt-8 rounded-xl bg-gradient-to-r from-[#f8fafc] to-[#e2e8f0] border-l-4 border-[#d97706] px-6 py-4">
+            <p className="text-sm text-[#475569] leading-relaxed">
+              <strong>Civil Service Commission Compliance:</strong> All vacancies published herein are in compliance with CSC Publication Requirements (CSMC 06, s. 2019) and are posted for a minimum of thirty (30) calendar days. The HRMO is an Equal Opportunity Employer committed to inclusive recruitment and fair selection processes.
+            </p>
+          </div>
+
+          {/* Closing Dates Legend */}
+          <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="rounded-lg bg-[#0f172a]/5 p-4 border border-[#e2e8f0]">
+              <p className="text-xs font-bold text-[#0f172a] uppercase tracking-wide mb-2">
+                <Calendar size={14} className="inline mr-2" /> Application Closing Dates
+              </p>
+              <ul className="text-sm text-[#64748b] space-y-1">
+                {JOB_VACANCIES.map((job) => (
+                  <li key={job.id}>
+                    <strong>{job.title}</strong>: {job.closing}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="rounded-lg bg-[#d97706]/5 p-4 border border-[#e2e8f0]">
+              <p className="text-xs font-bold text-[#0f172a] uppercase tracking-wide mb-2">
+                📋 Required Documents
+              </p>
+              <ul className="text-sm text-[#64748b] space-y-1">
+                <li>• Duly accomplished PDS (Personal Data Sheet)</li>
+                <li>• Certified true copy of NCLC</li>
+                <li>• Relevant professional or educational certificate</li>
+                <li>• Medical Certificate of Fitness</li>
+                <li>• Eligible applicants must have CS exam rating</li>
+              </ul>
+            </div>
           </div>
         </div>
       </section>
