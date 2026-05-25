@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Card, Checkbox, Input, Select } from '../../components';
 import { DEPARTMENT_OPTIONS, POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import { ensureRecruitmentSeedData, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
@@ -25,8 +25,9 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
 }) => {
   const [dynamicPositionOptions, setDynamicPositionOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [positionDepartmentMap, setPositionDepartmentMap] = useState<Record<string, string>>({});
+  const hasInitialPositionRef = useRef<boolean>(Boolean(formData.position));
 
-  const syncPostedPositions = (currentSelectedPosition?: string) => {
+  const syncPostedPositions = (currentSelectedPosition?: string, skipClearingOnFirstLoad = false) => {
     ensureRecruitmentSeedData();
 
     const activeRows = getAuthoritativeJobPostings().filter(
@@ -34,14 +35,16 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
     );
 
     if (activeRows.length === 0) {
-      setPositionDepartmentMap({});
-      setDynamicPositionOptions([]);
+      // Don't clear if this is the initial load with pre-filled position
+      if (!skipClearingOnFirstLoad) {
+        setPositionDepartmentMap({});
+        setDynamicPositionOptions([]);
 
-      if (currentSelectedPosition) {
-        onChange('position', '');
-        onChange('office', '');
+        if (currentSelectedPosition) {
+          onChange('position', '');
+          onChange('office', '');
+        }
       }
-
       return;
     }
 
@@ -70,7 +73,7 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
 
     if (currentSelectedPosition) {
       const stillActive = nextOptions.some((option) => option.value === currentSelectedPosition);
-      if (!stillActive) {
+      if (!stillActive && !skipClearingOnFirstLoad) {
         onChange('position', '');
         onChange('office', '');
       }
@@ -78,13 +81,15 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
   };
 
   useEffect(() => {
-    syncPostedPositions(formData.position);
-    loadJobPostings().then(() => syncPostedPositions(formData.position));
+    // On initial load, don't clear the position if it's pre-filled from URL
+    const isInitial = hasInitialPositionRef.current;
+    syncPostedPositions(formData.position, isInitial);
+    loadJobPostings().then(() => syncPostedPositions(formData.position, false));
 
     const onFocus = () => {
-      loadJobPostings().then(() => syncPostedPositions(formData.position));
+      loadJobPostings().then(() => syncPostedPositions(formData.position, false));
     };
-    const onUpdated = () => syncPostedPositions(formData.position);
+    const onUpdated = () => syncPostedPositions(formData.position, false);
     window.addEventListener('focus', onFocus);
     window.addEventListener('cictrix:job-postings-updated', onUpdated as EventListener);
 
@@ -97,11 +102,27 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
   useEffect(() => {
     if (!formData.position) return;
     const exists = dynamicPositionOptions.some((option) => option.value === formData.position);
-    if (exists) return;
+    if (!exists) {
+      // Only clear if this wasn't the initial pre-filled position
+      // This allows time for the positions to load from the database
+      if (!hasInitialPositionRef.current) {
+        onChange('position', '');
+        onChange('office', '');
+      }
+      return;
+    }
 
-    onChange('position', '');
-    onChange('office', '');
-  }, [dynamicPositionOptions, formData.position, onChange]);
+    // Clear the flag once we've found the position in the options
+    hasInitialPositionRef.current = false;
+
+    // Position exists - auto-populate department if not already set
+    if (!formData.office) {
+      const assignedDepartment = positionDepartmentMap[formData.position] ?? POSITION_TO_DEPARTMENT_MAP[formData.position];
+      if (assignedDepartment) {
+        onChange('office', assignedDepartment);
+      }
+    }
+  }, [dynamicPositionOptions, formData.position, formData.office, positionDepartmentMap, onChange]);
 
   const handlePositionChange = (positionValue: string) => {
     onChange('position', positionValue);
@@ -317,13 +338,11 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
           readOnly
         />
 
-        <Select
+        <Input
           label="Department"
-          options={DEPARTMENT_OPTIONS}
           value={formData.office}
-          onChange={(e) => onChange('office', e.target.value)}
-          error={errors.office}
-          required
+          readOnly
+          className="bg-slate-50 cursor-not-allowed"
         />
 
         <div className="md:col-span-2">
