@@ -458,6 +458,7 @@ export const LandingPage = () => {
               </table>
             </div>
             )}
+            </div>
 
             {/* Compliance Callout */}
             <div className="mt-8 rounded-xl bg-blue-50 border-l-4 border-slate-900 px-6 py-4 shadow-md">
