@@ -103,7 +103,7 @@ const HRMO_INFO = {
   ],
 };
 
-export const LandingPage = () => {
+export const LandingPageNew = () => {
   const [activeView, setActiveView] = useState<'jobs' | 'about'>('jobs');
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [selectedLoginTab, setSelectedLoginTab] = useState<'employee' | 'admin' | 'interviewer'>('employee');
