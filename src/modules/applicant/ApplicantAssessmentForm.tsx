@@ -13,6 +13,8 @@ interface ApplicantAssessmentFormProps {
   isEmployee?: boolean;
   /** Called when a non-employee toggles the application type radio group. Ignored when isEmployee. */
   onApplicationTypeChange?: (next: 'job' | 'promotion') => void;
+  /** True when department was auto-filled from job posting (makes it read-only). */
+  isDepartmentLocked?: boolean;
 }
 
 export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = ({
@@ -22,6 +24,7 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
   applicationType = 'job',
   isEmployee = false,
   onApplicationTypeChange,
+  isDepartmentLocked = false,
 }) => {
   const [dynamicPositionOptions, setDynamicPositionOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [positionDepartmentMap, setPositionDepartmentMap] = useState<Record<string, string>>({});
@@ -301,14 +304,23 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
           />
         </div>
 
-        <Select
-          label="Position Applied For"
-          options={dynamicPositionOptions}
-          value={formData.position}
-          onChange={(e) => handlePositionChange(e.target.value)}
-          error={errors.position}
-          required
-        />
+        {isDepartmentLocked ? (
+          <Input
+            label="Position Applied For"
+            value={formData.position}
+            readOnly
+            className="bg-slate-50 cursor-not-allowed"
+          />
+        ) : (
+          <Select
+            label="Position Applied For"
+            options={dynamicPositionOptions}
+            value={formData.position}
+            onChange={(e) => handlePositionChange(e.target.value)}
+            error={errors.position}
+            required
+          />
+        )}
 
         <Input
           label="Item Number"
@@ -317,14 +329,23 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
           readOnly
         />
 
-        <Select
-          label="Department"
-          options={DEPARTMENT_OPTIONS}
-          value={formData.office}
-          onChange={(e) => onChange('office', e.target.value)}
-          error={errors.office}
-          required
-        />
+        {isDepartmentLocked ? (
+          <Input
+            label="Department"
+            value={formData.office}
+            readOnly
+            className="bg-slate-50 cursor-not-allowed"
+          />
+        ) : (
+          <Select
+            label="Department"
+            options={DEPARTMENT_OPTIONS}
+            value={formData.office}
+            onChange={(e) => onChange('office', e.target.value)}
+            error={errors.office}
+            required
+          />
+        )}
 
         <div className="md:col-span-2">
           <Checkbox

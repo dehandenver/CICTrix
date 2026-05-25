@@ -445,7 +445,7 @@ export const LandingPage = () => {
                       {/* Action Column */}
                       <td className="px-6 py-4 text-center">
                         <Link
-                          to="/apply"
+                          to={`/apply?position=${encodeURIComponent(job.title)}&department=${encodeURIComponent(job.office)}`}
                           className="inline-flex items-center gap-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white px-5 py-2.5 text-sm font-bold transition focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-2"
                         >
                           <Briefcase size={14} />

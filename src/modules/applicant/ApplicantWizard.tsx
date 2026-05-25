@@ -10,6 +10,7 @@ import {
     Users,
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import hrisLogo from '../../assets/hris-logo.svg';
 import { Button, Dialog } from '../../components';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
@@ -126,16 +127,31 @@ const saveApplicantAppointmentType = (applicantId: string, applicationType: 'job
 };
 
 export const ApplicantWizard: React.FC = () => {
+  const location = useLocation();
+  
+  // Extract position and department from URL query parameters (from landing page job posting)
+  const queryParams = new URLSearchParams(location.search);
+  const jobPosition = queryParams.get('position');
+  const jobDepartment = queryParams.get('department');
+  const isFromJobPosting = Boolean(jobPosition && jobDepartment);
+  
   // Hydrate from sessionStorage so a refresh keeps the user on the same step
   // with the same form values, instead of bouncing back to the landing page.
   const persisted = (() => {
     try { return loadWizardState(); } catch { return {} as PersistedWizardState; }
   })();
 
+  // Pre-fill position and department from URL if coming from job posting
+  const initialFormData = {
+    ...(persisted.formData ?? INITIAL_FORM_DATA),
+    ...(jobPosition && { position: jobPosition }),
+    ...(jobDepartment && { office: jobDepartment }),
+  };
+
   const [entryMode, setEntryMode] = useState<'landing' | 'wizard'>(persisted.entryMode ?? 'landing');
   const [applicationType, setApplicationType] = useState<'job' | 'promotion'>(persisted.applicationType ?? 'job');
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(persisted.currentStep ?? 1);
-  const [formData, setFormData] = useState<ApplicantFormData>(persisted.formData ?? INITIAL_FORM_DATA);
+  const [formData, setFormData] = useState<ApplicantFormData>(initialFormData);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [fileError, setFileError] = useState('');
@@ -727,6 +743,7 @@ const handleNextToReview = () => {
                       setApplicationType(next);
                       handleFormChange('application_type', next);
                     }}
+                    isDepartmentLocked={isFromJobPosting}
                   />
                 </div>
               </>
