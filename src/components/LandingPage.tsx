@@ -187,18 +187,129 @@ export const LandingPage = () => {
       </nav>
 
       {/* ═══════════════════════════════════════════════════════════════════
-          JOBS VIEW - Public Career & Job Advertisement Portal
+          JOBS VIEW - Public Career & Job Advertisement Portal with Process Roadmap
           ═══════════════════════════════════════════════════════════════════ */}
       {activeView === 'jobs' && (
         <main className="px-4 sm:px-6 lg:px-8 py-12">
           <div className="mx-auto max-w-7xl">
+            {/* ═══════════════════════════════════════════════════════════════════
+                HERO SECTION: JOB APPLICATION PROCESS ROADMAP (PRIMARY FOCUS)
+                ═══════════════════════════════════════════════════════════════════ */}
+            <div className="mb-16">
+              <div className="text-center mb-12">
+                <h2 className="text-4xl sm:text-5xl font-bold text-slate-900 mb-4">
+                  Our Step-by-Step Job Application Process
+                </h2>
+                <p className="text-lg text-slate-700 max-w-3xl mx-auto">
+                  Clear, transparent, and easy-to-follow government recruitment workflow designed to guide you from application to employment.
+                </p>
+              </div>
+
+              {/* 4-Step Process Roadmap */}
+              <div className="bg-white rounded-2xl border-2 border-slate-200 p-8 shadow-lg mb-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  {/* Step 1 */}
+                  <div className="relative">
+                    <div className="flex flex-col items-center text-center">
+                      {/* Step Number Badge */}
+                      <div className="h-16 w-16 rounded-full bg-slate-900 text-white flex items-center justify-center text-2xl font-bold shadow-lg mb-4">
+                        1
+                      </div>
+                      {/* Step Icon - Account Creation */}
+                      <div className="h-20 w-20 rounded-xl bg-blue-50 border-2 border-slate-200 flex items-center justify-center mb-4">
+                        <Users size={32} className="text-slate-900" />
+                      </div>
+                      <h3 className="text-lg font-bold text-slate-900 mb-2">
+                        Account Creation & Profile Setup
+                      </h3>
+                      <p className="text-sm text-slate-600 leading-relaxed">
+                        Register for an applicant account and complete your basic profile information, including contact details and personal data.
+                      </p>
+                    </div>
+                    {/* Connector Line (hidden on mobile) */}
+                    <div className="hidden lg:block absolute left-full top-8 w-6 h-0.5 bg-slate-200 mt-2"></div>
+                  </div>
+
+                  {/* Step 2 */}
+                  <div className="relative">
+                    <div className="flex flex-col items-center text-center">
+                      <div className="h-16 w-16 rounded-full bg-slate-900 text-white flex items-center justify-center text-2xl font-bold shadow-lg mb-4">
+                        2
+                      </div>
+                      <div className="h-20 w-20 rounded-xl bg-blue-50 border-2 border-slate-200 flex items-center justify-center mb-4">
+                        <FileText size={32} className="text-slate-900" />
+                      </div>
+                      <h3 className="text-lg font-bold text-slate-900 mb-2">
+                        Document Submission
+                      </h3>
+                      <p className="text-sm text-slate-600 leading-relaxed">
+                        Upload your Personal Data Sheet (PDS), Work Experience Sheet, educational credentials, and civil service eligibility certificates.
+                      </p>
+                    </div>
+                    <div className="hidden lg:block absolute left-full top-8 w-6 h-0.5 bg-slate-200 mt-2"></div>
+                  </div>
+
+                  {/* Step 3 */}
+                  <div className="relative">
+                    <div className="flex flex-col items-center text-center">
+                      <div className="h-16 w-16 rounded-full bg-slate-900 text-white flex items-center justify-center text-2xl font-bold shadow-lg mb-4">
+                        3
+                      </div>
+                      <div className="h-20 w-20 rounded-xl bg-blue-50 border-2 border-slate-200 flex items-center justify-center mb-4">
+                        <Briefcase size={32} className="text-slate-900" />
+                      </div>
+                      <h3 className="text-lg font-bold text-slate-900 mb-2">
+                        Position Application
+                      </h3>
+                      <p className="text-sm text-slate-600 leading-relaxed">
+                        Browse available positions listed below and submit your application for roles that match your qualifications and interests.
+                      </p>
+                    </div>
+                    <div className="hidden lg:block absolute left-full top-8 w-6 h-0.5 bg-slate-200 mt-2"></div>
+                  </div>
+
+                  {/* Step 4 */}
+                  <div className="relative">
+                    <div className="flex flex-col items-center text-center">
+                      <div className="h-16 w-16 rounded-full bg-slate-900 text-white flex items-center justify-center text-2xl font-bold shadow-lg mb-4">
+                        4
+                      </div>
+                      <div className="h-20 w-20 rounded-xl bg-blue-50 border-2 border-slate-200 flex items-center justify-center mb-4">
+                        <Target size={32} className="text-slate-900" />
+                      </div>
+                      <h3 className="text-lg font-bold text-slate-900 mb-2">
+                        HRMO Screening & Interview
+                      </h3>
+                      <p className="text-sm text-slate-600 leading-relaxed">
+                        Track your application status in the applicant dashboard. Qualified candidates proceed to competency-based panel interviews.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* CTA to Start Application */}
+              <div className="text-center">
+                <button
+                  onClick={() => setShowLoginModal(true)}
+                  className="inline-flex items-center gap-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white px-8 py-4 text-lg font-bold shadow-lg transition focus:outline-none focus:ring-2 focus:ring-amber-600 focus:ring-offset-2"
+                >
+                  <LogIn size={20} />
+                  Start Your Application Now
+                </button>
+              </div>
+            </div>
+
+            {/* ═══════════════════════════════════════════════════════════════════
+                PUBLIC VACANT POSITIONS SECTION (Below Process Roadmap)
+                ═══════════════════════════════════════════════════════════════════ */}
             {/* Header */}
-            <div className="mb-12">
-              <h2 className="text-4xl font-bold text-slate-900 mb-3">
+            <div className="mb-12 mt-16 pt-12 border-t-2 border-slate-200">
+              <h2 className="text-3xl font-bold text-slate-900 mb-3">
                 Public Career Opportunities & Job Vacancies
               </h2>
               <p className="text-lg text-slate-700 max-w-3xl">
-                Browse available government positions. All vacancies comply with Civil Service Commission (CSC) publication requirements and equal opportunity employment principles.
+                Browse available government positions below. All vacancies comply with Civil Service Commission (CSC) publication requirements and equal opportunity employment principles. Ready to apply? Start with Step 1 above.
               </p>
             </div>
 
