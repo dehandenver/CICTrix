@@ -129,10 +129,10 @@ export const LandingPageNew = () => {
               <div className="h-12 w-12 rounded-lg bg-white flex items-center justify-center border-2 border-[#C8D1FF] shadow-sm">
                 <img src={abyanLogo} alt="Abyan Logo" className="h-10 w-10 object-contain" />
               </div>
-              <div className="hidden sm:flex flex-col">
-                <div className="flex items-baseline gap-3">
+              <div className="flex flex-col">
+                <div className="flex flex-wrap items-baseline gap-3">
                   <h1 className="text-xl font-extrabold text-[#040E6B]">ABYAN</h1>
-                  <span className="text-sm text-gray-500">Human Resource Information System</span>
+                  <span className="text-sm text-[#040E6B]">Human Resource Information System</span>
                 </div>
               </div>
             </div>

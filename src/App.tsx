@@ -20,7 +20,7 @@ import { SettingsPage } from './modules/admin/SettingsPage';
 import { SuperAdminDashboard } from './modules/admin/SuperAdminDashboard';
 import { ApplicantWizard } from './modules/applicant/ApplicantWizard';
 import { ApplicationStatusPage } from './modules/applicant/ApplicationStatusPage';
-import { LandingPage } from './components/LandingPage';
+import { LandingPageNew } from './components/LandingPageNew';
 import { EmployeeLoginPage, EmployeePage } from './modules/employee';
 import { ApplicantDetailsPage } from './modules/interviewer/ApplicantDetailsPage.tsx';
 import { EvaluationForm } from './modules/interviewer/EvaluationForm';
@@ -442,7 +442,7 @@ function AppContent() {
   return (
     <div className="app">
       <Routes>
-          <Route path="/" element={<LandingPage />} />
+          <Route path="/" element={<LandingPageNew />} />
           <Route path="/apply" element={<ApplicantWizard />} />
           <Route path="/track" element={<ApplicationStatusPage />} />
           <Route path="/succession" element={<SuccessionReadinessEngine />} />
