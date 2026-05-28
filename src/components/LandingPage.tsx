@@ -131,16 +131,16 @@ export const LandingPage = () => {
           <div className="flex items-center justify-between py-4">
             {/* Left: Logo & Branding */}
             <div className="flex items-center gap-4">
-              <div className="h-12 w-12 rounded-lg bg-white flex items-center justify-center border-2 border-amber-600 shadow-md">
+              <div className="h-12 w-12 rounded-lg bg-white flex items-center justify-center border-2 border-[#363EE8] shadow-md">
                 <img
                   src={abyanLogo}
-                  alt="Government Seal"
+                  alt="Abyan Logo"
                   className="h-10 w-10 object-contain"
                 />
               </div>
               <div className="hidden sm:block">
-                <h1 className="text-xl font-bold text-white">HRMO Portal</h1>
-                <p className="text-xs text-blue-100">Human Resource Management Office</p>
+                <h1 className="text-xl font-bold text-white">Abyan HRIS</h1>
+                <p className="text-xs text-blue-100">Human Resource Information System</p>
               </div>
             </div>
 

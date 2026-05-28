@@ -611,9 +611,9 @@ const handleNextToReview = () => {
     <div className="applicant-shell">
       <header className="applicant-topbar">
         <div className="applicant-brand">
-          <img src={hrisLogo} alt="HRIS logo" className="applicant-brand-logo" />
+          <img src={hrisLogo} alt="Abyan logo" className="applicant-brand-logo" />
           <div>
-            <h1>HRIS Applicant Portal</h1>
+            <h1>Abyan HRIS Applicant Portal</h1>
             <p>Human Resource Information System</p>
           </div>
         </div>
@@ -629,7 +629,7 @@ const handleNextToReview = () => {
       {entryMode === 'landing' ? (
         <main className="portal-landing">
           <div className="portal-landing-header">
-            <h2>Welcome to HRIS Applicant Portal</h2>
+            <h2>Welcome to Abyan HRIS Applicant Portal</h2>
             <p>Please begin your application below</p>
           </div>
 

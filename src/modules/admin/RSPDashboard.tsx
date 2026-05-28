@@ -302,7 +302,7 @@ const persistDashboardJobsToRecruitment = (rows: JobRecord[]) => {
   const nowIso = new Date().toISOString();
   const mapped: JobPosting[] = rows.map((row, index) => ({
     id: String(row.id ?? crypto.randomUUID()),
-    jobCode: row.item_number || `LGU-2026-${String(index + 1).padStart(3, '0')}`,
+    jobCode: row.item_number || `ABYAN-2026-${String(index + 1).padStart(3, '0')}`,
     title: row.title,
     department: row.department || 'Operations',
     division: 'Operations',
@@ -2363,7 +2363,7 @@ export const RSPDashboard = () => {
     // Persist through the central recruitment utility so all dependent caches/events stay in sync.
     const nextRecruitmentRows: JobPosting[] = nextJobs.map((row, index) => ({
       id: String(row.id ?? crypto.randomUUID()),
-      jobCode: row.item_number || `LGU-2026-${String(index + 1).padStart(3, '0')}`,
+      jobCode: row.item_number || `ABYAN-2026-${String(index + 1).padStart(3, '0')}`,
       title: row.title,
       department: row.department || 'Operations',
       division: 'Operations',
@@ -2407,7 +2407,7 @@ export const RSPDashboard = () => {
     // Persist through the central recruitment utility so all dependent caches/events stay in sync.
     const nextRecruitmentRows: JobPosting[] = nextJobs.map((row, index) => ({
       id: String(row.id ?? crypto.randomUUID()),
-      jobCode: row.item_number || `LGU-2026-${String(index + 1).padStart(3, '0')}`,
+      jobCode: row.item_number || `ABYAN-2026-${String(index + 1).padStart(3, '0')}`,
       title: row.title,
       department: row.department || 'Operations',
       division: 'Operations',
@@ -2983,7 +2983,7 @@ export const RSPDashboard = () => {
       `Due Date: ${dueDate}\n\n` +
       `Please log in to the Employee Portal at /employee/login and upload your file ` +
       `under Document Requirements.\n\n` +
-      `Thank you,\nCICTrix HRIS — RSP Office`;
+      `Thank you,\nAbyan HRIS — RSP Office`;
 
     try {
       // Send a single email with the recipients in TO so the SMTP server delivers

@@ -451,8 +451,8 @@ export const ApplicationStatusPage = () => {
         <footer className="mt-10 text-center text-sm text-slate-500">
           <p>
             Need assistance? Contact our admissions office at{' '}
-            <a className="font-medium text-slate-700 underline-offset-2 hover:underline" href="mailto:rsp@cictrix.gov.ph">
-              rsp@cictrix.gov.ph
+            <a className="font-medium text-slate-700 underline-offset-2 hover:underline" href="mailto:support@abyan.com">
+              support@abyan.com
             </a>
           </p>
           <p className="mt-2">

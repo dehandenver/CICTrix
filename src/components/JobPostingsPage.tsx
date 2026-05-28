@@ -86,7 +86,7 @@ interface JobPostFormValues {
 
 const buildDefaultJobForm = (): JobPostFormValues => ({
   title: '',
-  jobCode: `LGU-2026-${String(Math.floor(Math.random() * 999) + 1).padStart(3, '0')}`,
+  jobCode: `ABYAN-2026-${String(Math.floor(Math.random() * 999) + 1).padStart(3, '0')}`,
   department: '',
   division: '',
   positionLevel: '',
@@ -763,7 +763,7 @@ export const JobPostingsPage = () => {
 
     const payload: JobPosting = {
       id: editingId ?? crypto.randomUUID(),
-      jobCode: form.jobCode.trim() || `LGU-2026-${String(Math.floor(Math.random() * 999) + 1).padStart(3, '0')}`,
+      jobCode: form.jobCode.trim() || `ABYAN-2026-${String(Math.floor(Math.random() * 999) + 1).padStart(3, '0')}`,
       title: toTitleCase(form.title),
       department: form.department,
       division: form.division || undefined,

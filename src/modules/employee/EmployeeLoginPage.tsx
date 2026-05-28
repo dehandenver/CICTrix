@@ -126,7 +126,7 @@ export const EmployeeLoginPage: React.FC<EmployeeLoginPageProps> = ({
         </p>
       </div>
 
-      <p className="mt-10 text-center text-sm text-slate-500">© 2026 CICTrix Resorts. All rights reserved.</p>
+      <p className="mt-10 text-center text-sm text-slate-500">© 2026 Abyan HRIS. All rights reserved.</p>
     </div>
   );
 };

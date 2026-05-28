@@ -31,15 +31,15 @@ interface LoginPageProps {
 
 // Mock credentials for development
 const MOCK_USERS: Record<string, { password: string; role: Role }> = {
-  'admin@cictrix.gov.ph': { password: 'admin123', role: 'super-admin' },
-  'rsp@cictrix.gov.ph': { password: 'rsp123', role: 'rsp' },
-  'lnd@cictrix.gov.ph': { password: 'lnd123', role: 'lnd' },
-  'pm@cictrix.gov.ph': { password: 'pm123', role: 'pm' },
+  'admin@abyan.gov.ph': { password: 'admin123', role: 'super-admin' },
+  'rsp@abyan.gov.ph': { password: 'rsp123', role: 'rsp' },
+  'lnd@abyan.gov.ph': { password: 'lnd123', role: 'lnd' },
+  'pm@abyan.gov.ph': { password: 'pm123', role: 'pm' },
 
-  'admin@cictrix.com': { password: 'Admin@123', role: 'super-admin' },
-  'rsp@cictrix.com': { password: 'RSP@123', role: 'rsp' },
-  'lnd@cictrix.com': { password: 'LND@123', role: 'lnd' },
-  'pm@cictrix.com': { password: 'PM@123', role: 'pm' },
+  'admin@abyan.com': { password: 'Admin@123', role: 'super-admin' },
+  'rsp@abyan.com': { password: 'RSP@123', role: 'rsp' },
+  'lnd@abyan.com': { password: 'LND@123', role: 'lnd' },
+  'pm@abyan.com': { password: 'PM@123', role: 'pm' },
 };
 
 const ROLES: { key: Role; label: string; sublabel: string }[] = [
@@ -193,7 +193,7 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
                 className="text-sm font-semibold tracking-wide"
                 style={{ color: 'rgba(255,255,255,0.92)' }}
               >
-                CICTrix
+                Abyan
               </span>
             </div>
 
@@ -245,7 +245,7 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
               className="text-xs font-medium"
               style={{ color: 'rgba(255,255,255,0.55)' }}
             >
-              &copy; {new Date().getFullYear()} CICTrix Resorts. All rights reserved.
+              &copy; {new Date().getFullYear()} Abyan. All rights reserved.
             </p>
           </div>
         </aside>
@@ -258,7 +258,7 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#363EE8]">
                 <Lock className="h-4 w-4 text-white" strokeWidth={2} />
               </div>
-              <span className="text-sm font-semibold text-slate-900">CICTrix HRIS</span>
+              <span className="text-sm font-semibold text-slate-900">Abyan HRIS</span>
             </div>
 
             <div className="mb-8">
