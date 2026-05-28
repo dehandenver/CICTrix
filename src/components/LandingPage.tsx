@@ -11,7 +11,7 @@ import {
   Network,
   CheckCircle2,
 } from 'lucide-react';
-import abyanLogo from '../assets/abyan-logo.png';
+import hrisLogo from '../assets/hris-logo.svg';
 
 /* ── trish UI theme tokens ──────────────────────────────────────────
    Brand: Indigo #363EE8 · Hover #2E35D4 · Soft #EEF2FF
@@ -87,8 +87,8 @@ export const LandingPage = () => {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
           <div className="flex items-center gap-3">
             <img
-              src={abyanLogo}
-              alt="ABYAN HRIS"
+              src={hrisLogo}
+              alt="GOVHRIS Logo"
               className="h-10 w-auto rounded-lg bg-[#363EE8] object-contain p-1"
             />
             <div className="flex items-baseline gap-2">
@@ -218,8 +218,8 @@ export const LandingPage = () => {
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-6 py-6 text-sm text-slate-500 sm:flex-row">
           <div className="flex items-center gap-2">
             <img
-              src={abyanLogo}
-              alt="ABYAN HRIS"
+              src={hrisLogo}
+              alt="GOVHRIS Logo"
               className="h-7 w-auto rounded-md bg-[#363EE8] object-contain p-0.5"
             />
             <span className="font-semibold text-[#050D65]">ABYAN HRIS</span>
