@@ -125,15 +125,15 @@ export const LandingPageNew = () => {
       <nav className="sticky top-0 z-50 bg-white shadow-sm border-b">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between py-4">
-            <div className="flex items-center gap-4">
-              <div className="h-12 w-12 rounded-lg bg-white flex items-center justify-center border-2 border-[#C8D1FF] shadow-sm">
-                <img src={abyanLogo} alt="Abyan Logo" className="h-10 w-10 object-contain" />
+            <div className="flex items-center gap-3">
+              <div className="h-14 w-14 rounded-lg bg-gradient-to-br from-[#C8D1FF] to-[#E8ECFF] flex items-center justify-center border-2 border-[#363EE8] shadow-md">
+                <img src={abyanLogo} alt="Abyan HRIS Logo" className="h-12 w-12 object-contain" />
               </div>
               <div className="flex flex-col">
-                <div className="flex flex-wrap items-baseline gap-3">
-                  <h1 className="text-xl font-extrabold text-[#040E6B]">ABYAN</h1>
-                  <span className="text-sm text-[#040E6B]">Human Resource Information System</span>
+                <div className="flex flex-wrap items-baseline gap-2">
+                  <h1 className="text-2xl font-extrabold text-[#363EE8]">Abyan HRIS</h1>
                 </div>
+                <span className="text-xs text-[#040E6B] font-medium">Human Resource Information System</span>
               </div>
             </div>
 
@@ -421,7 +421,7 @@ export const LandingPageNew = () => {
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             {/* Modal Header */}
-            <div className="sticky top-0 bg-slate-900 text-white px-6 py-6 border-b-4 border-amber-600 flex items-center justify-between">
+            <div className="sticky top-0 bg-gradient-to-r from-[#363EE8] to-[#2f35d0] text-white px-6 py-6 border-b-4 border-[#C8D1FF] flex items-center justify-between">
               <h2 className="text-2xl font-bold">Portal Access Gateway</h2>
               <button
                 onClick={() => setShowLoginModal(false)}
@@ -434,15 +434,15 @@ export const LandingPageNew = () => {
             {/* Modal Content */}
             <div className="p-8">
               {/* Tab Navigation */}
-              <div className="mb-8 flex gap-2 border-b-2 border-slate-200">
+              <div className="mb-8 flex gap-2 border-b-2 border-[#C8D1FF]">
                 {['employee', 'admin', 'interviewer'].map((tab) => (
                   <button
                     key={tab}
                     onClick={() => setSelectedLoginTab(tab as 'employee' | 'admin' | 'interviewer')}
                     className={`py-3 px-6 font-bold text-sm uppercase tracking-wide border-b-4 transition ${
                       selectedLoginTab === tab
-                        ? 'border-b-4 border-amber-600 text-slate-900'
-                        : 'border-b-4 border-transparent text-slate-600 hover:text-slate-900'
+                        ? 'border-b-4 border-[#363EE8] text-[#363EE8]'
+                        : 'border-b-4 border-transparent text-[#040E6B] hover:text-[#363EE8]'
                     }`}
                   >
                     {tab === 'employee' && 'Employee Portal'}
@@ -456,7 +456,7 @@ export const LandingPageNew = () => {
               <form onSubmit={(e) => e.preventDefault()} className="space-y-6">
                 {/* Email/ID Input */}
                 <div>
-                  <label className="block text-sm font-bold text-slate-900 mb-2 uppercase tracking-wide">
+                  <label className="block text-sm font-bold text-[#040E6B] mb-2 uppercase tracking-wide">
                     {selectedLoginTab === 'employee' ? 'Employee ID or Email' : 'Email Address'}
                   </label>
                   <input
@@ -464,13 +464,13 @@ export const LandingPageNew = () => {
                     value={loginEmail}
                     onChange={(e) => setLoginEmail(e.target.value)}
                     placeholder={selectedLoginTab === 'employee' ? 'EMP-0001234' : 'your.email@gov.ph'}
-                    className="w-full px-4 py-3 border-2 border-slate-300 rounded-lg text-slate-900 placeholder-slate-500 font-medium transition focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                    className="w-full px-4 py-3 border-2 border-[#C8D1FF] rounded-lg text-[#040E6B] placeholder-[#040E6B]/40 font-medium transition focus:border-[#363EE8] focus:outline-none focus:ring-2 focus:ring-[#363EE8]/10"
                   />
                 </div>
 
                 {/* Password Input */}
                 <div>
-                  <label className="block text-sm font-bold text-slate-900 mb-2 uppercase tracking-wide">
+                  <label className="block text-sm font-bold text-[#040E6B] mb-2 uppercase tracking-wide">
                     Password
                   </label>
                   <div className="relative">
@@ -479,12 +479,12 @@ export const LandingPageNew = () => {
                       value={loginPassword}
                       onChange={(e) => setLoginPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="w-full px-4 py-3 border-2 border-slate-300 rounded-lg text-slate-900 placeholder-slate-500 font-medium transition focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10"
+                      className="w-full px-4 py-3 border-2 border-[#C8D1FF] rounded-lg text-[#040E6B] placeholder-[#040E6B]/40 font-medium transition focus:border-[#363EE8] focus:outline-none focus:ring-2 focus:ring-[#363EE8]/10"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-900 transition"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[#040E6B]/50 hover:text-[#363EE8] transition"
                     >
                       {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                     </button>
@@ -495,15 +495,15 @@ export const LandingPageNew = () => {
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
-                    className="w-5 h-5 rounded border-2 border-slate-300 cursor-pointer"
+                    className="w-5 h-5 rounded border-2 border-[#C8D1FF] cursor-pointer accent-[#363EE8]"
                   />
-                  <span className="text-sm font-medium text-slate-700">Remember this device</span>
+                  <span className="text-sm font-medium text-[#040E6B]">Remember this device</span>
                 </label>
 
                 {/* Sign In Button */}
                 <button
                   type="submit"
-                  className="w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg transition focus:outline-none focus:ring-2 focus:ring-amber-600 focus:ring-offset-2 flex items-center justify-center gap-2"
+                  className="w-full py-3 px-4 bg-[#363EE8] hover:bg-[#2f35d0] text-white font-bold rounded-lg transition focus:outline-none focus:ring-2 focus:ring-[#C8D1FF] focus:ring-offset-2 flex items-center justify-center gap-2"
                 >
                   <LogIn size={18} />
                   Sign In
@@ -511,25 +511,25 @@ export const LandingPageNew = () => {
 
                 {/* Forgot Password */}
                 <div className="text-center">
-                  <a href="#" className="text-sm font-bold text-slate-900 hover:text-slate-700 transition">
+                  <a href="#" className="text-sm font-bold text-[#363EE8] hover:text-[#2f35d0] transition">
                     Forgot your password?
                   </a>
                 </div>
               </form>
 
               {/* Security & Compliance Notice */}
-              <div className="mt-8 rounded-lg bg-slate-50 border-l-4 border-slate-900 p-4">
-                <p className="text-xs text-slate-700 leading-relaxed">
-                  <strong className="text-slate-900">Security Notice:</strong> Authorized Government Access Only. This system is protected by government-grade encryption. All login activities are logged and monitored in compliance with RA 10173 (Data Privacy Act). Unauthorized access is prohibited.
+              <div className="mt-8 rounded-lg bg-[#F8FAFF] border-l-4 border-[#363EE8] p-4">
+                <p className="text-xs text-[#040E6B] leading-relaxed">
+                  <strong className="text-[#363EE8]">Security Notice:</strong> Authorized Government Access Only. This system is protected by government-grade encryption. All login activities are logged and monitored in compliance with RA 10173 (Data Privacy Act). Unauthorized access is prohibited.
                 </p>
               </div>
 
               {/* Divider */}
               <div className="my-6 relative">
                 <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t-2 border-slate-200"></div>
+                  <div className="w-full border-t-2 border-[#C8D1FF]"></div>
                 </div>
-                <div className="relative flex justify-center text-xs font-bold text-slate-600 uppercase tracking-wide">
+                <div className="relative flex justify-center text-xs font-bold text-[#040E6B] uppercase tracking-wide">
                   <span className="px-2 bg-white">Not a registered user?</span>
                 </div>
               </div>
@@ -538,11 +538,11 @@ export const LandingPageNew = () => {
               <div className="space-y-2">
                 <Link
                   to="/apply"
-                  className="block w-full py-3 px-4 border-2 border-slate-900 text-slate-900 font-bold rounded-lg hover:bg-slate-50 transition text-center"
+                  className="block w-full py-3 px-4 border-2 border-[#363EE8] text-[#363EE8] font-bold rounded-lg hover:bg-[#F8FAFF] transition text-center"
                 >
                   Apply for a Job Position
                 </Link>
-                <button className="w-full py-3 px-4 border-2 border-slate-300 text-slate-700 font-bold rounded-lg hover:bg-slate-50 transition">
+                <button className="w-full py-3 px-4 border-2 border-[#C8D1FF] text-[#040E6B] font-bold rounded-lg hover:bg-[#F8FAFF] transition">
                   Request Password Reset
                 </button>
               </div>
