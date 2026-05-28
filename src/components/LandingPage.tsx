@@ -1,4 +1,5 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useState, useRef } from 'react';
 import {
   Briefcase,
   Users,
@@ -9,7 +10,8 @@ import {
   TrendingUp,
   GraduationCap,
   Network,
-  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import abyanLogo from '../assets/abyan-logo.png';
 
@@ -17,6 +19,81 @@ import abyanLogo from '../assets/abyan-logo.png';
    Brand: Indigo #363EE8 · Hover #2E35D4 · Soft #EEF2FF
    Ink:   #050D65 · Workspace: #F8FAFC · Surface: #FFFFFF
 ------------------------------------------------------------------- */
+
+const JOB_VACANCIES = [
+  {
+    id: 1,
+    title: 'Administrative Officer V',
+    department: 'Human Resource Management Office',
+    itemNumber: 'PS-2026-005',
+    postingDate: '2026-05-15',
+    closingDate: '2026-06-30',
+    type: 'Plantilla',
+  },
+  {
+    id: 2,
+    title: 'Information Technology Officer I',
+    department: 'ICT & Systems Division',
+    itemNumber: 'PS-2026-012',
+    postingDate: '2026-05-20',
+    closingDate: '2026-06-15',
+    type: 'Plantilla',
+  },
+  {
+    id: 3,
+    title: 'Planning Officer II',
+    department: 'Strategic Planning Unit',
+    itemNumber: 'CON-2026-008',
+    postingDate: '2026-05-18',
+    closingDate: '2026-07-05',
+    type: 'Contractual',
+  },
+  {
+    id: 4,
+    title: 'Legal Officer IV',
+    department: 'Legal & Compliance Division',
+    itemNumber: 'PS-2026-003',
+    postingDate: '2026-05-10',
+    closingDate: '2026-06-25',
+    type: 'Plantilla',
+  },
+  {
+    id: 5,
+    title: 'Finance Officer III',
+    department: 'Finance Department',
+    itemNumber: 'PS-2026-007',
+    postingDate: '2026-05-22',
+    closingDate: '2026-07-10',
+    type: 'Plantilla',
+  },
+  {
+    id: 6,
+    title: 'Procurement Specialist',
+    department: 'Procurement Office',
+    itemNumber: 'CON-2026-015',
+    postingDate: '2026-05-25',
+    closingDate: '2026-06-20',
+    type: 'Contractual',
+  },
+  {
+    id: 7,
+    title: 'Training Coordinator II',
+    department: 'Learning & Development',
+    itemNumber: 'PS-2026-009',
+    postingDate: '2026-05-16',
+    closingDate: '2026-07-01',
+    type: 'Plantilla',
+  },
+  {
+    id: 8,
+    title: 'Monitoring Officer',
+    department: 'Operations Division',
+    itemNumber: 'CON-2026-012',
+    postingDate: '2026-05-28',
+    closingDate: '2026-06-28',
+    type: 'Contractual',
+  },
+];
 
 const PORTALS = [
   {
@@ -77,10 +154,43 @@ const FEATURES = [
 ];
 
 export const LandingPage = () => {
+  const navigate = useNavigate();
+  const jobsTableRef = useRef<HTMLDivElement>(null);
+  const [itemsPerPage, setItemsPerPage] = useState(5);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const handleScrollToJobs = () => {
+    jobsTableRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const totalPages = Math.ceil(JOB_VACANCIES.length / itemsPerPage);
+  const startIdx = (currentPage - 1) * itemsPerPage;
+  const endIdx = startIdx + itemsPerPage;
+  const paginatedJobs = JOB_VACANCIES.slice(startIdx, endIdx);
+
+  const handleItemsPerPageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newItemsPerPage = parseInt(e.target.value, 10);
+    setItemsPerPage(newItemsPerPage);
+    setCurrentPage(1);
+  };
+
+  const handlePreviousPage = () => {
+    if (currentPage > 1) setCurrentPage(currentPage - 1);
+  };
+
+  const handleNextPage = () => {
+    if (currentPage < totalPages) setCurrentPage(currentPage + 1);
+  };
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
   return (
     <div
       className="min-h-screen bg-[#F8FAFC] text-[#050D65]"
-      style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}
+      style={{ fontFamily: "'Poppins', system-ui, -apple-system, sans-serif" }}
     >
       {/* ─── Top bar ─────────────────────────────────────────────── */}
       <header className="sticky top-0 z-30 bg-[#363EE8]">
@@ -108,29 +218,131 @@ export const LandingPage = () => {
         <div className="absolute -right-24 -top-28 h-80 w-80 rounded-full border border-white/15" />
         <div className="absolute -bottom-32 -left-20 h-96 w-96 rounded-full border border-white/10" />
         <div className="relative mx-auto max-w-6xl px-6 py-20 text-center text-white sm:py-28">
-          <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-1.5 text-xs font-medium">
-            <CheckCircle2 size={14} /> Official Human Resource Portal
-          </span>
-          <h1 className="mx-auto mt-6 max-w-3xl text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
-            A modern HR system for recruitment, performance, and people development
+          <h1 className="mx-auto mt-6 max-w-3xl text-4xl font-bold leading-tight tracking-tight text-white sm:text-5xl">
+            Your gateway to public service.
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-base text-indigo-100 sm:text-lg">
-            Apply for government positions, track your application, and access your
-            employee records — all in one secure platform.
+            Discover open positions, track your application, and manage your employee records through our secure, all-in-one platform. Abyan mo sa pag-asenso.
           </p>
           <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Link
-              to="/apply"
+            <button
+              onClick={handleScrollToJobs}
               className="inline-flex items-center gap-2 rounded-[14px] bg-white px-6 py-3 text-sm font-semibold text-[#363EE8] shadow-lg transition hover:bg-[#EEF2FF]"
             >
               <Briefcase size={18} /> Apply for a Job
-            </Link>
+            </button>
             <Link
               to="/track"
               className="inline-flex items-center gap-2 rounded-[14px] border border-white/40 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
             >
               <Search size={18} /> Track Application
             </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── Vacant Jobs Table ─────────────────────────────────────────────── */}
+      <section ref={jobsTableRef} className="bg-white py-16">
+        <div className="mx-auto max-w-6xl px-6">
+          <div className="mb-8 flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-[#050D65]">Currently Vacant Jobs</h2>
+              <p className="mt-1 text-sm text-slate-500">Browse and apply for available positions</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-[#050D65]">Show</label>
+              <select
+                value={itemsPerPage}
+                onChange={handleItemsPerPageChange}
+                className="rounded-lg border-2 border-[#363EE8] bg-white px-3 py-2 text-sm font-medium text-[#050D65] transition focus:outline-none focus:ring-2 focus:ring-[#363EE8]/20"
+              >
+                <option value={5}>5</option>
+                <option value={10}>10</option>
+              </select>
+              <span className="text-sm font-medium text-[#050D65]">entries</span>
+            </div>
+          </div>
+
+          {/* Responsive Table */}
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-100">
+                <tr className="border-b border-slate-200">
+                  <th className="px-4 py-3 text-left font-semibold text-[#050D65]">Position Title</th>
+                  <th className="px-4 py-3 text-left font-semibold text-[#050D65]">Department</th>
+                  <th className="px-4 py-3 text-left font-semibold text-[#050D65]">Plantilla Item No.</th>
+                  <th className="px-4 py-3 text-left font-semibold text-[#050D65]">Posting Date</th>
+                  <th className="px-4 py-3 text-left font-semibold text-[#050D65]">Closing Date</th>
+                  <th className="px-4 py-3 text-center font-semibold text-[#050D65]">Details</th>
+                  <th className="px-4 py-3 text-center font-semibold text-[#050D65]">Apply</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedJobs.map((job) => (
+                  <tr key={job.id} className="border-b border-slate-200 transition hover:bg-slate-50">
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-[#050D65]">{job.title}</p>
+                      <p className="text-xs text-slate-500 mt-1">{job.type}</p>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{job.department}</td>
+                    <td className="px-4 py-3 font-mono text-slate-600">{job.itemNumber}</td>
+                    <td className="px-4 py-3 text-slate-600">{formatDate(job.postingDate)}</td>
+                    <td className="px-4 py-3 text-slate-600">{formatDate(job.closingDate)}</td>
+                    <td className="px-4 py-3 text-center">
+                      <button className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50 hover:border-slate-400">
+                        Details
+                      </button>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <Link
+                        to="/apply"
+                        className="inline-flex items-center gap-1 rounded-lg bg-[#363EE8] px-3 py-2 text-xs font-medium text-white transition hover:bg-[#2f35d0]"
+                      >
+                        Apply
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination Controls */}
+          <div className="mt-6 flex items-center justify-between">
+            <div className="text-sm text-slate-600">
+              Showing {startIdx + 1} to {Math.min(endIdx, JOB_VACANCIES.length)} of {JOB_VACANCIES.length} jobs
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handlePreviousPage}
+                disabled={currentPage === 1}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft size={16} /> Previous
+              </button>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+                      currentPage === page
+                        ? 'bg-[#363EE8] text-white'
+                        : 'border border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    {page}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={handleNextPage}
+                disabled={currentPage === totalPages}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next <ChevronRight size={16} />
+              </button>
+            </div>
           </div>
         </div>
       </section>
