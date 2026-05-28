@@ -11,7 +11,7 @@ import {
   Network,
   CheckCircle2,
 } from 'lucide-react';
-import hrisLogo from '../assets/hris-logo.svg';
+import abyanLogo from '../assets/abyan-logo.png';
 
 /* ── trish UI theme tokens ──────────────────────────────────────────
    Brand: Indigo #363EE8 · Hover #2E35D4 · Soft #EEF2FF
@@ -83,17 +83,17 @@ export const LandingPage = () => {
       style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif" }}
     >
       {/* ─── Top bar ─────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
+      <header className="sticky top-0 z-30 bg-[#363EE8]">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3 text-white">
           <div className="flex items-center gap-3">
             <img
-              src={hrisLogo}
-              alt="GOVHRIS Logo"
-              className="h-10 w-auto rounded-lg bg-[#363EE8] object-contain p-1"
+              src={abyanLogo}
+              alt="Abyan Logo"
+              className="h-11 w-auto object-contain"
             />
             <div className="flex items-baseline gap-2">
-              <span className="text-xl font-bold tracking-tight text-[#050D65]">ABYAN</span>
-              <span className="hidden text-sm font-medium text-slate-500 sm:inline">
+              <span className="text-xl font-bold tracking-tight text-white">ABYAN</span>
+              <span className="hidden text-sm font-medium text-white/90 sm:inline">
                 Human Resource Information System
               </span>
             </div>
@@ -218,9 +218,9 @@ export const LandingPage = () => {
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-6 py-6 text-sm text-slate-500 sm:flex-row">
           <div className="flex items-center gap-2">
             <img
-              src={hrisLogo}
-              alt="GOVHRIS Logo"
-              className="h-7 w-auto rounded-md bg-[#363EE8] object-contain p-0.5"
+              src={abyanLogo}
+              alt="Abyan Logo"
+              className="h-7 w-auto object-contain"
             />
             <span className="font-semibold text-[#050D65]">ABYAN HRIS</span>
           </div>
