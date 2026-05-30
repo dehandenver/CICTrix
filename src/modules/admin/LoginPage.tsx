@@ -80,8 +80,8 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
       const mockUser = MOCK_USERS[normalizedEmail];
       if (mockUser && mockUser.password === password) {
         if (mockUser.role !== selectedRole) {
-          alert(`This account is assigned to ${mockUser.role.toUpperCase()}. Please select the correct role.`);
-          return;
+          // Auto-select the correct role instead of failing
+          setSelectedRole(mockUser.role);
         }
         onLogin(normalizedEmail, mockUser.role);
         navigate(getRoleDefaultRoute(mockUser.role));
@@ -116,8 +116,8 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
       }
 
       if (role !== selectedRole) {
-        alert(`Your account role is ${role.toUpperCase()}. Please select the matching role to continue.`);
-        return;
+        // Auto-select the correct role instead of failing
+        setSelectedRole(role as Role);
       }
 
       const resolvedEmail = authData.user.email ?? email;
