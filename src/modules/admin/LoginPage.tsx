@@ -36,6 +36,11 @@ const MOCK_USERS: Record<string, { password: string; role: Role }> = {
   'lnd@abyan.gov.ph': { password: 'lnd123', role: 'lnd' },
   'pm@abyan.gov.ph': { password: 'pm123', role: 'pm' },
 
+  'admin@cictrix.gov.ph': { password: 'admin123', role: 'super-admin' },
+  'rsp@cictrix.gov.ph': { password: 'rsp123', role: 'rsp' },
+  'lnd@cictrix.gov.ph': { password: 'lnd123', role: 'lnd' },
+  'pm@cictrix.gov.ph': { password: 'pm123', role: 'pm' },
+
   'admin@abyan.com': { password: 'Admin@123', role: 'super-admin' },
   'rsp@abyan.com': { password: 'RSP@123', role: 'rsp' },
   'lnd@abyan.com': { password: 'LND@123', role: 'lnd' },
