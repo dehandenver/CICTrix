@@ -121,6 +121,15 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
     onChange('office', '');
   }, [dynamicPositionOptions, formData.position, onChange, lockedPosition]);
 
+  // Auto-populate department when position is set (from prefilled data)
+  useEffect(() => {
+    if (!formData.position || formData.office) return;
+    const assignedDepartment = positionDepartmentMap[formData.position] ?? POSITION_TO_DEPARTMENT_MAP[formData.position];
+    if (assignedDepartment) {
+      onChange('office', assignedDepartment);
+    }
+  }, [formData.position, formData.office, positionDepartmentMap, onChange]);
+
   const handlePositionChange = (positionValue: string) => {
     onChange('position', positionValue);
 
