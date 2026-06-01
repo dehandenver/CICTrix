@@ -418,24 +418,6 @@ export const LandingPage = () => {
         </div>
       </section>
 
-      {/* ─── CTA strip ───────────────────────────────────────────── */}
-      <section className="mx-auto max-w-6xl px-6 py-16">
-        <div className="flex flex-col items-center justify-between gap-6 rounded-[22px] bg-gradient-to-r from-[#363EE8] to-[#050D65] px-8 py-10 text-white sm:flex-row sm:text-left">
-          <div>
-            <h2 className="text-xl font-bold">Ready to join the public service?</h2>
-            <p className="mt-1 text-sm text-indigo-100">
-              Browse open positions and submit your application today.
-            </p>
-          </div>
-          <Link
-            to="/apply"
-            className="inline-flex shrink-0 items-center gap-2 rounded-[14px] bg-white px-6 py-3 text-sm font-semibold text-[#363EE8] transition hover:bg-[#EEF2FF]"
-          >
-            <Briefcase size={18} /> Apply for a Job
-          </Link>
-        </div>
-      </section>
-
       {/* ─── Footer ──────────────────────────────────────────────── */}
       <footer className="border-t border-slate-200 bg-white">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-6 py-6 text-sm text-slate-500 sm:flex-row">
