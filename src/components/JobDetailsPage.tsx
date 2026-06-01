@@ -103,7 +103,7 @@ export const JobDetailsPage = () => {
                 <Briefcase className="h-5 w-5 text-sky-600" />
                 <span className="font-semibold text-slate-700">{landingJob ? 'Type' : 'Position Level'}</span>
               </div>
-              <p className="text-slate-900 font-medium text-lg">{landingJob?.type || job?.positionLevel || 'N/A'}</p>
+              <p className="text-slate-900 font-medium text-lg">{landingJob?.type || job?.positionType || 'N/A'}</p>
             </div>
 
             {/* Posting Date */}
@@ -140,7 +140,7 @@ export const JobDetailsPage = () => {
                   <Clock className="h-5 w-5 text-sky-600" />
                   <span className="font-semibold text-slate-700">Employment Type</span>
                 </div>
-                <p className="text-slate-900 font-medium text-lg">{job.employmentType}</p>
+                <p className="text-slate-900 font-medium text-lg">{job.employmentStatus}</p>
               </div>
             </div>
           )}
@@ -164,7 +164,7 @@ export const JobDetailsPage = () => {
                 Education
               </h3>
               <p className="text-slate-700 text-base leading-relaxed bg-blue-50 p-4 rounded-lg">
-                {job.education || 'Completion of 2 years studies in College'}
+                {job.qualifications.education || 'Completion of 2 years studies in College'}
               </p>
             </div>
 
@@ -175,7 +175,7 @@ export const JobDetailsPage = () => {
                 Work Experience
               </h3>
               <p className="text-slate-700 text-base leading-relaxed bg-blue-50 p-4 rounded-lg">
-                {job.yearsOfExperience} year(s) of experience {job.experienceField ? `in ${job.experienceField}` : 'required'}
+                {job.qualifications.experience.years} year(s) of experience {job.qualifications.experience.field ? `in ${job.qualifications.experience.field}` : 'required'}
               </p>
             </div>
 
@@ -197,9 +197,9 @@ export const JobDetailsPage = () => {
                 Required Skills
               </h3>
               <div className="flex flex-wrap gap-3">
-                {(job.skills || 'Communication, Records Management').split(',').map((skill, idx) => (
+                {(job.qualifications.skills || ['Communication', 'Records Management']).map((skill, idx) => (
                   <span key={idx} className="px-4 py-2 bg-blue-100 text-blue-700 rounded-full font-medium text-sm">
-                    {skill.trim()}
+                    {typeof skill === 'string' ? skill.trim() : skill}
                   </span>
                 ))}
               </div>
@@ -212,7 +212,9 @@ export const JobDetailsPage = () => {
                 Certifications
               </h3>
               <p className="text-slate-700 text-base leading-relaxed bg-blue-50 p-4 rounded-lg">
-                {job.certifications || 'Civil Service Eligibility'}
+                {(job.qualifications.certifications && job.qualifications.certifications.length > 0
+                  ? job.qualifications.certifications.join(', ')
+                  : 'Civil Service Eligibility')}
               </p>
             </div>
 
