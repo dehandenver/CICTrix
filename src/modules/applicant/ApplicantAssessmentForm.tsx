@@ -121,10 +121,19 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
     onChange('office', '');
   }, [dynamicPositionOptions, formData.position, onChange, lockedPosition]);
 
+  // Extract base position title (without rank level like I, II, III, IV, V, etc.)
+  const getBasePositionTitle = (position: string): string => {
+    return position.replace(/\s+(I+|V|X|XI+|IX|IV)$/i, '').trim();
+  };
+
   // Auto-populate department when position is set (from prefilled data)
   useEffect(() => {
     if (!formData.position || formData.office) return;
-    const assignedDepartment = positionDepartmentMap[formData.position] ?? POSITION_TO_DEPARTMENT_MAP[formData.position];
+    const basePosition = getBasePositionTitle(formData.position);
+    const assignedDepartment = positionDepartmentMap[formData.position]
+      ?? positionDepartmentMap[basePosition]
+      ?? POSITION_TO_DEPARTMENT_MAP[formData.position]
+      ?? POSITION_TO_DEPARTMENT_MAP[basePosition];
     if (assignedDepartment) {
       onChange('office', assignedDepartment);
     }
@@ -133,8 +142,12 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
   const handlePositionChange = (positionValue: string) => {
     onChange('position', positionValue);
 
-    // Auto-assign department based on position
-    const assignedDepartment = positionDepartmentMap[positionValue] ?? POSITION_TO_DEPARTMENT_MAP[positionValue];
+    // Auto-assign department based on position (handle rank levels like I, II, III, V)
+    const basePosition = getBasePositionTitle(positionValue);
+    const assignedDepartment = positionDepartmentMap[positionValue]
+      ?? positionDepartmentMap[basePosition]
+      ?? POSITION_TO_DEPARTMENT_MAP[positionValue]
+      ?? POSITION_TO_DEPARTMENT_MAP[basePosition];
     if (assignedDepartment) {
       onChange('office', assignedDepartment);
     }
