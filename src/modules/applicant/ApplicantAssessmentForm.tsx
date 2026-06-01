@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Card, Checkbox, Input, Select } from '../../components';
 import { DEPARTMENT_OPTIONS, POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import { ensureRecruitmentSeedData, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
@@ -28,6 +28,7 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
 }) => {
   const [dynamicPositionOptions, setDynamicPositionOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [positionDepartmentMap, setPositionDepartmentMap] = useState<Record<string, string>>({});
+  const hasLoadedPositionsRef = useRef(false);
 
   const syncPostedPositions = (currentSelectedPosition?: string) => {
     ensureRecruitmentSeedData();
@@ -50,6 +51,8 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
 
       return;
     }
+
+    hasLoadedPositionsRef.current = true;
 
     const seen = new Set<string>();
     const nextOptions: Array<{ value: string; label: string }> = [];
@@ -107,6 +110,10 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
   useEffect(() => {
     if (lockedPosition) return; // preserve prefilled values when fields are locked
     if (!formData.position) return;
+    // Only clear the position if positions have been loaded at least once
+    // This prevents clearing valid prefilled values while options are still loading
+    if (!hasLoadedPositionsRef.current) return;
+
     const exists = dynamicPositionOptions.some((option) => option.value === formData.position);
     if (exists) return;
 
