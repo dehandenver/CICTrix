@@ -10,6 +10,7 @@ import {
     Users,
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import hrisLogo from '../../assets/hris-logo.svg';
 import { Button, Dialog } from '../../components';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
@@ -152,6 +153,8 @@ export const ApplicantWizard: React.FC = () => {
     persisted.authenticatedEmployeeAccount ?? null,
   );
   const isGeneratingItemNumberRef = useRef(false);
+  const location = useLocation();
+  const landingJobAppliedRef = useRef(false);
 
   // Persist the wizard state whenever the user advances or edits.
   useEffect(() => {
@@ -163,6 +166,27 @@ export const ApplicantWizard: React.FC = () => {
       authenticatedEmployeeAccount,
     });
   }, [entryMode, applicationType, currentStep, formData, authenticatedEmployeeAccount]);
+
+  useEffect(() => {
+    const state = location.state as { landingJob?: { title: string; itemNumber: string; department: string } } | null;
+    const landingJob = state?.landingJob;
+
+    if (landingJob && !landingJobAppliedRef.current) {
+      landingJobAppliedRef.current = true;
+      setEntryMode('wizard');
+      setApplicationType('job');
+      setCurrentStep(1);
+      setAuthenticatedEmployeeAccount(null);
+      setFormData({
+        ...INITIAL_FORM_DATA,
+        application_type: 'job',
+        position: landingJob.title,
+        office: landingJob.department,
+      });
+      setFiles([]);
+      setSubmitError('');
+    }
+  }, [location.state]);
 
   const handleFormChange = (field: keyof ApplicantFormData, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));

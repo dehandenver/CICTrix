@@ -182,6 +182,10 @@ export const LandingPage = () => {
     if (currentPage < totalPages) setCurrentPage(currentPage + 1);
   };
 
+  const handleApplyForJob = (job: typeof JOB_VACANCIES[number]) => {
+    navigate('/apply', { state: { landingJob: job } });
+  };
+
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
@@ -299,12 +303,13 @@ export const LandingPage = () => {
                       </button>
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <Link
-                        to="/apply"
+                      <button
+                        type="button"
+                        onClick={() => handleApplyForJob(job)}
                         className="inline-flex items-center gap-1 rounded-lg bg-[#363EE8] px-3 py-2 text-xs font-medium text-white transition hover:bg-[#2f35d0]"
                       >
                         Apply
-                      </Link>
+                      </button>
                     </td>
                   </tr>
                 ))}

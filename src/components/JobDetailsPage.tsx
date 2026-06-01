@@ -1,4 +1,4 @@
-import { ArrowLeft, Briefcase, MapPin, DollarSign, BookOpen, Award, Users, FileText, Calendar, Clock } from 'lucide-react';
+import { ArrowLeft, Briefcase, MapPin, BookOpen, Award, Users, FileText, Calendar, Clock, CheckCircle2 } from 'lucide-react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { getJobPostings } from '../lib/recruitmentData';
@@ -74,32 +74,35 @@ export const JobDetailsPage = () => {
       {/* Main Container */}
       <div className="max-w-4xl mx-auto">
         {/* Header Section with ABYAN Branding */}
-        <div className="bg-white rounded-2xl shadow-lg overflow-hidden mb-6 border-t-4 border-blue-600">
-          <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-8 py-10 text-white">
-            <div className="flex items-start justify-between mb-6">
+        <div className="bg-white rounded-2xl shadow-lg overflow-hidden mb-6 border-t-4 border-sky-500">
+          <div className="bg-gradient-to-r from-sky-600 via-sky-600 to-slate-800 px-8 py-10 text-white">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-6">
               <div className="flex-1">
                 <h1 className="text-4xl font-bold mb-3">{title}</h1>
-                <div className="flex items-center gap-3 text-blue-100">
+                <div className="flex items-center gap-3 text-sky-100">
                   <Briefcase className="h-5 w-5" />
                   <span className="text-lg font-semibold">Item No. {itemNo}</span>
                 </div>
               </div>
-              <div className="text-right">
-                <span className={`inline-block px-6 py-2 rounded-full text-sm font-bold ${
-                  status === 'Active' || status === 'Open' ? 'bg-emerald-400 text-white' :
-                  status === 'Draft' ? 'bg-amber-400 text-white' :
-                  status === 'Closed' ? 'bg-red-400 text-white' :
-                  'bg-blue-400 text-white'
+              <div className="flex items-center justify-end">
+                <span className={`inline-flex items-center px-5 py-2 rounded-full text-sm font-semibold tracking-wide ${
+                  status === 'Active' || status === 'Open' ? 'bg-emerald-500 text-white' :
+                  status === 'Draft' ? 'bg-amber-500 text-white' :
+                  status === 'Closed' ? 'bg-red-500 text-white' :
+                  'bg-sky-400 text-white'
                 }`}>
                   {status}
-                </span>\n              </div>\n            </div>\n          </div>
+                </span>
+              </div>
+            </div>
+          </div>
 
           {/* Key Information Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 px-8 py-8 border-b border-slate-200">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 px-8 py-8 border-b border-slate-200">
             {/* Place of Assignment */}
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-slate-600">
-                <MapPin className="h-5 w-5 text-blue-600" />
+                <MapPin className="h-5 w-5 text-sky-600" />
                 <span className="font-semibold text-slate-700">Place of Assignment</span>
               </div>
               <p className="text-slate-900 font-medium text-lg">{department}</p>
@@ -108,7 +111,7 @@ export const JobDetailsPage = () => {
             {/* Position Title / Type */}
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-slate-600">
-                <Briefcase className="h-5 w-5 text-blue-600" />
+                <Briefcase className="h-5 w-5 text-sky-600" />
                 <span className="font-semibold text-slate-700">{landingJob ? 'Type' : 'Position Level'}</span>
               </div>
               <p className="text-slate-900 font-medium text-lg">{landingJob?.type || job?.positionLevel || 'N/A'}</p>
@@ -117,7 +120,7 @@ export const JobDetailsPage = () => {
             {/* Posting Date */}
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-slate-600">
-                <Calendar className="h-5 w-5 text-blue-600" />
+                <Calendar className="h-5 w-5 text-sky-600" />
                 <span className="font-semibold text-slate-700">Posted</span>
               </div>
               <p className="text-slate-900 font-medium text-lg">{new Date(postingDate).toLocaleDateString()}</p>
@@ -126,34 +129,32 @@ export const JobDetailsPage = () => {
             {/* Closing/Application Date */}
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-slate-600">
-                <Clock className="h-5 w-5 text-blue-600" />
+                <Clock className="h-5 w-5 text-sky-600" />
                 <span className="font-semibold text-slate-700">Application Closes</span>
               </div>
               <p className="text-slate-900 font-medium text-lg">{new Date(closingDate).toLocaleDateString()}</p>
             </div>
-
-            {job && !landingJob && (
-              <>
-                {/* Number of Positions */}
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-slate-600">
-                    <Users className="h-5 w-5 text-blue-600" />
-                    <span className="font-semibold text-slate-700">Number of Positions</span>
-                  </div>
-                  <p className="text-slate-900 font-medium text-lg">{job.numberOfPositions}</p>
-                </div>
-
-                {/* Employment Type */}
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-slate-600">
-                    <Clock className="h-5 w-5 text-blue-600" />
-                    <span className="font-semibold text-slate-700">Employment Type</span>
-                  </div>
-                  <p className="text-slate-900 font-medium text-lg">{job.employmentType}</p>
-                </div>
-              </>
-            )}
           </div>
+
+          {job && !landingJob && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 px-8 py-6">
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-slate-600">
+                  <Users className="h-5 w-5 text-sky-600" />
+                  <span className="font-semibold text-slate-700">Number of Positions</span>
+                </div>
+                <p className="text-slate-900 font-medium text-lg">{job.numberOfPositions}</p>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-slate-600">
+                  <Clock className="h-5 w-5 text-sky-600" />
+                  <span className="font-semibold text-slate-700">Employment Type</span>
+                </div>
+                <p className="text-slate-900 font-medium text-lg">{job.employmentType}</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Requirements Section - Only for Database Jobs */}
@@ -264,84 +265,59 @@ export const JobDetailsPage = () => {
         )}
 
         {/* Application Requirements Section */}
-        <div className="bg-white rounded-2xl shadow-lg overflow-hidden mb-6 border-l-4 border-blue-600">
+        <div className="bg-white rounded-2xl shadow-lg overflow-hidden mb-6 border-l-4 border-sky-500">
           <div className="bg-blue-50 px-8 py-6 border-b border-slate-200">
             <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
-              <FileText className="h-6 w-6 text-blue-600" />
+              <FileText className="h-6 w-6 text-sky-600" />
               Required Documents for Application
             </h2>
           </div>
 
           <div className="px-8 py-8">
-            <div className="space-y-3 mb-6">
+            <p className="mb-6 text-slate-700 text-base leading-relaxed">
+              Submit these documents before <span className="font-semibold text-slate-900">June 11, 2026</span> as part of your application package.
+            </p>
+
+            <div className="grid gap-3">
               {job && !landingJob ? (
                 (job.requiredDocuments || ['Resume/CV', 'Application Letter']).map((doc, idx) => (
-                  <div key={idx} className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg">
-                    <span className="text-blue-600 font-bold text-lg mt-1">✓</span>
+                  <div key={idx} className="flex items-start gap-3 p-4 bg-slate-50 border border-slate-200 rounded-2xl">
+                    <CheckCircle2 className="h-5 w-5 text-sky-600 flex-shrink-0" />
                     <span className="text-slate-700 text-base">{doc}</span>
                   </div>
                 ))
               ) : (
-                <>
-                  <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg">
-                    <span className="text-blue-600 font-bold text-lg mt-1">✓</span>
-                    <span className="text-slate-700 text-base">Personal Data Sheet (PDS) with Work Experience Sheet</span>
+                [
+                  'Personal Data Sheet (PDS) with Work Experience Sheet',
+                  'Application Letter',
+                  'Proof of eligibility/rating/license',
+                  'Transcript of Records'
+                ].map((doc, idx) => (
+                  <div key={idx} className="flex items-start gap-3 p-4 bg-slate-50 border border-slate-200 rounded-2xl">
+                    <CheckCircle2 className="h-5 w-5 text-sky-600 flex-shrink-0" />
+                    <span className="text-slate-700 text-base">{doc}</span>
                   </div>
-                  <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg">
-                    <span className="text-blue-600 font-bold text-lg mt-1">✓</span>
-                    <span className="text-slate-700 text-base">Application Letter</span>
-                  </div>
-                  <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg">
-                    <span className="text-blue-600 font-bold text-lg mt-1">✓</span>
-                    <span className="text-slate-700 text-base">Proof of eligibility/rating/license</span>
-                  </div>
-                  <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg">
-                    <span className="text-blue-600 font-bold text-lg mt-1">✓</span>
-                    <span className="text-slate-700 text-base">Transcript of Records</span>
-                  </div>
-                </>
+                ))
               )}
             </div>
 
-            {/* Important Instructions */}
-            <div className="bg-amber-50 border-l-4 border-amber-500 p-6 rounded-lg mt-6">
-              <h3 className="font-bold text-amber-900 mb-3 flex items-center gap-2">
-                <Calendar className="h-5 w-5" />
+            <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl mt-6">
+              <h3 className="font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                <Calendar className="h-5 w-5 text-slate-700" />
                 Important Instructions
               </h3>
-              <ul className="space-y-2 text-amber-900 text-sm">
-                <li className="flex gap-2">
-                  <span className="font-bold">1.</span>
-                  <span>Interested and qualified applicants should signify their interest in writing through an application letter addressed to the head of office.</span>
-                </li>
-                <li className="flex gap-2">
-                  <span className="font-bold">2.</span>
-                  <span>Applicants must attach the following documents to the application letter and send these to the address below not later than JUNE 11, 2026.</span>
-                </li>
-                <li className="flex gap-2">
-                  <span className="font-bold">3.</span>
-                  <span>Fully accomplished Personal Data Sheet (PDS) with Work Experience Sheet and recent passport-sized or authorized digital picture (CS Form No. 212, Revised 2025); digitally signed or electronically signed.</span>
-                </li>
-                <li className="flex gap-2">
-                  <span className="font-bold">4.</span>
-                  <span>Hard copy or electronic copy of Performance rating in the last rating period (if applicable).</span>
-                </li>
-                <li className="flex gap-2">
-                  <span className="font-bold">5.</span>
-                  <span>Hard copy or electronic copy of proof of eligibility/rating/license.</span>
-                </li>
-                <li className="flex gap-2">
-                  <span className="font-bold">6.</span>
-                  <span>Hard copy or electronic copy of Transcript of Records.</span>
-                </li>
-              </ul>
+              <p className="text-slate-700 text-sm leading-relaxed mb-3">
+                Address your application letter to the head of office and attach the required documents listed above before the deadline.
+              </p>
+              <p className="text-slate-700 text-sm leading-relaxed">
+                Applications received after <span className="font-semibold">June 11, 2026</span> may not be considered.
+              </p>
             </div>
 
-            {/* Equal Opportunity Statement */}
             <div className="bg-green-50 border-l-4 border-green-500 p-6 rounded-lg mt-6">
               <h3 className="font-bold text-green-900 mb-3">Equal Opportunities for Employment</h3>
               <p className="text-green-900 text-sm mb-3">
-                This Office highly encourages all interested and qualified applicants to apply, which include persons with disability (PWD) and members of the indigenous communities, irrespective of sexual orientation and gender identities and/or expression, civil status, religion, and political affiliation
+                This Office highly encourages all interested and qualified applicants to apply, which include persons with disability (PWD) and members of the indigenous communities, irrespective of sexual orientation and gender identities and/or expression, civil status, religion, and political affiliation.
               </p>
               <p className="text-green-900 text-sm">
                 This Office does not discriminate in the selection of employees based on the aforementioned pursuant to Equal Opportunities for Employment Principle (EOP).
