@@ -36,6 +36,11 @@ const MOCK_USERS: Record<string, { password: string; role: Role }> = {
   'lnd@abyan.gov.ph': { password: 'lnd123', role: 'lnd' },
   'pm@abyan.gov.ph': { password: 'pm123', role: 'pm' },
 
+  'admin@cictrix.gov.ph': { password: 'admin123', role: 'super-admin' },
+  'rsp@cictrix.gov.ph': { password: 'rsp123', role: 'rsp' },
+  'lnd@cictrix.gov.ph': { password: 'lnd123', role: 'lnd' },
+  'pm@cictrix.gov.ph': { password: 'pm123', role: 'pm' },
+
   'admin@abyan.com': { password: 'Admin@123', role: 'super-admin' },
   'rsp@abyan.com': { password: 'RSP@123', role: 'rsp' },
   'lnd@abyan.com': { password: 'LND@123', role: 'lnd' },
@@ -80,8 +85,8 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
       const mockUser = MOCK_USERS[normalizedEmail];
       if (mockUser && mockUser.password === password) {
         if (mockUser.role !== selectedRole) {
-          alert(`This account is assigned to ${mockUser.role.toUpperCase()}. Please select the correct role.`);
-          return;
+          // Auto-select the correct role instead of failing
+          setSelectedRole(mockUser.role);
         }
         onLogin(normalizedEmail, mockUser.role);
         navigate(getRoleDefaultRoute(mockUser.role));
@@ -116,8 +121,8 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
       }
 
       if (role !== selectedRole) {
-        alert(`Your account role is ${role.toUpperCase()}. Please select the matching role to continue.`);
-        return;
+        // Auto-select the correct role instead of failing
+        setSelectedRole(role as Role);
       }
 
       const resolvedEmail = authData.user.email ?? email;
