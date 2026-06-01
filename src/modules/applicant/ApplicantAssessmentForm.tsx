@@ -13,6 +13,8 @@ interface ApplicantAssessmentFormProps {
   isEmployee?: boolean;
   /** Called when a non-employee toggles the application type radio group. Ignored when isEmployee. */
   onApplicationTypeChange?: (next: 'job' | 'promotion') => void;
+  /** True when applying directly for a specific vacant job, making position and department read-only. */
+  isFixedJob?: boolean;
 }
 
 export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = ({
@@ -22,6 +24,7 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
   applicationType = 'job',
   isEmployee = false,
   onApplicationTypeChange,
+  isFixedJob = false,
 }) => {
   const [dynamicPositionOptions, setDynamicPositionOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [positionDepartmentMap, setPositionDepartmentMap] = useState<Record<string, string>>({});
@@ -95,13 +98,14 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
   }, [formData.position, onChange]);
 
   useEffect(() => {
+    if (isFixedJob) return;
     if (!formData.position) return;
     const exists = dynamicPositionOptions.some((option) => option.value === formData.position);
     if (exists) return;
 
     onChange('position', '');
     onChange('office', '');
-  }, [dynamicPositionOptions, formData.position, onChange]);
+  }, [dynamicPositionOptions, formData.position, onChange, isFixedJob]);
 
   const handlePositionChange = (positionValue: string) => {
     onChange('position', positionValue);
@@ -282,14 +286,22 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
           />
         </div>
 
-        <Select
-          label="Position Applied For"
-          options={dynamicPositionOptions}
-          value={formData.position}
-          onChange={(e) => handlePositionChange(e.target.value)}
-          error={errors.position}
-          required
-        />
+        {isFixedJob ? (
+          <Input
+            label="Position Applied For"
+            value={formData.position}
+            readOnly
+          />
+        ) : (
+          <Select
+            label="Position Applied For"
+            options={dynamicPositionOptions}
+            value={formData.position}
+            onChange={(e) => handlePositionChange(e.target.value)}
+            error={errors.position}
+            required
+          />
+        )}
 
         <Input
           label="Item Number"
@@ -298,14 +310,22 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
           readOnly
         />
 
-        <Select
-          label="Department"
-          options={DEPARTMENT_OPTIONS}
-          value={formData.office}
-          onChange={(e) => onChange('office', e.target.value)}
-          error={errors.office}
-          required
-        />
+        {isFixedJob ? (
+          <Input
+            label="Department"
+            value={formData.office}
+            readOnly
+          />
+        ) : (
+          <Select
+            label="Department"
+            options={DEPARTMENT_OPTIONS}
+            value={formData.office}
+            onChange={(e) => onChange('office', e.target.value)}
+            error={errors.office}
+            required
+          />
+        )}
 
         <div className="md:col-span-2">
           <Checkbox

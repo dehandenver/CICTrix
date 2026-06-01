@@ -18,10 +18,11 @@ import {
     findEmployeePortalAccount,
     getEmployeePortalAccounts,
 } from '../../lib/employeePortalData';
-import { getEmployeeRecords, syncApplicantSubmissionToRecruitment } from '../../lib/recruitmentData';
+import { getAuthoritativeJobPostings, getEmployeeRecords, loadJobPostings, syncApplicantSubmissionToRecruitment } from '../../lib/recruitmentData';
 import { ATTACHMENTS_BUCKET, supabase } from '../../lib/supabase';
 import '../../styles/wizard.css';
 import type { ApplicantFormData, UploadedFile, ValidationErrors } from '../../types/applicant.types';
+import type { JobPosting } from '../../types/recruitment.types';
 import { validateApplicantForm, validateFiles } from '../../utils/validation';
 import { ApplicantAssessmentForm } from './ApplicantAssessmentForm';
 import { AttachmentsUploadForm, REQUIRED_DOCUMENTS } from './AttachmentsUploadForm';
@@ -103,7 +104,13 @@ export const ApplicantWizard: React.FC = () => {
   const [showEmployeePassword, setShowEmployeePassword] = useState(false);
   const [employeeAuthError, setEmployeeAuthError] = useState('');
   const [authenticatedEmployeeAccount, setAuthenticatedEmployeeAccount] = useState<EmployeePortalAccount | null>(null);
+  
+  const [activeJobs, setActiveJobs] = useState<JobPosting[]>([]);
+  const [isFixedJob, setIsFixedJob] = useState(false);
+
   const isGeneratingItemNumberRef = useRef(false);
+
+
 
   const handleFormChange = (field: keyof ApplicantFormData, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -361,10 +368,17 @@ const handleNextToReview = () => {
     setShowSuccessDialog(false);
   };
 
-  const handleStartJobApplication = () => {
+  const handleStartJobApplication = (job?: JobPosting) => {
     setApplicationType('job');
     setAuthenticatedEmployeeAccount(null);
-    setFormData({ ...INITIAL_FORM_DATA, application_type: 'job' });
+    setFormData({ 
+      ...INITIAL_FORM_DATA, 
+      application_type: 'job',
+      position: job ? job.title : '',
+      office: job ? (job.division || job.department) : '',
+      item_number: job ? job.jobCode : ''
+    });
+    setIsFixedJob(!!job);
     setFiles([]);
     setEntryMode('wizard');
     setCurrentStep(1);
@@ -542,6 +556,15 @@ const handleNextToReview = () => {
     };
   }, [currentStep, entryMode, formData.item_number, hasStartedAssessment]);
 
+  useEffect(() => {
+    if (entryMode === 'landing') {
+      loadJobPostings().then(() => {
+        const jobs = getAuthoritativeJobPostings().filter(job => job.status === 'Active');
+        setActiveJobs(jobs);
+      });
+    }
+  }, [entryMode]);
+
   return (
     <div className="applicant-shell">
       <header className="applicant-topbar">
@@ -573,13 +596,33 @@ const handleNextToReview = () => {
               <UserPlus size={46} />
             </div>
             <h3>Job Application</h3>
-            <p>Apply for available positions</p>
-            <Button className="entry-primary-button" onClick={handleStartJobApplication}>
-              Start Application
+            <p>Apply for a general position or select from the vacancies below</p>
+            <Button className="entry-primary-button" onClick={() => handleStartJobApplication()}>
+              Start General Application
             </Button>
           </div>
 
-          <button className="employee-promotion-button" onClick={handleOpenEmployeeAuth}>
+          {activeJobs.length > 0 && (
+            <div className="mt-8 rounded-2xl bg-white p-6 shadow-sm border border-slate-200 w-full max-w-2xl mx-auto">
+              <h3 className="text-xl font-bold mb-4 text-slate-800 text-center">Currently Vacant Jobs</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                {activeJobs.map(job => (
+                  <div key={job.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4 hover:border-blue-300 hover:shadow-md transition-all flex flex-col h-full text-left">
+                    <h4 className="font-bold text-slate-900 leading-tight mb-1">{job.title}</h4>
+                    <p className="text-sm text-slate-600 flex-1">{job.division || job.department}</p>
+                    <div className="mt-4 pt-4 border-t border-slate-200">
+                      <p className="text-xs font-mono text-slate-500 mb-3">Item No: {job.jobCode}</p>
+                      <Button onClick={() => handleStartJobApplication(job)} variant="outline" className="w-full justify-center">
+                        Apply for this position
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <button className="employee-promotion-button mt-8" onClick={handleOpenEmployeeAuth}>
             <Users size={18} />
             <span>I'm a current employee applying for promotion</span>
           </button>
@@ -662,6 +705,7 @@ const handleNextToReview = () => {
                       setApplicationType(next);
                       handleFormChange('application_type', next);
                     }}
+                    isFixedJob={isFixedJob}
                   />
                 </div>
               </>

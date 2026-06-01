@@ -221,19 +221,13 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
               >
                 Human Resource Information System
               </p>
-              <ul className="mt-10 space-y-3 text-left text-sm">
+              <ul className="mt-10 space-y-3 text-center text-sm">
                 {['Recruitment & Selection', 'Learning & Development', 'Performance Management'].map(
                   (item) => (
                     <li
                       key={item}
-                      className="flex items-center gap-3"
                       style={{ color: 'rgba(255,255,255,0.88)' }}
                     >
-                      <span
-                        className="h-1.5 w-1.5 rounded-full"
-                        style={{ backgroundColor: 'rgba(255,255,255,0.75)' }}
-                        aria-hidden="true"
-                      />
                       {item}
                     </li>
                   ),
