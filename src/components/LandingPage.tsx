@@ -204,6 +204,7 @@ export const LandingPage = () => {
               src={abyanLogo}
               alt="Abyan Logo"
               className="h-11 w-auto object-contain"
+              style={{ mixBlendMode: 'screen' }}
             />
             <div className="flex items-baseline gap-2">
               <span className="text-xl font-bold tracking-tight text-white">ABYAN</span>
@@ -443,6 +444,7 @@ export const LandingPage = () => {
               src={abyanLogo}
               alt="Abyan Logo"
               className="h-7 w-auto object-contain"
+              style={{ mixBlendMode: 'screen' }}
             />
             <span className="font-semibold text-[#050D65]">ABYAN HRIS</span>
           </div>

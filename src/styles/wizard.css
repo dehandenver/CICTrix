@@ -20,9 +20,10 @@
   width: 58px;
   height: 58px;
   object-fit: contain;
-  background: #ffffff;
+  background: transparent;
   border-radius: 3px;
   padding: 0.2rem;
+  mix-blend-mode: screen;
 }
 
 .applicant-brand h1 {

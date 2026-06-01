@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import hrisLogo from '../../assets/hris-logo.svg';
+import abyanLogo from '../../assets/abyan-logo.png';
 import { Button, Dialog } from '../../components';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import {
@@ -155,6 +155,7 @@ export const ApplicantWizard: React.FC = () => {
   const isGeneratingItemNumberRef = useRef(false);
   const location = useLocation();
   const landingJobAppliedRef = useRef(false);
+  const [prefilledFromLanding, setPrefilledFromLanding] = useState(false);
 
   // Persist the wizard state whenever the user advances or edits.
   useEffect(() => {
@@ -170,9 +171,14 @@ export const ApplicantWizard: React.FC = () => {
   useEffect(() => {
     const state = location.state as { landingJob?: { title: string; itemNumber: string; department: string } } | null;
     const landingJob = state?.landingJob;
+    const searchParams = new URLSearchParams(location.search);
+    const positionFromQuery = searchParams.get('position') || undefined;
+    const itemNumberFromQuery = searchParams.get('itemNumber') || undefined;
+    const officeFromQuery = searchParams.get('office') || undefined;
 
     if (landingJob && !landingJobAppliedRef.current) {
       landingJobAppliedRef.current = true;
+      setPrefilledFromLanding(true);
       setEntryMode('wizard');
       setApplicationType('job');
       setCurrentStep(1);
@@ -182,11 +188,31 @@ export const ApplicantWizard: React.FC = () => {
         application_type: 'job',
         position: landingJob.title,
         office: landingJob.department,
+        item_number: landingJob.itemNumber,
+      });
+      setFiles([]);
+      setSubmitError('');
+      return;
+    }
+
+    if ((positionFromQuery || itemNumberFromQuery) && !landingJobAppliedRef.current) {
+      landingJobAppliedRef.current = true;
+      setPrefilledFromLanding(true);
+      setEntryMode('wizard');
+      setApplicationType('job');
+      setCurrentStep(1);
+      setAuthenticatedEmployeeAccount(null);
+      setFormData({
+        ...INITIAL_FORM_DATA,
+        application_type: 'job',
+        position: positionFromQuery || '',
+        office: officeFromQuery || POSITION_TO_DEPARTMENT_MAP[positionFromQuery || ''] || '',
+        item_number: itemNumberFromQuery || '',
       });
       setFiles([]);
       setSubmitError('');
     }
-  }, [location.state]);
+  }, [location.state, location.search]);
 
   const handleFormChange = (field: keyof ApplicantFormData, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -634,8 +660,8 @@ const handleNextToReview = () => {
   return (
     <div className="applicant-shell">
       <header className="applicant-topbar">
-        <div className="applicant-brand">
-          <img src={hrisLogo} alt="Abyan logo" className="applicant-brand-logo" />
+          <div className="applicant-brand">
+            <img src={abyanLogo} alt="ABYAN logo" className="applicant-brand-logo" />
           <div>
             <h1>Abyan HRIS Applicant Portal</h1>
             <p>Human Resource Information System</p>
@@ -739,19 +765,20 @@ const handleNextToReview = () => {
                 </div>
                 <div className="wizard-content">
                   <ApplicantAssessmentForm
-                    formData={formData}
-                    errors={errors}
-                    onChange={handleFormChange}
-                    applicationType={applicationType}
-                    isEmployee={Boolean(authenticatedEmployeeAccount?.employee?.employeeId)}
-                    onApplicationTypeChange={(next) => {
-                      // Guard: an authenticated employee may never switch to Original.
-                      // (UI also hides the radio group in that case, but defense-in-depth.)
-                      if (authenticatedEmployeeAccount?.employee?.employeeId && next === 'job') return;
-                      setApplicationType(next);
-                      handleFormChange('application_type', next);
-                    }}
-                  />
+                      formData={formData}
+                      errors={errors}
+                      onChange={handleFormChange}
+                      applicationType={applicationType}
+                      isEmployee={Boolean(authenticatedEmployeeAccount?.employee?.employeeId)}
+                      onApplicationTypeChange={(next) => {
+                        // Guard: an authenticated employee may never switch to Original.
+                        // (UI also hides the radio group in that case, but defense-in-depth.)
+                        if (authenticatedEmployeeAccount?.employee?.employeeId && next === 'job') return;
+                        setApplicationType(next);
+                        handleFormChange('application_type', next);
+                      }}
+                      lockedPosition={prefilledFromLanding}
+                    />
                 </div>
               </>
             )}

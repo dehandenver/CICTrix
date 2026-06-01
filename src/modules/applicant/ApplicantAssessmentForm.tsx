@@ -13,6 +13,8 @@ interface ApplicantAssessmentFormProps {
   isEmployee?: boolean;
   /** Called when a non-employee toggles the application type radio group. Ignored when isEmployee. */
   onApplicationTypeChange?: (next: 'job' | 'promotion') => void;
+  /** When true the position/department were prefilled from a job click and should be locked */
+  lockedPosition?: boolean;
 }
 
 export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = ({
@@ -22,6 +24,7 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
   applicationType = 'job',
   isEmployee = false,
   onApplicationTypeChange,
+  lockedPosition = false,
 }) => {
   const [dynamicPositionOptions, setDynamicPositionOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [positionDepartmentMap, setPositionDepartmentMap] = useState<Record<string, string>>({});
@@ -35,11 +38,14 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
 
     if (activeRows.length === 0) {
       setPositionDepartmentMap({});
-      setDynamicPositionOptions([]);
-
+      // If there are no authoritative job rows yet, preserve any
+      // prefilled position coming from the landing page so the user
+      // doesn't lose the selection while the background loader runs.
       if (currentSelectedPosition) {
-        onChange('position', '');
-        onChange('office', '');
+        setDynamicPositionOptions([{ value: currentSelectedPosition, label: currentSelectedPosition }]);
+        // Keep existing office value — do not clear it here.
+      } else {
+        setDynamicPositionOptions([]);
       }
 
       return;
@@ -66,15 +72,19 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
     });
 
     setPositionDepartmentMap(nextDepartmentMap);
-    setDynamicPositionOptions(nextOptions);
-
-    if (currentSelectedPosition) {
-      const stillActive = nextOptions.some((option) => option.value === currentSelectedPosition);
-      if (!stillActive) {
-        onChange('position', '');
-        onChange('office', '');
+    // If the current selected position came from a landing/page click and
+    // isn't present in the active job options, make sure the dropdown still
+    // contains it so the prefilled value remains visible and selectable.
+    if (currentSelectedPosition && !nextOptions.some((option) => option.value === currentSelectedPosition)) {
+      const fallbackDept = POSITION_TO_DEPARTMENT_MAP[currentSelectedPosition] || '';
+      nextOptions.unshift({ value: currentSelectedPosition, label: currentSelectedPosition });
+      if (fallbackDept && !nextDepartmentMap[currentSelectedPosition]) {
+        nextDepartmentMap[currentSelectedPosition] = fallbackDept;
       }
     }
+
+    setDynamicPositionOptions(nextOptions);
+    setPositionDepartmentMap(nextDepartmentMap);
   };
 
   useEffect(() => {
@@ -95,13 +105,14 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
   }, [formData.position, onChange]);
 
   useEffect(() => {
+    if (lockedPosition) return; // preserve prefilled values when fields are locked
     if (!formData.position) return;
     const exists = dynamicPositionOptions.some((option) => option.value === formData.position);
     if (exists) return;
 
     onChange('position', '');
     onChange('office', '');
-  }, [dynamicPositionOptions, formData.position, onChange]);
+  }, [dynamicPositionOptions, formData.position, onChange, lockedPosition]);
 
   const handlePositionChange = (positionValue: string) => {
     onChange('position', positionValue);
@@ -301,14 +312,31 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
           />
         </div>
 
-        <Select
-          label="Position Applied For"
-          options={dynamicPositionOptions}
-          value={formData.position}
-          onChange={(e) => handlePositionChange(e.target.value)}
-          error={errors.position}
-          required
-        />
+        {lockedPosition ? (
+          <Input
+            label="Position Applied For"
+            value={formData.position}
+            readOnly
+          />
+        ) : (
+          (() => {
+            const posOpts: Array<{ value: string; label: string }> = [...dynamicPositionOptions];
+            if (formData.position && !posOpts.some((p) => p.value === formData.position)) {
+              posOpts.unshift({ value: formData.position, label: formData.position });
+            }
+
+            return (
+              <Select
+                label="Position Applied For"
+                options={posOpts}
+                value={formData.position}
+                onChange={(e) => handlePositionChange(e.target.value)}
+                error={errors.position}
+                required
+              />
+            );
+          })()
+        )}
 
         <Input
           label="Item Number"
@@ -317,14 +345,36 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
           readOnly
         />
 
-        <Select
-          label="Department"
-          options={DEPARTMENT_OPTIONS}
-          value={formData.office}
-          onChange={(e) => onChange('office', e.target.value)}
-          error={errors.office}
-          required
-        />
+        {
+          // Ensure the department dropdown contains the prefilled office
+          // (e.g., 'Human Resource Management Office') when it doesn't
+          // exactly match the static `DEPARTMENT_OPTIONS` list.
+        }
+        {lockedPosition ? (
+          <Input
+            label="Department"
+            value={formData.office}
+            readOnly
+          />
+        ) : (
+          (() => {
+            const deptOpts: Array<{ value: string; label: string }> = [...DEPARTMENT_OPTIONS];
+            if (formData.office && !deptOpts.some((d) => d.value === formData.office)) {
+              deptOpts.unshift({ value: formData.office, label: formData.office });
+            }
+
+            return (
+              <Select
+                label="Department"
+                options={deptOpts}
+                value={formData.office}
+                onChange={(e) => onChange('office', e.target.value)}
+                error={errors.office}
+                required
+              />
+            );
+          })()
+        )}
 
         <div className="md:col-span-2">
           <Checkbox

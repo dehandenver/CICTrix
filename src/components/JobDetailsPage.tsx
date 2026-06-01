@@ -58,7 +58,6 @@ export const JobDetailsPage = () => {
   const department = landingJob?.department || job?.division || job?.department || '';
   const postingDate = landingJob?.postingDate || job?.postedDate || '';
   const closingDate = landingJob?.closingDate || job?.applicationDeadline || '';
-  const status = landingJob ? 'Open' : job?.status || '';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
@@ -75,24 +74,14 @@ export const JobDetailsPage = () => {
       <div className="max-w-4xl mx-auto">
         {/* Header Section with ABYAN Branding */}
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden mb-6 border-t-4 border-sky-500">
-          <div className="bg-gradient-to-r from-sky-600 via-sky-600 to-slate-800 px-8 py-10 text-white">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-6">
-              <div className="flex-1">
+          <div className="bg-gradient-to-r from-[#C8D1FF] via-[#7F93FF] to-[#363EE8] px-8 py-10 text-white">
+            <div className="flex flex-col gap-6 mb-6">
+              <div>
                 <h1 className="text-4xl font-bold mb-3">{title}</h1>
-                <div className="flex items-center gap-3 text-sky-100">
+                <div className="flex items-center gap-3 text-slate-100">
                   <Briefcase className="h-5 w-5" />
                   <span className="text-lg font-semibold">Item No. {itemNo}</span>
                 </div>
-              </div>
-              <div className="flex items-center justify-end">
-                <span className={`inline-flex items-center px-5 py-2 rounded-full text-sm font-semibold tracking-wide ${
-                  status === 'Active' || status === 'Open' ? 'bg-emerald-500 text-white' :
-                  status === 'Draft' ? 'bg-amber-500 text-white' :
-                  status === 'Closed' ? 'bg-red-500 text-white' :
-                  'bg-sky-400 text-white'
-                }`}>
-                  {status}
-                </span>
               </div>
             </div>
           </div>
@@ -354,7 +343,15 @@ export const JobDetailsPage = () => {
         {/* CTA Button */}
         <div className="text-center py-6">
           <button
-            onClick={() => navigate(`/apply?position=${encodeURIComponent(title)}&itemNumber=${encodeURIComponent(itemNo)}`)}
+            onClick={() => navigate('/apply', {
+              state: {
+                landingJob: {
+                  title,
+                  department,
+                  itemNumber: itemNo,
+                },
+              },
+            })}
             className="inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-bold text-lg rounded-xl hover:shadow-lg transition-shadow"
           >
             Apply for This Position
