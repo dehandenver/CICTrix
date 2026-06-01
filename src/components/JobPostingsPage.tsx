@@ -1130,7 +1130,15 @@ export const JobPostingsPage = () => {
                     <div className="mt-4 space-y-2">
                       <button
                         type="button"
-                        className="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-base font-semibold text-white"
+                        className="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-base font-semibold text-white hover:bg-blue-700 transition-colors"
+                        onClick={() => navigate(`/admin/rsp/job/${job.id}`)}
+                      >
+                        View Details <ChevronRight className="ml-2 inline h-4 w-4" />
+                      </button>
+
+                      <button
+                        type="button"
+                        className="w-full rounded-xl bg-slate-600 px-4 py-2.5 text-base font-semibold text-white hover:bg-slate-700 transition-colors"
                         onClick={() => {
                           setViewingApplicantsFor(job);
                           setJobApplicantsSearch('');

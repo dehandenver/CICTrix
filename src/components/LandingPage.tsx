@@ -289,7 +289,12 @@ export const LandingPage = () => {
                     <td className="px-4 py-3 text-slate-600">{formatDate(job.postingDate)}</td>
                     <td className="px-4 py-3 text-slate-600">{formatDate(job.closingDate)}</td>
                     <td className="px-4 py-3 text-center">
-                      <button className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50 hover:border-slate-400">
+                      <button 
+                        onClick={() => {
+                          navigate(`/job-details/${job.itemNumber}`, { state: { landingJob: job } });
+                        }}
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50 hover:border-slate-400 cursor-pointer"
+                      >
                         Details
                       </button>
                     </td>
