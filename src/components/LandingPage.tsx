@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useState, useRef, useEffect } from 'react';
 import {
   Briefcase,
@@ -84,7 +84,6 @@ const FEATURES = [
 ];
 
 export const LandingPage = () => {
-  const navigate = useNavigate();
   const jobsTableRef = useRef<HTMLDivElement>(null);
   const [itemsPerPage, setItemsPerPage] = useState(5);
   const [currentPage, setCurrentPage] = useState(1);
@@ -116,14 +115,16 @@ export const LandingPage = () => {
     // Load on mount
     syncJobs();
 
-    // Subscribe to job postings updates
-    window.addEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
-    window.addEventListener('focus', syncJobs);
+    // Subscribe to job postings updates (only on client side)
+    if (typeof window !== 'undefined') {
+      window.addEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
+      window.addEventListener('focus', syncJobs);
 
-    return () => {
-      window.removeEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
-      window.removeEventListener('focus', syncJobs);
-    };
+      return () => {
+        window.removeEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
+        window.removeEventListener('focus', syncJobs);
+      };
+    }
   }, []);
 
   const handleScrollToJobs = () => {
