@@ -170,24 +170,24 @@ export const LandingPage = () => {
 
             {/* Dropdown Menu */}
             <div className="absolute right-0 mt-0 w-48 bg-white text-slate-900 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 py-2">
-              <a
-                href="/login?portal=employee"
+              <Link
+                to="/employee/login"
                 className="block px-4 py-2 hover:bg-slate-50 font-medium"
               >
                 Employee Portal
-              </a>
-              <a
-                href="/login?portal=interviewer"
+              </Link>
+              <Link
+                to="/interviewer/login"
                 className="block px-4 py-2 hover:bg-slate-50 font-medium"
               >
                 Interviewer Portal
-              </a>
-              <a
-                href="/login?portal=hr"
+              </Link>
+              <Link
+                to="/admin/login"
                 className="block px-4 py-2 hover:bg-slate-50 font-medium"
               >
                 HR Administration
-              </a>
+              </Link>
             </div>
           </div>
         </div>
