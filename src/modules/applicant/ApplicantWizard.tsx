@@ -8,9 +8,11 @@ import {
     ShieldCheck,
     UserPlus,
     Users,
+    Briefcase,
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import hrisLogo from '../../assets/hris-logo.svg';
+import { useLocation, useNavigate } from 'react-router-dom';
+import abyanLogo from '../../assets/abyan-logo.png';
 import { Button, Dialog } from '../../components';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import {
@@ -18,10 +20,11 @@ import {
     findEmployeePortalAccount,
     getEmployeePortalAccounts,
 } from '../../lib/employeePortalData';
-import { getEmployeeRecordsFromSupabase, syncApplicantSubmissionToRecruitment } from '../../lib/recruitmentData';
+import { getEmployeeRecordsFromSupabase, syncApplicantSubmissionToRecruitment, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
 import { ATTACHMENTS_BUCKET, supabase } from '../../lib/supabase';
 import '../../styles/wizard.css';
 import type { ApplicantFormData, UploadedFile, ValidationErrors } from '../../types/applicant.types';
+import type { JobPosting } from '../../types/recruitment.types';
 import { validateApplicantForm, validateFiles } from '../../utils/validation';
 import { ApplicantAssessmentForm } from './ApplicantAssessmentForm';
 import { AttachmentsUploadForm, REQUIRED_DOCUMENTS } from './AttachmentsUploadForm';
@@ -151,7 +154,13 @@ export const ApplicantWizard: React.FC = () => {
   const [authenticatedEmployeeAccount, setAuthenticatedEmployeeAccount] = useState<EmployeePortalAccount | null>(
     persisted.authenticatedEmployeeAccount ?? null,
   );
+  const [activeJobs, setActiveJobs] = useState<JobPosting[]>([]);
+  const [isLockedPosition, setIsLockedPosition] = useState(false);
   const isGeneratingItemNumberRef = useRef(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const landingJobAppliedRef = useRef(false);
+  const [prefilledFromLanding, setPrefilledFromLanding] = useState(false);
 
   // Persist the wizard state whenever the user advances or edits.
   useEffect(() => {
@@ -163,6 +172,54 @@ export const ApplicantWizard: React.FC = () => {
       authenticatedEmployeeAccount,
     });
   }, [entryMode, applicationType, currentStep, formData, authenticatedEmployeeAccount]);
+
+  useEffect(() => {
+    const state = location.state as { landingJob?: { title: string; itemNumber: string; department: string } } | null;
+    const landingJob = state?.landingJob;
+    const searchParams = new URLSearchParams(location.search);
+    const positionFromQuery = searchParams.get('position') || undefined;
+    const itemNumberFromQuery = searchParams.get('itemNumber') || undefined;
+    const officeFromQuery = searchParams.get('office') || undefined;
+
+    if (landingJob && !landingJobAppliedRef.current) {
+      landingJobAppliedRef.current = true;
+      setPrefilledFromLanding(true);
+      setEntryMode('wizard');
+      setApplicationType('job');
+      setCurrentStep(1);
+      setAuthenticatedEmployeeAccount(null);
+      setFormData({
+        ...INITIAL_FORM_DATA,
+        application_type: 'job',
+        position: landingJob.title,
+        office: landingJob.department,
+        item_number: landingJob.itemNumber,
+      });
+      setIsLockedPosition(true);
+      setFiles([]);
+      setSubmitError('');
+      return;
+    }
+
+    if ((positionFromQuery || itemNumberFromQuery) && !landingJobAppliedRef.current) {
+      landingJobAppliedRef.current = true;
+      setPrefilledFromLanding(true);
+      setEntryMode('wizard');
+      setApplicationType('job');
+      setCurrentStep(1);
+      setAuthenticatedEmployeeAccount(null);
+      setFormData({
+        ...INITIAL_FORM_DATA,
+        application_type: 'job',
+        position: positionFromQuery || '',
+        office: officeFromQuery || POSITION_TO_DEPARTMENT_MAP[positionFromQuery || ''] || '',
+        item_number: itemNumberFromQuery || '',
+      });
+      setIsLockedPosition(true);
+      setFiles([]);
+      setSubmitError('');
+    }
+  }, [location.state, location.search]);
 
   const handleFormChange = (field: keyof ApplicantFormData, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -189,14 +246,14 @@ export const ApplicantWizard: React.FC = () => {
   };
 
 const handleNextToReview = () => {
-    const fileValidationError = validateFiles(files.map((f) => f.file), files, applicationType);
-    if (fileValidationError) {
-      setFileError(fileValidationError);
-      return;
-    }
-    setFileError('');
-    setCurrentStep(3);
-  };
+    const fileValidationError = validateFiles(files.map((f) => f.file), files, applicationType);
+    if (fileValidationError) {
+      setFileError(fileValidationError);
+      return;
+    }
+    setFileError('');
+    setCurrentStep(3);
+  };
 
   const handleBack = () => {
     if (currentStep === 3) {
@@ -421,12 +478,25 @@ const handleNextToReview = () => {
 
   const handleCloseSuccessDialog = () => {
     setShowSuccessDialog(false);
+    navigate('/');
   };
 
-  const handleStartJobApplication = () => {
+  const handleStartJobApplication = (job?: JobPosting) => {
     setApplicationType('job');
     setAuthenticatedEmployeeAccount(null);
-    setFormData({ ...INITIAL_FORM_DATA, application_type: 'job' });
+    if (job) {
+      setFormData({
+        ...INITIAL_FORM_DATA,
+        application_type: 'job',
+        position: job.title,
+        office: job.department || job.division || '',
+        item_number: job.jobCode || '',
+      });
+      setIsLockedPosition(true);
+    } else {
+      setFormData({ ...INITIAL_FORM_DATA, application_type: 'job' });
+      setIsLockedPosition(false);
+    }
     setFiles([]);
     setEntryMode('wizard');
     setCurrentStep(1);
@@ -607,11 +677,20 @@ const handleNextToReview = () => {
     };
   }, [currentStep, entryMode, formData.item_number, hasStartedAssessment]);
 
+  useEffect(() => {
+    if (entryMode === 'landing') {
+      loadJobPostings().then(() => {
+        const jobs = getAuthoritativeJobPostings().filter(job => job.status === 'Active');
+        setActiveJobs(jobs);
+      });
+    }
+  }, [entryMode]);
+
   return (
     <div className="applicant-shell">
       <header className="applicant-topbar">
-        <div className="applicant-brand">
-          <img src={hrisLogo} alt="Abyan logo" className="applicant-brand-logo" />
+          <div className="applicant-brand">
+            <img src={abyanLogo} alt="ABYAN logo" className="applicant-brand-logo" />
           <div>
             <h1>Abyan HRIS Applicant Portal</h1>
             <p>Human Resource Information System</p>
@@ -638,13 +717,37 @@ const handleNextToReview = () => {
               <UserPlus size={46} />
             </div>
             <h3>Job Application</h3>
-            <p>Apply for available positions</p>
-            <Button className="entry-primary-button" onClick={handleStartJobApplication}>
-              Start Application
+            <p>Apply for a general position or select from the vacancies below</p>
+            <Button className="entry-primary-button" onClick={() => handleStartJobApplication()}>
+              Start General Application
             </Button>
           </div>
 
-          <button className="employee-promotion-button" onClick={handleOpenEmployeeAuth}>
+          {activeJobs.length > 0 && (
+            <div className="mt-8 rounded-2xl bg-white p-6 shadow-sm border border-slate-200 w-full max-w-2xl mx-auto">
+              <h3 className="text-xl font-bold mb-4 text-slate-800 text-center">Currently Vacant Jobs</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                {activeJobs.map(job => (
+                  <div key={job.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4 hover:border-blue-300 hover:shadow-md transition-all flex flex-col h-full text-left">
+                    <h4 className="font-bold text-slate-900 leading-tight mb-1">{job.title}</h4>
+                    <p className="text-sm text-slate-600 flex-1">{job.division || job.department}</p>
+                    <div className="mt-4 pt-4 border-t border-slate-200">
+                      <p className="text-xs font-mono text-slate-500 mb-3">Item No: {job.jobCode}</p>
+                      <button 
+                        onClick={() => handleStartJobApplication(job)} 
+                        className="w-full flex items-center justify-center gap-2 rounded-full bg-white py-2.5 px-4 font-bold text-blue-600 border-[1.5px] border-blue-600 hover:bg-blue-50 transition-colors shadow-sm"
+                      >
+                        <Briefcase size={18} />
+                        Apply for a Job
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <button className="employee-promotion-button mt-8" onClick={handleOpenEmployeeAuth}>
             <Users size={18} />
             <span>I'm a current employee applying for promotion</span>
           </button>
@@ -715,19 +818,20 @@ const handleNextToReview = () => {
                 </div>
                 <div className="wizard-content">
                   <ApplicantAssessmentForm
-                    formData={formData}
-                    errors={errors}
-                    onChange={handleFormChange}
-                    applicationType={applicationType}
-                    isEmployee={Boolean(authenticatedEmployeeAccount?.employee?.employeeId)}
-                    onApplicationTypeChange={(next) => {
-                      // Guard: an authenticated employee may never switch to Original.
-                      // (UI also hides the radio group in that case, but defense-in-depth.)
-                      if (authenticatedEmployeeAccount?.employee?.employeeId && next === 'job') return;
-                      setApplicationType(next);
-                      handleFormChange('application_type', next);
-                    }}
-                  />
+                      formData={formData}
+                      errors={errors}
+                      onChange={handleFormChange}
+                      applicationType={applicationType}
+                      isEmployee={Boolean(authenticatedEmployeeAccount?.employee?.employeeId)}
+                      onApplicationTypeChange={(next) => {
+                        // Guard: an authenticated employee may never switch to Original.
+                        // (UI also hides the radio group in that case, but defense-in-depth.)
+                        if (authenticatedEmployeeAccount?.employee?.employeeId && next === 'job') return;
+                        setApplicationType(next);
+                        handleFormChange('application_type', next);
+                      }}
+                      lockedPosition={isLockedPosition}
+                    />
                 </div>
               </>
             )}
@@ -985,6 +1089,24 @@ const handleNextToReview = () => {
             <p className="submission-reference-hint">
               Save this number. You can use it at <strong>/track</strong> to check your application status anytime.
             </p>
+          </div>
+          <div className="flex gap-3 mt-6">
+            <Button
+              variant="outline"
+              onClick={handleCloseSuccessDialog}
+              style={{ flex: 1 }}
+            >
+              Back to Home
+            </Button>
+            <Button
+              onClick={() => {
+                navigate('/track');
+                setShowSuccessDialog(false);
+              }}
+              style={{ flex: 1 }}
+            >
+              Track Application
+            </Button>
           </div>
         </div>
       </Dialog>

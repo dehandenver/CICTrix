@@ -51,6 +51,13 @@
   opacity: 0.6;
 }
 
+.input:read-only {
+  background-color: #f3f4f6;
+  cursor: default;
+  color: #374151;
+  border-color: #d1d5db;
+}
+
 .input-error {
   border-color: var(--color-error);
 }

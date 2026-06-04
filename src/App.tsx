@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Dialog } from './components/Dialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { JobDetailsPage } from './components/JobDetailsPage';
 import { JobPostingsPage } from './components/JobPostingsPage';
 import { NewlyHiredPage } from './components/NewlyHiredPage';
 import { QualifiedApplicantsPage } from './components/QualifiedApplicantsPage';
@@ -607,6 +608,18 @@ function AppContent() {
             element={
               <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
                 <JobPostingsPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/job-details/:jobId"
+            element={<JobDetailsPage />}
+          />
+          <Route
+            path="/admin/rsp/job/:jobId"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <JobDetailsPage />
               </AdminRoute>
             }
           />
