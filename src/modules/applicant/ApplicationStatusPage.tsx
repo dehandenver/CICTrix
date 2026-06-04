@@ -464,8 +464,8 @@ export const ApplicationStatusPage = () => {
         <footer className="mt-10 text-center text-sm" style={{ color: '#363EE8' }}>
           <p>
             Need assistance? Contact our admissions office at{' '}
-            <a className="font-medium underline-offset-2 hover:underline" href="mailto:support@abyan.com" style={{ color: '#040E6B' }}>
-              support@abyan.com
+            <a className="font-medium underline-offset-2 hover:underline" href="mailto:cictrix23@gmail.com" style={{ color: '#040E6B' }}>
+              cictrix23@gmail.com
             </a>
           </p>
           <p className="mt-2">
