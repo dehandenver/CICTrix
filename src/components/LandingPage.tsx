@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   Briefcase,
   Users,
@@ -14,86 +14,16 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import abyanLogo from '../assets/abyan-logo.png';
+import { getAuthoritativeJobPostings, loadJobPostings } from '../lib/recruitmentData';
+import type { JobPosting } from '../types/recruitment.types';
 
 /* ── trish UI theme tokens ──────────────────────────────────────────
    Brand: Indigo #363EE8 · Hover #2E35D4 · Soft #EEF2FF
    Ink:   #050D65 · Workspace: #F8FAFC · Surface: #FFFFFF
 ------------------------------------------------------------------- */
 
-const JOB_VACANCIES = [
-  {
-    id: 1,
-    title: 'Administrative Officer V',
-    department: 'Human Resource Management Office',
-    itemNumber: 'PS-2026-005',
-    postingDate: '2026-05-15',
-    closingDate: '2026-06-30',
-    type: 'Plantilla',
-  },
-  {
-    id: 2,
-    title: 'Information Technology Officer I',
-    department: 'ICT & Systems Division',
-    itemNumber: 'PS-2026-012',
-    postingDate: '2026-05-20',
-    closingDate: '2026-06-15',
-    type: 'Plantilla',
-  },
-  {
-    id: 3,
-    title: 'Planning Officer II',
-    department: 'Strategic Planning Unit',
-    itemNumber: 'CON-2026-008',
-    postingDate: '2026-05-18',
-    closingDate: '2026-07-05',
-    type: 'Contractual',
-  },
-  {
-    id: 4,
-    title: 'Legal Officer IV',
-    department: 'Legal & Compliance Division',
-    itemNumber: 'PS-2026-003',
-    postingDate: '2026-05-10',
-    closingDate: '2026-06-25',
-    type: 'Plantilla',
-  },
-  {
-    id: 5,
-    title: 'Finance Officer III',
-    department: 'Finance Department',
-    itemNumber: 'PS-2026-007',
-    postingDate: '2026-05-22',
-    closingDate: '2026-07-10',
-    type: 'Plantilla',
-  },
-  {
-    id: 6,
-    title: 'Procurement Specialist',
-    department: 'Procurement Office',
-    itemNumber: 'CON-2026-015',
-    postingDate: '2026-05-25',
-    closingDate: '2026-06-20',
-    type: 'Contractual',
-  },
-  {
-    id: 7,
-    title: 'Training Coordinator II',
-    department: 'Learning & Development',
-    itemNumber: 'PS-2026-009',
-    postingDate: '2026-05-16',
-    closingDate: '2026-07-01',
-    type: 'Plantilla',
-  },
-  {
-    id: 8,
-    title: 'Monitoring Officer',
-    department: 'Operations Division',
-    itemNumber: 'CON-2026-012',
-    postingDate: '2026-05-28',
-    closingDate: '2026-06-28',
-    type: 'Contractual',
-  },
-];
+// Fallback: empty - will be populated from Supabase
+const FALLBACK_JOB_VACANCIES = [];
 
 const PORTALS = [
   {
@@ -158,15 +88,52 @@ export const LandingPage = () => {
   const jobsTableRef = useRef<HTMLDivElement>(null);
   const [itemsPerPage, setItemsPerPage] = useState(5);
   const [currentPage, setCurrentPage] = useState(1);
+  const [vacancyJobs, setVacancyJobs] = useState<any[]>(FALLBACK_JOB_VACANCIES);
+
+  // Load jobs from Supabase and subscribe to updates
+  useEffect(() => {
+    const syncJobs = () => {
+      void loadJobPostings().then(() => {
+        const allJobs = getAuthoritativeJobPostings();
+        
+        // Convert JobPosting to display format
+        const displayJobs = allJobs
+          .filter((job) => String(job?.status ?? '').toLowerCase() === 'active')
+          .map((job, idx) => ({
+            id: idx + 1,
+            title: job.title || '',
+            department: job.department || '',
+            itemNumber: job.jobCode || job.id || '',
+            postingDate: job.postedDate ? new Date(job.postedDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            closingDate: job.applicationDeadline ? new Date(job.applicationDeadline).toISOString().split('T')[0] : new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+            type: job.employmentStatus === 'Permanent' ? 'Plantilla' : 'Contractual',
+          }));
+        
+        setVacancyJobs(displayJobs);
+      });
+    };
+
+    // Load on mount
+    syncJobs();
+
+    // Subscribe to job postings updates
+    window.addEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
+    window.addEventListener('focus', syncJobs);
+
+    return () => {
+      window.removeEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
+      window.removeEventListener('focus', syncJobs);
+    };
+  }, []);
 
   const handleScrollToJobs = () => {
     jobsTableRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const totalPages = Math.ceil(JOB_VACANCIES.length / itemsPerPage);
+  const totalPages = Math.ceil(vacancyJobs.length / itemsPerPage);
   const startIdx = (currentPage - 1) * itemsPerPage;
   const endIdx = startIdx + itemsPerPage;
-  const paginatedJobs = JOB_VACANCIES.slice(startIdx, endIdx);
+  const paginatedJobs = vacancyJobs.slice(startIdx, endIdx);
 
   const handleItemsPerPageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newItemsPerPage = parseInt(e.target.value, 10);
