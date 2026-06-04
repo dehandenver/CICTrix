@@ -464,7 +464,16 @@ export const ApplicationStatusPage = () => {
         <footer className="mt-10 text-center text-sm" style={{ color: '#363EE8' }}>
           <p>
             Need assistance? Contact our admissions office at{' '}
-            <a className="font-medium underline-offset-2 hover:underline" href="mailto:cictrix23@gmail.com" style={{ color: '#040E6B' }}>
+            <a
+              className="font-medium underline-offset-2 hover:underline"
+              // Open Gmail's compose window directly (works in any browser
+              // even when no native mail client is configured). Falls back
+              // gracefully on right-click → "Copy email address".
+              href="https://mail.google.com/mail/?view=cm&fs=1&to=cictrix23@gmail.com&su=Application%20Status%20Inquiry"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: '#040E6B' }}
+            >
               cictrix23@gmail.com
             </a>
           </p>
