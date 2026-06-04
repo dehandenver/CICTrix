@@ -5,7 +5,6 @@ import {
   Users,
   ClipboardCheck,
   ShieldCheck,
-  ArrowRight,
   Search,
   TrendingUp,
   GraduationCap,
@@ -25,40 +24,6 @@ import type { JobPosting } from '../types/recruitment.types';
 // Fallback: empty - will be populated from Supabase
 const FALLBACK_JOB_VACANCIES = [];
 
-const PORTALS = [
-  {
-    title: 'Job Applicant',
-    description: 'Apply for open government positions and submit your requirements online.',
-    icon: Briefcase,
-    to: '/apply',
-    cta: 'Apply Now',
-    iconBg: 'bg-[#363EE8]',
-  },
-  {
-    title: 'Employee Portal',
-    description: 'Access your profile, submit documents, and view performance records.',
-    icon: Users,
-    to: '/employee/login',
-    cta: 'Employee Login',
-    iconBg: 'bg-[#059669]',
-  },
-  {
-    title: 'Interviewer',
-    description: 'Evaluate and score applicants assigned to you for review.',
-    icon: ClipboardCheck,
-    to: '/interviewer/login',
-    cta: 'Interviewer Login',
-    iconBg: 'bg-[#7C3AED]',
-  },
-  {
-    title: 'HR Administration',
-    description: 'Manage recruitment, performance, learning, and succession planning.',
-    icon: ShieldCheck,
-    to: '/admin/login',
-    cta: 'Staff Login',
-    iconBg: 'bg-[#050D65]',
-  },
-];
 
 const FEATURES = [
   {
@@ -213,31 +178,32 @@ export const LandingPage = () => {
 
             {/* Login Dropdown */}
             <div className="relative group">
-              <button className="flex items-center gap-2 rounded-lg bg-white/20 px-4 py-2 text-white hover:bg-white/30 transition-colors font-medium">
+              <button className="inline-flex items-center gap-2 rounded-[14px] bg-white px-6 py-3 text-sm font-semibold text-[#363EE8] shadow-lg transition hover:bg-[#EEF2FF]">
+                <ShieldCheck size={18} />
                 <span>Login</span>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
               </button>
 
               {/* Dropdown Menu */}
-              <div className="absolute right-0 mt-0 w-48 bg-white text-slate-900 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 py-2">
+              <div className="absolute right-0 top-full mt-2 w-52 bg-white text-slate-900 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 py-2 border border-slate-100">
                 <a
-                  href="/login?portal=employee"
-                  className="block px-4 py-2 hover:bg-slate-50 font-medium"
+                  href="/employee/login"
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-[#EEF2FF] font-medium text-sm text-[#050D65] transition-colors"
                 >
+                  <span className="grid h-8 w-8 place-content-center rounded-lg bg-[#059669] text-white"><Users size={15} /></span>
                   Employee Portal
                 </a>
                 <a
-                  href="/login?portal=interviewer"
-                  className="block px-4 py-2 hover:bg-slate-50 font-medium"
+                  href="/interviewer/login"
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-[#EEF2FF] font-medium text-sm text-[#050D65] transition-colors"
                 >
+                  <span className="grid h-8 w-8 place-content-center rounded-lg bg-[#7C3AED] text-white"><ClipboardCheck size={15} /></span>
                   Interviewer Portal
                 </a>
                 <a
-                  href="/login?portal=hr"
-                  className="block px-4 py-2 hover:bg-slate-50 font-medium"
+                  href="/admin/login"
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-[#EEF2FF] font-medium text-sm text-[#050D65] transition-colors"
                 >
+                  <span className="grid h-8 w-8 place-content-center rounded-lg bg-[#050D65] text-white"><ShieldCheck size={15} /></span>
                   HR Administration
                 </a>
               </div>
@@ -385,39 +351,6 @@ export const LandingPage = () => {
         </div>
       </section>
 
-      {/* ─── Portals ─────────────────────────────────────────────── */}
-      <section className="mx-auto max-w-6xl px-6 py-16">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-[#050D65]">Choose your portal</h2>
-          <p className="mt-2 text-sm text-slate-500">
-            Select how you want to access the system.
-          </p>
-        </div>
-        <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {PORTALS.map((portal) => {
-            const Icon = portal.icon;
-            return (
-              <Link
-                key={portal.title}
-                to={portal.to}
-                className="group flex flex-col rounded-[18px] border border-slate-200 bg-white p-6 transition hover:-translate-y-1 hover:border-[#363EE8] hover:shadow-[0_16px_40px_rgba(54,62,232,0.14)]"
-              >
-                <div
-                  className={`grid h-12 w-12 place-content-center rounded-[12px] text-white ${portal.iconBg}`}
-                >
-                  <Icon size={22} />
-                </div>
-                <h3 className="mt-4 text-base font-bold text-[#050D65]">{portal.title}</h3>
-                <p className="mt-1.5 flex-1 text-sm text-slate-500">{portal.description}</p>
-                <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-[#363EE8]">
-                  {portal.cta}
-                  <ArrowRight size={15} className="transition group-hover:translate-x-1" />
-                </span>
-              </Link>
-            );
-          })}
-        </div>
-      </section>
 
       {/* ─── Features ────────────────────────────────────────────── */}
       <section className="border-y border-slate-200 bg-white">
