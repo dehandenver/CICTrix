@@ -469,7 +469,13 @@ export const ApplicationStatusPage = () => {
             </a>
           </p>
           <p className="mt-2">
-            <a href="/" className="font-medium hover:underline" style={{ color: '#040E6B' }}>
+            <a
+              href="/"
+              className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white transition"
+              style={{ backgroundColor: '#363EE8' }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#252AB5')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#363EE8')}
+            >
               ← Back to Applicant Portal
             </a>
           </p>

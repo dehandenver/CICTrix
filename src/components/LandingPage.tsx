@@ -179,7 +179,7 @@ export const LandingPage = () => {
             {/* Login Dropdown */}
             <div className="relative group">
               <button className="inline-flex items-center gap-2 rounded-[14px] bg-white px-6 py-3 text-sm font-semibold text-[#363EE8] shadow-lg transition hover:bg-[#EEF2FF]">
-                <ShieldCheck size={18} />
+                <Users size={18} />
                 <span>Login</span>
               </button>
 
@@ -298,12 +298,13 @@ export const LandingPage = () => {
                       </button>
                     </td>
                     <td className="px-4 py-3 text-center">
-                      <Link
-                        to="/apply"
-                        className="inline-flex items-center gap-1 rounded-lg bg-[#363EE8] px-3 py-2 text-xs font-medium text-white transition hover:bg-[#2f35d0]"
+                      <button
+                        type="button"
+                        onClick={() => navigate('/apply', { state: { landingJob: job } })}
+                        className="inline-flex items-center gap-1 rounded-lg bg-[#363EE8] px-3 py-2 text-xs font-medium text-white transition hover:bg-[#2f35d0] cursor-pointer"
                       >
                         Apply
-                      </Link>
+                      </button>
                     </td>
                   </tr>
                 ))}
