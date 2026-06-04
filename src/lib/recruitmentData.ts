@@ -441,12 +441,29 @@ const persistJobPostingsToSupabase = async (rows: JobPosting[]): Promise<void> =
       .from('job_postings')
       .upsert(supabaseRows, { onConflict: 'id' });
     if (upsertError) {
-      console.warn('[RECRUITMENT] Upsert failed:', upsertError);
+      console.error('[RECRUITMENT] Upsert failed:', upsertError);
+      // Surface persistence failures so silent RLS / network problems don't
+      // strand newly added postings in the local cache (admin sees them but
+      // the LandingPage / Interviewer reading from Supabase do not).
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('cictrix:job-postings-persist-failed', {
+            detail: { error: upsertError, rowCount: supabaseRows.length },
+          }),
+        );
+      }
     } else {
       console.log('[RECRUITMENT] Upsert succeeded, rows persisted:', supabaseRows.length);
     }
   } catch (err) {
-    console.warn('[RECRUITMENT] Error persisting job postings to Supabase:', err);
+    console.error('[RECRUITMENT] Error persisting job postings to Supabase:', err);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('cictrix:job-postings-persist-failed', {
+          detail: { error: err, rowCount: supabaseRows.length },
+        }),
+      );
+    }
   }
 };
 
