@@ -18,21 +18,16 @@ export const JobDetailsPage = () => {
   const navigate = useNavigate();
   const { jobId } = useParams();
   const location = useLocation();
+  // Lazy initializer reads location.state immediately, preventing "not found" flash
+  const [landingJob] = useState<LandingJobData | null>(() => location.state?.landingJob ?? null);
   const [job, setJob] = useState<JobPosting | null>(null);
-  const [landingJob, setLandingJob] = useState<LandingJobData | null>(null);
 
   useEffect(() => {
-    // First, try to get landing page job from location state
-    if (location.state?.landingJob) {
-      setLandingJob(location.state.landingJob);
-      return;
-    }
-
-    // Otherwise, try to find from database
+    if (landingJob) return; // already have data from navigation state
     const jobs = getJobPostings();
     const foundJob = jobs.find(j => j.id === jobId);
     setJob(foundJob || null);
-  }, [jobId, location]);
+  }, [jobId, landingJob]);
 
   if (!job && !landingJob) {
     return (

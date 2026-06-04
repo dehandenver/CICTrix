@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useState, useRef, useEffect } from 'react';
 import {
   Briefcase,
@@ -84,6 +84,7 @@ const FEATURES = [
 ];
 
 export const LandingPage = () => {
+  const navigate = useNavigate();
   const jobsTableRef = useRef<HTMLDivElement>(null);
   const [itemsPerPage, setItemsPerPage] = useState(5);
   const [currentPage, setCurrentPage] = useState(1);
@@ -185,7 +186,62 @@ export const LandingPage = () => {
                 Human Resource Information System
               </span>
             </div>
+          </div>
 
+          {/* Nav Tabs + Login */}
+          <div className="flex items-center gap-6">
+            <nav className="flex items-center gap-1">
+              <a
+                href="/"
+                className="rounded-md px-4 py-2 text-sm font-medium bg-white/20 text-white transition-colors"
+              >
+                Home
+              </a>
+              <a
+                href="/about"
+                className="rounded-md px-4 py-2 text-sm font-medium text-white/80 hover:bg-white/15 hover:text-white transition-colors"
+              >
+                About
+              </a>
+              <a
+                href="/contacts"
+                className="rounded-md px-4 py-2 text-sm font-medium text-white/80 hover:bg-white/15 hover:text-white transition-colors"
+              >
+                Contacts
+              </a>
+            </nav>
+
+            {/* Login Dropdown */}
+            <div className="relative group">
+              <button className="flex items-center gap-2 rounded-lg bg-white/20 px-4 py-2 text-white hover:bg-white/30 transition-colors font-medium">
+                <span>Login</span>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {/* Dropdown Menu */}
+              <div className="absolute right-0 mt-0 w-48 bg-white text-slate-900 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 py-2">
+                <a
+                  href="/login?portal=employee"
+                  className="block px-4 py-2 hover:bg-slate-50 font-medium"
+                >
+                  Employee Portal
+                </a>
+                <a
+                  href="/login?portal=interviewer"
+                  className="block px-4 py-2 hover:bg-slate-50 font-medium"
+                >
+                  Interviewer Portal
+                </a>
+                <a
+                  href="/login?portal=hr"
+                  className="block px-4 py-2 hover:bg-slate-50 font-medium"
+                >
+                  HR Administration
+                </a>
+              </div>
+            </div>
           </div>
         </div>
       </header>
@@ -267,7 +323,11 @@ export const LandingPage = () => {
                     <td className="px-4 py-3 text-slate-600">{formatDate(job.postingDate)}</td>
                     <td className="px-4 py-3 text-slate-600">{formatDate(job.closingDate)}</td>
                     <td className="px-4 py-3 text-center">
-                      <button className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50 hover:border-slate-400">
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/job-details/${job.itemNumber}`, { state: { landingJob: job } })}
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50 hover:border-slate-400 cursor-pointer"
+                      >
                         Details
                       </button>
                     </td>
