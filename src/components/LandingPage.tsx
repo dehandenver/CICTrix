@@ -278,7 +278,7 @@ export const LandingPage = () => {
           {/* Pagination Controls */}
           <div className="mt-6 flex items-center justify-between">
             <div className="text-sm text-slate-600">
-              Showing {startIdx + 1} to {Math.min(endIdx, JOB_VACANCIES.length)} of {JOB_VACANCIES.length} jobs
+              Showing {startIdx + 1} to {Math.min(endIdx, vacancyJobs.length)} of {vacancyJobs.length} jobs
             </div>
             <div className="flex items-center gap-2">
               <button

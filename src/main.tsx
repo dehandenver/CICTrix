@@ -40,12 +40,14 @@ if (shouldRedirectToCanonicalHost) {
 if (!shouldRedirectToCanonicalHost && typeof window !== 'undefined') {
   purgeLegacyJobPostingLocalStorage();
 
-  const renderApp = () => {
-    ReactDOM.createRoot(document.getElementById('root')!).render(
-      <React.StrictMode>
-        <App />
-      </React.StrictMode>,
-    );
+const renderApp = () => {
+    if (typeof document !== 'undefined') {
+      ReactDOM.createRoot(document.getElementById('root')!).render(
+        <React.StrictMode>
+          <App />
+        </React.StrictMode>,
+      );
+    }
   };
 
   // Kick off the Supabase fetch but do not block first paint — pages listen

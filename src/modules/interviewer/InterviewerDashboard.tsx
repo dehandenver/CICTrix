@@ -182,15 +182,18 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
     };
 
     void fetchJobsAndApplicants();
-    window.addEventListener('focus', syncJobs);
-    window.addEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
-    window.addEventListener('storage', onStorage);
+    
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', syncJobs);
+      window.addEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
+      window.addEventListener('storage', onStorage);
 
-    return () => {
-      window.removeEventListener('focus', syncJobs);
-      window.removeEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
-      window.removeEventListener('storage', onStorage);
-    };
+      return () => {
+        window.removeEventListener('focus', syncJobs);
+        window.removeEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
+        window.removeEventListener('storage', onStorage);
+      };
+    }
   }, []);
 
   const fetchJobsAndApplicants = async () => {
