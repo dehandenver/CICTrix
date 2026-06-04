@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   Briefcase,
   Users,
@@ -12,88 +12,18 @@ import {
   Network,
   ChevronLeft,
   ChevronRight,
+  User
 } from 'lucide-react';
 import abyanLogo from '../assets/abyan-logo.png';
+import { getJobPostingsFromSupabase } from '../lib/recruitmentData';
+import { JobPosting } from '../types/recruitment.types';
 
 /* ── trish UI theme tokens ──────────────────────────────────────────
    Brand: Indigo #363EE8 · Hover #2E35D4 · Soft #EEF2FF
    Ink:   #050D65 · Workspace: #F8FAFC · Surface: #FFFFFF
 ------------------------------------------------------------------- */
 
-const JOB_VACANCIES = [
-  {
-    id: 1,
-    title: 'Administrative Officer V',
-    department: 'Human Resource Management Office',
-    itemNumber: 'PS-2026-005',
-    postingDate: '2026-05-15',
-    closingDate: '2026-06-30',
-    type: 'Plantilla',
-  },
-  {
-    id: 2,
-    title: 'Information Technology Officer I',
-    department: 'ICT & Systems Division',
-    itemNumber: 'PS-2026-012',
-    postingDate: '2026-05-20',
-    closingDate: '2026-06-15',
-    type: 'Plantilla',
-  },
-  {
-    id: 3,
-    title: 'Planning Officer II',
-    department: 'Strategic Planning Unit',
-    itemNumber: 'CON-2026-008',
-    postingDate: '2026-05-18',
-    closingDate: '2026-07-05',
-    type: 'Contractual',
-  },
-  {
-    id: 4,
-    title: 'Legal Officer IV',
-    department: 'Legal & Compliance Division',
-    itemNumber: 'PS-2026-003',
-    postingDate: '2026-05-10',
-    closingDate: '2026-06-25',
-    type: 'Plantilla',
-  },
-  {
-    id: 5,
-    title: 'Finance Officer III',
-    department: 'Finance Department',
-    itemNumber: 'PS-2026-007',
-    postingDate: '2026-05-22',
-    closingDate: '2026-07-10',
-    type: 'Plantilla',
-  },
-  {
-    id: 6,
-    title: 'Procurement Specialist',
-    department: 'Procurement Office',
-    itemNumber: 'CON-2026-015',
-    postingDate: '2026-05-25',
-    closingDate: '2026-06-20',
-    type: 'Contractual',
-  },
-  {
-    id: 7,
-    title: 'Training Coordinator II',
-    department: 'Learning & Development',
-    itemNumber: 'PS-2026-009',
-    postingDate: '2026-05-16',
-    closingDate: '2026-07-01',
-    type: 'Plantilla',
-  },
-  {
-    id: 8,
-    title: 'Monitoring Officer',
-    department: 'Operations Division',
-    itemNumber: 'CON-2026-012',
-    postingDate: '2026-05-28',
-    closingDate: '2026-06-28',
-    type: 'Contractual',
-  },
-];
+// Mock data replaced with backend fetch
 
 const PORTALS = [
   {
@@ -158,15 +88,33 @@ export const LandingPage = () => {
   const jobsTableRef = useRef<HTMLDivElement>(null);
   const [itemsPerPage, setItemsPerPage] = useState(5);
   const [currentPage, setCurrentPage] = useState(1);
+  const [jobs, setJobs] = useState<JobPosting[]>([]);
+  const [isLoadingJobs, setIsLoadingJobs] = useState(true);
+
+  useEffect(() => {
+    const fetchJobs = async () => {
+      setIsLoadingJobs(true);
+      try {
+        const fetchedJobs = await getJobPostingsFromSupabase();
+        const activeJobs = fetchedJobs.filter(job => job.status === 'Active' || job.status === 'Open');
+        setJobs(activeJobs);
+      } catch (error) {
+        console.error('Failed to fetch jobs:', error);
+      } finally {
+        setIsLoadingJobs(false);
+      }
+    };
+    fetchJobs();
+  }, []);
 
   const handleScrollToJobs = () => {
     jobsTableRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const totalPages = Math.ceil(JOB_VACANCIES.length / itemsPerPage);
+  const totalPages = Math.ceil(jobs.length / itemsPerPage);
   const startIdx = (currentPage - 1) * itemsPerPage;
   const endIdx = startIdx + itemsPerPage;
-  const paginatedJobs = JOB_VACANCIES.slice(startIdx, endIdx);
+  const paginatedJobs = jobs.slice(startIdx, endIdx);
 
   const handleItemsPerPageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newItemsPerPage = parseInt(e.target.value, 10);
@@ -182,7 +130,7 @@ export const LandingPage = () => {
     if (currentPage < totalPages) setCurrentPage(currentPage + 1);
   };
 
-  const handleApplyForJob = (job: typeof JOB_VACANCIES[number]) => {
+  const handleApplyForJob = (job: JobPosting) => {
     navigate('/apply', { state: { landingJob: job } });
   };
 
@@ -216,11 +164,8 @@ export const LandingPage = () => {
 
           {/* Login Dropdown */}
           <div className="relative group">
-            <button className="flex items-center gap-2 rounded-lg bg-white/20 px-4 py-2 text-white hover:bg-white/30 transition-colors font-medium">
-              <span>Login</span>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-              </svg>
+            <button className="inline-flex items-center gap-2 rounded-[14px] bg-white px-6 py-3 text-sm font-semibold text-[#363EE8] shadow-lg transition hover:bg-[#EEF2FF]">
+              <User size={18} /> Login
             </button>
 
             {/* Dropdown Menu */}
@@ -314,37 +259,51 @@ export const LandingPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {paginatedJobs.map((job) => (
-                  <tr key={job.id} className="border-b border-slate-200 transition hover:bg-slate-50">
-                    <td className="px-4 py-3">
-                      <p className="font-semibold text-[#050D65]">{job.title}</p>
-                      <p className="text-xs text-slate-500 mt-1">{job.type}</p>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">{job.department}</td>
-                    <td className="px-4 py-3 font-mono text-slate-600">{job.itemNumber}</td>
-                    <td className="px-4 py-3 text-slate-600">{formatDate(job.postingDate)}</td>
-                    <td className="px-4 py-3 text-slate-600">{formatDate(job.closingDate)}</td>
-                    <td className="px-4 py-3 text-center">
-                      <button 
-                        onClick={() => {
-                          navigate(`/job-details/${job.itemNumber}`, { state: { landingJob: job } });
-                        }}
-                        className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50 hover:border-slate-400 cursor-pointer"
-                      >
-                        Details
-                      </button>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <button
-                        type="button"
-                        onClick={() => handleApplyForJob(job)}
-                        className="inline-flex items-center gap-1 rounded-lg bg-[#363EE8] px-3 py-2 text-xs font-medium text-white transition hover:bg-[#2f35d0]"
-                      >
-                        Apply
-                      </button>
+                {isLoadingJobs ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                      Loading open positions...
                     </td>
                   </tr>
-                ))}
+                ) : paginatedJobs.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                      No open positions at this time.
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedJobs.map((job) => (
+                    <tr key={job.id} className="border-b border-slate-200 transition hover:bg-slate-50">
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-[#050D65]">{job.title}</p>
+                        <p className="text-xs text-slate-500 mt-1">{job.employmentStatus}</p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{job.department}</td>
+                      <td className="px-4 py-3 font-mono text-slate-600">{job.jobCode}</td>
+                      <td className="px-4 py-3 text-slate-600">{formatDate(job.postedDate)}</td>
+                      <td className="px-4 py-3 text-slate-600">{formatDate(job.applicationDeadline)}</td>
+                      <td className="px-4 py-3 text-center">
+                        <button 
+                          onClick={() => {
+                            navigate(`/job-details/${job.jobCode}`, { state: { landingJob: job } });
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50 hover:border-slate-400 cursor-pointer"
+                        >
+                          Details
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleApplyForJob(job)}
+                          className="inline-flex items-center gap-1 rounded-lg bg-[#363EE8] px-3 py-2 text-xs font-medium text-white transition hover:bg-[#2f35d0]"
+                        >
+                          Apply
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -352,7 +311,7 @@ export const LandingPage = () => {
           {/* Pagination Controls */}
           <div className="mt-6 flex items-center justify-between">
             <div className="text-sm text-slate-600">
-              Showing {startIdx + 1} to {Math.min(endIdx, JOB_VACANCIES.length)} of {JOB_VACANCIES.length} jobs
+              Showing {jobs.length === 0 ? 0 : startIdx + 1} to {Math.min(endIdx, jobs.length)} of {jobs.length} jobs
             </div>
             <div className="flex items-center gap-2">
               <button
