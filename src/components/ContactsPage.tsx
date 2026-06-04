@@ -1,5 +1,6 @@
 import abyanLogo from '../assets/abyan-logo.png';
 import { Link } from 'react-router-dom';
+import { Users, ClipboardCheck, ShieldCheck } from 'lucide-react';
 
 export function ContactsPage() {
   return (
@@ -50,20 +51,30 @@ export function ContactsPage() {
 
             {/* Login Dropdown */}
             <div className="relative group">
-              <button className="flex items-center gap-2 rounded-lg bg-white/20 px-4 py-2 text-white hover:bg-white/30 transition-colors font-medium">
+              <button className="inline-flex items-center gap-2 rounded-[14px] bg-white px-6 py-3 text-sm font-semibold text-[#363EE8] shadow-lg transition hover:bg-[#EEF2FF]">
+                <Users size={18} />
                 <span>Login</span>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
               </button>
-              <div className="absolute right-0 mt-0 w-48 bg-white text-slate-900 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 py-2">
-                <a href="/login?portal=employee" className="block px-4 py-2 hover:bg-slate-50 font-medium">
+              <div className="absolute right-0 top-full mt-2 w-52 bg-white text-slate-900 rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 py-2 border border-slate-100">
+                <a
+                  href="/employee/login"
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-[#EEF2FF] font-medium text-sm text-[#050D65] transition-colors"
+                >
+                  <span className="grid h-8 w-8 place-content-center rounded-lg bg-[#059669] text-white"><Users size={15} /></span>
                   Employee Portal
                 </a>
-                <a href="/login?portal=interviewer" className="block px-4 py-2 hover:bg-slate-50 font-medium">
+                <a
+                  href="/interviewer/login"
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-[#EEF2FF] font-medium text-sm text-[#050D65] transition-colors"
+                >
+                  <span className="grid h-8 w-8 place-content-center rounded-lg bg-[#7C3AED] text-white"><ClipboardCheck size={15} /></span>
                   Interviewer Portal
                 </a>
-                <a href="/login?portal=hr" className="block px-4 py-2 hover:bg-slate-50 font-medium">
+                <a
+                  href="/admin/login"
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-[#EEF2FF] font-medium text-sm text-[#050D65] transition-colors"
+                >
+                  <span className="grid h-8 w-8 place-content-center rounded-lg bg-[#050D65] text-white"><ShieldCheck size={15} /></span>
                   HR Administration
                 </a>
               </div>
@@ -75,7 +86,7 @@ export function ContactsPage() {
       {/* ─── Hero Banner ─────────────────────────────────────────── */}
       <section className="bg-gradient-to-br from-[#363EE8] to-[#050D65] py-16 text-white text-center">
         <p className="text-sm font-semibold uppercase tracking-widest text-indigo-200">Get in Touch</p>
-        <h1 className="mt-3 text-4xl font-bold tracking-tight sm:text-5xl">Contact Us</h1>
+        <h1 className="mt-3 text-4xl font-bold tracking-tight text-white sm:text-5xl">Contact Us</h1>
         <p className="mt-4 text-indigo-200 text-base">We'd love to hear from you.</p>
       </section>
 
@@ -102,7 +113,7 @@ export function ContactsPage() {
         <div className="mt-8 text-center">
           <Link
             to="/"
-            className="text-sm font-medium text-[#363EE8] hover:underline"
+            className="inline-flex items-center gap-2 rounded-xl bg-[#363EE8] px-6 py-3 text-sm font-semibold text-white transition hover:bg-[#2830c5]"
           >
             ← Back to Home
           </Link>

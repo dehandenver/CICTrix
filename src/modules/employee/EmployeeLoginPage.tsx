@@ -1,6 +1,7 @@
 import { Eye, EyeOff, Lock, User } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import abyanLogo from '../../assets/abyan-logo.png';
 
 interface EmployeeLoginPageProps {
   onLogin: (username: string, password: string) => Promise<void> | void;
@@ -34,99 +35,206 @@ export const EmployeeLoginPage: React.FC<EmployeeLoginPageProps> = ({
 
     setLoading(true);
     try {
-      // Call parent onLogin to set session
       await onLogin(username, password);
-      
-      // If we got here but App.tsx didn't navigate, we can still fallback gracefully
       const session = localStorage.getItem('cictrix_employee_session');
       if (!session) {
         setLoading(false);
       }
     } catch (err: any) {
       console.error('Login error:', err);
-      setError(err.message || 'Invalid credentials. Please use employee01 / hr2024 for demo.');
+      setError(err.message || 'Invalid credentials. Please try again.');
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-200 px-4 py-10">
-      <div className="mx-auto w-full max-w-md rounded-2xl border border-slate-200 bg-white px-8 py-9 shadow-xl">
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-indigo-600 text-white">
-            <Lock size={28} />
-          </div>
-          <h1 className="text-4xl font-bold text-slate-900">Employee Portal</h1>
-          <p className="mt-1 text-lg text-slate-500">Human Resources Information System</p>
-        </div>
+    <div
+      className="min-h-screen w-full bg-slate-50 text-slate-900"
+      style={{ fontFamily: "'Poppins', system-ui, -apple-system, sans-serif" }}
+    >
+      <div className="flex min-h-screen w-full">
+        {/* LEFT — brand panel */}
+        <aside
+          className="relative hidden w-1/2 overflow-hidden lg:flex"
+          style={{ background: 'linear-gradient(135deg, #363EE8 0%, #050D65 100%)', color: '#FFFFFF' }}
+        >
+          {/* Decorative orbs */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -top-32 -left-32 h-96 w-96 rounded-full blur-3xl"
+            style={{ backgroundColor: 'rgba(200,209,255,0.18)' }}
+          />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -bottom-40 -right-24 h-[28rem] w-[28rem] rounded-full blur-3xl"
+            style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
+          />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0"
+            style={{
+              backgroundImage:
+                'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.15) 1px, transparent 0)',
+              backgroundSize: '24px 24px',
+              opacity: 0.35,
+            }}
+          />
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {error && (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-              {error}
-            </div>
-          )}
-
-          <div>
-            <label htmlFor="username" className="mb-2 block text-sm font-semibold text-slate-700">Username</label>
-            <div className="relative">
-              <User size={18} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                id="username"
-                type="text"
-                placeholder="Enter your username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                disabled={loading || isLoading}
-                className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-10 pr-3 text-base text-slate-700 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none"
+          <div className="relative z-10 flex w-full flex-col p-12">
+            {/* Top wordmark with logo */}
+            <a href="/" className="flex items-center gap-3">
+              <img
+                src={abyanLogo}
+                alt="Abyan Logo"
+                className="h-10 w-auto object-contain"
+                style={{ mixBlendMode: 'screen' }}
               />
-            </div>
-          </div>
+              <div className="flex flex-col leading-tight">
+                <span className="text-base font-bold tracking-wide text-white">ABYAN HRIS</span>
+                <span className="text-xs font-medium" style={{ color: 'rgba(200,209,255,0.85)' }}>
+                  abyan-hris.vercel.app
+                </span>
+              </div>
+            </a>
 
-          <div>
-            <label htmlFor="password" className="mb-2 block text-sm font-semibold text-slate-700">Password</label>
-            <div className="relative">
-              <Lock size={18} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                id="password"
-                type={showPassword ? 'text' : 'password'}
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={loading || isLoading}
-                autoComplete="current-password"
-                className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-10 pr-10 text-base text-slate-700 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((prev) => !prev)}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-                disabled={loading || isLoading}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 disabled:cursor-not-allowed"
+            {/* Center hero */}
+            <div className="m-auto w-full max-w-md text-center">
+              <div
+                className="mx-auto mb-8 flex h-20 w-20 items-center justify-center rounded-3xl"
+                style={{
+                  backgroundColor: 'rgba(255,255,255,0.16)',
+                  boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.28)',
+                }}
               >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </button>
+                <User className="h-9 w-9 text-white" strokeWidth={1.6} />
+              </div>
+              <h1
+                className="text-4xl font-bold tracking-tight text-white"
+                style={{ lineHeight: 1.1 }}
+              >
+                Employee Portal
+              </h1>
+              <p
+                className="mt-3 text-base font-medium"
+                style={{ color: 'rgba(200,209,255,0.90)' }}
+              >
+                Human Resource Information System
+              </p>
+              <ul className="mt-10 space-y-3 text-center text-sm" style={{ color: 'rgba(255,255,255,0.85)' }}>
+                {['Access Your Employee Records', 'View Payslips & Benefits', 'Submit Leave Requests'].map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
             </div>
+
+            <p className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.45)' }}>
+              &copy; {new Date().getFullYear()} Abyan HRIS. All rights reserved.
+            </p>
           </div>
+        </aside>
 
-          <button
-            type="submit"
-            disabled={loading || isLoading}
-            className="w-full rounded-xl bg-indigo-600 px-4 py-3 text-lg font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {loading || isLoading ? 'Signing in...' : 'Sign In'}
-          </button>
-        </form>
+        {/* RIGHT — form panel */}
+        <main className="flex w-full items-center justify-center px-6 py-12 lg:w-1/2 lg:px-16">
+          <div className="w-full max-w-md">
+            {/* Mobile-only brand */}
+            <div className="mb-8 flex items-center gap-2 lg:hidden">
+              <img src={abyanLogo} alt="Abyan" className="h-8 w-auto object-contain" />
+              <span className="text-sm font-semibold text-slate-900">Abyan HRIS</span>
+            </div>
 
-        <p className="mt-8 text-center text-sm text-slate-500">
-          Login credentials are provided by HR upon hiring.
-        </p>
-        <p className="mt-2 text-center text-xs text-slate-400">
-          Demo: username: <span className="font-semibold">employee01</span> | password: <span className="font-semibold">hr2024</span>
-        </p>
+            <div className="mb-8">
+              <h1
+                className="text-3xl font-bold tracking-tight"
+                style={{ color: '#040E6B', lineHeight: 1.15 }}
+              >
+                Welcome back
+              </h1>
+              <p className="mt-2 text-sm text-slate-500">Sign in to access your employee portal</p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {error && (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  {error}
+                </div>
+              )}
+
+              {/* Username */}
+              <div>
+                <label htmlFor="emp-username" className="mb-2 block text-sm font-semibold" style={{ color: '#040E6B' }}>
+                  Username
+                </label>
+                <div className="relative">
+                  <User
+                    className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                    strokeWidth={1.8}
+                  />
+                  <input
+                    id="emp-username"
+                    type="text"
+                    placeholder="Enter your username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    disabled={loading || isLoading}
+                    className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-3 text-sm text-slate-900 placeholder:text-slate-400 transition-shadow focus:border-[#363EE8] focus:outline-none focus:ring-4 focus:ring-[#EEF2FF]"
+                  />
+                </div>
+              </div>
+
+              {/* Password */}
+              <div>
+                <label htmlFor="emp-password" className="mb-2 block text-sm font-semibold" style={{ color: '#040E6B' }}>
+                  Password
+                </label>
+                <div className="relative">
+                  <Lock
+                    className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                    strokeWidth={1.8}
+                  />
+                  <input
+                    id="emp-password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={loading || isLoading}
+                    autoComplete="current-password"
+                    className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-11 text-sm text-slate-900 placeholder:text-slate-400 transition-shadow focus:border-[#363EE8] focus:outline-none focus:ring-4 focus:ring-[#EEF2FF]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    disabled={loading || isLoading}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 disabled:cursor-not-allowed"
+                  >
+                    {showPassword ? <EyeOff size={16} strokeWidth={1.8} /> : <Eye size={16} strokeWidth={1.8} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Submit */}
+              <button
+                type="submit"
+                disabled={loading || isLoading}
+                className="mt-2 inline-flex w-full items-center justify-center rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-sm transition focus:outline-none focus:ring-4 focus:ring-[#EEF2FF] disabled:cursor-not-allowed disabled:opacity-60"
+                style={{ backgroundColor: '#363EE8' }}
+                onMouseEnter={(e) => { if (!loading && !isLoading) e.currentTarget.style.backgroundColor = '#2830c5'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#363EE8'; }}
+              >
+                {loading || isLoading ? 'Signing in…' : 'Sign In'}
+              </button>
+            </form>
+
+            <p className="mt-6 text-center text-sm text-slate-500">
+              Login credentials are provided by HR upon hiring.
+            </p>
+            <p className="mt-10 text-center text-xs font-medium text-slate-400">
+              Protected by government security protocols
+            </p>
+          </div>
+        </main>
       </div>
-
-      <p className="mt-10 text-center text-sm text-slate-500">© 2026 Abyan HRIS. All rights reserved.</p>
     </div>
   );
 };
