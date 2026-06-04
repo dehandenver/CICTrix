@@ -748,8 +748,13 @@ export const JobPostingsPage = () => {
   };
 
   const submitForm = (status: JobPosting['status']) => {
-    if (!form.title || !form.department || !form.summary || !form.applicationDeadline) {
-      setToast('Please complete required fields in Basic Information and Job Description.');
+    const missing: string[] = [];
+    if (!form.title?.trim()) missing.push('Title');
+    if (!form.department?.trim()) missing.push('Department');
+    if (!form.summary?.trim()) missing.push('Description');
+    if (!form.applicationDeadline?.trim()) missing.push('Application Deadline');
+    if (missing.length > 0) {
+      setToast(`Missing required field${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}.`);
       return;
     }
 
