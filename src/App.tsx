@@ -306,6 +306,12 @@ function AppContent() {
     };
 
     void checkInterviewerAccess();
+    if (typeof window === 'undefined') {
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const intervalId = window.setInterval(() => {
       void checkInterviewerAccess();
     }, 3000);
@@ -330,17 +336,19 @@ function AppContent() {
   useEffect(() => {
     // Notify data-driven pages that a route has been activated so they can refresh
     // without requiring a full browser reload.
-    window.dispatchEvent(new CustomEvent('cictrix:route-activated'));
-    const routeActivationTimer = window.setTimeout(() => {
+    if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('cictrix:route-activated'));
-    }, 120);
+      const routeActivationTimer = window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('cictrix:route-activated'));
+      }, 120);
 
-    const cleanupUiReset = scheduleTransientUiReset({ dispatchOverlayClose: true });
+      const cleanupUiReset = scheduleTransientUiReset({ dispatchOverlayClose: true });
 
-    return () => {
-      window.clearTimeout(routeActivationTimer);
-      cleanupUiReset();
-    };
+      return () => {
+        window.clearTimeout(routeActivationTimer);
+        cleanupUiReset();
+      };
+    }
   }, [location.pathname, location.search]);
 
   const handleLogin = (email: string, role: Role) => {

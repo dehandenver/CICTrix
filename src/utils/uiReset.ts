@@ -4,14 +4,16 @@ type UiResetOptions = {
 };
 
 export const resetTransientUiState = ({ dispatchOverlayClose = true }: UiResetOptions = {}) => {
-  if (dispatchOverlayClose) {
+  if (dispatchOverlayClose && typeof window !== 'undefined') {
     window.dispatchEvent(new Event('cictrix:force-close-overlays'));
   }
 
-  document.body.style.overflow = '';
-  document.body.style.pointerEvents = '';
-  document.documentElement.style.overflow = '';
-  document.documentElement.style.pointerEvents = '';
+  if (typeof document !== 'undefined') {
+    document.body.style.overflow = '';
+    document.body.style.pointerEvents = '';
+    document.documentElement.style.overflow = '';
+    document.documentElement.style.pointerEvents = '';
+  }
 };
 
 export const scheduleTransientUiReset = ({
@@ -19,6 +21,10 @@ export const scheduleTransientUiReset = ({
   delayedPassMs = 120,
 }: UiResetOptions = {}) => {
   resetTransientUiState({ dispatchOverlayClose });
+
+  if (typeof window === 'undefined') {
+    return () => {}; // No-op on server
+  }
 
   const frame = window.requestAnimationFrame(() => {
     resetTransientUiState({ dispatchOverlayClose: false });
