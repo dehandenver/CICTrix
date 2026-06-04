@@ -96,7 +96,7 @@ export const LandingPage = () => {
       setIsLoadingJobs(true);
       try {
         const fetchedJobs = await getJobPostingsFromSupabase();
-        const activeJobs = fetchedJobs.filter(job => job.status === 'Active' || job.status === 'Open');
+        const activeJobs = fetchedJobs.filter(job => job.status === 'Active');
         setJobs(activeJobs);
       } catch (error) {
         console.error('Failed to fetch jobs:', error);
