@@ -86,7 +86,7 @@ interface JobPostFormValues {
 
 const buildDefaultJobForm = (): JobPostFormValues => ({
   title: '',
-  jobCode: `LGU-2026-${String(Math.floor(Math.random() * 999) + 1).padStart(3, '0')}`,
+  jobCode: `ABYAN-2026-${String(Math.floor(Math.random() * 999) + 1).padStart(3, '0')}`,
   department: '',
   division: '',
   positionLevel: '',
@@ -763,7 +763,7 @@ export const JobPostingsPage = () => {
 
     const payload: JobPosting = {
       id: editingId ?? crypto.randomUUID(),
-      jobCode: form.jobCode.trim() || `LGU-2026-${String(Math.floor(Math.random() * 999) + 1).padStart(3, '0')}`,
+      jobCode: form.jobCode.trim() || `ABYAN-2026-${String(Math.floor(Math.random() * 999) + 1).padStart(3, '0')}`,
       title: toTitleCase(form.title),
       department: form.department,
       division: form.division || undefined,
@@ -1130,7 +1130,15 @@ export const JobPostingsPage = () => {
                     <div className="mt-4 space-y-2">
                       <button
                         type="button"
-                        className="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-base font-semibold text-white"
+                        className="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-base font-semibold text-white hover:bg-blue-700 transition-colors"
+                        onClick={() => navigate(`/admin/rsp/job/${job.id}`)}
+                      >
+                        View Details <ChevronRight className="ml-2 inline h-4 w-4" />
+                      </button>
+
+                      <button
+                        type="button"
+                        className="w-full rounded-xl bg-slate-600 px-4 py-2.5 text-base font-semibold text-white hover:bg-slate-700 transition-colors"
                         onClick={() => {
                           setViewingApplicantsFor(job);
                           setJobApplicantsSearch('');

@@ -24,6 +24,7 @@ export type EmployeeRow = {
   pagibig_number: string | null;
   tin_number: string | null;
   current_position: string | null;
+  department_id: string | null;
   current_department: string | null;
   current_division: string | null;
   status: 'Active' | 'On Leave' | 'Resigned' | 'Terminated';
@@ -41,7 +42,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
  */
 export async function fetchEmployees() {
   const { data, error } = await supabase
-    .from('employees')
+    .from('employees_with_department')
     .select('*')
     .order('created_at', { ascending: false });
 
@@ -54,7 +55,7 @@ export async function fetchEmployees() {
  */
 export async function fetchEmployeeById(id: string) {
   const { data, error } = await supabase
-    .from('employees')
+    .from('employees_with_department')
     .select('*')
     .eq('id', id)
     .single();
@@ -68,7 +69,7 @@ export async function fetchEmployeeById(id: string) {
  */
 export async function fetchEmployeeByEmpId(employee_id: string) {
   const { data, error } = await supabase
-    .from('employees')
+    .from('employees_with_department')
     .select('*')
     .eq('employee_id', employee_id)
     .single();

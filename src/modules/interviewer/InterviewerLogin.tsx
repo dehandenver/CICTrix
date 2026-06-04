@@ -152,7 +152,7 @@ export function InterviewerLogin({ onLogin }: InterviewerLoginProps) {
               <User size={48} />
             </div>
             <h2>Interviewer Portal</h2>
-            <p className="subtitle">CICTrix HRIS - Evaluation & Assessment</p>
+            <p className="subtitle">Abyan HRIS - Evaluation & Assessment</p>
             <ul className="feature-list">
               <li className="feature-item">View Assigned Applicants</li>
               <li className="feature-item">Conduct Evaluations</li>
@@ -182,7 +182,7 @@ export function InterviewerLogin({ onLogin }: InterviewerLoginProps) {
                 <input
                   id="email"
                   type="email"
-                  placeholder="interviewer@cictrix.com"
+                  placeholder="interviewer@abyan.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="email"
@@ -251,7 +251,7 @@ export function InterviewerLogin({ onLogin }: InterviewerLoginProps) {
 
             <div className="login-footer">
               <p>
-                Need help? Contact <a href="mailto:hr@cictrix.com">hr@cictrix.com</a>
+                Need help? Contact <a href="mailto:hr@abyan.com">hr@abyan.com</a>
               </p>
               {isMockModeEnabled && (
                 <div className="demo-credentials">

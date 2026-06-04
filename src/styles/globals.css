@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -24,7 +25,7 @@
   --border-subtle: #dee2e6;
 
   /* ACCENTS */
-  --accent-primary: #007bff;
+  --accent-primary: #363EE8;
   --selected-border: none;
   --control-active-bg: var(--accent-primary);
   --control-active-text: #ffffff;
@@ -49,7 +50,7 @@
   --border-subtle: #dee2e6;
 
   /* ACCENTS */
-  --accent-primary: #007bff;
+  --accent-primary: #363EE8;
   --selected-border: none;
   --control-active-bg: var(--accent-primary);
   --control-active-text: #ffffff;
@@ -73,7 +74,7 @@
   --border-subtle: #3a3f4e;     /* Clean divider border */
 
   /* ACCENTS */
-  --accent-primary: #007bff;    /* Vibrant Blue */
+  --accent-primary: #363EE8;    /* Abyan Vibrant Blue */
   --selected-border: 1px solid var(--accent-primary);
   --control-active-bg: var(--bg-control);
   --control-active-text: #ffffff; /* Must be white */
@@ -90,7 +91,7 @@ html[data-theme='light'] {
   --bg-sidebar: #f8f9fa;
   --bg-control: #ffffff;
   --border-subtle: #dee2e6;
-  --accent-primary: #007bff;
+  --accent-primary: #363EE8;
   --selected-border: none;
   --control-active-bg: var(--accent-primary);
   --control-active-text: #ffffff;
@@ -105,7 +106,7 @@ html[data-theme='dark'] {
   --bg-sidebar: #0f172a;
   --bg-control: #1e293b;
   --border-subtle: #334155;
-  --accent-primary: #3b82f6;
+  --accent-primary: #363EE8;
   --selected-border: 1px solid var(--accent-primary);
   --control-active-bg: var(--bg-control);
   --control-active-text: #ffffff;
@@ -119,12 +120,12 @@ html[data-theme='dark'] {
   --color-background-tertiary: #1e293b;
   --color-border: #334155;
   --color-border-light: #1e293b;
-  --color-border-focus: #3b82f6;
+  --color-border-focus: #363EE8;
   --border-color: #334155;
-  --color-primary: #3b82f6;
-  --color-primary-dark: #1d4ed8;
-  --color-primary-hover: #2563eb;
-  --color-primary-light: rgba(59, 130, 246, 0.15);
+  --color-primary: #363EE8;
+  --color-primary-dark: #040E6B;
+  --color-primary-hover: #2f35d0;
+  --color-primary-light: rgba(54, 62, 232, 0.15);
   --color-secondary: #94a3b8;
 
   /* Shadows on dark surfaces need stronger black */
@@ -461,7 +462,7 @@ html {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+  font-family: var(--font-family);
   font-size: 1rem;
   line-height: 1.5;
   text-rendering: optimizeLegibility;
@@ -478,10 +479,10 @@ body {
 
 :root {
   /* Brand Palette (Logo-based) */
-  --color-primary: #0b3d91; /* Deep blue */
-  --color-primary-dark: #0a2f6e;
-  --color-primary-hover: #0a2f6e;
-  --color-primary-light: #e6eef9;
+  --color-primary: #363EE8; /* Abyan Vibrant Blue */
+  --color-primary-dark: #040E6B; /* Abyan Dark Blue */
+  --color-primary-hover: #2f35d0;
+  --color-primary-light: #C8D1FF; /* Gradient start */
   --color-accent-yellow: #f5c12a;
   --color-accent-red: #d6453d;
   --color-secondary: #6b7280;
@@ -516,7 +517,7 @@ body {
   --spacing-3xl: 4rem;
   
   /* Typography */
-  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+  --font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
   --font-size-base: 1rem;
@@ -568,7 +569,7 @@ body {
   font-size: var(--font-size-base);
   line-height: var(--line-height-normal);
   color: var(--color-text-primary);
-  background: linear-gradient(135deg, #fff7e0 0%, #f1f5ff 100%);
+  background: var(--color-background);
   min-height: 100vh;
   text-rendering: optimizeLegibility;
 }

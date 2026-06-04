@@ -1,0 +1,189 @@
+﻿
+      });
+  
+      return records;
+    }, [portalAccountByEmployeeId, portalAccounts, supabaseEmployeeRecords]);
+  
+>   const directoryEmployeesSource = useMemo(
+      () => {
+        const merged = new Map<string, ApplicantRecord>();
+  
+        // Add credentialed applicants (those with employee numbers generated)
+        credentialedApplicantDirectorySource.forEach((employee) => {
+          const key = String(employee.employeeId ?? employee.id).trim();
+          if (!key) return;
+          merged.set(key, employee);
+        });
+  
+        // Add ALL hired applicants (even those without credentials yet)
+        applicants
+          .filter((app) => app.status === 'Hired')
+          .forEach((employee) => {
+            const key = String(employee.id).trim();
+            if (!key || merged.has(key)) return;
+            merged.set(key, {
+              ...employee,
+              status: 'Hired',
+              employeeId: undefined, // No employee number yet
+      },
+      [applicants, credentialedApplicantDirectorySource, 
+fallbackEmployeeDirectorySource]
+    );
+  
+    const employeeDirectoryCards = useMemo(() => {
+>     const source = directoryEmployeesSource;
+      const searchTerm = employeeDirectorySearch.trim().toLowerCase();
+      const grouped = new Map<string, { position: string; office: string; 
+count: number; activeCount: number; inactiveCount: number; status: 
+EmployeeDirectoryCardStatus }>();
+  
+      source.forEach((employee) => {
+        // Skip placeholder/unassigned positions
+        const position = employee.position || 'Unassigned Position';
+        if (position === 'Employee' || position === 'Unassigned Position' || 
+!position.trim()) {
+          return;
+        }
+  
+        const office = employee.office || 'Unassigned Office';
+        const isInactive = employee.status.toLowerCase().includes('inactive');
+        const key = `${position}__${office}`;
+        const existing = grouped.get(key);
+  
+        if (existing) {
+          existing.count += 1;
+          if (isInactive) {
+            existing.inactiveCount += 1;
+          } else {
+      return {
+        cards,
+        totalEmployees: source.length,
+        totalPositions: grouped.size,
+      };
+>   }, [directoryEmployeesSource, employeeDirectoryOfficeFilter, 
+employeeDirectorySearch, employeeDirectoryStatusFilter]);
+  
+    const employeeDirectoryOfficeOptions = useMemo(
+      () =>
+>       Array.from(new Set(directoryEmployeesSource.map((employee) => 
+employee.office || 'Unassigned Office'))).sort((a, b) =>
+          a.localeCompare(b)
+        ),
+>     [directoryEmployeesSource]
+    );
+  
+    const employeeDirectoryPageCount = Math.max(1, 
+Math.ceil(employeeDirectoryCards.cards.length / 
+EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE));
+    const safeEmployeeDirectoryPage = Math.min(employeeDirectoryPage, 
+employeeDirectoryPageCount - 1);
+    const paginatedEmployeeDirectoryCards = useMemo(
+      () =>
+        employeeDirectoryCards.cards.slice(
+          safeEmployeeDirectoryPage * EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE,
+          (safeEmployeeDirectoryPage + 1) * 
+EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE
+        ),
+      [employeeDirectoryCards.cards, safeEmployeeDirectoryPage]
+    );
+  
+    useEffect(() => {
+      if (employeeDirectoryPage > employeeDirectoryPageCount - 1) {
+        setEmployeeDirectoryPage(Math.max(0, employeeDirectoryPageCount - 1));
+      }
+    }, [employeeDirectoryPage, employeeDirectoryPageCount]);
+  
+    const employeeNumberById = useMemo(() => {
+      const employeeNumberMap = new Map<string, string>();
+  
+>     directoryEmployeesSource.forEach((employee, index) => {
+        const storedEmployeeNumber = 
+employeeNumberFromNewlyHired.get(employee.id);
+        if (storedEmployeeNumber) {
+          employeeNumberMap.set(employee.id, storedEmployeeNumber);
+          return;
+        }
+  
+        const year = Number.isNaN(new Date(employee.created_at).getFullYear())
+          ? '2026'
+          : String(new Date(employee.created_at).getFullYear());
+        employeeNumberMap.set(employee.id, `EMP-${year}-${String(index + 
+1).padStart(3, '0')}`);
+      });
+  
+      return employeeNumberMap;
+>   }, [directoryEmployeesSource, employeeNumberFromNewlyHired]);
+  
+    const selectedPositionEmployees = useMemo(() => {
+      if (!selectedDirectoryCard) return [];
+>     return directoryEmployeesSource.filter(
+        (employee) => employee.position === selectedDirectoryCard.position && 
+employee.office === selectedDirectoryCard.office
+      );
+>   }, [directoryEmployeesSource, selectedDirectoryCard]);
+  
+    const selectedEmployeeDetails = useMemo(
+>     () => directoryEmployeesSource.find((employee) => employee.id === 
+selectedEmployeeId) ?? null,
+>     [directoryEmployeesSource, selectedEmployeeId]
+    );
+  
+    const selectedEmployeeProfile = useMemo(() => {
+      if (!selectedEmployeeDetails) return null;
+      const resolvedEmployeeId = String(
+        selectedEmployeeDetails.employeeId ?? 
+employeeNumberFromNewlyHired.get(selectedEmployeeDetails.id) ?? ''
+      ).trim();
+      const portalAccount =
+        (resolvedEmployeeId ? 
+portalAccountByEmployeeId.get(resolvedEmployeeId) : null) ??
+        portalAccountByApplicantId.get(selectedEmployeeDetails.id);
+      const emp = portalAccount?.employee;
+      const computeAge = (dob: string | undefined) => {
+        if (!dob) return null;
+        const birth = new Date(dob);
+        if (Number.isNaN(birth.getTime())) return null;
+        const today = new Date();
+        let years = today.getFullYear() - birth.getFullYear();
+        const hasBirthdayPassed =
+          today.getMonth() > birth.getMonth() ||
+          (today.getMonth() === birth.getMonth() && today.getDate() >= 
+birth.getDate());
+        newPosition: currentPosition,
+      }));
+    }, [selectedEmployeeDetails]);
+  
+    const bulkRequestEmployees = useMemo<BulkRequestEmployee[]>(() => {
+>     return directoryEmployeesSource.map((employee) => ({
+        id: employee.id,
+        name: employee.full_name,
+        department: employee.office || 'Unassigned Office',
+      }));
+>   }, [directoryEmployeesSource]);
+  
+    const bulkRequestDepartments = useMemo(
+      () => Array.from(new Set(bulkRequestEmployees.map((employee) => 
+employee.department))).sort((a, b) => a.localeCompare(b)),
+      [bulkRequestEmployees]
+    );
+  
+    const selectedDepartmentEmployees = useMemo(
+      () => bulkRequestEmployees.filter((employee) => employee.department === 
+bulkRequestForm.department),
+      [bulkRequestEmployees, bulkRequestForm.department]
+    );
+  
+    const selectedEmployeesList = useMemo(
+      () => bulkRequestEmployees.filter((employee) => 
+bulkRequestForm.selectedEmployeeIds.includes(employee.id)),
+      [bulkRequestEmployees, bulkRequestForm.selectedEmployeeIds]
+    );
+  
+    const bulkRequestRecipientCount = useMemo(() => {
+      if (bulkRequestForm.recipientMode === 'all') return 
+bulkRequestEmployees.length;
+      if (bulkRequestForm.recipientMode === 'department') return 
+selectedDepartmentEmployees.length;
+      return selectedEmployeesList.length;
+
+

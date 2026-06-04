@@ -11,7 +11,8 @@ import {
     Briefcase,
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import hrisLogo from '../../assets/hris-logo.svg';
+import { useLocation, useNavigate } from 'react-router-dom';
+import abyanLogo from '../../assets/abyan-logo.png';
 import { Button, Dialog } from '../../components';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import {
@@ -19,7 +20,7 @@ import {
     findEmployeePortalAccount,
     getEmployeePortalAccounts,
 } from '../../lib/employeePortalData';
-import { getAuthoritativeJobPostings, getEmployeeRecords, loadJobPostings, syncApplicantSubmissionToRecruitment } from '../../lib/recruitmentData';
+import { getEmployeeRecordsFromSupabase, syncApplicantSubmissionToRecruitment, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
 import { ATTACHMENTS_BUCKET, supabase } from '../../lib/supabase';
 import '../../styles/wizard.css';
 import type { ApplicantFormData, UploadedFile, ValidationErrors } from '../../types/applicant.types';
@@ -30,6 +31,46 @@ import { AttachmentsUploadForm, REQUIRED_DOCUMENTS } from './AttachmentsUploadFo
 
 const ATTACHMENT_PREVIEW_CACHE_KEY = 'cictrix_attachment_previews';
 const APPOINTMENT_TYPE_STORAGE_KEY = 'cictrix_rsp_score_setup';
+
+// Per-tab wizard state. Survives a page refresh but clears when the tab is
+// closed — UI state only, not a data layer. `files` are not persisted (File
+// objects aren't serializable); after refresh the user re-uploads on step 2.
+const WIZARD_STATE_KEY = 'cictrix_wizard_state';
+
+interface PersistedWizardState {
+  entryMode?: 'landing' | 'wizard';
+  applicationType?: 'job' | 'promotion';
+  currentStep?: 1 | 2 | 3;
+  formData?: ApplicantFormData;
+  authenticatedEmployeeAccount?: EmployeePortalAccount | null;
+}
+
+const loadWizardState = (): PersistedWizardState => {
+  try {
+    const raw = sessionStorage.getItem(WIZARD_STATE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? (parsed as PersistedWizardState) : {};
+  } catch {
+    return {};
+  }
+};
+
+const saveWizardState = (state: PersistedWizardState): void => {
+  try {
+    sessionStorage.setItem(WIZARD_STATE_KEY, JSON.stringify(state));
+  } catch {
+    // sessionStorage may be unavailable (private mode); not fatal.
+  }
+};
+
+const clearWizardState = (): void => {
+  try {
+    sessionStorage.removeItem(WIZARD_STATE_KEY);
+  } catch {
+    // ignore
+  }
+};
 const MAX_PREVIEWABLE_FILE_BYTES = 10 * 1024 * 1024;
 
 type CachedPreviewFile = {
@@ -88,10 +129,16 @@ const saveApplicantAppointmentType = (applicantId: string, applicationType: 'job
 };
 
 export const ApplicantWizard: React.FC = () => {
-  const [entryMode, setEntryMode] = useState<'landing' | 'wizard'>('landing');
-  const [applicationType, setApplicationType] = useState<'job' | 'promotion'>('job');
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
-  const [formData, setFormData] = useState<ApplicantFormData>(INITIAL_FORM_DATA);
+  // Hydrate from sessionStorage so a refresh keeps the user on the same step
+  // with the same form values, instead of bouncing back to the landing page.
+  const persisted = (() => {
+    try { return loadWizardState(); } catch { return {} as PersistedWizardState; }
+  })();
+
+  const [entryMode, setEntryMode] = useState<'landing' | 'wizard'>(persisted.entryMode ?? 'landing');
+  const [applicationType, setApplicationType] = useState<'job' | 'promotion'>(persisted.applicationType ?? 'job');
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(persisted.currentStep ?? 1);
+  const [formData, setFormData] = useState<ApplicantFormData>(persisted.formData ?? INITIAL_FORM_DATA);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [errors, setErrors] = useState<ValidationErrors>({});
   const [fileError, setFileError] = useState('');
@@ -104,14 +151,75 @@ export const ApplicantWizard: React.FC = () => {
   const [employeePassword, setEmployeePassword] = useState('');
   const [showEmployeePassword, setShowEmployeePassword] = useState(false);
   const [employeeAuthError, setEmployeeAuthError] = useState('');
-  const [authenticatedEmployeeAccount, setAuthenticatedEmployeeAccount] = useState<EmployeePortalAccount | null>(null);
-  
+  const [authenticatedEmployeeAccount, setAuthenticatedEmployeeAccount] = useState<EmployeePortalAccount | null>(
+    persisted.authenticatedEmployeeAccount ?? null,
+  );
   const [activeJobs, setActiveJobs] = useState<JobPosting[]>([]);
-  const [isFixedJob, setIsFixedJob] = useState(false);
-
+  const [isLockedPosition, setIsLockedPosition] = useState(false);
   const isGeneratingItemNumberRef = useRef(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const landingJobAppliedRef = useRef(false);
+  const [prefilledFromLanding, setPrefilledFromLanding] = useState(false);
 
+  // Persist the wizard state whenever the user advances or edits.
+  useEffect(() => {
+    saveWizardState({
+      entryMode,
+      applicationType,
+      currentStep,
+      formData,
+      authenticatedEmployeeAccount,
+    });
+  }, [entryMode, applicationType, currentStep, formData, authenticatedEmployeeAccount]);
 
+  useEffect(() => {
+    const state = location.state as { landingJob?: { title: string; itemNumber: string; department: string } } | null;
+    const landingJob = state?.landingJob;
+    const searchParams = new URLSearchParams(location.search);
+    const positionFromQuery = searchParams.get('position') || undefined;
+    const itemNumberFromQuery = searchParams.get('itemNumber') || undefined;
+    const officeFromQuery = searchParams.get('office') || undefined;
+
+    if (landingJob && !landingJobAppliedRef.current) {
+      landingJobAppliedRef.current = true;
+      setPrefilledFromLanding(true);
+      setEntryMode('wizard');
+      setApplicationType('job');
+      setCurrentStep(1);
+      setAuthenticatedEmployeeAccount(null);
+      setFormData({
+        ...INITIAL_FORM_DATA,
+        application_type: 'job',
+        position: landingJob.title,
+        office: landingJob.department,
+        item_number: landingJob.itemNumber,
+      });
+      setIsLockedPosition(true);
+      setFiles([]);
+      setSubmitError('');
+      return;
+    }
+
+    if ((positionFromQuery || itemNumberFromQuery) && !landingJobAppliedRef.current) {
+      landingJobAppliedRef.current = true;
+      setPrefilledFromLanding(true);
+      setEntryMode('wizard');
+      setApplicationType('job');
+      setCurrentStep(1);
+      setAuthenticatedEmployeeAccount(null);
+      setFormData({
+        ...INITIAL_FORM_DATA,
+        application_type: 'job',
+        position: positionFromQuery || '',
+        office: officeFromQuery || POSITION_TO_DEPARTMENT_MAP[positionFromQuery || ''] || '',
+        item_number: itemNumberFromQuery || '',
+      });
+      setIsLockedPosition(true);
+      setFiles([]);
+      setSubmitError('');
+    }
+  }, [location.state, location.search]);
 
   const handleFormChange = (field: keyof ApplicantFormData, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -138,14 +246,14 @@ export const ApplicantWizard: React.FC = () => {
   };
 
 const handleNextToReview = () => {
-    const fileValidationError = validateFiles(files.map((f) => f.file), files, applicationType);
-    if (fileValidationError) {
-      setFileError(fileValidationError);
-      return;
-    }
-    setFileError('');
-    setCurrentStep(3);
-  };
+    const fileValidationError = validateFiles(files.map((f) => f.file), files, applicationType);
+    if (fileValidationError) {
+      setFileError(fileValidationError);
+      return;
+    }
+    setFileError('');
+    setCurrentStep(3);
+  };
 
   const handleBack = () => {
     if (currentStep === 3) {
@@ -337,6 +445,9 @@ const handleNextToReview = () => {
     setEmployeePassword('');
     setShowEmployeePassword(false);
     setEmployeeAuthError('');
+    // Wipe the per-tab wizard cache so a brand-new application starts fresh
+    // (refresh after submit should not resume the just-submitted form).
+    clearWizardState();
   };
 
   const handleSubmit = async () => {
@@ -367,19 +478,25 @@ const handleNextToReview = () => {
 
   const handleCloseSuccessDialog = () => {
     setShowSuccessDialog(false);
+    navigate('/');
   };
 
   const handleStartJobApplication = (job?: JobPosting) => {
     setApplicationType('job');
     setAuthenticatedEmployeeAccount(null);
-    setFormData({ 
-      ...INITIAL_FORM_DATA, 
-      application_type: 'job',
-      position: job ? job.title : '',
-      office: job ? (job.division || job.department) : '',
-      item_number: job ? job.jobCode : ''
-    });
-    setIsFixedJob(!!job);
+    if (job) {
+      setFormData({
+        ...INITIAL_FORM_DATA,
+        application_type: 'job',
+        position: job.title,
+        office: job.department || job.division || '',
+        item_number: job.jobCode || '',
+      });
+      setIsLockedPosition(true);
+    } else {
+      setFormData({ ...INITIAL_FORM_DATA, application_type: 'job' });
+      setIsLockedPosition(false);
+    }
     setFiles([]);
     setEntryMode('wizard');
     setCurrentStep(1);
@@ -399,7 +516,7 @@ const handleNextToReview = () => {
     setEmployeeAuthError('');
   };
 
-  const handleEmployeeAuthSubmit = (event: React.FormEvent) => {
+  const handleEmployeeAuthSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
     const enteredIdentifier = employeeNumber.trim();
@@ -427,7 +544,10 @@ const handleNextToReview = () => {
       return;
     }
 
-    const employeeRecord = getEmployeeRecords().find(
+    // Look up the employee in Supabase (source of truth) to get the most
+    // up-to-date position/department, falling back to the portal account's
+    // cached fields if no row exists yet.
+    const employeeRecord = (await getEmployeeRecordsFromSupabase()).find(
       (record) => String(record.employeeId ?? '').trim() === String(matchedAccount?.employee?.employeeId ?? '').trim()
     );
     const [firstName, ...remainingParts] = String(matchedAccount?.employee?.fullName ?? '').trim().split(/\s+/);
@@ -569,10 +689,10 @@ const handleNextToReview = () => {
   return (
     <div className="applicant-shell">
       <header className="applicant-topbar">
-        <div className="applicant-brand">
-          <img src={hrisLogo} alt="HRIS logo" className="applicant-brand-logo" />
+          <div className="applicant-brand">
+            <img src={abyanLogo} alt="ABYAN logo" className="applicant-brand-logo" />
           <div>
-            <h1>HRIS Applicant Portal</h1>
+            <h1>Abyan HRIS Applicant Portal</h1>
             <p>Human Resource Information System</p>
           </div>
         </div>
@@ -588,7 +708,7 @@ const handleNextToReview = () => {
       {entryMode === 'landing' ? (
         <main className="portal-landing">
           <div className="portal-landing-header">
-            <h2>Welcome to HRIS Applicant Portal</h2>
+            <h2>Welcome to Abyan HRIS Applicant Portal</h2>
             <p>Please begin your application below</p>
           </div>
 
@@ -698,20 +818,20 @@ const handleNextToReview = () => {
                 </div>
                 <div className="wizard-content">
                   <ApplicantAssessmentForm
-                    formData={formData}
-                    errors={errors}
-                    onChange={handleFormChange}
-                    applicationType={applicationType}
-                    isEmployee={Boolean(authenticatedEmployeeAccount?.employee?.employeeId)}
-                    onApplicationTypeChange={(next) => {
-                      // Guard: an authenticated employee may never switch to Original.
-                      // (UI also hides the radio group in that case, but defense-in-depth.)
-                      if (authenticatedEmployeeAccount?.employee?.employeeId && next === 'job') return;
-                      setApplicationType(next);
-                      handleFormChange('application_type', next);
-                    }}
-                    isFixedJob={isFixedJob}
-                  />
+                      formData={formData}
+                      errors={errors}
+                      onChange={handleFormChange}
+                      applicationType={applicationType}
+                      isEmployee={Boolean(authenticatedEmployeeAccount?.employee?.employeeId)}
+                      onApplicationTypeChange={(next) => {
+                        // Guard: an authenticated employee may never switch to Original.
+                        // (UI also hides the radio group in that case, but defense-in-depth.)
+                        if (authenticatedEmployeeAccount?.employee?.employeeId && next === 'job') return;
+                        setApplicationType(next);
+                        handleFormChange('application_type', next);
+                      }}
+                      lockedPosition={isLockedPosition}
+                    />
                 </div>
               </>
             )}
@@ -969,6 +1089,24 @@ const handleNextToReview = () => {
             <p className="submission-reference-hint">
               Save this number. You can use it at <strong>/track</strong> to check your application status anytime.
             </p>
+          </div>
+          <div className="flex gap-3 mt-6">
+            <Button
+              variant="outline"
+              onClick={handleCloseSuccessDialog}
+              style={{ flex: 1 }}
+            >
+              Back to Home
+            </Button>
+            <Button
+              onClick={() => {
+                navigate('/track');
+                setShowSuccessDialog(false);
+              }}
+              style={{ flex: 1 }}
+            >
+              Track Application
+            </Button>
           </div>
         </div>
       </Dialog>

@@ -29,6 +29,7 @@ import {
     X,
 } from 'lucide-react';
 import { QualifiedApplicantsSection } from '../../components/QualifiedApplicantsSection';
+import { SuccessionPlanningPage } from '../../components/SuccessionPlanningPage';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AdminHeader } from '../../components/AdminHeader';
@@ -47,9 +48,9 @@ import {
     ensureRecruitmentSeedData,
     getAuthoritativeJobPostings,
     getDeletedJobReports,
-    getEmployeeRecords,
+    getEmployeeRecordsFromSupabase,
     getJobPostingsFromSupabase,
-    getNewlyHired,
+    getNewlyHiredFromSupabase,
     getApplicants as getRecruitmentApplicants,
     saveDeletedJobReports,
     saveJobPostings,
@@ -58,6 +59,7 @@ import {
 } from '../../lib/recruitmentData';
 import { runSingleFlight, invalidateCacheKey } from '../../lib/singleFlight';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
+import { hireApplicant } from '../../lib/api/employeesApi';
 import {
     EMPLOYEE_DOCUMENTS_UPDATED_EVENT,
     downloadEmployeeDocument,
@@ -68,10 +70,10 @@ import {
 import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
 import { sendEmail } from '../../lib/email';
 import '../../styles/admin.css';
-import type { JobPosting, NewlyHired } from '../../types/recruitment.types';
+import type { EmployeeRecord, JobPosting, NewlyHired } from '../../types/recruitment.types';
 
 type JobStatus = 'Open' | 'Reviewing' | 'Closed';
-type Section = 'dashboard' | 'jobs' | 'qualified' | 'new-hired' | 'raters' | 'accounts' | 'reports' | 'settings';
+type Section = 'dashboard' | 'jobs' | 'qualified' | 'new-hired' | 'raters' | 'accounts' | 'succession' | 'reports' | 'settings';
 type BulkRecipientMode = 'all' | 'department' | 'selected';
 type EmployeeDocumentTemplateId = (typeof BULK_REQUEST_TEMPLATES)[number]['id'];
 type EmployeeDirectoryCardStatus = 'Active' | 'Inactive' | 'Mixed';
@@ -260,6 +262,7 @@ const resolveSection = (pathname: string, search: string): Section => {
   if (pathname === '/admin/rsp/new-hired') return 'new-hired';
   if (pathname === '/admin/rsp/raters' || pathname === '/admin/raters') return 'raters';
   if (pathname === '/admin/rsp/accounts') return 'accounts';
+  if (pathname === '/admin/rsp/succession') return 'succession';
   if (pathname === '/admin/rsp/reports') return 'reports';
   if (pathname === '/admin/rsp/settings' || pathname === '/admin/settings') return 'settings';
 
@@ -299,7 +302,7 @@ const persistDashboardJobsToRecruitment = (rows: JobRecord[]) => {
   const nowIso = new Date().toISOString();
   const mapped: JobPosting[] = rows.map((row, index) => ({
     id: String(row.id ?? crypto.randomUUID()),
-    jobCode: row.item_number || `LGU-2026-${String(index + 1).padStart(3, '0')}`,
+    jobCode: row.item_number || `ABYAN-2026-${String(index + 1).padStart(3, '0')}`,
     title: row.title,
     department: row.department || 'Operations',
     division: 'Operations',
@@ -462,8 +465,6 @@ const verifyRaterAccessState = async (client: any, email: string, expectedIsActi
     throw new Error('Rater access update did not persist for all matching rows.');
   }
 };
-
-const RATER_ASSIGNMENTS_KEY = 'cictrix_rater_assigned_positions';
 
 const normalizeEmailKey = (email: string) => email.trim().toLowerCase();
 
@@ -688,24 +689,8 @@ const normalizeWrittenScore = (value: number): number => {
   return Number((value * 0.3).toFixed(2));
 };
 
-const loadRaterAssignments = (): Record<string, string[]> => {
-  try {
-    const raw = localStorage.getItem(RATER_ASSIGNMENTS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return {};
-    return parsed as Record<string, string[]>;
-  } catch {
-    return {};
-  }
-};
-
-const saveRaterAssignments = (assignments: Record<string, string[]>) => {
-  try {
-    localStorage.setItem(RATER_ASSIGNMENTS_KEY, JSON.stringify(assignments));
-  } catch {
-  }
-};
+// Rater assigned_positions live exclusively in Supabase (raters.assigned_positions).
+// No local cache — every read goes through the DB.
 
 export const RSPDashboard = () => {
   const navigate = useNavigate();
@@ -778,9 +763,13 @@ export const RSPDashboard = () => {
           ?? '',
       ).trim();
       const empEmail = String((selectedEmployeeDetails as any).email ?? '').trim().toLowerCase();
-      const firstName = String((selectedEmployeeDetails as any).first_name ?? '').trim();
-      const lastName = String((selectedEmployeeDetails as any).last_name ?? '').trim();
-      const fullNameNormalized = `${firstName} ${lastName}`.trim().toLowerCase();
+      const fullName = ('name' in selectedEmployeeDetails)
+        ? String((selectedEmployeeDetails as any).name ?? '').trim()
+        : `${(selectedEmployeeDetails as any).first_name ?? ''} ${(selectedEmployeeDetails as any).last_name ?? ''}`.trim();
+      const nameParts = fullName.split(' ');
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+      const fullNameNormalized = fullName.toLowerCase();
 
       const accounts = getEmployeePortalAccounts();
 
@@ -977,8 +966,10 @@ export const RSPDashboard = () => {
       ensureRecruitmentSeedData();
       setDeletedJobReports(getDeletedJobReports());
 
-      const localAssignments = loadRaterAssignments();
-      setRaterAssignedPositionsByEmail(localAssignments);
+      // Assignments load from Supabase below (raters.assigned_positions).
+      // No localStorage seed — start empty so a stale browser cache can't
+      // leak into the UI before the DB fetch resolves.
+      setRaterAssignedPositionsByEmail({});
 
       // CRITICAL: Always fetch applicants from Supabase (as per user requirement: "all datas must be stored in supabase")
       const primaryClient = supabase; // Always use Supabase for applicants
@@ -1171,23 +1162,18 @@ export const RSPDashboard = () => {
 
       if (ratersRes.status === 'fulfilled' && !ratersRes.value.error && Array.isArray(ratersRes.value.data)) {
         const ratersSource = primaryRaters.length > 0 ? primaryRaters : ratersRes.value.data;
-        const mergedAssignments = { ...localAssignments };
+        const assignmentsFromDb: Record<string, string[]> = {};
 
         ratersSource.forEach((item: any) => {
           const emailKey = normalizeEmailKey(String(item?.email ?? ''));
           if (!emailKey) return;
 
-          const fromRow = Array.isArray(item?.assigned_positions)
+          assignmentsFromDb[emailKey] = Array.isArray(item?.assigned_positions)
             ? item.assigned_positions.filter((value: any) => typeof value === 'string')
-            : null;
-
-          if (fromRow && fromRow.length > 0) {
-            mergedAssignments[emailKey] = fromRow;
-          }
+            : [];
         });
 
-        setRaterAssignedPositionsByEmail(mergedAssignments);
-        saveRaterAssignments(mergedAssignments);
+        setRaterAssignedPositionsByEmail(assignmentsFromDb);
 
         const normalized = ratersSource.map((item: any, index: number) => ({
           id: Number(item?.id ?? index + 1),
@@ -1446,12 +1432,44 @@ export const RSPDashboard = () => {
     return scored.reduce((sum, applicant) => sum + applicant.total_score, 0) / scored.length;
   }, [qualifiedApplicants]);
 
+  // Loaded from Supabase newly_hired table; refreshed when saveNewlyHired
+  // dispatches 'cictrix:newly-hired-updated'. Used by both
+  // rankingPositionCards (card counts) and activeRankingRows (list) to
+  // exclude applicants the admin has already confirmed for hire.
+  const [newlyHiredRows, setNewlyHiredRows] = useState<NewlyHired[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      const rows = await getNewlyHiredFromSupabase();
+      if (!cancelled) setNewlyHiredRows(rows);
+    };
+    void refresh();
+    window.addEventListener('cictrix:newly-hired-updated', refresh as EventListener);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('cictrix:newly-hired-updated', refresh as EventListener);
+    };
+  }, [section]);
+
+  const hiredApplicantIds = useMemo(
+    () =>
+      new Set(
+        newlyHiredRows
+          .map((row) => String(row.applicantId ?? '').trim())
+          .filter(Boolean),
+      ),
+    [newlyHiredRows],
+  );
+
   const rankingPositionCards = useMemo<RankingPositionCard[]>(() => {
     const reportEligibleJobs = jobs.filter((job) => job.status !== 'Closed');
     const reportEligibleTitleSet = new Set(reportEligibleJobs.map((job) => job.title));
     const qualifiedByPosition = new Map<string, number>();
 
     applicants.forEach((applicant) => {
+      // Already-hired applicants must not inflate the qualified-count badge
+      // on position cards. Source of truth is Supabase newly_hired.
+      if (hiredApplicantIds.has(String(applicant.id))) return;
       if (!savedScoredApplicantIds.has(applicant.id)) return;
       const normalizedStatus = (applicant.status || '').toLowerCase();
       // Negative outcomes always exclude.
@@ -1459,7 +1477,9 @@ export const RSPDashboard = () => {
         normalizedStatus.includes('disqual') ||
         normalizedStatus.includes('not qualified') ||
         normalizedStatus.includes('reject') ||
-        normalizedStatus.includes('withdrawn');
+        normalizedStatus.includes('withdrawn') ||
+        normalizedStatus.includes('hired') ||
+        normalizedStatus.includes('deployed');
       if (isExplicitlyExcluded) return;
       // RSP-saved scores OR an explicit qualified status OR completed evaluation
       // all count as eligible for ranking. The first condition is the new path so
@@ -1490,7 +1510,7 @@ export const RSPDashboard = () => {
     });
 
     return Array.from(unique.values()).sort((a, b) => b.qualifiedCount - a.qualifiedCount || a.position.localeCompare(b.position));
-  }, [applicants, completedEvaluationIds, jobs, savedScoredApplicantIds]);
+  }, [applicants, completedEvaluationIds, jobs, savedScoredApplicantIds, hiredApplicantIds]);
 
   const activeRankingCard = useMemo(
     () => rankingPositionCards.find((card) => card.position === activeRankingPosition) || null,
@@ -1504,6 +1524,7 @@ export const RSPDashboard = () => {
     if (!eligibleTitles.has(activeRankingPosition)) return [];
 
     const candidates = applicants.filter((applicant) => {
+      if (hiredApplicantIds.has(String(applicant.id))) return false;
       if (!savedScoredApplicantIds.has(applicant.id)) return false;
       if (applicant.position !== activeRankingPosition) return false;
       const normalizedStatus = (applicant.status || '').toLowerCase();
@@ -1513,7 +1534,9 @@ export const RSPDashboard = () => {
         normalizedStatus.includes('disqual') ||
         normalizedStatus.includes('not qualified') ||
         normalizedStatus.includes('reject') ||
-        normalizedStatus.includes('withdrawn');
+        normalizedStatus.includes('withdrawn') ||
+        normalizedStatus.includes('hired') ||
+        normalizedStatus.includes('deployed');
       if (isExplicitlyExcluded) return false;
       return (
         savedScoredApplicantIds.has(applicant.id) ||
@@ -1561,7 +1584,7 @@ export const RSPDashboard = () => {
       .sort((a, b) => b.total - a.total || a.fullName.localeCompare(b.fullName));
 
     return rows;
-  }, [activeRankingPosition, applicants, completedEvaluationIds, activeRankingCard, jobs, savedScoredApplicantIds]);
+  }, [activeRankingPosition, applicants, completedEvaluationIds, activeRankingCard, jobs, savedScoredApplicantIds, hiredApplicantIds]);
 
   useEffect(() => {
     const syncSavedScores = () => setSavedScoredApplicantIds(getSavedScoredApplicantIdSet());
@@ -1800,7 +1823,6 @@ export const RSPDashboard = () => {
     }
   }, [activeAssessmentPosition, assessmentPositionCards]);
 
-  const newlyHiredRows = useMemo(() => getNewlyHired(), [section, applicants]);
 
   const newlyHiredApplicants = useMemo(() => {
     const applicantsById = new Map(applicants.map((applicant) => [String(applicant.id), applicant] as const));
@@ -1892,12 +1914,25 @@ export const RSPDashboard = () => {
     [applicants, credentialedApplicantIds, employeeNumberFromNewlyHired]
   );
 
+  // Loaded from Supabase employees table on mount. Used as the fallback
+  // source for the employee directory when no portal account is found.
+  const [supabaseEmployeeRecords, setSupabaseEmployeeRecords] = useState<EmployeeRecord[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const rows = await getEmployeeRecordsFromSupabase();
+      if (!cancelled) setSupabaseEmployeeRecords(rows);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const fallbackEmployeeDirectorySource = useMemo(() => {
-    const employeeRecords = getEmployeeRecords();
     const seenEmployeeIds = new Set<string>();
-    
-    // Add employees from recruitment records
-    const records = employeeRecords.reduce<ApplicantRecord[]>((acc, record) => {
+
+    // Add employees from the Supabase employees table.
+    const records = supabaseEmployeeRecords.reduce<ApplicantRecord[]>((acc, record) => {
         const employeeId = String(record.employeeId ?? '').trim();
         if (!employeeId) return acc;
 
@@ -1920,7 +1955,7 @@ export const RSPDashboard = () => {
         return acc;
       }, []);
 
-    // Also add any portal accounts that aren't in recruitment records
+    // Also add any portal accounts that aren't in the employees table.
     portalAccounts.forEach((account) => {
       const employeeId = String(account.employee.employeeId ?? '').trim();
       if (!employeeId || seenEmployeeIds.has(employeeId)) return;
@@ -1940,7 +1975,7 @@ export const RSPDashboard = () => {
     });
 
     return records;
-  }, [portalAccountByEmployeeId, portalAccounts]);
+  }, [portalAccountByEmployeeId, portalAccounts, supabaseEmployeeRecords]);
 
   const directoryEmployeesSource = useMemo(
     () => {
@@ -2049,7 +2084,7 @@ export const RSPDashboard = () => {
 
   const employeeDirectoryOfficeOptions = useMemo(
     () =>
-      Array.from(new Set(directoryEmployeesSource.map((employee) => employee.office || 'Unassigned Office'))).sort((a, b) =>
+      Array.from(new Set(directoryEmployeesSource.map((employee) => (employee as any).department || 'Unassigned Office'))).sort((a, b) =>
         a.localeCompare(b)
       ),
     [directoryEmployeesSource]
@@ -2184,7 +2219,7 @@ export const RSPDashboard = () => {
 
   useEffect(() => {
     if (!selectedEmployeeDetails) return;
-    const currentDepartment = selectedEmployeeDetails.office || 'IT Department';
+    const currentDepartment = (selectedEmployeeDetails as any).department || 'IT Department';
     const currentPosition = selectedEmployeeDetails.position || '';
     setPositionChangeForm((prev) => ({
       ...prev,
@@ -2199,7 +2234,7 @@ export const RSPDashboard = () => {
     return directoryEmployeesSource.map((employee) => ({
       id: employee.id,
       name: employee.full_name,
-      department: employee.office || 'Unassigned Office',
+      department: (employee as any).department || 'Unassigned Office',
     }));
   }, [directoryEmployeesSource]);
 
@@ -2280,6 +2315,7 @@ export const RSPDashboard = () => {
     if (target === 'new-hired') navigate('/admin/rsp/new-hired');
     if (target === 'raters') navigate('/admin/rsp/raters');
     if (target === 'accounts') navigate('/admin/rsp/accounts');
+    if (target === 'succession') navigate('/admin/rsp/succession');
     if (target === 'reports') navigate('/admin/rsp/reports');
     if (target === 'settings') navigate('/admin/rsp/settings');
   };
@@ -2327,7 +2363,7 @@ export const RSPDashboard = () => {
     // Persist through the central recruitment utility so all dependent caches/events stay in sync.
     const nextRecruitmentRows: JobPosting[] = nextJobs.map((row, index) => ({
       id: String(row.id ?? crypto.randomUUID()),
-      jobCode: row.item_number || `LGU-2026-${String(index + 1).padStart(3, '0')}`,
+      jobCode: row.item_number || `ABYAN-2026-${String(index + 1).padStart(3, '0')}`,
       title: row.title,
       department: row.department || 'Operations',
       division: 'Operations',
@@ -2371,7 +2407,7 @@ export const RSPDashboard = () => {
     // Persist through the central recruitment utility so all dependent caches/events stay in sync.
     const nextRecruitmentRows: JobPosting[] = nextJobs.map((row, index) => ({
       id: String(row.id ?? crypto.randomUUID()),
-      jobCode: row.item_number || `LGU-2026-${String(index + 1).padStart(3, '0')}`,
+      jobCode: row.item_number || `ABYAN-2026-${String(index + 1).padStart(3, '0')}`,
       title: row.title,
       department: row.department || 'Operations',
       division: 'Operations',
@@ -2411,12 +2447,13 @@ export const RSPDashboard = () => {
     if (!newRater.name || !newRater.email || !newRater.department) return;
 
     const assignmentKey = normalizeEmailKey(newRater.email);
-    const nextAssignments = {
-      ...raterAssignedPositionsByEmail,
-      [assignmentKey]: [...raterAccessForm.assignedPositions],
-    };
-    setRaterAssignedPositionsByEmail(nextAssignments);
-    saveRaterAssignments(nextAssignments);
+    const nextPositions = [...raterAccessForm.assignedPositions];
+
+    // Optimistic UI update — actual persistence happens via Supabase below.
+    setRaterAssignedPositionsByEmail((prev) => ({
+      ...prev,
+      [assignmentKey]: nextPositions,
+    }));
 
     setRaters((prev) => prev.map((rater) =>
       normalizeEmailKey(rater.email) === assignmentKey
@@ -2426,9 +2463,17 @@ export const RSPDashboard = () => {
 
     try {
       const client = getAccessClient();
-      await runRaterEmailUpdate(client, { is_active: true }, newRater.email);
+      await runRaterEmailUpdate(
+        client,
+        {
+          is_active: true,
+          assigned_positions: nextPositions,
+        },
+        newRater.email,
+      );
       saveRaterAccessState(newRater.email, true);
-    } catch {
+    } catch (err) {
+      console.warn('[RSPDashboard] Failed to persist rater assigned_positions:', err);
     }
 
     setShowRaterDialog(false);
@@ -2503,10 +2548,11 @@ export const RSPDashboard = () => {
 
     if (target?.email) {
       const assignmentKey = normalizeEmailKey(target.email);
-      const nextAssignments = { ...raterAssignedPositionsByEmail };
-      delete nextAssignments[assignmentKey];
-      setRaterAssignedPositionsByEmail(nextAssignments);
-      saveRaterAssignments(nextAssignments);
+      setRaterAssignedPositionsByEmail((prev) => {
+        const next = { ...prev };
+        delete next[assignmentKey];
+        return next;
+      });
     }
 
     try {
@@ -2713,7 +2759,9 @@ export const RSPDashboard = () => {
       ])
     );
 
-    const existing = getNewlyHired();
+    // Fetch fresh from Supabase to avoid creating duplicates if a concurrent
+    // session already added one of these applicants.
+    const existing = await getNewlyHiredFromSupabase();
     const existingApplicantIds = new Set(existing.map((item) => item.applicantId));
     const now = new Date();
     const startDate = new Date(now);
@@ -2786,39 +2834,31 @@ export const RSPDashboard = () => {
       saveNewlyHired([...existing, ...toAdd]);
     }
 
-    // Persist the status flip to the backend (relative /api → Vite proxy on :8000).
-    // If the backend is unavailable, fall back to Supabase. We verify Supabase
-    // succeeded by reading back the row(s); RLS can return error:null with 0 rows.
+    // Persist the status flip. Try the FastAPI backend first (which also
+    // creates the employee row); fall back to a direct Supabase UPDATE when
+    // it's unreachable (e.g. on Vercel where no Python backend runs). The
+    // Newly Hired page filters applicants by status === 'hired', so this
+    // flip is what makes the hire show up there.
     const persistOne = async (id: string): Promise<boolean> => {
       try {
-        const res = await fetch(`/api/applicants/${id}/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ applicant_id: id, status: 'hired' }),
-        });
-        if (res.ok) return true;
-        console.warn('[RSPDashboard] hire backend PATCH failed', id, res.status);
-      } catch (err) {
-        console.warn('[RSPDashboard] hire backend PATCH threw', id, err);
-      }
-      try {
-        const { data: updated, error } = await (supabase as any)
-          .from('applicants')
-          .update({ status: 'Hired' })
-          .eq('id', id)
-          .select('id, status');
-        if (error) {
-          console.error('[RSPDashboard] hire supabase update error', id, error);
-          return false;
-        }
-        if (!Array.isArray(updated) || updated.length === 0) {
-          console.error('[RSPDashboard] hire supabase update returned 0 rows for', id, '— likely RLS blocking UPDATE');
-          return false;
-        }
+        await hireApplicant(id);
         return true;
-      } catch (err) {
-        console.error('[RSPDashboard] hire supabase update threw', id, err);
-        return false;
+      } catch (backendErr) {
+        console.warn('[RSPDashboard] hire backend unavailable, falling back to direct Supabase update', backendErr);
+        try {
+          const { error } = await (supabase as any)
+            .from('applicants')
+            .update({ status: 'Hired' })
+            .eq('id', id);
+          if (error) {
+            console.error('[RSPDashboard] Supabase status update failed', id, error);
+            return false;
+          }
+          return true;
+        } catch (err) {
+          console.error('[RSPDashboard] Supabase status update threw', id, err);
+          return false;
+        }
       }
     };
 
@@ -2826,7 +2866,7 @@ export const RSPDashboard = () => {
     const allPersisted = persistResults.every(Boolean);
     if (!allPersisted) {
       console.warn(
-        '[RSPDashboard] not all hire status updates persisted to DB — local Newly Hired entries were saved regardless.',
+        '[RSPDashboard] not all hire status updates persisted — Newly Hired may be incomplete until the next refresh.',
       );
     }
 
@@ -2943,7 +2983,7 @@ export const RSPDashboard = () => {
       `Due Date: ${dueDate}\n\n` +
       `Please log in to the Employee Portal at /employee/login and upload your file ` +
       `under Document Requirements.\n\n` +
-      `Thank you,\nCICTrix HRIS — RSP Office`;
+      `Thank you,\nAbyan HRIS — RSP Office`;
 
     try {
       // Send a single email with the recipients in TO so the SMTP server delivers
@@ -3013,6 +3053,7 @@ export const RSPDashboard = () => {
             {section === 'raters' && 'Assign raters and define their evaluation access for specific job positions'}
             {section === 'accounts' && 'Manage employee accounts and information'}
             {section === 'reports' && 'Generate official government reports and access employee documents'}
+            {section === 'succession' && 'Build and manage the pipeline for critical roles and leadership continuity'}
             {section === 'settings' && 'Manage your personal information and account details'}
           </p>
         </div>
@@ -4505,6 +4546,10 @@ export const RSPDashboard = () => {
             </>
           )}
 
+          {section === 'succession' && (
+            <SuccessionPlanningPage />
+          )}
+
           {section === 'settings' && (
             <section className="grid grid-cols-1 gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
               <div className="rounded-2xl border border-[var(--border-color)] bg-white p-3">
@@ -5956,7 +6001,9 @@ export const RSPDashboard = () => {
                   <p className="!mb-0 text-sm text-slate-700">
                     Generate a new password for{' '}
                     <span className="font-semibold">
-                      {selectedEmployeeDetails.full_name || `${(selectedEmployeeDetails as any).first_name ?? ''} ${(selectedEmployeeDetails as any).last_name ?? ''}`.trim()}
+                      {'name' in selectedEmployeeDetails
+                        ? (String((selectedEmployeeDetails as any).name ?? '') || 'Unnamed Employee')
+                        : `${(selectedEmployeeDetails as any).first_name ?? ''} ${(selectedEmployeeDetails as any).last_name ?? ''}`.trim()}
                     </span>
                     {employeeNumberById.get(selectedEmployeeDetails.id)
                       ? ` (${employeeNumberById.get(selectedEmployeeDetails.id)})`

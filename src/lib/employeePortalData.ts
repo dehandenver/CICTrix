@@ -1,4 +1,5 @@
 import { Employee } from '../types/employee.types';
+import { supabase } from './supabase';
 
 export interface EmployeePortalAccount {
   id: string;
@@ -10,6 +11,103 @@ export interface EmployeePortalAccount {
 }
 
 const EMPLOYEE_PORTAL_ACCOUNTS_KEY = 'cictrix_employee_portal_accounts';
+
+// Supabase row shape for employee_portal_accounts. See migration
+// backend/database/migrations/008_create_employee_portal_accounts.sql.
+interface PortalAccountRow {
+  id: string;
+  username: string;
+  password: string;
+  employee_id: string | null;
+  full_name: string | null;
+  email: string | null;
+  mobile_number: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+const portalAccountFromRow = (row: PortalAccountRow): EmployeePortalAccount => ({
+  id: row.id,
+  username: row.username,
+  password: row.password,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  employee: {
+    employeeId: String(row.employee_id ?? ''),
+    fullName: String(row.full_name ?? ''),
+    email: String(row.email ?? ''),
+    mobileNumber: String(row.mobile_number ?? ''),
+    dateOfBirth: '',
+    age: 0,
+    gender: 'Other',
+    civilStatus: 'Single',
+    nationality: '',
+    homeAddress: '',
+    emergencyContactName: '',
+    emergencyRelationship: '',
+    emergencyContactNumber: '',
+    sssNumber: '',
+    philhealthNumber: '',
+    pagibigNumber: '',
+    tinNumber: '',
+  } as Employee,
+});
+
+const upsertPortalAccountToSupabase = async (account: EmployeePortalAccount): Promise<void> => {
+  try {
+    const { error } = await (supabase as any)
+      .from('employee_portal_accounts')
+      .upsert(
+        [
+          {
+            id: account.id,
+            username: account.username,
+            password: account.password,
+            employee_id: account.employee?.employeeId ?? null,
+            full_name: account.employee?.fullName ?? null,
+            email: account.employee?.email ?? null,
+            mobile_number: account.employee?.mobileNumber ?? null,
+            updated_at: account.updatedAt,
+          },
+        ],
+        { onConflict: 'id' },
+      );
+    if (error) {
+      console.error('[employeePortalData] Supabase upsert failed:', error);
+    }
+  } catch (err) {
+    console.error('[employeePortalData] Supabase upsert threw:', err);
+  }
+};
+
+// Async lookup against Supabase — the durable source of truth so credentials
+// generated on an RSP browser can be used by the employee on any browser.
+export const findEmployeePortalAccountFromSupabase = async (
+  username: string,
+  password?: string,
+): Promise<EmployeePortalAccount | null> => {
+  const usernameKey = String(username ?? '').trim().toLowerCase();
+  if (!usernameKey) return null;
+
+  try {
+    const { data, error } = await (supabase as any)
+      .from('employee_portal_accounts')
+      .select('*')
+      .ilike('username', usernameKey);
+    if (error) {
+      console.error('[employeePortalData] Supabase find failed:', error);
+      return null;
+    }
+    const rows = Array.isArray(data) ? (data as PortalAccountRow[]) : [];
+    const matched = rows.find((row) => String(row.username ?? '').trim().toLowerCase() === usernameKey);
+    if (!matched) return null;
+    if (typeof password === 'string' && matched.password !== password) return null;
+    return portalAccountFromRow(matched);
+  } catch (err) {
+    console.error('[employeePortalData] Supabase find threw:', err);
+    return null;
+  }
+};
 
 const DEMO_ACCOUNT: EmployeePortalAccount = {
   id: 'employee-account-demo-employee01',
@@ -91,23 +189,30 @@ export const upsertEmployeePortalAccount = (
   const usernameKey = normalizeUsername(nextAccount.username);
   const index = accounts.findIndex((account) => normalizeUsername(account.username) === usernameKey);
 
+  let upserted: EmployeePortalAccount;
   if (index >= 0) {
     const existing = accounts[index];
-    accounts[index] = {
+    upserted = {
       ...existing,
       ...nextAccount,
       createdAt: existing.createdAt || nowIso,
       updatedAt: nowIso,
     };
+    accounts[index] = upserted;
   } else {
-    accounts.push({
+    upserted = {
       ...nextAccount,
       createdAt: nowIso,
       updatedAt: nowIso,
-    });
+    };
+    accounts.push(upserted);
   }
 
   saveEmployeePortalAccounts(accounts);
+
+  // Mirror to Supabase so the employee can log in from any browser, not
+  // just the RSP admin's browser where this was originally generated.
+  void upsertPortalAccountToSupabase(upserted);
 };
 
 export const findEmployeePortalAccount = (username: string, password?: string) => {

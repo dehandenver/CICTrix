@@ -1,10 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, FileText, ChevronRight, Users } from 'lucide-react';
-import { supabase as supabaseClient } from '../../lib/supabase';
-
-// Bypass auto-generated Supabase types resolving to `never`. Same escape hatch
-// used elsewhere in the codebase.
-const supabase = supabaseClient as any;
+import { getAllEmployees } from '../../lib/api/employees';
 import EmployeeListByPosition from './components/EmployeeListByPosition';
 import EmployeeDetailPage from './components/EmployeeDetailPage';
 
@@ -48,86 +44,60 @@ export default function EmployeeDirectory() {
     try {
       setLoading(true);
       
-      // For now, fetch only from hired applicants table (employees table doesn't exist yet)
-      const { data: hiredApplicantsData, error: hireError } = await supabase
-        .from('applicants')
-        .select('position, office')
-        .eq('status', 'Hired');
+      const { success, data, error } = await getAllEmployees({ status: 'Active' });
 
-      console.log('🔍 Fetching hired applicants...');
-      console.log('Hired applicants data:', hiredApplicantsData);
-      console.log('Error:', hireError);
-
-      if (hireError) throw hireError;
+      if (!success) throw error;
 
       // Group hired applicants by position
       const positionMap = new Map<string, Position>();
       
-      (hiredApplicantsData || []).forEach((app) => {
-        const key = `${app.position}-${app.office}`;
+      (data || []).forEach((emp: any) => {
+        const position = emp.current_position || 'Unassigned Position';
+        const office = emp.department || emp.current_department || 'Unassigned Office';
+        const key = `${position}-${office}`;
         if (!positionMap.has(key)) {
           positionMap.set(key, {
             id: key,
-            name: app.position,
-            department: app.office,
+            name: position,
+            department: office,
             employee_count: 0,
+            employees: []
           });
         }
         const pos = positionMap.get(key)!;
         pos.employee_count += 1;
+        pos.employees!.push({
+          id: emp.id,
+          employee_id: emp.employee_id || 'N/A',
+          full_name: emp.full_name || 'Unnamed',
+          current_position: position,
+          department: office,
+          status: emp.status || 'Active',
+          email: emp.email || '',
+          mobile_number: emp.mobile_number || '',
+          hire_date: emp.hire_date || '',
+          photo_url: emp.photo_url || ''
+        });
       });
 
       const posArray = Array.from(positionMap.values()).sort((a, b) =>
         a.name.localeCompare(b.name)
       );
 
-      console.log('📊 Positions found:', posArray);
       setPositions(posArray);
     } catch (error) {
-      console.error('❌ Error fetching positions:', error);
+      console.error('Error fetching positions:', error);
     } finally {
       setLoading(false);
     }
   };
 
+
   const handlePositionClick = async (position: Position) => {
-    try {
-      // Fetch hired applicants for this position
-      const { data: hiredApplicants, error: appError } = await supabase
-        .from('applicants')
-        .select('id, first_name, last_name, email, contact_number, position, office, status, created_at')
-        .eq('status', 'Hired')
-        .eq('position', position.name)
-        .eq('office', position.department);
-
-      console.log('📋 Fetching position details:', position.name);
-      console.log('Hired applicants:', hiredApplicants);
-      console.log('Error:', appError);
-
-      if (appError) throw appError;
-
-      // Transform hired applicants to match Employee type
-      const transformedApplicants: Employee[] = (hiredApplicants || []).map((app) => ({
-        id: `applicant-${app.id}`,
-        employee_id: `NEW-${app.id.substring(0, 8).toUpperCase()}`,
-        full_name: `${app.first_name ?? ''} ${app.last_name ?? ''}`.trim(),
-        current_position: app.position,
-        department: app.office,
-        status: 'Pending Onboarding',
-        email: app.email,
-        mobile_number: app.contact_number,
-        hire_date: app.created_at,
-      }));
-
-      setSelectedPosition({
-        ...position,
-        employees: transformedApplicants,
-      });
-      setViewMode('position-list');
-    } catch (error) {
-      console.error('❌ Error fetching employees:', error);
-    }
+    setSelectedPosition(position);
+    setViewMode('position-list');
   };
+
 
   const handleEmployeeClick = (employee: Employee) => {
     setSelectedEmployee(employee);

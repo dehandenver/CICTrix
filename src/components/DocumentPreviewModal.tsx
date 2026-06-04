@@ -10,6 +10,8 @@ interface DocumentPreviewModalProps {
   title?: string;
   subtitle?: string;
   onClose: () => void;
+  /** Optional extra controls rendered next to the Download button (e.g. Approve/Reject). */
+  actions?: React.ReactNode;
 }
 
 const isImage = (fileName: string, fileType?: string | null): boolean => {
@@ -34,6 +36,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   title,
   subtitle,
   onClose,
+  actions,
 }) => {
   useEffect(() => {
     if (!open) return;
@@ -128,6 +131,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
             )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {actions}
             <button
               type="button"
               onClick={handleDownload}

@@ -43,15 +43,41 @@ import {
   X,
   XCircle
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '../../components/Button';
 import { Dialog } from '../../components/Dialog';
 import { Input } from '../../components/Input';
 import { LogoutConfirmPopover } from '../../components/LogoutConfirmPopover';
 import { Sidebar } from '../../components/Sidebar';
-import { supabase } from '../../lib/supabase';
+import {
+  computeSkillGapByDepartment,
+  getEmployeeCompetencies,
+} from '../../lib/api/competencies';
+import {
+  getDocumentRequests,
+  groupRequestsByDepartment,
+  summarizeRequests,
+  updateDocumentRequestStatus,
+  type DocumentRequest,
+} from '../../lib/api/documentRequests';
+import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
 import { getAllEmployees, type Employee } from '../../lib/api/employees';
+import { createDocumentRequest } from '../../lib/employeeDocuments';
+import {
+  bucketForScore,
+  getEvaluationStatusCounts,
+  getEvaluationsWithEmployee,
+  getPerformanceDistribution,
+  type DistributionBucket,
+  type EvaluationStatus,
+  type PerformanceEvaluation,
+} from '../../lib/api/performanceEvaluations';
+import { supabase } from '../../lib/supabase';
 import '../../styles/admin.css';
+
+type EmployeeOption = { id: string; name: string; position: string; department: string };
+
+import EmployeeDirectory from './EmployeeDirectory';
 import { SummaryOfRatings } from './pm/SummaryOfRatings';
 
 type EvaluationEmployeeRow = { name: string; position: string; status: string };
@@ -63,6 +89,7 @@ type EvaluationGroup = {
   review: number;
   self: number;
   planning: number;
+  rejected: number;
   employees: EvaluationEmployeeRow[];
 };
 
@@ -94,7 +121,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<
-    'dashboard' | 'evaluation-status' | 'performance-reviews' | 'goals' | 'ipcr' | 'analytics' | 'reports' | 'settings'
+    'dashboard' | 'employees' | 'evaluation-status' | 'performance-reviews' | 'goals' | 'ipcr' | 'analytics' | 'reports' | 'settings'
   >('dashboard');
   const [newCycle, setNewCycle] = useState<{
     title: string;
@@ -110,8 +137,9 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
   // Request Document modal state (individual employee requests)
   const [showRequestModal, setShowRequestModal] = useState(false);
-  const [requestEmployee, setRequestEmployee] = useState<{ name: string; role: string; dept: string; initials: string } | null>(null);
+  const [requestEmployee, setRequestEmployee] = useState<{ id?: string; name: string; role: string; dept: string; initials: string } | null>(null);
   const [requestDocType, setRequestDocType] = useState('');
+  const [requestDescription, setRequestDescription] = useState('');
   const [requestDueDate, setRequestDueDate] = useState('');
 
   const documentTypes = [
@@ -123,9 +151,10 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     'Updated Resume/CV',
   ];
 
-  const openRequestModal = (employee?: { name: string; role: string; dept: string; initials: string }) => {
+  const openRequestModal = (employee?: { id?: string; name: string; role: string; dept: string; initials: string }) => {
     setRequestEmployee(employee || null);
     setRequestDocType('');
+    setRequestDescription('');
     setRequestDueDate('');
     setShowRequestModal(true);
   };
@@ -134,16 +163,33 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     setShowRequestModal(false);
     setRequestEmployee(null);
     setRequestDocType('');
+    setRequestDescription('');
     setRequestDueDate('');
   };
 
-  const handleSendRequest = () => {
+  const handleSendRequest = async () => {
     if (!requestDocType || !requestDueDate) {
       alert('Please select a document type and due date.');
       return;
     }
-    // TODO: integrate with Supabase to persist the request
-    alert(`Request sent for "${requestDocType}" due ${requestDueDate}${requestEmployee ? ` to ${requestEmployee.name}` : ''}.`);
+    if (!requestEmployee?.id) {
+      alert('Cannot send request: Employee ID is missing.');
+      return;
+    }
+    const res = await createDocumentRequest({
+      employeeId: requestEmployee.id,
+      documentName: requestDocType,
+      description: requestDescription || `Please submit your ${requestDocType}`,
+      dueDate: requestDueDate,
+      requestedBy: 'PM Admin',
+      source: 'PM'
+    });
+    if (!res.success) {
+      alert(`Failed to send request: ${(res as any).error}`);
+      return;
+    }
+    window.dispatchEvent(new CustomEvent('EMPLOYEE_DOCUMENTS_UPDATED'));
+    alert(`Request sent for "${requestDocType}" due ${requestDueDate}${requestEmployee.name ? ` to ${requestEmployee.name}` : ''}.`);
     closeRequestModal();
   };
 
@@ -155,7 +201,56 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const [bulkCalendarMonth, setBulkCalendarMonth] = useState(new Date().getMonth());
   const [bulkCalendarYear, setBulkCalendarYear] = useState(new Date().getFullYear());
   const [bulkSendTo, setBulkSendTo] = useState<'all' | 'department' | 'selected'>('all');
-  const totalEmployees = 24;
+  const [activeEmployees, setActiveEmployees] = useState<EmployeeOption[]>([]);
+  const [bulkSelectedDepartment, setBulkSelectedDepartment] = useState<string>('');
+  const [bulkSelectedEmployees, setBulkSelectedEmployees] = useState<string[]>([]);
+  const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await (supabase as any)
+        .from('employees_with_department')
+        .select('id, full_name, current_position, department, status')
+        .eq('status', 'Active')
+        .order('full_name', { ascending: true });
+      if (cancelled) return;
+      if (error) {
+        console.error('Error loading employees for document request modal:', error);
+        setActiveEmployees([]);
+        return;
+      }
+      const mapped: EmployeeOption[] = (data ?? []).map((row: any) => {
+        const name = (row.full_name ?? '').trim() || 'Unnamed Employee';
+        return {
+          id: row.id,
+          name,
+          position: row.current_position ?? '—',
+          department: row.department ?? '—',
+        };
+      });
+      setActiveEmployees(mapped);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const filteredBulkEmployees = useMemo(() => {
+    const term = employeeSearchTerm.trim().toLowerCase();
+    if (!term) return activeEmployees;
+    return activeEmployees.filter((emp) =>
+      emp.name.toLowerCase().includes(term) ||
+      emp.position.toLowerCase().includes(term) ||
+      emp.department.toLowerCase().includes(term)
+    );
+  }, [activeEmployees, employeeSearchTerm]);
+
+  const toggleBulkEmployee = (id: string) => {
+    setBulkSelectedEmployees((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const totalEmployees = activeEmployees.length;
 
   const openBulkRequestModal = () => {
     setBulkDocName('');
@@ -164,20 +259,68 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     setBulkSendTo('all');
     setBulkCalendarMonth(new Date().getMonth());
     setBulkCalendarYear(new Date().getFullYear());
+    setBulkSelectedEmployees([]);
+    setEmployeeSearchTerm('');
     setShowBulkRequestModal(true);
   };
 
   const closeBulkRequestModal = () => {
     setShowBulkRequestModal(false);
+    setBulkSelectedEmployees([]);
+    setEmployeeSearchTerm('');
   };
 
-  const handleBulkSendRequest = () => {
+  const handleBulkSendRequest = async () => {
     if (!bulkDocName || !bulkDescription || !bulkDueDate) {
       alert('Please fill in all required fields.');
       return;
     }
-    // TODO: integrate with Supabase to persist the bulk request
-    alert(`Bulk request for "${bulkDocName}" sent to ${totalEmployees} employees, due ${bulkDueDate.toLocaleDateString()}.`);
+    
+    let targetEmployees: string[] = [];
+    if (bulkSendTo === 'all') {
+      targetEmployees = activeEmployees.map((e) => e.id);
+    } else if (bulkSendTo === 'department') {
+      if (!bulkSelectedDepartment) {
+        alert('Please select a department.');
+        return;
+      }
+      targetEmployees = activeEmployees.filter((e) => e.department === bulkSelectedDepartment).map((e) => e.id);
+    } else if (bulkSendTo === 'selected') {
+      targetEmployees = bulkSelectedEmployees;
+      if (targetEmployees.length === 0) {
+        alert('Please select at least one employee.');
+        return;
+      }
+    }
+
+    if (targetEmployees.length === 0) {
+      alert('No employees match the selected criteria.');
+      return;
+    }
+
+    const dueDateStr = bulkDueDate.toISOString().split('T')[0];
+    
+    const results = await Promise.all(
+      targetEmployees.map((id) =>
+        createDocumentRequest({
+          employeeId: id,
+          documentName: bulkDocName,
+          description: bulkDescription,
+          dueDate: dueDateStr,
+          requestedBy: 'PM Admin',
+          source: 'PM'
+        })
+      )
+    );
+
+    const errors = results.filter((r) => !r.success);
+    if (errors.length > 0) {
+      console.error(errors);
+      alert(`Failed to send ${errors.length} requests. Check console for details.`);
+    }
+
+    window.dispatchEvent(new CustomEvent('EMPLOYEE_DOCUMENTS_UPDATED'));
+    alert(`Bulk request for "${bulkDocName}" sent to ${targetEmployees.length - errors.length} employees, due ${bulkDueDate.toLocaleDateString()}.`);
     closeBulkRequestModal();
   };
 
@@ -221,14 +364,107 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const [reviewPage, setReviewPage] = useState(1);
   const [reviewRowsPerPage, setReviewRowsPerPage] = useState(20);
 
-  const reviewsData: any[] = [];
-  const reviewTotalPages = Math.ceil(reviewsData.length / reviewRowsPerPage);
+  // ── Live PM data ─────────────────────────────────────────────────────────
+  // Per Phase 2 of the data-migration plan: every dashboard widget reads from
+  // these state slots; per-section useEffects below populate them. No mock
+  // fallbacks — empty arrays render the "No data" empty state in each widget.
+  const [evaluations, setEvaluations] = useState<PerformanceEvaluation[]>([]);
+  const [evaluationsLoading, setEvaluationsLoading] = useState(false);
+  const [statusCounts, setStatusCounts] = useState<Record<EvaluationStatus, number>>({
+    'Planning': 0,
+    'Self Evaluation': 0,
+    'Supervisor Review': 0,
+    'Approved': 0,
+    'Rejected': 0,
+  });
+  const [evaluationTotal, setEvaluationTotal] = useState(0);
+  const [performanceDistribution, setPerformanceDistribution] = useState<Record<DistributionBucket, number>>({
+    'Outstanding': 0,
+    'Very Satisfactory': 0,
+    'Satisfactory': 0,
+    'Unsatisfactory': 0,
+    'Poor': 0,
+  });
+  const [distributionEvaluated, setDistributionEvaluated] = useState(0);
+  const [skillGaps, setSkillGaps] = useState<Array<{ dept: string; value: number }>>([]);
+  const [retirements, setRetirements] = useState<Array<{ name: string; role: string; date: string; monthsAway: number }>>([]);
+  const [documentRequests, setDocumentRequests] = useState<DocumentRequest[]>([]);
+  const [documentRequestsLoading, setDocumentRequestsLoading] = useState(false);
+  const [reviewingRequest, setReviewingRequest] = useState<DocumentRequest | null>(null);
+  const [reviewDecisionPending, setReviewDecisionPending] = useState<'Approved' | 'Rejected' | null>(null);
+
+  const refreshDocumentRequests = async () => {
+    const result = await getDocumentRequests({ source: 'PM' });
+    if (result.success) setDocumentRequests(result.data);
+  };
+
+  const handleReviewDecision = async (status: 'Approved' | 'Rejected') => {
+    if (!reviewingRequest) return;
+    setReviewDecisionPending(status);
+    const result = await updateDocumentRequestStatus(reviewingRequest.id, status);
+    setReviewDecisionPending(null);
+    if (!result.success) {
+      alert((result as any).error);
+      return;
+    }
+    setReviewingRequest(null);
+    await refreshDocumentRequests();
+  };
+
+  const reviewsData = evaluations.filter(e => e.status === 'Approved');
+  const reviewTotalPages = Math.max(1, Math.ceil(reviewsData.length / reviewRowsPerPage));
   const reviewStartIdx = (reviewPage - 1) * reviewRowsPerPage;
   const reviewPageData = reviewsData.slice(reviewStartIdx, reviewStartIdx + reviewRowsPerPage);
 
+  // Action-required queue: pending document requests + evaluations awaiting review.
+  const actionRequiredQueue = (() => {
+    const items: Array<{ name: string; dept: string; type: string; typeColor: string }> = [];
+    for (const e of evaluations) {
+      if (e.status === 'Supervisor Review' || e.status === 'Self Evaluation') {
+        items.push({
+          name: e.employee_name ?? 'Unknown',
+          dept: e.department ?? 'Unassigned',
+          type: e.status === 'Supervisor Review' ? 'IPCR Validation' : 'Self Evaluation',
+          typeColor: 'bg-emerald-100 text-emerald-700',
+        });
+      }
+    }
+    for (const d of documentRequests) {
+      if (d.status === 'Pending' || d.status === 'Submitted') {
+        items.push({
+          name: d.employee_name ?? 'Unknown',
+          dept: d.department ?? 'Unassigned',
+          type: d.document_type,
+          typeColor: 'bg-slate-100 text-slate-600',
+        });
+      }
+    }
+    return items;
+  })();
+
+  // Recent IPCR submissions for the dashboard table (most recent first, top 6).
+  const recentIPCRs = evaluations
+    .filter(e => e.final_score !== null || e.status === 'Approved' || e.status === 'Supervisor Review')
+    .slice(0, 6)
+    .map(e => ({
+      name: e.employee_name ?? 'Unknown',
+      position: e.employee_position ?? '—',
+      dept: e.department ?? 'Unassigned',
+      period: e.period ?? '—',
+      rating: e.final_score !== null ? e.final_score.toFixed(2) : '—',
+      status: e.status === 'Approved'
+        ? 'Approved'
+        : e.status === 'Supervisor Review'
+        ? 'Under Review'
+        : 'Submitted',
+      statusColor: e.status === 'Approved'
+        ? 'bg-emerald-100 text-emerald-700'
+        : e.status === 'Supervisor Review'
+        ? 'bg-orange-100 text-orange-700'
+        : 'bg-blue-100 text-blue-700',
+    }));
+
   // Department-grouped employees from the central employees table.
-  // When empty (live DB has no employees yet), the UI falls back to the
-  // hardcoded demo array inlined in the evaluation-status section.
   const [dbEvaluationGroups, setDbEvaluationGroups] = useState<EvaluationGroup[]>([]);
 
   useEffect(() => {
@@ -239,25 +475,34 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     calculateStats();
   }, [cycles]);
 
+  // Group active employees by department + merge live evaluation status per row.
+  // Replaces the prior "default everyone to Planning" behavior.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const result = await getAllEmployees({ status: 'Active' });
+      const [empResult, evalResult] = await Promise.all([
+        getAllEmployees({ status: 'Active' }),
+        getEvaluationsWithEmployee(),
+      ]);
       if (cancelled) return;
-      if (!result.success || !Array.isArray(result.data) || result.data.length === 0) {
+      if (!empResult.success || !Array.isArray(empResult.data) || empResult.data.length === 0) {
         setDbEvaluationGroups([]);
         return;
       }
 
-      // Group active employees by department; per-cycle review status is not
-      // tracked on the employees table, so each row defaults to 'Planning'.
+      const statusByEmployee = new Map<string, EvaluationStatus>();
+      for (const ev of evalResult.data) {
+        if (ev.employee_id) statusByEmployee.set(ev.employee_id, ev.status);
+      }
+
       const groupsByDept = new Map<string, EvaluationEmployeeRow[]>();
-      for (const emp of result.data as Employee[]) {
+      for (const emp of empResult.data as Employee[]) {
         const dept = emp.department ?? emp.current_department ?? 'Unassigned Department';
+        const liveStatus = statusByEmployee.get(emp.id) ?? 'Planning';
         const row: EvaluationEmployeeRow = {
           name: emp.full_name ?? 'Unnamed',
           position: emp.current_position ?? 'Unassigned Position',
-          status: 'Planning',
+          status: liveStatus,
         };
         const existing = groupsByDept.get(dept);
         if (existing) existing.push(row);
@@ -265,16 +510,25 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
       }
 
       const groups: EvaluationGroup[] = Array.from(groupsByDept.entries())
-        .map(([dept, employees]) => ({
-          dept,
-          count: employees.length,
-          pct: 0,
-          approved: 0,
-          review: 0,
-          self: 0,
-          planning: employees.length,
-          employees,
-        }))
+        .map(([dept, employees]) => {
+          const approved = employees.filter(e => e.status === 'Approved').length;
+          const review = employees.filter(e => e.status === 'Supervisor Review').length;
+          const self = employees.filter(e => e.status === 'Self Evaluation').length;
+          const planning = employees.filter(e => e.status === 'Planning').length;
+          const rejected = employees.filter(e => e.status === 'Rejected').length;
+          const count = employees.length;
+          return {
+            dept,
+            count,
+            pct: count === 0 ? 0 : Math.round((approved / count) * 100),
+            approved,
+            review,
+            self,
+            planning,
+            rejected,
+            employees,
+          };
+        })
         .sort((a, b) => a.dept.localeCompare(b.dept));
 
       setDbEvaluationGroups(groups);
@@ -282,7 +536,103 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [evaluations]);
+
+  // ── Per-section data fetches ───────────────────────────────────────────────
+  // Fetched once on mount because most widgets (Action Queue, Distribution,
+  // IPCR Submissions, Reviews, Status Counts) all read from the evaluations
+  // slice. activeCycleId scopes to the current cycle when one exists.
+  const activeCycleId = cycles.find(c => c.status === 'Active')?.id;
+
+  // Evaluations + derived status counts + distribution.
+  useEffect(() => {
+    if (activeSection !== 'dashboard' && activeSection !== 'evaluation-status'
+        && activeSection !== 'performance-reviews' && activeSection !== 'goals') {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setEvaluationsLoading(true);
+      const [evalResult, countsResult, distResult] = await Promise.all([
+        getEvaluationsWithEmployee(activeCycleId !== undefined ? { cycleId: activeCycleId } : undefined),
+        getEvaluationStatusCounts(activeCycleId),
+        getPerformanceDistribution(activeCycleId),
+      ]);
+      if (cancelled) return;
+      setEvaluations(evalResult.data);
+      setStatusCounts(countsResult.counts);
+      setEvaluationTotal(countsResult.total);
+      setPerformanceDistribution(distResult.distribution);
+      setDistributionEvaluated(distResult.evaluated);
+      setEvaluationsLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [activeSection, activeCycleId]);
+
+  // Document requests (Action Queue on dashboard + Documents/Reports section).
+  useEffect(() => {
+    if (activeSection !== 'dashboard' && activeSection !== 'reports') return;
+    let cancelled = false;
+    (async () => {
+      setDocumentRequestsLoading(true);
+      const result = await getDocumentRequests({ source: 'PM' });
+      if (cancelled) return;
+      setDocumentRequests(result.data);
+      setDocumentRequestsLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [activeSection]);
+
+  // Competency / skill-gap data + upcoming retirements (dashboard only).
+  useEffect(() => {
+    if (activeSection !== 'dashboard') return;
+    let cancelled = false;
+    (async () => {
+      const compResult = await getEmployeeCompetencies();
+      if (cancelled) return;
+      setSkillGaps(computeSkillGapByDepartment(compResult.data));
+    })();
+    return () => { cancelled = true; };
+  }, [activeSection]);
+
+  // Upcoming retirements: employees turning 65 within the next 12 months.
+  useEffect(() => {
+    if (activeSection !== 'dashboard') return;
+    let cancelled = false;
+    (async () => {
+      const result = await getAllEmployees({ status: 'Active' });
+      if (cancelled) return;
+      if (!result.success || !Array.isArray(result.data)) {
+        setRetirements([]);
+        return;
+      }
+      const today = new Date();
+      const horizon = new Date(today);
+      horizon.setMonth(horizon.getMonth() + 12);
+
+      const rows: Array<{ name: string; role: string; date: string; monthsAway: number }> = [];
+      for (const emp of result.data as Employee[]) {
+        const dob = (emp as any).date_of_birth as string | null | undefined;
+        if (!dob) continue;
+        const birth = new Date(dob);
+        if (Number.isNaN(birth.getTime())) continue;
+        const retirementDate = new Date(birth);
+        retirementDate.setFullYear(retirementDate.getFullYear() + 65);
+        if (retirementDate >= today && retirementDate <= horizon) {
+          const monthsAway = Math.max(0, Math.round((retirementDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24 * 30.4)));
+          rows.push({
+            name: emp.full_name ?? 'Unnamed',
+            role: emp.current_position ?? '—',
+            date: retirementDate.toLocaleString('default', { month: 'short', year: 'numeric' }),
+            monthsAway,
+          });
+        }
+      }
+      rows.sort((a, b) => a.monthsAway - b.monthsAway);
+      setRetirements(rows);
+    })();
+    return () => { cancelled = true; };
+  }, [activeSection]);
 
   const fetchCycles = async () => {
     setLoading(true);
@@ -380,6 +730,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   if (isDashboardView) {
     const sideNavItems = [
       { key: 'dashboard', label: 'Dashboard', subtitle: '', icon: LayoutDashboard },
+      { key: 'employees', label: 'Employees', subtitle: 'Employee Directory', icon: Users },
       { key: 'evaluation-status', label: 'Employee Evaluation Status', subtitle: 'Track progress', icon: ClipboardList },
       { key: 'performance-reviews', label: 'Performance Reviews', subtitle: 'Upcoming reviews', icon: CalendarCheck2 },
       { key: 'goals', label: 'DPCR', subtitle: 'Individual performance', icon: FileCheck2 },
@@ -394,9 +745,9 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
         <header className="sticky top-0 z-40 border-b border-slate-200 bg-white shadow-sm print:hidden">
           <div className="flex items-center justify-between px-6 py-3">
             <div className="flex items-center gap-4">
-              <div className="h-10 w-10 rounded-xl bg-blue-600 text-white grid place-content-center text-lg font-bold">HR</div>
+              <div className="h-10 w-10 rounded-xl bg-[#363EE8] text-white grid place-content-center text-lg font-bold">AB</div>
               <div>
-                <h1 className="text-lg font-bold leading-none">Government HRIS</h1>
+                <h1 className="text-lg font-bold leading-none">Abyan HRIS</h1>
                 <p className="text-xs text-slate-500">Human Resource Information System</p>
               </div>
             </div>
@@ -471,20 +822,22 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
                 {/* ── KPI Cards Row ── */}
                 <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm relative overflow-hidden">
+                    {evaluationsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
                     <div className="flex items-center gap-2 mb-1">
                       <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                       <p className="text-xs font-medium text-slate-500">Completed Evaluations</p>
                     </div>
-                    <p className="text-3xl font-extrabold text-slate-900 leading-none">142</p>
+                    <p className="text-3xl font-extrabold text-slate-900 leading-none">{statusCounts.Approved}</p>
                     <p className="text-xs text-slate-400 mt-1">FY 2025 total</p>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm relative overflow-hidden">
+                    {evaluationsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
                     <div className="flex items-center gap-2 mb-1">
                       <AlertCircle className="h-4 w-4 text-red-500" />
                       <p className="text-xs font-medium text-slate-500">Pending IPCR Reviews</p>
                     </div>
-                    <p className="text-3xl font-extrabold text-orange-500 leading-none">24</p>
+                    <p className="text-3xl font-extrabold text-orange-500 leading-none">{statusCounts['Supervisor Review']}</p>
                     <p className="text-xs text-slate-400 mt-1">Awaiting validation</p>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
@@ -513,7 +866,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                       <div className="flex items-center gap-2.5">
                         <span className="inline-block h-2.5 w-2.5 rounded-full bg-orange-400" />
                         <h3 className="text-sm font-bold text-slate-800">Action Required Queue</h3>
-                        <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">4 pending</span>
+                        <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">{actionRequiredQueue.length} pending</span>
                       </div>
                       <button type="button" className="text-xs font-medium text-blue-600 hover:underline">View all</button>
                     </header>
@@ -524,83 +877,98 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                       <div className="col-span-3">Request Type</div>
                       <div className="col-span-3 text-right">Action</div>
                     </div>
-                    <div className="divide-y divide-slate-100">
-                      {[
-                        { name: 'Elena Mercado', dept: 'Finance', type: 'IPCR Validation', typeColor: 'bg-emerald-100 text-emerald-700' },
-                        { name: 'Jose Reyes', dept: 'IT Department', type: 'Performance Evaluation', typeColor: 'bg-emerald-100 text-emerald-700' },
-                        { name: 'Carmen Diaz', dept: 'IT Department', type: 'IPCR Validation', typeColor: 'bg-emerald-100 text-emerald-700' },
-                        { name: 'Ricardo Lim', dept: 'Finance', type: 'Rating Dispute', typeColor: 'bg-slate-100 text-slate-600' },
-                      ].map((row) => (
-                        <div key={row.name} className="grid grid-cols-12 items-center gap-2 px-5 py-3.5 text-sm hover:bg-slate-50/60 transition">
-                          <div className="col-span-3 font-semibold text-slate-800">{row.name}</div>
-                          <div className="col-span-3 text-slate-500">{row.dept}</div>
-                          <div className="col-span-3">
-                            <span className={`inline-block rounded-full px-3 py-0.5 text-xs font-semibold ${row.typeColor}`}>{row.type}</span>
-                          </div>
-                          <div className="col-span-3 text-right">
-                            <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition">
-                              Review <span className="text-slate-400">&gt;</span>
-                            </button>
-                          </div>
+                    <div className="divide-y divide-slate-100 relative min-h-[60px]">
+                      {evaluationsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
+                      {actionRequiredQueue.length === 0 && !evaluationsLoading ? (
+                        <div className="py-8 text-center text-slate-500 text-sm italic">
+                          No pending actions
                         </div>
-                      ))}
+                      ) : (
+                        actionRequiredQueue.map((row, idx) => (
+                          <div key={`${row.name}-${idx}`} className="grid grid-cols-12 items-center gap-2 px-5 py-3.5 text-sm hover:bg-slate-50/60 transition">
+                            <div className="col-span-3 font-semibold text-slate-800">{row.name}</div>
+                            <div className="col-span-3 text-slate-500">{row.dept}</div>
+                            <div className="col-span-3">
+                              <span className={`inline-block rounded-full px-3 py-0.5 text-xs font-semibold ${row.typeColor}`}>{row.type}</span>
+                            </div>
+                            <div className="col-span-3 text-right">
+                              <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition">
+                                Review <span className="text-slate-400">&gt;</span>
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </section>
 
                   {/* Right – Performance Distribution Donut (40%) */}
-                  <section className="xl:col-span-2 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <section className="xl:col-span-2 rounded-xl border border-slate-200 bg-white p-5 shadow-sm relative overflow-hidden">
+                    {evaluationsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center gap-2">
                         <TrendingUp className="h-4 w-4 text-slate-500" />
                         <h3 className="text-sm font-bold text-slate-800">Performance Distribution</h3>
                       </div>
-                      <span className="text-xs text-slate-400">Q3 2025</span>
+                      <span className="text-xs text-slate-400">Current</span>
                     </div>
-                    <div className="flex flex-col items-center">
-                      {/* SVG Donut Chart – 5 segments: 70+76+30+7+2 = 185, circumference=289 */}
-                      <svg viewBox="0 0 120 120" className="w-44 h-44">
-                        {/* Outstanding green: 70/185 = 37.8% → 109 */}
-                        <circle cx="60" cy="60" r="46" fill="none" stroke="#22c55e" strokeWidth="18"
-                          strokeDasharray="109 289" strokeDashoffset="0"
-                          transform="rotate(-90 60 60)" />
-                        {/* Very Satisfactory blue: 76/185 = 41.1% → 119 */}
-                        <circle cx="60" cy="60" r="46" fill="none" stroke="#3b82f6" strokeWidth="18"
-                          strokeDasharray="119 289" strokeDashoffset="-109"
-                          transform="rotate(-90 60 60)" />
-                        {/* Satisfactory yellow: 30/185 = 16.2% → 47 */}
-                        <circle cx="60" cy="60" r="46" fill="none" stroke="#eab308" strokeWidth="18"
-                          strokeDasharray="47 289" strokeDashoffset="-228"
-                          transform="rotate(-90 60 60)" />
-                        {/* Unsatisfactory orange: 7/185 = 3.8% → 11 */}
-                        <circle cx="60" cy="60" r="46" fill="none" stroke="#f97316" strokeWidth="18"
-                          strokeDasharray="11 289" strokeDashoffset="-275"
-                          transform="rotate(-90 60 60)" />
-                        {/* Poor red: 2/185 = 1.1% → 3 */}
-                        <circle cx="60" cy="60" r="46" fill="none" stroke="#ef4444" strokeWidth="18"
-                          strokeDasharray="3 289" strokeDashoffset="-286"
-                          transform="rotate(-90 60 60)" />
-                        <text x="60" y="56" textAnchor="middle" fill="#1e293b" fontSize="22" fontWeight="700">185</text>
-                        <text x="60" y="72" textAnchor="middle" fill="#94a3b8" fontSize="9" fontWeight="500">Evaluated</text>
-                      </svg>
-                      {/* Legend */}
-                      <div className="mt-4 w-full space-y-1.5">
-                        {[
-                          { label: 'Outstanding', value: 70, color: '#22c55e' },
-                          { label: 'Very Satisfactory', value: 76, color: '#3b82f6' },
-                          { label: 'Satisfactory', value: 30, color: '#eab308' },
-                          { label: 'Unsatisfactory', value: 7, color: '#f97316' },
-                          { label: 'Poor', value: 2, color: '#ef4444' },
-                        ].map((item) => (
-                          <div key={item.label} className="flex items-center justify-between text-xs">
-                            <div className="flex items-center gap-2">
-                              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                              <span className="text-slate-600">{item.label}</span>
-                            </div>
-                            <span className="font-semibold text-slate-800">{item.value}</span>
+                    {(() => {
+                      const total = distributionEvaluated;
+                      const circ = 289;
+                      const oPct = total > 0 ? (performanceDistribution['Outstanding'] / total) * circ : 0;
+                      const vsPct = total > 0 ? (performanceDistribution['Very Satisfactory'] / total) * circ : 0;
+                      const sPct = total > 0 ? (performanceDistribution['Satisfactory'] / total) * circ : 0;
+                      const uPct = total > 0 ? (performanceDistribution['Unsatisfactory'] / total) * circ : 0;
+                      const pPct = total > 0 ? (performanceDistribution['Poor'] / total) * circ : 0;
+                      
+                      const oOff = 0;
+                      const vsOff = oOff - oPct;
+                      const sOff = vsOff - vsPct;
+                      const uOff = sOff - sPct;
+                      const pOff = uOff - uPct;
+
+                      return (
+                        <div className="flex flex-col items-center">
+                          <svg viewBox="0 0 120 120" className="w-44 h-44">
+                            <circle cx="60" cy="60" r="46" fill="none" stroke="#22c55e" strokeWidth="18"
+                              strokeDasharray={`${oPct} ${circ}`} strokeDashoffset={oOff}
+                              transform="rotate(-90 60 60)" />
+                            <circle cx="60" cy="60" r="46" fill="none" stroke="#3b82f6" strokeWidth="18"
+                              strokeDasharray={`${vsPct} ${circ}`} strokeDashoffset={vsOff}
+                              transform="rotate(-90 60 60)" />
+                            <circle cx="60" cy="60" r="46" fill="none" stroke="#eab308" strokeWidth="18"
+                              strokeDasharray={`${sPct} ${circ}`} strokeDashoffset={sOff}
+                              transform="rotate(-90 60 60)" />
+                            <circle cx="60" cy="60" r="46" fill="none" stroke="#f97316" strokeWidth="18"
+                              strokeDasharray={`${uPct} ${circ}`} strokeDashoffset={uOff}
+                              transform="rotate(-90 60 60)" />
+                            <circle cx="60" cy="60" r="46" fill="none" stroke="#ef4444" strokeWidth="18"
+                              strokeDasharray={`${pPct} ${circ}`} strokeDashoffset={pOff}
+                              transform="rotate(-90 60 60)" />
+                            {total === 0 && <circle cx="60" cy="60" r="46" fill="none" stroke="#f1f5f9" strokeWidth="18" />}
+                            <text x="60" y="56" textAnchor="middle" fill="#1e293b" fontSize="22" fontWeight="700">{total}</text>
+                            <text x="60" y="72" textAnchor="middle" fill="#94a3b8" fontSize="9" fontWeight="500">Evaluated</text>
+                          </svg>
+                          <div className="mt-4 w-full space-y-1.5">
+                            {[
+                              { label: 'Outstanding', value: performanceDistribution['Outstanding'], color: '#22c55e' },
+                              { label: 'Very Satisfactory', value: performanceDistribution['Very Satisfactory'], color: '#3b82f6' },
+                              { label: 'Satisfactory', value: performanceDistribution['Satisfactory'], color: '#eab308' },
+                              { label: 'Unsatisfactory', value: performanceDistribution['Unsatisfactory'], color: '#f97316' },
+                              { label: 'Poor', value: performanceDistribution['Poor'], color: '#ef4444' },
+                            ].map((item) => (
+                              <div key={item.label} className="flex items-center justify-between text-xs">
+                                <div className="flex items-center gap-2">
+                                  <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                                  <span className="text-slate-600">{item.label}</span>
+                                </div>
+                                <span className="font-semibold text-slate-800">{item.value}</span>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                    </div>
+                        </div>
+                      );
+                    })()}
                   </section>
                 </div>
 
@@ -617,39 +985,40 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                       <div>
                         <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Skill Gap Alerts by Department</p>
                         <div className="space-y-3">
-                          {[
-                            { dept: 'Finance', value: 72 },
-                            { dept: 'IT Dept', value: 58 },
-                            { dept: 'Admin', value: 45 },
-                            { dept: 'HR Dept', value: 38 },
-                            { dept: 'Engineering', value: 25 },
-                          ].map((d) => (
-                            <div key={d.dept} className="flex items-center gap-3 text-xs">
-                              <span className="w-20 text-slate-600 shrink-0">{d.dept}</span>
-                              <div className="flex-1 h-2.5 rounded-full bg-slate-100">
-                                <div className="h-2.5 rounded-full bg-blue-500" style={{ width: `${d.value}%` }} />
+                          {skillGaps.length === 0 ? (
+                            <p className="text-xs text-slate-400 italic">No skill gaps detected</p>
+                          ) : (
+                            skillGaps.map((d) => (
+                              <div key={d.dept} className="flex items-center gap-3 text-xs">
+                                <span className="w-20 text-slate-600 shrink-0">{d.dept}</span>
+                                <div className="flex-1 h-2.5 rounded-full bg-slate-100">
+                                  <div className="h-2.5 rounded-full bg-blue-500" style={{ width: `${d.value}%` }} />
+                                </div>
+                                <span className="w-8 text-right font-semibold text-slate-700">{d.value}%</span>
                               </div>
-                              <span className="w-8 text-right font-semibold text-slate-700">{d.value}%</span>
-                            </div>
-                          ))}
+                            ))
+                          )}
                         </div>
                       </div>
                       <div>
                         <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Upcoming Retirements (Next 12 Months)</p>
                         <div className="divide-y divide-slate-100">
-                          {[
-                            { name: 'Alfredo Santos', role: 'Director III', date: 'Aug 2025', dateColor: 'bg-orange-100 text-orange-700' },
-                            { name: 'Lourdes Castillo', role: 'Admin Officer V', date: 'Nov 2025', dateColor: 'bg-orange-100 text-orange-700' },
-                            { name: 'Eduardo Ramos', role: 'Senior Budget Analyst', date: 'Feb 2026', dateColor: 'bg-emerald-100 text-emerald-700' },
-                          ].map((r) => (
-                            <div key={r.name} className="flex items-center justify-between py-2.5 text-xs">
-                              <div>
-                                <p className="font-semibold text-slate-800">{r.name}</p>
-                                <p className="text-slate-400">{r.role}</p>
-                              </div>
-                              <span className={`rounded-full px-3 py-0.5 text-[11px] font-semibold ${r.dateColor}`}>{r.date}</span>
-                            </div>
-                          ))}
+                          {retirements.length === 0 ? (
+                            <p className="text-xs text-slate-400 italic py-2.5">No upcoming retirements</p>
+                          ) : (
+                            retirements.map((r) => {
+                              const dateColor = r.monthsAway <= 6 ? 'bg-orange-100 text-orange-700' : 'bg-emerald-100 text-emerald-700';
+                              return (
+                                <div key={r.name} className="flex items-center justify-between py-2.5 text-xs">
+                                  <div>
+                                    <p className="font-semibold text-slate-800">{r.name}</p>
+                                    <p className="text-slate-400">{r.role}</p>
+                                  </div>
+                                  <span className={`rounded-full px-3 py-0.5 text-[11px] font-semibold ${dateColor}`}>{r.date}</span>
+                                </div>
+                              );
+                            })
+                          )}
                         </div>
                       </div>
                     </div>
@@ -661,9 +1030,10 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                         <BookOpen className="h-4 w-4 text-slate-500" />
                         <h3 className="text-sm font-bold text-slate-800">IPCR Submissions</h3>
                       </div>
-                      <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">6 total</span>
+                      <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">{recentIPCRs.length} total</span>
                     </header>
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto relative min-h-[60px]">
+                      {evaluationsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
                       <table className="w-full text-xs">
                         <thead>
                           <tr className="bg-slate-50/80 text-left">
@@ -676,41 +1046,49 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {[
-                            { name: 'Maria Santos', position: 'IT Officer II', dept: 'IT Department', period: 'Q1 2025', rating: '4.66', status: 'Approved', statusColor: 'bg-emerald-100 text-emerald-700' },
-                            { name: 'Carlos Mendoza', position: 'Accountant II', dept: 'Finance', period: 'Q1 2025', rating: '4.50', status: 'Approved', statusColor: 'bg-emerald-100 text-emerald-700' },
-                            { name: 'Juan dela Cruz', position: 'HR Officer I', dept: 'HR Dept', period: 'Q2 2025', rating: '4.20', status: 'Under Review', statusColor: 'bg-orange-100 text-orange-700' },
-                            { name: 'Ana Reyes', position: 'Admin Officer III', dept: 'Admin', period: 'Q2 2025', rating: '3.80', status: 'Submitted', statusColor: 'bg-blue-100 text-blue-700' },
-                            { name: 'Roberto Cruz', position: 'Systems Analyst', dept: 'IT Department', period: 'Q1 2025', rating: '4.50', status: 'Approved', statusColor: 'bg-emerald-100 text-emerald-700' },
-                          ].map((row) => (
-                            <tr key={row.name + row.period} className="hover:bg-slate-50/60 transition">
-                              <td className="px-4 py-3">
-                                <p className="font-semibold text-slate-800">{row.name}</p>
-                                <p className="text-slate-400">{row.position}</p>
-                              </td>
-                              <td className="px-4 py-3 text-slate-500">{row.dept}</td>
-                              <td className="px-4 py-3 text-slate-500">{row.period}</td>
-                              <td className="px-4 py-3">
-                                <span className="inline-block rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">{row.rating}</span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${row.statusColor}`}>
-                                  {row.status}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 text-center">
-                                <button type="button" className="rounded-md p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition" title="View">
-                                  <Eye className="h-4 w-4" />
-                                </button>
-                              </td>
+                          {recentIPCRs.length === 0 && !evaluationsLoading ? (
+                            <tr>
+                              <td colSpan={6} className="py-8 text-center text-slate-500 italic">No submissions yet</td>
                             </tr>
-                          ))}
+                          ) : (
+                            recentIPCRs.map((row, idx) => (
+                              <tr key={`${row.name}-${idx}`} className="hover:bg-slate-50/60 transition">
+                                <td className="px-4 py-3">
+                                  <p className="font-semibold text-slate-800">{row.name}</p>
+                                  <p className="text-slate-400">{row.position}</p>
+                                </td>
+                                <td className="px-4 py-3 text-slate-500">{row.dept}</td>
+                                <td className="px-4 py-3 text-slate-500">{row.period}</td>
+                                <td className="px-4 py-3">
+                                  {row.rating !== '—' ? (
+                                    <span className="inline-block rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">{row.rating}</span>
+                                  ) : <span className="text-slate-400">—</span>}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${row.statusColor}`}>
+                                    {row.status}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-center">
+                                  <button type="button" className="rounded-md p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition" title="View">
+                                    <Eye className="h-4 w-4" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
                         </tbody>
                       </table>
                     </div>
                   </section>
                 </div>
               </>
+            )}
+
+            {activeSection === 'employees' && (
+              <div className="relative">
+                <EmployeeDirectory />
+              </div>
             )}
 
             {activeSection === 'evaluation-status' && (
@@ -726,40 +1104,46 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                 <p className="text-sm text-slate-500 mt-0.5">Track the complete progress of performance evaluations across your organization</p>
 
                 {/* 5 KPI Cards */}
-                <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+                <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 relative">
+                  {evaluationsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
                   <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
                     <p className="text-xs text-slate-500 mb-1">Overall Completion</p>
                     <div className="flex items-center gap-2.5">
                       <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-blue-100"><BarChart3 className="h-5 w-5 text-blue-600" /></span>
-                      <div><p className="text-2xl font-extrabold text-slate-900 leading-none">51%</p><p className="text-xs text-slate-400 mt-0.5">of 35 employees</p></div>
+                      <div>
+                        <p className="text-2xl font-extrabold text-slate-900 leading-none">
+                          {evaluationTotal > 0 ? Math.round((statusCounts.Approved / evaluationTotal) * 100) : 0}%
+                        </p>
+                        <p className="text-xs text-slate-400 mt-0.5">of {evaluationTotal} employees</p>
+                      </div>
                     </div>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
                     <p className="text-xs text-slate-500 mb-1">Approved</p>
                     <div className="flex items-center gap-2.5">
                       <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-emerald-100"><CheckCircle2 className="h-5 w-5 text-emerald-600" /></span>
-                      <div><p className="text-2xl font-extrabold text-emerald-600 leading-none">18</p><p className="text-xs text-slate-400 mt-0.5">Fully completed</p></div>
+                      <div><p className="text-2xl font-extrabold text-emerald-600 leading-none">{statusCounts.Approved}</p><p className="text-xs text-slate-400 mt-0.5">Fully completed</p></div>
                     </div>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
                     <p className="text-xs text-slate-500 mb-1">In Progress</p>
                     <div className="flex items-center gap-2.5">
                       <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-orange-100"><Clock className="h-5 w-5 text-orange-500" /></span>
-                      <div><p className="text-2xl font-extrabold text-orange-500 leading-none">13</p><p className="text-xs text-slate-400 mt-0.5">Under supervisor review</p></div>
+                      <div><p className="text-2xl font-extrabold text-orange-500 leading-none">{statusCounts['Supervisor Review']}</p><p className="text-xs text-slate-400 mt-0.5">Under supervisor review</p></div>
                     </div>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
                     <p className="text-xs text-slate-500 mb-1">Planning</p>
                     <div className="flex items-center gap-2.5">
                       <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-blue-100"><SlidersHorizontal className="h-5 w-5 text-blue-600" /></span>
-                      <div><p className="text-2xl font-extrabold text-slate-900 leading-none">3</p><p className="text-xs text-slate-400 mt-0.5">Self-evaluation stage</p></div>
+                      <div><p className="text-2xl font-extrabold text-slate-900 leading-none">{statusCounts.Planning}</p><p className="text-xs text-slate-400 mt-0.5">Self-evaluation stage</p></div>
                     </div>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
                     <p className="text-xs text-slate-500 mb-1">Rejected</p>
                     <div className="flex items-center gap-2.5">
                       <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-red-100"><XCircle className="h-5 w-5 text-red-500" /></span>
-                      <div><p className="text-2xl font-extrabold text-red-500 leading-none">1</p><p className="text-xs text-slate-400 mt-0.5">Requires resubmission</p></div>
+                      <div><p className="text-2xl font-extrabold text-red-500 leading-none">{statusCounts.Rejected}</p><p className="text-xs text-slate-400 mt-0.5">Requires resubmission</p></div>
                     </div>
                   </div>
                 </div>
@@ -782,13 +1166,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                       );
                     })}
                     {/* Bars */}
-                    {[
-                      { dept: 'Finance', approved: 6, review: 2, self: 1, planning: 1, rejected: 0 },
-                      { dept: 'IT Dept', approved: 4, review: 3, self: 1, planning: 1, rejected: 0 },
-                      { dept: 'HR', dept2: 'Department', approved: 5, review: 2, self: 1, planning: 0, rejected: 0 },
-                      { dept: 'Admin', dept2: 'Services', approved: 5, review: 2, self: 1, planning: 1, rejected: 0 },
-                      { dept: 'Engineering', approved: 3, review: 1, self: 1, planning: 0, rejected: 1 },
-                    ].map((d, i) => {
+                    {dbEvaluationGroups.map((d, i) => {
                       const x = 55 + i * 92;
                       const bw = 42;
                       const unitH = 17;
@@ -799,8 +1177,13 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                         { val: d.review, color: '#fb923c' },
                         { val: d.self, color: '#22d3ee' },
                         { val: d.planning, color: '#2563eb' },
-                        { val: d.rejected, color: '#ef4444' },
+                        { val: d.rejected || 0, color: '#ef4444' },
                       ];
+                      
+                      const deptParts = d.dept.split(' ');
+                      const dept1 = deptParts[0];
+                      const dept2 = deptParts.slice(1).join(' ');
+
                       return (
                         <g key={d.dept}>
                           {segments.map((seg, si) => {
@@ -809,8 +1192,8 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                             cy -= h;
                             return <rect key={si} x={x} y={cy} width={bw} height={h} fill={seg.color} rx={si === segments.length - 1 || (segments.slice(si + 1).every(s => s.val === 0)) ? 2 : 0} />;
                           })}
-                          <text x={x + bw / 2} y={195} textAnchor="middle" fontSize="10" fill="#64748b">{d.dept}</text>
-                          {'dept2' in d && d.dept2 && <text x={x + bw / 2} y={206} textAnchor="middle" fontSize="10" fill="#64748b">{d.dept2 as string}</text>}
+                          <text x={x + bw / 2} y={195} textAnchor="middle" fontSize="10" fill="#64748b">{dept1}</text>
+                          {dept2 && <text x={x + bw / 2} y={206} textAnchor="middle" fontSize="10" fill="#64748b">{dept2}</text>}
                         </g>
                       );
                     })}
@@ -848,33 +1231,8 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   </div>
 
                   {/* Department groups — uses live employees from the central
-                      employees table when present, otherwise falls back to the
-                      hardcoded demo data below. */}
-                  {(dbEvaluationGroups.length > 0
-                    ? dbEvaluationGroups
-                    : [
-                    {
-                      dept: 'Finance', count: 9, pct: 56, approved: 5, review: 2, self: 1, planning: 1,
-                      employees: [
-                        { name: 'Carlos Mendoza', position: 'Accountant II', status: 'Approved' },
-                        { name: 'Elena Mercado', position: 'Budget Officer III', status: 'Approved' },
-                        { name: 'Miguel Santos', position: 'Finance Officer II', status: 'Approved' },
-                        { name: 'Diana Cruz', position: 'Accountant I', status: 'Approved' },
-                        { name: 'Patricia Ramos', position: 'Budget Analyst', status: 'Approved' },
-                        { name: 'Ricardo Lim', position: 'Finance Officer I', status: 'Supervisor Review' },
-                      ],
-                    },
-                    {
-                      dept: 'IT Department', count: 7, pct: 50, approved: 3, review: 2, self: 1, planning: 1,
-                      employees: [
-                        { name: 'Roberto Cruz', position: 'Systems Analyst', status: 'Approved' },
-                        { name: 'Kevin Tan', position: 'Database Administrator', status: 'Approved' },
-                        { name: 'Angela Lim', position: 'Web Developer', status: 'Approved' },
-                        { name: 'Jose Reyes', position: 'IT Support Specialist', status: 'Supervisor Review' },
-                        { name: 'Carmen Diaz', position: 'Network Administrator', status: 'Supervisor Review' },
-                      ],
-                    },
-                  ]).map((group) => (
+                      employees table when present. */}
+                  {dbEvaluationGroups.length > 0 ? dbEvaluationGroups.map((group) => (
                     <div key={group.dept} className="border-b border-slate-100">
                       {/* Group header */}
                       <div className="flex items-center gap-3 px-5 py-2.5 bg-slate-50/50 border-b border-slate-100">
@@ -909,7 +1267,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                                 <p className="text-[11px] text-slate-500 mt-1">{emp.position}</p>
                               </div>
                             </div>
-                            <div className="col-span-3 pt-1.5"><span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-0.5 text-xs font-semibold ${statusColors[emp.status]}`}><span className={`h-1.5 w-1.5 rounded-full ${dotColors[emp.status]}`} />{emp.status}</span></div>
+                            <div className="col-span-3 pt-1.5"><span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-0.5 text-xs font-semibold ${statusColors[emp.status] || 'bg-slate-100 text-slate-700'}`}><span className={`h-1.5 w-1.5 rounded-full ${dotColors[emp.status] || 'bg-slate-400'}`} />{emp.status}</span></div>
                             <div className="col-span-2 flex items-center justify-end gap-2 pt-1.5">
                               <button type="button" className="p-1 text-slate-400 hover:text-blue-600 transition" title="View"><Eye className="h-4 w-4" /></button>
                               <button type="button" className="p-1 text-slate-400 hover:text-slate-600 transition"><MoreHorizontal className="h-4 w-4" /></button>
@@ -918,7 +1276,11 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                         );
                       })}
                     </div>
-                  ))}
+                  )) : (
+                    <div className="px-5 py-12 text-center text-slate-500">
+                      <p>No evaluation records found for this period.</p>
+                    </div>
+                  )}
 
                   {/* Footer */}
                   <div className="px-5 py-2.5 border-t border-slate-100 flex items-center justify-between">
@@ -968,7 +1330,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                 <section className="mt-5 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                   {/* Record count */}
                   <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
-                    <span className="text-sm text-slate-700"><span className="font-bold">142</span> Records Found</span>
+                    <span className="text-sm text-slate-700"><span className="font-bold">{reviewsData.length}</span> Records Found</span>
                     <span className="text-xs text-slate-400 italic">Jan 2024 – Feb 2025</span>
                   </div>
                   {/* Column headers */}
@@ -981,30 +1343,45 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                     <div className="col-span-2">Actions</div>
                   </div>
                   {/* Rows */}
-                  <div className="divide-y divide-slate-100">
-                    {reviewPageData.map((row) => {
-                      const ratingColor = row.rating === 'Outstanding' ? 'text-emerald-600' : row.rating === 'Very Satisfactory' ? 'text-blue-600' : 'text-orange-500';
-                      return (
-                        <div key={row.id} className="grid grid-cols-12 items-center px-5 py-3.5 text-sm hover:bg-slate-50/60 transition">
-                          <div className="col-span-2">
-                            <p className="font-semibold text-slate-800">{row.name}</p>
-                            <p className="text-xs text-slate-400">{row.id}</p>
+                  <div className="divide-y divide-slate-100 relative min-h-[120px]">
+                    {evaluationsLoading && (
+                      <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 flex items-center justify-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                      </div>
+                    )}
+                    {reviewPageData.length === 0 && !evaluationsLoading ? (
+                      <div className="py-12 flex flex-col items-center justify-center text-center">
+                        <CalendarCheck2 className="h-12 w-12 text-slate-300 mb-4" />
+                        <h3 className="text-lg font-bold text-slate-700">No performance reviews</h3>
+                        <p className="text-sm text-slate-500 mt-1">There are currently no approved performance reviews to display.</p>
+                      </div>
+                    ) : (
+                      reviewPageData.map((row) => {
+                        const score = row.final_score ?? 0;
+                        const rating = bucketForScore(score);
+                        const ratingColor = rating === 'Outstanding' ? 'text-emerald-600' : rating === 'Very Satisfactory' ? 'text-blue-600' : 'text-orange-500';
+                        return (
+                          <div key={row.id} className="grid grid-cols-12 items-center px-5 py-3.5 text-sm hover:bg-slate-50/60 transition">
+                            <div className="col-span-2">
+                              <p className="font-semibold text-slate-800">{row.employee_name ?? 'Unknown'}</p>
+                              <p className="text-xs text-slate-400">ID-{row.employee_id?.substring(0, 8).toUpperCase() ?? 'N/A'}</p>
+                            </div>
+                            <div className="col-span-2 text-slate-500">{row.employee_position ?? '—'}</div>
+                            <div className="col-span-2 text-slate-500">{row.department ?? 'Unassigned'}</div>
+                            <div className="col-span-2 flex items-center gap-2">
+                              <span className="font-bold text-slate-800">{score.toFixed(2)}</span>
+                              <span className={`text-xs font-medium ${ratingColor}`}>{rating}</span>
+                            </div>
+                            <div className="col-span-2 text-slate-500">{new Date(row.created_at).toLocaleDateString()}</div>
+                            <div className="col-span-2 flex items-center gap-3">
+                              <button type="button" className="text-xs font-semibold text-blue-600 hover:underline">View Review</button>
+                              <span className="text-slate-300">|</span>
+                              <button type="button" className="text-xs font-medium text-slate-400 hover:text-slate-600">Download IPCR</button>
+                            </div>
                           </div>
-                          <div className="col-span-2 text-slate-500">{row.pos}</div>
-                          <div className="col-span-2 text-slate-500">{row.dept}</div>
-                          <div className="col-span-2 flex items-center gap-2">
-                            <span className="font-bold text-slate-800">{row.score.toFixed(1)}</span>
-                            <span className={`text-xs font-medium ${ratingColor}`}>{row.rating}</span>
-                          </div>
-                          <div className="col-span-2 text-slate-500">{row.date}</div>
-                          <div className="col-span-2 flex items-center gap-3">
-                            <button type="button" className="text-xs font-semibold text-blue-600 hover:underline">View Review</button>
-                            <span className="text-slate-300">|</span>
-                            <button type="button" className="text-xs font-medium text-slate-400 hover:text-slate-600">Download IPCR</button>
-                          </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })
+                    )}
                   </div>
                   {/* Footer with functional pagination */}
                   <div className="px-5 py-3.5 border-t border-slate-100 flex items-center justify-between">
@@ -1069,37 +1446,43 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                 <p className="text-sm text-slate-500 mb-4">Click a department card to view its summary and individual employee IPCR forms</p>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
-                  {[
-                    { dept: 'IT Department', count: 3, score: 4.20, rating: 'Very Satisfactory', hasData: true },
-                    { dept: 'Finance Department', count: 2, score: 4.33, rating: 'Very Satisfactory', hasData: true },
-                    { dept: 'HR Department', count: 0, score: 0, rating: '', hasData: false },
-                    { dept: 'Operations', count: 0, score: 0, rating: '', hasData: false },
-                    { dept: 'Legal Department', count: 0, score: 0, rating: '', hasData: false },
-                  ].map((d) => (
-                    <div key={d.dept} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:border-blue-300 hover:shadow-md transition cursor-pointer">
-                      <div className="flex items-center gap-3 mb-3">
-                        <span className="flex items-center justify-center h-10 w-10 rounded-lg bg-blue-50"><FileText className="h-5 w-5 text-blue-500" /></span>
-                        <div>
-                          <p className="font-bold text-sm text-slate-800">{d.dept}</p>
-                          <p className="text-xs text-blue-500">{d.count} evaluated</p>
-                        </div>
-                      </div>
-                      {d.hasData ? (
-                        <>
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs text-slate-400">Avg. Score</span>
-                            <span className="text-2xl font-extrabold text-blue-600">{d.score.toFixed(2)}</span>
+                  {dbEvaluationGroups.map((g) => {
+                    const deptEvals = evaluations.filter(e => e.department === g.dept && e.status === 'Approved');
+                    const hasData = deptEvals.length > 0;
+                    const avgScore = hasData ? deptEvals.reduce((sum, e) => sum + (e.final_score ?? 0), 0) / deptEvals.length : 0;
+                    const rating = hasData ? bucketForScore(avgScore) : '';
+
+                    return (
+                      <div key={g.dept} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:border-blue-300 hover:shadow-md transition cursor-pointer">
+                        <div className="flex items-center gap-3 mb-3">
+                          <span className="flex items-center justify-center h-10 w-10 rounded-lg bg-blue-50"><FileText className="h-5 w-5 text-blue-500" /></span>
+                          <div>
+                            <p className="font-bold text-sm text-slate-800">{g.dept}</p>
+                            <p className="text-xs text-blue-500">{deptEvals.length} evaluated</p>
                           </div>
-                          <span className="inline-block rounded-full border border-blue-300 bg-blue-50 px-3 py-0.5 text-xs font-semibold text-blue-700 mb-3">{d.rating}</span>
-                        </>
-                      ) : (
-                        <p className="text-xs text-slate-400 italic mb-3">No completed IPCRs yet</p>
-                      )}
-                      <button type="button" className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:underline">
-                        <Eye className="h-3.5 w-3.5" /> View Department Report & IPCRs
-                      </button>
+                        </div>
+                        {hasData ? (
+                          <>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs text-slate-400">Avg. Score</span>
+                              <span className="text-2xl font-extrabold text-blue-600">{avgScore.toFixed(2)}</span>
+                            </div>
+                            <span className="inline-block rounded-full border border-blue-300 bg-blue-50 px-3 py-0.5 text-xs font-semibold text-blue-700 mb-3">{rating}</span>
+                          </>
+                        ) : (
+                          <p className="text-xs text-slate-400 italic mb-3">No completed IPCRs yet</p>
+                        )}
+                        <button type="button" className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:underline">
+                          <Eye className="h-3.5 w-3.5" /> View Department Report & IPCRs
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {dbEvaluationGroups.length === 0 && (
+                    <div className="col-span-full py-12 text-center text-slate-500">
+                      No department reports available.
                     </div>
-                  ))}
+                  )}
                 </div>
 
                 {/* IPCR Submissions */}
@@ -1127,51 +1510,70 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                     <div className="col-span-2 text-right">Action</div>
                   </div>
                   {/* Rows */}
-                  <div className="divide-y divide-slate-100">
-                    {[
-                      { dept: 'IT Department', deptColor: 'bg-blue-100 text-blue-700 border-blue-200', initials: 'MS', name: 'Maria Santos', position: 'IT Officer II', date: 'January 15, 2024', score: 4.58, rating: 'Outstanding', status: 'Submitted', hasScore: true },
-                      { dept: 'IT Department', deptColor: 'bg-blue-100 text-blue-700 border-blue-200', initials: 'Jd', name: 'Juan dela Cruz', position: 'Systems Analyst', date: 'January 18, 2024', score: 4.23, rating: 'Very Satisfactory', status: 'Submitted', hasScore: true },
-                      { dept: 'IT Department', deptColor: 'bg-blue-100 text-blue-700 border-blue-200', initials: 'AR', name: 'Ana Reyes', position: 'IT Support Specialist', date: 'January 20, 2024', score: 3.79, rating: 'Very Satisfactory', status: 'Submitted', hasScore: true },
-                      { dept: 'Finance Department', deptColor: 'bg-emerald-100 text-emerald-700 border-emerald-200', initials: 'CM', name: 'Carlos Mendoza', position: 'Accountant II', date: 'January 12, 2024', score: 4.50, rating: 'Outstanding', status: 'Submitted', hasScore: true },
-                      { dept: 'Finance Department', deptColor: 'bg-emerald-100 text-emerald-700 border-emerald-200', initials: 'EM', name: 'Elena Mercado', position: 'Budget Officer I', date: 'January 14, 2024', score: 4.17, rating: 'Very Satisfactory', status: 'Submitted', hasScore: true },
-                      { dept: 'HR Department', deptColor: 'bg-purple-100 text-purple-700 border-purple-200', initials: 'RC', name: 'Roberto Cruz', position: 'HR Officer I', date: '', score: 0, rating: '', status: 'Monitoring Phase', hasScore: false },
-                    ].map((row, idx) => (
-                      <div key={idx} className="grid grid-cols-12 items-center px-5 py-4 text-sm hover:bg-slate-50/60 transition">
-                        <div className="col-span-2">
-                          <span className={`inline-block rounded-full border px-3 py-0.5 text-[11px] font-semibold ${row.deptColor}`}>{row.dept}</span>
-                        </div>
-                        <div className="col-span-2 flex items-center gap-2.5">
-                          <span className="flex items-center justify-center h-8 w-8 rounded-full bg-slate-200 text-xs font-bold text-slate-600">{row.initials}</span>
-                          <div>
-                            <p className="font-semibold text-slate-800">{row.name}</p>
-                            <p className="text-xs text-slate-400">{row.position}</p>
-                          </div>
-                        </div>
-                        <div className="col-span-2 text-slate-500">{row.date || <span className="italic text-slate-400">Not yet submitted</span>}</div>
-                        <div className="col-span-2 text-center">
-                          {row.hasScore ? (
-                            <div>
-                              <p className="text-lg font-extrabold text-blue-600">{row.score.toFixed(2)}</p>
-                              <p className={`text-[11px] font-medium ${row.rating === 'Outstanding' ? 'text-emerald-600' : 'text-blue-500'}`}>{row.rating}</p>
-                            </div>
-                          ) : <span className="text-slate-400">—</span>}
-                        </div>
-                        <div className="col-span-2 text-center">
-                          {row.status === 'Submitted' ? (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-0.5 text-[11px] font-semibold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Submitted</span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-3 py-0.5 text-[11px] font-semibold text-orange-700"><Clock className="h-3 w-3" /> Monitoring Phase</span>
-                          )}
-                        </div>
-                        <div className="col-span-2 text-right">
-                          {row.hasScore ? (
-                            <button type="button" className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 transition">
-                              <Eye className="h-3.5 w-3.5" /> View IPCR
-                            </button>
-                          ) : <span className="text-xs text-slate-400 italic">Not available</span>}
-                        </div>
+                  <div className="divide-y divide-slate-100 relative min-h-[120px]">
+                    {evaluationsLoading && (
+                      <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 flex items-center justify-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                       </div>
-                    ))}
+                    )}
+                    {(() => {
+                      const goalEvals = evaluations.filter(e => e.status === 'Self Evaluation' || e.status === 'Supervisor Review' || e.status === 'Approved');
+                      if (goalEvals.length === 0 && !evaluationsLoading) {
+                        return (
+                          <div className="py-12 flex flex-col items-center justify-center text-center">
+                            <FileCheck2 className="h-12 w-12 text-slate-300 mb-4" />
+                            <h3 className="text-lg font-bold text-slate-700">No IPCR Submissions</h3>
+                            <p className="text-sm text-slate-500 mt-1">There are no recent IPCR submissions to display.</p>
+                          </div>
+                        );
+                      }
+                      return goalEvals.map((e) => {
+                        const hasScore = e.final_score !== null;
+                        const score = e.final_score ?? 0;
+                        const rating = hasScore ? bucketForScore(score) : '';
+                        const initials = (e.employee_name ?? 'U').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+
+                        return (
+                          <div key={e.id} className="grid grid-cols-12 items-center px-5 py-4 text-sm hover:bg-slate-50/60 transition">
+                            <div className="col-span-2">
+                              <span className="inline-block rounded-full border px-3 py-0.5 text-[11px] font-semibold bg-slate-100 text-slate-700 border-slate-200">{e.department ?? 'Unassigned'}</span>
+                            </div>
+                            <div className="col-span-2 flex items-center gap-2.5">
+                              <span className="flex items-center justify-center h-8 w-8 rounded-full bg-slate-200 text-xs font-bold text-slate-600">{initials}</span>
+                              <div>
+                                <p className="font-semibold text-slate-800">{e.employee_name}</p>
+                                <p className="text-xs text-slate-400">{e.employee_position}</p>
+                              </div>
+                            </div>
+                            <div className="col-span-2 text-slate-500">{new Date(e.created_at).toLocaleDateString()}</div>
+                            <div className="col-span-2 text-center">
+                              {hasScore ? (
+                                <div>
+                                  <p className="text-lg font-extrabold text-blue-600">{score.toFixed(2)}</p>
+                                  <p className={`text-[11px] font-medium ${rating === 'Outstanding' ? 'text-emerald-600' : 'text-blue-500'}`}>{rating}</p>
+                                </div>
+                              ) : <span className="text-slate-400">—</span>}
+                            </div>
+                            <div className="col-span-2 text-center">
+                              {e.status === 'Approved' ? (
+                                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-0.5 text-[11px] font-semibold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Approved</span>
+                              ) : e.status === 'Self Evaluation' || e.status === 'Supervisor Review' ? (
+                                <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-0.5 text-[11px] font-semibold text-blue-700"><CheckCircle2 className="h-3 w-3" /> Submitted</span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-3 py-0.5 text-[11px] font-semibold text-orange-700"><Clock className="h-3 w-3" /> Monitoring Phase</span>
+                              )}
+                            </div>
+                            <div className="col-span-2 text-right">
+                              {hasScore ? (
+                                <button type="button" className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 transition">
+                                  <Eye className="h-3.5 w-3.5" /> View IPCR
+                                </button>
+                              ) : <span className="text-xs text-slate-400 italic">Not available</span>}
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
                 </section>
               </>
@@ -1281,24 +1683,33 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                 </div>
 
                 {/* KPI Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                  <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                    <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Total Requests</p>
-                    <p className="text-3xl font-bold text-slate-900 leading-none">24</p>
-                  </div>
-                  <div className="rounded-xl border border-orange-300 bg-white p-4 shadow-sm">
-                    <p className="text-[11px] font-semibold text-orange-500 uppercase tracking-wider mb-1.5">Pending</p>
-                    <p className="text-3xl font-bold text-orange-500 leading-none">8</p>
-                  </div>
-                  <div className="rounded-xl border border-red-200 bg-white p-4 shadow-sm">
-                    <p className="text-[11px] font-semibold text-red-500 uppercase tracking-wider mb-1.5">Overdue</p>
-                    <p className="text-3xl font-bold text-red-500 leading-none">3</p>
-                  </div>
-                  <div className="rounded-xl border border-emerald-200 bg-white p-4 shadow-sm">
-                    <p className="text-[11px] font-semibold text-emerald-500 uppercase tracking-wider mb-1.5">Approved</p>
-                    <p className="text-3xl font-bold text-emerald-500 leading-none">5</p>
-                  </div>
-                </div>
+                {(() => {
+                  const reqSummary = summarizeRequests(documentRequests);
+                  return (
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm relative overflow-hidden">
+                        {documentRequestsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
+                        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Total Requests</p>
+                        <p className="text-3xl font-bold text-slate-900 leading-none">{reqSummary.total}</p>
+                      </div>
+                      <div className="rounded-xl border border-orange-300 bg-white p-4 shadow-sm relative overflow-hidden">
+                        {documentRequestsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
+                        <p className="text-[11px] font-semibold text-orange-500 uppercase tracking-wider mb-1.5">Pending</p>
+                        <p className="text-3xl font-bold text-orange-500 leading-none">{reqSummary.pending}</p>
+                      </div>
+                      <div className="rounded-xl border border-red-200 bg-white p-4 shadow-sm relative overflow-hidden">
+                        {documentRequestsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
+                        <p className="text-[11px] font-semibold text-red-500 uppercase tracking-wider mb-1.5">Overdue</p>
+                        <p className="text-3xl font-bold text-red-500 leading-none">{reqSummary.overdue}</p>
+                      </div>
+                      <div className="rounded-xl border border-emerald-200 bg-white p-4 shadow-sm relative overflow-hidden">
+                        {documentRequestsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
+                        <p className="text-[11px] font-semibold text-emerald-500 uppercase tracking-wider mb-1.5">Approved</p>
+                        <p className="text-3xl font-bold text-emerald-500 leading-none">{reqSummary.approved}</p>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Filters */}
                 <div className="rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm flex items-center gap-3 mb-4">
@@ -1324,111 +1735,133 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                 </div>
 
                 {/* Table Section */}
-                <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden mb-4">
-                  {/* Dark Header */}
-                  <div className="bg-[#1e293b] px-5 py-3 flex items-center justify-between text-white">
-                    <div className="flex items-center gap-4">
-                      <div>
-                        <h3 className="text-base font-bold leading-tight">IT Department</h3>
-                        <p className="text-xs text-slate-400">6 requests - 2 pages</p>
+                {(() => {
+                  if (documentRequestsLoading) {
+                    return (
+                      <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-8 text-center animate-pulse">
+                        <div className="h-4 bg-slate-200 rounded w-1/4 mx-auto mb-4" />
+                        <div className="h-10 bg-slate-100 rounded mb-2" />
+                        <div className="h-10 bg-slate-100 rounded mb-2" />
+                        <div className="h-10 bg-slate-100 rounded" />
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="inline-flex items-center rounded-full bg-orange-500 px-2.5 py-0.5 text-[11px] font-bold text-white">2 Pending</span>
-                        <span className="inline-flex items-center rounded-full bg-blue-500 px-2.5 py-0.5 text-[11px] font-bold text-white">1 Submitted</span>
-                        <span className="inline-flex items-center rounded-full bg-[#a855f7] px-2.5 py-0.5 text-[11px] font-bold text-white">1 Under Review</span>
-                        <span className="inline-flex items-center rounded-full bg-emerald-500 px-2.5 py-0.5 text-[11px] font-bold text-white">1 Approved</span>
-                        <span className="inline-flex items-center rounded-full bg-red-500 px-2.5 py-0.5 text-[11px] font-bold text-white">1 Overdue</span>
+                    );
+                  }
+
+                  const grouped = groupRequestsByDepartment(documentRequests);
+                  const depts = Object.keys(grouped).sort();
+
+                  if (depts.length === 0) {
+                    return (
+                      <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-12 text-center flex flex-col items-center">
+                        <FileText className="h-12 w-12 text-slate-300 mb-4" />
+                        <h3 className="text-lg font-bold text-slate-700">No document requests</h3>
+                        <p className="text-sm text-slate-500 mt-1">There are currently no document requests to display.</p>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2 cursor-pointer hover:text-slate-300">
-                      <span className="text-sm font-semibold">6 employees</span>
-                      <ChevronUp className="h-4 w-4" />
-                    </div>
-                  </div>
+                    );
+                  }
 
-                  {/* Table Header */}
-                  <div className="grid grid-cols-12 items-center px-5 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">
-                    <div className="col-span-1">NO.</div>
-                    <div className="col-span-3">EMPLOYEE</div>
-                    <div className="col-span-2">DOCUMENT TYPE</div>
-                    <div className="col-span-2">DATE REQUESTED</div>
-                    <div className="col-span-2">DATE SUBMITTED</div>
-                    <div className="col-span-1 text-center">STATUS</div>
-                    <div className="col-span-1 text-right">ACTION</div>
-                  </div>
+                  return depts.map(dept => {
+                    const reqs = grouped[dept];
+                    const pendingCount = reqs.filter(r => r.status === 'Pending').length;
+                    const submittedCount = reqs.filter(r => r.status === 'Submitted').length;
+                    const reviewCount = reqs.filter(r => r.status === 'Under Review').length;
+                    const approvedCount = reqs.filter(r => r.status === 'Approved').length;
+                    const overdueCount = reqs.filter(r => r.status === 'Overdue').length;
 
-                  {/* Rows */}
-                  <div className="divide-y divide-slate-100">
-                    {[
-                      { no: 1, initials: 'SM', name: 'Santos, Maria G.', role: 'IT Officer II', dept: 'IT Department', docType: 'IPCR', dateReq: 'Mar 1, 2025', dateSub: 'Mar 12, 2025', status: 'Submitted', statusClass: 'border-blue-200 bg-blue-50 text-blue-600', action: 'View', actionClass: 'border-purple-200 text-purple-600 hover:bg-purple-50', icon: Eye },
-                      { no: 2, initials: 'DC', name: 'Dela Cruz, Juan P.', role: 'Systems Analyst', dept: 'IT Department', docType: 'Accomplishment Report', dateReq: 'Mar 1, 2025', dateSub: 'Mar 10, 2025', status: 'Approved', statusClass: 'border-emerald-200 bg-emerald-50 text-emerald-600', action: 'Request', actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList, isPrimaryAction: true },
-                      { no: 3, initials: 'RA', name: 'Reyes, Ana T.', role: 'Network Administrator', dept: 'IT Department', docType: 'IPCR', dateReq: 'Mar 1, 2025', dateSub: '', status: 'Pending', statusClass: 'border-orange-200 bg-orange-50 text-orange-600', action: 'Request', actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList, isPrimaryAction: true },
-                      { no: 4, initials: 'AR', name: 'Aguilar, Ricardo M.', role: 'IT Support Specialist', dept: 'IT Department', docType: 'Service Record', dateReq: 'Mar 3, 2025', dateSub: 'Mar 18, 2025', status: 'Under Review', statusClass: 'border-purple-200 bg-purple-50 text-purple-600', action: 'View', actionClass: 'border-purple-200 text-purple-600 hover:bg-purple-50', icon: Eye },
-                      { no: 5, initials: 'BL', name: 'Bautista, Lourdes S.', role: 'Database Administrator', dept: 'IT Department', docType: 'Position Description Form', dateReq: 'Feb 15, 2025', dateSub: '', status: 'Overdue', statusClass: 'border-red-200 bg-red-50 text-red-600', action: 'Request', actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList, isPrimaryAction: true },
-                    ].map((row, i) => (
-                      <div key={i} className="grid grid-cols-12 items-start px-5 py-3 text-sm hover:bg-slate-50/50 transition">
-                        <div className="col-span-1 text-slate-500 pt-1.5">{row.no}</div>
-                        <div className="col-span-3 flex items-start gap-3">
-                          <span className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-[11px] font-bold text-blue-600 shrink-0">
-                            {row.initials}
-                          </span>
-                          <div className="flex flex-col pt-1.5">
-                            <p className="font-semibold text-slate-800 leading-none">{row.name}</p>
-                            <p className="text-[11px] text-slate-400 mt-1">{row.role}</p>
+                    return (
+                      <div key={dept} className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden mb-4">
+                        {/* Dark Header */}
+                        <div className="bg-[#1e293b] px-5 py-3 flex items-center justify-between text-white">
+                          <div className="flex items-center gap-4">
+                            <div>
+                              <h3 className="text-base font-bold leading-tight">{dept}</h3>
+                              <p className="text-xs text-slate-400">{reqs.length} requests</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {pendingCount > 0 && <span className="inline-flex items-center rounded-full bg-orange-500 px-2.5 py-0.5 text-[11px] font-bold text-white">{pendingCount} Pending</span>}
+                              {submittedCount > 0 && <span className="inline-flex items-center rounded-full bg-blue-500 px-2.5 py-0.5 text-[11px] font-bold text-white">{submittedCount} Submitted</span>}
+                              {reviewCount > 0 && <span className="inline-flex items-center rounded-full bg-[#a855f7] px-2.5 py-0.5 text-[11px] font-bold text-white">{reviewCount} Under Review</span>}
+                              {approvedCount > 0 && <span className="inline-flex items-center rounded-full bg-emerald-500 px-2.5 py-0.5 text-[11px] font-bold text-white">{approvedCount} Approved</span>}
+                              {overdueCount > 0 && <span className="inline-flex items-center rounded-full bg-red-500 px-2.5 py-0.5 text-[11px] font-bold text-white">{overdueCount} Overdue</span>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 cursor-pointer hover:text-slate-300">
+                            <ChevronUp className="h-4 w-4" />
                           </div>
                         </div>
-                        <div className="col-span-2 flex items-center gap-2 text-slate-600 pt-1.5">
-                          <FileText className="h-4 w-4 text-slate-400" />
-                          {row.docType}
+
+                        {/* Table Header */}
+                        <div className="grid grid-cols-12 items-center px-5 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                          <div className="col-span-1">NO.</div>
+                          <div className="col-span-3">EMPLOYEE</div>
+                          <div className="col-span-2">DOCUMENT TYPE</div>
+                          <div className="col-span-2">DATE REQUESTED</div>
+                          <div className="col-span-2">DATE SUBMITTED</div>
+                          <div className="col-span-1 text-center">STATUS</div>
+                          <div className="col-span-1 text-right">ACTION</div>
                         </div>
-                        <div className="col-span-2 text-slate-600 pt-1.5">{row.dateReq}</div>
-                        <div className="col-span-2 text-slate-600 pt-1.5">{row.dateSub}</div>
-                        <div className="col-span-1 flex justify-center pt-1.5">
-                          <span className={`inline-block rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${row.statusClass}`}>
-                            {row.status}
-                          </span>
-                        </div>
-                        <div className="col-span-1 flex justify-end pt-1">
-                          <button
-                            type="button"
-                            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition border ${row.actionClass}`}
-                            onClick={() => {
-                              if (row.action === 'Request') {
-                                openRequestModal({ name: row.name, role: row.role, dept: row.dept, initials: row.initials });
-                              }
-                            }}
-                          >
-                            <row.icon className="h-3.5 w-3.5" />
-                            {row.action}
-                          </button>
+
+                        {/* Rows */}
+                        <div className="divide-y divide-slate-100">
+                          {reqs.map((row, i) => {
+                            const statusConfig: Record<string, { class: string; action: string; actionClass: string; icon: any }> = {
+                              'Submitted': { class: 'border-blue-200 bg-blue-50 text-blue-600', action: 'View', actionClass: 'border-purple-200 text-purple-600 hover:bg-purple-50', icon: Eye },
+                              'Approved': { class: 'border-emerald-200 bg-emerald-50 text-emerald-600', action: 'Request', actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList },
+                              'Pending': { class: 'border-orange-200 bg-orange-50 text-orange-600', action: 'Request', actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList },
+                              'Under Review': { class: 'border-purple-200 bg-purple-50 text-purple-600', action: 'View', actionClass: 'border-purple-200 text-purple-600 hover:bg-purple-50', icon: Eye },
+                              'Overdue': { class: 'border-red-200 bg-red-50 text-red-600', action: 'Request', actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList },
+                            };
+                            const config = statusConfig[row.status] || statusConfig['Pending'];
+                            const initials = (row.employee_name ?? 'U').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                            const ActionIcon = config.icon;
+
+                            return (
+                              <div key={row.id} className="grid grid-cols-12 items-start px-5 py-3 text-sm hover:bg-slate-50/50 transition">
+                                <div className="col-span-1 text-slate-500 pt-1.5">{i + 1}</div>
+                                <div className="col-span-3 flex items-start gap-3">
+                                  <span className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-[11px] font-bold text-blue-600 shrink-0">
+                                    {initials}
+                                  </span>
+                                  <div className="flex flex-col pt-1.5">
+                                    <p className="font-semibold text-slate-800 leading-none">{row.employee_name}</p>
+                                    <p className="text-[11px] text-slate-400 mt-1">{row.department}</p>
+                                  </div>
+                                </div>
+                                <div className="col-span-2 flex items-center gap-2 text-slate-600 pt-1.5">
+                                  <FileText className="h-4 w-4 text-slate-400" />
+                                  {row.document_type}
+                                </div>
+                                <div className="col-span-2 text-slate-600 pt-1.5">{new Date(row.created_at).toLocaleDateString()}</div>
+                                <div className="col-span-2 text-slate-600 pt-1.5">{row.date_submitted ? new Date(row.date_submitted).toLocaleDateString() : '—'}</div>
+                                <div className="col-span-1 flex justify-center pt-1.5">
+                                  <span className={`inline-block rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${config.class}`}>
+                                    {row.status}
+                                  </span>
+                                </div>
+                                <div className="col-span-1 flex justify-end pt-1">
+                                  <button
+                                    type="button"
+                                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition border ${config.actionClass}`}
+                                    onClick={() => {
+                                      if (config.action === 'Request') {
+                                        openRequestModal({ id: row.employee_id, name: row.employee_name ?? '', role: '', dept: row.department ?? '', initials });
+                                      } else if (config.action === 'View') {
+                                        setReviewingRequest(row);
+                                      }
+                                    }}
+                                  >
+                                    <ActionIcon className="h-3.5 w-3.5" />
+                                    {config.action}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
-                    ))}
-                  </div>
-
-                  {/* Table Footer */}
-                  <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between">
-                    <span className="text-xs text-slate-500">
-                      Showing <span className="font-semibold text-slate-700">1–5</span> of <span className="font-semibold text-slate-700">6</span> requests
-                    </span>
-                    <div className="flex items-center gap-1 text-lg text-slate-400">
-                      <button type="button" className="px-1 hover:text-blue-600 transition disabled:opacity-50" disabled>&laquo;</button>
-                      <button type="button" className="px-1 hover:text-blue-600 transition disabled:opacity-50" disabled>&lsaquo;</button>
-                      <button type="button" className="h-7 w-7 rounded bg-blue-600 text-white text-xs font-semibold mx-1">1</button>
-                      <button type="button" className="h-7 w-7 rounded bg-transparent text-slate-600 hover:bg-slate-100 text-xs font-medium mr-1">2</button>
-                      <button type="button" className="px-1 hover:text-blue-600 transition">&rsaquo;</button>
-                      <button type="button" className="px-1 hover:text-blue-600 transition">&raquo;</button>
-                    </div>
-                    <div className="flex items-center gap-2 text-[10px] font-bold uppercase text-slate-400 tracking-wider">
-                      DISTRIBUTION:
-                      <span className="inline-block rounded bg-orange-100 px-2 py-0.5 text-orange-700 normal-case ml-1">2 Pending</span>
-                      <span className="inline-block rounded bg-blue-100 px-2 py-0.5 text-blue-700 normal-case">1 Submitted</span>
-                      <span className="inline-block rounded bg-purple-100 px-2 py-0.5 text-purple-700 normal-case">1 Under Review</span>
-                      <span className="inline-block rounded bg-emerald-100 px-2 py-0.5 text-emerald-700 normal-case">1 Approved</span>
-                      <span className="inline-block rounded bg-red-100 px-2 py-0.5 text-red-700 normal-case">1 Overdue</span>
-                    </div>
-                  </div>
-                </div>
+                    );
+                  });
+                })()}
               </>
             )}
 
@@ -1526,7 +1959,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
               </>
             )}
 
-            {!['dashboard', 'evaluation-status', 'performance-reviews', 'goals', 'ipcr', 'analytics', 'reports', 'settings'].includes(activeSection) && (
+            {!['dashboard', 'employees', 'evaluation-status', 'performance-reviews', 'goals', 'ipcr', 'analytics', 'reports', 'settings'].includes(activeSection) && (
               <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
                 <h2 className="text-2xl font-bold text-slate-900 capitalize">{activeSection.replace('-', ' ')}</h2>
                 <p className="mt-2 text-slate-600">Section scaffold is ready. Share the next screenshots and I'll match this page exactly.</p>
@@ -1580,6 +2013,20 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                       <option key={type} value={type}>{type}</option>
                     ))}
                   </select>
+                </div>
+
+                {/* Description */}
+                <div>
+                  <label className="block text-sm font-semibold text-slate-800 mb-1.5">
+                    Description <span className="text-slate-400 font-normal">(Optional)</span>
+                  </label>
+                  <textarea
+                    value={requestDescription}
+                    onChange={(e) => setRequestDescription(e.target.value)}
+                    placeholder="e.g. Please upload your signed Q3 Performance Review."
+                    rows={2}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none resize-none"
+                  />
                 </div>
 
                 {/* Due Date */}
@@ -1832,17 +2279,48 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                         <div className="rounded-lg border border-blue-500 bg-white overflow-hidden shadow-sm">
                           <div className="flex items-center px-3 py-2.5 border-b border-slate-200">
                             <Search className="h-4 w-4 text-slate-400 mr-2" />
-                            <input 
-                              type="text" 
-                              placeholder="Search by name, position, or department..." 
+                            <input
+                              type="text"
+                              value={employeeSearchTerm}
+                              onChange={(e) => setEmployeeSearchTerm(e.target.value)}
+                              placeholder="Search by name, position, or department..."
                               className="w-full text-sm text-slate-700 outline-none bg-transparent placeholder-slate-400"
                             />
                           </div>
-                          <div className="flex flex-col items-center justify-center py-8 text-center bg-slate-50/30">
-                            <Search className="h-8 w-8 text-slate-300 mb-2 opacity-50" />
-                            <p className="text-sm font-medium text-slate-600">Start typing to search for employees</p>
-                            <p className="text-xs text-slate-400 mt-1">Search by name, position, or department</p>
-                          </div>
+                          {filteredBulkEmployees.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-8 text-center bg-slate-50/30">
+                              <Search className="h-8 w-8 text-slate-300 mb-2 opacity-50" />
+                              <p className="text-sm font-medium text-slate-600">No employees match "{employeeSearchTerm}"</p>
+                              <p className="text-xs text-slate-400 mt-1">Try a different name, position, or department</p>
+                            </div>
+                          ) : (
+                            <ul className="max-h-64 overflow-y-auto divide-y divide-slate-100">
+                              {filteredBulkEmployees.map((emp) => {
+                                const checked = bulkSelectedEmployees.includes(emp.id);
+                                return (
+                                  <li key={emp.id}>
+                                    <label className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-slate-50">
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={() => toggleBulkEmployee(emp.id)}
+                                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                      />
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-sm font-medium text-slate-800 truncate">{emp.name}</p>
+                                        <p className="text-xs text-slate-500 truncate">{emp.position} &middot; {emp.department}</p>
+                                      </div>
+                                    </label>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          )}
+                          {bulkSelectedEmployees.length > 0 && (
+                            <div className="px-3 py-2 bg-blue-50 border-t border-blue-100 text-xs text-blue-700 font-medium">
+                              {bulkSelectedEmployees.length} selected
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
@@ -1881,6 +2359,42 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
             </div>
           </div>
         )}
+
+        <DocumentPreviewModal
+          open={!!reviewingRequest}
+          fileUrl={reviewingRequest?.file_url ?? ''}
+          fileName={reviewingRequest?.file_name ?? reviewingRequest?.document_name ?? 'Document'}
+          fileType={reviewingRequest?.file_type ?? undefined}
+          title={reviewingRequest?.document_name ?? 'Review Document'}
+          subtitle={
+            reviewingRequest
+              ? `${reviewingRequest.employee_name ?? 'Employee'} • ${reviewingRequest.department ?? 'Unassigned'} • Status: ${reviewingRequest.status}`
+              : undefined
+          }
+          onClose={() => { if (!reviewDecisionPending) setReviewingRequest(null); }}
+          actions={
+            reviewingRequest?.status === 'Submitted' ? (
+              <>
+                <button
+                  type="button"
+                  disabled={!!reviewDecisionPending}
+                  onClick={() => void handleReviewDecision('Rejected')}
+                  className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
+                >
+                  {reviewDecisionPending === 'Rejected' ? 'Rejecting…' : 'Reject'}
+                </button>
+                <button
+                  type="button"
+                  disabled={!!reviewDecisionPending}
+                  onClick={() => void handleReviewDecision('Approved')}
+                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  {reviewDecisionPending === 'Approved' ? 'Approving…' : 'Approve'}
+                </button>
+              </>
+            ) : null
+          }
+        />
       </div>
     );
   }

@@ -1,21 +1,24 @@
 import {
-  Bookmark,
-  Building2,
-  Calendar,
-  ChevronDown,
-  ChevronLeft,
-  ChevronUp,
-  Clock,
-  Edit2,
-  Filter,
-  MapPin,
-  Plus,
-  Search,
-  Trash2,
-  User,
-  UserPlus,
+    Bookmark,
+    Building2,
+    Calendar,
+    ChevronDown,
+    ChevronLeft,
+    ChevronUp,
+    Clock,
+    Edit2,
+    Filter,
+    MapPin,
+    Plus,
+    Search,
+    Trash2,
+    User,
+    UserPlus,
+    X,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { getTrainingStreams } from '../../lib/api/competencies';
+import { EnrollEmployeesModal } from './components/EnrollEmployeesModal';
 
 type SeminarStatus = 'Upcoming' | 'Ongoing' | 'Completed';
 type EnrollmentStatus = 'Confirmed' | 'Pending';
@@ -184,10 +187,170 @@ const statusBadge = (status: SeminarStatus | EnrollmentStatus) => {
   return 'bg-gray-100 text-gray-700';
 };
 
+type NewSeminarModalProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: (seminar: Seminar) => void;
+  categoryOptions: string[];
+};
+
+const NewSeminarModal = ({ isOpen, onClose, onSubmit, categoryOptions }: NewSeminarModalProps) => {
+  const [title, setTitle] = useState('');
+  const [category, setCategory] = useState('');
+  const [status, setStatus] = useState<SeminarStatus>('Upcoming');
+  const [instructor, setInstructor] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [startTime, setStartTime] = useState('');
+  const [endTime, setEndTime] = useState('');
+  const [location, setLocation] = useState('');
+  const [capacity, setCapacity] = useState('');
+  const [description, setDescription] = useState('');
+
+  if (!isOpen) return null;
+
+  const reset = () => {
+    setTitle(''); setCategory(''); setStatus('Upcoming'); setInstructor('');
+    setStartDate(''); setEndDate(''); setStartTime(''); setEndTime('');
+    setLocation(''); setCapacity(''); setDescription('');
+  };
+
+  const fmtDate = (d: string) => {
+    if (!d) return '';
+    return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  };
+  const fmtTime = (t: string) => {
+    if (!t) return '';
+    const [hh, mm] = t.split(':');
+    const h = parseInt(hh, 10);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    return `${h % 12 || 12}:${mm} ${ampm}`;
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSubmit({
+      id: Date.now().toString(),
+      title,
+      category,
+      status,
+      instructor,
+      dateString: startDate === endDate ? fmtDate(startDate) : `${fmtDate(startDate)} – ${fmtDate(endDate)}`,
+      timeString: `${fmtTime(startTime)} - ${fmtTime(endTime)}`,
+      location,
+      capacity: Number(capacity) || 0,
+      enrolledCount: 0,
+      description,
+      enrollees: [],
+    });
+    reset();
+    onClose();
+  };
+
+  const inputClass = 'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500';
+  const labelClass = 'block text-xs font-semibold uppercase tracking-wide text-gray-600 mb-1.5';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white shadow-xl">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-6 py-4 rounded-t-2xl">
+          <h2 className="text-lg font-bold text-gray-900">New Seminar</h2>
+          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          <div>
+            <label className={labelClass}>Seminar Title</label>
+            <input type="text" required value={title} onChange={(e) => setTitle(e.target.value)} className={inputClass} />
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className={labelClass}>Category</label>
+              <select required value={category} onChange={(e) => setCategory(e.target.value)} className={inputClass}>
+                <option value="" disabled>Select category</option>
+                {categoryOptions.map((c) => (<option key={c} value={c}>{c}</option>))}
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>Status</label>
+              <select value={status} onChange={(e) => setStatus(e.target.value as SeminarStatus)} className={inputClass}>
+                {(['Upcoming', 'Ongoing', 'Completed'] as SeminarStatus[]).map((s) => (<option key={s} value={s}>{s}</option>))}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className={labelClass}>Instructor</label>
+            <input type="text" required value={instructor} onChange={(e) => setInstructor(e.target.value)} className={inputClass} />
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className={labelClass}>Start Date</label>
+              <input type="date" required value={startDate} onChange={(e) => setStartDate(e.target.value)} className={inputClass} />
+            </div>
+            <div>
+              <label className={labelClass}>End Date</label>
+              <input type="date" required value={endDate} onChange={(e) => setEndDate(e.target.value)} className={inputClass} />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className={labelClass}>Start Time</label>
+              <input type="time" required value={startTime} onChange={(e) => setStartTime(e.target.value)} className={inputClass} />
+            </div>
+            <div>
+              <label className={labelClass}>End Time</label>
+              <input type="time" required value={endTime} onChange={(e) => setEndTime(e.target.value)} className={inputClass} />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className={labelClass}>Location</label>
+              <input type="text" required value={location} onChange={(e) => setLocation(e.target.value)} className={inputClass} />
+            </div>
+            <div>
+              <label className={labelClass}>Capacity</label>
+              <input type="number" required min="1" value={capacity} onChange={(e) => setCapacity(e.target.value)} className={inputClass} />
+            </div>
+          </div>
+          <div>
+            <label className={labelClass}>Description</label>
+            <textarea required rows={3} value={description} onChange={(e) => setDescription(e.target.value)} className={inputClass} />
+          </div>
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button type="button" onClick={onClose} className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
+            <button type="submit" className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors">Create Seminar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 export const SeminarEnrollment = () => {
+  const [seminars, setSeminars] = useState<Seminar[]>(seminarsData);
   const [expandedSeminarId, setExpandedSeminarId] = useState('1');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'All' | 'Upcoming' | 'Ongoing' | 'Completed' | 'Cancelled'>('All');
+  const [categoryFilter, setCategoryFilter] = useState<string>('All');
+  const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
+  const [isNewSeminarModalOpen, setIsNewSeminarModalOpen] = useState(false);
+  const [activeSeminarForModal, setActiveSeminarForModal] = useState<Seminar | null>(null);
+  const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
+
+  // Fetch training streams (categories) from Supabase
+  useEffect(() => {
+    (async () => {
+      const streams = await getTrainingStreams();
+      setCategoryOptions(streams.length > 0 ? streams : []);
+    })();
+  }, []);
+
+  const openEnrollModal = (seminar: Seminar) => {
+    setActiveSeminarForModal(seminar);
+    setIsEnrollModalOpen(true);
+  };
 
   const toggleExpand = (id: string) => {
     setExpandedSeminarId((current) => (current === id ? '' : id));
@@ -195,15 +358,16 @@ export const SeminarEnrollment = () => {
 
   const filteredSeminars = useMemo(() => {
     const query = searchQuery.toLowerCase();
-    return seminarsData.filter((seminar) => {
+    return seminars.filter((seminar) => {
       const matchesSearch =
         seminar.title.toLowerCase().includes(query) ||
         seminar.category.toLowerCase().includes(query) ||
         seminar.instructor.toLowerCase().includes(query);
       const matchesStatus = statusFilter === 'All' || seminar.status === statusFilter;
-      return matchesSearch && matchesStatus;
+      const matchesCategory = categoryFilter === 'All' || seminar.category === categoryFilter;
+      return matchesSearch && matchesStatus && matchesCategory;
     });
-  }, [searchQuery, statusFilter]);
+  }, [seminars, searchQuery, statusFilter, categoryFilter]);
 
   return (
     <div className="p-6 md:p-8 pt-24 bg-gray-50 min-h-screen">
@@ -217,7 +381,7 @@ export const SeminarEnrollment = () => {
             <p className="text-sm text-gray-500 mt-1">L&D Division — Manage seminars and enroll specific employees</p>
           </div>
         </div>
-        <button type="button" className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-colors">
+        <button type="button" onClick={() => setIsNewSeminarModalOpen(true)} className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm transition-colors">
           <Plus className="w-4 h-4" />
           <span>New Seminar</span>
         </button>
@@ -277,6 +441,39 @@ export const SeminarEnrollment = () => {
         </div>
       </div>
 
+      {categoryOptions.length > 0 && (
+        <div className="flex items-center flex-wrap gap-2 mb-6">
+          <span className="text-xs font-semibold uppercase tracking-wide text-gray-500 mr-1">Category:</span>
+          <button
+            type="button"
+            onClick={() => setCategoryFilter('All')}
+            className={[
+              'px-3 py-1.5 rounded-full text-sm transition-colors',
+              categoryFilter === 'All'
+                ? 'bg-blue-600 text-white'
+                : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50',
+            ].join(' ')}
+          >
+            All
+          </button>
+          {categoryOptions.map((cat) => (
+            <button
+              key={cat}
+              type="button"
+              onClick={() => setCategoryFilter(cat)}
+              className={[
+                'px-3 py-1.5 rounded-full text-sm transition-colors',
+                categoryFilter === cat
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50',
+              ].join(' ')}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="space-y-4">
         {filteredSeminars.map((seminar) => {
           const slotsLeft = seminar.capacity - seminar.enrolledCount;
@@ -303,7 +500,7 @@ export const SeminarEnrollment = () => {
                       <p className="text-xs text-gray-400 text-right mt-1">{slotsLeft} slots left</p>
                     </div>
 
-                    <button type="button" className="text-xs bg-green-100 text-green-700 px-2.5 py-1.5 rounded-md font-medium hover:bg-green-200">+ Add Employee</button>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); openEnrollModal(seminar); }} className="text-xs bg-green-100 text-green-700 px-2.5 py-1.5 rounded-md font-medium hover:bg-green-200">+ Add Employee</button>
                     <button type="button" className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500"><Edit2 className="w-4 h-4" /></button>
                     <button type="button" className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500"><Trash2 className="w-4 h-4" /></button>
                     <button type="button" className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500">
@@ -368,9 +565,9 @@ export const SeminarEnrollment = () => {
 
                   <div className="flex items-center justify-between p-4 border-t border-gray-100 bg-white">
                     <p className="text-sm text-gray-500">{seminar.enrolledCount} enrolled · {slotsLeft} slots remaining</p>
-                    <button type="button" className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center">
+                    <button type="button" onClick={() => openEnrollModal(seminar)} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center">
                       <UserPlus className="w-4 h-4 mr-2" />
-                      Add More Employees
+                      Add Employee to Seminar
                     </button>
                   </div>
                 </>
@@ -379,6 +576,24 @@ export const SeminarEnrollment = () => {
           );
         })}
       </div>
+
+      {activeSeminarForModal && (
+        <EnrollEmployeesModal
+          isOpen={isEnrollModalOpen}
+          onClose={() => setIsEnrollModalOpen(false)}
+          seminarTitle={activeSeminarForModal.title}
+          onEnroll={(selectedIds, status) => {
+            console.log('Enrolling', selectedIds, 'as', status, 'in', activeSeminarForModal.title);
+          }}
+        />
+      )}
+
+      <NewSeminarModal
+        isOpen={isNewSeminarModalOpen}
+        onClose={() => setIsNewSeminarModalOpen(false)}
+        onSubmit={(seminar) => setSeminars((prev) => [...prev, seminar])}
+        categoryOptions={categoryOptions}
+      />
     </div>
   );
 };

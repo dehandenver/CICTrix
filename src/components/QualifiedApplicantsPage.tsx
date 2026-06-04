@@ -26,10 +26,7 @@ import {
     formatPHDateTime,
     getApplicants,
     getAuthoritativeJobPostings,
-    getEmployeeRecords,
-    getNewlyHired,
     saveApplicants,
-    saveEmployeeRecords,
     saveNewlyHired,
 } from '../lib/recruitmentData';
 import { sendEmail } from '../lib/email';
@@ -2018,7 +2015,7 @@ export const QualifiedApplicantsPage = () => {
           <div className="mx-auto flex h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-start justify-between bg-blue-600 px-6 py-4 text-white">
               <div>
-                <h3 className="text-2xl font-semibold">Send Message to Applicant</h3>
+                <h3 className="text-2xl font-semibold text-white">Send Message to Applicant</h3>
                 <p className="text-sm text-blue-100">Notify applicant about their application</p>
               </div>
               <button className="rounded-md p-2 text-blue-100 hover:bg-blue-500" onClick={() => setShowMessageDialog(false)}>
@@ -2112,7 +2109,7 @@ export const QualifiedApplicantsPage = () => {
             onClick={(event) => event.stopPropagation()}
           >
             <div className={`rounded-t-2xl px-6 py-4 text-white ${pendingStatusAction.action === 'qualify' ? 'bg-green-600' : 'bg-rose-600'}`}>
-              <h3 className="text-xl font-semibold">Confirm Status Change</h3>
+              <h3 className="text-xl font-semibold text-white">Confirm Status Change</h3>
             </div>
             <div className="space-y-3 px-6 py-5 text-slate-700">
               <p className="text-base">
@@ -2173,7 +2170,7 @@ export const QualifiedApplicantsPage = () => {
             onClick={(event) => event.stopPropagation()}
           >
             <div className="rounded-t-2xl bg-emerald-600 px-6 py-4 text-white">
-              <h3 className="text-xl font-semibold">Confirm Hiring</h3>
+              <h3 className="text-xl font-semibold text-white">Confirm Hiring</h3>
             </div>
             <div className="space-y-3 px-6 py-5 text-slate-700">
               <p className="text-base">Are you sure you want to hire the selected applicant(s)?</p>

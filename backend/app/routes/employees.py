@@ -9,34 +9,6 @@ from app.utils.dependencies import get_current_user, require_role
 
 router = APIRouter(prefix="/api/employees", tags=["employees"])
 
-
-def _resolve_department_id(client, department_name: Optional[str]) -> str:
-    """
-    Resolve a department name to its UUID in the `departments` lookup table.
-    Migration 006 made employees.department_id NOT NULL, so every insert must
-    supply one. Falls back to 'Operations' (the same fallback migration 006's
-    backfill used) when the name is missing or unmatched.
-    """
-    name = (department_name or "").strip()
-    if name:
-        match = client.table("departments").select("id").eq("name", name).execute()
-        if match.data:
-            return match.data[0]["id"]
-
-    fallback = (
-        client.table("departments").select("id").eq("name", "Operations").execute()
-    )
-    if fallback.data:
-        return fallback.data[0]["id"]
-
-    raise HTTPException(
-        status_code=500,
-        detail=(
-            "Could not resolve a department_id: no match for "
-            f"'{name}' and no 'Operations' fallback in the departments table."
-        ),
-    )
-
 @router.post("/", response_model=EmployeeResponse, status_code=201)
 async def create_employee(
     employee: EmployeeCreate = Body(...),
@@ -62,7 +34,7 @@ async def list_employees(
     current_user: UserRole = Depends(get_current_user)
 ):
     client = db.get_service_client()
-    query = client.table("employees").select("*")
+    query = client.table("employees_with_department").select("*")
     
     if department:
         query = query.eq("current_department", department)
@@ -80,7 +52,7 @@ async def get_employee(
     current_user: UserRole = Depends(get_current_user)
 ):
     client = db.get_service_client()
-    response = client.table("employees").select("*").eq("id", id).execute()
+    response = client.table("employees_with_department").select("*").eq("id", id).execute()
     if not response.data:
         raise HTTPException(status_code=404, detail="Employee not found")
         
@@ -134,59 +106,72 @@ async def hire_from_applicant(
         raise HTTPException(status_code=404, detail="Applicant not found")
     
     app_data = app_res.data[0]
+    app_type = app_data.get("application_type", "job")
     
-    names = [app_data.get("first_name", ""), app_data.get("middle_name", ""), app_data.get("last_name", "")]
-    full_name = " ".join([n for n in names if n]).strip()
     today_str = date.today().isoformat()
-    
-    pos_hist = [{
-        "position": app_data.get("position") or app_data.get("current_position") or "",
-        "department": app_data.get("office") or app_data.get("current_department") or "",
-        "division": app_data.get("current_division") or "",
-        "effectiveDate": today_str,
-        "changeType": "hire",
-        "sourceApplicantId": applicant_id
-    }]
-    
-    emp_id = app_data.get("employee_id")
-    if not emp_id:
-        emp_id = f"EMP-{uuid.uuid4().hex[:8].upper()}"
+    department_name = app_data.get("office") or app_data.get("current_department") or "Operations"
+    position_name = app_data.get("position") or app_data.get("current_position") or "Staff"
 
-    department_name = app_data.get("office") or app_data.get("current_department")
-    department_id = _resolve_department_id(client, department_name)
-
-    insert_data = {
-        "employee_id": emp_id,
-        "user_id": None,
-        "full_name": full_name or "Unknown Name",
-        "email": app_data.get("email"),
-        "mobile_number": app_data.get("contact_number"),
-        "home_address": app_data.get("address"),
-        "gender": app_data.get("gender"),
-        "current_position": app_data.get("position") or app_data.get("current_position"),
-        # department_id satisfies the NOT NULL FK from migration 006; the
-        # sync trigger keeps current_department text aligned, but we set it
-        # too so the row is correct even if the trigger is ever dropped.
-        "department_id": department_id,
-        "current_department": department_name,
-        "current_division": app_data.get("current_division"),
-        "hire_date": today_str,
-        "status": "Active",
-        "position_history": pos_hist
-    }
-    
-    valid_genders = ['Male', 'Female', 'Other', 'Prefer not to say']
-    if insert_data["gender"] not in valid_genders:
-        insert_data.pop("gender", None)
-
-    # 2. Insert into employees
-    emp_res = client.table("employees").insert(insert_data).execute()
-    if not emp_res.data:
-        raise HTTPException(status_code=500, detail="Failed to insert employee record")
+    if app_type == "promotion" and app_data.get("employee_id"):
+        # Promotion: Update existing employee (Schema C uses employee_number)
+        emp_id = app_data.get("employee_id")
+        update_data = {
+            "position": position_name,
+            "department": department_name,
+        }
         
-    new_emp = emp_res.data[0]
-    
+        emp_res = client.table("employees").update(update_data).eq("employee_number", emp_id).execute()
+        if not emp_res.data:
+            raise HTTPException(status_code=500, detail="Failed to update existing employee record for promotion")
+            
+        new_emp_raw = emp_res.data[0]
+    else:
+        # New Hire: Insert/Upsert new employee
+        emp_id = app_data.get("employee_id")
+        if not emp_id:
+            # Deterministic employee_number generation based on applicant_id to ensure idempotency
+            emp_id = f"EMP-{str(applicant_id).replace('-', '')[:8].upper()}"
+        
+        email = app_data.get("email")
+        if not email:
+            first = app_data.get("first_name", "").lower().replace(" ", "")
+            last = app_data.get("last_name", "").lower().replace(" ", "")
+            email = f"{first}.{last}.{emp_id.lower()}@employee.local"
+
+        insert_data = {
+            "employee_number": emp_id,
+            "first_name": app_data.get("first_name", ""),
+            "middle_name": app_data.get("middle_name", ""),
+            "last_name": app_data.get("last_name", ""),
+            "email": email,
+            "phone": app_data.get("contact_number"),
+            "current_address_street": app_data.get("address"),
+            "sex": app_data.get("gender"),
+            "position": position_name,
+            "department": department_name,
+            "employment_status": "Regular",
+            "date_hired": today_str,
+            "status": "Active",
+            "user_account_id": None
+        }
+        
+        valid_genders = ['Male', 'Female', 'Other', 'Prefer not to say']
+        if insert_data["sex"] not in valid_genders:
+            insert_data.pop("sex", None)
+
+        # 2. Upsert into employees (using on_conflict to ensure idempotency)
+        emp_res = client.table("employees").upsert(insert_data, on_conflict="employee_number").execute()
+        if not emp_res.data:
+            raise HTTPException(status_code=500, detail="Failed to insert employee record")
+            
+        new_emp_raw = emp_res.data[0]
+        
     # 3. Update applicant
     client.table("applicants").update({"status": "hired"}).eq("id", applicant_id).execute()
     
-    return new_emp
+    # 4. Fetch the row through the compatibility view to return Schema B (EmployeeResponse) format
+    view_res = client.table("employees_with_department").select("*").eq("id", new_emp_raw["id"]).execute()
+    if not view_res.data:
+        raise HTTPException(status_code=500, detail="Failed to read created employee via view")
+    
+    return view_res.data[0]

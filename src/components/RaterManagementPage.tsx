@@ -54,7 +54,6 @@ interface RaterFormState {
   endDate: string;
 }
 
-const RATER_ASSIGNMENTS_KEY = 'cictrix_rater_assigned_positions';
 const RATER_ACCESS_STATE_KEY = 'cictrix_rater_access_state_map';
 
 const defaultFormState = (): RaterFormState => ({
@@ -81,25 +80,6 @@ const getAccessClient = () => {
 const normalizeEmailKey = (email: string) => String(email ?? '').trim().toLowerCase();
 
 const uniqueStrings = (values: string[]) => Array.from(new Set(values.filter(Boolean)));
-
-const loadRaterAssignments = (): Record<string, string[]> => {
-  try {
-    const raw = localStorage.getItem(RATER_ASSIGNMENTS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object') return {};
-    return parsed as Record<string, string[]>;
-  } catch {
-    return {};
-  }
-};
-
-const saveRaterAssignments = (assignments: Record<string, string[]>) => {
-  try {
-    localStorage.setItem(RATER_ASSIGNMENTS_KEY, JSON.stringify(assignments));
-  } catch {
-  }
-};
 
 const saveRaterAccessState = (email: string, isActive: boolean) => {
   try {
@@ -242,7 +222,8 @@ export const RaterManagementPage = () => {
   const [toast, setToast] = useState('');
 
   const loadRaters = async () => {
-    const localAssignments = loadRaterAssignments();
+    // Assignments come from Supabase raters.assigned_positions only.
+    // No localStorage cache — see the project-wide "Supabase only" rule.
 
     try {
       const responses = await Promise.all(
@@ -299,15 +280,21 @@ export const RaterManagementPage = () => {
           const email = String(row?.email ?? '').trim();
           const emailKey = normalizeEmailKey(email);
           const mapKey = emailKey || `id:${String(row?.id ?? crypto.randomUUID())}`;
-          const positionsFromRow = Array.isArray(row?.assigned_positions)
-            ? row.assigned_positions.filter((value: unknown) => typeof value === 'string')
-            : [];
-          const positionsFromLocal = emailKey ? localAssignments[emailKey] ?? [] : [];
           // Only real job-title strings belong here. Department names and the
           // sentinel 'Unassigned' must not pollute this list — they were silently
           // poisoning the interviewer's filter (no job title matches 'Unassigned'
           // so ALL jobs vanished from the interviewer dashboard after assignment).
-          const assignedPositions = uniqueStrings([...positionsFromRow, ...positionsFromLocal]);
+          const assignedPositions = uniqueStrings(
+            Array.isArray(row?.assigned_positions)
+              ? row.assigned_positions
+                  .filter((value: unknown): value is string => typeof value === 'string')
+                  .filter((value: string) => {
+                    // Strip leftover RLS test sentinels that were never real positions.
+                    const normalized = value.trim().toLowerCase();
+                    return normalized !== 'rls_test' && normalized !== 'rls test';
+                  })
+              : [],
+          );
 
           const nextRow: RaterSourceRow = {
             id: String(row?.id ?? crypto.randomUUID()),
@@ -359,7 +346,6 @@ export const RaterManagementPage = () => {
     const onStorage = (event: StorageEvent) => {
       if (
         !event.key ||
-        event.key === RATER_ASSIGNMENTS_KEY ||
         event.key === 'cictrix_raters' ||
         event.key === 'cictrix_data_source_mode'
       ) {
@@ -509,16 +495,6 @@ export const RaterManagementPage = () => {
     }));
   };
 
-  const persistAssignmentsLocally = (email: string, positions: string[]) => {
-    const assignmentKey = normalizeEmailKey(email);
-    const currentAssignments = loadRaterAssignments();
-    const nextAssignments = {
-      ...currentAssignments,
-      [assignmentKey]: uniqueStrings(positions),
-    };
-    saveRaterAssignments(nextAssignments);
-  };
-
   const handleSaveRaterAccess = async () => {
     const fallbackEmail = normalizeEmailKey(manualEmail);
     const fallbackName = String(manualName || manualEmail).trim();
@@ -542,7 +518,6 @@ export const RaterManagementPage = () => {
     const previousRows = ratersData;
     const nextAssignedPositions = uniqueStrings(form.assignedPositions);
 
-    persistAssignmentsLocally(accountToUse.email, nextAssignedPositions);
     setRatersData((current) =>
       selectedRater
         ? current.map((rater) =>

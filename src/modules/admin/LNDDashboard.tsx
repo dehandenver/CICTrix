@@ -1,31 +1,48 @@
 import {
-    Award,
-    BookOpen,
-    Building2,
-    Calendar,
-    ChevronLeft,
-    ChevronRight,
-    ChevronUp,
-    ClipboardCheck,
-    ClipboardList,
-    Eye,
-    FileText,
-    Info,
-    LayoutDashboard,
-    LineChart as LineChartIcon,
-    Plus,
-    Search,
-    Send,
-    Settings,
-    Target,
-    Upload,
-    Users,
-    UsersRound,
-    X,
+  Award,
+  BookOpen,
+  Building2,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  ClipboardCheck,
+  ClipboardList,
+  Eye,
+  FileText,
+  Info,
+  LayoutDashboard,
+  LineChart as LineChartIcon,
+  Plus,
+  Search,
+  Send,
+  Settings,
+  Target,
+  Upload,
+  Users,
+  UsersRound,
+  X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import {
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart as RechartsLineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { AdminHeader } from '../../components/AdminHeader';
 import { getAllEmployees, type Employee } from '../../lib/api/employees';
+import { supabase } from '../../lib/supabase';
+
+type EmployeeOption = { id: string; name: string; position: string; department: string };
+import { EmployeeDevelopment } from './EmployeeDevelopment';
+import { PMReports } from './PMReports';
+import { SeminarEnrollment } from './SeminarEnrollment';
+import { TrainingCourses, type Course } from './TrainingCourses';
 
 type DocumentRow = {
   no: number;
@@ -41,6 +58,7 @@ type DocumentRow = {
   action: 'Request' | 'View';
   actionClass: string;
   icon: any;
+  request: DocumentRequest;
 };
 
 /** Derive 2-letter initials from a full_name string. */
@@ -50,20 +68,16 @@ const getDocRowInitials = (name: string): string => {
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 };
-import {
-    CartesianGrid,
-    Legend,
-    Line,
-    LineChart as RechartsLineChart,
-    ResponsiveContainer,
-    Tooltip,
-    XAxis,
-    YAxis,
-} from 'recharts';
-import { EmployeeDevelopment } from './EmployeeDevelopment';
-import { PMReports } from './PMReports';
-import { SeminarEnrollment } from './SeminarEnrollment';
-import { type Course, TrainingCourses } from './TrainingCourses';
+
+import { EmptyState } from '../../components/EmptyState';
+import { computeLNDSkillGaps, getEmployeeCompetencies } from '../../lib/api/competencies';
+import { getDocumentRequests, updateDocumentRequestStatus, type DocumentRequest } from '../../lib/api/documentRequests';
+import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
+import { createDocumentRequest } from '../../lib/employeeDocuments';
+import { getActivePrograms, getTopProgramsByEnrollment, type TrainingProgram } from '../../lib/api/trainingPrograms';
+import { getTrainingRequests, summarizeByStatus } from '../../lib/api/trainingRequests';
+import { getMonthlySessionCounts, getUpcomingSessions } from '../../lib/api/trainingSessions';
+import EmployeeDirectory from './EmployeeDirectory';
 
 type Priority = 'high' | 'medium' | 'low';
 type RequestStatus = 'approved' | 'pending' | 'rejected';
@@ -74,6 +88,7 @@ type MenuId =
   | 'seminar-enrollment'
   | 'employee-progress'
   | 'documents'
+  | 'employees'
   | 'settings';
 
 type MenuItem = {
@@ -93,15 +108,7 @@ type StatCardProps = {
   sublabel: string;
 };
 
-const competencyGaps = [];
-
-const upcomingSeminars = [];
-
-const trainingRequests = [];
-
-const topPrograms = [];
-
-const monthlyTrainingData = [];
+// Module-scope mock data arrays removed in favor of component state
 
 const LND_MENU: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', sublabel: 'Overview and KPIs', icon: LayoutDashboard },
@@ -109,6 +116,7 @@ const LND_MENU: MenuItem[] = [
   { id: 'seminar-enrollment', label: 'Seminar Enrollment', sublabel: 'Registrations and slots', icon: ClipboardCheck },
   { id: 'employee-progress', label: 'Employee Development', sublabel: 'Employees and ratings', icon: Users },
   { id: 'documents', label: 'Documents', sublabel: 'Document submissions', icon: FileText },
+  { id: 'employees', label: 'Employees', sublabel: 'Directory and profiles', icon: UsersRound },
   { id: 'settings', label: 'Settings', sublabel: 'Division preferences', icon: Settings },
 ];
 
@@ -196,9 +204,65 @@ const StatCard = ({ label, value, icon: Icon, color, sublabel }: StatCardProps) 
 };
 
 const LndDashboardContent = () => {
+  const [lndLoading, setLndLoading] = useState(true);
+  const [trainingPrograms, setTrainingPrograms] = useState<TrainingProgram[]>([]);
+  const [monthlyTrainingData, setMonthlyTrainingData] = useState<any[]>([]);
+  const [competencyGaps, setCompetencyGaps] = useState<any[]>([]);
+  const [upcomingSeminars, setUpcomingSeminars] = useState<any[]>([]);
+  const [topPrograms, setTopPrograms] = useState<any[]>([]);
+  const [trainingRequests, setTrainingRequests] = useState<any[]>([]);
+  const [totalEmployees, setTotalEmployees] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [
+          programs,
+          sessionsCount,
+          reqs,
+          compRes,
+          topProgs,
+          upcSeminars,
+          empRes
+        ] = await Promise.all([
+          getActivePrograms(),
+          getMonthlySessionCounts(12),
+          getTrainingRequests(),
+          getEmployeeCompetencies(),
+          getTopProgramsByEnrollment(5),
+          getUpcomingSessions(5),
+          getAllEmployees({ status: 'Active' })
+        ]);
+
+        if (cancelled) return;
+
+        setTrainingPrograms(programs);
+        setMonthlyTrainingData(sessionsCount);
+        setTrainingRequests(reqs);
+        
+        if (compRes.success && compRes.data) {
+          setCompetencyGaps(computeLNDSkillGaps(compRes.data).slice(0, 4));
+        }
+        
+        setTopPrograms(topProgs);
+        setUpcomingSeminars(upcSeminars);
+        
+        if (empRes.success && Array.isArray(empRes.data)) {
+          setTotalEmployees(empRes.data.length);
+        }
+      } catch (err) {
+        console.error('Error fetching LND dashboard data', err);
+      } finally {
+        if (!cancelled) setLndLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const approvedCount = useMemo(
-    () => trainingRequests.filter((request) => request.status === 'approved').length,
-    []
+    () => summarizeByStatus(trainingRequests).approved,
+    [trainingRequests]
   );
 
   return (
@@ -211,36 +275,44 @@ const LndDashboardContent = () => {
         <p className="mt-1 text-sm text-gray-500">Monitor training programs, competency development, and completion performance.</p>
       </section>
 
-      <section className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Total Employees" value="1,248" icon={Users} color="blue" sublabel="Workforce covered" />
-        <StatCard label="Training Programs" value="36" icon={BookOpen} color="green" sublabel="Active modules" />
-        <StatCard label="Active Participants" value="742" icon={Award} color="orange" sublabel="In current cycle" />
-        <StatCard label="Completed Trainings" value="584" icon={ClipboardCheck} color="purple" sublabel="This quarter" />
+      <section className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4 relative">
+        {lndLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
+        <StatCard label="Total Employees" value={totalEmployees.toString()} icon={Users} color="blue" sublabel="Workforce covered" />
+        <StatCard label="Training Programs" value={trainingPrograms.length.toString()} icon={BookOpen} color="green" sublabel="Active modules" />
+        {/* Active Participants and Completed Trainings require enrollment tracking tables, currently defaulting to 0 until seeded */}
+        <StatCard label="Active Participants" value="0" icon={Award} color="orange" sublabel="In current cycle" />
+        <StatCard label="Completed Trainings" value="0" icon={ClipboardCheck} color="purple" sublabel="This quarter" />
       </section>
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-5">
+      <section className="rounded-2xl border border-gray-200 bg-white p-5 relative min-h-[350px]">
+        {lndLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">Trainings Conducted (This Month)</h2>
           <p className="text-xs text-gray-500">Weekly trend by category</p>
         </div>
-        <div className="h-[300px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <RechartsLineChart data={monthlyTrainingData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} />
-              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} />
-              <Tooltip />
-              <Legend />
-              <Line type="monotone" dataKey="Leadership" stroke="#2563eb" strokeWidth={2.5} dot={{ r: 4 }} />
-              <Line type="monotone" dataKey="Technical" stroke="#16a34a" strokeWidth={2.5} dot={{ r: 4 }} />
-              <Line type="monotone" dataKey="SoftSkills" stroke="#ea580c" strokeWidth={2.5} dot={{ r: 4 }} />
-              <Line type="monotone" dataKey="Compliance" stroke="#9333ea" strokeWidth={2.5} dot={{ r: 4 }} />
-            </RechartsLineChart>
-          </ResponsiveContainer>
-        </div>
+        {monthlyTrainingData.length === 0 && !lndLoading ? (
+          <EmptyState title="No training data" description="No training sessions have been conducted yet." />
+        ) : (
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <RechartsLineChart data={monthlyTrainingData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} />
+                <Tooltip />
+                <Legend />
+                <Line type="monotone" dataKey="Leadership" stroke="#2563eb" strokeWidth={2.5} dot={{ r: 4 }} />
+                <Line type="monotone" dataKey="Technical" stroke="#16a34a" strokeWidth={2.5} dot={{ r: 4 }} />
+                <Line type="monotone" dataKey="SoftSkills" stroke="#ea580c" strokeWidth={2.5} dot={{ r: 4 }} />
+                <Line type="monotone" dataKey="Compliance" stroke="#9333ea" strokeWidth={2.5} dot={{ r: 4 }} />
+              </RechartsLineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </section>
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-5">
+      <section className="rounded-2xl border border-gray-200 bg-white p-5 relative">
+        {lndLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
         <div className="mb-4 flex items-center justify-between">
           <h2 className="inline-flex items-center gap-2 text-lg font-semibold text-gray-900">
             <Target className="h-5 w-5 text-blue-600" />
@@ -249,120 +321,139 @@ const LndDashboardContent = () => {
           <button type="button" className="text-sm font-semibold text-blue-600 hover:text-blue-700">View Details</button>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {competencyGaps.map((item) => (
-            <article key={item.skill} className="rounded-xl border border-gray-200 p-4">
-              <div className="mb-4 flex items-start justify-between">
-                <div>
-                  <h3 className="text-base font-semibold text-gray-900">{item.skill}</h3>
-                  <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${priorityColor(item.priority)}`}>
-                    {item.priority}
-                  </span>
+        {competencyGaps.length === 0 && !lndLoading ? (
+          <EmptyState title="No competency gaps" description="All competency assessments are either completed or not yet recorded." />
+        ) : (
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            {competencyGaps.map((item) => (
+              <article key={item.skill} className="rounded-xl border border-gray-200 p-4">
+                <div className="mb-4 flex items-start justify-between">
+                  <div>
+                    <h3 className="text-base font-semibold text-gray-900">{item.skill}</h3>
+                    <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${priorityColor(item.priority)}`}>
+                      {item.priority}
+                    </span>
+                  </div>
+                  <p className="text-sm font-semibold text-red-600">Gap {item.gap}%</p>
                 </div>
-                <p className="text-sm font-semibold text-red-600">Gap {item.gap}%</p>
-              </div>
 
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <div>
-                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Current Level</p>
-                  <div className="h-2.5 rounded-full bg-gray-200">
-                    <div className="h-2.5 rounded-full bg-orange-500" style={{ width: `${item.currentLevel}%` }} />
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div>
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Current Level</p>
+                    <div className="h-2.5 rounded-full bg-gray-200">
+                      <div className="h-2.5 rounded-full bg-orange-500" style={{ width: `${item.currentLevel}%` }} />
+                    </div>
+                    <p className="mt-1 text-xs text-gray-600">{item.currentLevel}%</p>
                   </div>
-                  <p className="mt-1 text-xs text-gray-600">{item.currentLevel}%</p>
-                </div>
-                <div>
-                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Target Level</p>
-                  <div className="h-2.5 rounded-full bg-gray-200">
-                    <div className="h-2.5 rounded-full bg-blue-600" style={{ width: `${item.targetLevel}%` }} />
+                  <div>
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Target Level</p>
+                    <div className="h-2.5 rounded-full bg-gray-200">
+                      <div className="h-2.5 rounded-full bg-blue-600" style={{ width: `${item.targetLevel}%` }} />
+                    </div>
+                    <p className="mt-1 text-xs text-gray-600">{item.targetLevel}%</p>
                   </div>
-                  <p className="mt-1 text-xs text-gray-600">{item.targetLevel}%</p>
                 </div>
-              </div>
-            </article>
-          ))}
-        </div>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
-      <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <article className="rounded-2xl border border-gray-200 bg-white p-5">
+      <section className="grid grid-cols-1 gap-6 lg:grid-cols-2 relative">
+        <article className="rounded-2xl border border-gray-200 bg-white p-5 relative min-h-[250px]">
+          {lndLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
           <h2 className="mb-4 inline-flex items-center gap-2 text-lg font-semibold text-gray-900">
             <Calendar className="h-5 w-5 text-blue-600" />
             Upcoming Seminars
           </h2>
-          <div className="space-y-3">
-            {upcomingSeminars.map((seminar) => (
-              <div key={seminar.id} className="rounded-xl border border-gray-200 p-3 transition hover:bg-gray-50">
-                <p className="text-sm font-semibold text-gray-900">{seminar.title}</p>
-                <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-gray-500">
-                  <span>{seminar.date}</span>
-                  <span className="inline-flex items-center gap-1">
-                    <Users className="h-3.5 w-3.5" />
-                    {seminar.participants} participants
-                  </span>
+          {upcomingSeminars.length === 0 && !lndLoading ? (
+            <EmptyState title="No upcoming seminars" description="There are currently no training sessions scheduled." />
+          ) : (
+            <div className="space-y-3">
+              {upcomingSeminars.map((seminar) => (
+                <div key={seminar.id} className="rounded-xl border border-gray-200 p-3 transition hover:bg-gray-50">
+                  <p className="text-sm font-semibold text-gray-900">{seminar.title}</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-gray-500">
+                    <span>{seminar.date}</span>
+                    <span className="inline-flex items-center gap-1">
+                      <Users className="h-3.5 w-3.5" />
+                      {seminar.participants} participants
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-600">Instructor: {seminar.instructor}</p>
                 </div>
-                <p className="mt-1 text-xs text-gray-600">Instructor: {seminar.instructor}</p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </article>
 
-        <article className="rounded-2xl border border-gray-200 bg-white p-5">
+        <article className="rounded-2xl border border-gray-200 bg-white p-5 relative min-h-[250px]">
+          {lndLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
           <h2 className="mb-4 inline-flex items-center gap-2 text-lg font-semibold text-gray-900">
             <LineChartIcon className="h-5 w-5 text-blue-600" />
             Top Performing Programs
           </h2>
-          <div className="space-y-3">
-            {topPrograms.map((program, index) => (
-              <div key={program.id} className="rounded-xl border border-gray-200 p-3">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">
-                    {index + 1}
-                  </span>
-                  <p className="flex-1 text-sm font-semibold text-gray-900">{program.title}</p>
+          {topPrograms.length === 0 && !lndLoading ? (
+            <EmptyState title="No top programs" description="No training programs have sufficient completion data yet." />
+          ) : (
+            <div className="space-y-3">
+              {topPrograms.map((program, index) => (
+                <div key={program.id} className="rounded-xl border border-gray-200 p-3">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">
+                      {index + 1}
+                    </span>
+                    <p className="flex-1 text-sm font-semibold text-gray-900">{program.title}</p>
+                  </div>
+                  <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                    <p className="text-gray-600">Rating: <span className="font-semibold text-gray-900">{program.rating} <span className="text-yellow-500">★</span></span></p>
+                    <p className="text-gray-600">Completion: <span className="font-semibold text-gray-900">{program.completionRate}%</span></p>
+                    <p className="text-gray-600">Participants: <span className="font-semibold text-gray-900">{program.participants}</span></p>
+                  </div>
                 </div>
-                <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                  <p className="text-gray-600">Rating: <span className="font-semibold text-gray-900">{program.rating} <span className="text-yellow-500">★</span></span></p>
-                  <p className="text-gray-600">Completion: <span className="font-semibold text-gray-900">{program.completionRate}%</span></p>
-                  <p className="text-gray-600">Participants: <span className="font-semibold text-gray-900">{program.participants}</span></p>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </article>
       </section>
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-5">
+      <section className="rounded-2xl border border-gray-200 bg-white p-5 relative min-h-[300px]">
+        {lndLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
         <h2 className="mb-4 text-lg font-semibold text-gray-900">Recent Training Requests</h2>
-        <div className="overflow-x-auto">
-          <table className="min-w-full border-collapse">
-            <thead>
-              <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-                <th className="px-3 py-3">Employee</th>
-                <th className="px-3 py-3">Position</th>
-                <th className="px-3 py-3">Department</th>
-                <th className="px-3 py-3">Requested Training</th>
-                <th className="px-3 py-3">Date Requested</th>
-                <th className="px-3 py-3">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {trainingRequests.map((request) => (
-                <tr key={request.id} className="border-b border-gray-100 text-sm hover:bg-gray-50">
-                  <td className="px-3 py-3 font-medium text-gray-900">{request.employee}</td>
-                  <td className="px-3 py-3 text-gray-700">{request.position}</td>
-                  <td className="px-3 py-3 text-gray-700">{request.department}</td>
-                  <td className="px-3 py-3 text-gray-700">{request.requestedTraining}</td>
-                  <td className="px-3 py-3 text-gray-700">{request.dateRequested}</td>
-                  <td className="px-3 py-3">
-                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${statusColor(request.status)}`}>
-                      {request.status}
-                    </span>
-                  </td>
+        {trainingRequests.length === 0 && !lndLoading ? (
+          <EmptyState title="No training requests" description="Employees have not submitted any training requests yet." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full border-collapse">
+              <thead>
+                <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
+                  <th className="px-3 py-3">Employee</th>
+                  <th className="px-3 py-3">Position</th>
+                  <th className="px-3 py-3">Department</th>
+                  <th className="px-3 py-3">Requested Training</th>
+                  <th className="px-3 py-3">Date Requested</th>
+                  <th className="px-3 py-3">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {trainingRequests.map((request) => (
+                  <tr key={request.id} className="border-b border-gray-100 text-sm hover:bg-gray-50">
+                    <td className="px-3 py-3 font-medium text-gray-900">{request.employee}</td>
+                    <td className="px-3 py-3 text-gray-700">{request.position}</td>
+                    <td className="px-3 py-3 text-gray-700">{request.department}</td>
+                    <td className="px-3 py-3 text-gray-700">{request.requestedTraining}</td>
+                    <td className="px-3 py-3 text-gray-700">{request.dateRequested}</td>
+                    <td className="px-3 py-3">
+                      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${statusColor(request.status)}`}>
+                        {request.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
         <p className="mt-3 text-xs text-gray-500">Approved requests this cycle: {approvedCount}</p>
       </section>
     </div>
@@ -389,8 +480,9 @@ interface LNDDocumentsProps {
 const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSelectionConsumed }: LNDDocumentsProps) => {
   // Individual request modal state
   const [showRequestModal, setShowRequestModal] = useState(false);
-  const [requestEmployee, setRequestEmployee] = useState<{ name: string; role: string; dept: string; initials: string } | null>(null);
+  const [requestEmployee, setRequestEmployee] = useState<{ id?: string; name: string; role: string; dept: string; initials: string } | null>(null);
   const [requestDocType, setRequestDocType] = useState('');
+  const [requestDescription, setRequestDescription] = useState('');
   const [requestDueDate, setRequestDueDate] = useState('');
 
   // Bulk request modal state
@@ -401,40 +493,178 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
   const [bulkCalendarMonth, setBulkCalendarMonth] = useState(new Date().getMonth());
   const [bulkCalendarYear, setBulkCalendarYear] = useState(new Date().getFullYear());
   const [bulkSendTo, setBulkSendTo] = useState<'all' | 'department' | 'selected'>('all');
-  const totalEmployees = 24;
-
-  // Employees from the central employees table. When empty, the documents
-  // table falls back to the hardcoded demo `rows` below.
-  const [dbDocumentRows, setDbDocumentRows] = useState<DocumentRow[]>([]);
+  const [activeEmployees, setActiveEmployees] = useState<EmployeeOption[]>([]);
+  const [bulkSelectedDepartment, setBulkSelectedDepartment] = useState<string>('');
+  const [bulkSelectedEmployees, setBulkSelectedEmployees] = useState<string[]>([]);
+  const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const result = await getAllEmployees({ status: 'Active' });
+      const { data, error } = await (supabase as any)
+        .from('employees_with_department')
+        .select('id, full_name, current_position, department, status')
+        .eq('status', 'Active')
+        .order('full_name', { ascending: true });
       if (cancelled) return;
-      if (!result.success || !Array.isArray(result.data) || result.data.length === 0) {
-        setDbDocumentRows([]);
+      if (error) {
+        console.error('Error loading employees for document request modal:', error);
+        setActiveEmployees([]);
         return;
       }
-      // Per-employee per-document tracking is not wired yet, so every real
-      // employee shows up with a 'Pending' / 'Request' default until the
-      // document-request domain table exists.
-      const mapped: DocumentRow[] = (result.data as Employee[]).map((emp, idx) => ({
+      const mapped: EmployeeOption[] = (data ?? []).map((row: any) => {
+        const name = (row.full_name ?? '').trim() || 'Unnamed Employee';
+        return {
+          id: row.id,
+          name,
+          position: row.current_position ?? '—',
+          department: row.department ?? '—',
+        };
+      });
+      setActiveEmployees(mapped);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const filteredBulkEmployees = useMemo(() => {
+    const term = employeeSearchTerm.trim().toLowerCase();
+    if (!term) return activeEmployees;
+    return activeEmployees.filter((emp) =>
+      emp.name.toLowerCase().includes(term) ||
+      emp.position.toLowerCase().includes(term) ||
+      emp.department.toLowerCase().includes(term)
+    );
+  }, [activeEmployees, employeeSearchTerm]);
+
+  const toggleBulkEmployee = (id: string) => {
+    setBulkSelectedEmployees((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const totalEmployees = activeEmployees.length;
+
+  const [documentsLoading, setDocumentsLoading] = useState(true);
+  const [dbDocumentRows, setDbDocumentRows] = useState<DocumentRow[]>([]);
+  const [reviewingRequest, setReviewingRequest] = useState<DocumentRequest | null>(null);
+  const [reviewDecisionPending, setReviewDecisionPending] = useState<'Approved' | 'Rejected' | null>(null);
+
+  const refreshLNDDocumentRequests = async () => {
+    const result = await getDocumentRequests({ source: 'LND' });
+    if (!result.success || !Array.isArray(result.data)) {
+      setDbDocumentRows([]);
+      return;
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const mapped: DocumentRow[] = (result.data as DocumentRequest[]).map((req, idx) => {
+      let statusLabel: string = req.status;
+      if (statusLabel === 'Pending' && req.due_date) {
+        const due = new Date(req.due_date);
+        if (!Number.isNaN(due.getTime()) && due < today) statusLabel = 'Overdue';
+      }
+      let statusClass = 'border-slate-200 bg-slate-50 text-slate-600';
+      if (statusLabel === 'Approved') statusClass = 'border-emerald-200 bg-emerald-50 text-emerald-600';
+      if (statusLabel === 'Pending') statusClass = 'border-orange-200 bg-orange-50 text-orange-600';
+      if (statusLabel === 'Submitted') statusClass = 'border-blue-200 bg-blue-50 text-blue-600';
+      if (statusLabel === 'Overdue' || statusLabel === 'Rejected') statusClass = 'border-red-200 bg-red-50 text-red-600';
+      const action: 'Request' | 'View' = req.status === 'Submitted' || req.status === 'Approved' ? 'View' : 'Request';
+      const actionClass = action === 'View'
+        ? 'border-purple-200 text-purple-600 hover:bg-purple-50'
+        : 'bg-blue-600 text-white hover:bg-blue-700 border-transparent';
+      const icon = action === 'View' ? Eye : ClipboardList;
+      return {
         no: idx + 1,
-        initials: getDocRowInitials(emp.full_name ?? ''),
-        name: emp.full_name ?? 'Unnamed',
-        role: emp.current_position ?? 'Unassigned Position',
-        dept: emp.department ?? emp.current_department ?? 'Unassigned Department',
-        docType: '—',
-        dateReq: '—',
-        dateSub: '',
-        status: 'Pending',
-        statusClass: 'border-orange-200 bg-orange-50 text-orange-600',
-        action: 'Request',
-        actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent',
-        icon: ClipboardList,
-      }));
-      setDbDocumentRows(mapped);
+        initials: getDocRowInitials(req.employee_name ?? ''),
+        name: req.employee_name ?? 'Unnamed',
+        role: 'Employee',
+        dept: req.department ?? 'Unassigned Department',
+        docType: req.document_type || '—',
+        dateReq: new Date(req.uploaded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        dateSub: req.status !== 'Pending' ? new Date(req.uploaded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '',
+        status: statusLabel,
+        statusClass,
+        action,
+        actionClass,
+        icon,
+        request: req,
+      };
+    });
+    setDbDocumentRows(mapped);
+  };
+
+  const handleLNDReviewDecision = async (status: 'Approved' | 'Rejected') => {
+    if (!reviewingRequest) return;
+    setReviewDecisionPending(status);
+    const result = await updateDocumentRequestStatus(reviewingRequest.id, status);
+    setReviewDecisionPending(null);
+    if (!result.success) {
+      alert((result as any).error);
+      return;
+    }
+    setReviewingRequest(null);
+    await refreshLNDDocumentRequests();
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await getDocumentRequests({ source: 'LND' });
+        if (cancelled) return;
+        
+        if (!result.success || !Array.isArray(result.data) || result.data.length === 0) {
+          setDbDocumentRows([]);
+          return;
+        }
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const mapped: DocumentRow[] = (result.data as DocumentRequest[]).map((req, idx) => {
+          let statusLabel: string = req.status;
+          if (statusLabel === 'Pending' && req.due_date) {
+            const due = new Date(req.due_date);
+            if (!Number.isNaN(due.getTime()) && due < today) {
+              statusLabel = 'Overdue';
+            }
+          }
+
+          let statusClass = 'border-slate-200 bg-slate-50 text-slate-600';
+          if (statusLabel === 'Approved') statusClass = 'border-emerald-200 bg-emerald-50 text-emerald-600';
+          if (statusLabel === 'Pending') statusClass = 'border-orange-200 bg-orange-50 text-orange-600';
+          if (statusLabel === 'Submitted') statusClass = 'border-blue-200 bg-blue-50 text-blue-600';
+          if (statusLabel === 'Overdue' || statusLabel === 'Rejected') statusClass = 'border-red-200 bg-red-50 text-red-600';
+
+          const action = req.status === 'Submitted' || req.status === 'Approved' ? 'View' : 'Request';
+          const actionClass = action === 'View' 
+            ? 'border-purple-200 text-purple-600 hover:bg-purple-50' 
+            : 'bg-blue-600 text-white hover:bg-blue-700 border-transparent';
+          const icon = action === 'View' ? Eye : ClipboardList;
+
+          return {
+            no: idx + 1,
+            initials: getDocRowInitials(req.employee_name ?? ''),
+            name: req.employee_name ?? 'Unnamed',
+            role: 'Employee', // Role not available in DocumentRequest type currently
+            dept: req.department ?? 'Unassigned Department',
+            docType: req.document_type || '—',
+            dateReq: new Date(req.uploaded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+            dateSub: req.status !== 'Pending' ? new Date(req.uploaded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '',
+            status: statusLabel,
+            statusClass,
+            action,
+            actionClass,
+            icon,
+            request: req,
+          };
+        });
+        setDbDocumentRows(mapped);
+      } catch (err) {
+        console.error('Error loading documents', err);
+      } finally {
+        if (!cancelled) setDocumentsLoading(false);
+      }
     })();
     return () => {
       cancelled = true;
@@ -442,9 +672,10 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
   }, []);
 
   // ── Individual request helpers ──────────────────────────────────────
-  const openRequestModal = (employee?: { name: string; role: string; dept: string; initials: string }) => {
+  const openRequestModal = (employee?: { id?: string; name: string; role: string; dept: string; initials: string }) => {
     setRequestEmployee(employee || null);
     setRequestDocType('');
+    setRequestDescription('');
     setRequestDueDate('');
     setShowRequestModal(true);
   };
@@ -453,15 +684,33 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
     setShowRequestModal(false);
     setRequestEmployee(null);
     setRequestDocType('');
+    setRequestDescription('');
     setRequestDueDate('');
   };
 
-  const handleSendRequest = () => {
+  const handleSendRequest = async () => {
     if (!requestDocType || !requestDueDate) {
       alert('Please select a document type and due date.');
       return;
     }
-    alert(`Request sent for "${requestDocType}" due ${requestDueDate}${requestEmployee ? ` to ${requestEmployee.name}` : ''}.`);
+    if (!requestEmployee?.id) {
+      alert('Cannot send request: Employee ID is missing.');
+      return;
+    }
+    const res = await createDocumentRequest({
+      employeeId: requestEmployee.id,
+      documentName: requestDocType,
+      description: requestDescription || `Please submit your ${requestDocType}`,
+      dueDate: requestDueDate,
+      requestedBy: 'LND Admin',
+      source: 'LND'
+    });
+    if (!res.success) {
+      alert(`Failed to send request: ${(res as any).error}`);
+      return;
+    }
+    window.dispatchEvent(new CustomEvent('EMPLOYEE_DOCUMENTS_UPDATED'));
+    alert(`Request sent for "${requestDocType}" due ${requestDueDate}${requestEmployee.name ? ` to ${requestEmployee.name}` : ''}.`);
     closeRequestModal();
   };
 
@@ -473,19 +722,68 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
     setBulkSendTo('all');
     setBulkCalendarMonth(new Date().getMonth());
     setBulkCalendarYear(new Date().getFullYear());
+    setBulkSelectedEmployees([]);
+    setEmployeeSearchTerm('');
     setShowBulkRequestModal(true);
   };
 
   const closeBulkRequestModal = () => {
     setShowBulkRequestModal(false);
+    setBulkSelectedEmployees([]);
+    setEmployeeSearchTerm('');
   };
 
-  const handleBulkSendRequest = () => {
+  const handleBulkSendRequest = async () => {
     if (!bulkDocName || !bulkDescription || !bulkDueDate) {
       alert('Please fill in all required fields.');
       return;
     }
-    alert(`Bulk request for "${bulkDocName}" sent to ${totalEmployees} employees, due ${bulkDueDate.toLocaleDateString()}.`);
+    
+    let targetEmployees: string[] = [];
+    if (bulkSendTo === 'all') {
+      targetEmployees = activeEmployees.map((e) => e.id);
+    } else if (bulkSendTo === 'department') {
+      if (!bulkSelectedDepartment) {
+        alert('Please select a department.');
+        return;
+      }
+      targetEmployees = activeEmployees.filter((e) => e.department === bulkSelectedDepartment).map((e) => e.id);
+    } else if (bulkSendTo === 'selected') {
+      targetEmployees = bulkSelectedEmployees;
+      if (targetEmployees.length === 0) {
+        alert('Please select at least one employee.');
+        return;
+      }
+    }
+
+    if (targetEmployees.length === 0) {
+      alert('No employees match the selected criteria.');
+      return;
+    }
+
+    const dueDateStr = bulkDueDate.toISOString().split('T')[0];
+    
+    const results = await Promise.all(
+      targetEmployees.map((id) =>
+        createDocumentRequest({
+          employeeId: id,
+          documentName: bulkDocName,
+          description: bulkDescription,
+          dueDate: dueDateStr,
+          requestedBy: 'LND Admin',
+          source: 'LND'
+        })
+      )
+    );
+
+    const errors = results.filter((r) => !r.success);
+    if (errors.length > 0) {
+      console.error(errors);
+      alert(`Failed to send ${errors.length} requests. Check console for details.`);
+    }
+
+    window.dispatchEvent(new CustomEvent('EMPLOYEE_DOCUMENTS_UPDATED'));
+    alert(`Bulk request for "${bulkDocName}" sent to ${targetEmployees.length - errors.length} employees, due ${bulkDueDate.toLocaleDateString()}.`);
     closeBulkRequestModal();
   };
 
@@ -526,16 +824,26 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
     return check < today;
   };
 
-  // ── Table row data ──────────────────────────────────────────────────
-  // Hardcoded demo rows; used as fallback when no real employees exist yet.
-  const fallbackRows: DocumentRow[] = [
-    { no: 1, initials: 'SM', name: 'Santos, Maria G.', role: 'IT Officer II', dept: 'IT Department', docType: 'IPCR', dateReq: 'Mar 1, 2025', dateSub: 'Mar 12, 2025', status: 'Submitted', statusClass: 'border-blue-200 bg-blue-50 text-blue-600', action: 'View' as const, actionClass: 'border-purple-200 text-purple-600 hover:bg-purple-50', icon: Eye },
-    { no: 2, initials: 'DC', name: 'Dela Cruz, Juan P.', role: 'Systems Analyst', dept: 'IT Department', docType: 'Accomplishment Report', dateReq: 'Mar 1, 2025', dateSub: 'Mar 10, 2025', status: 'Approved', statusClass: 'border-emerald-200 bg-emerald-50 text-emerald-600', action: 'Request' as const, actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList },
-    { no: 3, initials: 'RA', name: 'Reyes, Ana T.', role: 'Network Administrator', dept: 'IT Department', docType: 'IPCR', dateReq: 'Mar 1, 2025', dateSub: '', status: 'Pending', statusClass: 'border-orange-200 bg-orange-50 text-orange-600', action: 'Request' as const, actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList },
-    { no: 4, initials: 'AR', name: 'Aguilar, Ricardo M.', role: 'IT Support Specialist', dept: 'IT Department', docType: 'Service Record', dateReq: 'Mar 3, 2025', dateSub: 'Mar 18, 2025', status: 'Under Review', statusClass: 'border-purple-200 bg-purple-50 text-purple-600', action: 'View' as const, actionClass: 'border-purple-200 text-purple-600 hover:bg-purple-50', icon: Eye },
-    { no: 5, initials: 'BL', name: 'Bautista, Lourdes S.', role: 'Database Administrator', dept: 'IT Department', docType: 'Position Description Form', dateReq: 'Feb 15, 2025', dateSub: '', status: 'Overdue', statusClass: 'border-red-200 bg-red-50 text-red-600', action: 'Request' as const, actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList },
-  ];
-  const rows: DocumentRow[] = dbDocumentRows.length > 0 ? dbDocumentRows : fallbackRows;
+  // Remove fallbackRows and use live data rows
+  const rows = dbDocumentRows;
+  
+  // Calculate summary for KPIs
+  // Transform to DocumentRequest type mock to use the summarizeRequests function, or calculate locally based on DocumentRow structure.
+  const total = rows.length;
+  const pending = rows.filter(r => r.status === 'Pending').length;
+  const overdue = rows.filter(r => r.status === 'Overdue').length;
+  const approved = rows.filter(r => r.status === 'Approved').length;
+  
+  // Group by department
+  const groupedDepts = new Map<string, DocumentRow[]>();
+  rows.forEach(r => {
+    const list = groupedDepts.get(r.dept);
+    if (list) list.push(r);
+    else groupedDepts.set(r.dept, [r]);
+  });
+  const groupedDepartments = Array.from(groupedDepts.entries())
+    .map(([dept, requests]) => ({ dept, requests }))
+    .sort((a, b) => a.dept.localeCompare(b.dept));
 
   if (showPMReports) {
     return (
@@ -582,22 +890,23 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
         </div>
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4 relative">
+          {documentsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-xl" />}
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Total Requests</p>
-            <p className="text-3xl font-bold text-slate-900 leading-none">24</p>
+            <p className="text-3xl font-bold text-slate-900 leading-none">{total}</p>
           </div>
           <div className="rounded-xl border border-orange-300 bg-white p-4 shadow-sm">
             <p className="text-[11px] font-semibold text-orange-500 uppercase tracking-wider mb-1.5">Pending</p>
-            <p className="text-3xl font-bold text-orange-500 leading-none">8</p>
+            <p className="text-3xl font-bold text-orange-500 leading-none">{pending}</p>
           </div>
           <div className="rounded-xl border border-red-200 bg-white p-4 shadow-sm">
             <p className="text-[11px] font-semibold text-red-500 uppercase tracking-wider mb-1.5">Overdue</p>
-            <p className="text-3xl font-bold text-red-500 leading-none">3</p>
+            <p className="text-3xl font-bold text-red-500 leading-none">{overdue}</p>
           </div>
           <div className="rounded-xl border border-emerald-200 bg-white p-4 shadow-sm">
             <p className="text-[11px] font-semibold text-emerald-500 uppercase tracking-wider mb-1.5">Approved</p>
-            <p className="text-3xl font-bold text-emerald-500 leading-none">5</p>
+            <p className="text-3xl font-bold text-emerald-500 leading-none">{approved}</p>
           </div>
         </div>
 
@@ -625,105 +934,121 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
         </div>
 
         {/* Table Section */}
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden mb-4">
-          {/* Dark Header */}
-          <div className="bg-[#1e293b] px-5 py-3 flex items-center justify-between text-white">
-            <div className="flex items-center gap-4">
-              <div>
-                <h3 className="text-base font-bold leading-tight">IT Department</h3>
-                <p className="text-xs text-slate-400">6 requests - 2 pages</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center rounded-full bg-orange-500 px-2.5 py-0.5 text-[11px] font-bold text-white">2 Pending</span>
-                <span className="inline-flex items-center rounded-full bg-blue-500 px-2.5 py-0.5 text-[11px] font-bold text-white">1 Submitted</span>
-                <span className="inline-flex items-center rounded-full bg-[#a855f7] px-2.5 py-0.5 text-[11px] font-bold text-white">1 Under Review</span>
-                <span className="inline-flex items-center rounded-full bg-emerald-500 px-2.5 py-0.5 text-[11px] font-bold text-white">1 Approved</span>
-                <span className="inline-flex items-center rounded-full bg-red-500 px-2.5 py-0.5 text-[11px] font-bold text-white">1 Overdue</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 cursor-pointer hover:text-slate-300">
-              <span className="text-sm font-semibold">6 employees</span>
-              <ChevronUp className="h-4 w-4" />
-            </div>
-          </div>
+        {groupedDepartments.length === 0 && !documentsLoading ? (
+          <EmptyState title="No document requests" description="There are no document requests matching the current filters." />
+        ) : (
+          groupedDepartments.map(({ dept, requests }) => {
+            const deptPending = requests.filter(r => r.status === 'Pending').length;
+            const deptSubmitted = requests.filter(r => r.status === 'Submitted').length;
+            const deptUnderReview = requests.filter(r => r.status === 'Under Review').length;
+            const deptApproved = requests.filter(r => r.status === 'Approved').length;
+            const deptOverdue = requests.filter(r => r.status === 'Overdue').length;
 
-          {/* Table Header */}
-          <div className="grid grid-cols-12 items-center px-5 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">
-            <div className="col-span-1">NO.</div>
-            <div className="col-span-3">EMPLOYEE</div>
-            <div className="col-span-2">DOCUMENT TYPE</div>
-            <div className="col-span-2">DATE REQUESTED</div>
-            <div className="col-span-2">DATE SUBMITTED</div>
-            <div className="col-span-1 text-center">STATUS</div>
-            <div className="col-span-1 text-right">ACTION</div>
-          </div>
-
-          {/* Rows */}
-          <div className="divide-y divide-slate-100">
-            {rows.map((row, i) => (
-              <div key={i} className="grid grid-cols-12 items-start px-5 py-3 text-sm hover:bg-slate-50/50 transition">
-                <div className="col-span-1 text-slate-500 pt-1.5">{row.no}</div>
-                <div className="col-span-3 flex items-start gap-3">
-                  <span className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-[11px] font-bold text-blue-600 shrink-0">
-                    {row.initials}
-                  </span>
-                  <div className="flex flex-col pt-1.5">
-                    <p className="font-semibold text-slate-800 leading-none">{row.name}</p>
-                    <p className="text-[11px] text-slate-400 mt-1">{row.role}</p>
+            return (
+              <div key={dept} className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden mb-4 relative">
+                {documentsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
+                {/* Dark Header */}
+                <div className="bg-[#1e293b] px-5 py-3 flex items-center justify-between text-white">
+                  <div className="flex items-center gap-4">
+                    <div>
+                      <h3 className="text-base font-bold leading-tight">{dept}</h3>
+                      <p className="text-xs text-slate-400">{requests.length} request(s)</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {deptPending > 0 && <span className="inline-flex items-center rounded-full bg-orange-500 px-2.5 py-0.5 text-[11px] font-bold text-white">{deptPending} Pending</span>}
+                      {deptSubmitted > 0 && <span className="inline-flex items-center rounded-full bg-blue-500 px-2.5 py-0.5 text-[11px] font-bold text-white">{deptSubmitted} Submitted</span>}
+                      {deptUnderReview > 0 && <span className="inline-flex items-center rounded-full bg-[#a855f7] px-2.5 py-0.5 text-[11px] font-bold text-white">{deptUnderReview} Under Review</span>}
+                      {deptApproved > 0 && <span className="inline-flex items-center rounded-full bg-emerald-500 px-2.5 py-0.5 text-[11px] font-bold text-white">{deptApproved} Approved</span>}
+                      {deptOverdue > 0 && <span className="inline-flex items-center rounded-full bg-red-500 px-2.5 py-0.5 text-[11px] font-bold text-white">{deptOverdue} Overdue</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 cursor-pointer hover:text-slate-300">
+                    <span className="text-sm font-semibold">{new Set(requests.map(r => r.name)).size} employees</span>
+                    <ChevronUp className="h-4 w-4" />
                   </div>
                 </div>
-                <div className="col-span-2 flex items-center gap-2 text-slate-600 pt-1.5">
-                  <FileText className="h-4 w-4 text-slate-400" />
-                  {row.docType}
+
+                {/* Table Header */}
+                <div className="grid grid-cols-12 items-center px-5 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200 bg-slate-50">
+                  <div className="col-span-1">NO.</div>
+                  <div className="col-span-3">EMPLOYEE</div>
+                  <div className="col-span-2">DOCUMENT TYPE</div>
+                  <div className="col-span-2">DATE REQUESTED</div>
+                  <div className="col-span-2">DATE SUBMITTED</div>
+                  <div className="col-span-1 text-center">STATUS</div>
+                  <div className="col-span-1 text-right">ACTION</div>
                 </div>
-                <div className="col-span-2 text-slate-600 pt-1.5">{row.dateReq}</div>
-                <div className="col-span-2 text-slate-600 pt-1.5">{row.dateSub}</div>
-                <div className="col-span-1 flex justify-center pt-1.5">
-                  <span className={`inline-block rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${row.statusClass}`}>
-                    {row.status}
+
+                {/* Rows */}
+                <div className="divide-y divide-slate-100">
+                  {requests.map((row, i) => (
+                    <div key={`${row.name}-${i}`} className="grid grid-cols-12 items-start px-5 py-3 text-sm hover:bg-slate-50/50 transition">
+                      <div className="col-span-1 text-slate-500 pt-1.5">{i + 1}</div>
+                      <div className="col-span-3 flex items-start gap-3">
+                        <span className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-[11px] font-bold text-blue-600 shrink-0">
+                          {row.initials}
+                        </span>
+                        <div className="flex flex-col pt-1.5">
+                          <p className="font-semibold text-slate-800 leading-none">{row.name}</p>
+                          <p className="text-[11px] text-slate-400 mt-1">{row.role}</p>
+                        </div>
+                      </div>
+                      <div className="col-span-2 flex items-center gap-2 text-slate-600 pt-1.5">
+                        <FileText className="h-4 w-4 text-slate-400" />
+                        {row.docType}
+                      </div>
+                      <div className="col-span-2 text-slate-600 pt-1.5">{row.dateReq}</div>
+                      <div className="col-span-2 text-slate-600 pt-1.5">{row.dateSub}</div>
+                      <div className="col-span-1 flex justify-center pt-1.5">
+                        <span className={`inline-block rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${row.statusClass}`}>
+                          {row.status}
+                        </span>
+                      </div>
+                      <div className="col-span-1 flex justify-end pt-1">
+                        <button
+                          type="button"
+                          className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition border ${row.actionClass}`}
+                          onClick={() => {
+                            if (row.action === 'Request') {
+                              openRequestModal({ id: row.request.employee_id, name: row.name, role: row.role, dept: row.dept, initials: row.initials });
+                            } else if (row.action === 'View') {
+                              setReviewingRequest(row.request);
+                            }
+                          }}
+                        >
+                          <row.icon className="h-3.5 w-3.5" />
+                          {row.action}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Table Footer */}
+                <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between bg-slate-50/50">
+                  <span className="text-xs text-slate-500">
+                    Showing <span className="font-semibold text-slate-700">1–{requests.length}</span> of <span className="font-semibold text-slate-700">{requests.length}</span> requests
                   </span>
-                </div>
-                <div className="col-span-1 flex justify-end pt-1">
-                  <button
-                    type="button"
-                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition border ${row.actionClass}`}
-                    onClick={() => {
-                      if (row.action === 'Request') {
-                        openRequestModal({ name: row.name, role: row.role, dept: row.dept, initials: row.initials });
-                      }
-                    }}
-                  >
-                    <row.icon className="h-3.5 w-3.5" />
-                    {row.action}
-                  </button>
+                  <div className="flex items-center gap-1 text-lg text-slate-400">
+                    <button type="button" className="px-1 hover:text-blue-600 transition disabled:opacity-50" disabled>&laquo;</button>
+                    <button type="button" className="px-1 hover:text-blue-600 transition disabled:opacity-50" disabled>&lsaquo;</button>
+                    <button type="button" className="h-7 w-7 rounded bg-blue-600 text-white text-xs font-semibold mx-1">1</button>
+                    <button type="button" className="px-1 hover:text-blue-600 transition disabled:opacity-50" disabled>&rsaquo;</button>
+                    <button type="button" className="px-1 hover:text-blue-600 transition disabled:opacity-50" disabled>&raquo;</button>
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] font-bold uppercase text-slate-400 tracking-wider">
+                    DISTRIBUTION:
+                    {deptPending > 0 && <span className="inline-block rounded bg-orange-100 px-2 py-0.5 text-orange-700 normal-case ml-1">{deptPending} Pending</span>}
+                    {deptSubmitted > 0 && <span className="inline-block rounded bg-blue-100 px-2 py-0.5 text-blue-700 normal-case">{deptSubmitted} Submitted</span>}
+                    {deptUnderReview > 0 && <span className="inline-block rounded bg-purple-100 px-2 py-0.5 text-purple-700 normal-case">{deptUnderReview} Under Review</span>}
+                    {deptApproved > 0 && <span className="inline-block rounded bg-emerald-100 px-2 py-0.5 text-emerald-700 normal-case">{deptApproved} Approved</span>}
+                    {deptOverdue > 0 && <span className="inline-block rounded bg-red-100 px-2 py-0.5 text-red-700 normal-case">{deptOverdue} Overdue</span>}
+                  </div>
                 </div>
               </div>
-            ))}
-          </div>
-
-          {/* Table Footer */}
-          <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between">
-            <span className="text-xs text-slate-500">
-              Showing <span className="font-semibold text-slate-700">1–5</span> of <span className="font-semibold text-slate-700">6</span> requests
-            </span>
-            <div className="flex items-center gap-1 text-lg text-slate-400">
-              <button type="button" className="px-1 hover:text-blue-600 transition disabled:opacity-50" disabled>&laquo;</button>
-              <button type="button" className="px-1 hover:text-blue-600 transition disabled:opacity-50" disabled>&lsaquo;</button>
-              <button type="button" className="h-7 w-7 rounded bg-blue-600 text-white text-xs font-semibold mx-1">1</button>
-              <button type="button" className="h-7 w-7 rounded bg-transparent text-slate-600 hover:bg-slate-100 text-xs font-medium mr-1">2</button>
-              <button type="button" className="px-1 hover:text-blue-600 transition">&rsaquo;</button>
-              <button type="button" className="px-1 hover:text-blue-600 transition">&raquo;</button>
-            </div>
-            <div className="flex items-center gap-2 text-[10px] font-bold uppercase text-slate-400 tracking-wider">
-              DISTRIBUTION:
-              <span className="inline-block rounded bg-orange-100 px-2 py-0.5 text-orange-700 normal-case ml-1">2 Pending</span>
-              <span className="inline-block rounded bg-blue-100 px-2 py-0.5 text-blue-700 normal-case">1 Submitted</span>
-              <span className="inline-block rounded bg-purple-100 px-2 py-0.5 text-purple-700 normal-case">1 Under Review</span>
-              <span className="inline-block rounded bg-emerald-100 px-2 py-0.5 text-emerald-700 normal-case">1 Approved</span>
-              <span className="inline-block rounded bg-red-100 px-2 py-0.5 text-red-700 normal-case">1 Overdue</span>
-            </div>
-          </div>
-        </div>
+            );
+          })
+        )}
       </div>
 
       {/* ── Individual Request Document Modal ────────────────────────── */}
@@ -770,6 +1095,20 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
                     <option key={type} value={type}>{type}</option>
                   ))}
                 </select>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-800 mb-1.5">
+                  Description <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <textarea
+                  value={requestDescription}
+                  onChange={(e) => setRequestDescription(e.target.value)}
+                  placeholder="e.g. Please upload your Certificate of Training."
+                  rows={2}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none resize-none"
+                />
               </div>
 
               <div>
@@ -986,7 +1325,10 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
                   </button>
                   {bulkSendTo === 'department' && (
                     <div className="animate-in fade-in slide-in-from-top-1 duration-200">
-                      <select className="w-full rounded-lg border border-blue-500 px-3 py-2.5 text-sm text-slate-700 outline-none focus:ring-1 focus:ring-blue-500 shadow-sm">
+                      <select 
+                        value={bulkSelectedDepartment} 
+                        onChange={(e) => setBulkSelectedDepartment(e.target.value)} 
+                        className="w-full rounded-lg border border-blue-500 px-3 py-2.5 text-sm text-slate-700 outline-none focus:ring-1 focus:ring-blue-500 shadow-sm">
                         <option value="">Select department...</option>
                         <option value="IT Department">IT Department</option>
                         <option value="Finance Department">Finance Department</option>
@@ -1021,17 +1363,48 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
                       <div className="rounded-lg border border-blue-500 bg-white overflow-hidden shadow-sm">
                         <div className="flex items-center px-3 py-2.5 border-b border-slate-200">
                           <Search className="h-4 w-4 text-slate-400 mr-2" />
-                          <input 
-                            type="text" 
-                            placeholder="Search by name, position, or department..." 
+                          <input
+                            type="text"
+                            value={employeeSearchTerm}
+                            onChange={(e) => setEmployeeSearchTerm(e.target.value)}
+                            placeholder="Search by name, position, or department..."
                             className="w-full text-sm text-slate-700 outline-none bg-transparent placeholder-slate-400"
                           />
                         </div>
-                        <div className="flex flex-col items-center justify-center py-8 text-center bg-slate-50/30">
-                          <Search className="h-8 w-8 text-slate-300 mb-2 opacity-50" />
-                          <p className="text-sm font-medium text-slate-600">Start typing to search for employees</p>
-                          <p className="text-xs text-slate-400 mt-1">Search by name, position, or department</p>
-                        </div>
+                        {filteredBulkEmployees.length === 0 ? (
+                          <div className="flex flex-col items-center justify-center py-8 text-center bg-slate-50/30">
+                            <Search className="h-8 w-8 text-slate-300 mb-2 opacity-50" />
+                            <p className="text-sm font-medium text-slate-600">No employees match "{employeeSearchTerm}"</p>
+                            <p className="text-xs text-slate-400 mt-1">Try a different name, position, or department</p>
+                          </div>
+                        ) : (
+                          <ul className="max-h-64 overflow-y-auto divide-y divide-slate-100">
+                            {filteredBulkEmployees.map((emp) => {
+                              const checked = bulkSelectedEmployees.includes(emp.id);
+                              return (
+                                <li key={emp.id}>
+                                  <label className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-slate-50">
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() => toggleBulkEmployee(emp.id)}
+                                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-sm font-medium text-slate-800 truncate">{emp.name}</p>
+                                      <p className="text-xs text-slate-500 truncate">{emp.position} &middot; {emp.department}</p>
+                                    </div>
+                                  </label>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                        {bulkSelectedEmployees.length > 0 && (
+                          <div className="px-3 py-2 bg-blue-50 border-t border-blue-100 text-xs text-blue-700 font-medium">
+                            {bulkSelectedEmployees.length} selected
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1070,6 +1443,42 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
           </div>
         </div>
       )}
+
+      <DocumentPreviewModal
+        open={!!reviewingRequest}
+        fileUrl={reviewingRequest?.file_url ?? ''}
+        fileName={reviewingRequest?.file_name ?? reviewingRequest?.document_name ?? 'Document'}
+        fileType={reviewingRequest?.file_type ?? undefined}
+        title={reviewingRequest?.document_name ?? 'Review Document'}
+        subtitle={
+          reviewingRequest
+            ? `${reviewingRequest.employee_name ?? 'Employee'} • ${reviewingRequest.department ?? 'Unassigned'} • Status: ${reviewingRequest.status}`
+            : undefined
+        }
+        onClose={() => { if (!reviewDecisionPending) setReviewingRequest(null); }}
+        actions={
+          reviewingRequest?.status === 'Submitted' ? (
+            <>
+              <button
+                type="button"
+                disabled={!!reviewDecisionPending}
+                onClick={() => void handleLNDReviewDecision('Rejected')}
+                className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
+              >
+                {reviewDecisionPending === 'Rejected' ? 'Rejecting…' : 'Reject'}
+              </button>
+              <button
+                type="button"
+                disabled={!!reviewDecisionPending}
+                onClick={() => void handleLNDReviewDecision('Approved')}
+                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {reviewDecisionPending === 'Approved' ? 'Approving…' : 'Approve'}
+              </button>
+            </>
+          ) : null
+        }
+      />
     </>
   );
 };
@@ -1112,6 +1521,8 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
               selectedReportId={selectedReportId}
               onSelectionConsumed={() => setSelectedReportId(null)}
             />
+          ) : activeModule === 'employees' ? (
+            <EmployeeDirectory />
           ) : (
             <PlaceholderPage label={LND_MENU.find((item) => item.id === activeModule)?.label || 'Module'} />
           )}
