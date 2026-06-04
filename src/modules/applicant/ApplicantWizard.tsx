@@ -10,7 +10,7 @@ import {
     Users,
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import abyanLogo from '../../assets/abyan-logo.png';
 import { Button, Dialog } from '../../components';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
@@ -154,6 +154,7 @@ export const ApplicantWizard: React.FC = () => {
   );
   const isGeneratingItemNumberRef = useRef(false);
   const location = useLocation();
+  const navigate = useNavigate();
   const landingJobAppliedRef = useRef(false);
   const [prefilledFromLanding, setPrefilledFromLanding] = useState(false);
 
@@ -471,6 +472,7 @@ const handleNextToReview = () => {
 
   const handleCloseSuccessDialog = () => {
     setShowSuccessDialog(false);
+    navigate('/');
   };
 
   const handleStartJobApplication = () => {
@@ -1036,6 +1038,24 @@ const handleNextToReview = () => {
             <p className="submission-reference-hint">
               Save this number. You can use it at <strong>/track</strong> to check your application status anytime.
             </p>
+          </div>
+          <div className="flex gap-3 mt-6">
+            <Button
+              variant="outline"
+              onClick={handleCloseSuccessDialog}
+              style={{ flex: 1 }}
+            >
+              Back to Home
+            </Button>
+            <Button
+              onClick={() => {
+                navigate('/track');
+                setShowSuccessDialog(false);
+              }}
+              style={{ flex: 1 }}
+            >
+              Track Application
+            </Button>
           </div>
         </div>
       </Dialog>
