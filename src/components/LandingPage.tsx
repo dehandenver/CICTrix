@@ -352,50 +352,6 @@ export const LandingPage = () => {
       </section>
 
 
-      {/* ─── Features ────────────────────────────────────────────── */}
-      <section className="border-y border-slate-200 bg-white">
-        <div className="mx-auto max-w-6xl px-6 py-16">
-          <div className="text-center">
-            <h2 className="text-2xl font-bold text-[#050D65]">What the system manages</h2>
-            <p className="mt-2 text-sm text-slate-500">
-              One platform covering the full employee lifecycle.
-            </p>
-          </div>
-          <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {FEATURES.map((feature) => {
-              const Icon = feature.icon;
-              return (
-                <div key={feature.title} className="rounded-[18px] bg-[#F8FAFC] p-6">
-                  <div className="grid h-11 w-11 place-content-center rounded-[10px] bg-[#EEF2FF] text-[#363EE8]">
-                    <Icon size={20} />
-                  </div>
-                  <h3 className="mt-4 text-sm font-bold text-[#050D65]">{feature.title}</h3>
-                  <p className="mt-1.5 text-sm text-slate-500">{feature.description}</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* ─── CTA strip ───────────────────────────────────────────── */}
-      <section className="mx-auto max-w-6xl px-6 py-16">
-        <div className="flex flex-col items-center justify-between gap-6 rounded-[22px] bg-gradient-to-r from-[#363EE8] to-[#050D65] px-8 py-10 text-white sm:flex-row sm:text-left">
-          <div>
-            <h2 className="text-xl font-bold">Ready to join the public service?</h2>
-            <p className="mt-1 text-sm text-indigo-100">
-              Browse open positions and submit your application today.
-            </p>
-          </div>
-          <Link
-            to="/apply"
-            className="inline-flex shrink-0 items-center gap-2 rounded-[14px] bg-white px-6 py-3 text-sm font-semibold text-[#363EE8] transition hover:bg-[#EEF2FF]"
-          >
-            <Briefcase size={18} /> Apply for a Job
-          </Link>
-        </div>
-      </section>
-
       {/* ─── Footer ──────────────────────────────────────────────── */}
       <footer className="border-t border-slate-200 bg-white">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-6 py-6 text-sm text-slate-500 sm:flex-row">
