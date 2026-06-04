@@ -8,6 +8,7 @@ import {
     ShieldCheck,
     UserPlus,
     Users,
+    Briefcase,
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import hrisLogo from '../../assets/hris-logo.svg';
@@ -612,9 +613,13 @@ const handleNextToReview = () => {
                     <p className="text-sm text-slate-600 flex-1">{job.division || job.department}</p>
                     <div className="mt-4 pt-4 border-t border-slate-200">
                       <p className="text-xs font-mono text-slate-500 mb-3">Item No: {job.jobCode}</p>
-                      <Button onClick={() => handleStartJobApplication(job)} variant="outline" className="w-full justify-center">
-                        Apply for this position
-                      </Button>
+                      <button 
+                        onClick={() => handleStartJobApplication(job)} 
+                        className="w-full flex items-center justify-center gap-2 rounded-full bg-white py-2.5 px-4 font-bold text-blue-600 border-[1.5px] border-blue-600 hover:bg-blue-50 transition-colors shadow-sm"
+                      >
+                        <Briefcase size={18} />
+                        Apply for a Job
+                      </button>
                     </div>
                   </div>
                 ))}
