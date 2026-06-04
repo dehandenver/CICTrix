@@ -91,13 +91,20 @@ export const LandingPage = () => {
 
   // Load jobs from Supabase and subscribe to updates
   useEffect(() => {
-    const syncJobs = () => {
-      void loadJobPostings().then(() => {
+    const syncJobs = async () => {
+      try {
+        await loadJobPostings();
         const allJobs = getAuthoritativeJobPostings();
+        
+        console.log('[LandingPage] Fetched jobs from Supabase:', allJobs);
         
         // Convert JobPosting to display format
         const displayJobs = allJobs
-          .filter((job) => String(job?.status ?? '').toLowerCase() === 'active')
+          .filter((job) => {
+            const statusMatch = String(job?.status ?? '').toLowerCase() === 'active';
+            console.log(`[LandingPage] Job "${job.title}" status: "${job.status}" -> "${String(job?.status ?? '').toLowerCase()}" -> matches: ${statusMatch}`);
+            return statusMatch;
+          })
           .map((job, idx) => ({
             id: idx + 1,
             title: job.title || '',
@@ -108,21 +115,24 @@ export const LandingPage = () => {
             type: job.employmentStatus === 'Permanent' ? 'Plantilla' : 'Contractual',
           }));
         
+        console.log('[LandingPage] Display jobs after filtering:', displayJobs);
         setVacancyJobs(displayJobs);
-      });
+      } catch (err) {
+        console.error('[LandingPage] Error loading jobs:', err);
+      }
     };
 
     // Load on mount
-    syncJobs();
+    void syncJobs();
 
     // Subscribe to job postings updates (only on client side)
     if (typeof window !== 'undefined') {
       window.addEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
-      window.addEventListener('focus', syncJobs);
+      window.addEventListener('focus', syncJobs as EventListener);
 
       return () => {
         window.removeEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
-        window.removeEventListener('focus', syncJobs);
+        window.removeEventListener('focus', syncJobs as EventListener);
       };
     }
   }, []);
