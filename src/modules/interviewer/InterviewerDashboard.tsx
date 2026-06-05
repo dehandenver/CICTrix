@@ -169,6 +169,7 @@ export function InterviewerDashboard({
     upcomingInterviews: 0
   });
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [applicantToDelete, setApplicantToDelete] = useState<Applicant | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -336,8 +337,8 @@ export function InterviewerDashboard({
     <div style={{ minHeight: '100vh', background: '#e5e7eb', fontFamily: "'Poppins', system-ui, sans-serif" }}>
 
       {/* ── Top Navbar ── */}
-      <header className="sticky top-0 z-30 bg-[#363EE8] shadow-md">
-        <div className="flex items-center justify-between px-6 py-3 text-white">
+      <header className="sticky top-0 z-30 bg-[#363EE8] shadow-md" style={{ color: '#ffffff' }}>
+        <div className="flex items-center justify-between px-6 py-3" style={{ color: '#ffffff' }}>
           <div className="flex items-center gap-3">
             <img
               src={abyanLogo}
@@ -346,8 +347,8 @@ export function InterviewerDashboard({
               style={{ mixBlendMode: 'screen' }}
             />
             <div className="flex flex-col leading-tight">
-              <span className="text-base font-bold tracking-tight">ABYAN HRIS</span>
-              <span className="text-xs font-medium" style={{ color: 'rgba(200,209,255,0.85)' }}>
+              <span className="text-base font-bold tracking-tight" style={{ color: '#ffffff' }}>ABYAN HRIS</span>
+              <span className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.80)' }}>
                 Interviewer Portal
               </span>
             </div>
@@ -356,17 +357,18 @@ export function InterviewerDashboard({
           <div className="flex items-center gap-4">
             {session?.name && (
               <div className="hidden sm:flex flex-col items-end leading-tight">
-                <span className="text-xs font-medium" style={{ color: 'rgba(200,209,255,0.80)' }}>
+                <span className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.75)' }}>
                   Signed in as
                 </span>
-                <span className="text-sm font-semibold text-white">{session.name}</span>
+                <span className="text-sm font-semibold" style={{ color: '#ffffff' }}>{session.name}</span>
               </div>
             )}
             {onLogout && (
               <button
                 type="button"
-                onClick={onLogout}
-                className="inline-flex items-center gap-2 rounded-xl border border-white/30 bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20"
+                onClick={() => setLogoutConfirmOpen(true)}
+                className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold transition hover:bg-white/20"
+                style={{ borderColor: 'rgba(255,255,255,0.35)', backgroundColor: 'rgba(255,255,255,0.12)', color: '#ffffff' }}
               >
                 <LogOut size={15} />
                 <span className="hidden sm:inline">Logout</span>
@@ -375,6 +377,45 @@ export function InterviewerDashboard({
           </div>
         </div>
       </header>
+
+      {/* ── Logout Confirmation Dialog ── */}
+      {logoutConfirmOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ backgroundColor: 'rgba(5,13,101,0.55)' }}
+          onClick={() => setLogoutConfirmOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white p-7 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            style={{ fontFamily: "'Poppins', system-ui, sans-serif" }}
+          >
+            <div className="mb-1 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-50">
+              <LogOut size={22} className="text-[#363EE8]" />
+            </div>
+            <h3 className="mt-3 text-lg font-bold text-[#050D65]">Confirm Logout</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Are you sure you want to log out of your Interviewer Portal session?
+            </p>
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setLogoutConfirmOpen(false)}
+                className="flex-1 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => { setLogoutConfirmOpen(false); onLogout?.(); }}
+                className="flex-1 rounded-xl bg-[#363EE8] py-2.5 text-sm font-semibold text-white transition hover:bg-[#2830c5]"
+              >
+                Yes, Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     <div className="interviewer-dashboard">
       {/* Header */}

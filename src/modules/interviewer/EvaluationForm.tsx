@@ -240,9 +240,8 @@ export function EvaluationForm() {
     if (id) {
       const type = getStoredAppointmentType(id);
       setAppointmentType(type);
-      if (type === 'promotional') {
-        setActiveTab('pcpt');
-      }
+      // Original applicants → Oral only; Promotional → PCPT only
+      setActiveTab(type === 'promotional' ? 'pcpt' : 'oral');
       fetchApplicantData();
     }
   }, [id]);
@@ -320,6 +319,7 @@ export function EvaluationForm() {
       setApplicant(applicantData);
       if (id && isPromotionalSource(applicantData)) {
         setAppointmentType('promotional');
+        setActiveTab('pcpt');
         try {
           const raw = localStorage.getItem(SCORE_SETUP_STORAGE_KEY);
           const parsed = raw ? (JSON.parse(raw) as Record<string, AppointmentType>) : {};
@@ -328,6 +328,8 @@ export function EvaluationForm() {
         } catch {
           // Best effort persistence only.
         }
+      } else {
+        setActiveTab('oral');
       }
       setAttachments(attachmentsData || []);
 
@@ -563,19 +565,19 @@ export function EvaluationForm() {
 
       {applicant && (
         <div className="evaluation-content">
-          <div className="evaluation-tabs">
-            <button
-              type="button"
-              className={`evaluation-tab ${activeTab === 'pcpt' ? 'active' : ''}`}
-              onClick={() => setActiveTab('pcpt')}
-            >
-              PCPT Evaluation
-            </button>
-            {hasOralEvaluation && (
+          <div className="evaluation-tabs" style={{ gridTemplateColumns: '1fr' }}>
+            {appointmentType === 'promotional' && (
               <button
                 type="button"
-                className={`evaluation-tab ${activeTab === 'oral' ? 'active' : ''}`}
-                onClick={() => setActiveTab('oral')}
+                className="evaluation-tab active"
+              >
+                PCPT Evaluation
+              </button>
+            )}
+            {appointmentType === 'original' && (
+              <button
+                type="button"
+                className="evaluation-tab active"
               >
                 Oral Interview Form
               </button>
