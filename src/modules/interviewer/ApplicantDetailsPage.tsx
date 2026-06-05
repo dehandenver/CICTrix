@@ -14,6 +14,8 @@ import {
     Users,
     X
 } from 'lucide-react';
+import { AdminHeader } from '../../components/AdminHeader';
+import { Sidebar } from '../../components/Sidebar';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
@@ -900,7 +902,8 @@ export function ApplicantDetailsPage() {
   const hasSavedEvaluation = Boolean(
     hasInterviewScores(evaluation) || interviewerScoreSnapshot?.pcptAverage || interviewerScoreSnapshot?.oralAverage
   );
-  const backTo = routeState?.from || '/admin/rsp/qualified';
+  const isRspAdmin = location.pathname.startsWith('/admin/rsp/');
+  const backTo = routeState?.from || (isRspAdmin ? '/admin/rsp/applications' : '/admin/rsp/qualified');
   const sourcePath = routeState?.from || '';
   const isJobScopedQualifiedRoute = /^\/admin\/rsp\/qualified\/[^/?#]+/.test(sourcePath);
   // Admin-RSP applicant detail route is the one at /admin/rsp/applicant/:id.
@@ -1352,8 +1355,11 @@ export function ApplicantDetailsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100">
-      <main className="bg-slate-100 !p-0">
+    <div className={isRspAdmin ? 'min-h-screen bg-[#f8f9fa]' : 'min-h-screen bg-slate-100'}>
+      {isRspAdmin && <AdminHeader userName="RSP Admin" divisionLabel="RSP Division" />}
+      <div className={isRspAdmin ? 'admin-layout' : ''}>
+        {isRspAdmin && <Sidebar activeModule="RSP" userRole="rsp" />}
+      <main className={isRspAdmin ? 'admin-content bg-white !p-0' : 'bg-slate-100 !p-0'}>
         <header className="border-b border-slate-200 bg-white px-4 py-3">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-2.5">
@@ -1394,10 +1400,10 @@ export function ApplicantDetailsPage() {
                     type="button"
                     onClick={() => { setConfirmAction('disqualify'); setConfirmReason(''); }}
                     disabled={hasFinalDecision}
-                    className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
                       isApplicantDisqualified
-                        ? 'border-rose-500 bg-rose-600 text-white'
-                        : 'border-rose-200 bg-white text-rose-700'
+                        ? 'border-rose-500 bg-rose-500 text-white'
+                        : 'border-rose-400 bg-white text-rose-600 hover:bg-rose-50'
                     }`}
                   >
                     <CircleX size={14} /> Disqualify
@@ -1406,10 +1412,10 @@ export function ApplicantDetailsPage() {
                     type="button"
                     onClick={() => { void persistStatus('shortlist'); }}
                     disabled={hasFinalDecision}
-                    className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
                       isApplicantShortlisted
-                        ? 'bg-blue-700 text-white'
-                        : 'bg-blue-600 text-white'
+                        ? 'border-[#363EE8] bg-[#363EE8] text-white'
+                        : 'border-[#363EE8] bg-white text-[#363EE8] hover:bg-blue-50'
                     }`}
                   >
                     <Star size={14} /> Shortlist
@@ -1418,10 +1424,10 @@ export function ApplicantDetailsPage() {
                     type="button"
                     onClick={() => { setConfirmAction('qualified'); }}
                     disabled={hasFinalDecision}
-                    className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
                       isApplicantQualified
-                        ? 'bg-emerald-700 text-white'
-                        : 'bg-emerald-600 text-white'
+                        ? 'border-emerald-600 bg-emerald-600 text-white'
+                        : 'border-emerald-500 bg-white text-emerald-600 hover:bg-emerald-50'
                     }`}
                   >
                     <CheckCircle2 size={14} /> Qualify
@@ -1444,7 +1450,7 @@ export function ApplicantDetailsPage() {
                 <button
                   key={tab.key}
                   type="button"
-                  className={`inline-flex items-center gap-1.5 border-b-2 pb-2 pt-2.5 font-semibold ${activeTab === tab.key ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-600'}`}
+                  className={`inline-flex items-center gap-1.5 border-b-2 pb-2 pt-2.5 font-semibold ${activeTab === tab.key ? 'border-[#363EE8] text-[#363EE8]' : 'border-transparent text-slate-600 hover:text-slate-900'}`}
                   onClick={() => setActiveTab(tab.key as TabKey)}
                 >
                   <Icon className="h-3.5 w-3.5" /> {tab.label}
@@ -2165,6 +2171,7 @@ export function ApplicantDetailsPage() {
           </div>
         );
       })()}
+      </div>{/* /admin-layout wrapper */}
     </div>
   );
 }
