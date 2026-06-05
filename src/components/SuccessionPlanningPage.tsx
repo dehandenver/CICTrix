@@ -1009,11 +1009,80 @@ export const SuccessionPlanningPage = () => {
             </div>
           </div>
 
-          {/* Position cards grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {positions.map(p => (
-              <PositionCard key={p.id} position={p} onEdit={() => openEditPosition(p.id)} />
-            ))}
+          {/* Critical positions table */}
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+            <table className="w-full min-w-full">
+              <thead>
+                <tr className="border-b border-gray-200 bg-gray-50">
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Position Title</th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Department / Incumbent</th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500">Experience</th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500">Eligibility</th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500">Training Hrs</th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">Required Courses</th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-gray-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {positions.map(p => (
+                  <tr key={p.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors last:border-0">
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-sm text-gray-900">{p.title}</span>
+                        <span className="bg-red-50 text-red-600 text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide">Critical</span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-4">
+                      <p className="text-sm font-medium text-gray-700">{p.department}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">Incumbent: {p.incumbent}</p>
+                    </td>
+                    <td className="px-5 py-4 text-center">
+                      <span className="text-sm text-gray-700 font-medium">{p.experienceYears} yrs</span>
+                    </td>
+                    <td className="px-5 py-4 text-center">
+                      <span className="text-sm text-gray-700">{p.eligibility}</span>
+                    </td>
+                    <td className="px-5 py-4 text-center">
+                      <span className="text-sm text-gray-700 font-medium">{p.trainingHours} hrs</span>
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex flex-wrap gap-1.5">
+                        {p.courses.length === 0
+                          ? <span className="text-xs text-gray-400 italic">None</span>
+                          : p.courses.map(c => (
+                              <span key={c} className="text-xs text-gray-700 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-md">{c}</span>
+                            ))
+                        }
+                      </div>
+                    </td>
+                    <td className="px-5 py-4 text-center">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          onClick={() => openEditPosition(p.id)}
+                          className="rounded-lg border border-gray-200 p-1.5 text-blue-600 hover:bg-blue-50 transition-colors"
+                          title="Edit"
+                        >
+                          <Settings size={14} />
+                        </button>
+                        <button
+                          className="rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                          title="Unmark critical"
+                        >
+                          Unmark
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {positions.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-5 py-12 text-center text-sm text-gray-500">
+                      No critical positions defined yet. Click "Add Position" to get started.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </>
       )}

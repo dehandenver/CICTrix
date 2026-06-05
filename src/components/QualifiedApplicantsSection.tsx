@@ -1435,92 +1435,83 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
             </div>
           </section>
 
-          {/* Section label */}
-          {filteredFolders.length > 0 && (
-            <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">
-              JOB POSITION FOLDERS — CLICK TO OPEN
-            </p>
-          )}
-
-          {/* Folder grid */}
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
-            {filteredFolders.map(folder => {
-              const es = EXAM_STYLES[folder.examStatus];
-              const posExam = examScores[folder.position] ?? {};
-              const scored  = folder.applicants.filter(a => posExam[a.id] && posExam[a.id] !== '').length;
-              const pct     = folder.count > 0 ? (scored / folder.count) * 100 : 0;
-
-              return (
-                <div
-                  key={folder.position}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setOpenFolder(folder)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenFolder(folder); } }}
-                  className="flex flex-col cursor-pointer rounded-2xl border border-[var(--border-color)] bg-white p-5 shadow-sm transition-shadow hover:shadow-md"
-                >
-                  {/* Card header */}
-                  <div className="mb-4 flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-3">
-                      <div className="mt-0.5 shrink-0 rounded-xl bg-amber-100 p-2.5 text-amber-600">
-                        <FolderOpen size={20} />
-                      </div>
-                      <div className="min-w-0">
-                        <h3 className="font-bold leading-tight text-slate-800">{folder.position}</h3>
-                        <p className="truncate text-sm text-slate-500">{folder.office}</p>
-                      </div>
-                    </div>
-                    <span className={`flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${es.bg} ${es.text}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${es.dot}`} />
-                      {es.label}
-                    </span>
-                  </div>
-
-                  {/* Applicant count */}
-                  <div className="mb-3 flex items-center gap-2 rounded-xl bg-slate-50 px-4 py-2.5">
-                    <Users size={15} className="text-slate-500" />
-                    <span className="text-sm font-semibold text-slate-700">
-                      {folder.count} qualified applicant{folder.count !== 1 ? 's' : ''}
-                    </span>
-                  </div>
-
-                  {/* Written Exam progress */}
-                  <div className="mb-4">
-                    <div className="mb-1 flex items-center justify-between text-xs">
-                      <span className="font-medium text-slate-500">Written Exam</span>
-                      <span className={`font-semibold ${scored < folder.count ? 'text-amber-600' : 'text-emerald-600'}`}>
-                        {scored} / {folder.count} encoded
-                      </span>
-                    </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                      <div
-                        className={`h-full rounded-full transition-all ${scored === folder.count && folder.count > 0 ? 'bg-emerald-500' : 'bg-amber-400'}`}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Single action button */}
-                  <div className="mt-auto">
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); setExamModal(folder); }}
-                      className="w-full rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-100 flex items-center justify-center gap-1.5"
+          {/* Folder table */}
+          <div className="overflow-hidden rounded-2xl border border-[var(--border-color)] bg-white">
+            <table className="w-full min-w-full">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50">
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Office</th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Applicants</th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Exam Status</th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Written Exam</th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredFolders.map(folder => {
+                  const es = EXAM_STYLES[folder.examStatus];
+                  const posExam = examScores[folder.position] ?? {};
+                  const scored  = folder.applicants.filter(a => posExam[a.id] && posExam[a.id] !== '').length;
+                  const pct     = folder.count > 0 ? (scored / folder.count) * 100 : 0;
+                  return (
+                    <tr
+                      key={folder.position}
+                      className="border-b border-slate-100 hover:bg-slate-50 transition-colors last:border-0 cursor-pointer"
+                      onClick={() => setOpenFolder(folder)}
                     >
-                      <Pencil size={14} /> Enter Written Exam Scores
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-
-            {filteredFolders.length === 0 && (
-              <div className="col-span-full flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white py-16 text-center">
-                <FolderOpen size={48} className="mb-4 text-slate-300" />
-                <p className="font-semibold text-slate-500">No qualified applicant folders found</p>
-                <p className="mt-1 text-sm text-slate-400">Applicants appear here once their status is marked as Qualified or Shortlisted.</p>
-              </div>
-            )}
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className="shrink-0 rounded-lg bg-amber-100 p-1.5 text-amber-600"><FolderOpen size={15} /></div>
+                          <span className="font-semibold text-sm text-slate-800">{folder.position}</span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 text-sm text-slate-600">{folder.office}</td>
+                      <td className="px-5 py-4 text-center">
+                        <span className="font-bold text-slate-900 text-sm">{folder.count}</span>
+                      </td>
+                      <td className="px-5 py-4 text-center">
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${es.bg} ${es.text}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${es.dot}`} />
+                          {es.label}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-2 min-w-[120px]">
+                          <div className="flex-1 h-2 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className={`h-full rounded-full transition-all ${scored === folder.count && folder.count > 0 ? 'bg-emerald-500' : 'bg-amber-400'}`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <span className={`text-xs font-semibold whitespace-nowrap ${scored < folder.count ? 'text-amber-600' : 'text-emerald-600'}`}>
+                            {scored}/{folder.count}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 text-center">
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); setExamModal(folder); }}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors"
+                        >
+                          <Pencil size={12} /> Scores
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filteredFolders.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-12 text-center text-slate-500">
+                      <FolderOpen size={40} className="mx-auto mb-2 text-slate-300" />
+                      <p className="font-semibold">No qualified applicant folders found</p>
+                      <p className="mt-1 text-xs text-slate-400">Applicants appear here once their status is marked Qualified or Shortlisted.</p>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </>
       )}

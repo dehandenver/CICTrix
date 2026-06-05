@@ -386,32 +386,51 @@ export const NewlyHiredPage = () => {
 
               <div>
                 <h2 className="mb-4 text-2xl font-semibold text-slate-900">Departments</h2>
-                <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
-                  {departmentCards.map((card) => (
-                    <button
-                      key={card.department}
-                      type="button"
-                      onClick={() => openDepartment(card.department)}
-                      className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-5 text-left transition hover:border-blue-400"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="rounded-2xl bg-blue-100 p-3 text-blue-600">
-                          <UserPlus size={20} />
-                        </div>
-                        <div>
-                          <p className="text-2xl font-semibold text-slate-900">{card.department}</p>
-                          <p className="text-base text-slate-600">{card.total} Newly Hired</p>
-                          <p className="text-sm text-slate-500">{card.pending} pending</p>
-                        </div>
-                      </div>
-                      <ChevronRight size={20} className="text-slate-400" />
-                    </button>
-                  ))}
-                  {departmentCards.length === 0 && (
-                    <p className="col-span-full rounded-2xl border border-slate-200 bg-white p-8 text-center text-base text-slate-500">
-                      No newly hired records found.
-                    </p>
-                  )}
+                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                  <table className="w-full min-w-full">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50">
+                        <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Department</th>
+                        <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Newly Hired</th>
+                        <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Pending Credentials</th>
+                        <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {departmentCards.map((card) => (
+                        <tr key={card.department} className="border-b border-slate-100 hover:bg-slate-50 transition-colors last:border-0 cursor-pointer" onClick={() => openDepartment(card.department)}>
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="shrink-0 rounded-xl bg-blue-100 p-2 text-blue-600"><UserPlus size={16} /></div>
+                              <span className="font-semibold text-sm text-slate-900">{card.department}</span>
+                            </div>
+                          </td>
+                          <td className="px-5 py-4 text-center">
+                            <span className="font-bold text-slate-900 text-sm">{card.total}</span>
+                          </td>
+                          <td className="px-5 py-4 text-center">
+                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${card.pending > 0 ? 'bg-orange-100 text-orange-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                              {card.pending > 0 ? `${card.pending} Pending` : 'Complete'}
+                            </span>
+                          </td>
+                          <td className="px-5 py-4 text-center">
+                            <button
+                              type="button"
+                              onClick={() => openDepartment(card.department)}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition-colors"
+                            >
+                              View <ChevronRight size={12} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {departmentCards.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-500">No newly hired records found.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </section>
