@@ -1,9 +1,11 @@
+import { useRef } from 'react';
 import abyanLogo from '../assets/abyan-logo.png';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Users, ClipboardCheck, ShieldCheck } from 'lucide-react';
+import { SharedFooter } from './SharedFooter';
 
 export function AboutPage() {
-  const navigate = useNavigate();
+  const contactRef = useRef<HTMLElement>(null);
 
   return (
     <div
@@ -43,12 +45,13 @@ export function AboutPage() {
               >
                 About
               </Link>
-              <Link
-                to="/contacts"
+              <button
+                type="button"
+                onClick={() => contactRef.current?.scrollIntoView({ behavior: 'smooth' })}
                 className="rounded-md px-4 py-2 text-sm font-medium text-white/80 hover:bg-white/15 hover:text-white transition-colors"
               >
                 Contacts
-              </Link>
+              </button>
             </nav>
 
             {/* Login Dropdown */}
@@ -100,11 +103,11 @@ export function AboutPage() {
       </section>
 
       {/* ─── Main Content ─────────────────────────────────────────── */}
-      <section className="mx-auto max-w-6xl px-6 py-16">
-        <div className="grid gap-12 lg:grid-cols-2 lg:gap-16">
+      <section className="mx-auto max-w-6xl px-6 py-10">
+        <div className="grid gap-10 lg:grid-cols-2 lg:gap-14">
 
           {/* Left — Intro Text */}
-          <div className="flex flex-col justify-center space-y-6">
+          <div className="flex flex-col justify-start space-y-6">
             <div>
               <h2 className="text-2xl font-bold text-[#050D65]">What is ABYAN?</h2>
               <p className="mt-4 text-base leading-relaxed text-slate-600">
@@ -129,7 +132,7 @@ export function AboutPage() {
           </div>
 
           {/* Right — Four Pillars */}
-          <div className="flex flex-col justify-center">
+          <div className="flex flex-col justify-start">
             <h2 className="mb-2 text-2xl font-bold text-[#050D65]">Our Four Pillars of HR</h2>
             <p className="mb-6 text-sm leading-relaxed text-slate-500">
               We broke down the complexities of human resource management into four intuitive, seamlessly integrated modules. Here is how ABYAN HRIS supports your organization at every stage of the employee journey:
@@ -193,27 +196,7 @@ export function AboutPage() {
         </div>
       </section>
 
-      {/* ─── Footer CTA ──────────────────────────────────────────── */}
-      <section className="bg-[#050D65] py-12 text-center text-white">
-        <p className="text-lg font-semibold">Ready to experience ABYAN?</p>
-        <p className="mt-2 text-sm text-indigo-200">
-          Reach out or log in to get started.
-        </p>
-        <div className="mt-6 flex justify-center gap-4">
-          <Link
-            to="/contacts"
-            className="rounded-lg border border-white/30 px-6 py-2 text-sm font-semibold text-white hover:bg-white/10 transition-colors"
-          >
-            Contact Us
-          </Link>
-          <Link
-            to="/"
-            className="rounded-lg border border-white/30 px-6 py-2 text-sm font-semibold text-white hover:bg-white/10 transition-colors"
-          >
-            Back to Home
-          </Link>
-        </div>
-      </section>
+      <SharedFooter ref={contactRef} />
     </div>
   );
 }

@@ -23,7 +23,6 @@ import { ApplicantWizard } from './modules/applicant/ApplicantWizard';
 import { ApplicationStatusPage } from './modules/applicant/ApplicationStatusPage';
 import { LandingPage } from './components/LandingPage';
 import { AboutPage } from './components/AboutPage';
-import { ContactsPage } from './components/ContactsPage';
 import { EmployeeLoginPage, EmployeePage } from './modules/employee';
 import { ApplicantDetailsPage } from './modules/interviewer/ApplicantDetailsPage.tsx';
 import { EvaluationForm } from './modules/interviewer/EvaluationForm';
@@ -427,6 +426,12 @@ function AppContent() {
     navigate('/employee/dashboard');
   };
 
+  const handleInterviewerLogout = () => {
+    setInterviewerSession(null);
+    localStorage.removeItem(INTERVIEWER_SESSION_KEY);
+    navigate('/interviewer/login');
+  };
+
   const handleEmployeeLogout = () => {
     setEmployeeSession(null);
     setCurrentEmployee(null);
@@ -455,7 +460,7 @@ function AppContent() {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/about" element={<AboutPage />} />
-          <Route path="/contacts" element={<ContactsPage />} />
+          <Route path="/contacts" element={<Navigate to="/" replace />} />
           <Route path="/apply" element={<ApplicantWizard />} />
           <Route path="/track" element={<ApplicationStatusPage />} />
           <Route path="/succession" element={<SuccessionReadinessEngine />} />
@@ -466,7 +471,7 @@ function AppContent() {
             path="/interviewer/dashboard"
             element={
               <InterviewerRoute session={interviewerSession}>
-                <InterviewerDashboard session={interviewerSession} />
+                <InterviewerDashboard session={interviewerSession} onLogout={handleInterviewerLogout} />
               </InterviewerRoute>
             }
           />

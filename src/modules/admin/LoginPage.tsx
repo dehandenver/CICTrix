@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { scheduleTransientUiReset } from '../../utils/uiReset';
 import iloiloCitySeal from '../../assets/iloilo-city-seal.png';
+import abyanLogo from '../../assets/abyan-logo.png';
 
 type Role = 'super-admin' | 'rsp' | 'lnd' | 'pm';
 
@@ -172,6 +173,12 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
           {/* Top-left wordmark */}
           <div className="relative z-10 flex w-full flex-col p-12">
             <a href="/" className="flex items-center gap-3">
+              <img
+                src={abyanLogo}
+                alt="Abyan Logo"
+                className="h-10 w-auto object-contain"
+                style={{ mixBlendMode: 'screen' }}
+              />
               <div className="flex flex-col leading-tight">
                 <span className="text-base font-bold tracking-wide text-white">ABYAN HRIS</span>
                 <span className="text-xs font-medium" style={{ color: 'rgba(200,209,255,0.85)' }}>
