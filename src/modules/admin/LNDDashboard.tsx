@@ -1496,12 +1496,6 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
       <AdminHeader
         userName="Alex Gonzales"
         divisionLabel="L&D Division"
-        division="lnd"
-        onNotificationClick={(item) => {
-          setActiveModule('documents');
-          setShowPMReports(true);
-          setSelectedReportId(item.payload.reportId);
-        }}
       />
       <div className="flex">
         <LndSidebar activeModule={activeModule} onSelect={setActiveModule} />

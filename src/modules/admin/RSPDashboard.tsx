@@ -3022,22 +3022,6 @@ export const RSPDashboard = () => {
       <AdminHeader
         userName="RSP Admin"
         divisionLabel="RSP Division"
-        division="rsp"
-        onNotificationClick={(item) => {
-          // Route to the most relevant page for the source of the notification.
-          if (item.source === 'applicant' && item.payload.applicantId) {
-            navigate(`/admin/rsp/applicant/${item.payload.applicantId}`);
-            return;
-          }
-          if (item.source === 'evaluation' && item.payload.applicantId) {
-            navigate(`/admin/rsp/applicant/${item.payload.applicantId}`);
-            return;
-          }
-          if (item.source === 'employee_doc') {
-            navigate('/admin/rsp/reports');
-            return;
-          }
-        }}
       />
     <div className="admin-layout">
       <Sidebar activeModule="RSP" userRole="rsp" />
