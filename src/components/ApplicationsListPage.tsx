@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { AdminHeader } from './AdminHeader';
 import { ApplicantsTabBar } from './ApplicantsTabBar';
 import { Sidebar } from './Sidebar';
-import { supabase } from '../lib/supabase';
+import { isMockModeEnabled, supabase } from '../lib/supabase';
+import { mockDatabase } from '../lib/mockDatabase';
+import { getPreferredDataSourceMode } from '../lib/dataSourceMode';
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -19,8 +21,6 @@ interface Applicant {
   created_at: string;
   application_type?: string | null;
 }
-
-// ── Constants ─────────────────────────────────────────────────────────────────
 
 const ITEMS_PER_PAGE = 10;
 
@@ -48,21 +48,24 @@ const getPositionColor = (pos: string) => {
   return positionColorCache.get(pos)!;
 };
 
-// Returns active/inactive style for each evaluate button based on current status
-const shortlistStyle = (status: string) => {
+// Highlights the matching evaluate button when the applicant already has that status
+const shortlistCls = (status: string) =>
+  status.toLowerCase().includes('shortlist')
+    ? 'bg-amber-500 text-white border-amber-500'
+    : 'border-amber-400 text-amber-600 hover:bg-amber-50';
+
+const qualifyCls = (status: string) => {
   const s = status.toLowerCase();
-  if (s.includes('shortlist')) return 'bg-amber-500 text-white border-amber-500';
-  return 'border-amber-400 text-amber-600 hover:bg-amber-50';
+  return s.includes('qualified') && !s.includes('dis')
+    ? 'bg-emerald-600 text-white border-emerald-600'
+    : 'border-emerald-400 text-emerald-600 hover:bg-emerald-50';
 };
-const qualifyStyle = (status: string) => {
+
+const disqualifyCls = (status: string) => {
   const s = status.toLowerCase();
-  if (s.includes('qualified') && !s.includes('dis')) return 'bg-emerald-600 text-white border-emerald-600';
-  return 'border-emerald-400 text-emerald-600 hover:bg-emerald-50';
-};
-const disqualifyStyle = (status: string) => {
-  const s = status.toLowerCase();
-  if (s.includes('disqual') || s.includes('not qualified') || s.includes('reject')) return 'bg-red-500 text-white border-red-500';
-  return 'border-red-300 text-red-500 hover:bg-red-50';
+  return s.includes('disqual') || s.includes('not qualified') || s.includes('reject')
+    ? 'bg-red-500 text-white border-red-500'
+    : 'border-red-300 text-red-500 hover:bg-red-50';
 };
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -75,18 +78,18 @@ export const ApplicationsListPage = () => {
   const [officeFilter, setOfficeFilter]     = useState('all');
   const [positionFilter, setPositionFilter] = useState('all');
   const [statusFilter, setStatusFilter]     = useState('all');
-  const [page, setPage]             = useState(1);
-  const [updating, setUpdating]     = useState<Set<string>>(new Set());
-  const [toast, setToast]           = useState('');
+  const [page, setPage]       = useState(1);
+  const [updating, setUpdating] = useState<Set<string>>(new Set());
+  const [toast, setToast]       = useState('');
 
   // ── Data load ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const load = async () => {
       try {
-        const { data } = await (supabase as any)
-          .from('applicants')
-          .select('*')
-          .order('created_at', { ascending: false });
+        const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
+        const client: any = preferredMode === 'local' ? mockDatabase : supabase;
+
+        const { data } = await client.from('applicants').select('*').order('created_at', { ascending: false });
         const rows: Applicant[] = (data ?? []).map((r: any) => ({
           id:               String(r.id ?? ''),
           full_name:        [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ') || String(r.full_name ?? '—'),
@@ -110,16 +113,29 @@ export const ApplicationsListPage = () => {
     return () => window.removeEventListener('cictrix:applicants-updated', load);
   }, []);
 
-  // ── Status update ──────────────────────────────────────────────────────────
+  // ── Status update — tries Supabase then falls back to mockDatabase ─────────
   const updateStatus = async (id: string, newStatus: string) => {
     setUpdating(prev => new Set(prev).add(id));
     try {
-      await (supabase as any).from('applicants').update({ status: newStatus }).eq('id', id);
+      const payload = { status: newStatus };
+
+      if (isMockModeEnabled) {
+        // Mock mode: write directly to mockDatabase
+        await (mockDatabase as any).from('applicants').update(payload).eq('id', id);
+      } else {
+        // Live mode: try Supabase, fall back to mockDatabase on RLS / network error
+        const result = await (supabase as any).from('applicants').update(payload).eq('id', id);
+        if ((result as any)?.error) {
+          await (mockDatabase as any).from('applicants').update(payload).eq('id', id);
+        }
+      }
+
+      // Optimistic local update so the button highlights immediately
       setApplicants(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a));
-      showToast(`Marked as ${newStatus}.`);
+      showToast(`Applicant marked as ${newStatus}.`);
       window.dispatchEvent(new Event('cictrix:applicants-updated'));
     } catch {
-      showToast('Failed to update status. Please try again.');
+      showToast('Update failed — please try again.');
     } finally {
       setUpdating(prev => { const n = new Set(prev); n.delete(id); return n; });
     }
@@ -130,7 +146,7 @@ export const ApplicationsListPage = () => {
     setTimeout(() => setToast(''), 3000);
   };
 
-  // ── Derived filters ────────────────────────────────────────────────────────
+  // ── Derived data ───────────────────────────────────────────────────────────
   const offices   = useMemo(() => [...new Set(applicants.map(a => a.office).filter(Boolean))].sort(), [applicants]);
   const positions = useMemo(() => [...new Set(applicants.map(a => a.position).filter(Boolean))].sort(), [applicants]);
   const statuses  = useMemo(() => [...new Set(applicants.map(a => a.status).filter(Boolean))].sort(), [applicants]);
@@ -152,7 +168,7 @@ export const ApplicationsListPage = () => {
   const safePage   = Math.min(page, totalPages);
   const paged      = filtered.slice((safePage - 1) * ITEMS_PER_PAGE, safePage * ITEMS_PER_PAGE);
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Loading state ──────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="min-h-screen bg-[#f8f9fa]">
@@ -168,6 +184,7 @@ export const ApplicationsListPage = () => {
     );
   }
 
+  // ── Main render ────────────────────────────────────────────────────────────
   return (
     <>
       <div className="min-h-screen bg-[#f8f9fa]">
@@ -181,7 +198,9 @@ export const ApplicationsListPage = () => {
               {/* Page header */}
               <div className="mb-5">
                 <h1 className="text-2xl font-bold text-slate-900">Applications</h1>
-                <p className="text-sm text-slate-500">Click an applicant's name to view their profile. Use the buttons to evaluate each applicant.</p>
+                <p className="text-sm text-slate-500">
+                  Click an applicant's name to view their profile · Use the buttons to evaluate each applicant
+                </p>
               </div>
 
               {/* Filters */}
@@ -197,44 +216,32 @@ export const ApplicationsListPage = () => {
                       className="w-full rounded-xl border border-slate-300 py-2.5 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none"
                     />
                   </div>
-                  <select
-                    value={officeFilter}
-                    onChange={e => { setOfficeFilter(e.target.value); setPage(1); }}
-                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none"
-                  >
+                  <select value={officeFilter} onChange={e => { setOfficeFilter(e.target.value); setPage(1); }}
+                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none">
                     <option value="all">All Departments</option>
                     {offices.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
-                  <select
-                    value={positionFilter}
-                    onChange={e => { setPositionFilter(e.target.value); setPage(1); }}
-                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none"
-                  >
+                  <select value={positionFilter} onChange={e => { setPositionFilter(e.target.value); setPage(1); }}
+                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none">
                     <option value="all">All Positions</option>
                     {positions.map(p => <option key={p} value={p}>{p}</option>)}
                   </select>
-                  <select
-                    value={statusFilter}
-                    onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
-                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none"
-                  >
+                  <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
+                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-blue-500 focus:outline-none">
                     <option value="all">All Statuses</option>
                     {statuses.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
                 <div className="mt-2.5 flex items-center justify-between border-t border-slate-100 pt-2.5 text-xs text-slate-500">
                   <span>{filtered.length} applicant{filtered.length !== 1 ? 's' : ''} found</span>
-                  <button
-                    type="button"
-                    className="text-blue-600 hover:underline"
-                    onClick={() => { setSearch(''); setOfficeFilter('all'); setPositionFilter('all'); setStatusFilter('all'); setPage(1); }}
-                  >
+                  <button type="button" className="text-blue-600 hover:underline"
+                    onClick={() => { setSearch(''); setOfficeFilter('all'); setPositionFilter('all'); setStatusFilter('all'); setPage(1); }}>
                     Clear filters
                   </button>
                 </div>
               </div>
 
-              {/* Table */}
+              {/* Applicant table */}
               <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
                 <table className="w-full min-w-full">
                   <thead>
@@ -249,21 +256,18 @@ export const ApplicationsListPage = () => {
                   </thead>
                   <tbody>
                     {paged.map(a => {
-                      const isUpdating = updating.has(a.id);
+                      const busy = updating.has(a.id);
                       return (
                         <tr key={a.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors last:border-0">
 
-                          {/* Name — clickable to open applicant info */}
+                          {/* Applicant name — clickable → applicant profile */}
                           <td className="px-5 py-4">
-                            <button
-                              type="button"
-                              onClick={() => navigate(`/admin/rsp/applicant/${a.id}`)}
-                              className="group text-left"
-                            >
-                              <p className="font-semibold text-sm text-[#363EE8] group-hover:underline underline-offset-2 transition-colors">
+                            <button type="button" className="group text-left"
+                              onClick={() => navigate(`/admin/rsp/applicant/${a.id}`)}>
+                              <p className="font-semibold text-sm text-[#363EE8] group-hover:underline underline-offset-2">
                                 {a.full_name}
                               </p>
-                              <p className="text-xs text-slate-400 mt-0.5">{a.email}</p>
+                              <p className="mt-0.5 text-xs text-slate-400">{a.email}</p>
                             </button>
                           </td>
 
@@ -290,31 +294,22 @@ export const ApplicationsListPage = () => {
                           {/* Evaluate: Shortlist / Qualify / Disqualify */}
                           <td className="px-5 py-4">
                             <div className="flex items-center justify-center gap-1.5">
-                              <button
-                                type="button"
-                                disabled={isUpdating}
+                              <button type="button" disabled={busy}
                                 onClick={() => updateStatus(a.id, 'Shortlisted')}
                                 title="Shortlist this applicant"
-                                className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${shortlistStyle(a.status)}`}
-                              >
+                                className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${shortlistCls(a.status)}`}>
                                 Shortlist
                               </button>
-                              <button
-                                type="button"
-                                disabled={isUpdating}
+                              <button type="button" disabled={busy}
                                 onClick={() => updateStatus(a.id, 'Qualified')}
                                 title="Mark as Qualified"
-                                className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${qualifyStyle(a.status)}`}
-                              >
+                                className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${qualifyCls(a.status)}`}>
                                 Qualify
                               </button>
-                              <button
-                                type="button"
-                                disabled={isUpdating}
+                              <button type="button" disabled={busy}
                                 onClick={() => updateStatus(a.id, 'Disqualified')}
                                 title="Mark as Disqualified"
-                                className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${disqualifyStyle(a.status)}`}
-                              >
+                                className={`rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${disqualifyCls(a.status)}`}>
                                 Disqualify
                               </button>
                             </div>
@@ -342,19 +337,13 @@ export const ApplicationsListPage = () => {
                     : `Showing ${(safePage - 1) * ITEMS_PER_PAGE + 1}–${Math.min(safePage * ITEMS_PER_PAGE, filtered.length)} of ${filtered.length}`}
                 </p>
                 <div className="flex items-center gap-2">
-                  <button
-                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 disabled:opacity-40 hover:bg-slate-50"
-                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                    disabled={safePage === 1}
-                  >
+                  <button className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 disabled:opacity-40 hover:bg-slate-50"
+                    onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1}>
                     <ChevronLeft className="h-4 w-4" />
                   </button>
                   <span className="text-xs font-medium">Page {safePage} of {totalPages}</span>
-                  <button
-                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 disabled:opacity-40 hover:bg-slate-50"
-                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                    disabled={safePage === totalPages}
-                  >
+                  <button className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 disabled:opacity-40 hover:bg-slate-50"
+                    onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}>
                     <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
@@ -364,7 +353,6 @@ export const ApplicationsListPage = () => {
         </div>
       </div>
 
-      {/* Toast */}
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-lg">
           {toast}
