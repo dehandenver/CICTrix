@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { scheduleTransientUiReset } from '../../utils/uiReset';
+import iloiloCitySeal from '../../assets/iloilo-city-seal.png';
 
 type Role = 'super-admin' | 'rsp' | 'lnd' | 'pm';
 
@@ -170,49 +171,29 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
 
           {/* Top-left wordmark */}
           <div className="relative z-10 flex w-full flex-col p-12">
-            <div className="flex items-center gap-3">
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-xl"
-                style={{
-                  backgroundColor: 'rgba(255,255,255,0.15)',
-                  boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.25)',
-                  backdropFilter: 'blur(8px)',
-                }}
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#FFFFFF"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="h-5 w-5"
-                  aria-hidden="true"
-                >
-                  <path d="M3 12l9-9 9 9" />
-                  <path d="M5 10v10h14V10" />
-                  <path d="M10 20v-6h4v6" />
-                </svg>
+            <a href="/" className="flex items-center gap-3">
+              <div className="flex flex-col leading-tight">
+                <span className="text-base font-bold tracking-wide text-white">ABYAN HRIS</span>
+                <span className="text-xs font-medium" style={{ color: 'rgba(200,209,255,0.85)' }}>
+                  Human Resource Information System
+                </span>
               </div>
-              <span
-                className="text-sm font-semibold tracking-wide"
-                style={{ color: 'rgba(255,255,255,0.92)' }}
-              >
-                Abyan
-              </span>
-            </div>
+            </a>
 
             {/* Centered hero block */}
             <div className="m-auto w-full max-w-md text-center">
-              <div
-                className="mx-auto mb-8 flex h-20 w-20 items-center justify-center rounded-3xl"
+              <div className="mx-auto mb-8 flex h-32 w-32 items-center justify-center rounded-full"
                 style={{
-                  backgroundColor: 'rgba(255,255,255,0.16)',
-                  boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.28)',
-                  backdropFilter: 'blur(8px)',
+                  backgroundColor: 'rgba(255,255,255,0.12)',
+                  boxShadow: 'inset 0 0 0 2px rgba(255,255,255,0.25)',
+                  padding: '12px',
                 }}
               >
-                <Lock className="h-9 w-9" strokeWidth={1.6} style={{ color: '#FFFFFF' }} />
+                <img
+                  src={iloiloCitySeal}
+                  alt="OCHRMO Seal"
+                  className="h-full w-full object-contain"
+                />
               </div>
               <h1
                 className="text-4xl font-bold tracking-tight"

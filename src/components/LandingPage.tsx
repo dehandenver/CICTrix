@@ -11,8 +11,12 @@ import {
   Network,
   ChevronLeft,
   ChevronRight,
+  Mail,
+  MapPin,
+  Phone,
 } from 'lucide-react';
 import abyanLogo from '../assets/abyan-logo.png';
+import iloiloCitySeal from '../assets/iloilo-city-seal.png';
 import { getAuthoritativeJobPostings, loadJobPostings } from '../lib/recruitmentData';
 import type { JobPosting } from '../types/recruitment.types';
 
@@ -51,6 +55,7 @@ const FEATURES = [
 export const LandingPage = () => {
   const navigate = useNavigate();
   const jobsTableRef = useRef<HTMLDivElement>(null);
+  const contactRef = useRef<HTMLElement>(null);
   const [itemsPerPage, setItemsPerPage] = useState(5);
   const [currentPage, setCurrentPage] = useState(1);
   const [vacancyJobs, setVacancyJobs] = useState<any[]>(FALLBACK_JOB_VACANCIES);
@@ -168,12 +173,13 @@ export const LandingPage = () => {
               >
                 About
               </a>
-              <a
-                href="/contacts"
+              <button
+                type="button"
+                onClick={() => contactRef.current?.scrollIntoView({ behavior: 'smooth' })}
                 className="rounded-md px-4 py-2 text-sm font-medium text-white/80 hover:bg-white/15 hover:text-white transition-colors"
               >
                 Contacts
-              </a>
+              </button>
             </nav>
 
             {/* Login Dropdown */}
@@ -353,16 +359,88 @@ export const LandingPage = () => {
       </section>
 
 
-      {/* ─── Footer ──────────────────────────────────────────────── */}
-      <footer className="border-t border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-6 py-6 text-sm text-slate-500 sm:flex-row">
-          <div className="flex items-center gap-2">
-            <img
-              src={abyanLogo}
-              alt="Abyan Logo"
-              className="h-7 w-auto object-contain"
-            />
-            <span className="font-semibold text-[#050D65]">ABYAN HRIS</span>
+      {/* ─── Contact / Footer ────────────────────────────────────── */}
+      <footer ref={contactRef} className="bg-gradient-to-br from-[#050D65] to-[#0e1a7a]">
+        {/* Contact section */}
+        <div className="mx-auto max-w-6xl px-6 py-16">
+          <div className="mb-12 text-center">
+            <p className="text-xs font-semibold uppercase tracking-widest text-indigo-300">Get in Touch</p>
+            <h2 className="mt-3 text-3xl font-bold text-white sm:text-4xl">Ready to experience ABYAN?</h2>
+            <p className="mt-3 text-base text-indigo-200">Reach out or log in to get started.</p>
+          </div>
+
+          <div className="grid gap-8 sm:grid-cols-3">
+            {/* Email */}
+            <div className="flex flex-col items-center gap-4 rounded-2xl border border-white/10 bg-white/5 px-6 py-8 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#363EE8]">
+                <Mail size={22} className="text-white" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-widest text-indigo-300">Email Us</p>
+                <a
+                  href="mailto:cictrix23@gmail.com"
+                  className="mt-1 block text-base font-medium text-white hover:text-indigo-200 transition-colors"
+                >
+                  cictrix23@gmail.com
+                </a>
+              </div>
+            </div>
+
+            {/* Office */}
+            <div className="flex flex-col items-center gap-4 rounded-2xl border border-white/10 bg-white/5 px-6 py-8 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#363EE8]">
+                <MapPin size={22} className="text-white" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-widest text-indigo-300">Office</p>
+                <p className="mt-1 text-base font-medium text-white">
+                  OCHRMO, Iloilo City Hall<br />
+                  <span className="text-sm text-indigo-200">Iloilo City, Philippines</span>
+                </p>
+              </div>
+            </div>
+
+            {/* Seal + CTA */}
+            <div className="flex flex-col items-center gap-4 rounded-2xl border border-white/10 bg-white/5 px-6 py-8 text-center">
+              <img
+                src={iloiloCitySeal}
+                alt="Iloilo City Seal"
+                className="h-16 w-16 object-contain opacity-90"
+              />
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-widest text-indigo-300">Portal Access</p>
+                <p className="mt-1 text-sm text-indigo-200">Log in through the portal for your account</p>
+              </div>
+            </div>
+          </div>
+
+          {/* CTA Buttons */}
+          <div className="mt-12 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <a
+              href="mailto:cictrix23@gmail.com"
+              className="inline-flex items-center gap-2 rounded-[14px] border border-white/30 px-7 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
+            >
+              <Mail size={16} /> Contact Us
+            </a>
+            <button
+              type="button"
+              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+              className="inline-flex items-center gap-2 rounded-[14px] bg-white px-7 py-3 text-sm font-semibold text-[#363EE8] shadow-lg transition hover:bg-[#EEF2FF]"
+            >
+              Back to Home
+            </button>
+          </div>
+        </div>
+
+        {/* Bottom bar */}
+        <div className="border-t border-white/10">
+          <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-6 py-5 text-xs text-indigo-300 sm:flex-row">
+            <div className="flex items-center gap-2">
+              <img src={abyanLogo} alt="Abyan Logo" className="h-6 w-auto object-contain opacity-80" />
+              <span className="font-semibold text-white">ABYAN HRIS</span>
+              <span className="text-indigo-400">— Human Resource Information System</span>
+            </div>
+            <p>&copy; {new Date().getFullYear()} Office of the City Human Resource Management Officer. All rights reserved.</p>
           </div>
         </div>
       </footer>

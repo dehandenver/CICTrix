@@ -2,6 +2,7 @@ import { Eye, EyeOff, Lock, User } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import abyanLogo from '../../assets/abyan-logo.png';
+import iloiloCitySeal from '../../assets/iloilo-city-seal.png';
 
 interface EmployeeLoginPageProps {
   onLogin: (username: string, password: string) => Promise<void> | void;
@@ -99,14 +100,18 @@ export const EmployeeLoginPage: React.FC<EmployeeLoginPageProps> = ({
 
             {/* Center hero */}
             <div className="m-auto w-full max-w-md text-center">
-              <div
-                className="mx-auto mb-8 flex h-20 w-20 items-center justify-center rounded-3xl"
+              <div className="mx-auto mb-8 flex h-32 w-32 items-center justify-center rounded-full"
                 style={{
-                  backgroundColor: 'rgba(255,255,255,0.16)',
-                  boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.28)',
+                  backgroundColor: 'rgba(255,255,255,0.12)',
+                  boxShadow: 'inset 0 0 0 2px rgba(255,255,255,0.25)',
+                  padding: '12px',
                 }}
               >
-                <User className="h-9 w-9 text-white" strokeWidth={1.6} />
+                <img
+                  src={iloiloCitySeal}
+                  alt="OCHRMO Seal"
+                  className="h-full w-full object-contain"
+                />
               </div>
               <h1
                 className="text-4xl font-bold tracking-tight text-white"
