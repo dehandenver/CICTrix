@@ -180,7 +180,7 @@ export const SettingsPage = () => {
     <div className="min-h-screen bg-[#f8f9fa]">
       <AdminHeader userName="RSP Admin" divisionLabel="RSP Division" />
     <div className="admin-layout">
-      <Sidebar activeModule="Settings" userRole="rsp" />
+      <Sidebar activeModule="RSP" userRole="rsp" />
       <main className="admin-content">
         <div className="admin-header">
           <h1>Settings</h1>

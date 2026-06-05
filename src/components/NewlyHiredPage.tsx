@@ -17,6 +17,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { createPassword, createUniqueUsername, getEmployeePortalAccounts, upsertEmployeePortalAccount } from '../lib/employeePortalData';
 import type { NewlyHired, NewlyHiredStatus } from '../types/recruitment.types';
+import { AdminHeader } from './AdminHeader';
 import { Sidebar } from './Sidebar';
 
 type ViewMode = 'overview' | 'department';
@@ -331,6 +332,8 @@ export const NewlyHiredPage = () => {
   };
 
   return (
+    <div className="min-h-screen bg-[#f8f9fa]">
+      <AdminHeader userName="RSP Admin" divisionLabel="RSP Division" />
     <div className="admin-layout">
       <Sidebar activeModule="RSP" userRole="rsp" />
 
@@ -584,6 +587,7 @@ export const NewlyHiredPage = () => {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 };
