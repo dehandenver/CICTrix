@@ -7,6 +7,7 @@ import { JobPostingsPage } from './components/JobPostingsPage';
 import { NewlyHiredPage } from './components/NewlyHiredPage';
 import { QualifiedApplicantsPage } from './components/QualifiedApplicantsPage';
 import { ApplicantRankingPage } from './components/ApplicantRankingPage';
+import { ApplicationsListPage } from './components/ApplicationsListPage';
 import { QualifiedApplicantsRSPPage } from './components/QualifiedApplicantsRSPPage';
 import { RaterManagementPage } from './components/RaterManagementPage';
 import SuccessionReadinessEngine from './components/SuccessionReadinessEngine';
@@ -633,7 +634,7 @@ function AppContent() {
             path="/admin/rsp/applications"
             element={
               <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
-                <JobPostingsPage />
+                <ApplicationsListPage />
               </AdminRoute>
             }
           />
