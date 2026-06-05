@@ -1,5 +1,5 @@
-import { BookOpen, ChevronDown, ChevronRight as ChevronRightIcon, ClipboardList, FileText, LayoutDashboard, Medal, Settings, TrendingUp, UserCog, Users, Network } from 'lucide-react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { BookOpen, ClipboardList, FileText, LayoutDashboard, Medal, Network, Settings, TrendingUp, UserCog, Users } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { getApplicantsFromSupabase, getApplicants } from '../lib/recruitmentData';
 import '../styles/sidebar.css';
@@ -21,37 +21,19 @@ interface MenuItem {
   badge?: string;
 }
 
-const APPLICANT_PATHS = ['/admin/rsp/applications', '/admin/rsp/qualified', '/admin/rsp/applicant-score'];
-
 export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
   const location = useLocation();
-  const navigate = useNavigate();
   const [qualifiedCount, setQualifiedCount] = useState(0);
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => {
-    if (APPLICANT_PATHS.includes(location.pathname)) return new Set(['applicants']);
-    return new Set();
-  });
 
-  const toggleGroup = (group: string) => {
-    setExpandedGroups(prev => {
-      const next = new Set(prev);
-      if (next.has(group)) next.delete(group); else next.add(group);
-      return next;
-    });
-  };
-
-  // Function to update qualified applicant count
   const updateQualifiedCount = async () => {
     try {
-      // Try Supabase first (source of truth)
       const applicants = await getApplicantsFromSupabase();
       const count = applicants.filter((a) => {
         const s = (a.status || '').toLowerCase();
         return s.includes('qualified') || s.includes('recommend') || s.includes('hired');
       }).length;
       setQualifiedCount(count);
-    } catch (err) {
-      // Fallback to localStorage
+    } catch {
       try {
         const applicants = getApplicants();
         const count = applicants.filter((a) => {
@@ -66,10 +48,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
   };
 
   useEffect(() => {
-    // Initial load
     void updateQualifiedCount();
-
-    // Listen for applicant updates
     window.addEventListener('cictrix:applicants-updated', updateQualifiedCount);
     return () => window.removeEventListener('cictrix:applicants-updated', updateQualifiedCount);
   }, []);
@@ -88,7 +67,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
 
   const getPath = (module: 'dashboard' | 'rsp' | 'lnd' | 'pm' | 'settings', defaultPath: string) =>
     isSuperAdmin ? `/admin?module=${module}` : defaultPath;
-  
+
   const menuItems: MenuItem[] = [
     {
       path: getPath('dashboard', '/admin'),
@@ -98,7 +77,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       isActive: isSuperAdmin
         ? location.pathname === '/admin' && activeAdminModule === 'dashboard'
         : location.pathname === '/admin',
-      roles: ['super-admin']
+      roles: ['super-admin'],
     },
     {
       path: getPath('rsp', '/admin/rsp'),
@@ -108,7 +87,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       isActive: isSuperAdmin
         ? location.pathname === '/admin' && activeAdminModule === 'rsp'
         : location.pathname === '/admin/rsp' || location.pathname === '/admin/jobs' || location.pathname === '/admin/raters',
-      roles: ['super-admin', 'rsp']
+      roles: ['super-admin', 'rsp'],
     },
     {
       path: getPath('lnd', '/admin/lnd'),
@@ -118,7 +97,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       isActive: isSuperAdmin
         ? location.pathname === '/admin' && activeAdminModule === 'lnd'
         : location.pathname === '/admin/lnd' || location.pathname === '/admin/lnd/manage',
-      roles: ['super-admin', 'lnd']
+      roles: ['super-admin', 'lnd'],
     },
     {
       path: getPath('pm', '/admin/pm'),
@@ -128,7 +107,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       isActive: isSuperAdmin
         ? location.pathname === '/admin' && activeAdminModule === 'pm'
         : location.pathname === '/admin/pm' || location.pathname === '/admin/pm/manage',
-      roles: ['super-admin', 'pm']
+      roles: ['super-admin', 'pm'],
     },
     {
       path: '/admin/users',
@@ -136,7 +115,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       label: 'User Management',
       sublabel: '',
       isActive: location.pathname === '/admin/users',
-      roles: ['super-admin']
+      roles: ['super-admin'],
     },
     {
       path: '/admin/reports',
@@ -144,7 +123,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       label: 'Reports',
       sublabel: '',
       isActive: location.pathname === '/admin/reports',
-      roles: ['super-admin']
+      roles: ['super-admin'],
     },
     {
       path: getPath('settings', '/admin/settings'),
@@ -154,8 +133,8 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       isActive: isSuperAdmin
         ? location.pathname === '/admin' && activeAdminModule === 'settings'
         : location.pathname === '/admin/settings',
-      roles: ['super-admin']
-    }
+      roles: ['super-admin'],
+    },
   ];
 
   const rspMenuItems: MenuItem[] = [
@@ -165,15 +144,42 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       label: 'Dashboard',
       sublabel: '',
       isActive: location.pathname === '/admin/rsp',
-      roles: ['rsp'] as AdminRole[],
+      roles: ['rsp'],
     },
+    // ── Applicants group (flat, no collapse) ──────────────────────────────
+    {
+      path: '/admin/rsp/applications',
+      icon: ClipboardList,
+      label: 'Applications',
+      sublabel: 'Job postings & applicants',
+      isActive: location.pathname === '/admin/rsp/applications' || location.pathname === '/admin/rsp/jobs',
+      roles: ['rsp'],
+    },
+    {
+      path: '/admin/rsp/qualified',
+      icon: Users,
+      label: 'Qualified Applicants',
+      sublabel: 'Ready for placement',
+      isActive: location.pathname === '/admin/rsp/qualified',
+      roles: ['rsp'],
+      badge: qualifiedCount > 0 ? String(qualifiedCount) : undefined,
+    },
+    {
+      path: '/admin/rsp/applicant-score',
+      icon: Medal,
+      label: 'Applicant Score',
+      sublabel: 'Evaluation & scoring',
+      isActive: location.pathname === '/admin/rsp/applicant-score',
+      roles: ['rsp'],
+    },
+    // ── Other sections ────────────────────────────────────────────────────
     {
       path: '/admin/rsp/new-hired',
       icon: Users,
       label: 'Newly Hired',
       sublabel: 'Generate credentials',
       isActive: location.pathname === '/admin/rsp/new-hired',
-      roles: ['rsp'] as AdminRole[],
+      roles: ['rsp'],
     },
     {
       path: '/admin/rsp/raters',
@@ -181,7 +187,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       label: 'Rater Management',
       sublabel: 'Access control',
       isActive: location.pathname === '/admin/rsp/raters',
-      roles: ['rsp'] as AdminRole[],
+      roles: ['rsp'],
     },
     {
       path: '/admin/rsp/accounts',
@@ -189,15 +195,17 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       label: 'Employee Accounts',
       sublabel: 'All employees',
       isActive: location.pathname === '/admin/rsp/accounts',
-      roles: ['rsp'] as AdminRole[],
+      roles: ['rsp'],
     },
     {
       path: '/admin/rsp/succession',
       icon: Network,
       label: 'Succession Planning',
       sublabel: 'Backup employees per position',
-      isActive: location.pathname === '/admin/rsp/succession' || location.pathname.startsWith('/admin/rsp/succession/'),
-      roles: ['rsp'] as AdminRole[],
+      isActive:
+        location.pathname === '/admin/rsp/succession' ||
+        location.pathname.startsWith('/admin/rsp/succession/'),
+      roles: ['rsp'],
     },
     {
       path: '/admin/rsp/reports',
@@ -205,7 +213,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       label: 'Reports',
       sublabel: '',
       isActive: location.pathname === '/admin/rsp/reports',
-      roles: ['rsp'] as AdminRole[],
+      roles: ['rsp'],
     },
     {
       path: '/admin/rsp/settings',
@@ -213,15 +221,13 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       label: 'Settings',
       sublabel: '',
       isActive: location.pathname === '/admin/rsp/settings',
-      roles: ['rsp'] as AdminRole[],
+      roles: ['rsp'],
     },
   ];
 
-  const applicantsExpanded = expandedGroups.has('applicants') || APPLICANT_PATHS.includes(location.pathname);
-
   const sourceMenu = isRspRole ? rspMenuItems : menuItems;
 
-  const filteredMenuItems = sourceMenu.filter(item => {
+  const filteredMenuItems = sourceMenu.filter((item) => {
     if (!item.roles || item.roles.length === 0) return false;
     if (!resolvedRole) return false;
     return item.roles.includes(resolvedRole);
@@ -233,11 +239,11 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
         <h2>HRIS Admin</h2>
         {activeModule && <span className="sidebar-module">{activeModule}</span>}
       </div>
-      
+
       <nav className="sidebar-nav">
-        {filteredMenuItems.map((item, idx) => {
+        {filteredMenuItems.map((item) => {
           const Icon = item.icon;
-          const dashboardLink = (
+          return (
             <Link
               key={item.path}
               to={item.path}
@@ -257,86 +263,9 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
               </div>
             </Link>
           );
-
-          // After Dashboard (index 0) for RSP role, inject the Applicants collapsible group
-          if (isRspRole && idx === 0) {
-            const isApplicantsActive = APPLICANT_PATHS.includes(location.pathname);
-            return (
-              <div key={`${item.path}-with-group`}>
-                {dashboardLink}
-
-                {/* Applicants group */}
-                <div>
-                  <button
-                    type="button"
-                    onClick={() => toggleGroup('applicants')}
-                    className={`sidebar-nav-item w-full text-left ${isApplicantsActive ? 'active' : ''}`}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer' }}
-                  >
-                    <ClipboardList size={18} />
-                    <div className="sidebar-nav-text flex-1 flex items-center justify-between">
-                      <span className="sidebar-nav-title">Applicants</span>
-                      {applicantsExpanded
-                        ? <ChevronDown size={14} className="text-slate-400" />
-                        : <ChevronRightIcon size={14} className="text-slate-400" />}
-                    </div>
-                  </button>
-
-                  {applicantsExpanded && (
-                    <div style={{ paddingLeft: '0.75rem' }}>
-                      <Link
-                        to="/admin/rsp/applications"
-                        className={`sidebar-nav-item ${location.pathname === '/admin/rsp/applications' || location.pathname === '/admin/rsp/jobs' ? 'active' : ''}`}
-                        style={{ fontSize: '0.85rem' }}
-                      >
-                        <FileText size={15} />
-                        <div className="sidebar-nav-text">
-                          <span className="sidebar-nav-title">Applications</span>
-                          <span className="sidebar-nav-subtitle flex">Job postings &amp; applicants</span>
-                        </div>
-                      </Link>
-
-                      <Link
-                        to="/admin/rsp/qualified"
-                        className={`sidebar-nav-item ${location.pathname === '/admin/rsp/qualified' ? 'active' : ''}`}
-                        style={{ fontSize: '0.85rem' }}
-                      >
-                        <Users size={15} />
-                        <div className="sidebar-nav-text flex-1 flex items-center justify-between">
-                          <div>
-                            <span className="sidebar-nav-title">Qualified Applicants</span>
-                            <span className="sidebar-nav-subtitle flex">Ready for placement</span>
-                          </div>
-                          {qualifiedCount > 0 && (
-                            <span className="ml-2 bg-blue-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-                              {qualifiedCount}
-                            </span>
-                          )}
-                        </div>
-                      </Link>
-
-                      <Link
-                        to="/admin/rsp/applicant-score"
-                        className={`sidebar-nav-item ${location.pathname === '/admin/rsp/applicant-score' ? 'active' : ''}`}
-                        style={{ fontSize: '0.85rem' }}
-                      >
-                        <Medal size={15} />
-                        <div className="sidebar-nav-text">
-                          <span className="sidebar-nav-title">Applicant Score</span>
-                          <span className="sidebar-nav-subtitle flex">Evaluation &amp; scoring</span>
-                        </div>
-                      </Link>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          }
-
-          return dashboardLink;
         })}
       </nav>
-      
+
       <div className="sidebar-footer">
         {session && (
           <div className="sidebar-user">
