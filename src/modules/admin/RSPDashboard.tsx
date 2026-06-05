@@ -73,7 +73,7 @@ import '../../styles/admin.css';
 import type { EmployeeRecord, JobPosting, NewlyHired } from '../../types/recruitment.types';
 
 type JobStatus = 'Open' | 'Reviewing' | 'Closed';
-type Section = 'dashboard' | 'jobs' | 'qualified' | 'new-hired' | 'raters' | 'accounts' | 'succession' | 'reports' | 'settings';
+type Section = 'dashboard' | 'jobs' | 'qualified' | 'applicant-score' | 'new-hired' | 'raters' | 'accounts' | 'succession' | 'reports' | 'settings';
 type BulkRecipientMode = 'all' | 'department' | 'selected';
 type EmployeeDocumentTemplateId = (typeof BULK_REQUEST_TEMPLATES)[number]['id'];
 type EmployeeDirectoryCardStatus = 'Active' | 'Inactive' | 'Mixed';
@@ -257,8 +257,9 @@ const EMPLOYEE_DIRECTORY_POSITIONS_BY_DEPARTMENT: Record<string, string[]> = {
 };
 
 const resolveSection = (pathname: string, search: string): Section => {
-  if (pathname === '/admin/rsp/jobs') return 'jobs';
+  if (pathname === '/admin/rsp/jobs' || pathname === '/admin/rsp/applications') return 'jobs';
   if (pathname === '/admin/rsp/qualified') return 'qualified';
+  if (pathname === '/admin/rsp/applicant-score') return 'applicant-score';
   if (pathname === '/admin/rsp/new-hired') return 'new-hired';
   if (pathname === '/admin/rsp/raters' || pathname === '/admin/raters') return 'raters';
   if (pathname === '/admin/rsp/accounts') return 'accounts';
@@ -2299,13 +2300,15 @@ export const RSPDashboard = () => {
 
   const sectionTitle = {
     dashboard: 'RSP Dashboard',
-    jobs: 'Job Postings Management',
+    jobs: 'Applications',
     qualified: 'Qualified Applicants',
+    'applicant-score': 'Applicant Score',
     'new-hired': 'Newly Hired Employees',
     raters: 'Rater Management & Access Control',
     accounts: 'Account Management',
     reports: 'Reports & Document Generation',
     settings: 'Settings',
+    succession: 'Succession Planning',
   }[section];
 
   const goToSection = (target: Section) => {
@@ -3033,6 +3036,7 @@ export const RSPDashboard = () => {
             {section === 'dashboard' && 'Overview of recruitment, selection and placement activities'}
             {section === 'jobs' && 'Manage and monitor all job positions and their applicants'}
             {section === 'qualified' && 'List of applicants who passed the evaluation and are eligible for further processing'}
+            {section === 'applicant-score' && 'View and update applicant evaluation scores for original and promotional applicants'}
             {section === 'new-hired' && 'Generate employee accounts for newly hired staff'}
             {section === 'raters' && 'Assign raters and define their evaluation access for specific job positions'}
             {section === 'accounts' && 'Manage employee accounts and information'}
@@ -3320,6 +3324,13 @@ export const RSPDashboard = () => {
           )}
 
           {section === 'qualified' && (
+            <QualifiedApplicantsSection
+              applicants={applicants}
+              completedEvaluationIds={completedEvaluationIds}
+            />
+          )}
+
+          {section === 'applicant-score' && (
             <QualifiedApplicantsSection
               applicants={applicants}
               completedEvaluationIds={completedEvaluationIds}

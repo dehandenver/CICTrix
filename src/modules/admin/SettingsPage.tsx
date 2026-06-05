@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Bell, Settings, Shield, Mail, Palette, Globe, User, Check, AlertCircle, Download, Upload } from 'lucide-react';
+import { AdminHeader } from '../../components/AdminHeader';
 import { Sidebar } from '../../components/Sidebar';
 import {
   type AccentColor,
@@ -176,6 +177,8 @@ export const SettingsPage = () => {
   };
 
   return (
+    <div className="min-h-screen bg-[#f8f9fa]">
+      <AdminHeader userName="RSP Admin" divisionLabel="RSP Division" />
     <div className="admin-layout">
       <Sidebar activeModule="Settings" userRole="rsp" />
       <main className="admin-content">
@@ -342,6 +345,7 @@ export const SettingsPage = () => {
           </div>
         </div>
       </main>
+    </div>
     </div>
   );
 };

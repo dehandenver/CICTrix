@@ -30,6 +30,7 @@ import {
 import { isMockModeEnabled, supabase } from '../lib/supabase';
 import { JobPosting } from '../types/recruitment.types';
 import { RecruitmentNavigationGuide } from './RecruitmentNavigationGuide';
+import { AdminHeader } from './AdminHeader';
 import { Sidebar } from './Sidebar';
 
 const ITEMS_PER_PAGE = 3;
@@ -873,6 +874,8 @@ export const JobPostingsPage = () => {
   };
 
   return (
+    <div className="min-h-screen bg-[#f8f9fa]">
+      <AdminHeader userName="RSP Admin" divisionLabel="RSP Division" />
     <div className="admin-layout">
       <Sidebar activeModule="RSP" userRole="rsp" />
       <main className="admin-content bg-slate-50">
@@ -1395,6 +1398,7 @@ export const JobPostingsPage = () => {
       {toast && (
         <div className="fixed bottom-6 right-6 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-lg">{toast}</div>
       )}
+    </div>
     </div>
   );
 };

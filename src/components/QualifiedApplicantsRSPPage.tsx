@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { AdminHeader } from './AdminHeader';
 import { QualifiedApplicantsSection } from './QualifiedApplicantsSection';
 import { Sidebar } from './Sidebar';
 import { ATTACHMENTS_BUCKET, supabase } from '../lib/supabase';
@@ -155,15 +156,18 @@ export const QualifiedApplicantsRSPPage = () => {
   }
 
   return (
-    <div className="admin-layout">
-      <Sidebar activeModule="RSP" userRole="rsp" />
-      <main className="admin-content bg-slate-50">
-        <QualifiedApplicantsSection
-          applicants={applicants}
-          completedEvaluationIds={completedEvaluationIds}
-          evaluationsByApplicant={evaluationsByApplicant}
-        />
-      </main>
+    <div className="min-h-screen bg-[#f8f9fa]">
+      <AdminHeader userName="RSP Admin" divisionLabel="RSP Division" />
+      <div className="admin-layout">
+        <Sidebar activeModule="RSP" userRole="rsp" />
+        <main className="admin-content bg-slate-50">
+          <QualifiedApplicantsSection
+            applicants={applicants}
+            completedEvaluationIds={completedEvaluationIds}
+            evaluationsByApplicant={evaluationsByApplicant}
+          />
+        </main>
+      </div>
     </div>
   );
 };

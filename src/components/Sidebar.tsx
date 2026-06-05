@@ -1,4 +1,4 @@
-import { BookOpen, FileText, LayoutDashboard, Settings, TrendingUp, UserCog, Users, Network } from 'lucide-react';
+import { BookOpen, ChevronDown, ChevronRight as ChevronRightIcon, ClipboardList, FileText, LayoutDashboard, Medal, Settings, TrendingUp, UserCog, Users, Network } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { getApplicantsFromSupabase, getApplicants } from '../lib/recruitmentData';
@@ -21,10 +21,24 @@ interface MenuItem {
   badge?: string;
 }
 
+const APPLICANT_PATHS = ['/admin/rsp/applications', '/admin/rsp/qualified', '/admin/rsp/applicant-score'];
+
 export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [qualifiedCount, setQualifiedCount] = useState(0);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => {
+    if (APPLICANT_PATHS.includes(location.pathname)) return new Set(['applicants']);
+    return new Set();
+  });
+
+  const toggleGroup = (group: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(group)) next.delete(group); else next.add(group);
+      return next;
+    });
+  };
 
   // Function to update qualified applicant count
   const updateQualifiedCount = async () => {
@@ -154,23 +168,6 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       roles: ['rsp'] as AdminRole[],
     },
     {
-      path: '/admin/rsp/jobs',
-      icon: FileText,
-      label: 'Job Posts',
-      sublabel: 'Manage positions',
-      isActive: location.pathname === '/admin/rsp/jobs',
-      roles: ['rsp'] as AdminRole[],
-    },
-    {
-      path: '/admin/rsp/qualified',
-      icon: Users,
-      label: 'Qualified Applicants',
-      sublabel: 'Ready for interview',
-      isActive: location.pathname === '/admin/rsp/qualified',
-      roles: ['rsp'] as AdminRole[],
-      badge: qualifiedCount > 0 ? qualifiedCount.toString() : undefined,
-    },
-    {
       path: '/admin/rsp/new-hired',
       icon: Users,
       label: 'Newly Hired',
@@ -220,16 +217,14 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
     },
   ];
 
+  const applicantsExpanded = expandedGroups.has('applicants') || APPLICANT_PATHS.includes(location.pathname);
+
   const sourceMenu = isRspRole ? rspMenuItems : menuItems;
 
   const filteredMenuItems = sourceMenu.filter(item => {
-    // If no role defined for the item, don't show it
     if (!item.roles || item.roles.length === 0) return false;
-    // If user has no role, don't show anything
     if (!resolvedRole) return false;
-    // Check if user's role is in the allowed roles
-    const allowed = item.roles.includes(resolvedRole);
-    return allowed;
+    return item.roles.includes(resolvedRole);
   });
 
   return (
@@ -240,9 +235,9 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       </div>
       
       <nav className="sidebar-nav">
-        {filteredMenuItems.map((item) => {
+        {filteredMenuItems.map((item, idx) => {
           const Icon = item.icon;
-          return (
+          const dashboardLink = (
             <Link
               key={item.path}
               to={item.path}
@@ -262,6 +257,83 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
               </div>
             </Link>
           );
+
+          // After Dashboard (index 0) for RSP role, inject the Applicants collapsible group
+          if (isRspRole && idx === 0) {
+            const isApplicantsActive = APPLICANT_PATHS.includes(location.pathname);
+            return (
+              <div key={`${item.path}-with-group`}>
+                {dashboardLink}
+
+                {/* Applicants group */}
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup('applicants')}
+                    className={`sidebar-nav-item w-full text-left ${isApplicantsActive ? 'active' : ''}`}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+                  >
+                    <ClipboardList size={18} />
+                    <div className="sidebar-nav-text flex-1 flex items-center justify-between">
+                      <span className="sidebar-nav-title">Applicants</span>
+                      {applicantsExpanded
+                        ? <ChevronDown size={14} className="text-slate-400" />
+                        : <ChevronRightIcon size={14} className="text-slate-400" />}
+                    </div>
+                  </button>
+
+                  {applicantsExpanded && (
+                    <div style={{ paddingLeft: '0.75rem' }}>
+                      <Link
+                        to="/admin/rsp/applications"
+                        className={`sidebar-nav-item ${location.pathname === '/admin/rsp/applications' || location.pathname === '/admin/rsp/jobs' ? 'active' : ''}`}
+                        style={{ fontSize: '0.85rem' }}
+                      >
+                        <FileText size={15} />
+                        <div className="sidebar-nav-text">
+                          <span className="sidebar-nav-title">Applications</span>
+                          <span className="sidebar-nav-subtitle flex">Job postings &amp; applicants</span>
+                        </div>
+                      </Link>
+
+                      <Link
+                        to="/admin/rsp/qualified"
+                        className={`sidebar-nav-item ${location.pathname === '/admin/rsp/qualified' ? 'active' : ''}`}
+                        style={{ fontSize: '0.85rem' }}
+                      >
+                        <Users size={15} />
+                        <div className="sidebar-nav-text flex-1 flex items-center justify-between">
+                          <div>
+                            <span className="sidebar-nav-title">Qualified Applicants</span>
+                            <span className="sidebar-nav-subtitle flex">Ready for placement</span>
+                          </div>
+                          {qualifiedCount > 0 && (
+                            <span className="ml-2 bg-blue-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                              {qualifiedCount}
+                            </span>
+                          )}
+                        </div>
+                      </Link>
+
+                      <Link
+                        to="/admin/rsp/applicant-score"
+                        className={`sidebar-nav-item ${location.pathname === '/admin/rsp/applicant-score' ? 'active' : ''}`}
+                        style={{ fontSize: '0.85rem' }}
+                      >
+                        <Medal size={15} />
+                        <div className="sidebar-nav-text">
+                          <span className="sidebar-nav-title">Applicant Score</span>
+                          <span className="sidebar-nav-subtitle flex">Evaluation &amp; scoring</span>
+                        </div>
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
+          return dashboardLink;
         })}
       </nav>
       

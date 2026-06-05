@@ -629,6 +629,22 @@ function AppContent() {
             }
           />
           <Route
+            path="/admin/rsp/applications"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <JobPostingsPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/rsp/applicant-score"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <QualifiedApplicantsRSPPage />
+              </AdminRoute>
+            }
+          />
+          <Route
             path="/job-details/:jobId"
             element={<JobDetailsPage />}
           />
