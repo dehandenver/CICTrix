@@ -9,6 +9,7 @@ import {
     Plus,
     Search,
     Trash2,
+    Unlock,
     Users
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -34,7 +35,7 @@ import { AdminHeader } from './AdminHeader';
 import { ApplicantsTabBar } from './ApplicantsTabBar';
 import { Sidebar } from './Sidebar';
 
-const ITEMS_PER_PAGE = 3;
+const ITEMS_PER_PAGE = 10;
 
 const normalizeText = (value: string) => String(value ?? '').trim().toLowerCase();
 
@@ -137,6 +138,9 @@ export const JobPostingsPage = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<JobPostFormValues>(buildDefaultJobForm());
   const [toast, setToast] = useState('');
+  const [lockConfirmJob, setLockConfirmJob] = useState<JobPosting | null>(null);
+  const [unlockDialogJob, setUnlockDialogJob] = useState<JobPosting | null>(null);
+  const [newDeadline, setNewDeadline] = useState('');
 
   const resolveLiveApplicants = async (jobRows: JobPosting[]) => {
     const localApplicants = getApplicants();
@@ -869,9 +873,31 @@ export const JobPostingsPage = () => {
   };
 
   const closeApplication = (job: JobPosting) => {
-    if (job.status === 'Active') {
-      updateStatus(job.id, 'Closed');
-    }
+    setLockConfirmJob(job);
+  };
+
+  const confirmLock = () => {
+    if (!lockConfirmJob) return;
+    updateStatus(lockConfirmJob.id, 'Closed');
+    setLockConfirmJob(null);
+  };
+
+  const openUnlockDialog = (job: JobPosting) => {
+    setNewDeadline('');
+    setUnlockDialogJob(job);
+  };
+
+  const confirmUnlock = () => {
+    if (!unlockDialogJob) return;
+    const now = new Date().toISOString();
+    const nextJobs = jobs.map((j) =>
+      j.id === unlockDialogJob.id
+        ? { ...j, status: 'Active' as JobPosting['status'], postedDate: now, applicationDeadline: newDeadline || j.applicationDeadline }
+        : j
+    );
+    saveJobs(nextJobs);
+    setToast('Position reopened. Date posted updated.');
+    setUnlockDialogJob(null);
   };
 
   return (
@@ -1158,9 +1184,15 @@ export const JobPostingsPage = () => {
                             Applicants
                           </button>
                           {job.status === 'Active' && (
-                            <button type="button" title="Close Application" onClick={() => closeApplication(job)}
+                            <button type="button" title="Close / Lock Application" onClick={() => closeApplication(job)}
                               className="rounded-lg border border-orange-300 px-2 py-1.5 text-orange-500 hover:bg-orange-50 transition-colors">
                               <Lock className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          {(job.status === 'Closed' || job.status === 'Draft') && (
+                            <button type="button" title="Unlock / Reopen Application" onClick={() => openUnlockDialog(job)}
+                              className="rounded-lg border border-emerald-300 px-2 py-1.5 text-emerald-600 hover:bg-emerald-50 transition-colors">
+                              <Unlock className="h-3.5 w-3.5" />
                             </button>
                           )}
                           <button type="button" title="Delete" onClick={() => void deleteJobPosting(job)}
@@ -1397,6 +1429,80 @@ export const JobPostingsPage = () => {
                 className="rounded-2xl bg-blue-600 px-8 py-3 text-lg font-semibold text-white"
               >
                 <Plus size={18} className="mr-2 inline" /> Create Position
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lock confirmation modal */}
+      {lockConfirmJob && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-100">
+                <Lock className="h-5 w-5 text-orange-500" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900">Close Application?</h3>
+                <p className="text-sm text-slate-500">This will stop accepting new applicants.</p>
+              </div>
+            </div>
+            <p className="mb-5 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              <span className="font-semibold">{lockConfirmJob.title}</span> will be marked as <span className="font-semibold text-orange-600">Closed</span>. Applicants already submitted will not be affected.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button type="button" onClick={() => setLockConfirmJob(null)}
+                className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+                Cancel
+              </button>
+              <button type="button" onClick={confirmLock}
+                className="rounded-xl bg-orange-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-600">
+                <Lock className="mr-1.5 inline h-3.5 w-3.5" /> Confirm Lock
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Unlock / reopen dialog */}
+      {unlockDialogJob && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100">
+                <Unlock className="h-5 w-5 text-emerald-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900">Reopen Application</h3>
+                <p className="text-sm text-slate-500">Set a new deadline and reactivate the posting.</p>
+              </div>
+            </div>
+            <p className="mb-4 rounded-xl bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
+              {unlockDialogJob.title}
+            </p>
+            <div className="mb-5">
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                New Application Deadline <span className="text-xs font-normal text-slate-400">(optional — leave blank to keep existing)</span>
+              </label>
+              <input
+                type="date"
+                value={newDeadline}
+                onChange={(e) => setNewDeadline(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none"
+              />
+              <p className="mt-1.5 text-xs text-slate-400">
+                Date Posted will be updated to today automatically.
+              </p>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button type="button" onClick={() => setUnlockDialogJob(null)}
+                className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+                Cancel
+              </button>
+              <button type="button" onClick={confirmUnlock}
+                className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700">
+                <Unlock className="mr-1.5 inline h-3.5 w-3.5" /> Reopen Position
               </button>
             </div>
           </div>

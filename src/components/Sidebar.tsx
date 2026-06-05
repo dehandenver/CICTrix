@@ -1,4 +1,4 @@
-import { BookOpen, ClipboardList, FileText, LayoutDashboard, Medal, Network, Settings, TrendingUp, UserCog, Users } from 'lucide-react';
+import { BookOpen, ClipboardList, FileText, LayoutDashboard, Network, Settings, TrendingUp, UserCog, Users } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { getApplicantsFromSupabase, getApplicants } from '../lib/recruitmentData';
@@ -146,31 +146,20 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       isActive: location.pathname === '/admin/rsp',
       roles: ['rsp'],
     },
-    // ── Applicants group (flat, no collapse) ──────────────────────────────
+    // ── Applicants (tabs live inside the Applications page) ───────────────
     {
       path: '/admin/rsp/applications',
       icon: ClipboardList,
-      label: 'Applications',
-      sublabel: 'Job postings & applicants',
-      isActive: location.pathname === '/admin/rsp/applications' || location.pathname === '/admin/rsp/jobs',
-      roles: ['rsp'],
-    },
-    {
-      path: '/admin/rsp/qualified',
-      icon: Users,
-      label: 'Qualified Applicants',
-      sublabel: 'Ready for placement',
-      isActive: location.pathname === '/admin/rsp/qualified',
+      label: 'Applicants',
+      sublabel: 'Applications & scoring',
+      isActive:
+        location.pathname === '/admin/rsp/applications' ||
+        location.pathname === '/admin/rsp/jobs' ||
+        location.pathname === '/admin/rsp/qualified' ||
+        location.pathname === '/admin/rsp/applicant-score' ||
+        location.pathname === '/admin/rsp/applicant-ranking',
       roles: ['rsp'],
       badge: qualifiedCount > 0 ? String(qualifiedCount) : undefined,
-    },
-    {
-      path: '/admin/rsp/applicant-score',
-      icon: Medal,
-      label: 'Applicant Score',
-      sublabel: 'Evaluation & scoring',
-      isActive: location.pathname === '/admin/rsp/applicant-score',
-      roles: ['rsp'],
     },
     // ── Other sections ────────────────────────────────────────────────────
     {

@@ -6,6 +6,7 @@ import { JobDetailsPage } from './components/JobDetailsPage';
 import { JobPostingsPage } from './components/JobPostingsPage';
 import { NewlyHiredPage } from './components/NewlyHiredPage';
 import { QualifiedApplicantsPage } from './components/QualifiedApplicantsPage';
+import { ApplicantRankingPage } from './components/ApplicantRankingPage';
 import { QualifiedApplicantsRSPPage } from './components/QualifiedApplicantsRSPPage';
 import { RaterManagementPage } from './components/RaterManagementPage';
 import SuccessionReadinessEngine from './components/SuccessionReadinessEngine';
@@ -641,6 +642,14 @@ function AppContent() {
             element={
               <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
                 <QualifiedApplicantsRSPPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/rsp/applicant-ranking"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <ApplicantRankingPage />
               </AdminRoute>
             }
           />
