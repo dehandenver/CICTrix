@@ -31,6 +31,7 @@ import { isMockModeEnabled, supabase } from '../lib/supabase';
 import { JobPosting } from '../types/recruitment.types';
 import { RecruitmentNavigationGuide } from './RecruitmentNavigationGuide';
 import { AdminHeader } from './AdminHeader';
+import { ApplicantsTabBar } from './ApplicantsTabBar';
 import { Sidebar } from './Sidebar';
 
 const ITEMS_PER_PAGE = 3;
@@ -878,11 +879,12 @@ export const JobPostingsPage = () => {
       <AdminHeader userName="RSP Admin" divisionLabel="RSP Division" />
     <div className="admin-layout">
       <Sidebar activeModule="RSP" userRole="rsp" />
-      <main className="admin-content bg-slate-50">
+      <main className="admin-content bg-slate-50 !p-0">
+        <ApplicantsTabBar />
+        <div className="p-6">
         <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="mb-2 text-base font-semibold text-blue-600">RSP Dashboard <span className="mx-2 text-slate-400">&gt;</span> <span className="text-slate-900">Job Postings</span></p>
-            <h1 className="text-2xl font-bold text-slate-900">Job Postings Management</h1>
+            <h1 className="text-2xl font-bold text-slate-900">Applications</h1>
             <p className="text-sm text-slate-600">Manage and monitor all job positions and their applicants</p>
           </div>
           <div className="flex gap-2">
@@ -1197,6 +1199,7 @@ export const JobPostingsPage = () => {
         </section>
         </>
         )}
+        </div>{/* /p-6 */}
       </main>
 
       <RecruitmentNavigationGuide open={showGuide} onClose={() => setShowGuide(false)} />
