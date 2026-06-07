@@ -745,9 +745,9 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
         <header className="sticky top-0 z-40 border-b border-slate-200 bg-white shadow-sm print:hidden">
           <div className="flex items-center justify-between px-6 py-3">
             <div className="flex items-center gap-4">
-              <div className="h-10 w-10 rounded-xl bg-blue-600 text-white grid place-content-center text-lg font-bold">HR</div>
+              <div className="h-10 w-10 rounded-xl bg-[#363EE8] text-white grid place-content-center text-lg font-bold">AB</div>
               <div>
-                <h1 className="text-lg font-bold leading-none">Government HRIS</h1>
+                <h1 className="text-lg font-bold leading-none">Abyan HRIS</h1>
                 <p className="text-xs text-slate-500">Human Resource Information System</p>
               </div>
             </div>

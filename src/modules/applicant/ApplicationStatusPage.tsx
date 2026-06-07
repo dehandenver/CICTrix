@@ -206,18 +206,18 @@ export const ApplicationStatusPage = () => {
     record?.application_type === 'promotion' ? 'Promotional Application' : 'Job Application';
 
   return (
-    <div className="min-h-screen bg-slate-50 py-12 px-4">
+    <div className="min-h-screen bg-white py-12 px-4" style={{ fontFamily: 'Poppins, sans-serif' }}>
       <div className="mx-auto w-full max-w-5xl">
         {/* Header */}
         <header className="mb-8 text-center">
-          <h1 className="text-4xl font-bold text-slate-900 sm:text-5xl">Application Status Tracker</h1>
-          <p className="mt-2 text-base text-slate-500">Track your application progress in real-time</p>
+          <h1 className="text-4xl font-bold sm:text-5xl" style={{ color: '#040E6B' }}>Application Status Tracker</h1>
+          <p className="mt-2 text-base" style={{ color: '#363EE8' }}>Track your application progress in real-time</p>
         </header>
 
         {/* Search card */}
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-          <h2 className="text-lg font-bold text-slate-900">Search Application</h2>
-          <p className="mt-1 text-sm text-slate-500">Enter your application number to view detailed status</p>
+          <h2 className="text-lg font-bold" style={{ color: '#040E6B' }}>Search Application</h2>
+          <p className="mt-1 text-sm" style={{ color: '#363EE8' }}>Enter your application number to view detailed status</p>
 
           <form onSubmit={handleSearch} className="mt-5 flex flex-col gap-3 sm:flex-row">
             <input
@@ -225,12 +225,21 @@ export const ApplicationStatusPage = () => {
               value={query}
               onChange={(e) => { setQuery(e.target.value); setError(''); }}
               placeholder="e.g., ITEM-2026-0001 or your.email@example.com"
-              className="flex-1 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400 outline-none ring-1 ring-transparent focus:ring-2 focus:ring-slate-300"
+              className="flex-1 rounded-xl px-4 py-3 text-sm outline-none ring-1 ring-transparent focus:ring-2"
+              style={{
+                backgroundColor: '#C8D1FF',
+                color: '#040E6B',
+              }}
             />
             <button
               type="submit"
               disabled={loading}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
+              style={{
+                backgroundColor: '#363EE8'
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#252AB5'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#363EE8'}
             >
               <Search size={16} />
               {loading ? 'Searching…' : 'Search'}
@@ -247,9 +256,9 @@ export const ApplicationStatusPage = () => {
         {/* Empty state */}
         {searched && !record && !error && (
           <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm">
-            <FileText size={40} className="mx-auto mb-3 text-slate-300" />
-            <p className="font-semibold text-slate-900">No application found</p>
-            <p className="mt-1 text-sm text-slate-500">
+            <FileText size={40} className="mx-auto mb-3" style={{ color: '#C8D1FF' }} />
+            <p className="font-semibold" style={{ color: '#040E6B' }}>No application found</p>
+            <p className="mt-1 text-sm" style={{ color: '#363EE8' }}>
               Double-check your application number or email address and try again.
             </p>
           </div>
@@ -262,8 +271,8 @@ export const ApplicationStatusPage = () => {
             <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <h3 className="text-xl font-bold text-slate-900">Application Details</h3>
-                  <p className="mt-1 text-sm text-slate-500">{record.item_number || '—'}</p>
+                  <h3 className="text-xl font-bold" style={{ color: '#040E6B' }}>Application Details</h3>
+                  <p className="mt-1 text-sm" style={{ color: '#363EE8' }}>{record.item_number || '—'}</p>
                 </div>
                 <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold ${BADGE_CLASS[badge.tone]}`}>
                   {badge.tone === 'approved' && <CheckCircle2 size={14} />}
@@ -274,45 +283,45 @@ export const ApplicationStatusPage = () => {
               <div className="mt-6 grid grid-cols-1 gap-8 md:grid-cols-2">
                 {/* Applicant Information */}
                 <div>
-                  <p className="text-sm font-semibold text-slate-500">Applicant Information</p>
+                  <p className="text-sm font-semibold" style={{ color: '#363EE8' }}>Applicant Information</p>
                   <div className="mt-4 space-y-4">
                     <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-400">Name</p>
-                      <p className="mt-0.5 text-base font-semibold text-slate-900">{fullName || '—'}</p>
+                      <p className="text-xs uppercase tracking-wide" style={{ color: '#363EE8' }}>Name</p>
+                      <p className="mt-0.5 text-base font-semibold" style={{ color: '#040E6B' }}>{fullName || '—'}</p>
                     </div>
                     <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-400">Email</p>
-                      <p className="mt-0.5 text-base font-medium text-slate-900 break-words">{record.email || '—'}</p>
+                      <p className="text-xs uppercase tracking-wide" style={{ color: '#363EE8' }}>Email</p>
+                      <p className="mt-0.5 text-base font-medium break-words" style={{ color: '#040E6B' }}>{record.email || '—'}</p>
                     </div>
                     <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-400">Phone</p>
-                      <p className="mt-0.5 text-base font-medium text-slate-900">{record.contact_number || '—'}</p>
+                      <p className="text-xs uppercase tracking-wide" style={{ color: '#363EE8' }}>Phone</p>
+                      <p className="mt-0.5 text-base font-medium" style={{ color: '#040E6B' }}>{record.contact_number || '—'}</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Application Information */}
                 <div>
-                  <p className="text-sm font-semibold text-slate-500">Application Information</p>
+                  <p className="text-sm font-semibold" style={{ color: '#363EE8' }}>Application Information</p>
                   <div className="mt-4 space-y-4">
                     <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-400">Program Type</p>
-                      <p className="mt-0.5 text-base font-semibold text-slate-900">{programType}</p>
+                      <p className="text-xs uppercase tracking-wide" style={{ color: '#363EE8' }}>Program Type</p>
+                      <p className="mt-0.5 text-base font-semibold" style={{ color: '#040E6B' }}>{programType}</p>
                     </div>
                     <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-400">Position</p>
-                      <p className="mt-0.5 text-base font-medium text-slate-900">
+                      <p className="text-xs uppercase tracking-wide" style={{ color: '#363EE8' }}>Position</p>
+                      <p className="mt-0.5 text-base font-medium" style={{ color: '#040E6B' }}>
                         {record.position || '—'}
-                        {record.office && <span className="text-slate-500"> · {record.office}</span>}
+                        {record.office && <span style={{ color: '#363EE8' }}> · {record.office}</span>}
                       </p>
                     </div>
                     <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-400">Submitted</p>
-                      <p className="mt-0.5 text-base font-medium text-slate-900">{formatDate(record.created_at)}</p>
+                      <p className="text-xs uppercase tracking-wide" style={{ color: '#363EE8' }}>Submitted</p>
+                      <p className="mt-0.5 text-base font-medium" style={{ color: '#040E6B' }}>{formatDate(record.created_at)}</p>
                     </div>
                     <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-400">Last Updated</p>
-                      <p className="mt-0.5 text-base font-medium text-slate-900">{formatDate(record.updated_at)}</p>
+                      <p className="text-xs uppercase tracking-wide" style={{ color: '#363EE8' }}>Last Updated</p>
+                      <p className="mt-0.5 text-base font-medium" style={{ color: '#040E6B' }}>{formatDate(record.updated_at)}</p>
                     </div>
                   </div>
                 </div>
@@ -321,8 +330,8 @@ export const ApplicationStatusPage = () => {
 
             {/* Application Progress */}
             <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-              <h3 className="text-xl font-bold text-slate-900">Application Progress</h3>
-              <p className="mt-1 text-sm text-slate-500">Track your application through each stage</p>
+              <h3 className="text-xl font-bold" style={{ color: '#040E6B' }}>Application Progress</h3>
+              <p className="mt-1 text-sm" style={{ color: '#363EE8' }}>Track your application through each stage</p>
 
               <ol className="mt-6">
                 {TIMELINE_STAGES.map((stage, index) => {
@@ -331,12 +340,16 @@ export const ApplicationStatusPage = () => {
 
                   const iconWrap =
                     state === 'done'      ? 'bg-emerald-100 text-emerald-600' :
-                    state === 'current'   ? 'bg-blue-100 text-blue-600' :
+                    state === 'current'   ? 'text-white' :
                     state === 'rejected'  ? 'bg-rose-100 text-rose-600' :
-                                            'bg-slate-100 text-slate-400';
+                                            'text-slate-400';
+
+                  const currentBg = state === 'current' ? { backgroundColor: '#363EE8' } : {};
 
                   const titleClass =
-                    state === 'pending' ? 'text-slate-400' : 'text-slate-900';
+                    state === 'pending' ? 'text-slate-400' : '';
+
+                  const titleStyle = state === 'pending' ? { color: '#C8D1FF' } : { color: '#040E6B' };
 
                   const dateForStage =
                     state === 'done' || state === 'current' || state === 'rejected'
@@ -356,7 +369,7 @@ export const ApplicationStatusPage = () => {
                       )}
 
                       {/* Icon */}
-                      <span className={`relative z-[1] flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full ${iconWrap}`}>
+                      <span className={`relative z-[1] flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full ${iconWrap}`} style={currentBg}>
                         {state === 'rejected'
                           ? <span className="text-base font-bold">×</span>
                           : <CheckCircle2 size={18} />}
@@ -365,16 +378,16 @@ export const ApplicationStatusPage = () => {
                       {/* Content */}
                       <div className="flex-1 pt-1">
                         <div className="flex flex-wrap items-baseline justify-between gap-2">
-                          <h4 className={`text-base font-semibold ${titleClass}`}>{stage.title}</h4>
+                          <h4 className={`text-base font-semibold ${titleClass}`} style={titleStyle}>{stage.title}</h4>
                           {dateForStage && (
-                            <span className="text-xs font-medium text-slate-400">{dateForStage}</span>
+                            <span className="text-xs font-medium" style={{ color: '#363EE8' }}>{dateForStage}</span>
                           )}
                         </div>
-                        <p className="mt-0.5 text-sm text-slate-500">{stage.subtitle}</p>
+                        <p className="mt-0.5 text-sm" style={{ color: '#363EE8' }}>{stage.subtitle}</p>
 
                         {/* Inline detail boxes for done stages */}
                         {state === 'done' && stage.key === 'verification' && (
-                          <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                          <div className="mt-3 rounded-lg px-3 py-2 text-sm" style={{ backgroundColor: '#C8D1FF', color: '#040E6B' }}>
                             All required documents received
                           </div>
                         )}
@@ -397,12 +410,12 @@ export const ApplicationStatusPage = () => {
 
             {/* Submitted Documents */}
             <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-              <h3 className="text-xl font-bold text-slate-900">Submitted Documents</h3>
-              <p className="mt-1 text-sm text-slate-500">Status of your submitted documents</p>
+              <h3 className="text-xl font-bold" style={{ color: '#040E6B' }}>Submitted Documents</h3>
+              <p className="mt-1 text-sm" style={{ color: '#363EE8' }}>Status of your submitted documents</p>
 
               <div className="mt-5 space-y-3">
                 {attachments.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+                  <div className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center text-sm" style={{ backgroundColor: '#C8D1FF', color: '#040E6B' }}>
                     No documents on file for this application.
                   </div>
                 ) : (
@@ -412,15 +425,15 @@ export const ApplicationStatusPage = () => {
                       className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+                        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-white" style={{ backgroundColor: '#363EE8' }}>
                           <FileText size={18} />
                         </span>
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-slate-900">
+                          <p className="truncate text-sm font-medium" style={{ color: '#040E6B' }}>
                             {doc.document_type || doc.file_name || 'Document'}
                           </p>
                           {doc.document_type && doc.file_name && (
-                            <p className="truncate text-xs text-slate-500">{doc.file_name}</p>
+                            <p className="truncate text-xs" style={{ color: '#363EE8' }}>{doc.file_name}</p>
                           )}
                         </div>
                       </div>
@@ -439,8 +452,8 @@ export const ApplicationStatusPage = () => {
               <div className="flex items-start gap-3">
                 <Mail size={20} className="mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="font-bold">Important Notice</p>
-                  <p className="mt-1 text-sm">{NOTICE_MESSAGE[badge.tone]}</p>
+                  <p className="font-bold" style={{ color: '#040E6B' }}>Important Notice</p>
+                  <p className="mt-1 text-sm" style={{ color: '#040E6B' }}>{NOTICE_MESSAGE[badge.tone]}</p>
                 </div>
               </div>
             </section>
@@ -448,15 +461,30 @@ export const ApplicationStatusPage = () => {
         )}
 
         {/* Footer */}
-        <footer className="mt-10 text-center text-sm text-slate-500">
+        <footer className="mt-10 text-center text-sm" style={{ color: '#363EE8' }}>
           <p>
             Need assistance? Contact our admissions office at{' '}
-            <a className="font-medium text-slate-700 underline-offset-2 hover:underline" href="mailto:rsp@cictrix.gov.ph">
-              rsp@cictrix.gov.ph
+            <a
+              className="font-medium underline-offset-2 hover:underline"
+              // Open Gmail's compose window directly (works in any browser
+              // even when no native mail client is configured). Falls back
+              // gracefully on right-click → "Copy email address".
+              href="https://mail.google.com/mail/?view=cm&fs=1&to=cictrix23@gmail.com&su=Application%20Status%20Inquiry"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: '#040E6B' }}
+            >
+              cictrix23@gmail.com
             </a>
           </p>
           <p className="mt-2">
-            <a href="/" className="font-medium text-slate-700 hover:underline">
+            <a
+              href="/"
+              className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white transition"
+              style={{ backgroundColor: '#363EE8' }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#252AB5')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#363EE8')}
+            >
               ← Back to Applicant Portal
             </a>
           </p>

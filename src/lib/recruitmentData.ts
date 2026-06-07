@@ -289,7 +289,12 @@ export const getJobPostingsFromSupabase = async (): Promise<JobPosting[]> => {
       console.warn('[RECRUITMENT] Supabase job fetch failed:', error);
       return [];
     }
-    if (!data || !Array.isArray(data)) return [];
+    if (!data || !Array.isArray(data)) {
+      console.warn('[RECRUITMENT] Supabase returned no data');
+      return [];
+    }
+
+    console.log('[RECRUITMENT] Fetched from Supabase:', data.length, 'jobs:', data.map((r: any) => ({ id: r.id, title: r.title, dbStatus: r.status })));
 
     return data.map((row: any): JobPosting => {
       const status = mapSupabaseStatusToJobPostingStatus(row.status);
@@ -342,10 +347,13 @@ const dispatchJobPostingsUpdated = (): void => {
 };
 
 export const loadJobPostings = async (): Promise<JobPosting[]> => {
+  console.log('[recruitmentData] loadJobPostings called');
   const rows = await getJobPostingsFromSupabase();
+  console.log('[recruitmentData] loadJobPostings got', rows.length, 'rows from Supabase');
   jobPostingsCache = rows;
   jobPostingsLoaded = true;
   dispatchJobPostingsUpdated();
+  console.log('[recruitmentData] loadJobPostings cache updated and event dispatched');
   return rows;
 };
 
@@ -422,27 +430,54 @@ const persistJobPostingsToSupabase = async (rows: JobPosting[]): Promise<void> =
   const client = supabase as any;
 
   const supabaseRows = rows.filter((job) => Boolean(job.id)).map(mapJobPostingToSupabaseRow);
-  if (supabaseRows.length === 0) return;
+  console.log('[recruitmentData] Persisting to Supabase, converting:', rows.map(r => ({ id: r.id, title: r.title, appStatus: r.status })), 'to:', supabaseRows);
+  if (supabaseRows.length === 0) {
+    console.warn('[recruitmentData] No valid rows to persist');
+    return;
+  }
 
   try {
     const { error: upsertError } = await client
       .from('job_postings')
       .upsert(supabaseRows, { onConflict: 'id' });
     if (upsertError) {
-      console.warn('[RECRUITMENT] Upsert failed:', upsertError);
+      console.error('[RECRUITMENT] Upsert failed:', upsertError);
+      // Surface persistence failures so silent RLS / network problems don't
+      // strand newly added postings in the local cache (admin sees them but
+      // the LandingPage / Interviewer reading from Supabase do not).
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('cictrix:job-postings-persist-failed', {
+            detail: { error: upsertError, rowCount: supabaseRows.length },
+          }),
+        );
+      }
+    } else {
+      console.log('[RECRUITMENT] Upsert succeeded, rows persisted:', supabaseRows.length);
     }
   } catch (err) {
-    console.warn('[RECRUITMENT] Error persisting job postings to Supabase:', err);
+    console.error('[RECRUITMENT] Error persisting job postings to Supabase:', err);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('cictrix:job-postings-persist-failed', {
+          detail: { error: err, rowCount: supabaseRows.length },
+        }),
+      );
+    }
   }
 };
 
 export const saveJobPostings = (rows: JobPosting[]): void => {
   const normalizedRows = Array.isArray(rows) ? rows : [];
 
+  console.log('[recruitmentData] saveJobPostings called with:', normalizedRows.map(r => ({ id: r.id, title: r.title, status: r.status })));
+
   // Update cache + notify subscribers synchronously for instant UI feedback.
   jobPostingsCache = normalizedRows;
   jobPostingsLoaded = true;
   dispatchJobPostingsUpdated();
+
+  console.log('[recruitmentData] Dispatched cictrix:job-postings-updated event');
 
   // Persist to Supabase in the background (source of truth).
   void persistJobPostingsToSupabase(normalizedRows);

@@ -15,6 +15,7 @@ import { mockDatabase } from '../lib/mockDatabase';
 import { getAuthoritativeJobPostings } from '../lib/recruitmentData';
 import { isMockModeEnabled, supabase } from '../lib/supabase';
 import { RaterManagementNavigationGuide } from './RaterManagementNavigationGuide';
+import { AdminHeader } from './AdminHeader';
 import { Sidebar } from './Sidebar';
 
 type RaterStatus = 'Active' | 'Inactive';
@@ -641,6 +642,8 @@ export const RaterManagementPage = () => {
   };
 
   return (
+    <div className="min-h-screen bg-[#f8f9fa]">
+      <AdminHeader userName="RSP Admin" divisionLabel="RSP Division" />
     <div className="admin-layout">
       <Sidebar activeModule="RSP" userRole="rsp" />
       <main className="admin-content bg-gray-50">
@@ -1006,6 +1009,7 @@ export const RaterManagementPage = () => {
           {toast}
         </div>
       )}
+    </div>
     </div>
   );
 };

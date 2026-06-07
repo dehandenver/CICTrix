@@ -1,6 +1,7 @@
-import { Filter, Search, Trash2, X } from 'lucide-react';
+import { Filter, LogOut, Search, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import abyanLogo from '../../assets/abyan-logo.png';
 import { Dialog } from '../../components/Dialog';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import { isPositionAssignedToInterviewer, resolveAssignedPositionsForInterviewer } from '../../lib/interviewerAccess';
@@ -149,7 +150,13 @@ const filterJobsByAssignments = (jobRows: RecruitmentJobPosting[], assignedPosit
   return jobRows.filter((job) => isPositionAssignedToInterviewer(String(job?.title ?? ''), assignedPositions));
 };
 
-export function InterviewerDashboard({ session }: { session?: InterviewerSessionInfo | null }) {
+export function InterviewerDashboard({
+  session,
+  onLogout,
+}: {
+  session?: InterviewerSessionInfo | null;
+  onLogout?: () => void;
+}) {
   const navigate = useNavigate();
   const [jobs, setJobs] = useState<JobPosting[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -162,6 +169,7 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
     upcomingInterviews: 0
   });
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [applicantToDelete, setApplicantToDelete] = useState<Applicant | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -182,15 +190,18 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
     };
 
     void fetchJobsAndApplicants();
-    window.addEventListener('focus', syncJobs);
-    window.addEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
-    window.addEventListener('storage', onStorage);
+    
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', syncJobs);
+      window.addEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
+      window.addEventListener('storage', onStorage);
 
-    return () => {
-      window.removeEventListener('focus', syncJobs);
-      window.removeEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
-      window.removeEventListener('storage', onStorage);
-    };
+      return () => {
+        window.removeEventListener('focus', syncJobs);
+        window.removeEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
+        window.removeEventListener('storage', onStorage);
+      };
+    }
   }, []);
 
   const fetchJobsAndApplicants = async () => {
@@ -323,15 +334,95 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
   };
 
   return (
+    <div style={{ minHeight: '100vh', background: '#e5e7eb', fontFamily: "'Poppins', system-ui, sans-serif" }}>
+
+      {/* ── Top Navbar ── */}
+      <header className="sticky top-0 z-30 bg-[#363EE8] shadow-md" style={{ color: '#ffffff' }}>
+        <div className="flex items-center justify-between px-6 py-3" style={{ color: '#ffffff' }}>
+          <div className="flex items-center gap-3">
+            <img
+              src={abyanLogo}
+              alt="ABYAN HRIS"
+              className="h-9 w-auto object-contain"
+              style={{ mixBlendMode: 'screen' }}
+            />
+            <div className="flex flex-col leading-tight">
+              <span className="text-base font-bold tracking-tight" style={{ color: '#ffffff' }}>ABYAN HRIS</span>
+              <span className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.80)' }}>
+                Interviewer Portal
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            {session?.name && (
+              <div className="hidden sm:flex flex-col items-end leading-tight">
+                <span className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.75)' }}>
+                  Signed in as
+                </span>
+                <span className="text-sm font-semibold" style={{ color: '#ffffff' }}>{session.name}</span>
+              </div>
+            )}
+            {onLogout && (
+              <button
+                type="button"
+                onClick={() => setLogoutConfirmOpen(true)}
+                className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold transition hover:bg-white/20"
+                style={{ borderColor: 'rgba(255,255,255,0.35)', backgroundColor: 'rgba(255,255,255,0.12)', color: '#ffffff' }}
+              >
+                <LogOut size={15} />
+                <span className="hidden sm:inline">Logout</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* ── Logout Confirmation Dialog ── */}
+      {logoutConfirmOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ backgroundColor: 'rgba(5,13,101,0.55)' }}
+          onClick={() => setLogoutConfirmOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white p-7 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+            style={{ fontFamily: "'Poppins', system-ui, sans-serif" }}
+          >
+            <div className="mb-1 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-50">
+              <LogOut size={22} className="text-[#363EE8]" />
+            </div>
+            <h3 className="mt-3 text-lg font-bold text-[#050D65]">Confirm Logout</h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Are you sure you want to log out of your Interviewer Portal session?
+            </p>
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setLogoutConfirmOpen(false)}
+                className="flex-1 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => { setLogoutConfirmOpen(false); onLogout?.(); }}
+                className="flex-1 rounded-xl bg-[#363EE8] py-2.5 text-sm font-semibold text-white transition hover:bg-[#2830c5]"
+              >
+                Yes, Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     <div className="interviewer-dashboard">
       {/* Header */}
       <div className="dashboard-header">
         <div>
           <h1>Interviewer Dashboard</h1>
           <p>View assigned job postings and manage applicant evaluations</p>
-          {session?.name && (
-            <p className="mt-1 text-sm text-gray-600">Signed in as: {session.name}</p>
-          )}
         </div>
       </div>
 
@@ -407,11 +498,13 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
                         <span className="interview-date">{formatDate(job.created_at)}</span>
                       </td>
                       <td>
-                        <button
-                          className="view-applicants-link"
+                                        <button
+                          type="button"
                           onClick={() => handleViewJobApplicants(job.title)}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-[#363EE8] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#2830c5]"
                         >
-                          View Applicants →
+                          View Applicants
+                          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
                         </button>
                       </td>
                     </tr>
@@ -497,6 +590,7 @@ export function InterviewerDashboard({ session }: { session?: InterviewerSession
           </Dialog>
         </>
       )}
+    </div>
     </div>
   );
 }

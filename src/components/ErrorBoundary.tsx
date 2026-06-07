@@ -20,13 +20,17 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   handleReload = (): void => {
-    window.location.reload();
+    if (typeof window !== 'undefined') {
+      window.location.reload();
+    }
   };
 
   handleHardReload = (): void => {
-    const url = new URL(window.location.href);
-    url.searchParams.set('_cb', Date.now().toString());
-    window.location.replace(url.toString());
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('_cb', Date.now().toString());
+      window.location.replace(url.toString());
+    }
   };
 
   render(): ReactNode {

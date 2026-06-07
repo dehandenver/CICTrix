@@ -2,9 +2,12 @@ import { useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Dialog } from './components/Dialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { JobDetailsPage } from './components/JobDetailsPage';
 import { JobPostingsPage } from './components/JobPostingsPage';
 import { NewlyHiredPage } from './components/NewlyHiredPage';
 import { QualifiedApplicantsPage } from './components/QualifiedApplicantsPage';
+import { ApplicantRankingPage } from './components/ApplicantRankingPage';
+import { ApplicationsListPage } from './components/ApplicationsListPage';
 import { QualifiedApplicantsRSPPage } from './components/QualifiedApplicantsRSPPage';
 import { RaterManagementPage } from './components/RaterManagementPage';
 import SuccessionReadinessEngine from './components/SuccessionReadinessEngine';
@@ -20,6 +23,8 @@ import { SettingsPage } from './modules/admin/SettingsPage';
 import { SuperAdminDashboard } from './modules/admin/SuperAdminDashboard';
 import { ApplicantWizard } from './modules/applicant/ApplicantWizard';
 import { ApplicationStatusPage } from './modules/applicant/ApplicationStatusPage';
+import { LandingPage } from './components/LandingPage';
+import { AboutPage } from './components/AboutPage';
 import { EmployeeLoginPage, EmployeePage } from './modules/employee';
 import { ApplicantDetailsPage } from './modules/interviewer/ApplicantDetailsPage.tsx';
 import { EvaluationForm } from './modules/interviewer/EvaluationForm';
@@ -304,6 +309,12 @@ function AppContent() {
     };
 
     void checkInterviewerAccess();
+    if (typeof window === 'undefined') {
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const intervalId = window.setInterval(() => {
       void checkInterviewerAccess();
     }, 3000);
@@ -328,17 +339,19 @@ function AppContent() {
   useEffect(() => {
     // Notify data-driven pages that a route has been activated so they can refresh
     // without requiring a full browser reload.
-    window.dispatchEvent(new CustomEvent('cictrix:route-activated'));
-    const routeActivationTimer = window.setTimeout(() => {
+    if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('cictrix:route-activated'));
-    }, 120);
+      const routeActivationTimer = window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('cictrix:route-activated'));
+      }, 120);
 
-    const cleanupUiReset = scheduleTransientUiReset({ dispatchOverlayClose: true });
+      const cleanupUiReset = scheduleTransientUiReset({ dispatchOverlayClose: true });
 
-    return () => {
-      window.clearTimeout(routeActivationTimer);
-      cleanupUiReset();
-    };
+      return () => {
+        window.clearTimeout(routeActivationTimer);
+        cleanupUiReset();
+      };
+    }
   }, [location.pathname, location.search]);
 
   const handleLogin = (email: string, role: Role) => {
@@ -415,6 +428,12 @@ function AppContent() {
     navigate('/employee/dashboard');
   };
 
+  const handleInterviewerLogout = () => {
+    setInterviewerSession(null);
+    localStorage.removeItem(INTERVIEWER_SESSION_KEY);
+    navigate('/interviewer/login');
+  };
+
   const handleEmployeeLogout = () => {
     setEmployeeSession(null);
     setCurrentEmployee(null);
@@ -440,8 +459,11 @@ function AppContent() {
 
   return (
     <div className="app">
-      <Routes>
-          <Route path="/" element={<ApplicantWizard />} />
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/about" element={<AboutPage />} />
+          <Route path="/contacts" element={<Navigate to="/" replace />} />
+          <Route path="/apply" element={<ApplicantWizard />} />
           <Route path="/track" element={<ApplicationStatusPage />} />
           <Route path="/succession" element={<SuccessionReadinessEngine />} />
           
@@ -451,7 +473,7 @@ function AppContent() {
             path="/interviewer/dashboard"
             element={
               <InterviewerRoute session={interviewerSession}>
-                <InterviewerDashboard session={interviewerSession} />
+                <InterviewerDashboard session={interviewerSession} onLogout={handleInterviewerLogout} />
               </InterviewerRoute>
             }
           />
@@ -605,6 +627,42 @@ function AppContent() {
             element={
               <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
                 <JobPostingsPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/rsp/applications"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <ApplicationsListPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/rsp/applicant-score"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <QualifiedApplicantsRSPPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/rsp/applicant-ranking"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <ApplicantRankingPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/job-details/:jobId"
+            element={<JobDetailsPage />}
+          />
+          <Route
+            path="/admin/rsp/job/:jobId"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <JobDetailsPage />
               </AdminRoute>
             }
           />

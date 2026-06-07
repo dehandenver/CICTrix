@@ -73,7 +73,7 @@ import '../../styles/admin.css';
 import type { EmployeeRecord, JobPosting, NewlyHired } from '../../types/recruitment.types';
 
 type JobStatus = 'Open' | 'Reviewing' | 'Closed';
-type Section = 'dashboard' | 'jobs' | 'qualified' | 'new-hired' | 'raters' | 'accounts' | 'succession' | 'reports' | 'settings';
+type Section = 'dashboard' | 'jobs' | 'qualified' | 'applicant-score' | 'new-hired' | 'raters' | 'accounts' | 'succession' | 'reports' | 'settings';
 type BulkRecipientMode = 'all' | 'department' | 'selected';
 type EmployeeDocumentTemplateId = (typeof BULK_REQUEST_TEMPLATES)[number]['id'];
 type EmployeeDirectoryCardStatus = 'Active' | 'Inactive' | 'Mixed';
@@ -257,8 +257,9 @@ const EMPLOYEE_DIRECTORY_POSITIONS_BY_DEPARTMENT: Record<string, string[]> = {
 };
 
 const resolveSection = (pathname: string, search: string): Section => {
-  if (pathname === '/admin/rsp/jobs') return 'jobs';
+  if (pathname === '/admin/rsp/jobs' || pathname === '/admin/rsp/applications') return 'jobs';
   if (pathname === '/admin/rsp/qualified') return 'qualified';
+  if (pathname === '/admin/rsp/applicant-score') return 'applicant-score';
   if (pathname === '/admin/rsp/new-hired') return 'new-hired';
   if (pathname === '/admin/rsp/raters' || pathname === '/admin/raters') return 'raters';
   if (pathname === '/admin/rsp/accounts') return 'accounts';
@@ -302,7 +303,7 @@ const persistDashboardJobsToRecruitment = (rows: JobRecord[]) => {
   const nowIso = new Date().toISOString();
   const mapped: JobPosting[] = rows.map((row, index) => ({
     id: String(row.id ?? crypto.randomUUID()),
-    jobCode: row.item_number || `LGU-2026-${String(index + 1).padStart(3, '0')}`,
+    jobCode: row.item_number || `ABYAN-2026-${String(index + 1).padStart(3, '0')}`,
     title: row.title,
     department: row.department || 'Operations',
     division: 'Operations',
@@ -2299,13 +2300,15 @@ export const RSPDashboard = () => {
 
   const sectionTitle = {
     dashboard: 'RSP Dashboard',
-    jobs: 'Job Postings Management',
+    jobs: 'Applications',
     qualified: 'Qualified Applicants',
+    'applicant-score': 'Applicant Score',
     'new-hired': 'Newly Hired Employees',
     raters: 'Rater Management & Access Control',
     accounts: 'Account Management',
     reports: 'Reports & Document Generation',
     settings: 'Settings',
+    succession: 'Succession Planning',
   }[section];
 
   const goToSection = (target: Section) => {
@@ -2363,7 +2366,7 @@ export const RSPDashboard = () => {
     // Persist through the central recruitment utility so all dependent caches/events stay in sync.
     const nextRecruitmentRows: JobPosting[] = nextJobs.map((row, index) => ({
       id: String(row.id ?? crypto.randomUUID()),
-      jobCode: row.item_number || `LGU-2026-${String(index + 1).padStart(3, '0')}`,
+      jobCode: row.item_number || `ABYAN-2026-${String(index + 1).padStart(3, '0')}`,
       title: row.title,
       department: row.department || 'Operations',
       division: 'Operations',
@@ -2407,7 +2410,7 @@ export const RSPDashboard = () => {
     // Persist through the central recruitment utility so all dependent caches/events stay in sync.
     const nextRecruitmentRows: JobPosting[] = nextJobs.map((row, index) => ({
       id: String(row.id ?? crypto.randomUUID()),
-      jobCode: row.item_number || `LGU-2026-${String(index + 1).padStart(3, '0')}`,
+      jobCode: row.item_number || `ABYAN-2026-${String(index + 1).padStart(3, '0')}`,
       title: row.title,
       department: row.department || 'Operations',
       division: 'Operations',
@@ -2983,7 +2986,7 @@ export const RSPDashboard = () => {
       `Due Date: ${dueDate}\n\n` +
       `Please log in to the Employee Portal at /employee/login and upload your file ` +
       `under Document Requirements.\n\n` +
-      `Thank you,\nCICTrix HRIS — RSP Office`;
+      `Thank you,\nAbyan HRIS — RSP Office`;
 
     try {
       // Send a single email with the recipients in TO so the SMTP server delivers
@@ -3022,22 +3025,6 @@ export const RSPDashboard = () => {
       <AdminHeader
         userName="RSP Admin"
         divisionLabel="RSP Division"
-        division="rsp"
-        onNotificationClick={(item) => {
-          // Route to the most relevant page for the source of the notification.
-          if (item.source === 'applicant' && item.payload.applicantId) {
-            navigate(`/admin/rsp/applicant/${item.payload.applicantId}`);
-            return;
-          }
-          if (item.source === 'evaluation' && item.payload.applicantId) {
-            navigate(`/admin/rsp/applicant/${item.payload.applicantId}`);
-            return;
-          }
-          if (item.source === 'employee_doc') {
-            navigate('/admin/rsp/reports');
-            return;
-          }
-        }}
       />
     <div className="admin-layout">
       <Sidebar activeModule="RSP" userRole="rsp" />
@@ -3049,6 +3036,7 @@ export const RSPDashboard = () => {
             {section === 'dashboard' && 'Overview of recruitment, selection and placement activities'}
             {section === 'jobs' && 'Manage and monitor all job positions and their applicants'}
             {section === 'qualified' && 'List of applicants who passed the evaluation and are eligible for further processing'}
+            {section === 'applicant-score' && 'View and update applicant evaluation scores for original and promotional applicants'}
             {section === 'new-hired' && 'Generate employee accounts for newly hired staff'}
             {section === 'raters' && 'Assign raters and define their evaluation access for specific job positions'}
             {section === 'accounts' && 'Manage employee accounts and information'}
@@ -3336,6 +3324,13 @@ export const RSPDashboard = () => {
           )}
 
           {section === 'qualified' && (
+            <QualifiedApplicantsSection
+              applicants={applicants}
+              completedEvaluationIds={completedEvaluationIds}
+            />
+          )}
+
+          {section === 'applicant-score' && (
             <QualifiedApplicantsSection
               applicants={applicants}
               completedEvaluationIds={completedEvaluationIds}
@@ -3631,57 +3626,69 @@ export const RSPDashboard = () => {
                       : `Position ${safeEmployeeDirectoryPage * EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE + 1} to ${Math.min((safeEmployeeDirectoryPage + 1) * EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE, employeeDirectoryCards.cards.length)} of ${employeeDirectoryCards.cards.length}`}
                   </div>
 
-                  <section className="grid grid-cols-[56px_minmax(0,1fr)_56px] items-start gap-4">
-                    <button
-                      type="button"
-                      onClick={() => setEmployeeDirectoryPage((current) => Math.max(0, current - 1))}
-                      disabled={safeEmployeeDirectoryPage === 0 || employeeDirectoryCards.cards.length === 0}
-                      className="flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 text-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <ChevronLeft size={24} />
-                    </button>
-
-                    <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-                      {paginatedEmployeeDirectoryCards.map((card) => (
-                        <button
-                          key={`${card.position}-${card.office}`}
-                          type="button"
-                          onClick={() => openPositionEmployees(card.position, card.office)}
-                          className="rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-                        >
-                          <div className="mb-3 flex items-start justify-between gap-3">
-                            <span className={`rounded-full px-3 py-1 text-sm font-semibold ${card.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : card.status === 'Inactive' ? 'bg-slate-200 text-slate-700' : 'bg-blue-100 text-blue-700'}`}>
-                              {card.status}
-                            </span>
-                            <ChevronRight size={18} className="text-slate-400" />
-                          </div>
-                          <h3 className="!mb-2 text-2xl font-bold text-slate-900">{card.position}</h3>
-                          <div className="space-y-2 text-base text-slate-600">
-                            <p className="!mb-0 inline-flex items-center gap-2"><MapPin size={16} className="text-slate-400" /> {card.office}</p>
-                            <p className="!mb-0 inline-flex items-center gap-2"><Users size={16} className="text-slate-400" /> {card.count} employee{card.count === 1 ? '' : 's'}</p>
-                            <p className="!mb-0 inline-flex items-center gap-2"><UserCheck size={16} className="text-slate-400" /> {card.activeCount} active • {card.inactiveCount} inactive</p>
-                          </div>
-                          <div className="mt-5 rounded-xl bg-blue-600 px-4 py-3 text-center text-base font-semibold text-white">
-                            View Employees
-                          </div>
-                        </button>
-                      ))}
-                      {employeeDirectoryCards.cards.length === 0 && (
-                        <div className="col-span-full rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">
-                          <Briefcase className="mx-auto h-10 w-10 text-slate-400" />
-                          <p className="mt-2 font-medium">No positions found for the selected filters.</p>
-                        </div>
-                      )}
+                  <section>
+                    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                      <table className="w-full min-w-full">
+                        <thead>
+                          <tr className="border-b border-slate-200 bg-slate-50">
+                            <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
+                            <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Office / Department</th>
+                            <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Employees</th>
+                            <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Active</th>
+                            <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Inactive</th>
+                            <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
+                            <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {paginatedEmployeeDirectoryCards.map((card) => (
+                            <tr
+                              key={`${card.position}-${card.office}`}
+                              className="border-b border-slate-100 hover:bg-slate-50 transition-colors last:border-0 cursor-pointer"
+                              onClick={() => openPositionEmployees(card.position, card.office)}
+                            >
+                              <td className="px-5 py-4">
+                                <span className="font-semibold text-sm text-slate-900">{card.position}</span>
+                              </td>
+                              <td className="px-5 py-4 text-sm text-slate-600">
+                                <span className="inline-flex items-center gap-1.5"><MapPin size={13} className="text-slate-400" /> {card.office}</span>
+                              </td>
+                              <td className="px-5 py-4 text-center">
+                                <span className="font-bold text-slate-900 text-sm">{card.count}</span>
+                              </td>
+                              <td className="px-5 py-4 text-center">
+                                <span className="text-sm text-emerald-700 font-semibold">{card.activeCount}</span>
+                              </td>
+                              <td className="px-5 py-4 text-center">
+                                <span className="text-sm text-slate-500 font-semibold">{card.inactiveCount}</span>
+                              </td>
+                              <td className="px-5 py-4 text-center">
+                                <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${card.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : card.status === 'Inactive' ? 'bg-slate-200 text-slate-700' : 'bg-blue-100 text-blue-700'}`}>
+                                  {card.status}
+                                </span>
+                              </td>
+                              <td className="px-5 py-4 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => openPositionEmployees(card.position, card.office)}
+                                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition-colors"
+                                >
+                                  View <ChevronRight size={12} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                          {employeeDirectoryCards.cards.length === 0 && (
+                            <tr>
+                              <td colSpan={7} className="px-5 py-12 text-center text-slate-500">
+                                <Briefcase className="mx-auto mb-2 h-9 w-9 text-slate-300" />
+                                <p className="font-medium">No positions found for the selected filters.</p>
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setEmployeeDirectoryPage((current) => Math.min(employeeDirectoryPageCount - 1, current + 1))}
-                      disabled={safeEmployeeDirectoryPage >= employeeDirectoryPageCount - 1 || employeeDirectoryCards.cards.length === 0}
-                      className="flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 text-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <ChevronRight size={24} />
-                    </button>
                   </section>
 
                   <footer className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">

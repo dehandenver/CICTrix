@@ -9,6 +9,7 @@ import {
     Plus,
     Search,
     Trash2,
+    Unlock,
     Users
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -30,9 +31,11 @@ import {
 import { isMockModeEnabled, supabase } from '../lib/supabase';
 import { JobPosting } from '../types/recruitment.types';
 import { RecruitmentNavigationGuide } from './RecruitmentNavigationGuide';
+import { AdminHeader } from './AdminHeader';
+import { ApplicantsTabBar } from './ApplicantsTabBar';
 import { Sidebar } from './Sidebar';
 
-const ITEMS_PER_PAGE = 3;
+const ITEMS_PER_PAGE = 10;
 
 const normalizeText = (value: string) => String(value ?? '').trim().toLowerCase();
 
@@ -86,7 +89,7 @@ interface JobPostFormValues {
 
 const buildDefaultJobForm = (): JobPostFormValues => ({
   title: '',
-  jobCode: `LGU-2026-${String(Math.floor(Math.random() * 999) + 1).padStart(3, '0')}`,
+  jobCode: `ABYAN-2026-${String(Math.floor(Math.random() * 999) + 1).padStart(3, '0')}`,
   department: '',
   division: '',
   positionLevel: '',
@@ -135,6 +138,9 @@ export const JobPostingsPage = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<JobPostFormValues>(buildDefaultJobForm());
   const [toast, setToast] = useState('');
+  const [lockConfirmJob, setLockConfirmJob] = useState<JobPosting | null>(null);
+  const [unlockDialogJob, setUnlockDialogJob] = useState<JobPosting | null>(null);
+  const [newDeadline, setNewDeadline] = useState('');
 
   const resolveLiveApplicants = async (jobRows: JobPosting[]) => {
     const localApplicants = getApplicants();
@@ -748,8 +754,13 @@ export const JobPostingsPage = () => {
   };
 
   const submitForm = (status: JobPosting['status']) => {
-    if (!form.title || !form.department || !form.summary || !form.applicationDeadline) {
-      setToast('Please complete required fields in Basic Information and Job Description.');
+    const missing: string[] = [];
+    if (!form.title?.trim()) missing.push('Title');
+    if (!form.department?.trim()) missing.push('Department');
+    if (!form.summary?.trim()) missing.push('Description');
+    if (!form.applicationDeadline?.trim()) missing.push('Application Deadline');
+    if (missing.length > 0) {
+      setToast(`Missing required field${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}.`);
       return;
     }
 
@@ -763,7 +774,7 @@ export const JobPostingsPage = () => {
 
     const payload: JobPosting = {
       id: editingId ?? crypto.randomUUID(),
-      jobCode: form.jobCode.trim() || `LGU-2026-${String(Math.floor(Math.random() * 999) + 1).padStart(3, '0')}`,
+      jobCode: form.jobCode.trim() || `ABYAN-2026-${String(Math.floor(Math.random() * 999) + 1).padStart(3, '0')}`,
       title: toTitleCase(form.title),
       department: form.department,
       division: form.division || undefined,
@@ -862,19 +873,44 @@ export const JobPostingsPage = () => {
   };
 
   const closeApplication = (job: JobPosting) => {
-    if (job.status === 'Active') {
-      updateStatus(job.id, 'Closed');
-    }
+    setLockConfirmJob(job);
+  };
+
+  const confirmLock = () => {
+    if (!lockConfirmJob) return;
+    updateStatus(lockConfirmJob.id, 'Closed');
+    setLockConfirmJob(null);
+  };
+
+  const openUnlockDialog = (job: JobPosting) => {
+    setNewDeadline('');
+    setUnlockDialogJob(job);
+  };
+
+  const confirmUnlock = () => {
+    if (!unlockDialogJob) return;
+    const now = new Date().toISOString();
+    const nextJobs = jobs.map((j) =>
+      j.id === unlockDialogJob.id
+        ? { ...j, status: 'Active' as JobPosting['status'], postedDate: now, applicationDeadline: newDeadline || j.applicationDeadline }
+        : j
+    );
+    saveJobs(nextJobs);
+    setToast('Position reopened. Date posted updated.');
+    setUnlockDialogJob(null);
   };
 
   return (
+    <div className="min-h-screen bg-[#f8f9fa]">
+      <AdminHeader userName="RSP Admin" divisionLabel="RSP Division" />
     <div className="admin-layout">
       <Sidebar activeModule="RSP" userRole="rsp" />
-      <main className="admin-content bg-slate-50">
+      <main className="admin-content bg-slate-50 !p-0">
+        <ApplicantsTabBar />
+        <div className="p-6">
         <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="mb-2 text-base font-semibold text-blue-600">RSP Dashboard <span className="mx-2 text-slate-400">&gt;</span> <span className="text-slate-900">Job Postings</span></p>
-            <h1 className="text-2xl font-bold text-slate-900">Job Postings Management</h1>
+            <h1 className="text-2xl font-bold text-slate-900">Applications</h1>
             <p className="text-sm text-slate-600">Manage and monitor all job positions and their applicants</p>
           </div>
           <div className="flex gap-2">
@@ -1097,85 +1133,105 @@ export const JobPostingsPage = () => {
         </section>
 
         <section className="mt-5">
-          <p className="mb-2 text-center text-base font-semibold text-slate-700">
-            {filteredJobs.length === 0 ? 'Position 0 to 0 of 0' : `Position ${(page - 1) * ITEMS_PER_PAGE + 1} to ${Math.min(page * ITEMS_PER_PAGE, filteredJobs.length)} of ${filteredJobs.length}`}
-          </p>
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+            <table className="w-full min-w-full">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50">
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position Title</th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Item No.</th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Office / Department</th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Date Posted</th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Applicants</th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {currentPageJobs.map((job) => {
+                  const liveCount = applicantCountsByJob.get(job.id) ?? { applicants: 0, qualified: 0 };
+                  const officeLabel = job.division || `${job.department} Department`;
+                  const statusLabel = STATUS_LABELS[job.status];
+                  return (
+                    <tr key={job.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors last:border-0">
+                      <td className="px-5 py-4">
+                        <p className="font-semibold text-slate-900 text-sm">{normalizeRomanNumeralsInText(job.title)}</p>
+                      </td>
+                      <td className="px-5 py-4 text-sm text-slate-500 whitespace-nowrap">{job.jobCode}</td>
+                      <td className="px-5 py-4 text-sm text-slate-700">{officeLabel}</td>
+                      <td className="px-5 py-4 text-sm text-slate-600 whitespace-nowrap">{formatPHDate(job.postedDate)}</td>
+                      <td className="px-5 py-4 text-center">
+                        <span className="font-bold text-slate-900 text-sm">{liveCount.applicants}</span>
+                      </td>
+                      <td className="px-5 py-4 text-center">
+                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_COLORS[job.status]}`}>{statusLabel}</span>
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            title="View Details"
+                            className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition-colors"
+                            onClick={() => navigate(`/admin/rsp/job/${job.id}`)}
+                          >
+                            Details
+                          </button>
+                          <button
+                            type="button"
+                            title="View Applicants"
+                            className="rounded-lg bg-slate-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 transition-colors"
+                            onClick={() => { setViewingApplicantsFor(job); setJobApplicantsSearch(''); }}
+                          >
+                            Applicants
+                          </button>
+                          {job.status === 'Active' && (
+                            <button type="button" title="Close / Lock Application" onClick={() => closeApplication(job)}
+                              className="rounded-lg border border-orange-300 px-2 py-1.5 text-orange-500 hover:bg-orange-50 transition-colors">
+                              <Lock className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          {(job.status === 'Closed' || job.status === 'Draft') && (
+                            <button type="button" title="Unlock / Reopen Application" onClick={() => openUnlockDialog(job)}
+                              className="rounded-lg border border-emerald-300 px-2 py-1.5 text-emerald-600 hover:bg-emerald-50 transition-colors">
+                              <Unlock className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          <button type="button" title="Delete" onClick={() => void deleteJobPosting(job)}
+                            className="rounded-lg border border-rose-300 px-2 py-1.5 text-rose-500 hover:bg-rose-50 transition-colors">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {currentPageJobs.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="px-5 py-12 text-center text-slate-500">
+                      <Briefcase className="mx-auto mb-2 h-9 w-9 text-slate-300" />
+                      <p className="font-medium">No job postings found for the selected filters.</p>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
 
-          <div className="grid grid-cols-[48px_minmax(0,1fr)_48px] items-start gap-3">
-            <button className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-300 bg-slate-100 text-slate-500 disabled:opacity-40" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-              {currentPageJobs.map((job) => {
-                const liveCount = applicantCountsByJob.get(job.id) ?? { applicants: 0, qualified: 0 };
-                const officeLabel = job.division || `${job.department} Department`;
-                const statusLabel = STATUS_LABELS[job.status];
-
-                return (
-                  <article key={job.id} className="rounded-xl border border-slate-200 bg-white p-4">
-                    <div className="mb-3 flex items-start justify-between gap-3">
-                      <h3 className="!mb-0 text-2xl font-semibold text-slate-900">{normalizeRomanNumeralsInText(job.title)}</h3>
-                      <span className={`rounded-full px-3 py-0.5 text-xs font-semibold ${STATUS_COLORS[job.status]}`}>{statusLabel}</span>
-                    </div>
-
-                    <p className="!mb-2 text-sm text-slate-500">Item No. {job.jobCode}</p>
-
-                    <div className="space-y-1.5 text-sm text-slate-700">
-                      <p className="!mb-0 flex items-center gap-2.5"><MapPin className="h-4 w-4 shrink-0 text-slate-400" /> <span>{officeLabel}</span></p>
-                      <p className="!mb-0 flex items-center gap-2.5"><Calendar className="h-4 w-4 shrink-0 text-slate-400" /> <span>Posted {formatPHDate(job.postedDate)}</span></p>
-                      <p className="!mb-0 flex items-center gap-2.5"><Users className="h-4 w-4 shrink-0 text-slate-400" /> <span><span className="font-bold text-slate-900">{liveCount.applicants}</span> Applicants</span></p>
-                    </div>
-
-                    <div className="mt-4 space-y-2">
-                      <button
-                        type="button"
-                        className="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-base font-semibold text-white"
-                        onClick={() => {
-                          setViewingApplicantsFor(job);
-                          setJobApplicantsSearch('');
-                        }}
-                      >
-                        View Applicants <ChevronRight className="ml-2 inline h-4 w-4" />
-                      </button>
-
-                      {job.status === 'Active' && (
-                        <button
-                          type="button"
-                          onClick={() => closeApplication(job)}
-                          className="w-full rounded-xl border border-orange-300 bg-white px-4 py-2.5 text-base font-medium text-orange-600"
-                        >
-                          <Lock className="mr-2 inline h-4 w-4" /> Close Application
-                        </button>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => void deleteJobPosting(job)}
-                        className="w-full rounded-xl border border-rose-300 bg-white px-4 py-2.5 text-base font-medium text-rose-600"
-                      >
-                        <Trash2 className="mr-2 inline h-4 w-4" /> Delete
-                      </button>
-                    </div>
-                  </article>
-                );
-              })}
-
-              {currentPageJobs.length === 0 && (
-                <div className="col-span-full rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">
-                  <Briefcase className="mx-auto h-10 w-10 text-slate-400" />
-                  <p className="mt-2 font-medium">No job postings found for the selected filters.</p>
-                </div>
-              )}
+          <div className="mt-3 flex items-center justify-between px-1 text-sm text-slate-600">
+            <p>{filteredJobs.length === 0 ? 'No results' : `Showing ${(page - 1) * ITEMS_PER_PAGE + 1}–${Math.min(page * ITEMS_PER_PAGE, filteredJobs.length)} of ${filteredJobs.length}`}</p>
+            <div className="flex items-center gap-2">
+              <button className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 disabled:opacity-40 hover:bg-slate-50" onClick={() => setPage((c) => Math.max(1, c - 1))} disabled={page === 1}>
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="text-xs font-medium">Page {page} of {totalPages || 1}</span>
+              <button className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-500 disabled:opacity-40 hover:bg-slate-50" onClick={() => setPage((c) => Math.min(totalPages, c + 1))} disabled={page === totalPages}>
+                <ChevronRight className="h-4 w-4" />
+              </button>
             </div>
-
-            <button className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-300 bg-slate-100 text-slate-500 disabled:opacity-40" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={page === totalPages}>
-              <ChevronRight className="h-5 w-5" />
-            </button>
           </div>
         </section>
         </>
         )}
+        </div>{/* /p-6 */}
       </main>
 
       <RecruitmentNavigationGuide open={showGuide} onClose={() => setShowGuide(false)} />
@@ -1379,9 +1435,84 @@ export const JobPostingsPage = () => {
         </div>
       )}
 
+      {/* Lock confirmation modal */}
+      {lockConfirmJob && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-100">
+                <Lock className="h-5 w-5 text-orange-500" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900">Close Application?</h3>
+                <p className="text-sm text-slate-500">This will stop accepting new applicants.</p>
+              </div>
+            </div>
+            <p className="mb-5 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              <span className="font-semibold">{lockConfirmJob.title}</span> will be marked as <span className="font-semibold text-orange-600">Closed</span>. Applicants already submitted will not be affected.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button type="button" onClick={() => setLockConfirmJob(null)}
+                className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+                Cancel
+              </button>
+              <button type="button" onClick={confirmLock}
+                className="rounded-xl bg-orange-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-600">
+                <Lock className="mr-1.5 inline h-3.5 w-3.5" /> Confirm Lock
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Unlock / reopen dialog */}
+      {unlockDialogJob && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100">
+                <Unlock className="h-5 w-5 text-emerald-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900">Reopen Application</h3>
+                <p className="text-sm text-slate-500">Set a new deadline and reactivate the posting.</p>
+              </div>
+            </div>
+            <p className="mb-4 rounded-xl bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
+              {unlockDialogJob.title}
+            </p>
+            <div className="mb-5">
+              <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                New Application Deadline <span className="text-xs font-normal text-slate-400">(optional — leave blank to keep existing)</span>
+              </label>
+              <input
+                type="date"
+                value={newDeadline}
+                onChange={(e) => setNewDeadline(e.target.value)}
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none"
+              />
+              <p className="mt-1.5 text-xs text-slate-400">
+                Date Posted will be updated to today automatically.
+              </p>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button type="button" onClick={() => setUnlockDialogJob(null)}
+                className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">
+                Cancel
+              </button>
+              <button type="button" onClick={confirmUnlock}
+                className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700">
+                <Unlock className="mr-1.5 inline h-3.5 w-3.5" /> Reopen Position
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {toast && (
         <div className="fixed bottom-6 right-6 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-lg">{toast}</div>
       )}
+    </div>
     </div>
   );
 };

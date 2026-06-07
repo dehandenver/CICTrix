@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { AdminHeader } from './AdminHeader';
+import { ApplicantsTabBar } from './ApplicantsTabBar';
 import { QualifiedApplicantsSection } from './QualifiedApplicantsSection';
 import { Sidebar } from './Sidebar';
 import { ATTACHMENTS_BUCKET, supabase } from '../lib/supabase';
@@ -145,25 +147,35 @@ export const QualifiedApplicantsRSPPage = () => {
 
   if (loading) {
     return (
-      <div className="admin-layout">
-        <Sidebar activeModule="RSP" userRole="rsp" />
-        <main className="admin-content bg-slate-50" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
-          <p>Loading qualified applicants...</p>
-        </main>
+      <div className="min-h-screen bg-[#f8f9fa]">
+        <AdminHeader userName="RSP Admin" divisionLabel="RSP Division" />
+        <div className="admin-layout">
+          <Sidebar activeModule="RSP" userRole="rsp" />
+          <main className="admin-content bg-slate-50 !p-0">
+            <ApplicantsTabBar />
+            <div className="flex items-center justify-center p-12 text-slate-500">Loading applicants...</div>
+          </main>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="admin-layout">
-      <Sidebar activeModule="RSP" userRole="rsp" />
-      <main className="admin-content bg-slate-50">
-        <QualifiedApplicantsSection
-          applicants={applicants}
-          completedEvaluationIds={completedEvaluationIds}
-          evaluationsByApplicant={evaluationsByApplicant}
-        />
-      </main>
+    <div className="min-h-screen bg-[#f8f9fa]">
+      <AdminHeader userName="RSP Admin" divisionLabel="RSP Division" />
+      <div className="admin-layout">
+        <Sidebar activeModule="RSP" userRole="rsp" />
+        <main className="admin-content bg-slate-50 !p-0">
+          <ApplicantsTabBar />
+          <div className="p-6">
+            <QualifiedApplicantsSection
+              applicants={applicants}
+              completedEvaluationIds={completedEvaluationIds}
+              evaluationsByApplicant={evaluationsByApplicant}
+            />
+          </div>
+        </main>
+      </div>
     </div>
   );
 };

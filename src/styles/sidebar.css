@@ -1,13 +1,14 @@
 .sidebar {
   width: 260px;
-  height: 100vh;
+  /* Offset by the AdminHeader height so the sidebar never slides up over it */
+  height: calc(100vh - 4rem);
   background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
-  top: 0;
+  top: 4rem;
   position: sticky;
-  z-index: 100;
+  z-index: 30;
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.05);
 }
 
