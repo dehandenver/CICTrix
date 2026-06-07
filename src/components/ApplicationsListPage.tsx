@@ -48,15 +48,6 @@ const getPositionColor = (pos: string) => {
   return positionColorCache.get(pos)!;
 };
 
-const statusBadge = (status: string) => {
-  const s = status.toLowerCase();
-  if (s.includes('hired'))                                          return 'bg-emerald-100 text-emerald-700';
-  if (s.includes('qualified') && !s.includes('dis'))               return 'bg-blue-100 text-blue-700';
-  if (s.includes('shortlist'))                                      return 'bg-amber-100 text-amber-700';
-  if (s.includes('disqual') || s.includes('reject'))               return 'bg-red-100 text-red-700';
-  if (s.includes('interview'))                                      return 'bg-purple-100 text-purple-700';
-  return 'bg-slate-100 text-slate-600';
-};
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
@@ -198,7 +189,6 @@ export const ApplicationsListPage = () => {
                     <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Department</th>
                     <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Type</th>
                     <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Applied</th>
-                    <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
                     <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Actions</th>
                   </tr>
                 </thead>
@@ -235,13 +225,6 @@ export const ApplicationsListPage = () => {
                       {/* Applied date */}
                       <td className="px-5 py-4 text-xs text-slate-500 whitespace-nowrap">{fmtDate(a.created_at)}</td>
 
-                      {/* Status */}
-                      <td className="px-5 py-4 text-center">
-                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusBadge(a.status)}`}>
-                          {a.status || 'Pending'}
-                        </span>
-                      </td>
-
                       {/* View button */}
                       <td className="px-5 py-4 text-center">
                         <button
@@ -256,7 +239,7 @@ export const ApplicationsListPage = () => {
                   ))}
                   {paged.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-5 py-12 text-center text-slate-500">
+                      <td colSpan={6} className="px-5 py-12 text-center text-slate-500">
                         <Search className="mx-auto mb-2 h-8 w-8 text-slate-300" />
                         <p className="font-medium">No applicants found for the selected filters.</p>
                       </td>

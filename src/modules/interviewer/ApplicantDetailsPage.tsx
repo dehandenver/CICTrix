@@ -915,9 +915,6 @@ export function ApplicantDetailsPage() {
     normalizeText(resolvedStatus ?? '').includes('recommend') ||
     normalizeText(resolvedStatus ?? '') === 'qualified';
   const isApplicantShortlisted = normalizeText(resolvedStatus ?? '').includes('shortlist');
-  // Once any decision (shortlist, qualify, or disqualify) is saved, all three header buttons lock.
-  // Only lock buttons for terminal states (qualified or disqualified)
-  const hasFinalDecision = isApplicantQualified || isApplicantDisqualified;
   const primaryEducation = recruitmentApplicant?.education?.[0] ?? null;
   const primaryExperience = recruitmentApplicant?.experience?.[0] ?? null;
 
@@ -1392,8 +1389,7 @@ export function ApplicantDetailsPage() {
                   <button
                     type="button"
                     onClick={() => { setConfirmAction('disqualify'); setConfirmReason(''); }}
-                    disabled={hasFinalDecision}
-                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm ${
                       isApplicantDisqualified
                         ? 'border-rose-500 bg-rose-500 text-white'
                         : 'border-rose-400 bg-white text-rose-600 hover:bg-rose-50'
@@ -1404,8 +1400,7 @@ export function ApplicantDetailsPage() {
                   <button
                     type="button"
                     onClick={() => { void persistStatus('shortlist'); }}
-                    disabled={hasFinalDecision}
-                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm ${
                       isApplicantShortlisted
                         ? 'border-[#363EE8] bg-[#363EE8] text-white'
                         : 'border-[#363EE8] bg-white text-[#363EE8] hover:bg-blue-50'
@@ -1416,8 +1411,7 @@ export function ApplicantDetailsPage() {
                   <button
                     type="button"
                     onClick={() => { setConfirmAction('qualified'); }}
-                    disabled={hasFinalDecision}
-                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm ${
                       isApplicantQualified
                         ? 'border-emerald-600 bg-emerald-600 text-white'
                         : 'border-emerald-500 bg-white text-emerald-600 hover:bg-emerald-50'
