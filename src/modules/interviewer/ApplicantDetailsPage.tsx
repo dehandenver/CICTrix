@@ -629,6 +629,29 @@ const getStoredInterviewerScoreSnapshot = (
   }
 };
 
+const DOCUMENT_LABEL_MAP: Record<string, { label: string; color: string }> = {
+  // labelize'd forms of DocumentType keys (all file_names pass through labelize())
+  'Application Letter':          { label: 'Application Letter',                       color: 'bg-blue-50 text-blue-700 border-blue-200' },
+  'Pds With Photo':              { label: 'Personal Data Sheet',                      color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+  'Curriculum Vitae':            { label: 'Curriculum Vitae',                         color: 'bg-violet-50 text-violet-700 border-violet-200' },
+  'Eligibility Proof':           { label: 'Proof of Eligibility Rating/License',      color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  'Training Certificate':        { label: 'Certificate of Relevant Training/Seminars', color: 'bg-amber-50 text-amber-700 border-amber-200' },
+  'Transcript Of Records':       { label: 'Transcript of Records',                    color: 'bg-sky-50 text-sky-700 border-sky-200' },
+  'Previous Employer Certificate': { label: 'Certificate from Previous Employer',     color: 'bg-teal-50 text-teal-700 border-teal-200' },
+  'Drug Test':                   { label: 'Drug Test Result',                         color: 'bg-rose-50 text-rose-700 border-rose-200' },
+  'Other':                       { label: 'Other Supporting Documents',               color: 'bg-slate-50 text-slate-600 border-slate-200' },
+  // raw snake_case keys as fallback (in case some rows skip labelize)
+  'application_letter':          { label: 'Application Letter',                       color: 'bg-blue-50 text-blue-700 border-blue-200' },
+  'pds_with_photo':              { label: 'Personal Data Sheet',                      color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+  'curriculum_vitae':            { label: 'Curriculum Vitae',                         color: 'bg-violet-50 text-violet-700 border-violet-200' },
+  'eligibility_proof':           { label: 'Proof of Eligibility Rating/License',      color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  'training_certificate':        { label: 'Certificate of Relevant Training/Seminars', color: 'bg-amber-50 text-amber-700 border-amber-200' },
+  'transcript_of_records':       { label: 'Transcript of Records',                    color: 'bg-sky-50 text-sky-700 border-sky-200' },
+  'previous_employer_certificate': { label: 'Certificate from Previous Employer',     color: 'bg-teal-50 text-teal-700 border-teal-200' },
+  'drug_test':                   { label: 'Drug Test Result',                         color: 'bg-rose-50 text-rose-700 border-rose-200' },
+  'other':                       { label: 'Other Supporting Documents',               color: 'bg-slate-50 text-slate-600 border-slate-200' },
+};
+
 export function ApplicantDetailsPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -1556,30 +1579,7 @@ export function ApplicantDetailsPage() {
                   </div>
                   <div className="space-y-2 p-3">
                     {attachments.length > 0 ? attachments.map((doc, idx) => {
-                      const DOCUMENT_TYPE_LABELS: Record<string, { label: string; color: string }> = {
-                        'application_letter':         { label: 'Application Letter',                  color: 'bg-blue-50 text-blue-700 border-blue-200' },
-                        'Application Letter':         { label: 'Application Letter',                  color: 'bg-blue-50 text-blue-700 border-blue-200' },
-                        'pds_with_photo':             { label: 'Personal Data Sheet (PDS)',           color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
-                        'Personal Data Sheet':        { label: 'Personal Data Sheet (PDS)',           color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
-                        'curriculum_vitae':           { label: 'Curriculum Vitae',                    color: 'bg-violet-50 text-violet-700 border-violet-200' },
-                        'Curriculum Vitae':           { label: 'Curriculum Vitae',                    color: 'bg-violet-50 text-violet-700 border-violet-200' },
-                        'eligibility_proof':          { label: 'Proof of Eligibility / License',      color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-                        'Proof Of Eligibility':       { label: 'Proof of Eligibility / License',      color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-                        'training_certificate':       { label: 'Training / Seminar Certificate',      color: 'bg-amber-50 text-amber-700 border-amber-200' },
-                        'Certificate Of Relevant':    { label: 'Training / Seminar Certificate',      color: 'bg-amber-50 text-amber-700 border-amber-200' },
-                        'transcript_of_records':      { label: 'Transcript of Records',               color: 'bg-sky-50 text-sky-700 border-sky-200' },
-                        'Transcript Of Records':      { label: 'Transcript of Records',               color: 'bg-sky-50 text-sky-700 border-sky-200' },
-                        'previous_employer_certificate': { label: 'Certificate from Previous Employer', color: 'bg-teal-50 text-teal-700 border-teal-200' },
-                        'Certificate From Previous':  { label: 'Certificate from Previous Employer',  color: 'bg-teal-50 text-teal-700 border-teal-200' },
-                        'drug_test':                  { label: 'Drug Test Result',                    color: 'bg-rose-50 text-rose-700 border-rose-200' },
-                        'Drug Test Result':           { label: 'Drug Test Result',                    color: 'bg-rose-50 text-rose-700 border-rose-200' },
-                        'other':                      { label: 'Supporting Document',                  color: 'bg-slate-50 text-slate-600 border-slate-200' },
-                      };
-                      const nameKey = Object.keys(DOCUMENT_TYPE_LABELS).find(k =>
-                        doc.file_name.toLowerCase().startsWith(k.toLowerCase().replace(/_/g, ' ').split(' ')[0])
-                        || doc.file_name === k
-                      );
-                      const typeInfo = nameKey ? DOCUMENT_TYPE_LABELS[nameKey] : null;
+                      const typeInfo = DOCUMENT_LABEL_MAP[doc.file_name] ?? null;
                       return (
                         <article key={doc.id} className="rounded-xl border border-slate-200 px-3 py-3">
                           <div className="flex items-start justify-between gap-3">
