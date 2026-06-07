@@ -904,15 +904,8 @@ export function ApplicantDetailsPage() {
   );
   const isRspAdmin = location.pathname.startsWith('/admin/rsp/');
   const backTo = routeState?.from || (isRspAdmin ? '/admin/rsp/applications' : '/admin/rsp/qualified');
-  const sourcePath = routeState?.from || '';
-  const isJobScopedQualifiedRoute = /^\/admin\/rsp\/qualified\/[^/?#]+/.test(sourcePath);
-  // Admin-RSP applicant detail route is the one at /admin/rsp/applicant/:id.
-  // Show Qualify/Shortlist/Disqualify/Send Message buttons whenever we're on that path,
-  // independent of routeState (which is lost on hard refresh or direct navigation).
-  const isOnRspApplicantRoute = location.pathname.startsWith('/admin/rsp/applicant/');
-  const isFromJobPosts = isOnRspApplicantRoute || sourcePath.startsWith('/admin/rsp/jobs') || sourcePath.startsWith('/admin/rsp/applications') || isJobScopedQualifiedRoute;
-  const showViewScoresButton = !isFromJobPosts;
-  const showJobPostActionButtons = isFromJobPosts;
+  const showViewScoresButton = false;
+  const showJobPostActionButtons = true;
   const scoreActionLabel = isScoreFinalized ? 'View Score' : 'Update Score';
   const isForcedPromotionalAppointment = isPromotionalSource(recruitmentApplicant, applicant);
   const isApplicantDisqualified =
