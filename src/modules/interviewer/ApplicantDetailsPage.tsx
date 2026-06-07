@@ -630,27 +630,29 @@ const getStoredInterviewerScoreSnapshot = (
   }
 };
 
-const DOCUMENT_LABEL_MAP: Record<string, { label: string; color: string }> = {
-  // labelize'd forms of DocumentType keys (all file_names pass through labelize())
-  'Application Letter':          { label: 'Application Letter',                       color: 'bg-blue-50 text-blue-700 border-blue-200' },
-  'Pds With Photo':              { label: 'Personal Data Sheet',                      color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
-  'Curriculum Vitae':            { label: 'Curriculum Vitae',                         color: 'bg-violet-50 text-violet-700 border-violet-200' },
-  'Eligibility Proof':           { label: 'Proof of Eligibility Rating/License',      color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  'Training Certificate':        { label: 'Certificate of Relevant Training/Seminars', color: 'bg-amber-50 text-amber-700 border-amber-200' },
-  'Transcript Of Records':       { label: 'Transcript of Records',                    color: 'bg-sky-50 text-sky-700 border-sky-200' },
-  'Previous Employer Certificate': { label: 'Certificate from Previous Employer',     color: 'bg-teal-50 text-teal-700 border-teal-200' },
-  'Drug Test':                   { label: 'Drug Test Result',                         color: 'bg-rose-50 text-rose-700 border-rose-200' },
-  'Other':                       { label: 'Other Supporting Documents',               color: 'bg-slate-50 text-slate-600 border-slate-200' },
-  // raw snake_case keys as fallback (in case some rows skip labelize)
-  'application_letter':          { label: 'Application Letter',                       color: 'bg-blue-50 text-blue-700 border-blue-200' },
-  'pds_with_photo':              { label: 'Personal Data Sheet',                      color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
-  'curriculum_vitae':            { label: 'Curriculum Vitae',                         color: 'bg-violet-50 text-violet-700 border-violet-200' },
-  'eligibility_proof':           { label: 'Proof of Eligibility Rating/License',      color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  'training_certificate':        { label: 'Certificate of Relevant Training/Seminars', color: 'bg-amber-50 text-amber-700 border-amber-200' },
-  'transcript_of_records':       { label: 'Transcript of Records',                    color: 'bg-sky-50 text-sky-700 border-sky-200' },
-  'previous_employer_certificate': { label: 'Certificate from Previous Employer',     color: 'bg-teal-50 text-teal-700 border-teal-200' },
-  'drug_test':                   { label: 'Drug Test Result',                         color: 'bg-rose-50 text-rose-700 border-rose-200' },
-  'other':                       { label: 'Other Supporting Documents',               color: 'bg-slate-50 text-slate-600 border-slate-200' },
+const DOCUMENT_SLOTS = [
+  { type: 'application_letter',            label: 'Application Letter',                       color: 'bg-blue-50 text-blue-700 border-blue-200',      required: true },
+  { type: 'pds_with_photo',               label: 'Personal Data Sheet',                      color: 'bg-indigo-50 text-indigo-700 border-indigo-200', required: true },
+  { type: 'curriculum_vitae',             label: 'Curriculum Vitae',                         color: 'bg-violet-50 text-violet-700 border-violet-200', required: true },
+  { type: 'eligibility_proof',            label: 'Proof of Eligibility Rating/License',      color: 'bg-emerald-50 text-emerald-700 border-emerald-200', required: true },
+  { type: 'training_certificate',         label: 'Certificate of Relevant Training/Seminars', color: 'bg-amber-50 text-amber-700 border-amber-200',  required: true },
+  { type: 'transcript_of_records',        label: 'Transcript of Records',                    color: 'bg-sky-50 text-sky-700 border-sky-200',          required: true },
+  { type: 'previous_employer_certificate',label: 'Certificate from Previous Employer',       color: 'bg-teal-50 text-teal-700 border-teal-200',       required: false },
+  { type: 'drug_test',                    label: 'Drug Test Result',                         color: 'bg-rose-50 text-rose-700 border-rose-200',       required: true },
+  { type: 'other',                        label: 'Other Supporting Documents',               color: 'bg-slate-50 text-slate-600 border-slate-200',    required: false },
+] as const;
+
+// Labelize'd file_name aliases → slot type (for attachments without document_type)
+const FILE_NAME_TO_TYPE: Record<string, string> = {
+  'Application Letter': 'application_letter',
+  'Pds With Photo':     'pds_with_photo',
+  'Curriculum Vitae':   'curriculum_vitae',
+  'Eligibility Proof':  'eligibility_proof',
+  'Training Certificate': 'training_certificate',
+  'Transcript Of Records': 'transcript_of_records',
+  'Previous Employer Certificate': 'previous_employer_certificate',
+  'Drug Test':          'drug_test',
+  'Other':              'other',
 };
 
 export function ApplicantDetailsPage() {
@@ -1579,30 +1581,47 @@ export function ApplicantDetailsPage() {
                     </button>
                   </div>
                   <div className="space-y-2 p-3">
-                    {attachments.length > 0 ? attachments.map((doc, idx) => {
-                      const typeInfo = DOCUMENT_LABEL_MAP[doc.document_type ?? ''] ?? DOCUMENT_LABEL_MAP[doc.file_name] ?? null;
+                    {DOCUMENT_SLOTS.map((slot, idx) => {
+                      const matched = attachments.filter(a => {
+                        const resolvedType = a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other';
+                        return resolvedType === slot.type;
+                      });
+                      const isSubmitted = matched.length > 0;
                       return (
-                        <article key={doc.id} className="rounded-xl border border-slate-200 px-3 py-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex items-start gap-2.5 min-w-0">
-                              <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#363EE8]/10 text-[#363EE8] text-xs font-bold">
-                                {idx + 1}
-                              </span>
-                              <div className="min-w-0">
-                                {typeInfo && (
-                                  <span className={`mb-1 inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${typeInfo.color}`}>
-                                    {typeInfo.label}
+                        <article key={slot.type} className={`rounded-xl border px-3 py-3 ${isSubmitted ? 'border-slate-200' : 'border-dashed border-slate-200 bg-slate-50/50'}`}>
+                          <div className="flex items-start gap-2.5">
+                            <span className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${isSubmitted ? 'bg-[#363EE8]/10 text-[#363EE8]' : 'bg-slate-100 text-slate-400'}`}>
+                              {idx + 1}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${slot.color}`}>
+                                  {slot.label}
+                                </span>
+                                {slot.required && (
+                                  <span className="inline-flex items-center rounded-full border border-red-200 bg-red-50 px-1.5 py-0.5 text-xs font-medium text-red-600">
+                                    Required
                                   </span>
                                 )}
-                                <p className="text-sm font-semibold text-slate-800 truncate">{doc.file_name}</p>
-                                <p className="text-xs text-slate-400">Uploaded {formatDate(doc.created_at || applicant.created_at)}</p>
                               </div>
+                              {isSubmitted ? (
+                                matched.map(doc => (
+                                  <div key={doc.id} className="flex items-center justify-between gap-3 mt-1">
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-semibold text-slate-800 truncate">{doc.file_name}</p>
+                                      <p className="text-xs text-slate-400">Uploaded {formatDate(doc.created_at || applicant.created_at)}</p>
+                                    </div>
+                                    <button className="shrink-0 text-sm font-semibold text-[#363EE8] hover:underline" onClick={() => openDocument(doc.file_path)}>View</button>
+                                  </div>
+                                ))
+                              ) : (
+                                <p className="text-sm italic text-slate-400">Not submitted</p>
+                              )}
                             </div>
-                            <button className="shrink-0 text-sm font-semibold text-[#363EE8] hover:underline" onClick={() => openDocument(doc.file_path)}>View</button>
                           </div>
                         </article>
                       );
-                    }) : <p className="text-slate-500">No uploaded documents found for this applicant yet.</p>}
+                    })}
                   </div>
                 </article>
               )}
