@@ -136,3 +136,409 @@ export async function getPerformanceDistribution(cycleId?: number) {
   }
   return { success: result.success, distribution, evaluated };
 }
+
+export interface IPCRRowDraft {
+  id?: number;
+  function_type: 'CORE' | 'SUPPORT';
+  target_text: string;
+  accomplishment_text: string;
+  q_rating: number | null;
+  e_rating: number | null;
+  t_rating: number | null;
+  ave_rating: number;
+  competency_id: number;
+  mapped_competency_standard: string;
+  remarks: string;
+}
+
+export interface IPCRDetails {
+  evaluation: PerformanceEvaluation | null;
+  rows: IPCRRowDraft[];
+}
+
+export async function getActivePerformanceCycle() {
+  try {
+    const { data, error } = await supabase
+      .from('performance_cycles')
+      .select('*')
+      .eq('status', 'Active')
+      .maybeSingle();
+
+    if (error) throw error;
+    if (data) return { success: true, data };
+
+    // Fallback to latest cycle if no active cycle exists
+    const { data: latest, error: latestError } = await supabase
+      .from('performance_cycles')
+      .select('*')
+      .order('start_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (latestError) throw latestError;
+    return { success: true, data: latest || null };
+  } catch (error) {
+    console.error('Error fetching active performance cycle:', error);
+    return { success: false, error: String(error), data: null };
+  }
+}
+
+export async function getCompetenciesList() {
+  try {
+    const { data, error } = await supabase
+      .from('competency_dictionary')
+      .select('competency_id, competency_standard')
+      .order('competency_standard', { ascending: true });
+
+    if (error) throw error;
+    return { success: true, data: data || [] };
+  } catch (error) {
+    console.error('Error fetching competencies list:', error);
+    return { success: false, error: String(error), data: [] };
+  }
+}
+
+export async function getEmployeeRawDetails(employeeUuid: string) {
+  try {
+    const { data, error } = await supabase
+      .from('employees')
+      .select('id, employee_number, first_name, last_name, department, position, position_id, plantilla_num, reports_to')
+      .eq('id', employeeUuid)
+      .single();
+
+    if (error) throw error;
+    return { success: true, data };
+  } catch (error) {
+    console.error('Error fetching raw employee details:', error);
+    return { success: false, error: String(error), data: null };
+  }
+}
+
+export async function getEmployeeIPCR(
+  employeeNum: string,
+  ratingPeriod: string,
+  employeeUuid: string,
+  cycleId: number | null
+): Promise<{ success: boolean; data: IPCRDetails; error?: string }> {
+  try {
+    // 1. Fetch ipcr_performance rows
+    const { data: rows, error: rowsError } = await supabase
+      .from('ipcr_performance')
+      .select('*')
+      .eq('employee_num', employeeNum)
+      .eq('rating_period', ratingPeriod)
+      .order('id', { ascending: true });
+
+    if (rowsError) throw rowsError;
+
+    // 2. Fetch performance_evaluations row
+    let evaluation: PerformanceEvaluation | null = null;
+    let evalQuery = supabase
+      .from('performance_evaluations')
+      .select('*')
+      .eq('employee_id', employeeUuid);
+      
+    if (cycleId) {
+      evalQuery = evalQuery.eq('cycle_id', cycleId);
+    } else {
+      evalQuery = evalQuery.eq('period', ratingPeriod);
+    }
+    
+    const { data: evalData, error: evalError } = await evalQuery.maybeSingle();
+    if (evalError) throw evalError;
+    evaluation = evalData;
+
+    return {
+      success: true,
+      data: {
+        evaluation,
+        rows: (rows || []).map((row: any) => ({
+          id: row.id,
+          function_type: row.function_type as 'CORE' | 'SUPPORT',
+          target_text: row.target_text || '',
+          accomplishment_text: row.accomplishment_text || '',
+          q_rating: row.q_rating ? Number(row.q_rating) : null,
+          e_rating: row.e_rating ? Number(row.e_rating) : null,
+          t_rating: row.t_rating ? Number(row.t_rating) : null,
+          ave_rating: row.ave_rating ? Number(row.ave_rating) : 0,
+          competency_id: row.competency_id ? Number(row.competency_id) : 0,
+          mapped_competency_standard: row.mapped_competency_standard || '',
+          remarks: row.remarks || ''
+        }))
+      }
+    };
+  } catch (error) {
+    console.error('Error fetching employee IPCR details:', error);
+    return {
+      success: false,
+      error: String(error),
+      data: { evaluation: null, rows: [] }
+    };
+  }
+}
+
+export async function saveOrSubmitEmployeeIPCR(params: {
+  employeeUuid: string;
+  employeeNum: string;
+  positionId: number | null;
+  position: string | null;
+  plantillaNum: string | null;
+  ratingPeriod: string;
+  cycleId: number | null;
+  status: 'Self Evaluation' | 'Supervisor Review';
+  rows: IPCRRowDraft[];
+}) {
+  try {
+    const {
+      employeeUuid,
+      employeeNum,
+      positionId,
+      position,
+      plantillaNum,
+      ratingPeriod,
+      cycleId,
+      status,
+      rows
+    } = params;
+
+    // 1. Fetch raw employee details to get reports_to (supervisor) if not provided,
+    // or just to confirm we have the latest supervisor ID.
+    const empResult = await getEmployeeRawDetails(employeeUuid);
+    const supervisorId = empResult.success ? empResult.data?.reports_to : null;
+
+    // 2. Compute final score (average of row ave_ratings)
+    let finalScore: number | null = null;
+    const activeRatings = rows.map(r => r.ave_rating).filter(Boolean);
+    if (activeRatings.length > 0) {
+      const sum = activeRatings.reduce((acc, score) => acc + score, 0);
+      finalScore = Number((sum / activeRatings.length).toFixed(2));
+    }
+
+    // 3. Delete existing ipcr_performance rows for this employee and period
+    const { error: deleteError } = await supabase
+      .from('ipcr_performance')
+      .delete()
+      .eq('employee_num', employeeNum)
+      .eq('rating_period', ratingPeriod);
+
+    if (deleteError) throw deleteError;
+
+    // 4. Insert new ipcr_performance rows
+    if (rows.length > 0) {
+      const insertPayloads = rows.map((row, index) => {
+        // Calculate average for the row defensively
+        const ratings = [row.q_rating, row.e_rating, row.t_rating].filter(r => typeof r === 'number' && r !== null) as number[];
+        const aveRating = ratings.length > 0
+          ? Number((ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(2))
+          : 0;
+
+        return {
+          ipcr_id: `IPCR-${ratingPeriod.replace(/\s+/g, '-')}-${employeeNum}`,
+          ipcr_row_id: `ROW-${String(index + 1).padStart(4, '0')}`,
+          employee_num: employeeNum,
+          position_id: positionId ? Number(positionId) : null,
+          position: position,
+          plantilla_num: plantillaNum ? Number(plantillaNum) : null,
+          rating_period: ratingPeriod,
+          function_type: row.function_type,
+          target_text: row.target_text,
+          accomplishment_text: row.accomplishment_text,
+          q_rating: row.q_rating,
+          e_rating: row.e_rating,
+          t_rating: row.t_rating,
+          ave_rating: aveRating,
+          competency_id: row.competency_id || null,
+          mapped_competency_standard: row.mapped_competency_standard || null,
+          remarks: row.remarks || null
+        };
+      });
+
+      const { error: insertError } = await supabase
+        .from('ipcr_performance')
+        .insert(insertPayloads);
+
+      if (insertError) throw insertError;
+    }
+
+    // 5. Update or insert performance_evaluations row
+    let existingEvalQuery = supabase
+      .from('performance_evaluations')
+      .select('id')
+      .eq('employee_id', employeeUuid);
+
+    if (cycleId) {
+      existingEvalQuery = existingEvalQuery.eq('cycle_id', cycleId);
+    } else {
+      existingEvalQuery = existingEvalQuery.eq('period', ratingPeriod);
+    }
+
+    const { data: existingEval } = await existingEvalQuery.maybeSingle();
+
+    const timestampFields: Record<string, string> = {
+      updated_at: new Date().toISOString()
+    };
+    if (status === 'Supervisor Review') {
+      timestampFields.submitted_at = new Date().toISOString();
+    }
+
+    if (existingEval) {
+      const { error: updateError } = await supabase
+        .from('performance_evaluations')
+        .update({
+          status,
+          final_score: finalScore,
+          supervisor_id: supervisorId,
+          ...timestampFields
+        })
+        .eq('id', existingEval.id);
+
+      if (updateError) throw updateError;
+    } else {
+      const { error: insertError } = await supabase
+        .from('performance_evaluations')
+        .insert({
+          employee_id: employeeUuid,
+          cycle_id: cycleId || null,
+          status,
+          final_score: finalScore,
+          period: ratingPeriod,
+          supervisor_id: supervisorId,
+          ...timestampFields
+        });
+
+      if (insertError) throw insertError;
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error saving or submitting employee IPCR:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+export async function getLatestEmployeeIPCR(
+  employeeUuid: string,
+  employeeNum: string,
+  activeCycleId: number | null
+): Promise<{
+  success: boolean;
+  data: {
+    evaluation: PerformanceEvaluation | null;
+    rows: IPCRRowDraft[];
+    ratingPeriod: string;
+    cycleId: number | null;
+  };
+  error?: string;
+}> {
+  try {
+    let evaluation: any = null;
+    let period = '';
+    let cycleId = activeCycleId;
+
+    // 1. Try to find by active cycle first if present
+    if (activeCycleId) {
+      const { data: evalData, error: evalError } = await supabase
+        .from('performance_evaluations')
+        .select('*')
+        .eq('employee_id', employeeUuid)
+        .eq('cycle_id', activeCycleId)
+        .maybeSingle();
+
+      if (evalError) throw evalError;
+      evaluation = evalData;
+    }
+
+    // 2. If not found or no active cycle, look for the most recent evaluation
+    if (!evaluation) {
+      const { data: recentEvals, error: recentError } = await supabase
+        .from('performance_evaluations')
+        .select('*')
+        .eq('employee_id', employeeUuid)
+        .order('updated_at', { ascending: false })
+        .limit(1);
+
+      if (recentError) throw recentError;
+      if (recentEvals && recentEvals.length > 0) {
+        evaluation = recentEvals[0];
+        cycleId = evaluation.cycle_id;
+      }
+    }
+
+    // 3. Determine the rating period
+    if (evaluation) {
+      period = evaluation.period || '';
+    } else {
+      // Fallback: default period
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth();
+      period = month < 6 ? `January–June ${year}` : `July–December ${year}`;
+    }
+
+    // 4. Fetch ipcr_performance rows
+    const { data: rows, error: rowsError } = await supabase
+      .from('ipcr_performance')
+      .select('*')
+      .eq('employee_num', employeeNum)
+      .eq('rating_period', period)
+      .order('id', { ascending: true });
+
+    if (rowsError) throw rowsError;
+
+    return {
+      success: true,
+      data: {
+        evaluation,
+        rows: (rows || []).map((row: any) => ({
+          id: row.id,
+          function_type: row.function_type as 'CORE' | 'SUPPORT',
+          target_text: row.target_text || '',
+          accomplishment_text: row.accomplishment_text || '',
+          q_rating: row.q_rating ? Number(row.q_rating) : null,
+          e_rating: row.e_rating ? Number(row.e_rating) : null,
+          t_rating: row.t_rating ? Number(row.t_rating) : null,
+          ave_rating: row.ave_rating ? Number(row.ave_rating) : 0,
+          competency_id: row.competency_id ? Number(row.competency_id) : 0,
+          mapped_competency_standard: row.mapped_competency_standard || '',
+          remarks: row.remarks || ''
+        })),
+        ratingPeriod: period,
+        cycleId
+      }
+    };
+  } catch (error) {
+    console.error('Error fetching latest employee IPCR:', error);
+    // Fallback to default period
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const fallbackPeriod = month < 6 ? `January–June ${year}` : `July–December ${year}`;
+    
+    return {
+      success: false,
+      error: String(error),
+      data: {
+        evaluation: null,
+        rows: [],
+        ratingPeriod: fallbackPeriod,
+        cycleId: activeCycleId
+      }
+    };
+  }
+}
+
+export async function getEmployeeEvaluations(employeeUuid: string): Promise<{ success: boolean; data: PerformanceEvaluation[]; error?: string }> {
+  try {
+    const { data, error } = await supabase
+      .from('performance_evaluations')
+      .select('*')
+      .eq('employee_id', employeeUuid)
+      .order('updated_at', { ascending: false });
+
+    if (error) throw error;
+    return { success: true, data: data || [] };
+  } catch (error) {
+    console.error('Error fetching employee evaluations:', error);
+    return { success: false, error: String(error), data: [] };
+  }
+}
