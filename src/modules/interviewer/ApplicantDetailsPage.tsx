@@ -910,7 +910,7 @@ export function ApplicantDetailsPage() {
   // Show Qualify/Shortlist/Disqualify/Send Message buttons whenever we're on that path,
   // independent of routeState (which is lost on hard refresh or direct navigation).
   const isOnRspApplicantRoute = location.pathname.startsWith('/admin/rsp/applicant/');
-  const isFromJobPosts = isOnRspApplicantRoute || sourcePath.startsWith('/admin/rsp/jobs') || isJobScopedQualifiedRoute;
+  const isFromJobPosts = isOnRspApplicantRoute || sourcePath.startsWith('/admin/rsp/jobs') || sourcePath.startsWith('/admin/rsp/applications') || isJobScopedQualifiedRoute;
   const showViewScoresButton = !isFromJobPosts;
   const showJobPostActionButtons = isFromJobPosts;
   const scoreActionLabel = isScoreFinalized ? 'View Score' : 'Update Score';

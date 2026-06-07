@@ -19,7 +19,7 @@ export const SharedFooter = React.forwardRef<HTMLElement, object>(
                 <img src={abyanLogo} alt="ABYAN HRIS" className="h-12 w-auto object-contain" style={{ mixBlendMode: 'screen' }} />
                 <img src={iloiloCitySeal} alt="Iloilo City Seal" className="h-12 w-auto object-contain opacity-90" />
               </div>
-              <p className="text-xs leading-relaxed" style={{ color: 'rgba(255,255,255,0.75)' }}>
+              <p className="text-xs leading-relaxed" style={{ color: '#ffffff' }}>
                 Office of the City Human Resource<br />
                 Management Officer<br />
                 Iloilo City Government
@@ -29,28 +29,28 @@ export const SharedFooter = React.forwardRef<HTMLElement, object>(
             {/* About column */}
             <div>
               <h4 className="mb-3 text-xs font-bold uppercase tracking-widest" style={{ color: '#ffffff' }}>About</h4>
-              <ul className="space-y-2 text-sm" style={{ color: 'rgba(255,255,255,0.85)' }}>
-                <li><Link to="/about" className="hover:text-white hover:underline transition-colors">About ABYAN</Link></li>
-                <li><Link to="/" className="hover:text-white hover:underline transition-colors">Home</Link></li>
-                <li><Link to="/apply" className="hover:text-white hover:underline transition-colors">Apply for a Job</Link></li>
-                <li><Link to="/track" className="hover:text-white hover:underline transition-colors">Track Application</Link></li>
+              <ul className="space-y-2 text-sm" style={{ color: '#ffffff' }}>
+                <li><Link to="/about" className="hover:underline transition-colors">About ABYAN</Link></li>
+                <li><Link to="/" className="hover:underline transition-colors">Home</Link></li>
+                <li><Link to="/apply" className="hover:underline transition-colors">Apply for a Job</Link></li>
+                <li><Link to="/track" className="hover:underline transition-colors">Track Application</Link></li>
               </ul>
             </div>
 
             {/* Portals column */}
             <div>
               <h4 className="mb-3 text-xs font-bold uppercase tracking-widest" style={{ color: '#ffffff' }}>Portals</h4>
-              <ul className="space-y-2 text-sm" style={{ color: 'rgba(255,255,255,0.85)' }}>
-                <li><a href="/employee/login" className="hover:text-white hover:underline transition-colors">Employee Portal</a></li>
-                <li><a href="/interviewer/login" className="hover:text-white hover:underline transition-colors">Interviewer Portal</a></li>
-                <li><a href="/admin/login" className="hover:text-white hover:underline transition-colors">HR Administration</a></li>
+              <ul className="space-y-2 text-sm" style={{ color: '#ffffff' }}>
+                <li><a href="/employee/login" className="hover:underline transition-colors">Employee Portal</a></li>
+                <li><a href="/interviewer/login" className="hover:underline transition-colors">Interviewer Portal</a></li>
+                <li><a href="/admin/login" className="hover:underline transition-colors">HR Administration</a></li>
               </ul>
             </div>
 
             {/* Address column */}
             <div>
               <h4 className="mb-3 text-xs font-bold uppercase tracking-widest" style={{ color: '#ffffff' }}>Address</h4>
-              <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.85)' }}>
+              <p className="text-sm leading-relaxed" style={{ color: '#ffffff' }}>
                 OCHRMO, Iloilo City Hall<br />
                 Luna St. La Paz,<br />
                 Iloilo City 5000<br />
@@ -65,7 +65,7 @@ export const SharedFooter = React.forwardRef<HTMLElement, object>(
               <a
                 href="mailto:cictrix23@gmail.com"
                 className="block text-sm hover:underline transition-colors"
-                style={{ color: 'rgba(255,255,255,0.85)' }}
+                style={{ color: '#ffffff' }}
               >
                 cictrix23@gmail.com
               </a>
@@ -116,7 +116,7 @@ export const SharedFooter = React.forwardRef<HTMLElement, object>(
 
         {/* Bottom bar */}
         <div style={{ borderTop: '1px solid rgba(255,255,255,0.20)' }} className="py-4">
-          <p className="text-center text-sm font-semibold" style={{ color: 'rgba(255,255,255,0.90)' }}>
+          <p className="text-center text-sm font-semibold" style={{ color: '#ffffff' }}>
             &copy; {new Date().getFullYear()} &ndash; {new Date().getFullYear() + 1} ABYAN HRIS &mdash; Office of the City Human Resource Management Officer
           </p>
         </div>
