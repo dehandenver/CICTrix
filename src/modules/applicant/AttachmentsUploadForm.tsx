@@ -11,9 +11,10 @@ interface AttachmentsUploadFormProps {
   applicationType?: 'job' | 'promotion';
 }
 
-export type DocumentType = 
+export type DocumentType =
   | 'application_letter'
   | 'pds_with_photo'
+  | 'curriculum_vitae'
   | 'eligibility_proof'
   | 'training_certificate'
   | 'transcript_of_records'
@@ -36,6 +37,12 @@ export const REQUIRED_DOCUMENTS = [
     type: 'pds_with_photo' as DocumentType,
     label: 'Personal Data Sheet (PDS)',
     description: 'CS Form No. 212, Revised 2023 with Work Experience Sheet and recent passport-sized photo; digitally signed',
+    required: true,
+  },
+  {
+    type: 'curriculum_vitae' as DocumentType,
+    label: 'Curriculum Vitae',
+    description: 'Updated CV summarizing your educational background, work experience, and relevant achievements',
     required: true,
   },
   {
@@ -291,8 +298,8 @@ export const AttachmentsUploadForm: React.FC<AttachmentsUploadFormProps> = ({
 
         <div className="upload-summary">
           <p className="summary-text">
-            📊 <strong>{categorizedFiles.length}</strong> of <strong>8</strong> documents uploaded
-            ({REQUIRED_DOCUMENTS.filter(d => d.required && getFileForDocType(d.type)).length} of 6 required)
+            📊 <strong>{categorizedFiles.length}</strong> of <strong>{REQUIRED_DOCUMENTS.length}</strong> documents uploaded
+            ({REQUIRED_DOCUMENTS.filter(d => d.required && getFileForDocType(d.type)).length} of {REQUIRED_DOCUMENTS.filter(d => d.required).length} required)
           </p>
         </div>
       </div>

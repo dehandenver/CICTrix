@@ -32,21 +32,6 @@ const fmtDate = (iso: string) => {
   } catch { return iso; }
 };
 
-const POSITION_COLORS = [
-  'bg-indigo-100 text-indigo-700', 'bg-sky-100 text-sky-700',
-  'bg-violet-100 text-violet-700', 'bg-teal-100 text-teal-700',
-  'bg-rose-100 text-rose-700',     'bg-amber-100 text-amber-700',
-  'bg-cyan-100 text-cyan-700',     'bg-lime-100 text-lime-700',
-];
-const positionColorCache = new Map<string, string>();
-let colorIdx = 0;
-const getPositionColor = (pos: string) => {
-  if (!positionColorCache.has(pos)) {
-    positionColorCache.set(pos, POSITION_COLORS[colorIdx % POSITION_COLORS.length]);
-    colorIdx++;
-  }
-  return positionColorCache.get(pos)!;
-};
 
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -210,7 +195,7 @@ export const ApplicationsListPage = () => {
 
                       {/* Position */}
                       <td className="px-5 py-4">
-                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${getPositionColor(a.position)}`}>
+                        <span className="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold bg-[#363EE8]/10 text-[#363EE8]">
                           {a.position || '—'}
                         </span>
                       </td>

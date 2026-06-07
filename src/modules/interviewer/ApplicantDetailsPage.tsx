@@ -1555,15 +1555,53 @@ export function ApplicantDetailsPage() {
                     </button>
                   </div>
                   <div className="space-y-2 p-3">
-                    {attachments.length > 0 ? attachments.map((doc) => (
-                      <article key={doc.id} className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2.5">
-                        <div>
-                          <p className="text-base font-semibold text-slate-900">{doc.file_name}</p>
-                          <p className="text-sm text-slate-500">Uploaded {formatDate(doc.created_at || applicant.created_at)}</p>
-                        </div>
-                        <button className="text-sm font-semibold text-blue-600" onClick={() => openDocument(doc.file_path)}>View</button>
-                      </article>
-                    )) : <p className="text-slate-500">No uploaded documents found for this applicant yet.</p>}
+                    {attachments.length > 0 ? attachments.map((doc, idx) => {
+                      const DOCUMENT_TYPE_LABELS: Record<string, { label: string; color: string }> = {
+                        'application_letter':         { label: 'Application Letter',                  color: 'bg-blue-50 text-blue-700 border-blue-200' },
+                        'Application Letter':         { label: 'Application Letter',                  color: 'bg-blue-50 text-blue-700 border-blue-200' },
+                        'pds_with_photo':             { label: 'Personal Data Sheet (PDS)',           color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+                        'Personal Data Sheet':        { label: 'Personal Data Sheet (PDS)',           color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+                        'curriculum_vitae':           { label: 'Curriculum Vitae',                    color: 'bg-violet-50 text-violet-700 border-violet-200' },
+                        'Curriculum Vitae':           { label: 'Curriculum Vitae',                    color: 'bg-violet-50 text-violet-700 border-violet-200' },
+                        'eligibility_proof':          { label: 'Proof of Eligibility / License',      color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+                        'Proof Of Eligibility':       { label: 'Proof of Eligibility / License',      color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+                        'training_certificate':       { label: 'Training / Seminar Certificate',      color: 'bg-amber-50 text-amber-700 border-amber-200' },
+                        'Certificate Of Relevant':    { label: 'Training / Seminar Certificate',      color: 'bg-amber-50 text-amber-700 border-amber-200' },
+                        'transcript_of_records':      { label: 'Transcript of Records',               color: 'bg-sky-50 text-sky-700 border-sky-200' },
+                        'Transcript Of Records':      { label: 'Transcript of Records',               color: 'bg-sky-50 text-sky-700 border-sky-200' },
+                        'previous_employer_certificate': { label: 'Certificate from Previous Employer', color: 'bg-teal-50 text-teal-700 border-teal-200' },
+                        'Certificate From Previous':  { label: 'Certificate from Previous Employer',  color: 'bg-teal-50 text-teal-700 border-teal-200' },
+                        'drug_test':                  { label: 'Drug Test Result',                    color: 'bg-rose-50 text-rose-700 border-rose-200' },
+                        'Drug Test Result':           { label: 'Drug Test Result',                    color: 'bg-rose-50 text-rose-700 border-rose-200' },
+                        'other':                      { label: 'Supporting Document',                  color: 'bg-slate-50 text-slate-600 border-slate-200' },
+                      };
+                      const nameKey = Object.keys(DOCUMENT_TYPE_LABELS).find(k =>
+                        doc.file_name.toLowerCase().startsWith(k.toLowerCase().replace(/_/g, ' ').split(' ')[0])
+                        || doc.file_name === k
+                      );
+                      const typeInfo = nameKey ? DOCUMENT_TYPE_LABELS[nameKey] : null;
+                      return (
+                        <article key={doc.id} className="rounded-xl border border-slate-200 px-3 py-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-2.5 min-w-0">
+                              <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#363EE8]/10 text-[#363EE8] text-xs font-bold">
+                                {idx + 1}
+                              </span>
+                              <div className="min-w-0">
+                                {typeInfo && (
+                                  <span className={`mb-1 inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${typeInfo.color}`}>
+                                    {typeInfo.label}
+                                  </span>
+                                )}
+                                <p className="text-sm font-semibold text-slate-800 truncate">{doc.file_name}</p>
+                                <p className="text-xs text-slate-400">Uploaded {formatDate(doc.created_at || applicant.created_at)}</p>
+                              </div>
+                            </div>
+                            <button className="shrink-0 text-sm font-semibold text-[#363EE8] hover:underline" onClick={() => openDocument(doc.file_path)}>View</button>
+                          </div>
+                        </article>
+                      );
+                    }) : <p className="text-slate-500">No uploaded documents found for this applicant yet.</p>}
                   </div>
                 </article>
               )}

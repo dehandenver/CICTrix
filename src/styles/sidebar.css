@@ -69,8 +69,8 @@
 }
 
 .sidebar-nav-item.active {
-  background-color: #2563eb;
-  color: #ffffff;
+  background-color: #eff6ff;
+  color: #1e40af;
   font-weight: 600;
 }
 
@@ -85,11 +85,11 @@
 }
 
 .sidebar-nav-item.active svg {
-  color: #ffffff;
+  color: #2563eb;
 }
 
 .sidebar-nav-item.active .sidebar-nav-subtitle {
-  color: rgba(255, 255, 255, 0.9);
+  color: #3b82f6;
 }
 
 .sidebar-nav-text {
@@ -106,7 +106,7 @@
 
 .sidebar-nav-subtitle {
   font-size: 0.75rem;
-  color: var(--text-muted);
+  color: #64748b;
   line-height: 1.2;
 }
 
