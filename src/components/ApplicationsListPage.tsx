@@ -58,7 +58,7 @@ export const ApplicationsListPage = () => {
   const [search, setSearch]         = useState('');
   const [officeFilter, setOfficeFilter]     = useState('all');
   const [positionFilter, setPositionFilter] = useState('all');
-  const [statusFilter, setStatusFilter]     = useState('all');
+  const [typeFilter, setTypeFilter]         = useState('all');
   const [page, setPage] = useState(1);
 
   // ── Load applicants ────────────────────────────────────────────────────────
@@ -93,20 +93,22 @@ export const ApplicationsListPage = () => {
   // ── Derived ────────────────────────────────────────────────────────────────
   const offices   = useMemo(() => [...new Set(applicants.map(a => a.office).filter(Boolean))].sort(),    [applicants]);
   const positions = useMemo(() => [...new Set(applicants.map(a => a.position).filter(Boolean))].sort(), [applicants]);
-  const statuses  = useMemo(() => [...new Set(applicants.map(a => a.status).filter(Boolean))].sort(),   [applicants]);
+
+  const normalizeType = (t: string | null | undefined) =>
+    (t ?? '').toLowerCase().includes('promot') ? 'promotional' : 'original';
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return applicants.filter(a => {
       if (officeFilter   !== 'all' && a.office   !== officeFilter)   return false;
       if (positionFilter !== 'all' && a.position !== positionFilter) return false;
-      if (statusFilter   !== 'all' && a.status   !== statusFilter)   return false;
+      if (typeFilter     !== 'all' && normalizeType(a.application_type) !== typeFilter) return false;
       if (term && !a.full_name.toLowerCase().includes(term) &&
           !a.email.toLowerCase().includes(term) &&
           !a.position.toLowerCase().includes(term)) return false;
       return true;
     });
-  }, [applicants, search, officeFilter, positionFilter, statusFilter]);
+  }, [applicants, search, officeFilter, positionFilter, typeFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
   const safePage   = Math.min(page, totalPages);
@@ -164,16 +166,17 @@ export const ApplicationsListPage = () => {
                   <option value="all">All Positions</option>
                   {positions.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
-                <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
+                <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(1); }}
                   className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:border-[#363EE8] focus:outline-none">
-                  <option value="all">All Statuses</option>
-                  {statuses.map(s => <option key={s} value={s}>{s}</option>)}
+                  <option value="all">All Types</option>
+                  <option value="original">Original</option>
+                  <option value="promotional">Promotional</option>
                 </select>
               </div>
               <div className="mt-2.5 flex items-center justify-between border-t border-slate-100 pt-2.5 text-xs text-slate-500">
                 <span>{filtered.length} applicant{filtered.length !== 1 ? 's' : ''} found</span>
                 <button type="button" className="text-[#363EE8] hover:underline"
-                  onClick={() => { setSearch(''); setOfficeFilter('all'); setPositionFilter('all'); setStatusFilter('all'); setPage(1); }}>
+                  onClick={() => { setSearch(''); setOfficeFilter('all'); setPositionFilter('all'); setTypeFilter('all'); setPage(1); }}>
                   Clear filters
                 </button>
               </div>
