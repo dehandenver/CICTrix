@@ -631,15 +631,15 @@ const getStoredInterviewerScoreSnapshot = (
 };
 
 const DOCUMENT_SLOTS = [
-  { type: 'application_letter',            label: 'Application Letter',                       color: 'bg-blue-50 text-blue-700 border-blue-200',      required: true },
-  { type: 'pds_with_photo',               label: 'Personal Data Sheet',                      color: 'bg-indigo-50 text-indigo-700 border-indigo-200', required: true },
-  { type: 'curriculum_vitae',             label: 'Curriculum Vitae',                         color: 'bg-violet-50 text-violet-700 border-violet-200', required: true },
-  { type: 'eligibility_proof',            label: 'Proof of Eligibility Rating/License',      color: 'bg-emerald-50 text-emerald-700 border-emerald-200', required: true },
-  { type: 'training_certificate',         label: 'Certificate of Relevant Training/Seminars', color: 'bg-amber-50 text-amber-700 border-amber-200',  required: true },
-  { type: 'transcript_of_records',        label: 'Transcript of Records',                    color: 'bg-sky-50 text-sky-700 border-sky-200',          required: true },
-  { type: 'previous_employer_certificate',label: 'Certificate from Previous Employer',       color: 'bg-teal-50 text-teal-700 border-teal-200',       required: false },
-  { type: 'drug_test',                    label: 'Drug Test Result',                         color: 'bg-rose-50 text-rose-700 border-rose-200',       required: true },
-  { type: 'other',                        label: 'Other Supporting Documents',               color: 'bg-slate-50 text-slate-600 border-slate-200',    required: false },
+  { type: 'application_letter',            label: 'Application Letter',                       required: true  },
+  { type: 'pds_with_photo',               label: 'Personal Data Sheet',                      required: true  },
+  { type: 'curriculum_vitae',             label: 'Curriculum Vitae',                         required: true  },
+  { type: 'eligibility_proof',            label: 'Proof of Eligibility Rating/License',      required: true  },
+  { type: 'training_certificate',         label: 'Certificate of Relevant Training/Seminars', required: true  },
+  { type: 'transcript_of_records',        label: 'Transcript of Records',                    required: true  },
+  { type: 'previous_employer_certificate',label: 'Certificate from Previous Employer',       required: false },
+  { type: 'drug_test',                    label: 'Drug Test Result',                         required: true  },
+  { type: 'other',                        label: 'Other Supporting Documents',               required: false },
 ] as const;
 
 // Labelize'd file_name aliases → slot type (for attachments without document_type)
@@ -1595,7 +1595,7 @@ export function ApplicantDetailsPage() {
                             </span>
                             <div className="min-w-0 flex-1">
                               <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-                                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${slot.color}`}>
+                                <span className="inline-flex items-center rounded-full border border-[#040E6B]/20 px-2 py-0.5 text-xs font-semibold" style={{ color: '#040E6B' }}>
                                   {slot.label}
                                 </span>
                                 {slot.required && (
