@@ -339,7 +339,7 @@ export function InterviewerDashboard({
       {/* ── Top Navbar ── */}
       <header className="sticky top-0 z-30 bg-[#363EE8] shadow-md" style={{ color: '#ffffff' }}>
         <div className="flex items-center justify-between px-6 py-3" style={{ color: '#ffffff' }}>
-          <div className="flex items-center gap-3">
+          <button type="button" className="flex items-center gap-3 cursor-pointer" onClick={() => navigate('/interviewer/dashboard')}>
             <img
               src={abyanLogo}
               alt="ABYAN HRIS"
@@ -352,7 +352,7 @@ export function InterviewerDashboard({
                 Interviewer Portal
               </span>
             </div>
-          </div>
+          </button>
 
           <div className="flex items-center gap-4">
             {session?.name && (

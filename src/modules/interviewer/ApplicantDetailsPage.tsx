@@ -48,6 +48,7 @@ type AttachmentRecord = {
   file_name: string;
   file_path: string;
   created_at?: string;
+  document_type?: string;
 };
 
 type EvaluationRecord = {
@@ -1579,7 +1580,7 @@ export function ApplicantDetailsPage() {
                   </div>
                   <div className="space-y-2 p-3">
                     {attachments.length > 0 ? attachments.map((doc, idx) => {
-                      const typeInfo = DOCUMENT_LABEL_MAP[doc.file_name] ?? null;
+                      const typeInfo = DOCUMENT_LABEL_MAP[doc.document_type ?? ''] ?? DOCUMENT_LABEL_MAP[doc.file_name] ?? null;
                       return (
                         <article key={doc.id} className="rounded-xl border border-slate-200 px-3 py-3">
                           <div className="flex items-start justify-between gap-3">

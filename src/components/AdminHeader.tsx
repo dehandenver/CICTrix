@@ -1,4 +1,5 @@
 import { UserCircle2 } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import abyanLogo from '../assets/abyan-logo.png';
 import { LogoutConfirmPopover } from './LogoutConfirmPopover';
 
@@ -9,10 +10,22 @@ interface AdminHeaderProps {
   divisionLabel?: string;
 }
 
+const getPortalHome = (pathname: string): string => {
+  if (pathname.startsWith('/admin/rsp')) return '/admin/rsp';
+  if (pathname.startsWith('/admin/lnd')) return '/admin/lnd';
+  if (pathname.startsWith('/admin/pm'))  return '/admin/pm';
+  if (pathname.startsWith('/interviewer')) return '/interviewer/dashboard';
+  return '/admin?module=dashboard';
+};
+
 export const AdminHeader = ({
   userName = 'Admin',
   divisionLabel = 'HRIS Admin',
 }: AdminHeaderProps) => {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const homeUrl = getPortalHome(pathname);
+
   return (
     <header
       className="sticky top-0 z-40 shadow-md"
@@ -20,8 +33,12 @@ export const AdminHeader = ({
     >
       <div className="flex items-center justify-between px-6 py-3">
 
-        {/* Left — Logo & Branding */}
-        <div className="flex items-center gap-3">
+        {/* Left — Logo & Branding (click to go to portal home) */}
+        <button
+          type="button"
+          className="flex items-center gap-3 cursor-pointer"
+          onClick={() => navigate(homeUrl)}
+        >
           <img
             src={abyanLogo}
             alt="ABYAN HRIS"
@@ -36,7 +53,7 @@ export const AdminHeader = ({
               Human Resource Information System
             </span>
           </div>
-        </div>
+        </button>
 
         {/* Right — User info + Logout */}
         <div className="flex items-center gap-4">
