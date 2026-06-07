@@ -904,6 +904,9 @@ type ApplicantSubmissionSyncInput = {
   };
   submittedAt?: string;
   attachments?: SyncAttachment[];
+  educationDegree?: string;
+  educationSchool?: string;
+  workExperienceYears?: number;
 };
 
 type LegacyPortalApplicant = {
@@ -1073,8 +1076,12 @@ export const syncApplicantSubmissionToRecruitment = (
     },
     qualificationScore: 0,
     status: 'New Application',
-    education: [],
-    experience: [],
+    education: input.educationDegree
+      ? [{ degree: input.educationDegree, school: input.educationSchool ?? '', year: new Date().getFullYear() }]
+      : [],
+    experience: input.workExperienceYears != null
+      ? [{ title: 'Applicant', company: '', years: input.workExperienceYears }]
+      : [],
     skills: [],
     certifications: [],
     documents,

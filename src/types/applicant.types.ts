@@ -16,6 +16,9 @@ export interface ApplicantFormData {
   current_department: string;
   current_division: string;
   employee_username: string;
+  education_degree: string;
+  education_school: string;
+  work_experience_years: string;
 }
 
 export interface ValidationErrors {

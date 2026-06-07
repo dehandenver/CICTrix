@@ -108,6 +108,9 @@ const INITIAL_FORM_DATA: ApplicantFormData = {
   current_department: '',
   current_division: '',
   employee_username: '',
+  education_degree: '',
+  education_school: '',
+  work_experience_years: '',
 };
 
 const buildApplicantItemNumber = (sequence: number): string => {
@@ -427,6 +430,9 @@ const handleNextToReview = () => {
         : undefined,
       submittedAt: new Date().toISOString(),
       attachments: syncedAttachments,
+      educationDegree: formData.education_degree || undefined,
+      educationSchool: formData.education_school || undefined,
+      workExperienceYears: formData.work_experience_years ? parseInt(formData.work_experience_years, 10) : undefined,
     });
 
     return applicantData.item_number || itemNumber;
@@ -930,6 +936,18 @@ const handleNextToReview = () => {
                       <label>PWD Status</label>
                       <p>{formData.is_pwd ? 'Yes' : 'No'}</p>
                     </div>
+                    {(formData.education_degree || formData.education_school) && (
+                      <div>
+                        <label>Educational Background</label>
+                        <p>{[formData.education_degree, formData.education_school].filter(Boolean).join(', ') || '-'}</p>
+                      </div>
+                    )}
+                    {formData.work_experience_years && (
+                      <div>
+                        <label>Years of Work Experience</label>
+                        <p>{formData.work_experience_years} year{formData.work_experience_years === '1' ? '' : 's'}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
 

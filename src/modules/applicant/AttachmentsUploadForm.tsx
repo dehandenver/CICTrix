@@ -223,6 +223,16 @@ export const AttachmentsUploadForm: React.FC<AttachmentsUploadFormProps> = ({
           <strong>Required Documents:</strong> Please upload all required documents below.
           Accepted formats: PDF, DOC, DOCX, JPG, PNG (Max 10MB per file)
         </p>
+        <div style={{ marginBottom: '1rem', padding: '0.75rem 1rem', borderRadius: '0.5rem', background: '#eff6ff', border: '1px solid #bfdbfe', fontSize: '0.85rem', color: '#1e40af' }}>
+          <strong>📁 File Naming Format:</strong> Please name your files using this format for easier tracking:<br />
+          <code style={{ background: '#dbeafe', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', fontSize: '0.8rem' }}>
+            [DocumentType]-[LastName]-[FirstName].pdf
+          </code>
+          <br />
+          <span style={{ color: '#3b82f6', fontSize: '0.78rem' }}>
+            Example: <em>ApplicationLetter-DelaCruz-Juan.pdf</em> &nbsp;|&nbsp; <em>CurriculumVitae-Santos-Maria.pdf</em>
+          </span>
+        </div>
 
         <div className="required-documents-list">
           {REQUIRED_DOCUMENTS.map((doc, index) => {

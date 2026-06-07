@@ -1525,9 +1525,23 @@ export function ApplicantDetailsPage() {
                         <p className="font-semibold text-slate-500">Work Experience</p>
                         <p className="text-sm text-slate-900">
                           {primaryExperience
-                            ? `${primaryExperience.years} year${primaryExperience.years === 1 ? '' : 's'} as ${primaryExperience.title}`
+                            ? `${primaryExperience.years} year${primaryExperience.years === 1 ? '' : 's'}`
                             : '--'}
                         </p>
+                        {(() => {
+                          const cv = attachments.find(a =>
+                            a.document_type === 'curriculum_vitae' ||
+                            FILE_NAME_TO_TYPE[a.file_name] === 'curriculum_vitae'
+                          );
+                          return cv ? (
+                            <button
+                              className="mt-0.5 text-xs font-semibold text-[#363EE8] hover:underline"
+                              onClick={() => openDocument(cv.file_path)}
+                            >
+                              View Curriculum Vitae ↗
+                            </button>
+                          ) : null;
+                        })()}
                       </div>
                       <div className="py-2.5 md:col-span-2">
                         <p className="font-semibold text-slate-500">Application Date</p>

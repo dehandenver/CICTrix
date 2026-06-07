@@ -194,14 +194,14 @@ export const ApplicationsListPage = () => {
                       </td>
 
                       {/* Position */}
-                      <td className="px-5 py-4">
-                        <span className="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold bg-[#363EE8]/10 text-[#363EE8]">
-                          {a.position || '—'}
-                        </span>
-                      </td>
+                      <td className="px-5 py-4 text-sm text-slate-700">{a.position || '—'}</td>
 
                       {/* Department */}
-                      <td className="px-5 py-4 text-sm text-slate-600">{a.office || '—'}</td>
+                      <td className="px-5 py-4">
+                        <span className="inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold bg-[#363EE8]/10 text-[#363EE8]">
+                          {a.office || '—'}
+                        </span>
+                      </td>
 
                       {/* Type */}
                       <td className="px-5 py-4">

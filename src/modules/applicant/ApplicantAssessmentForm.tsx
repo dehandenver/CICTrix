@@ -413,6 +413,44 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
           />
         </div>
       </div>
+
+      {/* Educational Background */}
+      <fieldset className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <legend className="px-2 text-sm font-semibold uppercase tracking-wide text-slate-700">
+          Educational Background
+        </legend>
+        <div className="grid gap-md md:grid-cols-2">
+          <Input
+            label="Degree / Course"
+            placeholder="e.g. Bachelor of Science in Information Technology"
+            value={formData.education_degree}
+            onChange={(e) => onChange('education_degree', e.target.value)}
+          />
+          <Input
+            label="School / University"
+            placeholder="e.g. University of the Philippines"
+            value={formData.education_school}
+            onChange={(e) => onChange('education_school', e.target.value)}
+          />
+        </div>
+      </fieldset>
+
+      {/* Work Experience */}
+      <fieldset className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <legend className="px-2 text-sm font-semibold uppercase tracking-wide text-slate-700">
+          Work Experience
+        </legend>
+        <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+          In Step 2, you will be asked to upload your <strong>Curriculum Vitae (CV)</strong> as supporting document for your work experience.
+        </div>
+        <Input
+          label="Total Years of Work Experience"
+          type="number"
+          placeholder="e.g. 5"
+          value={formData.work_experience_years}
+          onChange={(e) => onChange('work_experience_years', e.target.value)}
+        />
+      </fieldset>
     </Card>
   );
 };
