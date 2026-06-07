@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AdminHeader } from './AdminHeader';
 import { ApplicantsTabBar } from './ApplicantsTabBar';
+import { PendingAssignmentList } from './PendingAssignmentList';
 import { QualifiedApplicantsSection } from './QualifiedApplicantsSection';
 import { Sidebar } from './Sidebar';
 import { ATTACHMENTS_BUCKET, supabase } from '../lib/supabase';
@@ -21,11 +22,26 @@ export interface ApplicantRecord {
   created_at: string;
   total_score: number | null;
   application_type?: string | null;
+  // Schedule + interviewer assignment (migration 007). Drives
+  // /admin/rsp/qualified Pending Assignment → /admin/rsp/applicant-score.
+  exam_date?: string | null;
+  exam_time?: string | null;
+  interview_date?: string | null;
+  interview_time?: string | null;
+  assigned_interviewer_email?: string | null;
 }
+
+export type QualifiedRspMode = 'pending' | 'score';
 
 export type InterviewerEvaluation = EvaluationSnapshot;
 
-export const QualifiedApplicantsRSPPage = () => {
+interface QualifiedApplicantsRSPPageProps {
+  /** 'pending' = subtab 2 (assign schedule + interviewer).
+   *  'score'   = subtab 3 (existing folder/scoring view). */
+  mode?: QualifiedRspMode;
+}
+
+export const QualifiedApplicantsRSPPage = ({ mode = 'score' }: QualifiedApplicantsRSPPageProps = {}) => {
   const [applicants, setApplicants] = useState<ApplicantRecord[]>([]);
   const [completedEvaluationIds, setCompletedEvaluationIds] = useState<Set<string>>(new Set());
   const [evaluationsByApplicant, setEvaluationsByApplicant] = useState<Record<string, InterviewerEvaluation>>({});
@@ -110,6 +126,11 @@ export const QualifiedApplicantsRSPPage = () => {
             created_at: String(row?.created_at || ''),
             total_score: row?.total_score ? Number(row.total_score) : null,
             application_type: row?.application_type ?? null,
+            exam_date: row?.exam_date ?? null,
+            exam_time: row?.exam_time ?? null,
+            interview_date: row?.interview_date ?? null,
+            interview_time: row?.interview_time ?? null,
+            assigned_interviewer_email: row?.assigned_interviewer_email ?? null,
           };
         });
 
@@ -168,11 +189,18 @@ export const QualifiedApplicantsRSPPage = () => {
         <main className="admin-content bg-slate-50 !p-0">
           <ApplicantsTabBar />
           <div className="p-6">
-            <QualifiedApplicantsSection
-              applicants={applicants}
-              completedEvaluationIds={completedEvaluationIds}
-              evaluationsByApplicant={evaluationsByApplicant}
-            />
+            {mode === 'pending' ? (
+              <PendingAssignmentList
+                applicants={applicants}
+                completedEvaluationIds={completedEvaluationIds}
+              />
+            ) : (
+              <QualifiedApplicantsSection
+                applicants={applicants}
+                completedEvaluationIds={completedEvaluationIds}
+                evaluationsByApplicant={evaluationsByApplicant}
+              />
+            )}
           </div>
         </main>
       </div>

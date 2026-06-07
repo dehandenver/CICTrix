@@ -670,7 +670,7 @@ function AppContent() {
             path="/admin/rsp/qualified"
             element={
               <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
-                <QualifiedApplicantsRSPPage />
+                <QualifiedApplicantsRSPPage mode="pending" />
               </AdminRoute>
             }
           />

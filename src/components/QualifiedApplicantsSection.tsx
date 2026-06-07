@@ -41,6 +41,13 @@ export interface ApplicantRecord {
   /** 'promotion' = applicant is a current employee (verified via wizard auth);
       'job' / null = new applicant. Drives appointment-type lock in scoring modal. */
   application_type?: string | null;
+  // Schedule + interviewer assignment (migration 007). Drives the Pending
+  // Assignment subtab → Applicant Score subtab progression.
+  exam_date?: string | null;
+  exam_time?: string | null;
+  interview_date?: string | null;
+  interview_time?: string | null;
+  assigned_interviewer_email?: string | null;
 }
 
 interface ScoringCat {
