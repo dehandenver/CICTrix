@@ -30,6 +30,7 @@ import {
     saveNewlyHired,
 } from '../lib/recruitmentData';
 import { sendEmail } from '../lib/email';
+import { createPassword, upsertEmployeePortalAccount } from '../lib/employeePortalData';
 import { runSingleFlight } from '../lib/singleFlight';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../lib/supabase';
 import { Applicant, ApplicantStatus, JobPosting, NewlyHired } from '../types/recruitment.types';
@@ -463,6 +464,15 @@ export const QualifiedApplicantsPage = () => {
   }>(null);
   const [selectedHireApplicantIds, setSelectedHireApplicantIds] = useState<string[]>([]);
   const [showHireConfirmModal, setShowHireConfirmModal] = useState(false);
+  const [generatedCredentials, setGeneratedCredentials] = useState<Array<{
+    fullName: string;
+    email: string;
+    position: string;
+    department: string;
+    employeeId: string;
+    tempPassword: string;
+  }>>([]);
+  const [showCredentialsModal, setShowCredentialsModal] = useState(false);
 
   const loadQualifiedApplicantsData = async () => {
     ensureRecruitmentSeedData();
@@ -980,15 +990,62 @@ export const QualifiedApplicantsPage = () => {
       const hiredIdSet = new Set<string>();
       const skippedRows: string[] = [];
       const nowIsoForLocalUpdate = new Date().toISOString();
+      const newCredentials: typeof generatedCredentials = [];
 
       // Proceed with new backend logic per applicant
       for (const row of selectedRows) {
+        const fullName = `${row.personalInfo.firstName} ${row.personalInfo.lastName}`.trim();
+        const job = jobMap.get(row.jobPostingId);
+        const position = job?.title ?? 'Unknown Position';
+        const department = job?.department ?? 'Unassigned';
+
         try {
-          await import('../lib/api/employeesApi').then((m) => m.hireApplicant(row.id));
+          const employeeRow = await hireApplicant(row.id);
           hiredIdSet.add(row.id);
+
+          // Generate a temp password and provision the portal account so the
+          // applicant can log in with the printed/emailed credentials.
+          const tempPassword = createPassword();
+          const employeeId = employeeRow?.employee_id ?? row.id;
+          upsertEmployeePortalAccount({
+            id: `portal-${employeeId}`,
+            username: employeeId,
+            password: tempPassword,
+            employee: {
+              employeeId,
+              fullName,
+              email: row.personalInfo.email ?? '',
+              dateOfBirth: '',
+              age: 0,
+              gender: 'Other',
+              civilStatus: 'Single',
+              nationality: '',
+              mobileNumber: row.personalInfo.phone ?? '',
+              homeAddress: '',
+              emergencyContactName: '',
+              emergencyRelationship: '',
+              emergencyContactNumber: '',
+              sssNumber: '',
+              philhealthNumber: '',
+              pagibigNumber: '',
+              tinNumber: '',
+              currentPosition: position,
+              currentDepartment: department,
+              status: 'Active',
+              hireDate: nowIsoForLocalUpdate,
+            } as any,
+          });
+
+          newCredentials.push({
+            fullName,
+            email: row.personalInfo.email ?? '',
+            position,
+            department,
+            employeeId,
+            tempPassword,
+          });
         } catch (err) {
           console.error(`Failed to hire applicant ${row.id}`, err);
-          const fullName = `${row.personalInfo.firstName} ${row.personalInfo.lastName}`.trim();
           skippedRows.push(fullName);
         }
       }
@@ -1015,7 +1072,12 @@ export const QualifiedApplicantsPage = () => {
 
       setSelectedHireApplicantIds([]);
       setShowHireConfirmModal(false);
-      
+
+      if (newCredentials.length > 0) {
+        setGeneratedCredentials(newCredentials);
+        setShowCredentialsModal(true);
+      }
+
       if (skippedRows.length > 0) {
         setToast(
           `Processed ${hiredIdSet.size} applicant(s). Failed to hire: ${skippedRows.join(', ')}.`
@@ -2173,11 +2235,39 @@ export const QualifiedApplicantsPage = () => {
               <h3 className="text-xl font-semibold text-white">Confirm Hiring</h3>
             </div>
             <div className="space-y-3 px-6 py-5 text-slate-700">
-              <p className="text-base">Are you sure you want to hire the selected applicant(s)?</p>
-              <p className="text-sm text-slate-500">
-                This will mark them as hired and move them to employee onboarding records.
-                External applicants will proceed to Newly Hired for credential generation.
-              </p>
+              {selectedRowsForHiring.length === 1 ? (() => {
+                const row = selectedRowsForHiring[0];
+                const job = jobMap.get(row.jobPostingId);
+                const position = job?.title ?? 'this position';
+                const department = job?.department ?? 'this department';
+                return (
+                  <p className="text-base">
+                    Are you sure you want to hire this applicant for the position of{' '}
+                    <span className="font-semibold">{position}</span> under the{' '}
+                    <span className="font-semibold">{department}</span> department?
+                    This action will create an employee record and generate a system account.
+                  </p>
+                );
+              })() : (
+                <>
+                  <p className="text-base">
+                    Are you sure you want to hire the {selectedRowsForHiring.length} selected applicants?
+                    This action will create employee records and generate system accounts for each.
+                  </p>
+                  <ul className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 space-y-1 max-h-48 overflow-auto">
+                    {selectedRowsForHiring.map((row) => {
+                      const job = jobMap.get(row.jobPostingId);
+                      const fullName = `${row.personalInfo.firstName} ${row.personalInfo.lastName}`.trim();
+                      return (
+                        <li key={row.id}>
+                          <span className="font-semibold">{fullName}</span> · {job?.title ?? 'Unknown Position'} ·{' '}
+                          <span className="text-slate-500">{job?.department ?? 'Unassigned'}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </>
+              )}
               {selectedHiringMeta.promotions.length > 0 && (
                 <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
                   <p className="font-semibold">Promotion Confirmation</p>
@@ -2213,6 +2303,133 @@ export const QualifiedApplicantsPage = () => {
                 disabled={selectedHireApplicantIds.length === 0 || !canManageHiring}
               >
                 Confirm and Hire
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCredentialsModal && generatedCredentials.length > 0 && (
+        <div className="fixed inset-0 z-[150] bg-slate-900/70 p-4" onClick={() => setShowCredentialsModal(false)}>
+          <div
+            className="mx-auto mt-12 w-full max-w-2xl rounded-2xl bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="rounded-t-2xl bg-blue-600 px-6 py-4 text-white flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-semibold">Account Credentials</h3>
+                <p className="text-xs text-blue-100 mt-0.5">
+                  Share these with the new employee(s). They will be prompted to change the password on first login.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCredentialsModal(false)}
+                className="text-white/80 hover:text-white"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div id="credentials-print-area" className="max-h-[60vh] overflow-y-auto px-6 py-5 space-y-3">
+              {generatedCredentials.map((cred, idx) => (
+                <div key={idx} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div>
+                      <p className="font-semibold text-slate-900">{cred.fullName}</p>
+                      <p className="text-xs text-slate-500">
+                        {cred.position} · {cred.department}
+                      </p>
+                    </div>
+                    <span className="text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+                      Newly Hired
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Employee ID</p>
+                      <p className="font-mono font-semibold text-slate-900">{cred.employeeId}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Temporary Password</p>
+                      <p className="font-mono font-semibold text-slate-900">{cred.tempPassword}</p>
+                    </div>
+                    {cred.email && (
+                      <div className="sm:col-span-2">
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Sent to email</p>
+                        <p className="text-slate-700">{cred.email}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 px-6 py-4">
+              <button
+                type="button"
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                onClick={() => setShowCredentialsModal(false)}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 inline-flex items-center gap-2"
+                onClick={() => {
+                  const area = document.getElementById('credentials-print-area');
+                  if (!area) {
+                    window.print();
+                    return;
+                  }
+                  const printWindow = window.open('', '_blank', 'width=800,height=600');
+                  if (!printWindow) {
+                    window.print();
+                    return;
+                  }
+                  printWindow.document.write(`
+                    <html>
+                      <head>
+                        <title>Account Credentials</title>
+                        <style>
+                          body { font-family: system-ui, sans-serif; padding: 24px; color: #0f172a; }
+                          h1 { font-size: 18px; margin: 0 0 16px; }
+                          .credential { border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+                          .name { font-weight: 600; }
+                          .meta { color: #64748b; font-size: 12px; margin-top: 2px; }
+                          .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; font-size: 13px; }
+                          .label { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #64748b; }
+                          .value { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; }
+                        </style>
+                      </head>
+                      <body>
+                        <h1>Newly Hired — Account Credentials</h1>
+                        ${generatedCredentials.map((c) => `
+                          <div class="credential">
+                            <div class="name">${c.fullName}</div>
+                            <div class="meta">${c.position} · ${c.department}</div>
+                            <div class="grid">
+                              <div>
+                                <div class="label">Employee ID</div>
+                                <div class="value">${c.employeeId}</div>
+                              </div>
+                              <div>
+                                <div class="label">Temporary Password</div>
+                                <div class="value">${c.tempPassword}</div>
+                              </div>
+                            </div>
+                          </div>
+                        `).join('')}
+                      </body>
+                    </html>
+                  `);
+                  printWindow.document.close();
+                  printWindow.focus();
+                  printWindow.print();
+                }}
+              >
+                <FileText className="h-4 w-4" /> Print Credentials
               </button>
             </div>
           </div>
