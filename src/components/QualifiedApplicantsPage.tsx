@@ -1044,6 +1044,29 @@ export const QualifiedApplicantsPage = () => {
             employeeId,
             tempPassword,
           });
+
+          // Send login credentials by email. Fire-and-forget: failure here
+          // shouldn't roll back the hire (HR can still use Print Credentials).
+          const recipient = (row.personalInfo.email ?? '').trim();
+          if (recipient) {
+            void sendEmail({
+              to: recipient,
+              subject: 'Your CICTrix HRIS account is ready',
+              body:
+                `Hello ${fullName},\n\n` +
+                `Your employee account has been created.\n\n` +
+                `Position: ${position}\n` +
+                `Department: ${department}\n\n` +
+                `Employee ID: ${employeeId}\n` +
+                `Temporary password: ${tempPassword}\n\n` +
+                `Log in to the employee portal and you will be prompted to set a new password before accessing any modules.\n\n` +
+                `If you did not expect this email, please contact HR.\n`,
+              employeeId,
+              template: 'employee_credentials',
+            }).catch((emailErr) => {
+              console.error('sendEmail (credentials) failed; Print Credentials still available', emailErr);
+            });
+          }
         } catch (err) {
           console.error(`Failed to hire applicant ${row.id}`, err);
           skippedRows.push(fullName);
