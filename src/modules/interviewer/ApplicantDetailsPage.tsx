@@ -1131,7 +1131,7 @@ export function ApplicantDetailsPage() {
   };
 
   const persistStatus = async (
-    action: 'shortlist' | 'qualified' | 'disqualify',
+    action: 'shortlist' | 'unshortlist' | 'qualified' | 'disqualify',
     reasonInput?: string,
   ) => {
     // Only `applicant` (the ApplicantRecord from DB) is required. The richer
@@ -1143,10 +1143,11 @@ export function ApplicantDetailsPage() {
     }
 
     // Immediately update local status for instant UI feedback
-    setApplicantStatus(action);
+    setApplicantStatus(action === 'unshortlist' ? null : action);
 
-    const statusMap: Record<'shortlist' | 'qualified' | 'disqualify', Applicant['status']> = {
+    const statusMap: Record<'shortlist' | 'unshortlist' | 'qualified' | 'disqualify', Applicant['status']> = {
       shortlist: 'Shortlisted',
+      unshortlist: 'Under Review',
       qualified: 'Recommended for Hiring',
       disqualify: 'Not Qualified',
     };
@@ -1425,14 +1426,14 @@ export function ApplicantDetailsPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => { void persistStatus('shortlist'); }}
+                    onClick={() => { void persistStatus(isApplicantShortlisted ? 'unshortlist' : 'shortlist'); }}
                     className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm ${
                       isApplicantShortlisted
                         ? 'border-[#363EE8] bg-[#363EE8] text-white'
                         : 'border-[#363EE8] bg-white text-[#363EE8] hover:bg-blue-50'
                     }`}
                   >
-                    <Star size={14} /> Shortlist
+                    <Star size={14} /> {isApplicantShortlisted ? 'Undo Shortlist' : 'Shortlist'}
                   </button>
                   <button
                     type="button"
