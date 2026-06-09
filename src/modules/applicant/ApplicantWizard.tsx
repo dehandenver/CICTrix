@@ -111,6 +111,7 @@ const INITIAL_FORM_DATA: ApplicantFormData = {
   education_degree: '',
   education_school: '',
   work_experience_years: '',
+  work_experience_months: '',
 };
 
 const buildApplicantItemNumber = (sequence: number): string => {
@@ -432,7 +433,12 @@ const handleNextToReview = () => {
       attachments: syncedAttachments,
       educationDegree: formData.education_degree || undefined,
       educationSchool: formData.education_school || undefined,
-      workExperienceYears: formData.work_experience_years ? parseInt(formData.work_experience_years, 10) : undefined,
+      workExperienceYears: (() => {
+        const years = parseInt(formData.work_experience_years || '0', 10) || 0;
+        const months = parseInt(formData.work_experience_months || '0', 10) || 0;
+        const total = years + months / 12;
+        return total > 0 ? Math.round(total * 100) / 100 : undefined;
+      })(),
     });
 
     return applicantData.item_number || itemNumber;
@@ -942,10 +948,18 @@ const handleNextToReview = () => {
                         <p>{[formData.education_degree, formData.education_school].filter(Boolean).join(', ') || '-'}</p>
                       </div>
                     )}
-                    {formData.work_experience_years && (
+                    {(formData.work_experience_years || formData.work_experience_months) && (
                       <div>
-                        <label>Years of Work Experience</label>
-                        <p>{formData.work_experience_years} year{formData.work_experience_years === '1' ? '' : 's'}</p>
+                        <label>Work Experience</label>
+                        <p>
+                          {formData.work_experience_years
+                            ? `${formData.work_experience_years} year${formData.work_experience_years === '1' ? '' : 's'}`
+                            : ''}
+                          {formData.work_experience_years && formData.work_experience_months ? ' ' : ''}
+                          {formData.work_experience_months
+                            ? `${formData.work_experience_months} month${formData.work_experience_months === '1' ? '' : 's'}`
+                            : ''}
+                        </p>
                       </div>
                     )}
                   </div>

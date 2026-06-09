@@ -457,6 +457,22 @@ export function InterviewerDashboard({
         </div>
       </div>
 
+      {/* Stats (moved above the search bar per onboarding spec) */}
+      <div className="stats-footer">
+        <div className="stat-box">
+          <span className="stat-label">Total Job Postings</span>
+          <span className="stat-value">{stats.totalJobs}</span>
+        </div>
+        <div className="stat-box">
+          <span className="stat-label">Total Applicants</span>
+          <span className="stat-value">{stats.totalApplicants}</span>
+        </div>
+        <div className="stat-box">
+          <span className="stat-label">Upcoming Interviews</span>
+          <span className="stat-value">{stats.upcomingInterviews}</span>
+        </div>
+      </div>
+
       {/* Search and Filter Bar */}
       <div className="search-filter-bar">
         <div className="search-wrapper">
@@ -551,22 +567,6 @@ export function InterviewerDashboard({
                 )}
               </tbody>
             </table>
-          </div>
-
-          {/* Stats Footer */}
-          <div className="stats-footer">
-            <div className="stat-box">
-              <span className="stat-label">Total Job Postings</span>
-              <span className="stat-value">{stats.totalJobs}</span>
-            </div>
-            <div className="stat-box">
-              <span className="stat-label">Total Applicants</span>
-              <span className="stat-value">{stats.totalApplicants}</span>
-            </div>
-            <div className="stat-box">
-              <span className="stat-label">Upcoming Interviews</span>
-              <span className="stat-value">{stats.upcomingInterviews}</span>
-            </div>
           </div>
 
           {/* Delete Confirmation Dialog */}

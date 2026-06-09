@@ -443,13 +443,25 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
         <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
           In Step 2, you will be asked to upload your <strong>Curriculum Vitae (CV)</strong> as supporting document for your work experience.
         </div>
-        <Input
-          label="Total Years of Work Experience"
-          type="number"
-          placeholder="e.g. 5"
-          value={formData.work_experience_years}
-          onChange={(e) => onChange('work_experience_years', e.target.value)}
-        />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Input
+            label="Years of Work Experience"
+            type="number"
+            min={0}
+            placeholder="e.g. 5"
+            value={formData.work_experience_years}
+            onChange={(e) => onChange('work_experience_years', e.target.value)}
+          />
+          <Input
+            label="Additional Months"
+            type="number"
+            min={0}
+            max={11}
+            placeholder="e.g. 6"
+            value={formData.work_experience_months}
+            onChange={(e) => onChange('work_experience_months', e.target.value)}
+          />
+        </div>
       </fieldset>
     </Card>
   );

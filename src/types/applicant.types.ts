@@ -19,6 +19,7 @@ export interface ApplicantFormData {
   education_degree: string;
   education_school: string;
   work_experience_years: string;
+  work_experience_months: string;
 }
 
 export interface ValidationErrors {
