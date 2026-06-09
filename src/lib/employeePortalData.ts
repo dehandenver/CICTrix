@@ -8,6 +8,10 @@ export interface EmployeePortalAccount {
   employee: Employee;
   createdAt: string;
   updatedAt: string;
+  // True for accounts created via the hire flow — employee must set their own
+  // password before accessing any module. Cleared after the first successful
+  // password change.
+  mustChangePassword?: boolean;
 }
 
 const EMPLOYEE_PORTAL_ACCOUNTS_KEY = 'cictrix_employee_portal_accounts';
@@ -309,11 +313,23 @@ export const changeEmployeePortalPassword = (
   accounts[index] = {
     ...accounts[index],
     password: newPassword,
+    mustChangePassword: false,
     updatedAt: nowIso,
   };
 
   saveEmployeePortalAccounts(accounts);
   return { ok: true };
+};
+
+/**
+ * Check whether a portal account still requires a first-login password reset.
+ * Used by the route guard to redirect to /employee/set-password.
+ */
+export const portalAccountRequiresPasswordChange = (username: string): boolean => {
+  const usernameKey = normalizeUsername(username);
+  const accounts = getEmployeePortalAccounts();
+  const account = accounts.find((a) => normalizeUsername(a.username) === usernameKey);
+  return Boolean(account?.mustChangePassword);
 };
 
 export const updateEmployeePortalEmployee = (employeeId: string, patch: Partial<Employee>) => {

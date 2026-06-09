@@ -25,7 +25,7 @@ import { ApplicantWizard } from './modules/applicant/ApplicantWizard';
 import { ApplicationStatusPage } from './modules/applicant/ApplicationStatusPage';
 import { LandingPage } from './components/LandingPage';
 import { AboutPage } from './components/AboutPage';
-import { EmployeeLoginPage, EmployeePage } from './modules/employee';
+import { EmployeeLoginPage, EmployeePage, SetInitialPasswordPage } from './modules/employee';
 import { ApplicantDetailsPage } from './modules/interviewer/ApplicantDetailsPage.tsx';
 import { EvaluationForm } from './modules/interviewer/EvaluationForm';
 import { InterviewerApplicantsList } from './modules/interviewer/InterviewerApplicantsList';
@@ -189,6 +189,9 @@ const EmployeeRoute = ({
 }) => {
   if (!session) {
     return <Navigate to="/employee/login" replace />;
+  }
+  if (session.mustChangePassword) {
+    return <Navigate to="/employee/set-password" replace />;
   }
   return children;
 };
@@ -420,11 +423,20 @@ function AppContent() {
       fullName: resolvedEmployee.fullName,
       loginUsername: trimmedUsername,
       supabaseId,
+      mustChangePassword: Boolean(portalAccount.mustChangePassword),
     };
 
     setCurrentEmployee(resolvedEmployee);
     setEmployeeSession(session);
     localStorage.setItem(EMPLOYEE_SESSION_KEY, JSON.stringify(session));
+    navigate(session.mustChangePassword ? '/employee/set-password' : '/employee/dashboard');
+  };
+
+  const handleInitialPasswordSet = () => {
+    if (!employeeSession) return;
+    const updated: EmployeeSession = { ...employeeSession, mustChangePassword: false };
+    setEmployeeSession(updated);
+    localStorage.setItem(EMPLOYEE_SESSION_KEY, JSON.stringify(updated));
     navigate('/employee/dashboard');
   };
 
@@ -504,6 +516,24 @@ function AppContent() {
             element={<Navigate to={employeeSession ? '/employee/dashboard' : '/employee/login'} replace />}
           />
           <Route path="/employee/login" element={<EmployeeLoginPage onLogin={handleEmployeeLogin} />} />
+          <Route
+            path="/employee/set-password"
+            element={
+              employeeSession ? (
+                employeeSession.mustChangePassword ? (
+                  <SetInitialPasswordPage
+                    username={employeeSession.loginUsername ?? employeeSession.employeeId}
+                    fullName={employeeSession.fullName}
+                    onDone={handleInitialPasswordSet}
+                  />
+                ) : (
+                  <Navigate to="/employee/dashboard" replace />
+                )
+              ) : (
+                <Navigate to="/employee/login" replace />
+              )
+            }
+          />
           <Route
             path="/employee/dashboard"
             element={

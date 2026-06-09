@@ -1011,6 +1011,7 @@ export const QualifiedApplicantsPage = () => {
             id: `portal-${employeeId}`,
             username: employeeId,
             password: tempPassword,
+            mustChangePassword: true,
             employee: {
               employeeId,
               fullName,

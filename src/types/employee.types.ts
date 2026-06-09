@@ -62,6 +62,9 @@ export interface EmployeeSession {
   email: string;
   fullName: string;
   loginUsername?: string; // For mock demo lookups (e.g., 'employee01')
+  // True when the account still has the temp password from onboarding and the
+  // employee must set their own password before accessing the dashboard.
+  mustChangePassword?: boolean;
 }
 
 export interface AuthError {
