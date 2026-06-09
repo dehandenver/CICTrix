@@ -20,6 +20,8 @@ interface JobPosting {
   status: string;
   created_at: string;
   applicant_count: number;
+  evaluated_count?: number;
+  is_fully_evaluated?: boolean;
 }
 
 interface Applicant {
@@ -88,7 +90,11 @@ const fetchEvaluationsFromClient = async (client: any): Promise<any[]> => {
 
 const normalizeText = (value: string) => value.trim().toLowerCase();
 
-const buildJobsFromPostings = (jobRows: RecruitmentJobPosting[], allApplicants: any[]) => {
+const buildJobsFromPostings = (
+  jobRows: RecruitmentJobPosting[],
+  allApplicants: any[],
+  allEvaluations: any[] = [],
+) => {
   // Dedup defensively: same posting may exist twice in Supabase (e.g. created via
   // both job_postings and jobs tables, or a duplicate row was inserted). Keep the
   // first occurrence by jobCode → falls back to normalized title when jobCode is
@@ -120,11 +126,30 @@ const buildJobsFromPostings = (jobRows: RecruitmentJobPosting[], allApplicants: 
     applicantCountByTitle.set(key, (applicantCountByTitle.get(key) || 0) + 1);
   });
 
+  // Build a set of applicant ids that already have an evaluation so we can
+  // compute, per job, how many of its applicants are done.
+  const evaluatedApplicantIds = new Set<string>(
+    (allEvaluations || [])
+      .map((evaluation: any) => String(evaluation?.applicant_id ?? '').trim())
+      .filter(Boolean),
+  );
+
+  const evaluatedCountByTitle = new Map<string, number>();
+  visibleApplicants.forEach((applicant) => {
+    const applicantId = String(applicant?.id ?? '').trim();
+    if (!applicantId || !evaluatedApplicantIds.has(applicantId)) return;
+    const key = normalizeText(String(applicant?.position || ''));
+    if (!key) return;
+    evaluatedCountByTitle.set(key, (evaluatedCountByTitle.get(key) || 0) + 1);
+  });
+
   const jobs = activeJobs
     .map((job, index) => {
       const normalizedTitle = normalizeText(String(job?.title || ''));
       const office = String(job?.department || '').trim() || POSITION_TO_DEPARTMENT_MAP[job.title] || 'N/A';
       const numericId = Number(job.id);
+      const applicantCount = applicantCountByTitle.get(normalizedTitle) || 0;
+      const evaluatedCount = evaluatedCountByTitle.get(normalizedTitle) || 0;
 
       return {
         id: Number.isFinite(numericId) ? numericId : index + 1,
@@ -134,7 +159,9 @@ const buildJobsFromPostings = (jobRows: RecruitmentJobPosting[], allApplicants: 
         office,
         status: 'Open',
         created_at: job.postedDate || new Date().toISOString(),
-        applicant_count: applicantCountByTitle.get(normalizedTitle) || 0,
+        applicant_count: applicantCount,
+        evaluated_count: evaluatedCount,
+        is_fully_evaluated: applicantCount > 0 && evaluatedCount >= applicantCount,
       };
     })
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -253,7 +280,7 @@ export function InterviewerDashboard({
       allApplicants = (allApplicants || []).filter((item) => !isDemoApplicant(item));
 
       // Single source of truth: use canonical RSP/Admin postings only.
-      const { jobs: jobsFromPostings, visibleApplicants } = buildJobsFromPostings(canonicalJobRows, allApplicants);
+      const { jobs: jobsFromPostings, visibleApplicants } = buildJobsFromPostings(canonicalJobRows, allApplicants, allEvaluations);
       const visibleApplicantIds = new Set(
         visibleApplicants.map((applicant: any) => String(applicant?.id ?? '').trim()).filter(Boolean)
       );
@@ -281,13 +308,17 @@ export function InterviewerDashboard({
 
   const filteredJobs = useMemo(() => {
     return jobs.filter(job => {
-      const matchesSearch = !searchTerm || 
+      const matchesSearch = !searchTerm ||
         job.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
         job.office.toLowerCase().includes(searchTerm.toLowerCase());
-      
+
       const matchesDept = departmentFilter === 'all' || job.office === departmentFilter;
-      
-      return matchesSearch && matchesDept;
+
+      // Hide jobs once every applicant has an evaluation — the interviewer is
+      // done with this posting and shouldn't see it in their queue anymore.
+      const stillHasWork = !job.is_fully_evaluated;
+
+      return matchesSearch && matchesDept && stillHasWork;
     });
   }, [jobs, searchTerm, departmentFilter]);
 
@@ -346,7 +377,7 @@ export function InterviewerDashboard({
               className="h-9 w-auto object-contain"
               style={{ mixBlendMode: 'screen' }}
             />
-            <div className="flex flex-col leading-tight">
+            <div className="flex flex-col items-start text-left leading-tight">
               <span className="text-base font-bold tracking-tight" style={{ color: '#ffffff' }}>ABYAN HRIS</span>
               <span className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.80)' }}>
                 Interviewer Portal

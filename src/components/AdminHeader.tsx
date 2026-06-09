@@ -45,7 +45,7 @@ export const AdminHeader = ({
             className="h-10 w-auto object-contain"
             style={{ mixBlendMode: 'screen' }}
           />
-          <div className="flex flex-col leading-tight">
+          <div className="flex flex-col items-start text-left leading-tight">
             <span className="text-lg font-bold tracking-tight" style={{ color: '#ffffff' }}>
               ABYAN
             </span>

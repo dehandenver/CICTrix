@@ -6,6 +6,16 @@ import '../styles/sidebar.css';
 
 type AdminRole = 'super-admin' | 'rsp' | 'lnd' | 'pm';
 
+// Maps the short module identifier (passed in by each dashboard) to the full
+// label shown in the sidebar header so admins see the spelled-out name.
+const ADMIN_MODULE_LABELS: Record<string, string> = {
+  RSP: 'Recruitment, Selection, and Placement',
+  PM: 'Performance Management',
+  LND: 'Learning and Development',
+  'L&D': 'Learning and Development',
+  Super: 'Super Admin',
+};
+
 interface SidebarProps {
   activeModule?: string;
   userRole?: AdminRole;
@@ -159,7 +169,6 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
         location.pathname === '/admin/rsp/applicant-score' ||
         location.pathname === '/admin/rsp/applicant-ranking',
       roles: ['rsp'],
-      badge: qualifiedCount > 0 ? String(qualifiedCount) : undefined,
     },
     // ── Other sections ────────────────────────────────────────────────────
     {
@@ -226,7 +235,9 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
     <aside className="sidebar">
       <div className="sidebar-header">
         <h2>HRIS Admin</h2>
-        {activeModule && <span className="sidebar-module">{activeModule}</span>}
+        {activeModule && (
+          <span className="sidebar-module">{ADMIN_MODULE_LABELS[activeModule] ?? activeModule}</span>
+        )}
       </div>
 
       <nav className="sidebar-nav">
