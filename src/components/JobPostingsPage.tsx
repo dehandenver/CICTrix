@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { DEPARTMENTS } from '../constants/positions';
+import { DEPARTMENTS, COMPETENCIES, EDUCATION_LEVELS } from '../constants/positions';
 import { getPreferredDataSourceMode } from '../lib/dataSourceMode';
 import { mockDatabase } from '../lib/mockDatabase';
 import {
@@ -73,6 +73,16 @@ interface JobPostFormValues {
   summary: string;
   qualifications: string;
   responsibilities: string[];
+  // Spec additions on CREATE JOB → Job Information / Qualifications.
+  salaryGrade: string;
+  monthlySalary: string;
+  qualEligibility: string;
+  qualEducation: string;
+  qualDegreeCourse: string;
+  qualTraining: string;
+  qualExperienceYears: string;
+  qualExperienceMonths: string;
+  qualCompetency: string;
   education: string;
   yearsOfExperience: number;
   experienceField: string;
@@ -101,6 +111,15 @@ const buildDefaultJobForm = (): JobPostFormValues => ({
   summary: '',
   qualifications: '',
   responsibilities: [''],
+  salaryGrade: '',
+  monthlySalary: '',
+  qualEligibility: '',
+  qualEducation: '',
+  qualDegreeCourse: '',
+  qualTraining: '',
+  qualExperienceYears: '',
+  qualExperienceMonths: '',
+  qualCompetency: '',
   education: "Bachelor's Degree",
   yearsOfExperience: 1,
   experienceField: 'Public Administration',
@@ -746,6 +765,22 @@ export const JobPostingsPage = () => {
       interviewStart: job.interviewPeriod?.start.slice(0, 10) ?? '',
       interviewEnd: job.interviewPeriod?.end.slice(0, 10) ?? '',
       expectedStartDate: job.expectedStartDate?.slice(0, 10) ?? '',
+      salaryGrade: job.salaryGrade != null ? String(job.salaryGrade) : '',
+      monthlySalary: job.monthlySalary != null ? String(job.monthlySalary) : '',
+      qualEligibility: job.eligibility ?? job.qualifications.certifications[0] ?? '',
+      qualEducation: job.qualifications.education ?? '',
+      qualDegreeCourse: job.qualifications.experience.field ?? '',
+      qualTraining: job.training ?? job.qualifications.preferred ?? '',
+      qualExperienceYears: (() => {
+        const totalYears = job.qualifications.experience.years || 0;
+        return totalYears > 0 ? String(Math.floor(totalYears)) : '';
+      })(),
+      qualExperienceMonths: (() => {
+        const totalYears = job.qualifications.experience.years || 0;
+        const months = Math.round((totalYears - Math.floor(totalYears)) * 12);
+        return months > 0 ? String(months) : '';
+      })(),
+      qualCompetency: job.competency ?? job.qualifications.skills[0] ?? '',
     });
     setShowModal(true);
     requestAnimationFrame(() => {
@@ -755,9 +790,10 @@ export const JobPostingsPage = () => {
 
   const submitForm = (status: JobPosting['status']) => {
     const missing: string[] = [];
-    if (!form.title?.trim()) missing.push('Title');
-    if (!form.department?.trim()) missing.push('Department');
-    if (!form.summary?.trim()) missing.push('Description');
+    if (!form.title?.trim()) missing.push('Position Title');
+    if (!form.department?.trim()) missing.push('Place of Assignation');
+    if (!form.qualEligibility?.trim()) missing.push('Eligibility');
+    if (!form.qualEducation?.trim()) missing.push('Education');
     if (!form.applicationDeadline?.trim()) missing.push('Application Deadline');
     if (missing.length > 0) {
       setToast(`Missing required field${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}.`);
@@ -770,7 +806,10 @@ export const JobPostingsPage = () => {
       requiredDocuments.push(form.otherDocument.trim());
     }
 
-    const normalizedQualifications = form.qualifications.trim();
+    // Combine years + months into a single decimal year value.
+    const expYears = parseInt(form.qualExperienceYears || '0', 10) || 0;
+    const expMonths = parseInt(form.qualExperienceMonths || '0', 10) || 0;
+    const totalYears = expYears + expMonths / 12;
 
     const payload: JobPosting = {
       id: editingId ?? crypto.randomUUID(),
@@ -780,16 +819,24 @@ export const JobPostingsPage = () => {
       division: form.division || undefined,
       positionType: form.positionType,
       numberOfPositions: form.numberOfPositions,
-      employmentStatus: form.employmentType === 'Contractual' ? 'Contractual' : form.employmentType === 'Full-time' ? 'Permanent' : 'Temporary',
+      employmentStatus: 'Permanent',
       summary: form.summary,
       responsibilities: normalizedResponsibilities,
       qualifications: {
-        education: normalizedQualifications || form.education,
-        experience: { years: form.yearsOfExperience, field: form.experienceField },
-        skills: form.skills.split(',').map((item) => item.trim()).filter(Boolean),
-        certifications: form.certifications.split(',').map((item) => item.trim()).filter(Boolean),
-        preferred: normalizedQualifications || form.preferred || undefined,
+        education: form.qualEducation,
+        experience: {
+          years: totalYears > 0 ? Math.round(totalYears * 100) / 100 : 0,
+          field: form.qualDegreeCourse || form.experienceField,
+        },
+        skills: form.qualCompetency ? [form.qualCompetency] : [],
+        certifications: form.qualEligibility ? [form.qualEligibility] : [],
+        preferred: form.qualTraining || undefined,
       },
+      salaryGrade: form.salaryGrade ? Number(form.salaryGrade) : undefined,
+      monthlySalary: form.monthlySalary ? Number(form.monthlySalary) : undefined,
+      eligibility: form.qualEligibility || undefined,
+      training: form.qualTraining || undefined,
+      competency: form.qualCompetency || undefined,
       requiredDocuments,
       applicationDeadline: new Date(form.applicationDeadline).toISOString(),
       interviewPeriod:
@@ -1257,7 +1304,7 @@ export const JobPostingsPage = () => {
             <div ref={modalBodyRef} className="flex-1 space-y-7 overflow-y-auto px-7 py-6">
               <section>
                 <h3 className="!mb-4 flex items-center gap-2 text-4xl font-bold text-slate-900">
-                  <FileText size={28} className="text-blue-600" /> Basic Information
+                  <FileText size={28} className="text-blue-600" /> Job Information
                 </h3>
                 <div className="space-y-4">
                   <div>
@@ -1271,145 +1318,159 @@ export const JobPostingsPage = () => {
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-base font-semibold text-slate-900">Item Number <span className="text-red-500">*</span></label>
+                    <label className="mb-2 block text-base font-semibold text-slate-900">Plantilla Item Number <span className="text-red-500">*</span></label>
                     <input
                       className="w-full rounded-xl border border-slate-300 p-3 text-base"
-                      placeholder="e.g., ITEM-2024-001"
+                      placeholder="e.g., SBSEC-04"
                       value={form.jobCode}
                       onChange={(event) => setForm((prev) => ({ ...prev, jobCode: event.target.value }))}
                     />
                   </div>
 
-                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                    <div>
-                      <label className="mb-2 block text-base font-semibold text-slate-900">Office/Department <span className="text-red-500">*</span></label>
-                      <select
-                        className="w-full rounded-xl border border-slate-300 bg-white p-3 text-base"
-                        value={form.department}
-                        onChange={(event) => setForm((prev) => ({ ...prev, department: event.target.value }))}
-                      >
-                        <option value="">Select Office</option>
-                        {DEPARTMENTS.map((office) => (
-                          <option key={office} value={office}>{office}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-base font-semibold text-slate-900">Position Level</label>
-                      <select
-                        className="w-full rounded-xl border border-slate-300 bg-white p-3 text-base"
-                        value={form.positionLevel}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          const mappedType: JobPosting['positionType'] =
-                            value === 'Supervisory' || value === 'Managerial'
-                              ? 'Civil Service'
-                              : value === 'Entry Level'
-                                ? 'JO'
-                                : value === 'Mid Level'
-                                  ? 'COS'
-                                  : value === 'Senior Level'
-                                    ? 'Contractual'
-                                    : form.positionType;
-                          setForm((prev) => ({ ...prev, positionLevel: value, positionType: mappedType }));
-                        }}
-                      >
-                        <option value="">Select Level</option>
-                        <option value="Entry Level">Entry Level</option>
-                        <option value="Mid Level">Mid Level</option>
-                        <option value="Senior Level">Senior Level</option>
-                        <option value="Supervisory">Supervisory</option>
-                        <option value="Managerial">Managerial</option>
-                      </select>
-                    </div>
+                  <div>
+                    <label className="mb-2 block text-base font-semibold text-slate-900">Place of Assignation <span className="text-red-500">*</span></label>
+                    <select
+                      className="w-full rounded-xl border border-slate-300 bg-white p-3 text-base"
+                      value={form.department}
+                      onChange={(event) => setForm((prev) => ({ ...prev, department: event.target.value }))}
+                    >
+                      <option value="">Select Office</option>
+                      {DEPARTMENTS.map((office) => (
+                        <option key={office} value={office}>{office}</option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                     <div>
-                      <label className="mb-2 block text-base font-semibold text-slate-900">Number of Slots</label>
+                      <label className="mb-2 block text-base font-semibold text-slate-900">Salary Grade</label>
                       <input
                         type="number"
                         min={1}
+                        step={1}
                         className="w-full rounded-xl border border-slate-300 p-3 text-base"
-                        value={form.numberOfPositions}
-                        onChange={(event) => setForm((prev) => ({ ...prev, numberOfPositions: Number(event.target.value) || 1 }))}
+                        placeholder="e.g., 6"
+                        value={form.salaryGrade}
+                        onChange={(event) => setForm((prev) => ({ ...prev, salaryGrade: event.target.value.replace(/[^0-9]/g, '') }))}
                       />
                     </div>
                     <div>
-                      <label className="mb-2 block text-base font-semibold text-slate-900">Employment Type</label>
-                      <select
-                        className="w-full rounded-xl border border-slate-300 bg-white p-3 text-base"
-                        value={form.employmentType}
-                        onChange={(event) => setForm((prev) => ({ ...prev, employmentType: event.target.value as JobPostFormValues['employmentType'] }))}
-                      >
-                        <option value="Full-time">Full-time</option>
-                        <option value="Part-time">Part-time</option>
-                        <option value="Contractual">Contractual</option>
-                        <option value="Project-based">Project-based</option>
-                      </select>
+                      <label className="mb-2 block text-base font-semibold text-slate-900">Monthly Salary (PHP)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        className="w-full rounded-xl border border-slate-300 p-3 text-base"
+                        placeholder="e.g., 16113"
+                        value={form.monthlySalary}
+                        onChange={(event) => setForm((prev) => ({ ...prev, monthlySalary: event.target.value.replace(/[^0-9]/g, '') }))}
+                      />
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                    <div>
-                      <label className="mb-2 block text-base font-semibold text-slate-900">Application Deadline</label>
-                      <input
-                        type="date"
-                        className="w-full rounded-xl border border-slate-300 p-3 text-base"
-                        value={form.applicationDeadline}
-                        onChange={(event) => setForm((prev) => ({ ...prev, applicationDeadline: event.target.value }))}
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-base font-semibold text-slate-900">Status</label>
-                      <select
-                        className="w-full rounded-xl border border-slate-300 bg-white p-3 text-base"
-                        value={form.statusLabel}
-                        onChange={(event) => setForm((prev) => ({ ...prev, statusLabel: event.target.value as JobPostFormValues['statusLabel'] }))}
-                      >
-                        <option value="Open">Open</option>
-                        <option value="Reviewing">Reviewing</option>
-                        <option value="Closed">Closed</option>
-                      </select>
-                    </div>
+                  <div>
+                    <label className="mb-2 block text-base font-semibold text-slate-900">Application Deadline</label>
+                    <input
+                      type="date"
+                      className="w-full rounded-xl border border-slate-300 p-3 text-base"
+                      value={form.applicationDeadline}
+                      onChange={(event) => setForm((prev) => ({ ...prev, applicationDeadline: event.target.value }))}
+                    />
                   </div>
                 </div>
               </section>
 
               <section>
                 <h3 className="!mb-4 flex items-center gap-2 text-4xl font-bold text-slate-900">
-                  <FileText size={28} className="text-blue-600" /> Job Description
+                  <FileText size={28} className="text-blue-600" /> Qualifications
                 </h3>
                 <div className="space-y-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-rose-600">Required</p>
+
                   <div>
-                    <label className="mb-2 block text-base font-semibold text-slate-900">Description</label>
-                    <textarea
-                      rows={4}
+                    <label className="mb-2 block text-base font-semibold text-slate-900">Eligibility <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
                       className="w-full rounded-xl border border-slate-300 p-3 text-base"
-                      placeholder="Provide a brief overview of the position..."
-                      value={form.summary}
-                      onChange={(event) => setForm((prev) => ({ ...prev, summary: event.target.value }))}
+                      placeholder="e.g., Career Service (SubProfessional) 1st level Eligibility"
+                      value={form.qualEligibility}
+                      onChange={(event) => setForm((prev) => ({ ...prev, qualEligibility: event.target.value }))}
                     />
                   </div>
+
                   <div>
-                    <label className="mb-2 block text-base font-semibold text-slate-900">Key Responsibilities</label>
-                    <textarea
-                      rows={4}
+                    <label className="mb-2 block text-base font-semibold text-slate-900">Education <span className="text-red-500">*</span></label>
+                    <select
+                      className="w-full rounded-xl border border-slate-300 bg-white p-3 text-base"
+                      value={form.qualEducation}
+                      onChange={(event) => setForm((prev) => ({ ...prev, qualEducation: event.target.value }))}
+                    >
+                      <option value="">Select Education Level</option>
+                      {EDUCATION_LEVELS.map((level) => (
+                        <option key={level} value={level}>{level}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <p className="pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Optional</p>
+
+                  <div>
+                    <label className="mb-2 block text-base font-semibold text-slate-900">Degree / Course</label>
+                    <input
+                      type="text"
                       className="w-full rounded-xl border border-slate-300 p-3 text-base"
-                      placeholder="List the main duties and responsibilities (one per line)..."
-                      value={form.responsibilities.join('\n')}
-                      onChange={(event) => setForm((prev) => ({ ...prev, responsibilities: event.target.value.split('\n') }))}
+                      placeholder="e.g., BS Accountancy"
+                      value={form.qualDegreeCourse}
+                      onChange={(event) => setForm((prev) => ({ ...prev, qualDegreeCourse: event.target.value }))}
                     />
                   </div>
+
                   <div>
-                    <label className="mb-2 block text-base font-semibold text-slate-900">Qualifications</label>
-                    <textarea
-                      rows={4}
+                    <label className="mb-2 block text-base font-semibold text-slate-900">Training</label>
+                    <input
+                      type="text"
                       className="w-full rounded-xl border border-slate-300 p-3 text-base"
-                      placeholder="List required qualifications, education, and experience..."
-                      value={form.qualifications}
-                      onChange={(event) => setForm((prev) => ({ ...prev, qualifications: event.target.value }))}
+                      placeholder="e.g., None Required"
+                      value={form.qualTraining}
+                      onChange={(event) => setForm((prev) => ({ ...prev, qualTraining: event.target.value }))}
                     />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-base font-semibold text-slate-900">Work Experience</label>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <input
+                        type="number"
+                        min={0}
+                        className="w-full rounded-xl border border-slate-300 p-3 text-base"
+                        placeholder="Years"
+                        value={form.qualExperienceYears}
+                        onChange={(event) => setForm((prev) => ({ ...prev, qualExperienceYears: event.target.value.replace(/[^0-9]/g, '') }))}
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        max={11}
+                        className="w-full rounded-xl border border-slate-300 p-3 text-base"
+                        placeholder="Months"
+                        value={form.qualExperienceMonths}
+                        onChange={(event) => setForm((prev) => ({ ...prev, qualExperienceMonths: event.target.value.replace(/[^0-9]/g, '') }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-base font-semibold text-slate-900">Competency</label>
+                    <select
+                      className="w-full rounded-xl border border-slate-300 bg-white p-3 text-base"
+                      value={form.qualCompetency}
+                      onChange={(event) => setForm((prev) => ({ ...prev, qualCompetency: event.target.value }))}
+                    >
+                      <option value="">Select Competency</option>
+                      {COMPETENCIES.map((competency) => (
+                        <option key={competency} value={competency}>{competency}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </section>
@@ -1425,7 +1486,7 @@ export const JobPostingsPage = () => {
               </button>
               <button
                 type="button"
-                onClick={() => submitForm(form.statusLabel === 'Open' ? 'Active' : form.statusLabel === 'Reviewing' ? 'Draft' : 'Closed')}
+                onClick={() => submitForm('Active')}
                 className="rounded-2xl bg-blue-600 px-8 py-3 text-lg font-semibold text-white"
               >
                 <Plus size={18} className="mr-2 inline" /> Create Position

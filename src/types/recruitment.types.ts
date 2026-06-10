@@ -20,6 +20,13 @@ export interface JobPosting {
     preferred?: string;
   };
   requiredDocuments: string[];
+  // CREATE JOB spec additions on Job Information.
+  salaryGrade?: number;
+  monthlySalary?: number;
+  // Optional structured qualification details (mirror Qualifications form).
+  eligibility?: string;
+  training?: string;
+  competency?: string;
   applicationDeadline: string;
   interviewPeriod?: { start: string; end: string };
   expectedStartDate?: string;
