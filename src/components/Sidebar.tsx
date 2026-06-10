@@ -172,16 +172,9 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       sublabel: 'Applications & scoring',
       isActive:
         location.pathname === '/admin/rsp/applications' ||
+        location.pathname === '/admin/rsp/qualified' ||
         location.pathname === '/admin/rsp/applicant-score' ||
         location.pathname === '/admin/rsp/applicant-ranking',
-      roles: ['rsp'],
-    },
-    {
-      path: '/admin/rsp/qualified',
-      icon: UserCheck,
-      label: 'Qualified Applicants',
-      sublabel: 'Ready for interview',
-      isActive: location.pathname === '/admin/rsp/qualified',
       roles: ['rsp'],
     },
     // ── Other sections ────────────────────────────────────────────────────

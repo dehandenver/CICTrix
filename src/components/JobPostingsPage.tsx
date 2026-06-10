@@ -32,7 +32,6 @@ import { isMockModeEnabled, supabase } from '../lib/supabase';
 import { JobPosting } from '../types/recruitment.types';
 import { RecruitmentNavigationGuide } from './RecruitmentNavigationGuide';
 import { AdminHeader } from './AdminHeader';
-import { ApplicantsTabBar } from './ApplicantsTabBar';
 import { Sidebar } from './Sidebar';
 
 const ITEMS_PER_PAGE = 10;
@@ -953,7 +952,6 @@ export const JobPostingsPage = () => {
     <div className="admin-layout">
       <Sidebar activeModule="RSP" userRole="rsp" />
       <main className="admin-content bg-slate-50 !p-0">
-        <ApplicantsTabBar />
         <div className="p-6">
         <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
           <div>
