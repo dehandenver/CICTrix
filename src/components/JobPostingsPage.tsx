@@ -1010,11 +1010,6 @@ export const JobPostingsPage = () => {
                       <p className="!mb-0 text-base font-bold text-slate-900">
                         {a.full_name || <span className="italic text-slate-400">Unnamed applicant</span>}
                       </p>
-                      {a.matched && (
-                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
-                          Matched
-                        </span>
-                      )}
                     </div>
                     <p className="!mb-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-slate-600">
                       {a.email && <span>{a.email}</span>}
@@ -1027,9 +1022,19 @@ export const JobPostingsPage = () => {
                     </p>
                   </div>
                 </div>
-                <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${statusClass(a.status)}`}>
-                  {a.status}
-                </span>
+                {(() => {
+                  // Spec: status badge on the right should only read
+                  // "New Applicant" when the applicant just applied; otherwise
+                  // omit it.
+                  const normalized = String(a.status ?? '').trim().toLowerCase();
+                  const isNew = normalized === 'new application' || normalized === 'pending' || normalized === '' || normalized === 'submitted';
+                  if (!isNew) return null;
+                  return (
+                    <span className="shrink-0 rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">
+                      New Applicant
+                    </span>
+                  );
+                })()}
               </div>
             </article>
           );
@@ -1097,9 +1102,6 @@ export const JobPostingsPage = () => {
                   <>
                     {matchedRows.length > 0 && (
                       <>
-                        <p className="!mb-0 text-xs font-semibold uppercase tracking-widest text-slate-500">
-                          Matched to this job ({matchedRows.length})
-                        </p>
                         {matchedRows.map((a, i) => renderCard(a, i))}
                       </>
                     )}

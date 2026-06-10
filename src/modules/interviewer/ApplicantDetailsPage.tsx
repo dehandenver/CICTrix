@@ -1506,7 +1506,7 @@ export function ApplicantDetailsPage() {
               </div>
 
               <div className="mt-4 space-y-3 border-t border-slate-200 pt-3 text-sm">
-                <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Application ID</p><p className="font-semibold text-slate-800">{applicant.id}</p></div>
+                <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Application ID</p><p className="font-semibold text-slate-800">{applicant.item_number || applicant.id}</p></div>
                 <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Date Applied</p><p className="font-semibold text-slate-800">{formatDate(applicant.created_at)}</p></div>
                 <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Email</p><p className="font-semibold text-slate-800">{applicant.email || '--'}</p></div>
                 <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Phone</p><p className="font-semibold text-slate-800">{applicant.contact_number || '--'}</p></div>
@@ -1534,17 +1534,45 @@ export function ApplicantDetailsPage() {
                       <div className="border-b border-slate-100 py-2.5">
                         <p className="font-semibold text-slate-500">Education</p>
                         <p className="text-sm text-slate-900">
-                          {primaryEducation
-                            ? [primaryEducation.degree, primaryEducation.school].filter(Boolean).join(', ') || '--'
-                            : '--'}
+                          {(() => {
+                            const row = applicant as any;
+                            const attainment = String(row?.education_attainment ?? '').trim();
+                            const degree = String(row?.education_degree ?? '').trim();
+                            const school = String(row?.education_school ?? '').trim();
+                            const parts = [attainment, degree, school].filter(Boolean);
+                            if (parts.length > 0) return parts.join(' · ');
+                            if (primaryEducation) {
+                              return [primaryEducation.degree, primaryEducation.school].filter(Boolean).join(', ') || '--';
+                            }
+                            return '--';
+                          })()}
                         </p>
                       </div>
                       <div className="border-b border-slate-100 py-2.5">
                         <p className="font-semibold text-slate-500">Work Experience</p>
                         <p className="text-sm text-slate-900">
-                          {primaryExperience
-                            ? `${primaryExperience.years} year${primaryExperience.years === 1 ? '' : 's'}`
-                            : '--'}
+                          {(() => {
+                            const row = applicant as any;
+                            const totalYearsRaw =
+                              row?.work_experience_years ??
+                              row?.years_of_experience ??
+                              primaryExperience?.years ??
+                              null;
+                            const monthsRaw = row?.work_experience_months;
+                            const totalYears = totalYearsRaw == null ? null : Number(totalYearsRaw);
+                            if (totalYears == null || !Number.isFinite(totalYears) || totalYears < 0) {
+                              return '--';
+                            }
+                            const wholeYears = Math.floor(totalYears);
+                            const derivedMonths = Math.round((totalYears - wholeYears) * 12);
+                            const months = monthsRaw != null && Number.isFinite(Number(monthsRaw))
+                              ? Number(monthsRaw)
+                              : derivedMonths;
+                            const segments: string[] = [];
+                            if (wholeYears > 0) segments.push(`${wholeYears} year${wholeYears === 1 ? '' : 's'}`);
+                            if (months > 0) segments.push(`${months} month${months === 1 ? '' : 's'}`);
+                            return segments.length > 0 ? segments.join(' ') : '0 months';
+                          })()}
                         </p>
                         {(() => {
                           const cv = attachments.find(a =>
@@ -1558,7 +1586,9 @@ export function ApplicantDetailsPage() {
                             >
                               View Curriculum Vitae ↗
                             </button>
-                          ) : null;
+                          ) : (
+                            <p className="mt-0.5 text-xs text-slate-400">No CV attached</p>
+                          );
                         })()}
                       </div>
                       <div className="py-2.5 md:col-span-2">
