@@ -556,7 +556,9 @@ export function InterviewerDashboard({
                         </div>
                       </td>
                       <td>
-                        <span className="applicant-count">{job.applicant_count}</span>
+                        <span className="applicant-count">
+                          {Math.max(0, job.applicant_count - (job.evaluated_count ?? 0))}
+                        </span>
                       </td>
                       <td>
                         <span className="interview-date">

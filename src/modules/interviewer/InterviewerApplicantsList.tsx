@@ -402,7 +402,7 @@ export function InterviewerApplicantsList() {
   
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'reviewed' | 'shortlisted' | 'qualified'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'to-evaluate' | 'evaluated'>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'original' | 'promotional'>('all');
   const [jobDetails, setJobDetails] = useState<JobPosting | null>(null);
   const [loading, setLoading] = useState(true);
@@ -719,11 +719,9 @@ export function InterviewerApplicantsList() {
     }
 
     if (statusFilter === 'all') return true;
-    const status = applicant.status.toLowerCase();
-    if (statusFilter === 'pending') return status.includes('pending');
-    if (statusFilter === 'reviewed') return status.includes('review');
-    if (statusFilter === 'shortlisted') return status.includes('shortlist');
-    return status.includes('qualif') || status.includes('recommend') || status.includes('hired');
+    const isEvaluated = applicant.evaluation_status === 'Completed';
+    if (statusFilter === 'evaluated') return isEvaluated;
+    return !isEvaluated; // 'to-evaluate'
   });
 
   const activeAttachments = activeApplicant ? attachmentsByApplicant[activeApplicant.id] || [] : [];
@@ -802,13 +800,11 @@ export function InterviewerApplicantsList() {
           <select
             className="filter-select"
             value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value as 'all' | 'pending' | 'reviewed' | 'shortlisted' | 'qualified')}
+            onChange={(event) => setStatusFilter(event.target.value as 'all' | 'to-evaluate' | 'evaluated')}
           >
             <option value="all">All Status</option>
-            <option value="pending">Pending</option>
-            <option value="reviewed">Reviewed</option>
-            <option value="shortlisted">Shortlisted</option>
-            <option value="qualified">Qualified</option>
+            <option value="to-evaluate">To Evaluate</option>
+            <option value="evaluated">Evaluated</option>
           </select>
         </div>
 
