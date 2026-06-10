@@ -1,4 +1,4 @@
-import { BookOpen, ClipboardList, FileText, LayoutDashboard, Network, Settings, TrendingUp, UserCog, Users } from 'lucide-react';
+import { BookOpen, Briefcase, ClipboardList, FileText, LayoutDashboard, Network, Settings, TrendingUp, UserCheck, UserCog, Users } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { getApplicantsFromSupabase, getApplicants } from '../lib/recruitmentData';
@@ -156,6 +156,14 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       isActive: location.pathname === '/admin/rsp',
       roles: ['rsp'],
     },
+    {
+      path: '/admin/rsp/jobs',
+      icon: Briefcase,
+      label: 'Job Posts',
+      sublabel: 'Manage positions',
+      isActive: location.pathname === '/admin/rsp/jobs',
+      roles: ['rsp'],
+    },
     // ── Applicants (tabs live inside the Applications page) ───────────────
     {
       path: '/admin/rsp/applications',
@@ -164,10 +172,16 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       sublabel: 'Applications & scoring',
       isActive:
         location.pathname === '/admin/rsp/applications' ||
-        location.pathname === '/admin/rsp/jobs' ||
-        location.pathname === '/admin/rsp/qualified' ||
         location.pathname === '/admin/rsp/applicant-score' ||
         location.pathname === '/admin/rsp/applicant-ranking',
+      roles: ['rsp'],
+    },
+    {
+      path: '/admin/rsp/qualified',
+      icon: UserCheck,
+      label: 'Qualified Applicants',
+      sublabel: 'Ready for interview',
+      isActive: location.pathname === '/admin/rsp/qualified',
       roles: ['rsp'],
     },
     // ── Other sections ────────────────────────────────────────────────────
