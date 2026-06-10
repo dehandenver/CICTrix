@@ -22,6 +22,7 @@ interface JobPosting {
   applicant_count: number;
   evaluated_count?: number;
   is_fully_evaluated?: boolean;
+  interview_date?: string;
 }
 
 interface Applicant {
@@ -143,6 +144,20 @@ const buildJobsFromPostings = (
     evaluatedCountByTitle.set(key, (evaluatedCountByTitle.get(key) || 0) + 1);
   });
 
+  // Pick the earliest applicant.interview_date per job — that's what RSP
+  // published via the Pending Assignment workflow.
+  const interviewDateByTitle = new Map<string, string>();
+  visibleApplicants.forEach((applicant) => {
+    const raw = String(applicant?.interview_date ?? '').trim();
+    if (!raw) return;
+    const key = normalizeText(String(applicant?.position || ''));
+    if (!key) return;
+    const existing = interviewDateByTitle.get(key);
+    if (!existing || new Date(raw).getTime() < new Date(existing).getTime()) {
+      interviewDateByTitle.set(key, raw);
+    }
+  });
+
   const jobs = activeJobs
     .map((job, index) => {
       const normalizedTitle = normalizeText(String(job?.title || ''));
@@ -150,6 +165,7 @@ const buildJobsFromPostings = (
       const numericId = Number(job.id);
       const applicantCount = applicantCountByTitle.get(normalizedTitle) || 0;
       const evaluatedCount = evaluatedCountByTitle.get(normalizedTitle) || 0;
+      const interviewDate = interviewDateByTitle.get(normalizedTitle) || '';
 
       return {
         id: Number.isFinite(numericId) ? numericId : index + 1,
@@ -162,6 +178,7 @@ const buildJobsFromPostings = (
         applicant_count: applicantCount,
         evaluated_count: evaluatedCount,
         is_fully_evaluated: applicantCount > 0 && evaluatedCount >= applicantCount,
+        interview_date: interviewDate,
       };
     })
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -542,7 +559,9 @@ export function InterviewerDashboard({
                         <span className="applicant-count">{job.applicant_count}</span>
                       </td>
                       <td>
-                        <span className="interview-date">{formatDate(job.created_at)}</span>
+                        <span className="interview-date">
+                          {job.interview_date ? formatDate(job.interview_date) : '—'}
+                        </span>
                       </td>
                       <td>
                                         <button

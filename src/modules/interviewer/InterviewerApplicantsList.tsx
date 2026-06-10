@@ -835,7 +835,6 @@ export function InterviewerApplicantsList() {
                   <th>TYPE</th>
                   <th>CONTACT INFO</th>
                   <th>APPLICATION DATE</th>
-                  <th>STATUS</th>
                   <th>ACTION</th>
                 </tr>
               </thead>
@@ -875,11 +874,6 @@ export function InterviewerApplicantsList() {
                       </div>
                     </td>
                     <td>{formatDate(applicant.created_at)}</td>
-                    <td>
-                      <span className={`applicant-status-pill ${getApplicantStatusBadgeClass(applicant.status)}`}>
-                        {applicant.status}
-                      </span>
-                    </td>
                     <td>
                       {applicant.evaluation_status === 'Completed' ? (
                         <button className="action-btn evaluated" disabled>
