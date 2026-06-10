@@ -581,6 +581,9 @@ export const RaterManagementPage = () => {
       closeAssignModal();
       setToast('Rater access updated.');
       await loadRaters();
+      // Let other pages (e.g. Qualified Applicants assignment dropdown) refetch
+      // their interviewer list so a newly-added rater shows up immediately.
+      window.dispatchEvent(new CustomEvent('cictrix:raters-updated'));
     } catch {
       setRatersData(previousRows);
       setToast('Failed to save rater access.');

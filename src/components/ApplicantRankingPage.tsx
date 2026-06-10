@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, CheckCircle2, ChevronRight, Printer, Trophy, UserCheck, Users } from 'lucide-react';
+import { ArrowLeft, Building2, CheckCircle2, ChevronRight, Printer, Trophy, UserCheck, Users } from 'lucide-react';
 import { AdminHeader } from './AdminHeader';
 import { ApplicantsTabBar } from './ApplicantsTabBar';
 import { Sidebar } from './Sidebar';
@@ -38,6 +38,7 @@ const medalStyle = (rank: number) => {
 export const ApplicantRankingPage = () => {
   const [applicants, setApplicants]   = useState<Applicant[]>([]);
   const [loading, setLoading]         = useState(true);
+  const [activeDepartment, setActiveDepartment] = useState<string | null>(null);
   const [activePosition, setActivePosition] = useState<string | null>(null);
   const [selected, setSelected]       = useState<Set<string>>(new Set());
   const [hiring, setHiring]           = useState(false);
@@ -93,6 +94,27 @@ export const ApplicantRankingPage = () => {
     .sort((a, b) => a.position.localeCompare(b.position));
 
   const activeGroup = groups.find(g => g.position === activePosition) ?? null;
+
+  // Group positions by their office/department so the landing view is a
+  // folder of departments and clicking one reveals the positions inside.
+  const departmentGroups = Object.entries(
+    groups.reduce<Record<string, PositionGroup[]>>((acc, g) => {
+      const dept = g.office || 'Unassigned';
+      if (!acc[dept]) acc[dept] = [];
+      acc[dept].push(g);
+      return acc;
+    }, {})
+  )
+    .map(([office, positions]) => ({
+      office,
+      positions,
+      totalApplicants: positions.reduce((sum, p) => sum + p.members.length, 0),
+    }))
+    .sort((a, b) => a.office.localeCompare(b.office));
+
+  const positionsInActiveDept = activeDepartment
+    ? groups.filter(g => (g.office || 'Unassigned') === activeDepartment)
+    : [];
 
   const toggleSelect = (id: string) =>
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -165,14 +187,74 @@ export const ApplicantRankingPage = () => {
     </Shell>
   );
 
-  // ── VIEW 1 — Positions overview table ────────────────────────────────────────
-  if (!activePosition) return (
+  // ── VIEW 0 — Department folder grid ─────────────────────────────────────────
+  if (!activePosition && !activeDepartment) return (
     <Shell>
       <div className="p-6">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Applicant Ranking</h1>
-            <p className="text-sm text-slate-500">Select a position to view its ranked applicant list</p>
+            <p className="text-sm text-slate-500">Select a department to view the vacant positions inside it.</p>
+          </div>
+          <button
+            type="button"
+            onClick={handlePrint}
+            className="no-print inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+          >
+            <Printer className="h-4 w-4" /> Print All Rankings
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 no-print">
+          {departmentGroups.map((d) => (
+            <button
+              key={d.office}
+              type="button"
+              onClick={() => setActiveDepartment(d.office)}
+              className="group flex items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 text-left transition hover:border-blue-300 hover:bg-blue-50/30"
+            >
+              <div className="flex items-start gap-3">
+                <div className="shrink-0 rounded-xl bg-blue-100 p-2.5 text-blue-700">
+                  <Building2 size={20} />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-900 leading-tight">{d.office}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {d.positions.length} {d.positions.length === 1 ? 'position' : 'positions'} · {d.totalApplicants} applicant{d.totalApplicants === 1 ? '' : 's'}
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-slate-400 group-hover:text-blue-600" />
+            </button>
+          ))}
+          {departmentGroups.length === 0 && (
+            <div className="col-span-full rounded-2xl border border-dashed border-slate-300 bg-white py-12 text-center text-slate-400">
+              <Trophy className="mx-auto mb-2 h-9 w-9 text-slate-300" />
+              <p className="font-medium">No applicant data yet.</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </Shell>
+  );
+
+  // ── VIEW 1 — Positions overview table (within a department) ─────────────────
+  if (!activePosition) return (
+    <Shell>
+      <div className="p-6">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <button
+              type="button"
+              onClick={() => setActiveDepartment(null)}
+              className="mt-1 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" /> Departments
+            </button>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900">{activeDepartment}</h1>
+              <p className="text-sm text-slate-500">Vacant positions in this department — click a row to view its ranking.</p>
+            </div>
           </div>
           <button
             type="button"
@@ -197,7 +279,7 @@ export const ApplicantRankingPage = () => {
               </tr>
             </thead>
             <tbody>
-              {groups.map(g => (
+              {positionsInActiveDept.map(g => (
                 <tr
                   key={g.position}
                   className="border-b border-slate-100 hover:bg-blue-50/40 transition-colors last:border-0 cursor-pointer"
@@ -228,11 +310,11 @@ export const ApplicantRankingPage = () => {
                   </td>
                 </tr>
               ))}
-              {groups.length === 0 && (
+              {positionsInActiveDept.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-5 py-12 text-center text-slate-400">
                     <Trophy className="mx-auto mb-2 h-9 w-9 text-slate-300" />
-                    <p className="font-medium">No applicant data yet.</p>
+                    <p className="font-medium">No positions found in this department.</p>
                   </td>
                 </tr>
               )}

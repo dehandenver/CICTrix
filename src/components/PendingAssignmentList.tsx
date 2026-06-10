@@ -65,6 +65,16 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
 
   useEffect(() => {
     void fetchActiveInterviewers().then(setInterviewers);
+
+    // Refetch when Rater Management adds or grants access to a new rater so
+    // the Assigned Interviewer dropdown stays in sync without a page reload.
+    const onRatersUpdated = () => {
+      void fetchActiveInterviewers().then(setInterviewers);
+    };
+    window.addEventListener('cictrix:raters-updated', onRatersUpdated);
+    return () => {
+      window.removeEventListener('cictrix:raters-updated', onRatersUpdated);
+    };
   }, []);
 
   const mergeAssignment = useCallback(

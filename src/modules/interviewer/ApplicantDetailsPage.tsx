@@ -917,6 +917,23 @@ export function ApplicantDetailsPage() {
     load();
   }, [id, routeState]);
 
+  // Pre-fill the Experience scoring input with what the applicant submitted in
+  // the application portal (work_experience_years). RSP can still overwrite it
+  // — we only fill when no stored RSP value exists yet.
+  useEffect(() => {
+    if (!id || experienceYears.trim()) return;
+    const submitted =
+      (applicant as any)?.work_experience_years ??
+      (applicant as any)?.years_of_experience ??
+      (recruitmentApplicant as any)?.workExperienceYears;
+    if (submitted == null || submitted === '') return;
+    const numeric = Number(submitted);
+    if (!Number.isFinite(numeric) || numeric <= 0) return;
+    const rounded = Math.round(numeric * 100) / 100;
+    setExperienceYears(String(rounded));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applicant, recruitmentApplicant, id]);
+
   const fullName = useMemo(() => (applicant ? getFullName(applicant) : ''), [applicant]);
   const resolvedStatus = recruitmentApplicant?.status || applicant?.status;
   const badge = statusBadge(resolvedStatus);
@@ -1980,6 +1997,28 @@ export function ApplicantDetailsPage() {
                   <p className="mt-1 text-sm text-slate-400">1-5 yrs = 12 pts | 6-10 yrs = 14 pts | 11-15 yrs = 16 pts</p>
                   <p className="text-sm text-slate-400">16-20 yrs = 18 pts | 21+ yrs = 18 pts</p>
                   <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-blue-700">{modalExperienceScore}</span></p>
+                  {(() => {
+                    const experienceDocs = attachments.filter((a) => {
+                      const type = String(a.document_type ?? FILE_NAME_TO_TYPE[a.file_name] ?? '').toLowerCase();
+                      const name = String(a.file_name ?? '').toLowerCase();
+                      return (
+                        type === 'curriculum_vitae' ||
+                        name.includes('cv') ||
+                        name.includes('resume') ||
+                        name.includes('experience')
+                      );
+                    });
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => experienceDocs.forEach((doc) => void openDocument(doc.file_path))}
+                        disabled={experienceDocs.length === 0}
+                        className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:text-blue-800 disabled:cursor-not-allowed disabled:text-slate-400"
+                      >
+                        <FileText size={14} /> View Experience Documents ({experienceDocs.length} {experienceDocs.length === 1 ? 'file' : 'files'}) ↗
+                      </button>
+                    );
+                  })()}
                 </div>
                 {isPromotionalAppointment ? (
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
