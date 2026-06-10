@@ -285,7 +285,6 @@ export const LandingPage = () => {
                   <tr key={job.id} className="border-b border-slate-200 transition hover:bg-slate-50">
                     <td className="px-4 py-3">
                       <p className="font-semibold text-[#050D65]">{job.title}</p>
-                      <p className="text-xs text-slate-500 mt-1">{job.type}</p>
                     </td>
                     <td className="px-4 py-3 text-slate-600">{job.department}</td>
                     <td className="px-4 py-3 font-mono text-slate-600">{job.itemNumber}</td>

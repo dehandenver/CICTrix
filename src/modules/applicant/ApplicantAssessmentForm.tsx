@@ -419,19 +419,52 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
         <legend className="px-2 text-sm font-semibold uppercase tracking-wide text-slate-700">
           Educational Background
         </legend>
-        <div className="grid gap-md md:grid-cols-2">
-          <Input
-            label="Degree / Course"
-            placeholder="e.g. Bachelor of Science in Information Technology"
-            value={formData.education_degree}
-            onChange={(e) => onChange('education_degree', e.target.value)}
-          />
-          <Input
-            label="School / University"
-            placeholder="e.g. University of the Philippines"
-            value={formData.education_school}
-            onChange={(e) => onChange('education_school', e.target.value)}
-          />
+        <div className="space-y-3">
+          <div>
+            <label htmlFor="education-attainment" className="mb-1.5 block text-sm font-medium text-slate-700">
+              Educational Attainment
+            </label>
+            <select
+              id="education-attainment"
+              value={formData.education_attainment}
+              onChange={(e) => {
+                const next = e.target.value;
+                onChange('education_attainment', next);
+                // Clear degree/course if applicant drops below college graduate.
+                const needsDegree =
+                  next === 'College Graduate' ||
+                  next === "Master's Degree" ||
+                  next === 'Doctorate Degree';
+                if (!needsDegree && formData.education_degree) {
+                  onChange('education_degree', '');
+                }
+              }}
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">Select educational attainment...</option>
+              <option value="Can read and write">Can read and write</option>
+              <option value="Elementary Undergraduate">Elementary Undergraduate</option>
+              <option value="Elementary Graduate">Elementary Graduate</option>
+              <option value="High School Undergraduate">High School Undergraduate</option>
+              <option value="High School Graduate">High School Graduate</option>
+              <option value="Vocational / Technical Course">Vocational / Technical Course</option>
+              <option value="College Undergraduate">College Undergraduate</option>
+              <option value="College Graduate">College Graduate</option>
+              <option value="Master's Degree">Master's Degree</option>
+              <option value="Doctorate Degree">Doctorate Degree</option>
+            </select>
+          </div>
+
+          {(formData.education_attainment === 'College Graduate' ||
+            formData.education_attainment === "Master's Degree" ||
+            formData.education_attainment === 'Doctorate Degree') && (
+            <Input
+              label="Degree / Course"
+              placeholder="e.g. Bachelor of Science in Information Technology"
+              value={formData.education_degree}
+              onChange={(e) => onChange('education_degree', e.target.value)}
+            />
+          )}
         </div>
       </fieldset>
 

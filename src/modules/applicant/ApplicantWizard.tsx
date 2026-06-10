@@ -108,6 +108,7 @@ const INITIAL_FORM_DATA: ApplicantFormData = {
   current_department: '',
   current_division: '',
   employee_username: '',
+  education_attainment: '',
   education_degree: '',
   education_school: '',
   work_experience_years: '',
@@ -709,13 +710,6 @@ const handleNextToReview = () => {
           </div>
         </div>
       </header>
-
-      {entryMode === 'wizard' && (
-        <div className="application-type-banner">
-          <strong>Application Type:</strong>{' '}
-          {applicationType === 'promotion' ? 'Promotional Application' : 'Job Application'}
-        </div>
-      )}
 
       {entryMode === 'landing' ? (
         <main className="portal-landing">
