@@ -10,7 +10,6 @@ import {
 } from '../lib/recruitmentData';
 import { sendEmail } from '../lib/email';
 import { createPassword, upsertEmployeePortalAccount } from '../lib/employeePortalData';
-import { isMockModeEnabled } from '../lib/supabase';
 import { supabase } from '../lib/supabase';
 import { CheckCircle, Printer, UserCheck, Users, XCircle } from 'lucide-react';
 
@@ -68,33 +67,66 @@ export const ForHiringPage = () => {
         const local = getApplicants().filter(a => isForHiring(a.status));
 
         const supabaseRows: HiringRow[] = [];
-        if (!isMockModeEnabled) {
-          try {
-            const { data } = await (supabase as any)
-              .from('applicants')
-              .select('id,first_name,last_name,middle_name,email,position,office,status,qualification_score')
-              .order('office', { ascending: true });
+        // Always attempt Supabase regardless of mock mode — fall back silently on failure.
+        try {
+          const { data } = await (supabase as any)
+            .from('applicants')
+            .select('id,first_name,last_name,middle_name,full_name,email,position,office,department,status,qualification_score,total_score')
+            .order('office', { ascending: true });
 
-            const localIds = new Set(local.map(a => a.id));
-            (data ?? []).forEach((r: any) => {
-              if (!localIds.has(String(r.id)) && isForHiring(String(r.status ?? ''))) {
-                const fullName = [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')
-                  || r.full_name
-                  || '';
-                supabaseRows.push({
-                  id: String(r.id),
-                  fullName: fullName || (r.email ? r.email.split('@')[0] : '—'),
-                  email: r.email ?? '',
-                  position: r.position ?? '—',
-                  department: r.office ?? r.department ?? '—',
-                  score: Number(r.qualification_score ?? r.total_score ?? 0),
-                  status: r.status ?? '',
-                });
-              }
-            });
-          } catch {
-            // Supabase unavailable — local only
+          const localIds = new Set(local.map(a => a.id));
+          const newLocalEntries: any[] = [];
+
+          (data ?? []).forEach((r: any) => {
+            const status = String(r.status ?? '');
+            if (!isForHiring(status)) return;
+
+            const fullName = [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')
+              || r.full_name
+              || '';
+            const row: HiringRow = {
+              id: String(r.id),
+              fullName: fullName || (r.email ? String(r.email).split('@')[0] : '—'),
+              email: r.email ?? '',
+              position: r.position ?? '—',
+              department: r.office ?? r.department ?? '—',
+              score: Number(r.qualification_score ?? r.total_score ?? 0),
+              status,
+            };
+
+            if (!localIds.has(row.id)) {
+              supabaseRows.push(row);
+
+              // Sync this Supabase-only applicant into localStorage so future
+              // loads work even when Supabase is unavailable.
+              const nameParts = (row.fullName || '').split(/\s+/);
+              newLocalEntries.push({
+                id: row.id,
+                jobPostingId: 'supabase-sync',
+                personalInfo: {
+                  firstName: nameParts[0] || '',
+                  lastName: nameParts.slice(1).join(' ') || '',
+                  email: row.email,
+                  phone: '', address: '', dateOfBirth: '',
+                },
+                position: row.position,
+                department: row.department,
+                office: row.department,
+                qualificationScore: row.score,
+                status: row.status as any,
+                education: [], experience: [], skills: [],
+                certifications: [], documents: [],
+                applicationDate: new Date().toISOString(),
+              });
+            }
+          });
+
+          // Persist newly discovered applicants to localStorage
+          if (newLocalEntries.length > 0) {
+            saveApplicants([...getApplicants(), ...newLocalEntries]);
           }
+        } catch {
+          // Supabase unavailable — local store only
         }
 
         const localMapped: HiringRow[] = local.map(a => {

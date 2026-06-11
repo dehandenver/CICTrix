@@ -141,15 +141,46 @@ export const ApplicantRankingPage = () => {
         // Update Supabase
         try {
           await (supabase as any).from('applicants').update({ status: newStatus }).eq('id', a.id);
-        } catch { /* continue — local store update below is the fallback */ }
+        } catch { /* continue */ }
 
-        // Update local recruitment store so ForHiringPage picks it up
+        // Upsert into localStorage so ForHiringPage can find this applicant
+        // even when mock mode is on or the Supabase query in ForHiringPage
+        // is not available.
         const localApplicants = getApplicants();
-        saveApplicants(
-          localApplicants.map(la =>
+        const existsLocally = localApplicants.some(la => la.id === a.id);
+        if (existsLocally) {
+          saveApplicants(localApplicants.map(la =>
             la.id === a.id ? { ...la, status: newStatus as any } : la
-          )
-        );
+          ));
+        } else {
+          // Applicant lives only in Supabase — construct a minimal record
+          // from the data we already have and write it to localStorage.
+          const nameParts = (a.full_name || '').trim().split(/\s+/);
+          const synced: any = {
+            id: a.id,
+            jobPostingId: 'supabase-sync',
+            personalInfo: {
+              firstName: nameParts[0] || '',
+              lastName: nameParts.slice(1).join(' ') || '',
+              email: a.email,
+              phone: '',
+              address: '',
+              dateOfBirth: '',
+            },
+            position: a.position,
+            department: a.office,
+            office: a.office,
+            qualificationScore: a.total_score ?? 0,
+            status: newStatus,
+            education: [],
+            experience: [],
+            skills: [],
+            certifications: [],
+            documents: [],
+            applicationDate: new Date().toISOString(),
+          };
+          saveApplicants([...localApplicants, synced]);
+        }
       }
 
       // Update local component state immediately
