@@ -29,6 +29,8 @@ interface CredentialResult {
   tempPassword: string;
   email: string;
   emailSent: boolean;
+  position: string;
+  department: string;
 }
 
 // 'hired' must be a separate exact match because it is a substring of
@@ -199,72 +201,95 @@ export const ForHiringPage = () => {
     const newCredentials: CredentialResult[] = [];
 
     for (const row of confirmTarget) {
+      // Step 1 — attempt to create the official employee record via the API.
+      // If the backend is unavailable we fall back to a provisional ID so that
+      // credential generation, portal account creation, and email sending can
+      // still complete in the same transaction.
+      let employeeId: string;
+      let backendSuccess = false;
       try {
         const employeeRow = await hireApplicant(row.id);
-        const employeeId = employeeRow?.employee_id ?? row.id;
-        const tempPassword = createPassword();
-
-        upsertEmployeePortalAccount({
-          id: `portal-${employeeId}`,
-          username: employeeId,
-          password: tempPassword,
-          mustChangePassword: true,
-          employee: {
-            employeeId,
-            fullName: row.fullName,
-            email: row.email,
-            position: row.position,
-            department: row.department,
-            status: 'Active',
-            hireDate: new Date().toISOString().split('T')[0],
-          } as any,
-        });
-
-        // Update local recruitment store
-        const applicants = getApplicants();
-        saveApplicants(
-          applicants.map(a =>
-            a.id === row.id ? { ...a, status: 'Hired' as any } : a
-          )
-        );
-
-        hiredIds.push(row.id);
-
-        let emailSent = false;
-        const recipient = row.email.trim();
-        if (recipient) {
-          try {
-            await sendEmail({
-              to: recipient,
-              subject: 'Your CICTrix HRIS account is ready',
-              body:
-                `Hello ${row.fullName},\n\n` +
-                `Your employee account has been created.\n\n` +
-                `Position: ${row.position}\n` +
-                `Department: ${row.department}\n\n` +
-                `Employee ID: ${employeeId}\n` +
-                `Temporary password: ${tempPassword}\n\n` +
-                `Log in to the employee portal and you will be prompted to set a new password before accessing any modules.\n\n` +
-                `If you did not expect this email, please contact HR.\n`,
-              employeeId,
-              template: 'employee_credentials',
-            });
-            emailSent = true;
-          } catch {
-            // Email failure doesn't block onboarding; HR can use Print Credentials
-          }
-        }
-
-        newCredentials.push({
-          fullName: row.fullName,
-          employeeId,
-          tempPassword,
-          email: recipient,
-          emailSent,
-        });
+        employeeId = employeeRow?.employee_id || '';
+        backendSuccess = Boolean(employeeId);
       } catch {
-        failed.push(row.fullName);
+        employeeId = '';
       }
+
+      // Fallback: generate a provisional Employee ID if the backend did not
+      // return one. Format: EMP-YYYY-NNNN (last 4 digits of timestamp).
+      if (!employeeId) {
+        const year = new Date().getFullYear();
+        const seq = String(Date.now()).slice(-4);
+        employeeId = `EMP-${year}-${seq}`;
+      }
+
+      // Step 2 — generate credentials and provision the portal account.
+      const tempPassword = createPassword();
+
+      upsertEmployeePortalAccount({
+        id: `portal-${employeeId}`,
+        username: employeeId,
+        password: tempPassword,
+        mustChangePassword: true,
+        employee: {
+          employeeId,
+          fullName: row.fullName,
+          email: row.email,
+          position: row.position,
+          department: row.department,
+          status: 'Active',
+          hireDate: new Date().toISOString().split('T')[0],
+        } as any,
+      });
+
+      // Step 3 — update local recruitment store status to Hired.
+      const applicants = getApplicants();
+      saveApplicants(
+        applicants.map(a =>
+          a.id === row.id ? { ...a, status: 'Hired' as any } : a
+        )
+      );
+
+      hiredIds.push(row.id);
+
+      // Step 4 — send credentials email. Non-blocking: failure here does not
+      // abort onboarding; HR can always use Print Credentials instead.
+      let emailSent = false;
+      const recipient = row.email.trim();
+      if (recipient) {
+        try {
+          await sendEmail({
+            to: recipient,
+            subject: 'Your ABYAN HRIS account is ready',
+            body:
+              `Hello ${row.fullName},\n\n` +
+              `Your employee account has been created in the ABYAN HRIS.\n\n` +
+              `Position : ${row.position}\n` +
+              `Department: ${row.department}\n\n` +
+              `Employee ID      : ${employeeId}\n` +
+              `Temporary password: ${tempPassword}\n\n` +
+              `Please log in to the Employee Portal and change your password before accessing any module.\n` +
+              (backendSuccess ? '' : `\nNote: Your employee record is being finalised. Please contact HR if you experience any access issues.\n`) +
+              `\nIf you did not expect this email, please contact HR immediately.\n`,
+            employeeId,
+            template: 'employee_credentials',
+          });
+          emailSent = true;
+        } catch {
+          // Email unavailable — HR can distribute credentials via Print Credentials
+        }
+      }
+
+      // Step 5 — collect for the credentials modal.
+      newCredentials.push({
+        fullName: row.fullName,
+        employeeId,
+        tempPassword,
+        email: recipient,
+        emailSent,
+        position: row.position,
+        department: row.department,
+      });
     }
 
     setHiring(false);
@@ -289,11 +314,13 @@ export const ForHiringPage = () => {
     const dateStr = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
     const rows = credentialsResult.map(c => `
       <tr>
-        <td>${c.fullName}</td>
+        <td><strong>${c.fullName}</strong></td>
+        <td>${c.position || '&mdash;'}</td>
+        <td>${c.department || '&mdash;'}</td>
         <td class="mono">${c.employeeId}</td>
         <td class="mono">${c.tempPassword}</td>
         <td>${c.email || '&mdash;'}</td>
-        <td class="${c.emailSent ? 'sent' : 'notsent'}">${c.emailSent ? 'Sent' : 'Not sent'}</td>
+        <td class="${c.emailSent ? 'sent' : 'notsent'}">${c.emailSent ? '&#10003; Sent' : 'Not sent'}</td>
       </tr>`).join('');
 
     win.document.head.innerHTML = `
@@ -319,6 +346,8 @@ export const ForHiringPage = () => {
         <thead>
           <tr>
             <th>Full Name</th>
+            <th>Position</th>
+            <th>Department</th>
             <th>Employee ID</th>
             <th>Temporary Password</th>
             <th>Email</th>
@@ -540,7 +569,8 @@ export const ForHiringPage = () => {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200">
-                    <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Full Name</th>
+                    <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Name</th>
+                    <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position / Dept.</th>
                     <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Employee ID</th>
                     <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Temporary Password</th>
                     <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Email Status</th>
@@ -552,6 +582,10 @@ export const ForHiringPage = () => {
                       <td className="py-3 pr-4">
                         <p className="font-semibold text-slate-900">{c.fullName}</p>
                         <p className="text-xs text-slate-400">{c.email || '—'}</p>
+                      </td>
+                      <td className="py-3 pr-4">
+                        <p className="text-sm text-slate-700">{c.position || '—'}</p>
+                        <p className="text-xs text-slate-400">{c.department || '—'}</p>
                       </td>
                       <td className="py-3 pr-4">
                         <span className="font-mono font-semibold text-[#040E6B]">{c.employeeId}</span>
