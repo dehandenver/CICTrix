@@ -29,21 +29,21 @@ export const SharedFooter = React.forwardRef<HTMLElement, object>(
             {/* About column */}
             <div>
               <h4 className="mb-3 text-xs font-bold uppercase tracking-widest" style={{ color: '#ffffff' }}>About</h4>
-              <ul className="space-y-2 text-sm" style={{ color: '#ffffff' }}>
-                <li><Link to="/about" className="hover:underline transition-colors">About ABYAN</Link></li>
-                <li><Link to="/" className="hover:underline transition-colors">Home</Link></li>
-                <li><Link to="/apply" className="hover:underline transition-colors">Apply for a Job</Link></li>
-                <li><Link to="/track" className="hover:underline transition-colors">Track Application</Link></li>
+              <ul className="space-y-2 text-sm">
+                <li><Link to="/about" className="hover:underline transition-colors" style={{ color: '#ffffff' }}>About ABYAN</Link></li>
+                <li><Link to="/" className="hover:underline transition-colors" style={{ color: '#ffffff' }}>Home</Link></li>
+                <li><Link to="/apply" className="hover:underline transition-colors" style={{ color: '#ffffff' }}>Apply for a Job</Link></li>
+                <li><Link to="/track" className="hover:underline transition-colors" style={{ color: '#ffffff' }}>Track Application</Link></li>
               </ul>
             </div>
 
             {/* Portals column */}
             <div>
               <h4 className="mb-3 text-xs font-bold uppercase tracking-widest" style={{ color: '#ffffff' }}>Portals</h4>
-              <ul className="space-y-2 text-sm" style={{ color: '#ffffff' }}>
-                <li><a href="/employee/login" className="hover:underline transition-colors">Employee Portal</a></li>
-                <li><a href="/interviewer/login" className="hover:underline transition-colors">Interviewer Portal</a></li>
-                <li><a href="/admin/login" className="hover:underline transition-colors">HR Administration</a></li>
+              <ul className="space-y-2 text-sm">
+                <li><a href="/employee/login" className="hover:underline transition-colors" style={{ color: '#ffffff' }}>Employee Portal</a></li>
+                <li><a href="/interviewer/login" className="hover:underline transition-colors" style={{ color: '#ffffff' }}>Interviewer Portal</a></li>
+                <li><a href="/admin/login" className="hover:underline transition-colors" style={{ color: '#ffffff' }}>HR Administration</a></li>
               </ul>
             </div>
 
