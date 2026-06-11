@@ -274,6 +274,9 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
         </div>
       </section>
 
+      {/* Rater Management (spec: positioned above the applicants table). */}
+      <RaterManagementSubsection onAccessChange={() => void fetchActiveInterviewers().then(setInterviewers)} />
+
       {/* Applicants table */}
       {pendingApplicants.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white py-16 text-center">
@@ -349,8 +352,6 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
         </div>
       )}
 
-      {/* Rater Management subsection (spec: simplified rater list with grant/revoke access) */}
-      <RaterManagementSubsection onAccessChange={() => void fetchActiveInterviewers().then(setInterviewers)} />
     </div>
   );
 };
