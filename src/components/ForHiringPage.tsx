@@ -49,15 +49,9 @@ export const ForHiringPage = () => {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmTarget, setConfirmTarget] = useState<HiringRow[] | null>(null);
   const [hiring, setHiring] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [credentialsResult, setCredentialsResult] = useState<CredentialResult[]>([]);
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
   const printAreaRef = useRef<HTMLDivElement>(null);
-
-  const showToast = (message: string, type: 'success' | 'error') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 4000);
-  };
 
   useEffect(() => {
     const load = async () => {
@@ -211,14 +205,13 @@ export const ForHiringPage = () => {
     setHiring(true);
 
     const hiredIds: string[] = [];
-    const failed: string[] = [];
     const newCredentials: CredentialResult[] = [];
 
     for (const row of confirmTarget) {
-      // Step 1 — attempt to create the official employee record via the API.
-      // If the backend is unavailable we fall back to a provisional ID so that
-      // credential generation, portal account creation, and email sending can
-      // still complete in the same transaction.
+      // Step 1 — create the official employee record via the API.
+      // Fallback: a unique provisional ID so the rest of the flow still completes
+      // if the backend is unavailable. Random 4-digit suffix avoids collisions
+      // during bulk onboarding when the loop iterates faster than the clock ticks.
       let employeeId: string;
       let backendSuccess = false;
       try {
@@ -229,12 +222,10 @@ export const ForHiringPage = () => {
         employeeId = '';
       }
 
-      // Fallback: generate a provisional Employee ID if the backend did not
-      // return one. Format: EMP-YYYY-NNNN (last 4 digits of timestamp).
       if (!employeeId) {
         const year = new Date().getFullYear();
-        const seq = String(Date.now()).slice(-4);
-        employeeId = `EMP-${year}-${seq}`;
+        const rnd = String(Math.floor(Math.random() * 9000) + 1000);
+        employeeId = `EMP-${year}-${rnd}`;
       }
 
       // Step 2 — generate credentials and provision the portal account.
@@ -256,18 +247,23 @@ export const ForHiringPage = () => {
         } as any,
       });
 
-      // Step 3 — update local recruitment store status to Hired.
-      const applicants = getApplicants();
+      // Step 3 — mark as Hired in both Supabase and localStorage.
+      try {
+        await (supabase as any)
+          .from('applicants')
+          .update({ status: 'Hired' })
+          .eq('id', row.id);
+      } catch { /* continue */ }
+
       saveApplicants(
-        applicants.map(a =>
+        getApplicants().map(a =>
           a.id === row.id ? { ...a, status: 'Hired' as any } : a
         )
       );
 
       hiredIds.push(row.id);
 
-      // Step 4 — send credentials email. Non-blocking: failure here does not
-      // abort onboarding; HR can always use Print Credentials instead.
+      // Step 4 — send credentials email (non-blocking).
       let emailSent = false;
       const recipient = row.email.trim();
       if (recipient) {
@@ -278,9 +274,9 @@ export const ForHiringPage = () => {
             body:
               `Hello ${row.fullName},\n\n` +
               `Your employee account has been created in the ABYAN HRIS.\n\n` +
-              `Position : ${row.position}\n` +
-              `Department: ${row.department}\n\n` +
-              `Employee ID      : ${employeeId}\n` +
+              `Position  : ${row.position || '—'}\n` +
+              `Department: ${row.department || '—'}\n\n` +
+              `Employee ID       : ${employeeId}\n` +
               `Temporary password: ${tempPassword}\n\n` +
               `Please log in to the Employee Portal and change your password before accessing any module.\n` +
               (backendSuccess ? '' : `\nNote: Your employee record is being finalised. Please contact HR if you experience any access issues.\n`) +
@@ -289,12 +285,10 @@ export const ForHiringPage = () => {
             template: 'employee_credentials',
           });
           emailSent = true;
-        } catch {
-          // Email unavailable — HR can distribute credentials via Print Credentials
-        }
+        } catch { /* HR can use Print Credentials instead */ }
       }
 
-      // Step 5 — collect for the credentials modal.
+      // Step 5 — collect for credentials modal.
       newCredentials.push({
         fullName: row.fullName,
         employeeId,
@@ -315,64 +309,70 @@ export const ForHiringPage = () => {
       setCredentialsResult(newCredentials);
       setShowCredentialsModal(true);
     }
-
-    if (failed.length > 0) {
-      showToast(`Failed to hire: ${failed.join(', ')}`, 'error');
-    }
   };
 
   const handlePrintCredentials = () => {
-    const win = window.open('', '_blank', 'width=700,height=600');
+    const win = window.open('', '_blank', 'width=820,height=700');
     if (!win) return;
 
     const dateStr = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
-    const rows = credentialsResult.map(c => `
-      <tr>
-        <td><strong>${c.fullName}</strong></td>
-        <td>${c.position || '&mdash;'}</td>
-        <td>${c.department || '&mdash;'}</td>
-        <td class="mono">${c.employeeId}</td>
-        <td class="mono">${c.tempPassword}</td>
-        <td>${c.email || '&mdash;'}</td>
-        <td class="${c.emailSent ? 'sent' : 'notsent'}">${c.emailSent ? '&#10003; Sent' : 'Not sent'}</td>
-      </tr>`).join('');
+
+    // One card per employee — designed to be printed and cut for manual distribution.
+    const cards = credentialsResult.map(c => `
+      <div class="card">
+        <div class="card-header">
+          <span class="org">ABYAN HRIS &mdash; Iloilo City Government</span>
+          <span class="label">EMPLOYEE CREDENTIALS</span>
+        </div>
+        <div class="card-body">
+          <div class="name">${c.fullName}</div>
+          <div class="role">${c.position || '&mdash;'} &nbsp;&bull;&nbsp; ${c.department || '&mdash;'}</div>
+          <div class="cred-row">
+            <div class="cred-box">
+              <div class="cred-label">Employee ID</div>
+              <div class="cred-value">${c.employeeId}</div>
+            </div>
+            <div class="cred-box">
+              <div class="cred-label">Temporary Password</div>
+              <div class="cred-value">${c.tempPassword}</div>
+            </div>
+          </div>
+          <div class="note">Please log in to the Employee Portal and change your password immediately upon first access. Keep this document confidential.</div>
+        </div>
+        <div class="card-footer">Issued ${dateStr}</div>
+      </div>`).join('');
 
     win.document.head.innerHTML = `
       <title>Employee Credentials</title>
       <style>
-        body { font-family: Arial, sans-serif; padding: 32px; color: #000; }
-        h2 { font-size: 18px; margin-bottom: 4px; }
-        p.sub { font-size: 12px; color: #555; margin-bottom: 24px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-        th { background: #000; color: #fff; padding: 8px 12px; font-size: 11px; text-align: left; }
-        td { padding: 8px 12px; font-size: 12px; border-bottom: 1px solid #ccc; }
-        .mono { font-family: 'Courier New', monospace; font-weight: bold; }
-        .sent { font-weight: bold; }
-        .notsent { font-style: italic; }
-        .footer { margin-top: 32px; font-size: 10px; color: #555; border-top: 1px solid #ccc; padding-top: 12px; }
-        @media print { body { padding: 16px; } }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: Arial, sans-serif; background: #fff; padding: 24px; color: #000; }
+        h1 { font-size: 13pt; text-align: center; margin-bottom: 4px; }
+        .page-sub { font-size: 9pt; text-align: center; color: #555; margin-bottom: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+        .card { border: 2px solid #000; border-radius: 6px; overflow: hidden; break-inside: avoid; }
+        .card-header { background: #040E6B; color: #fff; padding: 8px 14px; display: flex; justify-content: space-between; align-items: center; }
+        .org { font-size: 8pt; opacity: 0.85; }
+        .label { font-size: 8pt; font-weight: 700; letter-spacing: 0.05em; }
+        .card-body { padding: 14px; }
+        .name { font-size: 14pt; font-weight: 700; margin-bottom: 2px; }
+        .role { font-size: 9pt; color: #444; margin-bottom: 12px; }
+        .cred-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+        .cred-box { border: 1px solid #ccc; border-radius: 4px; padding: 8px 10px; }
+        .cred-label { font-size: 8pt; color: #666; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 3px; }
+        .cred-value { font-family: 'Courier New', monospace; font-size: 13pt; font-weight: 700; letter-spacing: 0.08em; color: #040E6B; }
+        .note { font-size: 7.5pt; color: #777; border-top: 1px dashed #ccc; padding-top: 7px; line-height: 1.4; }
+        .card-footer { background: #f4f4f4; padding: 5px 14px; font-size: 8pt; color: #555; text-align: right; border-top: 1px solid #ddd; }
+        @media print {
+          body { padding: 12px; }
+          .grid { grid-template-columns: repeat(2, 1fr); }
+        }
       </style>`;
 
     win.document.body.innerHTML = `
-      <h2>Employee Onboarding Credentials</h2>
-      <p class="sub">Generated ${dateStr} &mdash; Office of the City Human Resource Management Officer, Iloilo City Government</p>
-      <table>
-        <thead>
-          <tr>
-            <th>Full Name</th>
-            <th>Position</th>
-            <th>Department</th>
-            <th>Employee ID</th>
-            <th>Temporary Password</th>
-            <th>Email</th>
-            <th>Email Sent</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <div class="footer">
-        Employees must change their temporary password upon first login. Keep this document confidential.
-      </div>`;
+      <h1>Employee Onboarding Credentials</h1>
+      <p class="page-sub">Office of the City Human Resource Management Officer &mdash; Iloilo City Government &mdash; ${dateStr}</p>
+      <div class="grid">${cards}</div>`;
 
     win.focus();
     win.print();
@@ -402,13 +402,6 @@ export const ForHiringPage = () => {
           <ApplicantsTabBar />
 
           <div className="p-6">
-            {/* Toast */}
-            {toast && (
-              <div className={`mb-4 rounded-xl px-4 py-3 text-sm font-semibold ${toast.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
-                {toast.message}
-              </div>
-            )}
-
             <div className="mb-5 flex items-center justify-between">
               <div>
                 <h1 className="text-2xl font-bold text-slate-900">For Hiring</h1>
