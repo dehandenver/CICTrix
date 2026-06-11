@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AdminHeader } from './AdminHeader';
 import { ApplicantsTabBar } from './ApplicantsTabBar';
 import { Sidebar } from './Sidebar';
@@ -8,9 +8,11 @@ import {
   getApplicants,
   saveApplicants,
 } from '../lib/recruitmentData';
+import { sendEmail } from '../lib/email';
+import { createPassword, upsertEmployeePortalAccount } from '../lib/employeePortalData';
 import { isMockModeEnabled } from '../lib/supabase';
 import { supabase } from '../lib/supabase';
-import { UserCheck, Users } from 'lucide-react';
+import { CheckCircle, Printer, UserCheck, Users, XCircle } from 'lucide-react';
 
 interface HiringRow {
   id: string;
@@ -20,6 +22,14 @@ interface HiringRow {
   department: string;
   score: number;
   status: string;
+}
+
+interface CredentialResult {
+  fullName: string;
+  employeeId: string;
+  tempPassword: string;
+  email: string;
+  emailSent: boolean;
 }
 
 const QUALIFY_STATUSES = ['qualified', 'recommended for hiring', 'accepted'];
@@ -36,6 +46,9 @@ export const ForHiringPage = () => {
   const [confirmTarget, setConfirmTarget] = useState<HiringRow[] | null>(null);
   const [hiring, setHiring] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [credentialsResult, setCredentialsResult] = useState<CredentialResult[]>([]);
+  const [showCredentialsModal, setShowCredentialsModal] = useState(false);
+  const printAreaRef = useRef<HTMLDivElement>(null);
 
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
@@ -49,7 +62,6 @@ export const ForHiringPage = () => {
         ensureRecruitmentSeedData();
         const local = getApplicants().filter(a => isForHiring(a.status));
 
-        // Also check Supabase for any qualified applicants not in local store
         const supabaseRows: HiringRow[] = [];
         if (!isMockModeEnabled) {
           try {
@@ -88,7 +100,6 @@ export const ForHiringPage = () => {
         }));
 
         const all = [...localMapped, ...supabaseRows];
-        // Sort by department then position
         all.sort((a, b) =>
           a.department.localeCompare(b.department) || a.position.localeCompare(b.position)
         );
@@ -135,19 +146,75 @@ export const ForHiringPage = () => {
   const handleConfirmHire = async () => {
     if (!confirmTarget) return;
     setHiring(true);
-    const succeeded: string[] = [];
+
+    const hiredIds: string[] = [];
     const failed: string[] = [];
+    const newCredentials: CredentialResult[] = [];
 
     for (const row of confirmTarget) {
       try {
-        await hireApplicant(row.id);
-        succeeded.push(row.id);
-        // Update local recruitment store status
+        const employeeRow = await hireApplicant(row.id);
+        const employeeId = employeeRow?.employee_id ?? row.id;
+        const tempPassword = createPassword();
+
+        upsertEmployeePortalAccount({
+          id: `portal-${employeeId}`,
+          username: employeeId,
+          password: tempPassword,
+          mustChangePassword: true,
+          employee: {
+            employeeId,
+            fullName: row.fullName,
+            email: row.email,
+            position: row.position,
+            department: row.department,
+            status: 'Active',
+            hireDate: new Date().toISOString().split('T')[0],
+          } as any,
+        });
+
+        // Update local recruitment store
         const applicants = getApplicants();
-        const updated = applicants.map(a =>
-          a.id === row.id ? { ...a, status: 'Hired' as any } : a
+        saveApplicants(
+          applicants.map(a =>
+            a.id === row.id ? { ...a, status: 'Hired' as any } : a
+          )
         );
-        saveApplicants(updated);
+
+        hiredIds.push(row.id);
+
+        let emailSent = false;
+        const recipient = row.email.trim();
+        if (recipient) {
+          try {
+            await sendEmail({
+              to: recipient,
+              subject: 'Your CICTrix HRIS account is ready',
+              body:
+                `Hello ${row.fullName},\n\n` +
+                `Your employee account has been created.\n\n` +
+                `Position: ${row.position}\n` +
+                `Department: ${row.department}\n\n` +
+                `Employee ID: ${employeeId}\n` +
+                `Temporary password: ${tempPassword}\n\n` +
+                `Log in to the employee portal and you will be prompted to set a new password before accessing any modules.\n\n` +
+                `If you did not expect this email, please contact HR.\n`,
+              employeeId,
+              template: 'employee_credentials',
+            });
+            emailSent = true;
+          } catch {
+            // Email failure doesn't block onboarding; HR can use Print Credentials
+          }
+        }
+
+        newCredentials.push({
+          fullName: row.fullName,
+          employeeId,
+          tempPassword,
+          email: recipient,
+          emailSent,
+        });
       } catch {
         failed.push(row.fullName);
       }
@@ -156,15 +223,77 @@ export const ForHiringPage = () => {
     setHiring(false);
     setConfirmTarget(null);
     setSelected(new Set());
+    setRows(prev => prev.filter(r => !hiredIds.includes(r.id)));
 
-    // Remove hired rows from display
-    setRows(prev => prev.filter(r => !succeeded.includes(r.id)));
+    if (newCredentials.length > 0) {
+      setCredentialsResult(newCredentials);
+      setShowCredentialsModal(true);
+    }
 
     if (failed.length > 0) {
       showToast(`Failed to hire: ${failed.join(', ')}`, 'error');
-    } else {
-      showToast(`${succeeded.length} employee record${succeeded.length > 1 ? 's' : ''} created successfully.`, 'success');
     }
+  };
+
+  const handlePrintCredentials = () => {
+    const printContent = printAreaRef.current;
+    if (!printContent) return;
+
+    const win = window.open('', '_blank', 'width=700,height=600');
+    if (!win) return;
+
+    win.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Employee Credentials</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 32px; color: #000; }
+          h2 { font-size: 18px; margin-bottom: 4px; }
+          p.sub { font-size: 12px; color: #555; margin-bottom: 24px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+          th { background: #040E6B; color: #fff; padding: 8px 12px; font-size: 11px; text-align: left; }
+          td { padding: 8px 12px; font-size: 12px; border-bottom: 1px solid #e2e8f0; }
+          .mono { font-family: 'Courier New', monospace; font-weight: bold; }
+          .sent { color: #16a34a; }
+          .notsent { color: #dc2626; }
+          .footer { margin-top: 32px; font-size: 10px; color: #888; border-top: 1px solid #e2e8f0; padding-top: 12px; }
+        </style>
+      </head>
+      <body>
+        <h2>Employee Onboarding Credentials</h2>
+        <p class="sub">Generated ${new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })} — Office of the City Human Resource Management Officer, Iloilo City Government</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Full Name</th>
+              <th>Employee ID</th>
+              <th>Temporary Password</th>
+              <th>Email</th>
+              <th>Email Sent</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${credentialsResult.map(c => `
+              <tr>
+                <td>${c.fullName}</td>
+                <td class="mono">${c.employeeId}</td>
+                <td class="mono">${c.tempPassword}</td>
+                <td>${c.email || '—'}</td>
+                <td class="${c.emailSent ? 'sent' : 'notsent'}">${c.emailSent ? 'Sent' : 'Not sent'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        <div class="footer">
+          Employees must change their temporary password upon first login. Keep this document confidential.
+        </div>
+      </body>
+      </html>
+    `);
+    win.document.close();
+    win.focus();
+    win.print();
   };
 
   if (loading) {
@@ -246,7 +375,6 @@ export const ForHiringPage = () => {
                   <tbody>
                     {Array.from(groupedByDept.entries()).map(([dept, deptRows]) => (
                       <>
-                        {/* Department group header */}
                         <tr key={`dept-${dept}`} className="bg-[#363EE8]/5 border-b border-slate-200">
                           <td colSpan={6} className="px-5 py-2 text-xs font-bold uppercase tracking-wider text-[#363EE8]">
                             {dept}
@@ -344,6 +472,94 @@ export const ForHiringPage = () => {
                 className="rounded-xl bg-[#363EE8] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
               >
                 {hiring ? 'Creating…' : 'Yes, Create Record'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Credentials Modal */}
+      {showCredentialsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-3xl rounded-2xl bg-white shadow-2xl flex flex-col max-h-[90vh]">
+
+            {/* Header */}
+            <div className="flex items-center gap-3 px-6 py-5 border-b border-slate-200">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-100">
+                <CheckCircle className="h-5 w-5 text-green-600" />
+              </div>
+              <div className="flex-1">
+                <h2 className="text-lg font-bold text-slate-900">Employee Records Created</h2>
+                <p className="text-sm text-slate-500">
+                  {credentialsResult.length} employee account{credentialsResult.length > 1 ? 's' : ''} generated. Credentials have been sent to each employee's registered email where available.
+                </p>
+              </div>
+            </div>
+
+            {/* Credentials Table */}
+            <div className="overflow-auto flex-1 px-6 py-4" ref={printAreaRef}>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Full Name</th>
+                    <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Employee ID</th>
+                    <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Temporary Password</th>
+                    <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Email Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {credentialsResult.map((c, i) => (
+                    <tr key={i} className="py-3">
+                      <td className="py-3 pr-4">
+                        <p className="font-semibold text-slate-900">{c.fullName}</p>
+                        <p className="text-xs text-slate-400">{c.email || '—'}</p>
+                      </td>
+                      <td className="py-3 pr-4">
+                        <span className="font-mono font-semibold text-[#040E6B]">{c.employeeId}</span>
+                      </td>
+                      <td className="py-3 pr-4">
+                        <span className="font-mono text-slate-800">{c.tempPassword}</span>
+                      </td>
+                      <td className="py-3">
+                        {c.email ? (
+                          c.emailSent ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-semibold text-green-700">
+                              <CheckCircle className="h-3 w-3" /> Sent
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
+                              <XCircle className="h-3 w-3" /> Not sent
+                            </span>
+                          )
+                        ) : (
+                          <span className="text-xs text-slate-400">No email</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="mt-4 text-xs text-slate-400">
+                Employees must change their temporary password upon first login. Keep this document confidential.
+              </p>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between border-t border-slate-200 px-6 py-4">
+              <button
+                type="button"
+                onClick={handlePrintCredentials}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+              >
+                <Printer className="h-4 w-4" />
+                Print Credentials
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCredentialsModal(false)}
+                className="rounded-xl bg-[#363EE8] px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition"
+              >
+                Done
               </button>
             </div>
           </div>
