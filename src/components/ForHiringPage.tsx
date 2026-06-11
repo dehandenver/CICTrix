@@ -33,10 +33,8 @@ interface CredentialResult {
   department: string;
 }
 
-// 'hired' must be a separate exact match because it is a substring of
-// 'recommended for hiring', so the includes() check alone would catch it.
-// We keep both: 'hired' for the old-flow applicants marked directly from
-// the ranking page, and 'recommended for hiring' for the new flow.
+// Match any status that indicates an applicant has passed all recruitment stages.
+// All checks run on the lowercased status so casing from different sources doesn't matter.
 const QUALIFY_STATUSES = ['qualified', 'recommended for hiring', 'accepted', 'for hiring'];
 const EXACT_QUALIFY = ['hired'];
 
@@ -68,7 +66,6 @@ export const ForHiringPage = () => {
         ensureRecruitmentSeedData();
         const local = getApplicants().filter(a => isForHiring(a.status));
 
-        const supabaseRows: HiringRow[] = [];
         // Fetch from backend API (primary — bypasses RLS, returns all statuses).
         // Fall back to direct Supabase query if the API is unreachable.
         const remoteData: any[] = [];
@@ -89,7 +86,8 @@ export const ForHiringPage = () => {
           } catch { /* local store only */ }
         }
 
-        const localIds = new Set(local.map(a => a.id));
+        // Build a map of remote qualifying rows (API/Supabase is the source of truth)
+        const remoteMap = new Map<string, HiringRow>();
         const newLocalEntries: any[] = [];
 
         remoteData.forEach((r: any) => {
@@ -102,17 +100,16 @@ export const ForHiringPage = () => {
             id: String(r.id),
             fullName: fullName || (r.email ? String(r.email).split('@')[0] : '—'),
             email: r.email ?? '',
-            position: r.position ?? '—',
-            department: r.office ?? r.department ?? '—',
+            position: r.position || '',
+            department: r.office || r.department || '',
             score: Number(r.qualification_score ?? r.total_score ?? 0),
             status,
           };
+          remoteMap.set(row.id, row);
 
-          if (!localIds.has(row.id)) {
-            supabaseRows.push(row);
-
-            // Persist into localStorage so the entry survives page reloads
-            // without needing the API to be available.
+          // Persist into localStorage so the entry survives page reloads
+          const existsLocally = local.some(a => a.id === row.id);
+          if (!existsLocally) {
             const nameParts = (row.fullName || '').split(/\s+/);
             newLocalEntries.push({
               id: row.id,
@@ -139,24 +136,33 @@ export const ForHiringPage = () => {
           saveApplicants([...getApplicants(), ...newLocalEntries]);
         }
 
-        const localMapped: HiringRow[] = local.map(a => {
+        // Merge: remote row takes priority (it has authoritative status + scores).
+        // For applicants only in localStorage (offline-created), use local data.
+        const mergedMap = new Map<string, HiringRow>();
+
+        // Add all local qualifying rows first as baseline
+        local.forEach(a => {
           const fullName = [a.personalInfo.firstName, a.personalInfo.lastName].filter(Boolean).join(' ')
             || a.personalInfo.email?.split('@')[0]
             || '—';
-          return {
+          mergedMap.set(a.id, {
             id: a.id,
             fullName,
             email: a.personalInfo.email ?? '',
-            position: (a as any).position ?? (a as any).jobPosting?.title ?? '—',
-            department: (a as any).department ?? (a as any).office ?? (a as any).jobPosting?.department ?? '—',
+            position: (a as any).position ?? (a as any).jobPosting?.title ?? '',
+            department: (a as any).department ?? (a as any).office ?? (a as any).jobPosting?.department ?? '',
             score: Number(a.qualificationScore ?? 0),
             status: a.status,
-          };
+          });
         });
 
-        const all = [...localMapped, ...supabaseRows];
+        // Remote data overwrites — Supabase is authoritative
+        remoteMap.forEach((row, id) => mergedMap.set(id, row));
+
+        const all = Array.from(mergedMap.values());
         all.sort((a, b) =>
-          a.department.localeCompare(b.department) || a.position.localeCompare(b.position)
+          (a.department || 'zzz').localeCompare(b.department || 'zzz') ||
+          (a.position || 'zzz').localeCompare(b.position || 'zzz')
         );
         setRows(all);
       } finally {
@@ -171,7 +177,7 @@ export const ForHiringPage = () => {
   const groupedByDept = useMemo(() => {
     const map = new Map<string, HiringRow[]>();
     rows.forEach(r => {
-      const dept = r.department || '—';
+      const dept = r.department || 'No Department';
       if (!map.has(dept)) map.set(dept, []);
       map.get(dept)!.push(r);
     });
@@ -473,10 +479,10 @@ export const ForHiringPage = () => {
                               <p className="text-sm font-semibold text-slate-900">{row.fullName}</p>
                               <p className="text-xs text-slate-400">{row.email}</p>
                             </td>
-                            <td className="px-5 py-4 text-sm text-slate-700">{row.position}</td>
+                            <td className="px-5 py-4 text-sm text-slate-700">{row.position || '—'}</td>
                             <td className="px-5 py-4">
                               <span className="inline-flex rounded-full bg-[#363EE8]/10 px-2.5 py-0.5 text-xs font-semibold text-[#363EE8]">
-                                {row.department}
+                                {row.department || '—'}
                               </span>
                             </td>
                             <td className="px-5 py-4 text-sm font-semibold text-slate-700">

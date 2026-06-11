@@ -152,15 +152,29 @@ export const ApplicantRankingPage = () => {
     setHiring(true);
     try {
       const toMark = applicants.filter(a => selected.has(a.id));
-      const newStatus = 'recommended for hiring';
+      // Use title-case to match what the backend stores via status_label_map
+      const newStatus = 'Recommended for Hiring';
+
+      // Get auth token once before the loop
+      let token: string | undefined;
+      try {
+        const { data: { session } } = await (supabase as any).auth.getSession();
+        token = session?.access_token;
+      } catch { /* no token */ }
 
       for (const a of toMark) {
-        // Primary: backend status endpoint ('qualified' maps to 'Recommended for Hiring')
-        let apiOk = false;
+        // Always run direct Supabase update — most reliable path when the user
+        // is authenticated via the Supabase client (bypasses backend auth).
         try {
-          const { data: { session } } = await (supabase as any).auth.getSession();
-          const token = session?.access_token;
-          const res = await fetch(`/api/applicants/${a.id}/status`, {
+          await (supabase as any)
+            .from('applicants')
+            .update({ status: newStatus })
+            .eq('id', a.id);
+        } catch { /* continue to backend attempt */ }
+
+        // Also attempt the backend API for redundancy (uses service-level Supabase).
+        try {
+          await fetch(`/api/applicants/${a.id}/status`, {
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',
@@ -168,19 +182,9 @@ export const ApplicantRankingPage = () => {
             },
             body: JSON.stringify({ applicant_id: a.id, status: 'qualified' }),
           });
-          apiOk = res.ok;
-        } catch { /* fallback below */ }
+        } catch { /* continue */ }
 
-        // Fallback: direct Supabase update
-        if (!apiOk) {
-          try {
-            await (supabase as any).from('applicants').update({ status: newStatus }).eq('id', a.id);
-          } catch { /* continue */ }
-        }
-
-        // Upsert into localStorage so ForHiringPage can find this applicant
-        // even when mock mode is on or the Supabase query in ForHiringPage
-        // is not available.
+        // Keep localStorage in sync as a local cache for offline resilience.
         const localApplicants = getApplicants();
         const existsLocally = localApplicants.some(la => la.id === a.id);
         if (existsLocally) {
@@ -188,8 +192,6 @@ export const ApplicantRankingPage = () => {
             la.id === a.id ? { ...la, status: newStatus as any } : la
           ));
         } else {
-          // Applicant lives only in Supabase — construct a minimal record
-          // from the data we already have and write it to localStorage.
           const nameParts = (a.full_name || '').trim().split(/\s+/);
           const synced: any = {
             id: a.id,
@@ -198,27 +200,22 @@ export const ApplicantRankingPage = () => {
               firstName: nameParts[0] || '',
               lastName: nameParts.slice(1).join(' ') || '',
               email: a.email,
-              phone: '',
-              address: '',
-              dateOfBirth: '',
+              phone: '', address: '', dateOfBirth: '',
             },
             position: a.position,
             department: a.office,
             office: a.office,
             qualificationScore: a.total_score ?? 0,
             status: newStatus,
-            education: [],
-            experience: [],
-            skills: [],
-            certifications: [],
-            documents: [],
+            education: [], experience: [], skills: [],
+            certifications: [], documents: [],
             applicationDate: new Date().toISOString(),
           };
           saveApplicants([...localApplicants, synced]);
         }
       }
 
-      // Update local component state immediately
+      // Reflect new status in local UI state immediately
       setApplicants(prev =>
         prev.map(a => selected.has(a.id) ? { ...a, status: newStatus } : a)
       );
