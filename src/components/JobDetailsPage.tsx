@@ -350,23 +350,25 @@ export const JobDetailsPage = () => {
           </div>
         )}
 
-        {/* CTA Button */}
-        <div className="text-center py-6">
-          <button
-            onClick={() => navigate('/apply', {
-              state: {
-                landingJob: {
-                  title,
-                  department,
-                  itemNumber: itemNo,
+        {/* CTA Button — hidden on admin routes */}
+        {!location.pathname.startsWith('/admin') && (
+          <div className="text-center py-6">
+            <button
+              onClick={() => navigate('/apply', {
+                state: {
+                  landingJob: {
+                    title,
+                    department,
+                    itemNumber: itemNo,
+                  },
                 },
-              },
-            })}
-            className="inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-bold text-lg rounded-xl hover:shadow-lg transition-shadow"
-          >
-            Apply for This Position
-          </button>
-        </div>
+              })}
+              className="inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-bold text-lg rounded-xl hover:shadow-lg transition-shadow"
+            >
+              Apply for This Position
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -4,7 +4,7 @@ import { AdminHeader } from './AdminHeader';
 import { ApplicantsTabBar } from './ApplicantsTabBar';
 import { Sidebar } from './Sidebar';
 import { supabase } from '../lib/supabase';
-import { hireApplicant } from '../lib/api/employeesApi';
+import { getApplicants, saveApplicants } from '../lib/recruitmentData';
 
 interface Applicant {
   id: string;
@@ -119,24 +119,45 @@ export const ApplicantRankingPage = () => {
   const toggleSelect = (id: string) =>
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
+  const isMarked = (status: string) => {
+    const s = status.toLowerCase();
+    return s.includes('hired') || s.includes('recommended for hiring');
+  };
+
   const selectAll = () => {
     if (!activeGroup) return;
-    const all = new Set(activeGroup.members.filter(a => !a.status.toLowerCase().includes('hired')).map(a => a.id));
+    const all = new Set(activeGroup.members.filter(a => !isMarked(a.status)).map(a => a.id));
     setSelected(all);
   };
 
-  const handleHire = async () => {
+  const handleMarkForHiring = async () => {
     if (selected.size === 0) return;
     setHiring(true);
     try {
-      const toHire = applicants.filter(a => selected.has(a.id));
-      for (const a of toHire) {
-        try { await hireApplicant(a.id); } catch {
-          await (supabase as any).from('applicants').update({ status: 'Hired' }).eq('id', a.id);
-        }
+      const toMark = applicants.filter(a => selected.has(a.id));
+      const newStatus = 'recommended for hiring';
+
+      for (const a of toMark) {
+        // Update Supabase
+        try {
+          await (supabase as any).from('applicants').update({ status: newStatus }).eq('id', a.id);
+        } catch { /* continue — local store update below is the fallback */ }
+
+        // Update local recruitment store so ForHiringPage picks it up
+        const localApplicants = getApplicants();
+        saveApplicants(
+          localApplicants.map(la =>
+            la.id === a.id ? { ...la, status: newStatus as any } : la
+          )
+        );
       }
+
+      // Update local component state immediately
+      setApplicants(prev =>
+        prev.map(a => selected.has(a.id) ? { ...a, status: newStatus } : a)
+      );
       setSelected(new Set());
-      setToast(`${toHire.length} applicant(s) marked as Hired.`);
+      setToast(`${toMark.length} applicant(s) marked for hiring.`);
       window.dispatchEvent(new Event('cictrix:applicants-updated'));
       setTimeout(() => setToast(''), 3500);
     } finally {
@@ -144,30 +165,58 @@ export const ApplicantRankingPage = () => {
     }
   };
 
-  const handlePrint = () => window.print();
+  const handlePrint = (group?: PositionGroup | null) => {
+    const printGroup = group ?? activeGroup;
+    const win = window.open('', '_blank', 'width=800,height=650');
+    if (!win) return;
+
+    const groupsForPrint = printGroup ? [printGroup] : groups;
+    const dateStr = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
+    const deptLabel = activeDepartment ? `${activeDepartment} &mdash; ` : '';
+
+    win.document.head.innerHTML = `
+      <title>Applicant Ranking Report</title>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 32px; color: #000; background: #fff; }
+        h2 { font-size: 16pt; font-weight: 700; text-align: center; margin: 0 0 2px; }
+        .sub { font-size: 9pt; text-align: center; color: #444; margin-bottom: 20px; }
+        .pos-header { font-size: 12pt; font-weight: 700; margin: 20px 0 4px; border-bottom: 2px solid #000; padding-bottom: 3px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+        th { background: #ddd; font-size: 9pt; font-weight: 700; text-align: left; padding: 6px 8px; border: 1px solid #000; }
+        td { font-size: 9pt; padding: 5px 8px; border: 1px solid #000; }
+        .center { text-align: center; }
+        .footer { margin-top: 24px; font-size: 8pt; color: #666; border-top: 1px solid #ccc; padding-top: 8px; }
+        @media print { body { padding: 16px; } }
+      </style>`;
+
+    win.document.body.innerHTML = `
+      <h2>APPLICANT RANKING REPORT</h2>
+      <p class="sub">${deptLabel}Office of the City Human Resource Management Officer, Iloilo City Government<br/>Printed: ${dateStr}</p>
+      ${groupsForPrint.map(g => `
+        <div class="pos-header">${g.position} &mdash; ${g.office} (${g.members.length} applicant${g.members.length !== 1 ? 's' : ''})</div>
+        <table>
+          <thead><tr><th>Rank</th><th>Applicant Name</th><th>Office</th><th>Type</th><th>Total Score</th><th>Status</th></tr></thead>
+          <tbody>
+            ${g.members.map((a, i) => `
+              <tr>
+                <td class="center" style="font-weight:700">${i + 1}</td>
+                <td><strong>${a.full_name}</strong><br/><span style="font-size:8pt;color:#555">${a.email}</span></td>
+                <td>${a.office || '&mdash;'}</td>
+                <td>${(a.application_type ?? '').toLowerCase().includes('promot') ? 'Promotional' : 'Original'}</td>
+                <td class="center" style="font-weight:700">${fmtScore(a.total_score)}</td>
+                <td>${a.status || 'Pending'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>`).join('')}
+      <div class="footer">Generated by ABYAN HRIS &mdash; Office of the City Human Resource Management Officer &mdash; Iloilo City Government</div>`;
+
+    win.focus();
+    win.print();
+  };
 
   // ── Shared shell ─────────────────────────────────────────────────────────────
   const Shell = ({ children }: { children: React.ReactNode }) => (
     <>
-      <style>{`
-        @media print {
-          body * { visibility: hidden; }
-          #ranking-print-area, #ranking-print-area * { visibility: visible; }
-          #ranking-print-area {
-            position: absolute; inset: 0; padding: 28px;
-            font-family: Arial, sans-serif; color: #000; background: #fff;
-          }
-          .no-print { display: none !important; }
-          .print-only { display: block !important; }
-          table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
-          th, td { border: 1px solid #000; padding: 6px 10px; font-size: 11pt; }
-          th { background: #ddd; font-weight: 700; text-align: left; }
-          .print-title   { font-size: 16pt; font-weight: 700; text-align: center; margin-bottom: 2px; }
-          .print-sub     { font-size: 10pt; text-align: center; color: #555; margin-bottom: 18px; }
-          .print-pos-hdr { font-size: 13pt; font-weight: 700; margin: 14px 0 4px; border-bottom: 2px solid #000; padding-bottom: 3px; }
-        }
-        .print-only { display: none; }
-      `}</style>
       <div className="min-h-screen bg-[#f8f9fa]">
         <AdminHeader userName="RSP Admin" divisionLabel="RSP Division" />
         <div className="admin-layout">
@@ -198,7 +247,7 @@ export const ApplicantRankingPage = () => {
           </div>
           <button
             type="button"
-            onClick={handlePrint}
+            onClick={() => handlePrint(null)}
             className="no-print inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
           >
             <Printer className="h-4 w-4" /> Print All Rankings
@@ -258,7 +307,7 @@ export const ApplicantRankingPage = () => {
           </div>
           <button
             type="button"
-            onClick={handlePrint}
+            onClick={() => handlePrint(null)}
             className="no-print inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
           >
             <Printer className="h-4 w-4" /> Print All Rankings
@@ -322,33 +371,6 @@ export const ApplicantRankingPage = () => {
           </table>
         </div>
 
-        {/* Full print layout (all positions) */}
-        <div id="ranking-print-area">
-          <div className="print-only print-title">APPLICANT RANKING REPORT</div>
-          <div className="print-only print-sub">
-            Office of the City Human Resource Management Officer — ABYAN HRIS
-            <br />Printed: {new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })}
-          </div>
-          {groups.map(g => (
-            <div key={g.position} className="print-only">
-              <div className="print-pos-hdr">{g.position} — {g.office} ({g.members.length} applicants)</div>
-              <table>
-                <thead><tr><th>Rank</th><th>Name</th><th>Type</th><th>Score</th><th>Status</th></tr></thead>
-                <tbody>
-                  {g.members.map((a, i) => (
-                    <tr key={a.id}>
-                      <td style={{ textAlign: 'center', fontWeight: 700 }}>{i + 1}</td>
-                      <td>{a.full_name}</td>
-                      <td>{(a.application_type ?? '').toLowerCase().includes('promot') ? 'Promotional' : 'Original'}</td>
-                      <td style={{ textAlign: 'center', fontWeight: 700 }}>{fmtScore(a.total_score)}</td>
-                      <td>{a.status || 'Pending'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
-        </div>
       </div>
     </Shell>
   );
@@ -376,17 +398,17 @@ export const ApplicantRankingPage = () => {
             {selected.size > 0 && (
               <button
                 type="button"
-                onClick={handleHire}
+                onClick={handleMarkForHiring}
                 disabled={hiring}
                 className="inline-flex items-center gap-2 rounded-xl bg-[#363EE8] px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
               >
                 <UserCheck className="h-4 w-4" />
-                {hiring ? 'Processing…' : `Hire Selected (${selected.size})`}
+                {hiring ? 'Processing…' : `Mark for Hiring (${selected.size})`}
               </button>
             )}
             <button
               type="button"
-              onClick={handlePrint}
+              onClick={() => handlePrint(activeGroup)}
               className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
             >
               <Printer className="h-4 w-4" /> Print
@@ -403,7 +425,7 @@ export const ApplicantRankingPage = () => {
                   <input
                     type="checkbox"
                     className="h-4 w-4 rounded border-slate-300 accent-[#363EE8]"
-                    checked={selected.size > 0 && activeGroup !== null && selected.size === activeGroup.members.filter(a => !a.status.toLowerCase().includes('hired')).length}
+                    checked={selected.size > 0 && activeGroup !== null && selected.size === activeGroup.members.filter(a => !isMarked(a.status)).length}
                     onChange={e => e.target.checked ? selectAll() : setSelected(new Set())}
                   />
                 </th>
@@ -420,17 +442,18 @@ export const ApplicantRankingPage = () => {
                 const rank     = idx + 1;
                 const medal    = medalStyle(rank);
                 const isSelected = selected.has(a.id);
-                const isHired  = a.status.toLowerCase().includes('hired');
+                const alreadyMarked = isMarked(a.status);
+                const isHired = a.status.toLowerCase().includes('hired') && !a.status.toLowerCase().includes('recommended');
                 return (
                   <tr
                     key={a.id}
-                    className={`border-b border-slate-100 last:border-0 transition-colors ${isSelected ? 'bg-blue-50' : isHired ? 'bg-emerald-50/50' : 'hover:bg-slate-50'}`}
+                    className={`border-b border-slate-100 last:border-0 transition-colors ${isSelected ? 'bg-blue-50' : alreadyMarked ? 'bg-emerald-50/50' : 'hover:bg-slate-50'}`}
                   >
                     <td className="px-4 py-3.5 text-center">
                       <input
                         type="checkbox"
                         checked={isSelected}
-                        disabled={isHired}
+                        disabled={alreadyMarked}
                         onChange={() => toggleSelect(a.id)}
                         className="h-4 w-4 rounded border-slate-300 accent-[#363EE8] disabled:cursor-not-allowed disabled:opacity-50"
                       />
@@ -458,7 +481,9 @@ export const ApplicantRankingPage = () => {
                     <td className="px-4 py-3.5 text-center">
                       {isHired
                         ? <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Hired</span>
-                        : <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">{a.status || 'Pending'}</span>
+                        : a.status.toLowerCase().includes('recommended for hiring')
+                          ? <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-700"><CheckCircle2 className="h-3 w-3" /> For Hiring</span>
+                          : <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">{a.status || 'Pending'}</span>
                       }
                     </td>
                   </tr>
@@ -468,30 +493,6 @@ export const ApplicantRankingPage = () => {
           </table>
         </div>
 
-        {/* Print layout for this position */}
-        <div id="ranking-print-area">
-          <div className="print-only print-title">APPLICANT RANKING — {activePosition}</div>
-          <div className="print-only print-sub">
-            {activeGroup?.office} · {activeGroup?.members.length} applicants<br />
-            Office of the City Human Resource Management Officer — ABYAN HRIS<br />
-            Printed: {new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })}
-          </div>
-          <table className="print-only">
-            <thead><tr><th>Rank</th><th>Applicant Name</th><th>Office</th><th>Type</th><th>Score</th><th>Status</th></tr></thead>
-            <tbody>
-              {(activeGroup?.members ?? []).map((a, i) => (
-                <tr key={a.id}>
-                  <td style={{ textAlign: 'center', fontWeight: 700 }}>{i + 1}</td>
-                  <td>{a.full_name}</td>
-                  <td>{a.office || '—'}</td>
-                  <td>{(a.application_type ?? '').toLowerCase().includes('promot') ? 'Promotional' : 'Original'}</td>
-                  <td style={{ textAlign: 'center', fontWeight: 700 }}>{fmtScore(a.total_score)}</td>
-                  <td>{a.status || 'Pending'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       </div>
 
       {toast && (

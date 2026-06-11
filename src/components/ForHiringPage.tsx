@@ -32,7 +32,7 @@ interface CredentialResult {
   emailSent: boolean;
 }
 
-const QUALIFY_STATUSES = ['qualified', 'recommended for hiring', 'accepted'];
+const QUALIFY_STATUSES = ['qualified', 'recommended for hiring', 'accepted', 'for hiring'];
 
 const isForHiring = (status: string) => {
   const s = status.toLowerCase().trim();
@@ -109,6 +109,8 @@ export const ForHiringPage = () => {
       }
     };
     void load();
+    window.addEventListener('cictrix:applicants-updated', load);
+    return () => window.removeEventListener('cictrix:applicants-updated', load);
   }, []);
 
   const groupedByDept = useMemo(() => {
@@ -236,62 +238,54 @@ export const ForHiringPage = () => {
   };
 
   const handlePrintCredentials = () => {
-    const printContent = printAreaRef.current;
-    if (!printContent) return;
-
     const win = window.open('', '_blank', 'width=700,height=600');
     if (!win) return;
 
-    win.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Employee Credentials</title>
-        <style>
-          body { font-family: Arial, sans-serif; padding: 32px; color: #000; }
-          h2 { font-size: 18px; margin-bottom: 4px; }
-          p.sub { font-size: 12px; color: #555; margin-bottom: 24px; }
-          table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-          th { background: #040E6B; color: #fff; padding: 8px 12px; font-size: 11px; text-align: left; }
-          td { padding: 8px 12px; font-size: 12px; border-bottom: 1px solid #e2e8f0; }
-          .mono { font-family: 'Courier New', monospace; font-weight: bold; }
-          .sent { color: #16a34a; }
-          .notsent { color: #dc2626; }
-          .footer { margin-top: 32px; font-size: 10px; color: #888; border-top: 1px solid #e2e8f0; padding-top: 12px; }
-        </style>
-      </head>
-      <body>
-        <h2>Employee Onboarding Credentials</h2>
-        <p class="sub">Generated ${new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })} — Office of the City Human Resource Management Officer, Iloilo City Government</p>
-        <table>
-          <thead>
-            <tr>
-              <th>Full Name</th>
-              <th>Employee ID</th>
-              <th>Temporary Password</th>
-              <th>Email</th>
-              <th>Email Sent</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${credentialsResult.map(c => `
-              <tr>
-                <td>${c.fullName}</td>
-                <td class="mono">${c.employeeId}</td>
-                <td class="mono">${c.tempPassword}</td>
-                <td>${c.email || '—'}</td>
-                <td class="${c.emailSent ? 'sent' : 'notsent'}">${c.emailSent ? 'Sent' : 'Not sent'}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-        <div class="footer">
-          Employees must change their temporary password upon first login. Keep this document confidential.
-        </div>
-      </body>
-      </html>
-    `);
-    win.document.close();
+    const dateStr = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
+    const rows = credentialsResult.map(c => `
+      <tr>
+        <td>${c.fullName}</td>
+        <td class="mono">${c.employeeId}</td>
+        <td class="mono">${c.tempPassword}</td>
+        <td>${c.email || '&mdash;'}</td>
+        <td class="${c.emailSent ? 'sent' : 'notsent'}">${c.emailSent ? 'Sent' : 'Not sent'}</td>
+      </tr>`).join('');
+
+    win.document.head.innerHTML = `
+      <title>Employee Credentials</title>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 32px; color: #000; }
+        h2 { font-size: 18px; margin-bottom: 4px; }
+        p.sub { font-size: 12px; color: #555; margin-bottom: 24px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+        th { background: #000; color: #fff; padding: 8px 12px; font-size: 11px; text-align: left; }
+        td { padding: 8px 12px; font-size: 12px; border-bottom: 1px solid #ccc; }
+        .mono { font-family: 'Courier New', monospace; font-weight: bold; }
+        .sent { font-weight: bold; }
+        .notsent { font-style: italic; }
+        .footer { margin-top: 32px; font-size: 10px; color: #555; border-top: 1px solid #ccc; padding-top: 12px; }
+        @media print { body { padding: 16px; } }
+      </style>`;
+
+    win.document.body.innerHTML = `
+      <h2>Employee Onboarding Credentials</h2>
+      <p class="sub">Generated ${dateStr} &mdash; Office of the City Human Resource Management Officer, Iloilo City Government</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Full Name</th>
+            <th>Employee ID</th>
+            <th>Temporary Password</th>
+            <th>Email</th>
+            <th>Email Sent</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="footer">
+        Employees must change their temporary password upon first login. Keep this document confidential.
+      </div>`;
+
     win.focus();
     win.print();
   };
