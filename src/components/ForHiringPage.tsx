@@ -69,66 +69,74 @@ export const ForHiringPage = () => {
         const local = getApplicants().filter(a => isForHiring(a.status));
 
         const supabaseRows: HiringRow[] = [];
-        // Always attempt Supabase regardless of mock mode — fall back silently on failure.
+        // Fetch from backend API (primary — bypasses RLS, returns all statuses).
+        // Fall back to direct Supabase query if the API is unreachable.
+        const remoteData: any[] = [];
         try {
-          const { data } = await (supabase as any)
-            .from('applicants')
-            .select('id,first_name,last_name,middle_name,full_name,email,position,office,department,status,qualification_score,total_score')
-            .order('office', { ascending: true });
-
-          const localIds = new Set(local.map(a => a.id));
-          const newLocalEntries: any[] = [];
-
-          (data ?? []).forEach((r: any) => {
-            const status = String(r.status ?? '');
-            if (!isForHiring(status)) return;
-
-            const fullName = [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')
-              || r.full_name
-              || '';
-            const row: HiringRow = {
-              id: String(r.id),
-              fullName: fullName || (r.email ? String(r.email).split('@')[0] : '—'),
-              email: r.email ?? '',
-              position: r.position ?? '—',
-              department: r.office ?? r.department ?? '—',
-              score: Number(r.qualification_score ?? r.total_score ?? 0),
-              status,
-            };
-
-            if (!localIds.has(row.id)) {
-              supabaseRows.push(row);
-
-              // Sync this Supabase-only applicant into localStorage so future
-              // loads work even when Supabase is unavailable.
-              const nameParts = (row.fullName || '').split(/\s+/);
-              newLocalEntries.push({
-                id: row.id,
-                jobPostingId: 'supabase-sync',
-                personalInfo: {
-                  firstName: nameParts[0] || '',
-                  lastName: nameParts.slice(1).join(' ') || '',
-                  email: row.email,
-                  phone: '', address: '', dateOfBirth: '',
-                },
-                position: row.position,
-                department: row.department,
-                office: row.department,
-                qualificationScore: row.score,
-                status: row.status as any,
-                education: [], experience: [], skills: [],
-                certifications: [], documents: [],
-                applicationDate: new Date().toISOString(),
-              });
-            }
-          });
-
-          // Persist newly discovered applicants to localStorage
-          if (newLocalEntries.length > 0) {
-            saveApplicants([...getApplicants(), ...newLocalEntries]);
+          const res = await fetch('/api/applicants/?skip=0&limit=5000');
+          if (res.ok) {
+            const json = await res.json();
+            if (Array.isArray(json)) remoteData.push(...json);
           }
-        } catch {
-          // Supabase unavailable — local store only
+        } catch { /* fallback */ }
+
+        if (remoteData.length === 0) {
+          try {
+            const { data } = await (supabase as any)
+              .from('applicants')
+              .select('id,first_name,last_name,middle_name,full_name,email,position,office,department,status,qualification_score,total_score');
+            if (Array.isArray(data)) remoteData.push(...data);
+          } catch { /* local store only */ }
+        }
+
+        const localIds = new Set(local.map(a => a.id));
+        const newLocalEntries: any[] = [];
+
+        remoteData.forEach((r: any) => {
+          const status = String(r.status ?? '');
+          if (!isForHiring(status)) return;
+
+          const fullName = [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')
+            || r.full_name || '';
+          const row: HiringRow = {
+            id: String(r.id),
+            fullName: fullName || (r.email ? String(r.email).split('@')[0] : '—'),
+            email: r.email ?? '',
+            position: r.position ?? '—',
+            department: r.office ?? r.department ?? '—',
+            score: Number(r.qualification_score ?? r.total_score ?? 0),
+            status,
+          };
+
+          if (!localIds.has(row.id)) {
+            supabaseRows.push(row);
+
+            // Persist into localStorage so the entry survives page reloads
+            // without needing the API to be available.
+            const nameParts = (row.fullName || '').split(/\s+/);
+            newLocalEntries.push({
+              id: row.id,
+              jobPostingId: 'supabase-sync',
+              personalInfo: {
+                firstName: nameParts[0] || '',
+                lastName: nameParts.slice(1).join(' ') || '',
+                email: row.email,
+                phone: '', address: '', dateOfBirth: '',
+              },
+              position: row.position,
+              department: row.department,
+              office: row.department,
+              qualificationScore: row.score,
+              status: row.status as any,
+              education: [], experience: [], skills: [],
+              certifications: [], documents: [],
+              applicationDate: new Date().toISOString(),
+            });
+          }
+        });
+
+        if (newLocalEntries.length > 0) {
+          saveApplicants([...getApplicants(), ...newLocalEntries]);
         }
 
         const localMapped: HiringRow[] = local.map(a => {

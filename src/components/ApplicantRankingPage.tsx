@@ -44,20 +44,37 @@ export const ApplicantRankingPage = () => {
   const [hiring, setHiring]           = useState(false);
   const [toast, setToast]             = useState('');
 
+  const mapRow = (r: any): Applicant => ({
+    id:               String(r.id ?? ''),
+    full_name:        [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')
+                        || String(r.full_name ?? '—'),
+    email:            String(r.email ?? ''),
+    position:         String(r.position ?? ''),
+    office:           String(r.office ?? ''),
+    status:           String(r.status ?? ''),
+    total_score:      r.total_score != null ? Number(r.total_score) : null,
+    application_type: r.application_type ?? null,
+  });
+
   useEffect(() => {
     const load = async () => {
       try {
-        const { data } = await (supabase as any).from('applicants').select('*');
-        const rows: Applicant[] = (data ?? []).map((r: any) => ({
-          id:               String(r.id ?? ''),
-          full_name:        [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ') || String(r.full_name ?? '—'),
-          email:            String(r.email ?? ''),
-          position:         String(r.position ?? ''),
-          office:           String(r.office ?? ''),
-          status:           String(r.status ?? ''),
-          total_score:      r.total_score != null ? Number(r.total_score) : null,
-          application_type: r.application_type ?? null,
-        }));
+        // Primary: backend API (bypasses RLS, always returns full data)
+        let rows: Applicant[] = [];
+        try {
+          const res = await fetch('/api/applicants/?skip=0&limit=5000');
+          if (res.ok) {
+            const data = await res.json();
+            rows = (Array.isArray(data) ? data : []).map(mapRow);
+          }
+        } catch { /* fall through to Supabase */ }
+
+        // Fallback: direct Supabase query
+        if (rows.length === 0) {
+          const { data } = await (supabase as any).from('applicants').select('*');
+          rows = (data ?? []).map(mapRow);
+        }
+
         setApplicants(rows);
       } catch {
         setApplicants([]);
@@ -138,10 +155,28 @@ export const ApplicantRankingPage = () => {
       const newStatus = 'recommended for hiring';
 
       for (const a of toMark) {
-        // Update Supabase
+        // Primary: backend status endpoint ('qualified' maps to 'Recommended for Hiring')
+        let apiOk = false;
         try {
-          await (supabase as any).from('applicants').update({ status: newStatus }).eq('id', a.id);
-        } catch { /* continue */ }
+          const { data: { session } } = await (supabase as any).auth.getSession();
+          const token = session?.access_token;
+          const res = await fetch(`/api/applicants/${a.id}/status`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ applicant_id: a.id, status: 'qualified' }),
+          });
+          apiOk = res.ok;
+        } catch { /* fallback below */ }
+
+        // Fallback: direct Supabase update
+        if (!apiOk) {
+          try {
+            await (supabase as any).from('applicants').update({ status: newStatus }).eq('id', a.id);
+          } catch { /* continue */ }
+        }
 
         // Upsert into localStorage so ForHiringPage can find this applicant
         // even when mock mode is on or the Supabase query in ForHiringPage
