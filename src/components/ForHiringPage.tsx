@@ -32,11 +32,16 @@ interface CredentialResult {
   emailSent: boolean;
 }
 
+// 'hired' must be a separate exact match because it is a substring of
+// 'recommended for hiring', so the includes() check alone would catch it.
+// We keep both: 'hired' for the old-flow applicants marked directly from
+// the ranking page, and 'recommended for hiring' for the new flow.
 const QUALIFY_STATUSES = ['qualified', 'recommended for hiring', 'accepted', 'for hiring'];
+const EXACT_QUALIFY = ['hired'];
 
 const isForHiring = (status: string) => {
   const s = status.toLowerCase().trim();
-  return QUALIFY_STATUSES.some(q => s.includes(q));
+  return QUALIFY_STATUSES.some(q => s.includes(q)) || EXACT_QUALIFY.includes(s);
 };
 
 export const ForHiringPage = () => {
@@ -73,13 +78,16 @@ export const ForHiringPage = () => {
             const localIds = new Set(local.map(a => a.id));
             (data ?? []).forEach((r: any) => {
               if (!localIds.has(String(r.id)) && isForHiring(String(r.status ?? ''))) {
+                const fullName = [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')
+                  || r.full_name
+                  || '';
                 supabaseRows.push({
                   id: String(r.id),
-                  fullName: [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' '),
+                  fullName: fullName || (r.email ? r.email.split('@')[0] : '—'),
                   email: r.email ?? '',
                   position: r.position ?? '—',
-                  department: r.office ?? '—',
-                  score: Number(r.qualification_score ?? 0),
+                  department: r.office ?? r.department ?? '—',
+                  score: Number(r.qualification_score ?? r.total_score ?? 0),
                   status: r.status ?? '',
                 });
               }
@@ -89,15 +97,20 @@ export const ForHiringPage = () => {
           }
         }
 
-        const localMapped: HiringRow[] = local.map(a => ({
-          id: a.id,
-          fullName: `${a.personalInfo.firstName} ${a.personalInfo.lastName}`.trim(),
-          email: a.personalInfo.email ?? '',
-          position: (a as any).position ?? '—',
-          department: (a as any).department ?? (a as any).office ?? '—',
-          score: Number(a.qualificationScore ?? 0),
-          status: a.status,
-        }));
+        const localMapped: HiringRow[] = local.map(a => {
+          const fullName = [a.personalInfo.firstName, a.personalInfo.lastName].filter(Boolean).join(' ')
+            || a.personalInfo.email?.split('@')[0]
+            || '—';
+          return {
+            id: a.id,
+            fullName,
+            email: a.personalInfo.email ?? '',
+            position: (a as any).position ?? (a as any).jobPosting?.title ?? '—',
+            department: (a as any).department ?? (a as any).office ?? (a as any).jobPosting?.department ?? '—',
+            score: Number(a.qualificationScore ?? 0),
+            status: a.status,
+          };
+        });
 
         const all = [...localMapped, ...supabaseRows];
         all.sort((a, b) =>
