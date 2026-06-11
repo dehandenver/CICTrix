@@ -4,8 +4,9 @@ from fastapi import APIRouter, HTTPException, Depends, Query, Body
 from typing import List, Optional
 from app.models.employee import EmployeeResponse, EmployeeCreate, EmployeeUpdate, EmployeeStatusUpdate
 from app.models.user import UserRole
+from app.core.security import TokenData
 from app.core.supabase_client import db
-from app.utils.dependencies import get_current_user, require_role
+from app.utils.dependencies import get_current_user, get_authenticated_user, require_role
 
 router = APIRouter(prefix="/api/employees", tags=["employees"])
 
@@ -96,7 +97,7 @@ async def update_employee_status(
 @router.post("/from-applicant/{applicant_id}", response_model=EmployeeResponse, status_code=201)
 async def hire_from_applicant(
     applicant_id: str,
-    current_user: UserRole = Depends(require_role("ADMIN", "PM", "RSP", "LND"))
+    current_user: TokenData = Depends(get_authenticated_user),
 ):
     client = db.get_service_client()
     
