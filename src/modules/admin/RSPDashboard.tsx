@@ -3058,8 +3058,8 @@ export const RSPDashboard = () => {
 
       <main className="admin-content !p-0">
         <div className="border-b border-[var(--border-color)] bg-white px-8 py-6">
-          <h1 className={`!mb-1 font-bold ${section === 'new-hired' || section === 'reports' ? '!text-xl' : '!text-2xl'}`}>{sectionTitle}</h1>
-          <p className={`!mb-0 text-[var(--text-secondary)] ${section === 'new-hired' || section === 'reports' ? '!text-sm' : '!text-base'}`}>
+          <h1 className="!mb-1 !text-2xl font-bold">{sectionTitle}</h1>
+          <p className="!mb-0 text-base text-[var(--text-secondary)]">
             {section === 'dashboard' && 'Overview of recruitment, selection and placement activities'}
             {section === 'jobs' && 'Manage and monitor all job positions and their applicants'}
             {section === 'qualified' && 'List of applicants who passed the evaluation and are eligible for further processing'}
@@ -3551,22 +3551,12 @@ export const RSPDashboard = () => {
             <>
               {accountsView === 'directory' ? (
                 <>
-                  <section className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="!mb-1 text-base text-blue-600">RSP / Employees</p>
-                      <h2 className="!mb-1 text-4xl font-bold text-[var(--text-primary)]">Employee Accounts</h2>
-                      <p className="!mb-0 text-lg text-[var(--text-secondary)]">
-                        Browse employees by position • {employeeDirectoryCards.totalEmployees} total employees
-                      </p>
-                    </div>
-                    <Button
-                      type="button"
-                      className="relative z-10 !px-6 !py-3 text-lg"
-                      onClick={openBulkRequestDialog}
-                    >
-                      <FileText size={20} /> Bulk Document Request
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm text-slate-500">{employeeDirectoryCards.totalEmployees} total employees</p>
+                    <Button type="button" onClick={openBulkRequestDialog}>
+                      <FileText size={16} /> Bulk Document Request
                     </Button>
-                  </section>
+                  </div>
 
                   <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
                     <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.3fr)_280px_280px]">
@@ -3706,17 +3696,17 @@ export const RSPDashboard = () => {
                 </>
               ) : accountsView === 'position' ? (
                 <>
-                  <section>
+                  <div>
                     <button
                       type="button"
                       onClick={() => setAccountsView('directory')}
-                      className="mb-3 inline-flex items-center gap-2 text-xl font-semibold text-blue-600"
+                      className="mb-1 inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline"
                     >
-                      <ChevronLeft size={24} /> Employees
+                      <ChevronLeft size={14} /> Employee Accounts
                     </button>
-                    <h2 className="!mb-1 text-4xl font-bold text-[var(--text-primary)]">{selectedDirectoryCard?.position ?? 'Position'}</h2>
-                    <p className="!mb-0 text-lg text-[var(--text-secondary)]">{selectedPositionEmployees.length} employee{selectedPositionEmployees.length === 1 ? '' : 's'}</p>
-                  </section>
+                    <h2 className="!mb-0.5 text-xl font-bold text-[var(--text-primary)]">{selectedDirectoryCard?.position ?? 'Position'}</h2>
+                    <p className="!mb-0 text-sm text-[var(--text-secondary)]">{selectedPositionEmployees.length} employee{selectedPositionEmployees.length === 1 ? '' : 's'}</p>
+                  </div>
 
                   <section className="overflow-hidden rounded-2xl border border-[var(--border-color)] bg-white">
                     <table className="w-full border-collapse">
@@ -3764,17 +3754,17 @@ export const RSPDashboard = () => {
                     <button
                       type="button"
                       onClick={() => setAccountsView('position')}
-                      className="mb-3 inline-flex items-center gap-2 text-xl font-semibold text-blue-600"
+                      className="mb-2 inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline"
                     >
-                      <ChevronLeft size={24} /> Back to Employees
+                      <ChevronLeft size={14} /> Back to Employee Accounts
                     </button>
 
                     <div className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
                       <div className="mb-5 flex items-start gap-5">
                         <div className="rounded-2xl bg-blue-100 p-5 text-blue-600"><User size={48} /></div>
                         <div>
-                          <h2 className="!mb-1 text-4xl font-bold text-[var(--text-primary)]">{selectedEmployeeDetails?.full_name ?? 'Employee'}</h2>
-                          <p className="!mb-3 text-xl text-[var(--text-secondary)]">{selectedEmployeeDetails?.position || '--'}</p>
+                          <h2 className="!mb-1 text-2xl font-bold text-[var(--text-primary)]">{selectedEmployeeDetails?.full_name ?? 'Employee'}</h2>
+                          <p className="!mb-3 text-base text-[var(--text-secondary)]">{selectedEmployeeDetails?.position || '--'}</p>
                           <div className="flex flex-wrap gap-2 text-base">
                             <span className="rounded-full bg-blue-100 px-3 py-1 text-blue-700">{selectedEmployeeDetails?.office || 'Unassigned Office'}</span>
                             <span className="rounded-full bg-green-100 px-3 py-1 text-green-700">
@@ -4179,24 +4169,30 @@ export const RSPDashboard = () => {
               ) : reportsView === 'documents' ? null : reportsView === 'ranking' ? (
                 <section className="space-y-4">
                   {/* ── Header bar ─────────────────────────────────────────── */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--border-color)] bg-white p-5">
-                    <div className="flex items-center gap-2 flex-wrap">
+                  <div>
+                    <div className="mb-2 flex flex-wrap items-center gap-1.5 text-sm">
+                      <button
+                        type="button"
+                        onClick={() => setReportsView('overview')}
+                        className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
+                      >
+                        <ChevronLeft size={13} /> Archives
+                      </button>
+                      <ChevronRight size={13} className="text-slate-400" />
+                      <button
+                        type="button"
+                        onClick={() => { setRankingNavDept(null); setRankingNavPos(null); }}
+                        className={`font-medium ${rankingNavDept ? 'text-blue-600 hover:underline' : 'text-slate-700'}`}
+                      >
+                        Application Ranking
+                      </button>
                       {rankingNavDept && (
-                        <button
-                          type="button"
-                          onClick={() => { setRankingNavDept(null); setRankingNavPos(null); }}
-                          className="inline-flex items-center gap-1 text-sm font-semibold text-blue-600 hover:underline"
-                        >
-                          <ChevronLeft size={15} /> Departments
-                        </button>
-                      )}
-                      {rankingNavDept && rankingNavPos && (
                         <>
-                          <ChevronRight size={14} className="text-slate-400" />
+                          <ChevronRight size={13} className="text-slate-400" />
                           <button
                             type="button"
                             onClick={() => setRankingNavPos(null)}
-                            className="text-sm font-semibold text-blue-600 hover:underline"
+                            className={`font-medium ${rankingNavPos ? 'text-blue-600 hover:underline' : 'text-slate-700'}`}
                           >
                             {rankingNavDept}
                           </button>
@@ -4204,24 +4200,14 @@ export const RSPDashboard = () => {
                       )}
                       {rankingNavPos && (
                         <>
-                          <ChevronRight size={14} className="text-slate-400" />
-                          <span className="text-sm font-semibold text-slate-700">{rankingNavPos}</span>
+                          <ChevronRight size={13} className="text-slate-400" />
+                          <span className="font-medium text-slate-700">{rankingNavPos}</span>
                         </>
                       )}
-                      {!rankingNavDept && (
-                        <div>
-                          <p className="!mb-0.5 text-sm font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Archives / Application Ranking</p>
-                          <h2 className="!mb-0 text-xl font-semibold text-[var(--text-primary)]">Application Ranking Reports</h2>
-                        </div>
-                      )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setReportsView('overview')}
-                      className="rounded-lg border border-[var(--border-color)] bg-white px-4 py-2 text-sm font-semibold text-[var(--text-primary)]"
-                    >
-                      Back to Archives
-                    </button>
+                    <h2 className="text-xl font-bold text-[var(--text-primary)]">
+                      {rankingNavPos ? rankingNavPos : rankingNavDept ? rankingNavDept : 'Application Ranking Reports'}
+                    </h2>
                   </div>
 
                   {/* ── Level 1: Department table ─────────────────────────── */}
@@ -4387,19 +4373,20 @@ export const RSPDashboard = () => {
                 </section>
               ) : (
                 <section className="space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--border-color)] bg-white p-5">
-                    <div>
-                      <p className="!mb-1 text-sm font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Reports / Assessment Forms</p>
-                      <h2 className="!mb-1 text-2xl font-semibold text-[var(--text-primary)]">Assessment Forms</h2>
-                      <p className="!mb-0 text-base text-[var(--text-secondary)]">Select a job position to view and print assessment forms.</p>
+                  <div>
+                    <div className="mb-2 flex flex-wrap items-center gap-1.5 text-sm">
+                      <button
+                        type="button"
+                        onClick={() => setReportsView('overview')}
+                        className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
+                      >
+                        <ChevronLeft size={13} /> Archives
+                      </button>
+                      <ChevronRight size={13} className="text-slate-400" />
+                      <span className="font-medium text-slate-700">Assessment Forms</span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setReportsView('overview')}
-                      className="rounded-lg border border-[var(--border-color)] bg-white px-4 py-2 text-sm font-semibold text-[var(--text-primary)]"
-                    >
-                      Back to Archives
-                    </button>
+                    <h2 className="text-xl font-bold text-[var(--text-primary)]">Assessment Forms</h2>
+                    <p className="text-sm text-[var(--text-secondary)]">Select a job position to view and print assessment forms.</p>
                   </div>
 
                   {assessmentPositionCards.length === 0 ? (
