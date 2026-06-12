@@ -1,7 +1,7 @@
 import {
-  ArrowLeft,
   Calculator,
   CheckCircle2,
+  ChevronRight,
   Download,
   ExternalLink,
   FileText,
@@ -13,8 +13,6 @@ import {
   RefreshCw,
   Save,
   Search,
-  Trophy,
-  Upload,
   Users,
   X,
 } from 'lucide-react';
@@ -48,6 +46,10 @@ export interface ApplicantRecord {
   interview_date?: string | null;
   interview_time?: string | null;
   assigned_interviewer_email?: string | null;
+  /** Educational attainment from the application form (raw string). Used to auto-fill Education score. */
+  education_level?: string | null;
+  /** Years of experience from the application form. Used to auto-fill Experience score. */
+  years_of_experience?: number | null;
 }
 
 interface ScoringCat {
@@ -102,7 +104,7 @@ const CAT_META: Record<CatKey, {
   education:   {
     roman: 'I',   label: 'Education',         maxOriginal: 20, maxPromotional: 20,
     color: 'var(--accent-blue)', bg: 'var(--score-very-good-bg)', border: 'var(--accent-blue)', badgeBg: 'var(--score-very-good-bg)', rspOwned: true,
-    guide: "Bachelor's Degree = 15 pts | Master's Degree = 18 pts | Doctorate = 20 pts",
+    guide: "Can Read/Write = 3 | Elem Undergrad = 5 | Elem Graduate = 7 | HS Undergrad = 9 | HS Graduate = 11 | Vocational = 13 | College Undergrad = 14 | College Graduate = 15 | Master's = 18 | Doctorate = 20",
   },
   experience:  {
     roman: 'II',  label: 'Experience',         maxOriginal: 25, maxPromotional: 25,
@@ -159,6 +161,35 @@ const DOC_TYPE_MAP: Record<CatKey, string[]> = {
 
 // ─── Storage ──────────────────────────────────────────────────────────────────
 
+// ─── Education / Experience auto-fill helpers ─────────────────────────────────
+
+const educationLevelToPoints = (level: string | null | undefined): number | null => {
+  if (!level) return null;
+  const l = level.toLowerCase().trim();
+  if (l.includes('doctorate') || l.includes('phd') || l.includes('doctoral')) return 20;
+  if (l.includes('master')) return 18;
+  if (l.includes('college graduate') || l.includes('bachelor') || l.includes('college grad')) return 15;
+  if (l.includes('college undergraduate') || l.includes('college undergrad')) return 14;
+  if (l.includes('vocational') || l.includes('technical') || l.includes('tesda') || l.includes('trade')) return 13;
+  if (l.includes('high school graduate') || l.includes('senior high') || l.includes('secondary graduate')) return 11;
+  if (l.includes('high school') || l.includes('secondary')) return 9;
+  if (l.includes('elementary graduate') || l.includes('elem graduate') || l.includes('primary graduate')) return 7;
+  if (l.includes('elementary') || l.includes('primary') || l.includes('elem')) return 5;
+  if (l.includes('can read') || l.includes('literate')) return 3;
+  return null;
+};
+
+const experienceYearsToPoints = (years: number | null | undefined): number | null => {
+  if (years == null || isNaN(Number(years))) return null;
+  const y = Number(years);
+  if (y >= 21) return 25;
+  if (y >= 16) return 18;
+  if (y >= 11) return 16;
+  if (y >= 6)  return 14;
+  if (y >= 1)  return 12;
+  return 0;
+};
+
 const EXAM_KEY = 'cictrix_exam_scores';
 const CAT_KEY  = 'cictrix_category_scores';
 
@@ -178,14 +209,16 @@ const deriveInitial = (
 ): ApplicantCategoryScores => {
   if (saved[applicant.id]) return saved[applicant.id];
   const pct = (applicant.total_score ?? 0) / 100;
+  const autoEdu = educationLevelToPoints(applicant.education_level);
+  const autoExp = experienceYearsToPoints(applicant.years_of_experience);
   return {
-    education:   { initialScore: +((pct * 20).toFixed(1)),  finalScore: null, remarks: '' },
-    experience:  { initialScore: +((pct * 25).toFixed(1)),  finalScore: null, remarks: '' },
-    performance: { initialScore: +((pct * 20).toFixed(1)),  finalScore: null, remarks: '' },
-    pcpt:        { initialScore: +((pct * 20).toFixed(1)),  finalScore: null, remarks: '' },
-    potential:   { initialScore: +((pct * 25).toFixed(1)),  finalScore: null, remarks: '' },
-    writtenExam: { initialScore: 0,                          finalScore: null, remarks: '' },
-    oralExam:    { initialScore: 0,                          finalScore: null, remarks: '' },
+    education:   { initialScore: autoEdu ?? +((pct * 20).toFixed(1)),  finalScore: autoEdu,  remarks: '' },
+    experience:  { initialScore: autoExp ?? +((pct * 25).toFixed(1)),  finalScore: autoExp,  remarks: '' },
+    performance: { initialScore: +((pct * 20).toFixed(1)),             finalScore: null,     remarks: '' },
+    pcpt:        { initialScore: +((pct * 20).toFixed(1)),             finalScore: null,     remarks: '' },
+    potential:   { initialScore: +((pct * 25).toFixed(1)),             finalScore: null,     remarks: '' },
+    writtenExam: { initialScore: 0,                                    finalScore: null,     remarks: '' },
+    oralExam:    { initialScore: 0,                                    finalScore: null,     remarks: '' },
   };
 };
 
@@ -494,6 +527,9 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
       oralExam:    { ...base.oralExam,    initialScore: oralRaw   ?? 0,                          finalScore: oralRaw   === null ? null                     : oralRawToConvertedScore(oralRaw) },
     };
   });
+  const [expYearsInput, setExpYearsInput] = useState<string>(() =>
+    applicant.years_of_experience != null ? String(applicant.years_of_experience) : '',
+  );
   const [apptType,  setApptType]  = useState<AppointmentType>(
     isCurrentEmployee ? 'promotional' : (savedScores[applicant.id]?.appointmentType ?? 'original'),
   );
@@ -803,18 +839,33 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                 // Per-category semantic input
                 let inputEl: JSX.Element;
                 if (catKey === 'education') {
+                  const autoFilled = applicant.education_level && educationLevelToPoints(applicant.education_level) !== null;
                   inputEl = (
-                    <select
-                      disabled={isFinalized}
-                      value={rawVal}
-                      onChange={(e) => !isFinalized && setFinal(catKey, e.target.value)}
-                      style={{ width: '100%', border: `1.5px solid ${meta.border}`, borderRadius: 8, padding: '0.6rem 0.75rem', fontSize: '0.95rem', outline: 'none', background: isFinalized ? '#f8fafc' : '#fff', color: '#0f172a', boxSizing: 'border-box', marginBottom: '0.45rem' }}
-                    >
-                      <option value="">Select Educational Attainment</option>
-                      <option value="15">Bachelor's Degree (15 pts)</option>
-                      <option value="18">Master's Degree (18 pts)</option>
-                      <option value="20">Doctorate (20 pts)</option>
-                    </select>
+                    <>
+                      {autoFilled && (
+                        <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '0.45rem 0.75rem', marginBottom: '0.5rem', fontSize: '0.75rem', color: '#1d4ed8', fontWeight: 600 }}>
+                          Auto-filled from application: {applicant.education_level}
+                        </div>
+                      )}
+                      <select
+                        disabled={isFinalized}
+                        value={rawVal}
+                        onChange={(e) => !isFinalized && setFinal(catKey, e.target.value)}
+                        style={{ width: '100%', border: `1.5px solid ${meta.border}`, borderRadius: 8, padding: '0.6rem 0.75rem', fontSize: '0.95rem', outline: 'none', background: isFinalized ? '#f8fafc' : '#fff', color: '#0f172a', boxSizing: 'border-box', marginBottom: '0.45rem' }}
+                      >
+                        <option value="">Select Educational Attainment</option>
+                        <option value="3">Can Read and Write (3 pts)</option>
+                        <option value="5">Elementary Undergraduate (5 pts)</option>
+                        <option value="7">Elementary Graduate (7 pts)</option>
+                        <option value="9">High School Undergraduate (9 pts)</option>
+                        <option value="11">High School Graduate (11 pts)</option>
+                        <option value="13">Vocational / Technical Course (13 pts)</option>
+                        <option value="14">College Undergraduate (14 pts)</option>
+                        <option value="15">College Graduate / Bachelor's Degree (15 pts)</option>
+                        <option value="18">Master's Degree (18 pts)</option>
+                        <option value="20">Doctorate Degree (20 pts)</option>
+                      </select>
+                    </>
                   );
                 } else if (catKey === 'experience') {
                   const yearsToPoints = (y: number) => {
@@ -825,19 +876,29 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                     if (y >= 1)  return 12;
                     return 0;
                   };
+                  const autoFilled = applicant.years_of_experience != null;
                   inputEl = (
-                    <input
-                      type="number" min={0} step={1}
-                      placeholder="Enter years of experience"
-                      readOnly={isFinalized}
-                      onChange={(e) => {
-                        if (isFinalized) return;
-                        const y = parseFloat(e.target.value);
-                        if (isNaN(y)) { setFinal(catKey, ''); return; }
-                        setFinal(catKey, String(yearsToPoints(y)));
-                      }}
-                      style={{ width: '100%', border: `1.5px solid ${meta.border}`, borderRadius: 8, padding: '0.6rem 0.75rem', fontSize: '0.95rem', outline: 'none', background: isFinalized ? '#f8fafc' : '#fff', color: '#0f172a', boxSizing: 'border-box', marginBottom: '0.45rem' }}
-                    />
+                    <>
+                      {autoFilled && (
+                        <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '0.45rem 0.75rem', marginBottom: '0.5rem', fontSize: '0.75rem', color: '#1d4ed8', fontWeight: 600 }}>
+                          Auto-filled from application: {applicant.years_of_experience} year(s)
+                        </div>
+                      )}
+                      <input
+                        type="number" min={0} step={1}
+                        placeholder="Enter years of experience"
+                        value={expYearsInput}
+                        readOnly={isFinalized}
+                        onChange={(e) => {
+                          if (isFinalized) return;
+                          setExpYearsInput(e.target.value);
+                          const y = parseFloat(e.target.value);
+                          if (isNaN(y)) { setFinal(catKey, ''); return; }
+                          setFinal(catKey, String(yearsToPoints(y)));
+                        }}
+                        style={{ width: '100%', border: `1.5px solid ${meta.border}`, borderRadius: 8, padding: '0.6rem 0.75rem', fontSize: '0.95rem', outline: 'none', background: isFinalized ? '#f8fafc' : '#fff', color: '#0f172a', boxSizing: 'border-box', marginBottom: '0.45rem' }}
+                      />
+                    </>
                   );
                 } else if (catKey === 'performance') {
                   inputEl = (
@@ -1121,142 +1182,120 @@ const ApplicantsListView = ({ folder, completedEvaluationIds, savedCatScores, on
     [folder.applicants, search, savedCatScores],
   );
 
-  const SCORE_BADGES = [
-    { key: 'education' as CatKey,   label: 'Education',    max: 20  },
-    { key: 'experience' as CatKey,  label: 'Experience',   max: 25  },
-    { key: 'performance' as CatKey, label: 'Performance',  max: 20  },
-    { key: 'pcpt' as CatKey,        label: 'PCPT',         max: 20  },
-    { key: 'potential' as CatKey,   label: 'Potential',    max: 25  },
-    { key: 'writtenExam' as CatKey, label: 'Written Exam', max: 100 },
-  ];
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       {/* Breadcrumb */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: '#64748b' }}>
-        <button type="button" onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#2563eb', fontWeight: 600, padding: 0 }}>RSP</button>
-        <span>/</span>
-        <button type="button" onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#2563eb', fontWeight: 600, padding: 0 }}>Qualified Applicants</button>
-        <span>&gt;</span>
-        <span style={{ color: '#0f172a', fontWeight: 700 }}>{folder.position}</span>
-      </div>
-
-      {/* Header with back arrow */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16, padding: '1.1rem 1.25rem' }}>
-        <button type="button" onClick={onBack} style={{ background: '#f1f5f9', border: 'none', borderRadius: 10, cursor: 'pointer', color: '#334155', display: 'flex', padding: '0.55rem' }}>
-          <ArrowLeft size={18} />
-        </button>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: '#0f172a' }}>{folder.position}</h2>
-          <p style={{ margin: '0.1rem 0 0', fontSize: '0.875rem', color: '#64748b' }}>
-            {folder.office} &middot; {folder.count} qualified applicant{folder.count !== 1 ? 's' : ''}
-          </p>
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem', fontSize: '0.875rem' }}>
+          <button
+            type="button"
+            onClick={onBack}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: '#2563eb', fontWeight: 600, padding: 0 }}
+          >
+            <ChevronRight size={13} style={{ transform: 'rotate(180deg)' }} /> Applicant Score
+          </button>
+          <ChevronRight size={13} style={{ color: '#94a3b8' }} />
+          <span style={{ fontWeight: 500, color: '#334155' }}>{folder.position}</span>
         </div>
+        <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: '#0f172a' }}>{folder.position}</h2>
+        <p style={{ margin: '0.15rem 0 0', fontSize: '0.875rem', color: '#64748b' }}>
+          {folder.office} &middot; {folder.count} qualified applicant{folder.count !== 1 ? 's' : ''}
+        </p>
       </div>
 
       {/* Search */}
-      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16, padding: '0.85rem 1.25rem' }}>
-        <div style={{ position: 'relative' }}>
-          <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-          <input
-            value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search applicants…"
-            style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: 10, padding: '0.6rem 0.75rem 0.6rem 2.25rem', fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box' }}
-          />
-        </div>
+      <div style={{ position: 'relative' }}>
+        <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', pointerEvents: 'none' }} />
+        <input
+          value={search} onChange={e => setSearch(e.target.value)}
+          placeholder="Search applicants by name…"
+          style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: 12, padding: '0.6rem 0.75rem 0.6rem 2.25rem', fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box', background: '#fff' }}
+        />
       </div>
 
-      {/* Applicant cards */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-        {ranked.map((a, i) => {
-          const isFinalized = !!savedCatScores[a.id] || completedEvaluationIds.has(a.id);
-          const cs = a.catScores;
-          const apptType: AppointmentType = cs.appointmentType ?? 'original';
-          const evalTotal = calcModalScore(cs, apptType);
-          const adj = getAdjectival(evalTotal);
-          return (
-            <div key={a.id} style={{ background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: 14, padding: '1.1rem 1.25rem' }}>
-              {/* Top row */}
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem', marginBottom: '0.9rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  {/* Ranking badge with medal for top 3 */}
-                  {i < 3 ? (
-                    <div style={{
-                      width: 42,
-                      height: 42,
-                      borderRadius: '50%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                      background: i === 0 ? '#fbbf24' : i === 1 ? '#c0c0c0' : '#cd7f32',
-                      border: `2px solid ${i === 0 ? '#f59e0b' : i === 1 ? '#9ca3af' : '#b45309'}`,
-                      boxShadow: `0 2px 8px ${i === 0 ? 'rgba(251,191,36,0.4)' : i === 1 ? 'rgba(192,192,192,0.4)' : 'rgba(205,127,50,0.4)'}`,
-                    }}>
-                      <Medal size={22} style={{ color: '#fff', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))' }} />
-                    </div>
-                  ) : (
-                    <div style={{ width: 38, height: 38, borderRadius: '50%', background: '#e0e7ff', color: '#3730a3', fontWeight: 800, fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      #{i + 1}
-                    </div>
-                  )}
-                  <div>
-                    <p style={{ margin: 0, fontWeight: 700, color: '#0f172a', fontSize: '0.975rem' }}>{a.full_name}</p>
-                    <p style={{ margin: 0, fontSize: '0.78rem', color: '#64748b' }}>Qualified: {fmtDate(a.created_at)}</p>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexShrink: 0 }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.28rem 0.8rem', borderRadius: 999, fontSize: '0.78rem', fontWeight: 700, background: isFinalized ? '#dcfce7' : '#fef3c7', color: isFinalized ? '#15803d' : '#92400e', border: `1px solid ${isFinalized ? '#bbf7d0' : '#fde68a'}` }}>
-                    {isFinalized && <CheckCircle2 size={12} />}
-                    {isFinalized ? 'Finalized' : 'Pending'}
-                  </span>
-                  <button
-                    type="button" onClick={() => onUpdateScores(a)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.42rem 0.95rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer' }}
-                  >
-                    <Pencil size={13} /> Update Scores
-                  </button>
-                </div>
-              </div>
-              {/* Score badges — show only the categories that actually count
-                  toward this applicant's total. Promotional applicants
-                  (existing employees) are scored on Performance + Potential,
-                  while original applicants (new external hires) are scored on
-                  Written Exam instead. Mirrors calcModalScore. */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem', marginBottom: '0.85rem' }}>
-                {SCORE_BADGES.filter(b =>
-                  apptType === 'promotional'
-                    ? b.key !== 'writtenExam'
-                    : b.key !== 'performance' && b.key !== 'potential',
-                ).map(b => {
-                  const meta = CAT_META[b.key];
-                  const val  = cs[b.key].finalScore ?? cs[b.key].initialScore;
-                  return (
-                    <div key={b.key} style={{ background: meta.badgeBg, border: `1px solid ${meta.border}`, borderRadius: 8, padding: '0.3rem 0.75rem', textAlign: 'center' }}>
-                      <p style={{ margin: 0, fontSize: '0.7rem', color: meta.color, fontWeight: 600 }}>{b.label}</p>
-                      <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 800, color: meta.color }}>
-                        {val > 0 ? val : '—'}/{b.max}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-              {/* Evaluation total footer */}
-              <div style={{ borderTop: '1px dashed #e2e8f0', paddingTop: '0.7rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
-                <span style={{ fontSize: '0.82rem', color: '#475569', fontWeight: 600 }}>Evaluation Total:</span>
-                <span style={{ fontSize: '0.95rem', fontWeight: 800, color: adj.color }}>
-                  {evalTotal.toFixed(2)} / 100 <span style={{ fontWeight: 700, fontSize: '0.82rem' }}>— {adj.label}</span>
-                </span>
-              </div>
-            </div>
-          );
-        })}
-        {ranked.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8', background: '#fff', border: '1px dashed #cbd5e1', borderRadius: 14 }}>
-            <FolderOpen size={44} style={{ marginBottom: '0.75rem', opacity: 0.3 }} />
-            <p style={{ fontWeight: 600, margin: 0 }}>No applicants found</p>
-          </div>
-        )}
+      {/* Table */}
+      <div style={{ overflowX: 'auto', borderRadius: 16, border: '1px solid #e2e8f0', background: '#fff' }}>
+        <table style={{ width: '100%', minWidth: 980, borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+              <th style={{ padding: '0.75rem 1rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', width: 48 }}>#</th>
+              <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Applicant Name</th>
+              <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Type</th>
+              <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Educ /20</th>
+              <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Exp /25</th>
+              <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Perf /20</th>
+              <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Written /100</th>
+              <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Potential /25</th>
+              <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>PCPT /20</th>
+              <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Oral /20</th>
+              <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Status</th>
+              <th style={{ padding: '0.75rem 1rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ranked.map((a, i) => {
+              const isFinalized = !!savedCatScores[a.id] || completedEvaluationIds.has(a.id);
+              const cs = a.catScores;
+              const apptType: AppointmentType = cs.appointmentType ?? 'original';
+              const isPromotional = apptType === 'promotional';
+              const sv = (key: CatKey): string => {
+                const v = cs[key].finalScore ?? cs[key].initialScore;
+                return v > 0 ? String(v) : '—';
+              };
+              return (
+                <tr key={a.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
+                    {i < 3 ? (
+                      <div style={{ width: 30, height: 30, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: i === 0 ? '#fbbf24' : i === 1 ? '#c0c0c0' : '#cd7f32' }}>
+                        <Medal size={14} style={{ color: '#fff' }} />
+                      </div>
+                    ) : (
+                      <span style={{ display: 'inline-flex', width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: '#e0e7ff', color: '#3730a3', fontWeight: 800, fontSize: '0.75rem' }}>#{i + 1}</span>
+                    )}
+                  </td>
+                  <td style={{ padding: '0.75rem 1rem' }}>
+                    <p style={{ margin: 0, fontWeight: 700, color: '#0f172a', fontSize: '0.9rem' }}>{a.full_name}</p>
+                    <p style={{ margin: 0, fontSize: '0.72rem', color: '#94a3b8' }}>Qualified: {fmtDate(a.created_at)}</p>
+                  </td>
+                  <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center' }}>
+                    <span style={{ display: 'inline-block', padding: '0.2rem 0.6rem', borderRadius: 999, fontSize: '0.7rem', fontWeight: 700, background: isPromotional ? '#f3e8ff' : '#eff6ff', color: isPromotional ? '#7c3aed' : '#1d4ed8' }}>
+                      {isPromotional ? 'Promotional' : 'Original'}
+                    </span>
+                  </td>
+                  <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>{sv('education')}</td>
+                  <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>{sv('experience')}</td>
+                  <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.85rem', fontWeight: 600, color: isPromotional ? '#334155' : '#cbd5e1' }}>{isPromotional ? sv('performance') : '—'}</td>
+                  <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>{sv('writtenExam')}</td>
+                  <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.85rem', fontWeight: 600, color: isPromotional ? '#334155' : '#cbd5e1' }}>{isPromotional ? sv('potential') : '—'}</td>
+                  <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.85rem', fontWeight: 600, color: !isPromotional ? '#334155' : '#cbd5e1' }}>{!isPromotional ? sv('pcpt') : '—'}</td>
+                  <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.85rem', fontWeight: 600, color: !isPromotional ? '#334155' : '#cbd5e1' }}>{!isPromotional ? sv('oralExam') : '—'}</td>
+                  <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.65rem', borderRadius: 999, fontSize: '0.72rem', fontWeight: 700, background: isFinalized ? '#dcfce7' : '#fef3c7', color: isFinalized ? '#15803d' : '#92400e', border: `1px solid ${isFinalized ? '#bbf7d0' : '#fde68a'}` }}>
+                      {isFinalized && <CheckCircle2 size={11} />}
+                      {isFinalized ? 'Finalized' : 'Pending'}
+                    </span>
+                  </td>
+                  <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
+                    <button
+                      type="button" onClick={() => onUpdateScores(a)}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', padding: '0.4rem 0.85rem', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    >
+                      <Pencil size={12} /> Edit Scores
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+            {ranked.length === 0 && (
+              <tr>
+                <td colSpan={12} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
+                  <FolderOpen size={40} style={{ display: 'block', margin: '0 auto 0.75rem', opacity: 0.3 }} />
+                  <p style={{ fontWeight: 600, margin: 0 }}>No applicants found</p>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -1440,6 +1479,7 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
                   <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Exam Status</th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Written Exam</th>
                   <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Actions</th>
+                  <th className="w-8 px-3 py-3" />
                 </tr>
               </thead>
               <tbody>
@@ -1451,7 +1491,7 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
                   return (
                     <tr
                       key={folder.position}
-                      className="border-b border-slate-100 hover:bg-slate-50 transition-colors last:border-0 cursor-pointer"
+                      className="border-b border-slate-100 hover:bg-slate-50 transition-colors last:border-0 cursor-pointer group"
                       onClick={() => setOpenFolder(folder)}
                     >
                       <td className="px-5 py-4">
@@ -1487,17 +1527,20 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); setExamModal(folder); }}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors whitespace-nowrap"
                         >
-                          <Pencil size={12} /> Scores
+                          <Pencil size={12} /> Edit Total Score
                         </button>
+                      </td>
+                      <td className="w-8 px-3 py-4 text-slate-400 group-hover:text-blue-600 transition-colors">
+                        <ChevronRight size={15} />
                       </td>
                     </tr>
                   );
                 })}
                 {filteredFolders.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-5 py-12 text-center text-slate-500">
+                    <td colSpan={7} className="px-5 py-12 text-center text-slate-500">
                       <FolderOpen size={40} className="mx-auto mb-2 text-slate-300" />
                       <p className="font-semibold">No qualified applicant folders found</p>
                       <p className="mt-1 text-xs text-slate-400">Applicants appear here once their status is marked Qualified or Shortlisted.</p>

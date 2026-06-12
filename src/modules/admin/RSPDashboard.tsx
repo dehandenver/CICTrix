@@ -725,6 +725,18 @@ export const RSPDashboard = () => {
   const [assessmentStatusFilter, setAssessmentStatusFilter] = useState<AssessmentStatusFilter>('all');
   const [assessmentSearch, setAssessmentSearch] = useState('');
   const [archivesSearch, setArchivesSearch] = useState('');
+  const [archivesAssessmentSearch, setArchivesAssessmentSearch] = useState('');
+  const [archivesAssessmentDeptFilter, setArchivesAssessmentDeptFilter] = useState('all');
+  const [archivesAssessmentPage, setArchivesAssessmentPage] = useState(0);
+  const [archivesRankingSearch, setArchivesRankingSearch] = useState('');
+  const [archivesRankingDeptFilter, setArchivesRankingDeptFilter] = useState('all');
+  const [archivesRankingPage, setArchivesRankingPage] = useState(0);
+  const [archivesClosedSearch, setArchivesClosedSearch] = useState('');
+  const [archivesClosedDeptFilter, setArchivesClosedDeptFilter] = useState('all');
+  const [archivesClosedPage, setArchivesClosedPage] = useState(0);
+  const [archivesTempSearch, setArchivesTempSearch] = useState('');
+  const [archivesTempDeptFilter, setArchivesTempDeptFilter] = useState('all');
+  const [archivesTempPage, setArchivesTempPage] = useState(0);
   const [rankingPositionFilter, setRankingPositionFilter] = useState<string>('all');
   const [rankingNavDept, setRankingNavDept] = useState<string | null>(null);
   const [rankingNavPos, setRankingNavPos] = useState<string | null>(null);
@@ -4091,89 +4103,302 @@ export const RSPDashboard = () => {
           {section === 'reports' && (
             <>
               {reportsView === 'overview' ? (
-                <>
-                  {/* Quick-access sub-view buttons */}
-                  <div className="flex flex-wrap gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setReportsView('ranking')}
-                      className="inline-flex items-center gap-2 rounded-xl border border-[var(--border-color)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition hover:border-[var(--primary-color)] hover:text-[var(--primary-color)]"
-                    >
-                      <FileText size={16} /> Application Ranking Report
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setReportsView('assessment')}
-                      className="inline-flex items-center gap-2 rounded-xl border border-[var(--border-color)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition hover:border-[var(--primary-color)] hover:text-[var(--primary-color)]"
-                    >
-                      <Briefcase size={16} /> Assessment Forms
-                    </button>
-                  </div>
+                <div className="space-y-10">
 
-                  {/* Search bar */}
-                  <div className="relative">
-                    <Search size={18} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                      value={archivesSearch}
-                      onChange={(e) => setArchivesSearch(e.target.value)}
-                      placeholder="Search by employee name or position…"
-                      className="h-11 w-full rounded-xl border border-slate-300 bg-white pl-10 pr-3 text-sm focus:border-blue-400 focus:outline-none"
-                    />
-                  </div>
+                  {/* ── 1. Application Ranking ───────────────────────────── */}
+                  {(() => {
+                    const PAGE = 10;
+                    const allRows: { dept: string; position: string; count: number }[] = [];
+                    rankingHistoricalData.forEach((posMap, dept) => {
+                      posMap.forEach((rows, pos) => allRows.push({ dept, position: pos, count: rows.length }));
+                    });
+                    allRows.sort((a, b) => a.dept.localeCompare(b.dept));
+                    const t = archivesRankingSearch.trim().toLowerCase();
+                    const depts = [...new Set(allRows.map(r => r.dept))].sort();
+                    const filtered = allRows.filter(r =>
+                      (!t || r.dept.toLowerCase().includes(t) || r.position.toLowerCase().includes(t)) &&
+                      (archivesRankingDeptFilter === 'all' || r.dept === archivesRankingDeptFilter)
+                    );
+                    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE));
+                    const page = Math.min(archivesRankingPage, totalPages - 1);
+                    const sliced = filtered.slice(page * PAGE, (page + 1) * PAGE);
+                    return (
+                      <section>
+                        <div className="mb-4 flex items-center justify-between gap-3">
+                          <h3 className="text-base font-bold text-[var(--text-primary)]">Application Ranking</h3>
+                          <button type="button" onClick={() => setReportsView('ranking')} className="text-sm font-semibold text-blue-600 hover:underline">View Full Report →</button>
+                        </div>
+                        <div className="mb-3 flex flex-wrap gap-2">
+                          <div className="relative flex-1 min-w-[180px]">
+                            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input value={archivesRankingSearch} onChange={e => { setArchivesRankingSearch(e.target.value); setArchivesRankingPage(0); }} placeholder="Search by position or department…" className="h-9 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm focus:outline-none" />
+                          </div>
+                          <select value={archivesRankingDeptFilter} onChange={e => { setArchivesRankingDeptFilter(e.target.value); setArchivesRankingPage(0); }} className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm">
+                            <option value="all">All Departments</option>
+                            {depts.map(d => <option key={d} value={d}>{d}</option>)}
+                          </select>
+                        </div>
+                        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                          <table className="w-full min-w-full">
+                            <thead>
+                              <tr className="border-b border-slate-200 bg-slate-50">
+                                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Department / Office</th>
+                                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
+                                <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Applicants</th>
+                                <th className="w-8 px-3 py-3" />
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {sliced.length === 0 ? (
+                                <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-500">No application ranking data found.</td></tr>
+                              ) : sliced.map(r => (
+                                <tr key={`${r.dept}-${r.position}`}
+                                  onClick={() => { setReportsView('ranking'); setRankingNavDept(r.dept); setRankingNavPos(r.position); }}
+                                  className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-blue-50/40 transition-colors group"
+                                >
+                                  <td className="px-5 py-3 text-sm text-slate-600">{r.dept}</td>
+                                  <td className="px-5 py-3 text-sm font-semibold text-slate-900">{r.position}</td>
+                                  <td className="px-5 py-3 text-center">
+                                    <span className="inline-flex rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-700">{r.count}</span>
+                                  </td>
+                                  <td className="px-3 py-3 text-slate-400 group-hover:text-blue-600 transition-colors"><ChevronRight size={15} /></td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        {filtered.length > PAGE && (
+                          <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                            <span>Showing {page * PAGE + 1}–{Math.min((page + 1) * PAGE, filtered.length)} of {filtered.length}</span>
+                            <div className="flex gap-1.5">
+                              <button onClick={() => setArchivesRankingPage(p => Math.max(0, p - 1))} disabled={page === 0} className="rounded-lg border border-slate-200 px-3 py-1 font-semibold disabled:opacity-40">Previous</button>
+                              <button onClick={() => setArchivesRankingPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="rounded-lg border border-slate-200 px-3 py-1 font-semibold disabled:opacity-40">Next</button>
+                            </div>
+                          </div>
+                        )}
+                      </section>
+                    );
+                  })()}
 
-                  {/* Employee records table */}
-                  <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                    <table className="w-full min-w-full">
-                      <thead>
-                        <tr className="border-b border-slate-200 bg-slate-50">
-                          <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Employee Name</th>
-                          <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
-                          <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Department / Office</th>
-                          <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(() => {
-                          const term = archivesSearch.trim().toLowerCase();
-                          const filtered = directoryEmployeesSource.filter((emp) => {
-                            if (!term) return true;
-                            return (
-                              emp.full_name.toLowerCase().includes(term) ||
-                              (emp.position || '').toLowerCase().includes(term)
-                            );
-                          });
-                          if (filtered.length === 0) {
-                            return (
-                              <tr>
-                                <td colSpan={4} className="px-5 py-12 text-center text-slate-500">
-                                  {term ? `No employees matching "${archivesSearch}"` : 'No employee records found.'}
-                                </td>
+                  {/* ── 2. Assessment Forms ──────────────────────────────── */}
+                  {(() => {
+                    const PAGE = 10;
+                    const t = archivesAssessmentSearch.trim().toLowerCase();
+                    const depts = [...new Set(assessmentPositionCards.map(c => c.department || 'Unassigned'))].sort();
+                    const filtered = assessmentPositionCards.filter(c =>
+                      (!t || c.position.toLowerCase().includes(t) || (c.department || '').toLowerCase().includes(t)) &&
+                      (archivesAssessmentDeptFilter === 'all' || (c.department || 'Unassigned') === archivesAssessmentDeptFilter)
+                    );
+                    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE));
+                    const page = Math.min(archivesAssessmentPage, totalPages - 1);
+                    const sliced = filtered.slice(page * PAGE, (page + 1) * PAGE);
+                    return (
+                      <section>
+                        <div className="mb-4 flex items-center justify-between gap-3">
+                          <h3 className="text-base font-bold text-[var(--text-primary)]">Assessment Forms</h3>
+                          <button type="button" onClick={() => setReportsView('assessment')} className="text-sm font-semibold text-blue-600 hover:underline">View All →</button>
+                        </div>
+                        <div className="mb-3 flex flex-wrap gap-2">
+                          <div className="relative flex-1 min-w-[180px]">
+                            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input value={archivesAssessmentSearch} onChange={e => { setArchivesAssessmentSearch(e.target.value); setArchivesAssessmentPage(0); }} placeholder="Search by position…" className="h-9 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm focus:outline-none" />
+                          </div>
+                          <select value={archivesAssessmentDeptFilter} onChange={e => { setArchivesAssessmentDeptFilter(e.target.value); setArchivesAssessmentPage(0); }} className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm">
+                            <option value="all">All Departments</option>
+                            {depts.map(d => <option key={d} value={d}>{d}</option>)}
+                          </select>
+                        </div>
+                        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                          <table className="w-full min-w-full">
+                            <thead>
+                              <tr className="border-b border-slate-200 bg-slate-50">
+                                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
+                                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Department</th>
+                                <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Total</th>
+                                <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Hired</th>
+                                <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Qualified</th>
+                                <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Disqualified</th>
+                                <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Report</th>
                               </tr>
-                            );
-                          }
-                          return filtered.map((emp) => {
-                            const isInactive = emp.status.toLowerCase().includes('inactive');
-                            return (
-                              <tr key={emp.id} className="border-b border-slate-100 last:border-0">
-                                <td className="px-5 py-3">
-                                  <p className="text-sm font-semibold text-slate-900">{emp.full_name}</p>
-                                  <p className="text-xs text-slate-400">{emp.email || '—'}</p>
-                                </td>
-                                <td className="px-5 py-3 text-sm text-slate-600">{emp.position || '—'}</td>
-                                <td className="px-5 py-3 text-sm text-slate-600">{emp.office || '—'}</td>
-                                <td className="px-5 py-3 text-center">
-                                  <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${isInactive ? 'bg-slate-200 text-slate-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                    {isInactive ? 'Inactive' : 'Active'}
-                                  </span>
-                                </td>
+                            </thead>
+                            <tbody>
+                              {sliced.length === 0 ? (
+                                <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-500">No assessment forms available.</td></tr>
+                              ) : sliced.map(c => (
+                                <tr key={c.position} className="border-b border-slate-100 last:border-0">
+                                  <td className="px-5 py-3">
+                                    <p className="!mb-0 text-sm font-semibold text-slate-900">{c.position}</p>
+                                    <p className="!mb-0 text-xs text-slate-400">{c.itemNumber}</p>
+                                  </td>
+                                  <td className="px-5 py-3 text-sm text-slate-600">{c.department || '—'}</td>
+                                  <td className="px-5 py-3 text-center text-sm font-bold text-slate-700">{c.totalApplicants}</td>
+                                  <td className="px-5 py-3 text-center"><span className="rounded-md bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700">{c.hiredCount}</span></td>
+                                  <td className="px-5 py-3 text-center"><span className="rounded-md bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">{c.qualifiedCount}</span></td>
+                                  <td className="px-5 py-3 text-center"><span className="rounded-md bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">{c.disqualifiedCount}</span></td>
+                                  <td className="px-5 py-3 text-center">
+                                    <button type="button" onClick={() => openAssessmentForms(c.position)} className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 transition-colors">
+                                      <FileText size={12} /> View
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        {filtered.length > PAGE && (
+                          <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                            <span>Showing {page * PAGE + 1}–{Math.min((page + 1) * PAGE, filtered.length)} of {filtered.length}</span>
+                            <div className="flex gap-1.5">
+                              <button onClick={() => setArchivesAssessmentPage(p => Math.max(0, p - 1))} disabled={page === 0} className="rounded-lg border border-slate-200 px-3 py-1 font-semibold disabled:opacity-40">Previous</button>
+                              <button onClick={() => setArchivesAssessmentPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="rounded-lg border border-slate-200 px-3 py-1 font-semibold disabled:opacity-40">Next</button>
+                            </div>
+                          </div>
+                        )}
+                      </section>
+                    );
+                  })()}
+
+                  {/* ── 3. Closed Jobs ───────────────────────────────────── */}
+                  {(() => {
+                    const PAGE = 10;
+                    const closedJobs = jobs.filter(j => j.status === 'Closed');
+                    const t = archivesClosedSearch.trim().toLowerCase();
+                    const depts = [...new Set(closedJobs.map(j => j.department || 'Unassigned'))].sort();
+                    const filtered = closedJobs.filter(j =>
+                      (!t || j.title.toLowerCase().includes(t) || j.department.toLowerCase().includes(t)) &&
+                      (archivesClosedDeptFilter === 'all' || j.department === archivesClosedDeptFilter)
+                    );
+                    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE));
+                    const page = Math.min(archivesClosedPage, totalPages - 1);
+                    const sliced = filtered.slice(page * PAGE, (page + 1) * PAGE);
+                    const fmtDt = (iso: string) => { try { return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }); } catch { return iso; } };
+                    return (
+                      <section>
+                        <h3 className="mb-4 text-base font-bold text-[var(--text-primary)]">Closed Jobs</h3>
+                        <div className="mb-3 flex flex-wrap gap-2">
+                          <div className="relative flex-1 min-w-[180px]">
+                            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input value={archivesClosedSearch} onChange={e => { setArchivesClosedSearch(e.target.value); setArchivesClosedPage(0); }} placeholder="Search by job title…" className="h-9 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm focus:outline-none" />
+                          </div>
+                          <select value={archivesClosedDeptFilter} onChange={e => { setArchivesClosedDeptFilter(e.target.value); setArchivesClosedPage(0); }} className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm">
+                            <option value="all">All Departments</option>
+                            {depts.map(d => <option key={d} value={d}>{d}</option>)}
+                          </select>
+                        </div>
+                        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                          <table className="w-full min-w-full">
+                            <thead>
+                              <tr className="border-b border-slate-200 bg-slate-50">
+                                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position Title</th>
+                                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Department</th>
+                                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Item No.</th>
+                                <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Date</th>
+                                <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
                               </tr>
-                            );
-                          });
-                        })()}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
+                            </thead>
+                            <tbody>
+                              {sliced.length === 0 ? (
+                                <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-500">{closedJobs.length === 0 ? 'No closed jobs on record.' : 'No results match your search.'}</td></tr>
+                              ) : sliced.map(j => (
+                                <tr key={j.id} className="border-b border-slate-100 last:border-0">
+                                  <td className="px-5 py-3 text-sm font-semibold text-slate-900">{j.title}</td>
+                                  <td className="px-5 py-3 text-sm text-slate-600">{j.department}</td>
+                                  <td className="px-5 py-3 text-sm text-slate-500">{j.item_number || '—'}</td>
+                                  <td className="px-5 py-3 text-center text-sm text-slate-500">{fmtDt(j.created_at)}</td>
+                                  <td className="px-5 py-3 text-center">
+                                    <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">Closed</span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        {filtered.length > PAGE && (
+                          <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                            <span>Showing {page * PAGE + 1}–{Math.min((page + 1) * PAGE, filtered.length)} of {filtered.length}</span>
+                            <div className="flex gap-1.5">
+                              <button onClick={() => setArchivesClosedPage(p => Math.max(0, p - 1))} disabled={page === 0} className="rounded-lg border border-slate-200 px-3 py-1 font-semibold disabled:opacity-40">Previous</button>
+                              <button onClick={() => setArchivesClosedPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="rounded-lg border border-slate-200 px-3 py-1 font-semibold disabled:opacity-40">Next</button>
+                            </div>
+                          </div>
+                        )}
+                      </section>
+                    );
+                  })()}
+
+                  {/* ── 4. Temporary Employee Account Generation ─────────── */}
+                  {(() => {
+                    const PAGE = 10;
+                    const t = archivesTempSearch.trim().toLowerCase();
+                    const depts = [...new Set(newlyHiredApplicants.map(a => a.office || 'Unassigned'))].sort();
+                    const filtered = newlyHiredApplicants.filter(a =>
+                      (!t || a.full_name.toLowerCase().includes(t) || (a.email || '').toLowerCase().includes(t)) &&
+                      (archivesTempDeptFilter === 'all' || a.office === archivesTempDeptFilter)
+                    );
+                    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE));
+                    const page = Math.min(archivesTempPage, totalPages - 1);
+                    const sliced = filtered.slice(page * PAGE, (page + 1) * PAGE);
+                    const fmtDt = (iso: string) => { try { return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }); } catch { return iso; } };
+                    return (
+                      <section>
+                        <h3 className="mb-4 text-base font-bold text-[var(--text-primary)]">Temporary Employee Account Generation</h3>
+                        <div className="mb-3 flex flex-wrap gap-2">
+                          <div className="relative flex-1 min-w-[180px]">
+                            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input value={archivesTempSearch} onChange={e => { setArchivesTempSearch(e.target.value); setArchivesTempPage(0); }} placeholder="Search by employee name…" className="h-9 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm focus:outline-none" />
+                          </div>
+                          <select value={archivesTempDeptFilter} onChange={e => { setArchivesTempDeptFilter(e.target.value); setArchivesTempPage(0); }} className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm">
+                            <option value="all">All Departments</option>
+                            {depts.map(d => <option key={d} value={d}>{d}</option>)}
+                          </select>
+                        </div>
+                        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                          <table className="w-full min-w-full">
+                            <thead>
+                              <tr className="border-b border-slate-200 bg-slate-50">
+                                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Employee Name</th>
+                                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
+                                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Department / Office</th>
+                                <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Date Hired</th>
+                                <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {sliced.length === 0 ? (
+                                <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-500">{newlyHiredApplicants.length === 0 ? 'No hired employees on record.' : 'No results match your search.'}</td></tr>
+                              ) : sliced.map(a => (
+                                <tr key={a.id} className="border-b border-slate-100 last:border-0">
+                                  <td className="px-5 py-3">
+                                    <p className="!mb-0 text-sm font-semibold text-slate-900">{a.full_name}</p>
+                                    <p className="!mb-0 text-xs text-slate-400">{a.email || '—'}</p>
+                                  </td>
+                                  <td className="px-5 py-3 text-sm text-slate-600">{a.position || '—'}</td>
+                                  <td className="px-5 py-3 text-sm text-slate-600">{a.office || '—'}</td>
+                                  <td className="px-5 py-3 text-center text-sm text-slate-500">{fmtDt(a.created_at)}</td>
+                                  <td className="px-5 py-3 text-center">
+                                    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${a.status.toLowerCase().includes('hired') || a.status.toLowerCase().includes('accept') ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+                                      {a.status}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        {filtered.length > PAGE && (
+                          <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                            <span>Showing {page * PAGE + 1}–{Math.min((page + 1) * PAGE, filtered.length)} of {filtered.length}</span>
+                            <div className="flex gap-1.5">
+                              <button onClick={() => setArchivesTempPage(p => Math.max(0, p - 1))} disabled={page === 0} className="rounded-lg border border-slate-200 px-3 py-1 font-semibold disabled:opacity-40">Previous</button>
+                              <button onClick={() => setArchivesTempPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="rounded-lg border border-slate-200 px-3 py-1 font-semibold disabled:opacity-40">Next</button>
+                            </div>
+                          </div>
+                        )}
+                      </section>
+                    );
+                  })()}
+
+                </div>
               ) : reportsView === 'documents' ? null : reportsView === 'ranking' ? (
                 <section className="space-y-4">
                   {/* ── Header bar ─────────────────────────────────────────── */}

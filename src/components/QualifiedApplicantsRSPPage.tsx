@@ -29,6 +29,8 @@ export interface ApplicantRecord {
   interview_date?: string | null;
   interview_time?: string | null;
   assigned_interviewer_email?: string | null;
+  education_level?: string | null;
+  years_of_experience?: number | null;
 }
 
 export type QualifiedRspMode = 'pending' | 'score';
@@ -131,6 +133,12 @@ export const QualifiedApplicantsRSPPage = ({ mode = 'score' }: QualifiedApplican
             interview_date: row?.interview_date ?? null,
             interview_time: row?.interview_time ?? null,
             assigned_interviewer_email: row?.assigned_interviewer_email ?? null,
+            education_level: row?.education_level ?? row?.educational_attainment ?? row?.education ?? null,
+            years_of_experience: row?.years_of_experience != null
+              ? Number(row.years_of_experience)
+              : row?.years_experience != null
+              ? Number(row.years_experience)
+              : null,
           };
         });
 
