@@ -3697,13 +3697,17 @@ export const RSPDashboard = () => {
               ) : accountsView === 'position' ? (
                 <>
                   <div>
-                    <button
-                      type="button"
-                      onClick={() => setAccountsView('directory')}
-                      className="mb-1 inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline"
-                    >
-                      <ChevronLeft size={14} /> Employee Accounts
-                    </button>
+                    <div className="mb-1 flex items-center gap-1.5 text-sm">
+                      <button
+                        type="button"
+                        onClick={() => setAccountsView('directory')}
+                        className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
+                      >
+                        <ChevronLeft size={13} /> Employee Accounts
+                      </button>
+                      <ChevronRight size={13} className="text-slate-400" />
+                      <span className="font-medium text-slate-700">{selectedDirectoryCard?.position ?? 'Position'}</span>
+                    </div>
                     <h2 className="!mb-0.5 text-xl font-bold text-[var(--text-primary)]">{selectedDirectoryCard?.position ?? 'Position'}</h2>
                     <p className="!mb-0 text-sm text-[var(--text-secondary)]">{selectedPositionEmployees.length} employee{selectedPositionEmployees.length === 1 ? '' : 's'}</p>
                   </div>
@@ -3751,13 +3755,17 @@ export const RSPDashboard = () => {
               ) : (
                 <>
                   <section>
-                    <button
-                      type="button"
-                      onClick={() => setAccountsView('position')}
-                      className="mb-2 inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline"
-                    >
-                      <ChevronLeft size={14} /> Back to Employee Accounts
-                    </button>
+                    <div className="mb-2 flex items-center gap-1.5 text-sm">
+                      <button
+                        type="button"
+                        onClick={() => setAccountsView('position')}
+                        className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
+                      >
+                        <ChevronLeft size={13} /> {selectedDirectoryCard?.position ?? 'Position'}
+                      </button>
+                      <ChevronRight size={13} className="text-slate-400" />
+                      <span className="font-medium text-slate-700">{selectedEmployeeDetails?.full_name ?? 'Employee'}</span>
+                    </div>
 
                     <div className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
                       <div className="mb-5 flex items-start gap-5">

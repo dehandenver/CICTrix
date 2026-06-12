@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase';
 import { isMockModeEnabled } from '../lib/supabase';
 import { mockDatabase } from '../lib/mockDatabase';
 import { getPreferredDataSourceMode } from '../lib/dataSourceMode';
-import { ChevronLeft, ChevronRight, Eye, Search, Undo2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search, Undo2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -247,12 +247,11 @@ export const ApplicationsListPage = () => {
                     <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Department</th>
                     <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Type</th>
                     <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Applied</th>
-                    <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {paged.map(a => (
-                    <tr key={a.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors last:border-0">
+                    <tr key={a.id} onClick={() => navigate(`/admin/rsp/applicant/${a.id}`, { state: { from: '/admin/rsp/applications' } })} className="cursor-pointer border-b border-slate-100 hover:bg-slate-50 transition-colors last:border-0">
 
                       {/* Name — clickable */}
                       <td className="px-5 py-4">
@@ -278,22 +277,11 @@ export const ApplicationsListPage = () => {
 
                       {/* Applied date */}
                       <td className="px-5 py-4 text-xs text-slate-500 whitespace-nowrap">{fmtDate(a.created_at)}</td>
-
-                      {/* View button */}
-                      <td className="px-5 py-4 text-center">
-                        <button
-                          type="button"
-                          onClick={() => navigate(`/admin/rsp/applicant/${a.id}`, { state: { from: '/admin/rsp/applications' } })}
-                          className="inline-flex items-center gap-1.5 rounded-xl bg-[#363EE8] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition-colors"
-                        >
-                          <Eye className="h-3.5 w-3.5" /> View
-                        </button>
-                      </td>
                     </tr>
                   ))}
                   {paged.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-5 py-12 text-center text-slate-500">
+                      <td colSpan={5} className="px-5 py-12 text-center text-slate-500">
                         <Search className="mx-auto mb-2 h-8 w-8 text-slate-300" />
                         <p className="font-medium">No applicants found for the selected filters.</p>
                       </td>
@@ -345,7 +333,6 @@ export const ApplicationsListPage = () => {
                       <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Department</th>
                       <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Type</th>
                       <th className="px-5 py-3 text-left   text-xs font-semibold uppercase tracking-wider text-slate-500">Applied</th>
-                      <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -375,20 +362,11 @@ export const ApplicationsListPage = () => {
                           </span>
                         </td>
                         <td className="px-5 py-4 text-xs text-slate-500 whitespace-nowrap">{fmtDate(a.created_at)}</td>
-                        <td className="px-5 py-4 text-center">
-                          <button
-                            type="button"
-                            onClick={() => navigate(`/admin/rsp/applicant/${a.id}`, { state: { from: '/admin/rsp/applications' } })}
-                            className="inline-flex items-center gap-1.5 rounded-xl bg-[#363EE8] px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition-colors"
-                          >
-                            <Eye className="h-3.5 w-3.5" /> View
-                          </button>
-                        </td>
                       </tr>
                     ))}
                     {shortlisted.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="px-5 py-12 text-center text-slate-500">
+                        <td colSpan={6} className="px-5 py-12 text-center text-slate-500">
                           <p className="font-medium">No shortlisted applicants yet.</p>
                           <p className="text-xs text-slate-400 mt-1">
                             Click Shortlist on an applicant's profile to move them here.

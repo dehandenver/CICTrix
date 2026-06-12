@@ -2,6 +2,8 @@ import {
     Activity as ActivityIcon,
     ArrowLeft,
     CheckCircle2,
+    ChevronLeft,
+    ChevronRight,
     CircleX,
     Eye,
     FileText,
@@ -947,6 +949,10 @@ export function ApplicantDetailsPage() {
   );
   const isRspAdmin = location.pathname.startsWith('/admin/rsp/');
   const backTo = routeState?.from || (isRspAdmin ? '/admin/rsp/applications' : '/admin/rsp/qualified');
+  const backLabel = backTo.includes('qualified') ? 'Qualified Applicants'
+    : backTo.includes('applicant-score') ? 'Applicant Score'
+    : backTo.includes('for-hiring') ? 'For Hiring'
+    : 'Applications';
   const showViewScoresButton = false;
   const showJobPostActionButtons = true;
   const scoreActionLabel = isScoreFinalized ? 'View Score' : 'Update Score';
@@ -1394,20 +1400,21 @@ export function ApplicantDetailsPage() {
       <div className={isRspAdmin ? 'admin-layout' : ''}>
         {isRspAdmin && <Sidebar activeModule="RSP" userRole="rsp" />}
       <main className={isRspAdmin ? 'admin-content bg-white !p-0' : 'bg-slate-100 !p-0'}>
-        <header className="border-b border-slate-200 bg-white px-4 py-3">
+        <header className="border-b border-slate-200 bg-white px-8 py-6">
           <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-2.5">
-              <button
-                type="button"
-                onClick={() => navigate(backTo)}
-                className="mt-0.5 rounded-full p-1.5 text-slate-500 hover:bg-slate-100"
-              >
-                <ArrowLeft size={16} />
-              </button>
-              <div>
-                <p className="text-xs text-slate-500">Recruitment <span className="px-1">/</span> Applicants <span className="px-1">/</span> <span className="font-semibold text-slate-700">Details</span></p>
-                <h1 className="text-[27px] leading-tight font-semibold text-slate-900">{fullName}</h1>
+            <div>
+              <div className="mb-2 flex items-center gap-1.5 text-sm">
+                <button
+                  type="button"
+                  onClick={() => navigate(backTo)}
+                  className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
+                >
+                  <ChevronLeft size={13} /> {backLabel}
+                </button>
+                <ChevronRight size={13} className="text-slate-400" />
+                <span className="font-medium text-slate-700">{fullName}</span>
               </div>
+              <h1 className="!mb-0 !text-2xl font-bold text-slate-900">{fullName}</h1>
             </div>
 
             <div className="flex flex-wrap items-center justify-end gap-2">

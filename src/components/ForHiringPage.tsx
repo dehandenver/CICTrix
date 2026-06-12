@@ -15,6 +15,7 @@ import {
   ArrowLeft,
   Building2,
   CheckCircle,
+  ChevronLeft,
   ChevronRight,
   Printer,
   UserCheck,
@@ -462,20 +463,22 @@ export const ForHiringPage = () => {
       <div className="p-6">
         {/* Breadcrumb / header */}
         <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-start gap-3">
-            <button
-              type="button"
-              onClick={() => { setSelectedDept(null); setSelected(new Set()); }}
-              className="mt-1 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" /> Departments
-            </button>
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">{selectedDept}</h1>
-              <p className="text-sm text-slate-500">
-                {deptApplicants.length} qualified applicant{deptApplicants.length !== 1 ? 's' : ''} — ranked by interview score
-              </p>
+          <div>
+            <div className="mb-1 flex items-center gap-1.5 text-sm">
+              <button
+                type="button"
+                onClick={() => { setSelectedDept(null); setSelected(new Set()); }}
+                className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" /> For Hiring
+              </button>
+              <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+              <span className="font-medium text-slate-700">{selectedDept}</span>
             </div>
+            <h1 className="text-xl font-bold text-slate-900">{selectedDept}</h1>
+            <p className="text-sm text-slate-500">
+              {deptApplicants.length} qualified applicant{deptApplicants.length !== 1 ? 's' : ''} — ranked by interview score
+            </p>
           </div>
           <button
             type="button"
