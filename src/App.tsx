@@ -6,7 +6,6 @@ import { JobDetailsPage } from './components/JobDetailsPage';
 import { JobPostingsPage } from './components/JobPostingsPage';
 import { NewlyHiredPage } from './components/NewlyHiredPage';
 import { QualifiedApplicantsPage } from './components/QualifiedApplicantsPage';
-import { ApplicantRankingPage } from './components/ApplicantRankingPage';
 import { ForHiringPage } from './components/ForHiringPage';
 import { ApplicationsListPage } from './components/ApplicationsListPage';
 import { QualifiedApplicantsRSPPage } from './components/QualifiedApplicantsRSPPage';
@@ -679,11 +678,7 @@ function AppContent() {
           />
           <Route
             path="/admin/rsp/applicant-ranking"
-            element={
-              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
-                <ApplicantRankingPage />
-              </AdminRoute>
-            }
+            element={<Navigate to="/admin/rsp/for-hiring" replace />}
           />
           <Route
             path="/admin/rsp/for-hiring"

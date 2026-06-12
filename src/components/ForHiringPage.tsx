@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AdminHeader } from './AdminHeader';
 import { ApplicantsTabBar } from './ApplicantsTabBar';
 import { Sidebar } from './Sidebar';
@@ -51,7 +51,6 @@ export const ForHiringPage = () => {
   const [hiring, setHiring] = useState(false);
   const [credentialsResult, setCredentialsResult] = useState<CredentialResult[]>([]);
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
-  const printAreaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -168,12 +167,16 @@ export const ForHiringPage = () => {
     return () => window.removeEventListener('cictrix:applicants-updated', load);
   }, []);
 
-  const groupedByDept = useMemo(() => {
-    const map = new Map<string, HiringRow[]>();
+  // Nested grouping: Department → Position → rows
+  const groupedByDeptPos = useMemo(() => {
+    const map = new Map<string, Map<string, HiringRow[]>>();
     rows.forEach(r => {
       const dept = r.department || 'No Department';
-      if (!map.has(dept)) map.set(dept, []);
-      map.get(dept)!.push(r);
+      const pos  = r.position  || 'No Position';
+      if (!map.has(dept)) map.set(dept, new Map());
+      const posMap = map.get(dept)!;
+      if (!posMap.has(pos)) posMap.set(pos, []);
+      posMap.get(pos)!.push(r);
     });
     return map;
   }, [rows]);
@@ -406,7 +409,7 @@ export const ForHiringPage = () => {
               <div>
                 <h1 className="text-2xl font-bold text-slate-900">For Hiring</h1>
                 <p className="text-sm text-slate-500">
-                  Applicants who have completed all recruitment stages and obtained the required scores are listed below.
+                  Qualified applicants organized by department and position. Select applicants to create their employee records.
                 </p>
               </div>
               <button
@@ -424,7 +427,7 @@ export const ForHiringPage = () => {
               <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white py-20 text-slate-400">
                 <Users className="mb-3 h-10 w-10" />
                 <p className="font-medium">No applicants ready for hiring yet.</p>
-                <p className="mt-1 text-sm">Qualified applicants will appear here once all stages are completed.</p>
+                <p className="mt-1 text-sm">Qualified applicants will appear here once all recruitment stages are completed.</p>
               </div>
             ) : (
               <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
@@ -441,52 +444,55 @@ export const ForHiringPage = () => {
                         />
                       </th>
                       <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Applicant Name</th>
-                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
-                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Department</th>
                       <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Score</th>
                       <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {Array.from(groupedByDept.entries()).map(([dept, deptRows]) => (
+                    {Array.from(groupedByDeptPos.entries()).map(([dept, posMap]) => (
                       <>
-                        <tr key={`dept-${dept}`} className="bg-[#363EE8]/5 border-b border-slate-200">
-                          <td colSpan={6} className="px-5 py-2 text-xs font-bold uppercase tracking-wider text-[#363EE8]">
+                        {/* Department header */}
+                        <tr key={`dept-${dept}`} className="bg-[#363EE8]/5 border-b border-[#363EE8]/10">
+                          <td colSpan={4} className="px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-[#363EE8]">
                             {dept}
                           </td>
                         </tr>
-                        {deptRows.map(row => (
-                          <tr
-                            key={row.id}
-                            className={`border-b border-slate-100 last:border-0 transition-colors hover:bg-slate-50 ${selected.has(row.id) ? 'bg-blue-50/60' : ''}`}
-                          >
-                            <td className="px-4 py-4 text-center">
-                              <input
-                                type="checkbox"
-                                checked={selected.has(row.id)}
-                                onChange={() => toggleRow(row.id)}
-                                className="h-4 w-4 accent-[#363EE8]"
-                              />
-                            </td>
-                            <td className="px-5 py-4">
-                              <p className="text-sm font-semibold text-slate-900">{row.fullName}</p>
-                              <p className="text-xs text-slate-400">{row.email}</p>
-                            </td>
-                            <td className="px-5 py-4 text-sm text-slate-700">{row.position || '—'}</td>
-                            <td className="px-5 py-4">
-                              <span className="inline-flex rounded-full bg-[#363EE8]/10 px-2.5 py-0.5 text-xs font-semibold text-[#363EE8]">
-                                {row.department || '—'}
-                              </span>
-                            </td>
-                            <td className="px-5 py-4 text-sm font-semibold text-slate-700">
-                              {row.score > 0 ? `${row.score.toFixed(1)}%` : '—'}
-                            </td>
-                            <td className="px-5 py-4">
-                              <span className="inline-flex rounded-full border border-green-200 bg-green-50 px-2.5 py-0.5 text-xs font-semibold text-green-700">
-                                {row.status}
-                              </span>
-                            </td>
-                          </tr>
+                        {Array.from(posMap.entries()).map(([position, posRows]) => (
+                          <>
+                            {/* Position sub-header */}
+                            <tr key={`pos-${dept}-${position}`} className="bg-slate-50/80 border-b border-slate-100">
+                              <td colSpan={4} className="pl-8 pr-5 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                                {position}
+                              </td>
+                            </tr>
+                            {posRows.map(row => (
+                              <tr
+                                key={row.id}
+                                className={`border-b border-slate-100 last:border-0 transition-colors hover:bg-slate-50 ${selected.has(row.id) ? 'bg-blue-50/60' : ''}`}
+                              >
+                                <td className="px-4 py-4 text-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={selected.has(row.id)}
+                                    onChange={() => toggleRow(row.id)}
+                                    className="h-4 w-4 accent-[#363EE8]"
+                                  />
+                                </td>
+                                <td className="px-5 py-4">
+                                  <p className="text-sm font-semibold text-slate-900">{row.fullName}</p>
+                                  <p className="text-xs text-slate-400">{row.email}</p>
+                                </td>
+                                <td className="px-5 py-4 text-sm font-semibold text-slate-700">
+                                  {row.score > 0 ? `${row.score.toFixed(1)}%` : '—'}
+                                </td>
+                                <td className="px-5 py-4">
+                                  <span className="inline-flex rounded-full border border-green-200 bg-green-50 px-2.5 py-0.5 text-xs font-semibold text-green-700">
+                                    {row.status}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </>
                         ))}
                       </>
                     ))}
@@ -508,23 +514,25 @@ export const ForHiringPage = () => {
             <h2 className="mb-2 text-lg font-bold text-slate-900">Confirm Employee Record Creation</h2>
 
             {confirmTarget.length === 1 ? (
-              <p className="text-sm text-slate-600">
-                Are you sure you want to hire{' '}
-                <strong>{confirmTarget[0].fullName}</strong> for the position of{' '}
-                <strong>{confirmTarget[0].position}</strong> under the{' '}
-                <strong>{confirmTarget[0].department}</strong> department? This action will create an employee record and generate a system account.
-              </p>
+              <>
+                <p className="text-sm font-semibold text-slate-800 mb-1">{confirmTarget[0].fullName}</p>
+                <p className="text-sm text-slate-600">
+                  Are you sure you want to hire this applicant for the position of{' '}
+                  <strong>{confirmTarget[0].position || '—'}</strong> under the{' '}
+                  <strong>{confirmTarget[0].department || '—'}</strong> department? This action will create an employee record and generate a system account.
+                </p>
+              </>
             ) : (
               <>
                 <p className="mb-3 text-sm text-slate-600">
                   Are you sure you want to create employee records for the following{' '}
                   <strong>{confirmTarget.length} applicants</strong>? This action will create employee records and generate system accounts.
                 </p>
-                <ul className="mb-3 max-h-40 overflow-y-auto rounded-xl border border-slate-200 divide-y divide-slate-100">
+                <ul className="mb-3 max-h-48 overflow-y-auto rounded-xl border border-slate-200 divide-y divide-slate-100">
                   {confirmTarget.map(r => (
-                    <li key={r.id} className="px-3 py-2">
+                    <li key={r.id} className="px-3 py-2.5">
                       <p className="text-sm font-semibold text-slate-800">{r.fullName}</p>
-                      <p className="text-xs text-slate-500">{r.position} — {r.department}</p>
+                      <p className="text-xs text-slate-500">{r.position || '—'} — {r.department || '—'}</p>
                     </li>
                   ))}
                 </ul>
@@ -572,7 +580,7 @@ export const ForHiringPage = () => {
             </div>
 
             {/* Credentials Table */}
-            <div className="overflow-auto flex-1 px-6 py-4" ref={printAreaRef}>
+            <div className="overflow-auto flex-1 px-6 py-4">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200">

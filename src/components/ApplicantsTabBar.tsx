@@ -4,7 +4,6 @@ const TABS = [
   { label: 'Applications',        path: '/admin/rsp/applications' },
   { label: 'Qualified Applicants', path: '/admin/rsp/qualified' },
   { label: 'Applicant Score',      path: '/admin/rsp/applicant-score' },
-  { label: 'Applicant Ranking',    path: '/admin/rsp/applicant-ranking' },
   { label: 'For Hiring',           path: '/admin/rsp/for-hiring' },
 ] as const;
 
