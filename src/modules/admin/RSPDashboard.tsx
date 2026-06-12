@@ -101,6 +101,7 @@ interface ApplicantRecord {
   status: string;
   created_at: string;
   total_score: number | null;
+  qualification_score?: number | null;
   // Optional metadata used by the assessment-form rendering paths.
   // Persisted on the applicant record when scoring is finalized.
   appointmentType?: 'original' | 'promotional';
@@ -725,6 +726,8 @@ export const RSPDashboard = () => {
   const [assessmentSearch, setAssessmentSearch] = useState('');
   const [archivesSearch, setArchivesSearch] = useState('');
   const [rankingPositionFilter, setRankingPositionFilter] = useState<string>('all');
+  const [rankingNavDept, setRankingNavDept] = useState<string | null>(null);
+  const [rankingNavPos, setRankingNavPos] = useState<string | null>(null);
   const [activeDocumentTemplateId, setActiveDocumentTemplateId] = useState<EmployeeDocumentTemplateId | null>(null);
   const [expandedDocumentOffices, setExpandedDocumentOffices] = useState<Record<string, boolean>>({});
   const [selectedDocumentSubmissionIds, setSelectedDocumentSubmissionIds] = useState<string[]>([]);
@@ -1301,6 +1304,8 @@ export const RSPDashboard = () => {
       setReportsView('overview');
       setArchivesSearch('');
       setRankingPositionFilter('all');
+      setRankingNavDept(null);
+      setRankingNavPos(null);
     }
     if (section !== 'accounts') {
       setAccountsView('directory');
@@ -1831,6 +1836,21 @@ export const RSPDashboard = () => {
     }
   }, [activeAssessmentPosition, assessmentPositionCards]);
 
+
+  // All non-hired applicants grouped by office(dept) → position for historical ranking view
+  const rankingHistoricalData = useMemo(() => {
+    const notHired = applicants.filter(a => !a.status.toLowerCase().includes('hired'));
+    const byDept = new Map<string, Map<string, ApplicantRecord[]>>();
+    notHired.forEach(a => {
+      const dept = a.office || 'No Department';
+      const pos  = a.position || 'No Position';
+      if (!byDept.has(dept)) byDept.set(dept, new Map());
+      const posMap = byDept.get(dept)!;
+      if (!posMap.has(pos)) posMap.set(pos, []);
+      posMap.get(pos)!.push(a);
+    });
+    return byDept;
+  }, [applicants]);
 
   const newlyHiredApplicants = useMemo(() => {
     const applicantsById = new Map(applicants.map((applicant) => [String(applicant.id), applicant] as const));
@@ -3534,7 +3554,7 @@ export const RSPDashboard = () => {
                   <section className="flex items-start justify-between gap-4">
                     <div>
                       <p className="!mb-1 text-base text-blue-600">RSP / Employees</p>
-                      <h2 className="!mb-1 text-4xl font-bold text-[var(--text-primary)]">Employee Directory</h2>
+                      <h2 className="!mb-1 text-4xl font-bold text-[var(--text-primary)]">Employee Accounts</h2>
                       <p className="!mb-0 text-lg text-[var(--text-secondary)]">
                         Browse employees by position • {employeeDirectoryCards.totalEmployees} total employees
                       </p>
@@ -4158,11 +4178,42 @@ export const RSPDashboard = () => {
                 </>
               ) : reportsView === 'documents' ? null : reportsView === 'ranking' ? (
                 <section className="space-y-4">
+                  {/* ── Header bar ─────────────────────────────────────────── */}
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--border-color)] bg-white p-5">
-                    <div>
-                      <p className="!mb-1 text-sm font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Reports / Application Ranking</p>
-                      <h2 className="!mb-1 text-2xl font-semibold text-[var(--text-primary)]">Application Ranking Reports</h2>
-                      <p className="!mb-0 text-base text-[var(--text-secondary)]">Generate ranking reports per position and select applicants to hire.</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {rankingNavDept && (
+                        <button
+                          type="button"
+                          onClick={() => { setRankingNavDept(null); setRankingNavPos(null); }}
+                          className="inline-flex items-center gap-1 text-sm font-semibold text-blue-600 hover:underline"
+                        >
+                          <ChevronLeft size={15} /> Departments
+                        </button>
+                      )}
+                      {rankingNavDept && rankingNavPos && (
+                        <>
+                          <ChevronRight size={14} className="text-slate-400" />
+                          <button
+                            type="button"
+                            onClick={() => setRankingNavPos(null)}
+                            className="text-sm font-semibold text-blue-600 hover:underline"
+                          >
+                            {rankingNavDept}
+                          </button>
+                        </>
+                      )}
+                      {rankingNavPos && (
+                        <>
+                          <ChevronRight size={14} className="text-slate-400" />
+                          <span className="text-sm font-semibold text-slate-700">{rankingNavPos}</span>
+                        </>
+                      )}
+                      {!rankingNavDept && (
+                        <div>
+                          <p className="!mb-0.5 text-sm font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Archives / Application Ranking</p>
+                          <h2 className="!mb-0 text-xl font-semibold text-[var(--text-primary)]">Application Ranking Reports</h2>
+                        </div>
+                      )}
                     </div>
                     <button
                       type="button"
@@ -4173,48 +4224,166 @@ export const RSPDashboard = () => {
                     </button>
                   </div>
 
-                  {rankingPositionCards.length > 0 && (
-                    <div className="flex items-center gap-3">
-                      <label className="text-sm font-semibold text-[var(--text-secondary)] whitespace-nowrap">Filter by Position:</label>
-                      <select
-                        value={rankingPositionFilter}
-                        onChange={(e) => setRankingPositionFilter(e.target.value)}
-                        className="rounded-xl border border-[var(--border-color)] bg-white px-3 py-2 text-sm"
-                      >
-                        <option value="all">All Positions</option>
-                        {rankingPositionCards.map((c) => (
-                          <option key={c.position} value={c.position}>{c.position}</option>
-                        ))}
-                      </select>
-                    </div>
+                  {/* ── Level 1: Department table ─────────────────────────── */}
+                  {!rankingNavDept && (
+                    rankingHistoricalData.size === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-[var(--border-color)] bg-white p-6 text-center">
+                        <p className="!mb-0 text-base text-[var(--text-secondary)]">No applicant records available yet.</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                        <table className="w-full min-w-full">
+                          <thead>
+                            <tr className="border-b border-slate-200 bg-slate-50">
+                              <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Department / Office</th>
+                              <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Positions</th>
+                              <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Applicants</th>
+                              <th className="w-10 px-5 py-3" />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Array.from(rankingHistoricalData.entries())
+                              .sort(([a], [b]) => a.localeCompare(b))
+                              .map(([dept, posMap]) => {
+                                const totalApplicants = Array.from(posMap.values()).reduce((s, arr) => s + arr.length, 0);
+                                return (
+                                  <tr
+                                    key={dept}
+                                    onClick={() => setRankingNavDept(dept)}
+                                    className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-blue-50/40 transition-colors group"
+                                  >
+                                    <td className="px-5 py-4">
+                                      <div className="flex items-center gap-3">
+                                        <div className="shrink-0 rounded-xl bg-[#363EE8]/10 p-2 text-[#363EE8]">
+                                          <Building2 size={18} />
+                                        </div>
+                                        <span className="text-sm font-semibold text-slate-900">{dept}</span>
+                                      </div>
+                                    </td>
+                                    <td className="px-5 py-4 text-center text-sm text-slate-600">{posMap.size}</td>
+                                    <td className="px-5 py-4 text-center">
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-[#363EE8]/10 px-2.5 py-0.5 text-xs font-semibold text-[#363EE8]">
+                                        {totalApplicants}
+                                      </span>
+                                    </td>
+                                    <td className="px-5 py-4 text-slate-400 group-hover:text-[#363EE8] transition-colors">
+                                      <ChevronRight size={16} />
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )
                   )}
 
-                  {rankingPositionCards.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-[var(--border-color)] bg-white p-6 text-center">
-                      <p className="!mb-0 text-base text-[var(--text-secondary)]">No qualified applicants available for ranking reports yet.</p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                      {rankingPositionCards.filter((c) => rankingPositionFilter === 'all' || c.position === rankingPositionFilter).map((card) => (
-                        <article key={card.position} className="rounded-2xl border border-[var(--border-color)] bg-white p-5">
-                          <p className="!mb-1 text-sm text-[var(--text-secondary)]">{card.department}</p>
-                          <h3 className="!mb-2 text-xl font-semibold text-[var(--text-primary)]">{card.position}</h3>
-                          <p className="!mb-4 text-sm text-[var(--text-secondary)]">
-                            Item No.: <span className="font-semibold text-[var(--text-primary)]">{card.itemNumber}</span>
-                            {' • '}
-                            Qualified Applicants: <span className="font-semibold text-[var(--text-primary)]">{card.qualifiedCount}</span>
+                  {/* ── Level 2: Positions in selected department ─────────── */}
+                  {rankingNavDept && !rankingNavPos && (() => {
+                    const posMap = rankingHistoricalData.get(rankingNavDept);
+                    if (!posMap) return null;
+                    return (
+                      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                        <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
+                          <p className="!mb-0 text-sm font-bold uppercase tracking-wider text-slate-500">{rankingNavDept}</p>
+                        </div>
+                        <table className="w-full min-w-full">
+                          <thead>
+                            <tr className="border-b border-slate-200 bg-white">
+                              <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
+                              <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Applicants</th>
+                              <th className="w-10 px-5 py-3" />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Array.from(posMap.entries())
+                              .sort(([a], [b]) => a.localeCompare(b))
+                              .map(([pos, rows]) => (
+                                <tr
+                                  key={pos}
+                                  onClick={() => setRankingNavPos(pos)}
+                                  className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-blue-50/40 transition-colors group"
+                                >
+                                  <td className="px-5 py-4 text-sm font-semibold text-slate-900">{pos}</td>
+                                  <td className="px-5 py-4 text-center">
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-[#363EE8]/10 px-2.5 py-0.5 text-xs font-semibold text-[#363EE8]">
+                                      {rows.length}
+                                    </span>
+                                  </td>
+                                  <td className="px-5 py-4 text-slate-400 group-hover:text-[#363EE8] transition-colors">
+                                    <ChevronRight size={16} />
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()}
+
+                  {/* ── Level 3: Applicants in selected position ──────────── */}
+                  {rankingNavDept && rankingNavPos && (() => {
+                    const posMap = rankingHistoricalData.get(rankingNavDept);
+                    const rows = (posMap?.get(rankingNavPos) ?? [])
+                      .slice()
+                      .sort((a, b) => (b.total_score ?? -1) - (a.total_score ?? -1));
+                    const fmtScore = (v: number | null | undefined) => v != null ? v.toFixed(2) : '—';
+                    return (
+                      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-3">
+                          <p className="!mb-0 text-sm font-bold uppercase tracking-wider text-slate-500">
+                            {rankingNavDept} — {rankingNavPos}
                           </p>
                           <button
                             type="button"
-                            onClick={() => openRankingReport(card.position)}
-                            className="rounded-lg bg-[var(--primary-color)] px-4 py-2 text-sm font-semibold text-white"
+                            onClick={() => openRankingReport(rankingNavPos)}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--primary-color)] px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 transition"
                           >
-                            Generate Ranking Report
+                            <FileText size={12} /> Generate Ranking Report
                           </button>
-                        </article>
-                      ))}
-                    </div>
-                  )}
+                        </div>
+                        <table className="w-full min-w-full">
+                          <thead>
+                            <tr className="border-b border-slate-200 bg-white">
+                              <th className="w-12 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Rank</th>
+                              <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Applicant Name</th>
+                              <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
+                              <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Interview Score</th>
+                              <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Exam Score</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rows.length === 0 ? (
+                              <tr>
+                                <td colSpan={5} className="px-5 py-8 text-center text-sm text-slate-500">No applicants found.</td>
+                              </tr>
+                            ) : rows.map((row, idx) => {
+                              const rank = idx + 1;
+                              const medalBg = rank === 1 ? 'bg-yellow-400 text-yellow-900' : rank === 2 ? 'bg-slate-300 text-slate-800' : rank === 3 ? 'bg-amber-500 text-amber-900' : 'bg-slate-100 text-slate-600';
+                              const statusLc = row.status.toLowerCase();
+                              const statusColor = statusLc.includes('hired') ? 'bg-green-100 text-green-700' : statusLc.includes('qualified') ? 'bg-blue-100 text-blue-700' : statusLc.includes('disqualified') || statusLc.includes('rejected') ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600';
+                              return (
+                                <tr key={row.id} className="border-b border-slate-100 last:border-0">
+                                  <td className="px-4 py-3 text-center">
+                                    <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${medalBg}`}>{rank}</span>
+                                  </td>
+                                  <td className="px-5 py-3">
+                                    <p className="!mb-0 text-sm font-semibold text-slate-900">{row.full_name}</p>
+                                    <p className="!mb-0 text-xs text-slate-400">{row.email}</p>
+                                  </td>
+                                  <td className="px-5 py-3">
+                                    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusColor}`}>{row.status}</span>
+                                  </td>
+                                  <td className="px-5 py-3 text-center text-sm font-bold text-[#040E6B]">{fmtScore(row.total_score)}</td>
+                                  <td className="px-5 py-3 text-center text-sm font-bold text-[#040E6B]">{fmtScore(row.qualification_score)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()}
                 </section>
               ) : (
                 <section className="space-y-4">
