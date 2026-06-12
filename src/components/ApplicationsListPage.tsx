@@ -176,6 +176,10 @@ export const ApplicationsListPage = () => {
         <div className="admin-layout">
           <Sidebar activeModule="RSP" userRole="rsp" />
           <main className="admin-content bg-slate-50 !p-0">
+            <div className="border-b border-slate-200 bg-white px-8 py-6">
+              <h1 className="!mb-1 !text-2xl font-bold">Applications</h1>
+              <p className="!mb-0 text-base text-slate-500">All applicants submitted across all job positions</p>
+            </div>
             <ApplicantsTabBar />
             <div className="flex items-center justify-center p-16 text-slate-500">Loading applicants…</div>
           </main>
@@ -191,16 +195,13 @@ export const ApplicationsListPage = () => {
       <div className="admin-layout">
         <Sidebar activeModule="RSP" userRole="rsp" />
         <main className="admin-content bg-slate-50 !p-0">
+          <div className="border-b border-slate-200 bg-white px-8 py-6">
+            <h1 className="!mb-1 !text-2xl font-bold">Applications</h1>
+            <p className="!mb-0 text-base text-slate-500">All applicants submitted across all job positions</p>
+          </div>
           <ApplicantsTabBar />
 
           <div className="p-6">
-            <div className="mb-5">
-              <h1 className="text-2xl font-bold text-slate-900">Applications</h1>
-              <p className="text-sm text-slate-500">
-                Click <strong>View</strong> to open an applicant's profile and evaluate them
-              </p>
-            </div>
-
             {/* Filters */}
             <div className="mb-4 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">

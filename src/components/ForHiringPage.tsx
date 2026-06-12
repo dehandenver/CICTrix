@@ -377,6 +377,10 @@ export const ForHiringPage = () => {
       <div className="admin-layout">
         <Sidebar activeModule="RSP" userRole="rsp" />
         <main className="admin-content bg-slate-50 !p-0">
+          <div className="border-b border-slate-200 bg-white px-8 py-6">
+            <h1 className="!mb-1 !text-2xl font-bold">For Hiring</h1>
+            <p className="!mb-0 text-base text-slate-500">Applicants ranked and ready for the final hiring decision</p>
+          </div>
           <ApplicantsTabBar />
           {children}
         </main>
@@ -394,13 +398,6 @@ export const ForHiringPage = () => {
   if (!selectedDept) return (
     <Shell>
       <div className="p-6">
-        <div className="mb-5">
-          <h1 className="text-2xl font-bold text-slate-900">For Hiring</h1>
-          <p className="text-sm text-slate-500">
-            Select a department to view its ranked list of qualified applicants.
-          </p>
-        </div>
-
         {departmentList.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white py-20 text-slate-400">
             <Users className="mb-3 h-10 w-10" />

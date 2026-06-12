@@ -952,19 +952,17 @@ export const JobPostingsPage = () => {
     <div className="admin-layout">
       <Sidebar activeModule="RSP" userRole="rsp" />
       <main className="admin-content bg-slate-50 !p-0">
+        <div className="border-b border-slate-200 bg-white px-8 py-6">
+          <h1 className="!mb-1 !text-2xl font-bold">Job Posts</h1>
+          <p className="!mb-0 text-base text-slate-500">Manage and monitor all job positions and their applicants</p>
+        </div>
         <div className="p-6">
-        <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">Applications</h1>
-            <p className="text-sm text-slate-600">Manage and monitor all job positions and their applicants</p>
-          </div>
-          <div className="flex gap-2">
-            <button className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white" onClick={openCreateModal}>
-              <Plus className="h-4 w-4" />
-              Add New Position
-            </button>
-          </div>
-        </header>
+        <div className="mb-5 flex justify-end">
+          <button className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white" onClick={openCreateModal}>
+            <Plus className="h-4 w-4" />
+            Add New Position
+          </button>
+        </div>
 
         {viewingApplicantsFor && (() => {
           const job = viewingApplicantsFor;
