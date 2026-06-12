@@ -1373,19 +1373,6 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
 
   return (
     <>
-      {/* Page header */}
-      <section style={{ background: '#fff', border: '1px solid var(--border-color, #e2e8f0)', borderRadius: 16, padding: '1.25rem 1.5rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        <div style={{ width: 48, height: 48, borderRadius: 12, background: '#dcfce7', color: '#16a34a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Trophy size={26} />
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <h2 style={{ margin: 0, fontSize: '1.35rem', fontWeight: 800, color: '#0f172a' }}>Qualified Applicants</h2>
-          <p style={{ margin: '0.15rem 0 0', fontSize: '0.875rem', color: '#64748b' }}>
-            List of applicants who passed the evaluation, organized by job position.
-          </p>
-        </div>
-      </section>
-
       {liveOpenFolder ? (
         <ApplicantsListView
           folder={liveOpenFolder}
@@ -1401,7 +1388,7 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
             <article className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="!mb-2 text-sm text-[var(--text-secondary)]">Total Qualified</p>
+                  <p className="!mb-2 text-sm text-[var(--text-secondary)]">Total Qualified Applicants</p>
                   <p className="!mb-0 text-3xl font-bold">{qualifiedBase.length}</p>
                 </div>
                 <div className="rounded-2xl bg-blue-100 p-4 text-blue-600"><Users size={28} /></div>
@@ -1410,7 +1397,7 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
             <article className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="!mb-2 text-sm text-[var(--text-secondary)]">Job Positions</p>
+                  <p className="!mb-2 text-sm text-[var(--text-secondary)]">Total Job Positions</p>
                   <p className="!mb-0 text-3xl font-bold">{folders.length}</p>
                 </div>
                 <div className="rounded-2xl bg-indigo-100 p-4 text-indigo-600"><FolderOpen size={28} /></div>
