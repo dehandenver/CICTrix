@@ -11,7 +11,16 @@ import {
 import { sendEmail } from '../lib/email';
 import { createPassword, upsertEmployeePortalAccount } from '../lib/employeePortalData';
 import { supabase } from '../lib/supabase';
-import { CheckCircle, Printer, UserCheck, Users, XCircle } from 'lucide-react';
+import {
+  ArrowLeft,
+  Building2,
+  CheckCircle,
+  ChevronRight,
+  Printer,
+  UserCheck,
+  Users,
+  XCircle,
+} from 'lucide-react';
 
 interface HiringRow {
   id: string;
@@ -19,7 +28,8 @@ interface HiringRow {
   email: string;
   position: string;
   department: string;
-  score: number;
+  interviewScore: number | null;
+  examScore: number | null;
   status: string;
 }
 
@@ -33,8 +43,6 @@ interface CredentialResult {
   department: string;
 }
 
-// Match any status that indicates an applicant has passed all recruitment stages.
-// All checks run on the lowercased status so casing from different sources doesn't matter.
 const QUALIFY_STATUSES = ['qualified', 'recommended for hiring', 'accepted', 'for hiring'];
 const EXACT_QUALIFY = ['hired'];
 
@@ -43,15 +51,19 @@ const isForHiring = (status: string) => {
   return QUALIFY_STATUSES.some(q => s.includes(q)) || EXACT_QUALIFY.includes(s);
 };
 
+const fmtScore = (v: number | null) => (v != null ? v.toFixed(2) : '—');
+
 export const ForHiringPage = () => {
-  const [rows, setRows] = useState<HiringRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [confirmTarget, setConfirmTarget] = useState<HiringRow[] | null>(null);
-  const [hiring, setHiring] = useState(false);
+  const [rows, setRows]                         = useState<HiringRow[]>([]);
+  const [loading, setLoading]                   = useState(true);
+  const [selectedDept, setSelectedDept]         = useState<string | null>(null);
+  const [selected, setSelected]                 = useState<Set<string>>(new Set());
+  const [confirmTarget, setConfirmTarget]       = useState<HiringRow[] | null>(null);
+  const [hiring, setHiring]                     = useState(false);
   const [credentialsResult, setCredentialsResult] = useState<CredentialResult[]>([]);
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
 
+  // ── Data loading ────────────────────────────────────────────────────────────
   useEffect(() => {
     const load = async () => {
       setLoading(true);
@@ -59,8 +71,6 @@ export const ForHiringPage = () => {
         ensureRecruitmentSeedData();
         const local = getApplicants().filter(a => isForHiring(a.status));
 
-        // Fetch from backend API (primary — bypasses RLS, returns all statuses).
-        // Fall back to direct Supabase query if the API is unreachable.
         const remoteData: any[] = [];
         try {
           const res = await fetch('/api/applicants/?skip=0&limit=5000');
@@ -79,7 +89,7 @@ export const ForHiringPage = () => {
           } catch { /* local store only */ }
         }
 
-        // Build a map of remote qualifying rows (API/Supabase is the source of truth)
+        // Build remote map — API data is authoritative
         const remoteMap = new Map<string, HiringRow>();
         const newLocalEntries: any[] = [];
 
@@ -90,17 +100,17 @@ export const ForHiringPage = () => {
           const fullName = [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')
             || r.full_name || '';
           const row: HiringRow = {
-            id: String(r.id),
-            fullName: fullName || (r.email ? String(r.email).split('@')[0] : '—'),
-            email: r.email ?? '',
-            position: r.position || '',
-            department: r.office || r.department || '',
-            score: Number(r.qualification_score ?? r.total_score ?? 0),
+            id:            String(r.id),
+            fullName:      fullName || (r.email ? String(r.email).split('@')[0] : '—'),
+            email:         r.email ?? '',
+            position:      r.position || '',
+            department:    r.office || r.department || '',
+            interviewScore: r.total_score        != null ? Number(r.total_score)        : null,
+            examScore:      r.qualification_score != null ? Number(r.qualification_score) : null,
             status,
           };
           remoteMap.set(row.id, row);
 
-          // Persist into localStorage so the entry survives page reloads
           const existsLocally = local.some(a => a.id === row.id);
           if (!existsLocally) {
             const nameParts = (row.fullName || '').split(/\s+/);
@@ -109,15 +119,15 @@ export const ForHiringPage = () => {
               jobPostingId: 'supabase-sync',
               personalInfo: {
                 firstName: nameParts[0] || '',
-                lastName: nameParts.slice(1).join(' ') || '',
-                email: row.email,
+                lastName:  nameParts.slice(1).join(' ') || '',
+                email:     row.email,
                 phone: '', address: '', dateOfBirth: '',
               },
-              position: row.position,
-              department: row.department,
-              office: row.department,
-              qualificationScore: row.score,
-              status: row.status as any,
+              position:         row.position,
+              department:       row.department,
+              office:           row.department,
+              qualificationScore: row.examScore ?? 0,
+              status:           row.status as any,
               education: [], experience: [], skills: [],
               certifications: [], documents: [],
               applicationDate: new Date().toISOString(),
@@ -129,33 +139,27 @@ export const ForHiringPage = () => {
           saveApplicants([...getApplicants(), ...newLocalEntries]);
         }
 
-        // Merge: remote row takes priority (it has authoritative status + scores).
-        // For applicants only in localStorage (offline-created), use local data.
+        // Merge: local baseline, then remote overwrites
         const mergedMap = new Map<string, HiringRow>();
-
-        // Add all local qualifying rows first as baseline
         local.forEach(a => {
           const fullName = [a.personalInfo.firstName, a.personalInfo.lastName].filter(Boolean).join(' ')
-            || a.personalInfo.email?.split('@')[0]
-            || '—';
+            || a.personalInfo.email?.split('@')[0] || '—';
           mergedMap.set(a.id, {
-            id: a.id,
+            id:            a.id,
             fullName,
-            email: a.personalInfo.email ?? '',
-            position: (a as any).position ?? (a as any).jobPosting?.title ?? '',
-            department: (a as any).department ?? (a as any).office ?? (a as any).jobPosting?.department ?? '',
-            score: Number(a.qualificationScore ?? 0),
-            status: a.status,
+            email:         a.personalInfo.email ?? '',
+            position:      (a as any).position ?? '',
+            department:    (a as any).department ?? (a as any).office ?? '',
+            interviewScore: null,
+            examScore:      Number(a.qualificationScore ?? 0) || null,
+            status:         a.status,
           });
         });
-
-        // Remote data overwrites — Supabase is authoritative
         remoteMap.forEach((row, id) => mergedMap.set(id, row));
 
-        const all = Array.from(mergedMap.values());
-        all.sort((a, b) =>
+        const all = Array.from(mergedMap.values()).sort((a, b) =>
           (a.department || 'zzz').localeCompare(b.department || 'zzz') ||
-          (a.position || 'zzz').localeCompare(b.position || 'zzz')
+          (a.position   || 'zzz').localeCompare(b.position   || 'zzz')
         );
         setRows(all);
       } finally {
@@ -167,42 +171,52 @@ export const ForHiringPage = () => {
     return () => window.removeEventListener('cictrix:applicants-updated', load);
   }, []);
 
-  // Nested grouping: Department → Position → rows
-  const groupedByDeptPos = useMemo(() => {
-    const map = new Map<string, Map<string, HiringRow[]>>();
+  // ── Department folder list ────────────────────────────────────────────────
+  const departmentList = useMemo(() => {
+    const map = new Map<string, { positions: Set<string>; count: number }>();
     rows.forEach(r => {
       const dept = r.department || 'No Department';
-      const pos  = r.position  || 'No Position';
-      if (!map.has(dept)) map.set(dept, new Map());
-      const posMap = map.get(dept)!;
-      if (!posMap.has(pos)) posMap.set(pos, []);
-      posMap.get(pos)!.push(r);
+      if (!map.has(dept)) map.set(dept, { positions: new Set(), count: 0 });
+      const entry = map.get(dept)!;
+      entry.positions.add(r.position || 'No Position');
+      entry.count++;
     });
-    return map;
+    return Array.from(map.entries())
+      .map(([dept, { positions, count }]) => ({
+        dept,
+        positionCount:  positions.size,
+        applicantCount: count,
+      }))
+      .sort((a, b) => a.dept.localeCompare(b.dept));
   }, [rows]);
 
-  const toggleRow = (id: string) => {
-    setSelected(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
+  // ── Applicants for the selected department, sorted by interview score ─────
+  const deptApplicants = useMemo(() => {
+    if (!selectedDept) return [];
+    return rows
+      .filter(r => (r.department || 'No Department') === selectedDept)
+      .sort((a, b) => (b.interviewScore ?? b.examScore ?? -1) - (a.interviewScore ?? a.examScore ?? -1));
+  }, [rows, selectedDept]);
+
+  // ── Selection helpers ─────────────────────────────────────────────────────
+  const toggleRow = (id: string) =>
+    setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const toggleAll = () => {
-    if (selected.size === rows.length) {
+    if (selected.size === deptApplicants.length && deptApplicants.length > 0) {
       setSelected(new Set());
     } else {
-      setSelected(new Set(rows.map(r => r.id)));
+      setSelected(new Set(deptApplicants.map(r => r.id)));
     }
   };
 
   const handleCreateClick = () => {
-    const targets = rows.filter(r => selected.has(r.id));
+    const targets = deptApplicants.filter(r => selected.has(r.id));
     if (targets.length === 0) return;
     setConfirmTarget(targets);
   };
 
+  // ── Hiring flow ───────────────────────────────────────────────────────────
   const handleConfirmHire = async () => {
     if (!confirmTarget) return;
     setHiring(true);
@@ -211,46 +225,38 @@ export const ForHiringPage = () => {
     const newCredentials: CredentialResult[] = [];
 
     for (const row of confirmTarget) {
-      // Step 1 — create the official employee record via the API.
-      // Fallback: a unique provisional ID so the rest of the flow still completes
-      // if the backend is unavailable. Random 4-digit suffix avoids collisions
-      // during bulk onboarding when the loop iterates faster than the clock ticks.
-      let employeeId: string;
+      let employeeId = '';
       let backendSuccess = false;
       try {
         const employeeRow = await hireApplicant(row.id);
         employeeId = employeeRow?.employee_id || '';
         backendSuccess = Boolean(employeeId);
-      } catch {
-        employeeId = '';
-      }
+      } catch { /* fallback below */ }
 
       if (!employeeId) {
         const year = new Date().getFullYear();
-        const rnd = String(Math.floor(Math.random() * 9000) + 1000);
+        const rnd  = String(Math.floor(Math.random() * 9000) + 1000);
         employeeId = `EMP-${year}-${rnd}`;
       }
 
-      // Step 2 — generate credentials and provision the portal account.
       const tempPassword = createPassword();
 
       upsertEmployeePortalAccount({
-        id: `portal-${employeeId}`,
+        id:       `portal-${employeeId}`,
         username: employeeId,
         password: tempPassword,
         mustChangePassword: true,
         employee: {
           employeeId,
-          fullName: row.fullName,
-          email: row.email,
-          position: row.position,
+          fullName:   row.fullName,
+          email:      row.email,
+          position:   row.position,
           department: row.department,
-          status: 'Active',
-          hireDate: new Date().toISOString().split('T')[0],
+          status:     'Active',
+          hireDate:   new Date().toISOString().split('T')[0],
         } as any,
       });
 
-      // Step 3 — mark as Hired in both Supabase and localStorage.
       try {
         await (supabase as any)
           .from('applicants')
@@ -259,20 +265,16 @@ export const ForHiringPage = () => {
       } catch { /* continue */ }
 
       saveApplicants(
-        getApplicants().map(a =>
-          a.id === row.id ? { ...a, status: 'Hired' as any } : a
-        )
+        getApplicants().map(a => a.id === row.id ? { ...a, status: 'Hired' as any } : a)
       );
-
       hiredIds.push(row.id);
 
-      // Step 4 — send credentials email (non-blocking).
       let emailSent = false;
       const recipient = row.email.trim();
       if (recipient) {
         try {
           await sendEmail({
-            to: recipient,
+            to:      recipient,
             subject: 'Your ABYAN HRIS account is ready',
             body:
               `Hello ${row.fullName},\n\n` +
@@ -288,19 +290,10 @@ export const ForHiringPage = () => {
             template: 'employee_credentials',
           });
           emailSent = true;
-        } catch { /* HR can use Print Credentials instead */ }
+        } catch { /* HR can print credentials instead */ }
       }
 
-      // Step 5 — collect for credentials modal.
-      newCredentials.push({
-        fullName: row.fullName,
-        employeeId,
-        tempPassword,
-        email: recipient,
-        emailSent,
-        position: row.position,
-        department: row.department,
-      });
+      newCredentials.push({ fullName: row.fullName, employeeId, tempPassword, email: recipient, emailSent, position: row.position, department: row.department });
     }
 
     setHiring(false);
@@ -314,13 +307,12 @@ export const ForHiringPage = () => {
     }
   };
 
+  // ── Print credentials ─────────────────────────────────────────────────────
   const handlePrintCredentials = () => {
     const win = window.open('', '_blank', 'width=820,height=700');
     if (!win) return;
 
     const dateStr = new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
-
-    // One card per employee — designed to be printed and cut for manual distribution.
     const cards = credentialsResult.map(c => `
       <div class="card">
         <div class="card-header">
@@ -340,7 +332,7 @@ export const ForHiringPage = () => {
               <div class="cred-value">${c.tempPassword}</div>
             </div>
           </div>
-          <div class="note">Please log in to the Employee Portal and change your password immediately upon first access. Keep this document confidential.</div>
+          <div class="note">Log in to the Employee Portal and change your password immediately upon first access. Keep this document confidential.</div>
         </div>
         <div class="card-footer">Issued ${dateStr}</div>
       </div>`).join('');
@@ -366,10 +358,7 @@ export const ForHiringPage = () => {
         .cred-value { font-family: 'Courier New', monospace; font-size: 13pt; font-weight: 700; letter-spacing: 0.08em; color: #040E6B; }
         .note { font-size: 7.5pt; color: #777; border-top: 1px dashed #ccc; padding-top: 7px; line-height: 1.4; }
         .card-footer { background: #f4f4f4; padding: 5px 14px; font-size: 8pt; color: #555; text-align: right; border-top: 1px solid #ddd; }
-        @media print {
-          body { padding: 12px; }
-          .grid { grid-template-columns: repeat(2, 1fr); }
-        }
+        @media print { body { padding: 12px; } .grid { grid-template-columns: repeat(2, 1fr); } }
       </style>`;
 
     win.document.body.innerHTML = `
@@ -381,278 +370,356 @@ export const ForHiringPage = () => {
     win.print();
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#f8f9fa]">
-        <AdminHeader userName="RSP Admin" divisionLabel="RSP Division" />
-        <div className="admin-layout">
-          <Sidebar activeModule="RSP" userRole="rsp" />
-          <main className="admin-content bg-slate-50 !p-0">
-            <ApplicantsTabBar />
-            <div className="flex items-center justify-center p-16 text-slate-500">Loading…</div>
-          </main>
-        </div>
-      </div>
-    );
-  }
-
-  return (
+  // ── Shell layout ──────────────────────────────────────────────────────────
+  const Shell = ({ children }: { children: React.ReactNode }) => (
     <div className="min-h-screen bg-[#f8f9fa]">
       <AdminHeader userName="RSP Admin" divisionLabel="RSP Division" />
       <div className="admin-layout">
         <Sidebar activeModule="RSP" userRole="rsp" />
         <main className="admin-content bg-slate-50 !p-0">
           <ApplicantsTabBar />
-
-          <div className="p-6">
-            <div className="mb-5 flex items-center justify-between">
-              <div>
-                <h1 className="text-2xl font-bold text-slate-900">For Hiring</h1>
-                <p className="text-sm text-slate-500">
-                  Qualified applicants organized by department and position. Select applicants to create their employee records.
-                </p>
-              </div>
-              <button
-                type="button"
-                disabled={selected.size === 0}
-                onClick={handleCreateClick}
-                className="inline-flex items-center gap-2 rounded-xl bg-[#363EE8] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <UserCheck className="h-4 w-4" />
-                Create Employee Record{selected.size > 1 ? `s (${selected.size})` : ''}
-              </button>
-            </div>
-
-            {rows.length === 0 ? (
-              <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white py-20 text-slate-400">
-                <Users className="mb-3 h-10 w-10" />
-                <p className="font-medium">No applicants ready for hiring yet.</p>
-                <p className="mt-1 text-sm">Qualified applicants will appear here once all recruitment stages are completed.</p>
-              </div>
-            ) : (
-              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                <table className="w-full min-w-full">
-                  <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50">
-                      <th className="w-10 px-4 py-3">
-                        <input
-                          type="checkbox"
-                          checked={selected.size === rows.length && rows.length > 0}
-                          onChange={toggleAll}
-                          className="h-4 w-4 accent-[#363EE8]"
-                          title="Select all"
-                        />
-                      </th>
-                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Applicant Name</th>
-                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Score</th>
-                      <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Array.from(groupedByDeptPos.entries()).map(([dept, posMap]) => (
-                      <>
-                        {/* Department header */}
-                        <tr key={`dept-${dept}`} className="bg-[#363EE8]/5 border-b border-[#363EE8]/10">
-                          <td colSpan={4} className="px-5 py-2.5 text-xs font-bold uppercase tracking-wider text-[#363EE8]">
-                            {dept}
-                          </td>
-                        </tr>
-                        {Array.from(posMap.entries()).map(([position, posRows]) => (
-                          <>
-                            {/* Position sub-header */}
-                            <tr key={`pos-${dept}-${position}`} className="bg-slate-50/80 border-b border-slate-100">
-                              <td colSpan={4} className="pl-8 pr-5 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                                {position}
-                              </td>
-                            </tr>
-                            {posRows.map(row => (
-                              <tr
-                                key={row.id}
-                                className={`border-b border-slate-100 last:border-0 transition-colors hover:bg-slate-50 ${selected.has(row.id) ? 'bg-blue-50/60' : ''}`}
-                              >
-                                <td className="px-4 py-4 text-center">
-                                  <input
-                                    type="checkbox"
-                                    checked={selected.has(row.id)}
-                                    onChange={() => toggleRow(row.id)}
-                                    className="h-4 w-4 accent-[#363EE8]"
-                                  />
-                                </td>
-                                <td className="px-5 py-4">
-                                  <p className="text-sm font-semibold text-slate-900">{row.fullName}</p>
-                                  <p className="text-xs text-slate-400">{row.email}</p>
-                                </td>
-                                <td className="px-5 py-4 text-sm font-semibold text-slate-700">
-                                  {row.score > 0 ? `${row.score.toFixed(1)}%` : '—'}
-                                </td>
-                                <td className="px-5 py-4">
-                                  <span className="inline-flex rounded-full border border-green-200 bg-green-50 px-2.5 py-0.5 text-xs font-semibold text-green-700">
-                                    {row.status}
-                                  </span>
-                                </td>
-                              </tr>
-                            ))}
-                          </>
-                        ))}
-                      </>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+          {children}
         </main>
       </div>
-
-      {/* Confirmation Dialog */}
-      {confirmTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[#363EE8]/10">
-              <UserCheck className="h-6 w-6 text-[#363EE8]" />
-            </div>
-            <h2 className="mb-2 text-lg font-bold text-slate-900">Confirm Employee Record Creation</h2>
-
-            {confirmTarget.length === 1 ? (
-              <>
-                <p className="text-sm font-semibold text-slate-800 mb-1">{confirmTarget[0].fullName}</p>
-                <p className="text-sm text-slate-600">
-                  Are you sure you want to hire this applicant for the position of{' '}
-                  <strong>{confirmTarget[0].position || '—'}</strong> under the{' '}
-                  <strong>{confirmTarget[0].department || '—'}</strong> department? This action will create an employee record and generate a system account.
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="mb-3 text-sm text-slate-600">
-                  Are you sure you want to create employee records for the following{' '}
-                  <strong>{confirmTarget.length} applicants</strong>? This action will create employee records and generate system accounts.
-                </p>
-                <ul className="mb-3 max-h-48 overflow-y-auto rounded-xl border border-slate-200 divide-y divide-slate-100">
-                  {confirmTarget.map(r => (
-                    <li key={r.id} className="px-3 py-2.5">
-                      <p className="text-sm font-semibold text-slate-800">{r.fullName}</p>
-                      <p className="text-xs text-slate-500">{r.position || '—'} — {r.department || '—'}</p>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
-
-            <div className="mt-5 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setConfirmTarget(null)}
-                disabled={hiring}
-                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmHire}
-                disabled={hiring}
-                className="rounded-xl bg-[#363EE8] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-              >
-                {hiring ? 'Creating…' : 'Yes, Create Record'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Credentials Modal */}
-      {showCredentialsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-3xl rounded-2xl bg-white shadow-2xl flex flex-col max-h-[90vh]">
-
-            {/* Header */}
-            <div className="flex items-center gap-3 px-6 py-5 border-b border-slate-200">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-100">
-                <CheckCircle className="h-5 w-5 text-green-600" />
-              </div>
-              <div className="flex-1">
-                <h2 className="text-lg font-bold text-slate-900">Employee Records Created</h2>
-                <p className="text-sm text-slate-500">
-                  {credentialsResult.length} employee account{credentialsResult.length > 1 ? 's' : ''} generated. Credentials have been sent to each employee's registered email where available.
-                </p>
-              </div>
-            </div>
-
-            {/* Credentials Table */}
-            <div className="overflow-auto flex-1 px-6 py-4">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200">
-                    <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Name</th>
-                    <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position / Dept.</th>
-                    <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Employee ID</th>
-                    <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Temporary Password</th>
-                    <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Email Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {credentialsResult.map((c, i) => (
-                    <tr key={i} className="py-3">
-                      <td className="py-3 pr-4">
-                        <p className="font-semibold text-slate-900">{c.fullName}</p>
-                        <p className="text-xs text-slate-400">{c.email || '—'}</p>
-                      </td>
-                      <td className="py-3 pr-4">
-                        <p className="text-sm text-slate-700">{c.position || '—'}</p>
-                        <p className="text-xs text-slate-400">{c.department || '—'}</p>
-                      </td>
-                      <td className="py-3 pr-4">
-                        <span className="font-mono font-semibold text-[#040E6B]">{c.employeeId}</span>
-                      </td>
-                      <td className="py-3 pr-4">
-                        <span className="font-mono text-slate-800">{c.tempPassword}</span>
-                      </td>
-                      <td className="py-3">
-                        {c.email ? (
-                          c.emailSent ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-semibold text-green-700">
-                              <CheckCircle className="h-3 w-3" /> Sent
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
-                              <XCircle className="h-3 w-3" /> Not sent
-                            </span>
-                          )
-                        ) : (
-                          <span className="text-xs text-slate-400">No email</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <p className="mt-4 text-xs text-slate-400">
-                Employees must change their temporary password upon first login. Keep this document confidential.
-              </p>
-            </div>
-
-            {/* Footer */}
-            <div className="flex items-center justify-between border-t border-slate-200 px-6 py-4">
-              <button
-                type="button"
-                onClick={handlePrintCredentials}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
-              >
-                <Printer className="h-4 w-4" />
-                Print Credentials
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowCredentialsModal(false)}
-                className="rounded-xl bg-[#363EE8] px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition"
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
+
+  if (loading) return (
+    <Shell>
+      <div className="flex items-center justify-center p-16 text-slate-500">Loading…</div>
+    </Shell>
+  );
+
+  // ── VIEW 1 — Department folder table ──────────────────────────────────────
+  if (!selectedDept) return (
+    <Shell>
+      <div className="p-6">
+        <div className="mb-5">
+          <h1 className="text-2xl font-bold text-slate-900">For Hiring</h1>
+          <p className="text-sm text-slate-500">
+            Select a department to view its ranked list of qualified applicants.
+          </p>
+        </div>
+
+        {departmentList.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white py-20 text-slate-400">
+            <Users className="mb-3 h-10 w-10" />
+            <p className="font-medium">No qualified applicants yet.</p>
+            <p className="mt-1 text-sm">Applicants recommended for hiring will appear here.</p>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+            <table className="w-full min-w-full">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50">
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Department</th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Positions</th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Applicants</th>
+                  <th className="w-10 px-5 py-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {departmentList.map(({ dept, positionCount, applicantCount }) => (
+                  <tr
+                    key={dept}
+                    onClick={() => { setSelectedDept(dept); setSelected(new Set()); }}
+                    className="border-b border-slate-100 last:border-0 cursor-pointer transition-colors hover:bg-blue-50/40 group"
+                  >
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="shrink-0 rounded-xl bg-[#363EE8]/10 p-2 text-[#363EE8]">
+                          <Building2 className="h-5 w-5" />
+                        </div>
+                        <span className="text-sm font-semibold text-slate-900">{dept}</span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-4 text-center text-sm text-slate-600">
+                      {positionCount} {positionCount === 1 ? 'position' : 'positions'}
+                    </td>
+                    <td className="px-5 py-4 text-center">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-[#363EE8]/10 px-2.5 py-0.5 text-xs font-semibold text-[#363EE8]">
+                        <Users className="h-3 w-3" />
+                        {applicantCount} {applicantCount === 1 ? 'applicant' : 'applicants'}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 text-slate-400 group-hover:text-[#363EE8] transition-colors">
+                      <ChevronRight className="h-4 w-4" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Dialogs are rendered even in dept list view so state is preserved */}
+      {renderConfirmDialog()}
+      {renderCredentialsModal()}
+    </Shell>
+  );
+
+  // ── VIEW 2 — Ranked applicant list for the selected department ────────────
+  return (
+    <Shell>
+      <div className="p-6">
+        {/* Breadcrumb / header */}
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <button
+              type="button"
+              onClick={() => { setSelectedDept(null); setSelected(new Set()); }}
+              className="mt-1 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" /> Departments
+            </button>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900">{selectedDept}</h1>
+              <p className="text-sm text-slate-500">
+                {deptApplicants.length} qualified applicant{deptApplicants.length !== 1 ? 's' : ''} — ranked by interview score
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            disabled={selected.size === 0}
+            onClick={handleCreateClick}
+            className="inline-flex items-center gap-2 rounded-xl bg-[#363EE8] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <UserCheck className="h-4 w-4" />
+            Create Employee Record{selected.size > 1 ? `s (${selected.size})` : ''}
+          </button>
+        </div>
+
+        {deptApplicants.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white py-20 text-slate-400">
+            <Users className="mb-3 h-10 w-10" />
+            <p className="font-medium">No applicants in this department.</p>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+            <table className="w-full min-w-full">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50">
+                  <th className="w-12 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Rank</th>
+                  <th className="w-10 px-3 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selected.size === deptApplicants.length && deptApplicants.length > 0}
+                      onChange={toggleAll}
+                      className="h-4 w-4 accent-[#363EE8]"
+                      title="Select all"
+                    />
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Applicant Name</th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Interview Score</th>
+                  <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Exam Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deptApplicants.map((row, idx) => {
+                  const rank = idx + 1;
+                  const medalBg =
+                    rank === 1 ? 'bg-yellow-400 text-yellow-900'  :
+                    rank === 2 ? 'bg-slate-300 text-slate-800'    :
+                    rank === 3 ? 'bg-amber-500 text-amber-900'    :
+                                 'bg-slate-100 text-slate-600';
+                  return (
+                    <tr
+                      key={row.id}
+                      className={`border-b border-slate-100 last:border-0 transition-colors hover:bg-slate-50 ${selected.has(row.id) ? 'bg-blue-50/60' : ''}`}
+                    >
+                      <td className="px-4 py-4 text-center">
+                        <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${medalBg}`}>
+                          {rank}
+                        </span>
+                      </td>
+                      <td className="px-3 py-4 text-center">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(row.id)}
+                          onChange={() => toggleRow(row.id)}
+                          className="h-4 w-4 accent-[#363EE8]"
+                        />
+                      </td>
+                      <td className="px-5 py-4">
+                        <p className="text-sm font-semibold text-slate-900">{row.fullName}</p>
+                        <p className="text-xs text-slate-400">{row.email}</p>
+                      </td>
+                      <td className="px-5 py-4 text-sm text-slate-600">{row.position || '—'}</td>
+                      <td className="px-5 py-4 text-center">
+                        <span className={`text-sm font-bold ${row.interviewScore != null ? 'text-[#040E6B]' : 'text-slate-300'}`}>
+                          {fmtScore(row.interviewScore)}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4 text-center">
+                        <span className={`text-sm font-bold ${row.examScore != null ? 'text-[#040E6B]' : 'text-slate-300'}`}>
+                          {fmtScore(row.examScore)}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {renderConfirmDialog()}
+      {renderCredentialsModal()}
+    </Shell>
+  );
+
+  // ── Extracted dialog renderers (used in both views) ───────────────────────
+  function renderConfirmDialog() {
+    if (!confirmTarget) return null;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+        <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[#363EE8]/10">
+            <UserCheck className="h-6 w-6 text-[#363EE8]" />
+          </div>
+          <h2 className="mb-2 text-lg font-bold text-slate-900">Confirm Employee Record Creation</h2>
+
+          {confirmTarget.length === 1 ? (
+            <>
+              <p className="text-sm font-semibold text-slate-800 mb-1">{confirmTarget[0].fullName}</p>
+              <p className="text-sm text-slate-600">
+                Are you sure you want to hire this applicant for the position of{' '}
+                <strong>{confirmTarget[0].position || '—'}</strong> under the{' '}
+                <strong>{confirmTarget[0].department || '—'}</strong> department? This action will create an employee record and generate a system account.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="mb-3 text-sm text-slate-600">
+                Are you sure you want to create employee records for the following{' '}
+                <strong>{confirmTarget.length} applicants</strong>? This action will create employee records and generate system accounts.
+              </p>
+              <ul className="mb-3 max-h-48 overflow-y-auto rounded-xl border border-slate-200 divide-y divide-slate-100">
+                {confirmTarget.map(r => (
+                  <li key={r.id} className="px-3 py-2.5">
+                    <p className="text-sm font-semibold text-slate-800">{r.fullName}</p>
+                    <p className="text-xs text-slate-500">{r.position || '—'} — {r.department || '—'}</p>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          <div className="mt-5 flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setConfirmTarget(null)}
+              disabled={hiring}
+              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmHire}
+              disabled={hiring}
+              className="rounded-xl bg-[#363EE8] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {hiring ? 'Creating…' : 'Yes, Create Record'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderCredentialsModal() {
+    if (!showCredentialsModal) return null;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+        <div className="w-full max-w-3xl rounded-2xl bg-white shadow-2xl flex flex-col max-h-[90vh]">
+          <div className="flex items-center gap-3 px-6 py-5 border-b border-slate-200">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-100">
+              <CheckCircle className="h-5 w-5 text-green-600" />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-lg font-bold text-slate-900">Employee Records Created</h2>
+              <p className="text-sm text-slate-500">
+                {credentialsResult.length} employee account{credentialsResult.length > 1 ? 's' : ''} generated. Credentials sent to each employee's email where available.
+              </p>
+            </div>
+          </div>
+
+          <div className="overflow-auto flex-1 px-6 py-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200">
+                  <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Name</th>
+                  <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position / Dept.</th>
+                  <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Employee ID</th>
+                  <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Temporary Password</th>
+                  <th className="pb-2 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Email Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {credentialsResult.map((c, i) => (
+                  <tr key={i}>
+                    <td className="py-3 pr-4">
+                      <p className="font-semibold text-slate-900">{c.fullName}</p>
+                      <p className="text-xs text-slate-400">{c.email || '—'}</p>
+                    </td>
+                    <td className="py-3 pr-4">
+                      <p className="text-sm text-slate-700">{c.position || '—'}</p>
+                      <p className="text-xs text-slate-400">{c.department || '—'}</p>
+                    </td>
+                    <td className="py-3 pr-4">
+                      <span className="font-mono font-semibold text-[#040E6B]">{c.employeeId}</span>
+                    </td>
+                    <td className="py-3 pr-4">
+                      <span className="font-mono text-slate-800">{c.tempPassword}</span>
+                    </td>
+                    <td className="py-3">
+                      {c.email ? (
+                        c.emailSent ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-semibold text-green-700">
+                            <CheckCircle className="h-3 w-3" /> Sent
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
+                            <XCircle className="h-3 w-3" /> Not sent
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-xs text-slate-400">No email</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="mt-4 text-xs text-slate-400">
+              Employees must change their temporary password upon first login. Keep this document confidential.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between border-t border-slate-200 px-6 py-4">
+            <button
+              type="button"
+              onClick={handlePrintCredentials}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+            >
+              <Printer className="h-4 w-4" />
+              Print Credentials
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCredentialsModal(false)}
+              className="rounded-xl bg-[#363EE8] px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 };
