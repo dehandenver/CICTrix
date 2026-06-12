@@ -216,36 +216,32 @@ function AppContent() {
     return 'dashboard';
   };
 
-  // Restore currentEmployee from session on page reload (supabaseId available → re-fetch).
+  // Restore currentEmployee from session on page reload.
   useEffect(() => {
     const session = loadEmployeeSession();
     if (!session) return;
-    if (session.supabaseId) {
-      // We have the UUID — full fetch happens inside EmployeePage on mount.
-      // Build a minimal stub so the routes render immediately while EmployeePage
-      // re-fetches the live data.
-      setCurrentEmployee({
-        employeeId: session.employeeId,
-        fullName: session.fullName,
-        email: session.email,
-        supabaseId: session.supabaseId,
-        // Required by the Employee type — safe defaults.
-        dateOfBirth: '',
-        age: 0,
-        gender: 'Prefer not to say',
-        civilStatus: 'Single',
-        nationality: 'Filipino',
-        mobileNumber: '',
-        homeAddress: '',
-        emergencyContactName: '',
-        emergencyRelationship: '',
-        emergencyContactNumber: '',
-        sssNumber: '',
-        philhealthNumber: '',
-        pagibigNumber: '',
-        tinNumber: '',
-      });
-    }
+    // Always build a stub from the stored session so the routes render
+    // immediately. EmployeePage re-fetches the full live record on mount.
+    setCurrentEmployee({
+      employeeId: session.employeeId,
+      fullName: session.fullName,
+      email: session.email,
+      supabaseId: session.supabaseId,
+      dateOfBirth: '',
+      age: 0,
+      gender: 'Prefer not to say',
+      civilStatus: 'Single',
+      nationality: 'Filipino',
+      mobileNumber: '',
+      homeAddress: '',
+      emergencyContactName: '',
+      emergencyRelationship: '',
+      emergencyContactNumber: '',
+      sssNumber: '',
+      philhealthNumber: '',
+      pagibigNumber: '',
+      tinNumber: '',
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
