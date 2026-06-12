@@ -723,6 +723,8 @@ export const RSPDashboard = () => {
   const [showAssessmentFormsModal, setShowAssessmentFormsModal] = useState(false);
   const [assessmentStatusFilter, setAssessmentStatusFilter] = useState<AssessmentStatusFilter>('all');
   const [assessmentSearch, setAssessmentSearch] = useState('');
+  const [archivesSearch, setArchivesSearch] = useState('');
+  const [rankingPositionFilter, setRankingPositionFilter] = useState<string>('all');
   const [activeDocumentTemplateId, setActiveDocumentTemplateId] = useState<EmployeeDocumentTemplateId | null>(null);
   const [expandedDocumentOffices, setExpandedDocumentOffices] = useState<Record<string, boolean>>({});
   const [selectedDocumentSubmissionIds, setSelectedDocumentSubmissionIds] = useState<string[]>([]);
@@ -731,7 +733,7 @@ export const RSPDashboard = () => {
   const [raterSearch, setRaterSearch] = useState('');
   const [raterStatus, setRaterStatus] = useState('all');
   const [raterAssignedPositionsByEmail, setRaterAssignedPositionsByEmail] = useState<Record<string, string[]>>({});
-  const [accountsView, setAccountsView] = useState<'overview' | 'directory' | 'position' | 'details'>('overview');
+  const [accountsView, setAccountsView] = useState<'directory' | 'position' | 'details'>('directory');
   const [employeeDirectorySearch, setEmployeeDirectorySearch] = useState('');
   const [employeeDirectoryStatusFilter, setEmployeeDirectoryStatusFilter] = useState<'all' | EmployeeDirectoryCardStatus>('all');
   const [employeeDirectoryOfficeFilter, setEmployeeDirectoryOfficeFilter] = useState('all');
@@ -1297,6 +1299,11 @@ export const RSPDashboard = () => {
       setExpandedDocumentOffices({});
       setSelectedDocumentSubmissionIds([]);
       setReportsView('overview');
+      setArchivesSearch('');
+      setRankingPositionFilter('all');
+    }
+    if (section !== 'accounts') {
+      setAccountsView('directory');
     }
   }, [section]);
 
@@ -2305,8 +2312,8 @@ export const RSPDashboard = () => {
     'applicant-score': 'Applicant Score',
     'new-hired': 'Newly Hired Employees',
     raters: 'Rater Management & Access Control',
-    accounts: 'Account Management',
-    reports: 'Reports & Document Generation',
+    accounts: 'Employee Accounts',
+    reports: 'Archives',
     settings: 'Settings',
     succession: 'Succession Planning',
   }[section];
@@ -3039,8 +3046,8 @@ export const RSPDashboard = () => {
             {section === 'applicant-score' && 'View and update applicant evaluation scores for original and promotional applicants'}
             {section === 'new-hired' && 'Generate employee accounts for newly hired staff'}
             {section === 'raters' && 'Assign raters and define their evaluation access for specific job positions'}
-            {section === 'accounts' && 'Manage employee accounts and information'}
-            {section === 'reports' && 'Generate official government reports and access employee documents'}
+            {section === 'accounts' && 'Browse and view employee records organized by position'}
+            {section === 'reports' && 'Assessment forms, application ranking records, and employee archive'}
             {section === 'succession' && 'Build and manage the pipeline for critical roles and leadership continuity'}
             {section === 'settings' && 'Manage your personal information and account details'}
           </p>
@@ -3522,34 +3529,7 @@ export const RSPDashboard = () => {
 
           {section === 'accounts' && (
             <>
-              {accountsView === 'overview' ? (
-                <>
-                  <section className="rounded-2xl border border-[var(--border-color)] bg-white p-6 xl:w-3/5">
-                    <button
-                      type="button"
-                      onClick={() => setAccountsView('directory')}
-                      className="flex w-full items-center gap-4 rounded-2xl border border-[var(--border-color)] px-6 py-6 text-left transition hover:border-[var(--primary-color)]"
-                    >
-                      <div className="rounded-2xl bg-blue-100 p-4 text-blue-600"><Users size={28} /></div>
-                      <div className="flex-1">
-                        <p className="!mb-1 text-xl font-semibold text-[var(--text-primary)]">Employee Directory</p>
-                        <p className="!mb-0 text-lg text-[var(--text-secondary)]">View and manage all employee accounts, personal information, and document requirements</p>
-                      </div>
-                      <ChevronRight size={30} className="text-[var(--text-muted)]" />
-                    </button>
-                  </section>
-
-                  <section className="rounded-2xl border border-blue-200 bg-blue-50 p-6 xl:w-3/5">
-                    <h3 className="!mb-3 text-xl font-semibold text-blue-900">What you can do:</h3>
-                    <ul className="list-disc space-y-2 pl-6 text-base text-blue-800">
-                      <li>View all employees organized by position</li>
-                      <li>Access detailed employee profiles with personal information</li>
-                      <li>Request and manage employee document submissions</li>
-                      <li>Approve or request resubmission of documents</li>
-                    </ul>
-                  </section>
-                </>
-              ) : accountsView === 'directory' ? (
+              {accountsView === 'directory' ? (
                 <>
                   <section className="flex items-start justify-between gap-4">
                     <div>
@@ -3637,7 +3617,6 @@ export const RSPDashboard = () => {
                             <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Active</th>
                             <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Inactive</th>
                             <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
-                            <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Actions</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -3667,20 +3646,11 @@ export const RSPDashboard = () => {
                                   {card.status}
                                 </span>
                               </td>
-                              <td className="px-5 py-4 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => openPositionEmployees(card.position, card.office)}
-                                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition-colors"
-                                >
-                                  View <ChevronRight size={12} />
-                                </button>
-                              </td>
                             </tr>
                           ))}
                           {employeeDirectoryCards.cards.length === 0 && (
                             <tr>
-                              <td colSpan={7} className="px-5 py-12 text-center text-slate-500">
+                              <td colSpan={6} className="px-5 py-12 text-center text-slate-500">
                                 <Briefcase className="mx-auto mb-2 h-9 w-9 text-slate-300" />
                                 <p className="font-medium">No positions found for the selected filters.</p>
                               </td>
@@ -3713,12 +3683,6 @@ export const RSPDashboard = () => {
                       </button>
                     </div>
                   </footer>
-
-                  <div>
-                    <Button variant="secondary" onClick={() => setAccountsView('overview')}>
-                      <ChevronLeft size={18} /> Back to Account Management
-                    </Button>
-                  </div>
                 </>
               ) : accountsView === 'position' ? (
                 <>
@@ -3743,14 +3707,13 @@ export const RSPDashboard = () => {
                           <th className="px-5 py-4">Position</th>
                           <th className="px-5 py-4">Department</th>
                           <th className="px-5 py-4">Status</th>
-                          <th className="px-5 py-4">Action</th>
                         </tr>
                       </thead>
                       <tbody>
                         {selectedPositionEmployees.map((employee) => {
                           const statusLabel = employee.status.toLowerCase().includes('inactive') ? 'Inactive' : 'Active';
                           return (
-                            <tr key={employee.id} className="border-t border-[var(--border-color)] text-lg">
+                            <tr key={employee.id} onClick={() => openEmployeeDetails(employee.id)} className="border-t border-[var(--border-color)] text-lg cursor-pointer hover:bg-slate-50 transition-colors">
                               <td className="px-5 py-4">
                                 <p className="!mb-0 font-semibold text-[var(--text-primary)]">{employee.full_name}</p>
                                 <p className="!mb-0 text-base text-[var(--text-secondary)]">{employee.email || '--'}</p>
@@ -3763,21 +3726,12 @@ export const RSPDashboard = () => {
                                   {statusLabel}
                                 </span>
                               </td>
-                              <td className="px-5 py-4">
-                                <button
-                                  type="button"
-                                  onClick={() => openEmployeeDetails(employee.id)}
-                                  className="rounded-full border border-[var(--border-color)] p-2 text-[var(--text-muted)] transition hover:border-blue-400 hover:text-blue-600"
-                                >
-                                  <ChevronRight size={18} />
-                                </button>
-                              </td>
                             </tr>
                           );
                         })}
                         {selectedPositionEmployees.length === 0 && (
                           <tr>
-                            <td colSpan={6} className="px-5 py-8 text-center text-base text-[var(--text-secondary)]">No employees found for this position.</td>
+                            <td colSpan={5} className="px-5 py-8 text-center text-base text-[var(--text-secondary)]">No employees found for this position.</td>
                           </tr>
                         )}
                       </tbody>
@@ -4119,42 +4073,89 @@ export const RSPDashboard = () => {
           {section === 'reports' && (
             <>
               {reportsView === 'overview' ? (
-                <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-                  {[
-                    {
-                      title: 'Application Ranking Report',
-                      subtitle: 'Generate comparative assessment reports with applicant rankings',
-                      icon: FileText,
-                      color: 'bg-blue-100 text-blue-600',
-                      onClick: () => setReportsView('ranking'),
-                    },
-                    {
-                      title: 'Assessment Forms',
-                      subtitle: 'View and print individual applicant assessment reports',
-                      icon: Briefcase,
-                      color: 'bg-green-100 text-green-600',
-                      onClick: () => setReportsView('assessment'),
-                    },
-                  ].map((card) => {
-                    const Icon = card.icon;
-                    return (
-                      <button
-                        key={card.title}
-                        type="button"
-                        onClick={card.onClick}
-                        className="rounded-2xl border border-[var(--border-color)] bg-white p-5 text-left transition hover:border-[var(--primary-color)]"
-                      >
-                          <div className="mb-6 flex items-start justify-between">
-                            <div className={`rounded-2xl p-3 ${card.color}`}><Icon size={24} /></div>
-                            <ChevronRight size={22} className="text-[var(--text-muted)]" />
-                        </div>
-                          <h3 className="!mb-2 !text-lg font-semibold">{card.title}</h3>
-                          <p className="!mb-4 !text-sm text-[var(--text-secondary)]">{card.subtitle}</p>
-                          <span className="rounded-full bg-slate-100 px-3 py-1 !text-xs text-[var(--text-secondary)]">Official Template</span>
-                      </button>
-                    );
-                  })}
-                </section>
+                <>
+                  {/* Quick-access sub-view buttons */}
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setReportsView('ranking')}
+                      className="inline-flex items-center gap-2 rounded-xl border border-[var(--border-color)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition hover:border-[var(--primary-color)] hover:text-[var(--primary-color)]"
+                    >
+                      <FileText size={16} /> Application Ranking Report
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReportsView('assessment')}
+                      className="inline-flex items-center gap-2 rounded-xl border border-[var(--border-color)] bg-white px-4 py-2.5 text-sm font-semibold text-[var(--text-primary)] transition hover:border-[var(--primary-color)] hover:text-[var(--primary-color)]"
+                    >
+                      <Briefcase size={16} /> Assessment Forms
+                    </button>
+                  </div>
+
+                  {/* Search bar */}
+                  <div className="relative">
+                    <Search size={18} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      value={archivesSearch}
+                      onChange={(e) => setArchivesSearch(e.target.value)}
+                      placeholder="Search by employee name or position…"
+                      className="h-11 w-full rounded-xl border border-slate-300 bg-white pl-10 pr-3 text-sm focus:border-blue-400 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Employee records table */}
+                  <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                    <table className="w-full min-w-full">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50">
+                          <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Employee Name</th>
+                          <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
+                          <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Department / Office</th>
+                          <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          const term = archivesSearch.trim().toLowerCase();
+                          const filtered = directoryEmployeesSource.filter((emp) => {
+                            if (!term) return true;
+                            return (
+                              emp.full_name.toLowerCase().includes(term) ||
+                              (emp.position || '').toLowerCase().includes(term)
+                            );
+                          });
+                          if (filtered.length === 0) {
+                            return (
+                              <tr>
+                                <td colSpan={4} className="px-5 py-12 text-center text-slate-500">
+                                  {term ? `No employees matching "${archivesSearch}"` : 'No employee records found.'}
+                                </td>
+                              </tr>
+                            );
+                          }
+                          return filtered.map((emp) => {
+                            const isInactive = emp.status.toLowerCase().includes('inactive');
+                            return (
+                              <tr key={emp.id} className="border-b border-slate-100 last:border-0">
+                                <td className="px-5 py-3">
+                                  <p className="text-sm font-semibold text-slate-900">{emp.full_name}</p>
+                                  <p className="text-xs text-slate-400">{emp.email || '—'}</p>
+                                </td>
+                                <td className="px-5 py-3 text-sm text-slate-600">{emp.position || '—'}</td>
+                                <td className="px-5 py-3 text-sm text-slate-600">{emp.office || '—'}</td>
+                                <td className="px-5 py-3 text-center">
+                                  <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${isInactive ? 'bg-slate-200 text-slate-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                    {isInactive ? 'Inactive' : 'Active'}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          });
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               ) : reportsView === 'documents' ? null : reportsView === 'ranking' ? (
                 <section className="space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--border-color)] bg-white p-5">
@@ -4168,9 +4169,25 @@ export const RSPDashboard = () => {
                       onClick={() => setReportsView('overview')}
                       className="rounded-lg border border-[var(--border-color)] bg-white px-4 py-2 text-sm font-semibold text-[var(--text-primary)]"
                     >
-                      Back to Reports
+                      Back to Archives
                     </button>
                   </div>
+
+                  {rankingPositionCards.length > 0 && (
+                    <div className="flex items-center gap-3">
+                      <label className="text-sm font-semibold text-[var(--text-secondary)] whitespace-nowrap">Filter by Position:</label>
+                      <select
+                        value={rankingPositionFilter}
+                        onChange={(e) => setRankingPositionFilter(e.target.value)}
+                        className="rounded-xl border border-[var(--border-color)] bg-white px-3 py-2 text-sm"
+                      >
+                        <option value="all">All Positions</option>
+                        {rankingPositionCards.map((c) => (
+                          <option key={c.position} value={c.position}>{c.position}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   {rankingPositionCards.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-[var(--border-color)] bg-white p-6 text-center">
@@ -4178,7 +4195,7 @@ export const RSPDashboard = () => {
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                      {rankingPositionCards.map((card) => (
+                      {rankingPositionCards.filter((c) => rankingPositionFilter === 'all' || c.position === rankingPositionFilter).map((card) => (
                         <article key={card.position} className="rounded-2xl border border-[var(--border-color)] bg-white p-5">
                           <p className="!mb-1 text-sm text-[var(--text-secondary)]">{card.department}</p>
                           <h3 className="!mb-2 text-xl font-semibold text-[var(--text-primary)]">{card.position}</h3>
@@ -4212,7 +4229,7 @@ export const RSPDashboard = () => {
                       onClick={() => setReportsView('overview')}
                       className="rounded-lg border border-[var(--border-color)] bg-white px-4 py-2 text-sm font-semibold text-[var(--text-primary)]"
                     >
-                      Back to Reports
+                      Back to Archives
                     </button>
                   </div>
 
@@ -4221,77 +4238,73 @@ export const RSPDashboard = () => {
                       <p className="!mb-0 text-base text-[var(--text-secondary)]">No assessment forms available for current job postings.</p>
                     </div>
                   ) : (
-                    <div className="space-y-4">
-                      {assessmentPositionCards.map((card, index) => (
-                        <article key={card.position} className="rounded-2xl border border-[var(--border-color)] bg-white p-5">
-                          <div className="mb-3 flex items-start justify-between gap-3">
-                            <div>
-                              <div className="mb-2 flex flex-wrap items-center gap-2">
-                                <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">Position #{index + 1}</span>
-                                <span className="text-sm text-[var(--text-secondary)]">{card.itemNumber}</span>
+                    (() => {
+                      // Group by department
+                      const byDept = new Map<string, typeof assessmentPositionCards>();
+                      assessmentPositionCards.forEach((card) => {
+                        const dept = card.department || 'Unassigned Department';
+                        if (!byDept.has(dept)) byDept.set(dept, []);
+                        byDept.get(dept)!.push(card);
+                      });
+                      return (
+                        <div className="space-y-4">
+                          {Array.from(byDept.entries()).map(([dept, cards]) => (
+                            <div key={dept} className="overflow-hidden rounded-2xl border border-[var(--border-color)] bg-white">
+                              {/* Department header */}
+                              <div className="border-b border-[var(--border-color)] bg-slate-50 px-5 py-3">
+                                <p className="!mb-0 text-sm font-bold uppercase tracking-wider text-[var(--text-secondary)]">{dept}</p>
                               </div>
-                              <h3 className="!mb-2 !text-lg font-semibold text-[var(--text-primary)]">{card.position}</h3>
-                              <p className="!mb-0 !text-sm text-[var(--text-secondary)]">{card.department} • {card.totalApplicants} Total Applicants</p>
+                              <table className="w-full min-w-full">
+                                <thead>
+                                  <tr className="border-b border-slate-100 bg-white">
+                                    <th className="px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Position</th>
+                                    <th className="px-5 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-slate-400">Total</th>
+                                    <th className="px-5 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-slate-400">Hired</th>
+                                    <th className="px-5 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-slate-400">Qualified</th>
+                                    <th className="px-5 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-slate-400">Disqualified</th>
+                                    <th className="px-5 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-slate-400">Report</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {cards.map((card) => (
+                                    <tr key={card.position} className="border-b border-slate-100 last:border-0">
+                                      <td className="px-5 py-3">
+                                        <p className="!mb-0 text-sm font-semibold text-[var(--text-primary)]">{card.position}</p>
+                                        <p className="!mb-0 text-xs text-[var(--text-secondary)]">{card.itemNumber}</p>
+                                      </td>
+                                      <td className="px-5 py-3 text-center text-sm font-bold text-slate-700">{card.totalApplicants}</td>
+                                      <td className="px-5 py-3 text-center">
+                                        <span className="rounded-md bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700">{card.hiredCount}</span>
+                                      </td>
+                                      <td className="px-5 py-3 text-center">
+                                        <span className="rounded-md bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">{card.qualifiedCount}</span>
+                                      </td>
+                                      <td className="px-5 py-3 text-center">
+                                        <span className="rounded-md bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">{card.disqualifiedCount}</span>
+                                      </td>
+                                      <td className="px-5 py-3 text-center">
+                                        <button
+                                          type="button"
+                                          onClick={() => openAssessmentForms(card.position)}
+                                          className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 transition-colors"
+                                        >
+                                          <FileText size={12} /> View
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
                             </div>
-                            <div className="rounded-2xl bg-green-100 p-3 text-green-600">
-                              <FileText size={24} />
-                            </div>
-                          </div>
-
-                          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
-                            <span className="rounded-md bg-green-100 px-2 py-1 font-semibold text-green-700">{card.hiredCount} Hired</span>
-                            <span className="rounded-md bg-blue-100 px-2 py-1 font-semibold text-blue-700">{card.qualifiedCount} Qualified</span>
-                            <span className="rounded-md bg-red-100 px-2 py-1 font-semibold text-red-700">{card.disqualifiedCount} Disqualified</span>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => openAssessmentForms(card.position)}
-                            className="w-full rounded-xl bg-green-600 px-4 py-2.5 text-base font-semibold text-white"
-                          >
-                            View Assessment Forms
-                          </button>
-                        </article>
-                      ))}
-                    </div>
+                          ))}
+                        </div>
+                      );
+                    })()
                   )}
                 </section>
               )}
 
-              {reportsView !== 'documents' ? (
-                <>
-                  <section>
-                    <h2 className="!mb-1 !text-lg font-semibold">Employee Documents</h2>
-                    <p className="!text-sm text-[var(--text-secondary)]">Access and download documents submitted by employees</p>
-                  </section>
-
-                  <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-                    {BULK_REQUEST_TEMPLATES.map((template) => (
-                      <button
-                        key={template.id}
-                        type="button"
-                        onClick={() => openDocumentTemplate(template.id)}
-                        className="rounded-2xl border border-[var(--border-color)] bg-white p-5 text-center transition hover:border-[var(--primary-color)]"
-                      >
-                        <div className="mb-3 inline-flex rounded-2xl bg-indigo-100 p-3 text-indigo-600">
-                          <FileText size={22} />
-                        </div>
-                        <h3 className="!mb-0 !text-sm font-semibold text-[var(--text-primary)]">{template.name.replace(' (Statement of Assets, Liabilities and Net Worth)', '')}</h3>
-                      </button>
-                    ))}
-                  </section>
-
-                  <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
-                    <h3 className="!mb-3 !text-base font-semibold text-blue-900">Document Generation Guidelines</h3>
-                    <ul className="list-disc space-y-2 pl-6 !text-sm text-blue-800">
-                      <li>All reports follow official government formatting standards</li>
-                      <li>Ranking reports are automatically formatted for landscape printing</li>
-                      <li>Assessment forms are portrait-oriented with conditional logic for disqualified applicants</li>
-                      <li>Use the Print function in your browser to generate PDF documents</li>
-                    </ul>
-                  </section>
-                </>
-              ) : (
+              {reportsView === 'documents' && (
                 <section className="space-y-4">
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>

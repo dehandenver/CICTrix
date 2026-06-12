@@ -215,7 +215,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
     {
       path: '/admin/rsp/reports',
       icon: FileText,
-      label: 'Reports',
+      label: 'Archives',
       sublabel: '',
       isActive: location.pathname === '/admin/rsp/reports',
       roles: ['rsp'],
@@ -257,7 +257,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
               className={`sidebar-nav-item ${item.isActive ? 'active' : ''}`}
             >
               <Icon size={18} />
-              <div className="sidebar-nav-text flex-1 flex items-center justify-between">
+              <div className="sidebar-nav-text flex-1 flex items-start justify-between">
                 <div>
                   <span className="sidebar-nav-title">{item.label}</span>
                   {item.sublabel ? <span className="sidebar-nav-subtitle flex">{item.sublabel}</span> : null}
