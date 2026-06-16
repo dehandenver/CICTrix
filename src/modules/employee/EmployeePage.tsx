@@ -541,7 +541,13 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
 
   // DB-hydration state — true while the initial Supabase fetch is in-flight.
   const [profileLoading, setProfileLoading] = useState(false);
-  const [showOnboardingModal, setShowOnboardingModal] = useState(false);
+  // Setup wizard
+  const [showSetupWizard, setShowSetupWizard] = useState(false);
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
+  const [wizardTryNext, setWizardTryNext] = useState(false);
+  const [wContact, setWContact] = useState<ContactDraft>({ email: '', mobileNumber: '', homeAddress: '' });
+  const [wEmergency, setWEmergency] = useState<EmergencyDraft>({ emergencyContactName: '', emergencyRelationship: '', emergencyContactNumber: '' });
+  const [wGovt, setWGovt] = useState<GovernmentDraft>({ sssNumber: '', philhealthNumber: '', pagibigNumber: '', tinNumber: '' });
   // Save feedback banners for profile edits.
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
@@ -584,15 +590,19 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Show onboarding modal once after profile loads if setup is incomplete.
+  // Open setup wizard once after profile loads if any setup field is missing.
   useEffect(() => {
     if (profileLoading) return;
+    // Seed wizard drafts from live profile so already-filled values are pre-populated.
+    setWContact(getContactDraft(profile));
+    setWEmergency(getEmergencyDraft(profile));
+    setWGovt(getGovernmentDraft(profile));
     const missing =
       !profile.email?.trim() ||
       !profile.mobileNumber?.trim() ||
       !profile.emergencyContactName?.trim() ||
       !profile.sssNumber?.trim();
-    if (missing) setShowOnboardingModal(true);
+    if (missing) { setWizardStep(1); setWizardTryNext(false); setShowSetupWizard(true); }
     // Only fire once on mount after loading resolves.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileLoading]);
@@ -613,6 +623,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
     [hrRequests],
   );
 
+  const SETUP_FIELDS = 10;
   const incompleteSetupCount = useMemo(() => {
     let n = 0;
     if (!profile.email?.trim()) n++;
@@ -627,6 +638,8 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
     if (!profile.tinNumber?.trim()) n++;
     return n;
   }, [profile]);
+
+  const completionPercent = Math.round(((SETUP_FIELDS - incompleteSetupCount) / SETUP_FIELDS) * 100);
 
   const tabs: TabConfig[] = useMemo(
     () => [
@@ -1258,20 +1271,63 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
         {activeTab === 'submission' && (
           <div className="space-y-4">
 
-            {/* ── Account Setup Banner ─────────────────────────────────── */}
-            {incompleteSetupCount > 0 && (
-              <div style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', borderRadius: 14, padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                <AlertCircle className="h-5 w-5 shrink-0" style={{ color: '#C8D1FF' }} />
-                <div>
-                  <p style={{ margin: 0, fontWeight: 700, color: '#ffffff', fontSize: '0.95rem' }}>
-                    Account setup incomplete — {incompleteSetupCount} item{incompleteSetupCount !== 1 ? 's' : ''} remaining
-                  </p>
-                  <p style={{ margin: 0, fontSize: '0.8rem', color: '#C8D1FF' }}>
-                    Please fill in the sections below to complete your employee profile.
-                  </p>
+            {/* ── Profile Completion Card ───────────────────────────────── */}
+            {(() => {
+              const R = 54;
+              const circ = 2 * Math.PI * R;
+              const offset = circ * (1 - completionPercent / 100);
+              const done = completionPercent === 100;
+              return (
+                <div style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', borderRadius: 20, padding: '1.5rem 2rem', display: 'flex', alignItems: 'center', gap: '2rem', flexWrap: 'wrap' }}>
+                  {/* Ring */}
+                  <div style={{ position: 'relative', width: 128, height: 128, flexShrink: 0 }}>
+                    <svg width="128" height="128" viewBox="0 0 128 128" style={{ transform: 'rotate(-90deg)' }}>
+                      <circle cx="64" cy="64" r={R} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="12" />
+                      <circle
+                        cx="64" cy="64" r={R} fill="none"
+                        stroke={done ? '#4ADE80' : '#C8D1FF'}
+                        strokeWidth="12"
+                        strokeLinecap="round"
+                        strokeDasharray={circ}
+                        strokeDashoffset={offset}
+                        style={{ transition: 'stroke-dashoffset 0.6s ease' }}
+                      />
+                    </svg>
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                      <span style={{ fontSize: '1.75rem', fontWeight: 800, color: '#ffffff', lineHeight: 1 }}>{completionPercent}%</span>
+                      <span style={{ fontSize: '0.65rem', color: '#C8D1FF', fontWeight: 600, marginTop: 2 }}>Complete</span>
+                    </div>
+                  </div>
+                  {/* Text + CTA */}
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <p style={{ margin: '0 0 0.25rem', fontWeight: 800, color: '#ffffff', fontSize: '1.15rem' }}>
+                      {done ? 'Profile Complete!' : 'Complete your profile'}
+                    </p>
+                    <p style={{ margin: '0 0 1rem', fontSize: '0.85rem', color: '#C8D1FF', lineHeight: 1.5 }}>
+                      {done
+                        ? 'All required information has been filled in.'
+                        : `${incompleteSetupCount} field${incompleteSetupCount !== 1 ? 's' : ''} still missing — fill them in to finish setting up your account.`}
+                    </p>
+                    {!done && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWContact(getContactDraft(profile));
+                          setWEmergency(getEmergencyDraft(profile));
+                          setWGovt(getGovernmentDraft(profile));
+                          setWizardStep(1);
+                          setWizardTryNext(false);
+                          setShowSetupWizard(true);
+                        }}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', borderRadius: 10, border: 'none', background: '#ffffff', padding: '0.65rem 1.25rem', fontSize: '0.9rem', fontWeight: 700, color: '#363EE8', cursor: 'pointer', boxShadow: '0 4px 14px rgba(0,0,0,0.18)' }}
+                      >
+                        Continue set up account →
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* ── Contact Information Setup ─────────────────────────────── */}
             <section className="rounded-xl border bg-white p-5" style={{ borderColor: '#C8D1FF' }}>
@@ -2315,53 +2371,172 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
         )}
       </main>
 
-      {/* ── Onboarding Modal ─────────────────────────────────────────── */}
-      {showOnboardingModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(4,14,107,0.55)', padding: '1rem', fontFamily: "'Poppins', sans-serif" }}>
-          <div style={{ background: '#ffffff', borderRadius: 20, boxShadow: '0 24px 80px rgba(54,62,232,0.22)', width: '100%', maxWidth: 460, overflow: 'hidden' }}>
-            {/* Modal header */}
-            <div style={{ background: 'linear-gradient(135deg, #5B65F0 0%, #363EE8 100%)', padding: '1.5rem 1.5rem 1.25rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div style={{ background: 'rgba(255,255,255,0.18)', borderRadius: 10, padding: '0.5rem', display: 'flex' }}>
-                  <AlertCircle className="h-5 w-5" style={{ color: '#ffffff' }} />
+      {/* ── Account Setup Wizard ──────────────────────────────────────── */}
+      {showSetupWizard && (() => {
+        const STEPS = ['Contact Information', 'Emergency Contact', 'Government Identification'];
+        const totalSteps = STEPS.length;
+
+        // Per-step validation: which fields must be filled?
+        const step1Invalid = wizardTryNext && (!wContact.email.trim() || !wContact.mobileNumber.trim() || !wContact.homeAddress.trim());
+        const step2Invalid = wizardTryNext && (!wEmergency.emergencyContactName.trim() || !wEmergency.emergencyRelationship.trim() || !wEmergency.emergencyContactNumber.trim());
+        const step3Invalid = wizardTryNext && (!wGovt.sssNumber.trim() || !wGovt.philhealthNumber.trim() || !wGovt.pagibigNumber.trim() || !wGovt.tinNumber.trim());
+
+        // Red border style for a field that is empty and validation was attempted
+        const redIf = (val: string) => ({
+          border: `1.5px solid ${wizardTryNext && !val.trim() ? '#EF4444' : '#C8D1FF'}`,
+          borderRadius: 8, padding: '0.6rem 0.85rem', fontSize: '0.9rem',
+          outline: 'none', width: '100%', boxSizing: 'border-box' as const,
+          color: '#040E6B', fontFamily: "'Poppins', sans-serif",
+          background: wizardTryNext && !val.trim() ? '#FFF5F5' : '#ffffff',
+          transition: 'border-color 0.15s, background 0.15s',
+        });
+
+        const labelStyle: React.CSSProperties = { display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#040E6B', marginBottom: '0.3rem' };
+        const fieldWrap: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 0 };
+        const errMsg: React.CSSProperties = { fontSize: '0.72rem', color: '#EF4444', marginTop: '0.2rem', fontWeight: 600 };
+
+        const handleNext = () => {
+          setWizardTryNext(true);
+          if (wizardStep === 1) {
+            if (!wContact.email.trim() || !wContact.mobileNumber.trim() || !wContact.homeAddress.trim()) return;
+            void persistProfilePatch({ email: wContact.email.trim(), mobileNumber: wContact.mobileNumber.trim(), homeAddress: wContact.homeAddress.trim() });
+            setWizardStep(2); setWizardTryNext(false);
+          } else if (wizardStep === 2) {
+            if (!wEmergency.emergencyContactName.trim() || !wEmergency.emergencyRelationship.trim() || !wEmergency.emergencyContactNumber.trim()) return;
+            void persistProfilePatch({ emergencyContactName: wEmergency.emergencyContactName.trim(), emergencyRelationship: wEmergency.emergencyRelationship.trim(), emergencyContactNumber: wEmergency.emergencyContactNumber.trim() });
+            setWizardStep(3); setWizardTryNext(false);
+          } else {
+            if (!wGovt.sssNumber.trim() || !wGovt.philhealthNumber.trim() || !wGovt.pagibigNumber.trim() || !wGovt.tinNumber.trim()) return;
+            void persistProfilePatch({ sssNumber: wGovt.sssNumber.trim(), philhealthNumber: wGovt.philhealthNumber.trim(), pagibigNumber: wGovt.pagibigNumber.trim(), tinNumber: wGovt.tinNumber.trim() });
+            setShowSetupWizard(false);
+          }
+        };
+
+        // Circular mini-step ring
+        const StepCircle = ({ n }: { n: number }) => {
+          const done = n < wizardStep;
+          const active = n === wizardStep;
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem' }}>
+              <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.8rem', background: done ? '#4ADE80' : active ? '#363EE8' : 'rgba(255,255,255,0.2)', color: '#ffffff', border: done || active ? 'none' : '2px solid rgba(255,255,255,0.4)', transition: 'all 0.3s' }}>
+                {done ? '✓' : n}
+              </div>
+              <span style={{ fontSize: '0.65rem', color: active ? '#ffffff' : '#C8D1FF', fontWeight: active ? 700 : 500, whiteSpace: 'nowrap' }}>{STEPS[n - 1]}</span>
+            </div>
+          );
+        };
+
+        // Progress bar width
+        const barPct = ((wizardStep - 1) / (totalSteps - 1)) * 100;
+
+        return (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(4,14,107,0.6)', padding: '1rem', fontFamily: "'Poppins', sans-serif" }}>
+            <div style={{ background: '#ffffff', borderRadius: 20, boxShadow: '0 28px 80px rgba(54,62,232,0.28)', width: '100%', maxWidth: 520, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+
+              {/* Header */}
+              <div style={{ background: 'linear-gradient(135deg, #5B65F0 0%, #363EE8 100%)', padding: '1.25rem 1.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                  <div>
+                    <p style={{ margin: 0, fontSize: '0.72rem', color: '#C8D1FF', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Step {wizardStep} of {totalSteps}</p>
+                    <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#ffffff' }}>{STEPS[wizardStep - 1]}</h2>
+                  </div>
+                  <button type="button" onClick={() => setShowSetupWizard(false)} style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: 8, cursor: 'pointer', color: '#ffffff', padding: '0.3rem', display: 'flex' }}>
+                    <X className="h-4 w-4" />
+                  </button>
                 </div>
-                <div>
-                  <h2 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#ffffff' }}>Account Setup Required</h2>
-                  <p style={{ margin: 0, fontSize: '0.8rem', color: '#C8D1FF' }}>Welcome to the Employee Self-Service Portal</p>
+                {/* Step indicators */}
+                <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div style={{ position: 'absolute', top: 15, left: '10%', right: '10%', height: 3, background: 'rgba(255,255,255,0.2)', borderRadius: 99, zIndex: 0 }}>
+                    <div style={{ width: `${barPct}%`, height: '100%', background: '#C8D1FF', borderRadius: 99, transition: 'width 0.4s ease' }} />
+                  </div>
+                  {[1, 2, 3].map(n => <StepCircle key={n} n={n} />)}
                 </div>
               </div>
-            </div>
-            {/* Modal body */}
-            <div style={{ padding: '1.5rem' }}>
-              <p style={{ margin: '0 0 0.75rem', fontSize: '0.95rem', fontWeight: 600, color: '#040E6B' }}>
-                There is more information required to set up your employee account.
-              </p>
-              <p style={{ margin: '0 0 1.25rem', fontSize: '0.85rem', color: '#5B65F0', lineHeight: 1.6 }}>
-                Please complete your Contact Information, Emergency Contact, and Government Identification in the Submission Bin to finish setting up your profile.
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+
+              {/* Body */}
+              <div style={{ padding: '1.5rem', overflowY: 'auto' }}>
+                {wizardStep === 1 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#5B65F0' }}>Enter your contact details for official communication.</p>
+                    <div style={fieldWrap}>
+                      <label style={labelStyle}>Email Address *</label>
+                      <input type="email" placeholder="your@email.com" value={wContact.email} onChange={e => setWContact(p => ({ ...p, email: e.target.value }))} style={redIf(wContact.email)} />
+                      {wizardTryNext && !wContact.email.trim() && <span style={errMsg}>Email address is required.</span>}
+                    </div>
+                    <div style={fieldWrap}>
+                      <label style={labelStyle}>Phone Number *</label>
+                      <input type="tel" placeholder="09XXXXXXXXX" value={wContact.mobileNumber} onChange={e => setWContact(p => ({ ...p, mobileNumber: e.target.value }))} style={redIf(wContact.mobileNumber)} />
+                      {wizardTryNext && !wContact.mobileNumber.trim() && <span style={errMsg}>Phone number is required.</span>}
+                    </div>
+                    <div style={fieldWrap}>
+                      <label style={labelStyle}>Home Address *</label>
+                      <input type="text" placeholder="Street, Barangay, City, Province" value={wContact.homeAddress} onChange={e => setWContact(p => ({ ...p, homeAddress: e.target.value }))} style={redIf(wContact.homeAddress)} />
+                      {wizardTryNext && !wContact.homeAddress.trim() && <span style={errMsg}>Home address is required.</span>}
+                    </div>
+                  </div>
+                )}
+                {wizardStep === 2 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#5B65F0' }}>Provide a contact person in case of emergency.</p>
+                    <div style={fieldWrap}>
+                      <label style={labelStyle}>Contact Person Name *</label>
+                      <input type="text" placeholder="Full name" value={wEmergency.emergencyContactName} onChange={e => setWEmergency(p => ({ ...p, emergencyContactName: e.target.value }))} style={redIf(wEmergency.emergencyContactName)} />
+                      {wizardTryNext && !wEmergency.emergencyContactName.trim() && <span style={errMsg}>Contact name is required.</span>}
+                    </div>
+                    <div style={fieldWrap}>
+                      <label style={labelStyle}>Relationship *</label>
+                      <input type="text" placeholder="e.g. Spouse, Parent, Sibling" value={wEmergency.emergencyRelationship} onChange={e => setWEmergency(p => ({ ...p, emergencyRelationship: e.target.value }))} style={redIf(wEmergency.emergencyRelationship)} />
+                      {wizardTryNext && !wEmergency.emergencyRelationship.trim() && <span style={errMsg}>Relationship is required.</span>}
+                    </div>
+                    <div style={fieldWrap}>
+                      <label style={labelStyle}>Phone Number *</label>
+                      <input type="tel" placeholder="09XXXXXXXXX" value={wEmergency.emergencyContactNumber} onChange={e => setWEmergency(p => ({ ...p, emergencyContactNumber: e.target.value }))} style={redIf(wEmergency.emergencyContactNumber)} />
+                      {wizardTryNext && !wEmergency.emergencyContactNumber.trim() && <span style={errMsg}>Phone number is required.</span>}
+                    </div>
+                  </div>
+                )}
+                {wizardStep === 3 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#5B65F0' }}>Your government ID numbers for payroll and benefits.</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                      {[
+                        { label: 'SSS Number', field: 'sssNumber' as const, val: wGovt.sssNumber, ph: 'XX-XXXXXXX-X' },
+                        { label: 'PhilHealth Number', field: 'philhealthNumber' as const, val: wGovt.philhealthNumber, ph: 'XX-XXXXXXXXX-X' },
+                        { label: 'Pag-IBIG Number', field: 'pagibigNumber' as const, val: wGovt.pagibigNumber, ph: 'XXXX-XXXX-XXXX' },
+                        { label: 'TIN Number', field: 'tinNumber' as const, val: wGovt.tinNumber, ph: 'XXX-XXX-XXX' },
+                      ].map(({ label, field, val, ph }) => (
+                        <div key={field} style={fieldWrap}>
+                          <label style={labelStyle}>{label} *</label>
+                          <input type="text" placeholder={ph} value={val} onChange={e => setWGovt(p => ({ ...p, [field]: e.target.value }))} style={redIf(val)} />
+                          {wizardTryNext && !val.trim() && <span style={errMsg}>Required.</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div style={{ padding: '1rem 1.5rem', borderTop: '1.5px solid #EEF0FD', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem' }}>
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowOnboardingModal(false);
-                    handleTabSelect(tabs.find(t => t.id === 'submission')!);
-                  }}
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', padding: '0.75rem 1rem', fontSize: '0.9rem', fontWeight: 700, color: '#ffffff', cursor: 'pointer', boxShadow: '0 4px 14px rgba(54,62,232,0.3)' }}
+                  onClick={() => { if (wizardStep > 1) { setWizardStep((wizardStep - 1) as 1 | 2 | 3); setWizardTryNext(false); } else setShowSetupWizard(false); }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', borderRadius: 8, border: '1.5px solid #C8D1FF', background: '#fff', padding: '0.6rem 1rem', fontSize: '0.85rem', fontWeight: 600, color: '#040E6B', cursor: 'pointer' }}
                 >
-                  Click to continue setting up
+                  {wizardStep > 1 ? '← Previous' : 'Remind me later'}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowOnboardingModal(false)}
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 10, border: '1.5px solid #C8D1FF', background: '#ffffff', padding: '0.65rem 1rem', fontSize: '0.85rem', fontWeight: 600, color: '#040E6B', cursor: 'pointer' }}
+                  onClick={handleNext}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', padding: '0.6rem 1.25rem', fontSize: '0.9rem', fontWeight: 700, color: '#ffffff', cursor: 'pointer', boxShadow: '0 4px 14px rgba(54,62,232,0.3)' }}
                 >
-                  Remind me later
+                  {wizardStep < 3 ? 'Save & Continue →' : 'Save Changes ✓'}
                 </button>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       <DocumentPreviewModal
         open={previewDocument !== null}
