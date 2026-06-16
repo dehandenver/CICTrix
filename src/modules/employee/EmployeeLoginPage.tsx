@@ -1,6 +1,5 @@
 import { Eye, EyeOff, Lock, User } from 'lucide-react';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import abyanLogo from '../../assets/abyan-logo.png';
 import iloiloCitySeal from '../../assets/iloilo-city-seal.png';
 
@@ -18,8 +17,6 @@ export const EmployeeLoginPage: React.FC<EmployeeLoginPageProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -154,7 +151,6 @@ export const EmployeeLoginPage: React.FC<EmployeeLoginPageProps> = ({
               >
                 Welcome back
               </h1>
-              <p className="mt-2 text-sm text-slate-500">Sign in to access your employee portal</p>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-5">
@@ -231,12 +227,6 @@ export const EmployeeLoginPage: React.FC<EmployeeLoginPageProps> = ({
               </button>
             </form>
 
-            <p className="mt-6 text-center text-sm text-slate-500">
-              Login credentials are provided by HR upon hiring.
-            </p>
-            <p className="mt-10 text-center text-xs font-medium text-slate-400">
-              Protected by government security protocols
-            </p>
           </div>
         </main>
       </div>

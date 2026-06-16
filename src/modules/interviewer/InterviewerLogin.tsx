@@ -245,7 +245,6 @@ export function InterviewerLogin({ onLogin }: InterviewerLoginProps) {
               >
                 Welcome back
               </h1>
-              <p className="mt-2 text-sm text-slate-500">Sign in to access your interviewer dashboard</p>
             </div>
 
             <form onSubmit={handleLogin} className="space-y-5">
@@ -347,9 +346,6 @@ export function InterviewerLogin({ onLogin }: InterviewerLoginProps) {
               </div>
             )}
 
-            <p className="mt-10 text-center text-xs font-medium text-slate-400">
-              Protected by government security protocols
-            </p>
           </div>
         </main>
       </div>

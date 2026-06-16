@@ -71,9 +71,6 @@ export const AdminLogin = () => {
           </Button>
         </form>
 
-        <p className="admin-login-note">
-          This is a demo login. Connect to Supabase Auth when ready.
-        </p>
       </div>
     </div>
   );

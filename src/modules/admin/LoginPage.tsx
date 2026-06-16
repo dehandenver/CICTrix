@@ -255,7 +255,6 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
               >
                 Welcome back
               </h1>
-              <p className="mt-2 text-sm text-slate-500">Please sign in to your account</p>
             </div>
 
             <form onSubmit={handleLogin} className="space-y-5">
@@ -388,9 +387,6 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
               </button>
             </form>
 
-            <p className="mt-10 text-center text-xs font-medium text-slate-400">
-              Protected by government security protocols
-            </p>
           </div>
         </main>
       </div>

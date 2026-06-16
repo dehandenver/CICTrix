@@ -1149,14 +1149,6 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
                     <h2 className="text-lg font-bold" style={{ color: '#363EE8' }}>{section.title}</h2>
                     <p className="text-sm" style={{ color: '#040E6B', opacity: 0.65 }}>{section.note}</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleTabSelect(tabs.find(t => t.id === 'submission')!)}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', borderRadius: 8, border: '1.5px solid #C8D1FF', background: '#EEF0FD', padding: '0.3rem 0.75rem', fontSize: '0.78rem', fontWeight: 700, color: '#363EE8', cursor: 'pointer' }}
-                  >
-                    <Pencil className="h-3 w-3" />
-                    Update in Submission Bin
-                  </button>
                 </div>
                 {section.fields.map(f => <FieldRow key={f.label} label={f.label} value={f.value ?? ''} />)}
               </section>
