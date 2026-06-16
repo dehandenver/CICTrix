@@ -122,11 +122,6 @@ export const EmployeeLoginPage: React.FC<EmployeeLoginPageProps> = ({
               >
                 Human Resource Information System
               </p>
-              <ul className="mt-10 space-y-3 text-center text-sm" style={{ color: 'rgba(255,255,255,0.85)' }}>
-                {['Access Your Employee Records', 'View Payslips & Benefits', 'Submit Leave Requests'].map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
             </div>
 
             <p className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.45)' }}>
