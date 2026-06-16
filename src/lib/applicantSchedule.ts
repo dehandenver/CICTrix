@@ -74,7 +74,7 @@ export async function saveApplicantAssignment(
 export async function fetchActiveInterviewers(): Promise<InterviewerOption[]> {
   const { data, error } = await (supabase as any)
     .from('raters')
-    .select('name, email, designation, is_active')
+    .select('name, email, is_active')
     .order('name', { ascending: true });
 
   if (error) {
