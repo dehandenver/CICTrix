@@ -1228,6 +1228,8 @@ const ApplicantsListView = ({ folder, completedEvaluationIds, savedCatScores, on
               <th style={{ padding: '0.75rem 1rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', width: 48 }}>#</th>
               <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Applicant Name</th>
               <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Type</th>
+              <th style={{ padding: '0.75rem 0.75rem', textAlign: 'left', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Exam Schedule</th>
+              <th style={{ padding: '0.75rem 0.75rem', textAlign: 'left', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Interview Schedule</th>
               <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Educ /20</th>
               <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Exp /25</th>
               <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Perf /20</th>
@@ -1269,6 +1271,26 @@ const ApplicantsListView = ({ folder, completedEvaluationIds, savedCatScores, on
                       {isPromotional ? 'Promotional' : 'Original'}
                     </span>
                   </td>
+                  <td style={{ padding: '0.75rem 0.75rem' }}>
+                    {a.exam_date ? (
+                      <div>
+                        <p style={{ margin: 0, fontSize: '0.78rem', fontWeight: 600, color: '#040E6B' }}>{fmtDate(a.exam_date)}</p>
+                        {a.exam_time && <p style={{ margin: 0, fontSize: '0.72rem', color: '#64748b' }}>{a.exam_time}</p>}
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>—</span>
+                    )}
+                  </td>
+                  <td style={{ padding: '0.75rem 0.75rem' }}>
+                    {a.interview_date ? (
+                      <div>
+                        <p style={{ margin: 0, fontSize: '0.78rem', fontWeight: 600, color: '#040E6B' }}>{fmtDate(a.interview_date)}</p>
+                        {a.interview_time && <p style={{ margin: 0, fontSize: '0.72rem', color: '#64748b' }}>{a.interview_time}</p>}
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>—</span>
+                    )}
+                  </td>
                   <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>{sv('education')}</td>
                   <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>{sv('experience')}</td>
                   <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.85rem', fontWeight: 600, color: isPromotional ? '#334155' : '#cbd5e1' }}>{isPromotional ? sv('performance') : '—'}</td>
@@ -1295,7 +1317,7 @@ const ApplicantsListView = ({ folder, completedEvaluationIds, savedCatScores, on
             })}
             {ranked.length === 0 && (
               <tr>
-                <td colSpan={12} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
+                <td colSpan={14} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
                   <FolderOpen size={40} style={{ display: 'block', margin: '0 auto 0.75rem', opacity: 0.3 }} />
                   <p style={{ fontWeight: 600, margin: 0 }}>No applicants found</p>
                 </td>
