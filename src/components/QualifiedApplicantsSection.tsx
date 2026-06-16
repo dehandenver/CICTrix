@@ -670,10 +670,10 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
         <div style={{ background: '#ffffff', borderRadius: 20, boxShadow: '0 24px 80px rgba(54,62,232,0.22)', width: '100%', maxWidth: 760, maxHeight: '95vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: "'Poppins', sans-serif" }}>
 
           {/* Branded header */}
-          <div style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', padding: '1.35rem 1.5rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexShrink: 0 }}>
+          <div style={{ background: 'linear-gradient(135deg, #5B65F0 0%, #363EE8 100%)', padding: '1.35rem 1.5rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexShrink: 0 }}>
             <div>
-              <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: '#ffffff', letterSpacing: '-0.01em' }}>Applicant Evaluation &amp; Scoring</h2>
-              <p style={{ margin: 0, fontSize: '0.85rem', color: '#C8D1FF', marginTop: 3 }}>
+              <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.01em', textShadow: '0 1px 4px rgba(4,14,107,0.25)' }}>Applicant Evaluation &amp; Scoring</h2>
+              <p style={{ margin: 0, fontSize: '0.85rem', color: 'rgba(255,255,255,0.85)', marginTop: 3 }}>
                 {applicant.full_name} &mdash; {applicant.position}
               </p>
             </div>
@@ -783,7 +783,7 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
             </div>
 
             {/* Final Numerical Score */}
-            <div style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', borderRadius: 14, padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ background: 'linear-gradient(135deg, #5B65F0 0%, #363EE8 100%)', borderRadius: 14, padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                 <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: 10, padding: '0.5rem', display: 'flex' }}>
                   <Calculator size={22} style={{ color: '#C8D1FF' }} />

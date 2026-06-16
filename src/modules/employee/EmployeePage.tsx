@@ -541,6 +541,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
 
   // DB-hydration state — true while the initial Supabase fetch is in-flight.
   const [profileLoading, setProfileLoading] = useState(false);
+  const [showOnboardingModal, setShowOnboardingModal] = useState(false);
   // Save feedback banners for profile edits.
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
@@ -583,6 +584,19 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Show onboarding modal once after profile loads if setup is incomplete.
+  useEffect(() => {
+    if (profileLoading) return;
+    const missing =
+      !profile.email?.trim() ||
+      !profile.mobileNumber?.trim() ||
+      !profile.emergencyContactName?.trim() ||
+      !profile.sssNumber?.trim();
+    if (missing) setShowOnboardingModal(true);
+    // Only fire once on mount after loading resolves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileLoading]);
+
   // HR-created document requests drive the Submission Bin tab.
   const hrRequests = useMemo(
     () => employeeDocuments.filter((d) => d.category === 'hr_request'),
@@ -599,6 +613,21 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
     [hrRequests],
   );
 
+  const incompleteSetupCount = useMemo(() => {
+    let n = 0;
+    if (!profile.email?.trim()) n++;
+    if (!profile.mobileNumber?.trim()) n++;
+    if (!profile.homeAddress?.trim()) n++;
+    if (!profile.emergencyContactName?.trim()) n++;
+    if (!profile.emergencyRelationship?.trim()) n++;
+    if (!profile.emergencyContactNumber?.trim()) n++;
+    if (!profile.sssNumber?.trim()) n++;
+    if (!profile.philhealthNumber?.trim()) n++;
+    if (!profile.pagibigNumber?.trim()) n++;
+    if (!profile.tinNumber?.trim()) n++;
+    return n;
+  }, [profile]);
+
   const tabs: TabConfig[] = useMemo(
     () => [
       { id: 'personal', label: 'Personal Information', icon: User, route: '/employee/profile' },
@@ -608,11 +637,11 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
         label: 'Submission Bin',
         icon: Bell,
         route: '/employee/documents/submission',
-        count: pendingRequests.length || undefined,
+        count: (pendingRequests.length + incompleteSetupCount) || undefined,
       },
       { id: 'account', label: 'Account & Security', icon: Lock, route: '/employee/account' },
     ],
-    [pendingRequests.length]
+    [pendingRequests.length, incompleteSetupCount]
   );
 
   const activeTab = useMemo<PortalTab>(() => {
@@ -872,70 +901,67 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
 
   const FieldRow: React.FC<{ label: string; value?: string }> = ({ label, value }) => (
     <div className="grid grid-cols-1 gap-1 py-2 md:grid-cols-[210px_1fr] md:gap-3">
-      <div className="text-sm font-semibold text-slate-600">{label}:</div>
-      <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+      <div className="text-sm font-semibold" style={{ color: '#040E6B' }}>{label}:</div>
+      <div className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: '#C8D1FF', background: '#F4F5FD', color: value?.trim() ? '#040E6B' : '#A5ACEE', fontStyle: value?.trim() ? 'normal' : 'italic' }}>
         {value?.trim() || 'Not provided'}
       </div>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-slate-100">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
+    <div className="min-h-screen" style={{ background: '#F0F2FD', fontFamily: "'Poppins', sans-serif" }}>
+      {/* ── Branded top nav ── */}
+      <header style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', boxShadow: '0 2px 16px rgba(54,62,232,0.18)' }}>
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600 text-white">
-              <Home className="h-5 w-5" />
+            <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: 10, padding: '0.45rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Home className="h-5 w-5" style={{ color: '#ffffff' }} />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-slate-900">Employee Self-Service Portal</h1>
-              <p className="text-sm text-slate-500">Human Resources Information System</p>
+              <h1 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.01em' }}>Employee Self-Service Portal</h1>
+              <p style={{ margin: 0, fontSize: '0.75rem', color: '#C8D1FF' }}>Human Resources Information System</p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
             <div className="hidden text-right sm:block">
-              <p className="text-sm font-semibold text-slate-700">Welcome, {currentUser.fullName}</p>
-              <p className="text-xs text-slate-500">Employee ID: {currentUser.employeeId}</p>
+              <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 700, color: '#ffffff' }}>Welcome, {currentUser.fullName}</p>
+              <p style={{ margin: 0, fontSize: '0.72rem', color: '#C8D1FF' }}>Employee ID: {currentUser.employeeId}</p>
             </div>
             <button
               onClick={onLogout}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', borderRadius: 8, border: '1.5px solid rgba(255,255,255,0.35)', background: 'rgba(255,255,255,0.12)', padding: '0.4rem 0.85rem', fontSize: '0.85rem', fontWeight: 600, color: '#ffffff', cursor: 'pointer', transition: 'background 0.15s' }}
             >
               <LogOut className="h-4 w-4" />
               Logout
             </button>
           </div>
         </div>
-      </header>
 
-      <div className="border-b border-slate-200 bg-white">
+        {/* Tab bar inside header */}
         <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
-          <div className="flex flex-wrap gap-2 py-3">
+          <div className="flex flex-wrap gap-1.5 pb-3">
             {tabs.map((tab) => {
               const isActive = tab.id === activeTab;
               const Icon = tab.icon;
-
               return (
                 <button
                   key={tab.id}
                   onClick={() => handleTabSelect(tab)}
-                  className={[
-                    'inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition',
-                    isActive
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50',
-                  ].join(' ')}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+                    borderRadius: 8, padding: '0.45rem 0.9rem',
+                    fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer',
+                    border: isActive ? '1.5px solid #ffffff' : '1.5px solid rgba(255,255,255,0.25)',
+                    background: isActive ? '#ffffff' : 'rgba(255,255,255,0.1)',
+                    color: isActive ? '#363EE8' : '#ffffff',
+                    transition: 'all 0.15s',
+                  }}
                 >
                   <Icon className="h-4 w-4" />
                   {tab.label}
                   {tab.count ? (
-                    <span
-                      className={[
-                        'rounded-full px-2 py-0.5 text-xs font-bold',
-                        isActive ? 'bg-white text-blue-700' : 'bg-rose-100 text-rose-700',
-                      ].join(' ')}
-                    >
+                    <span style={{ borderRadius: 999, padding: '0.1rem 0.45rem', fontSize: '0.72rem', fontWeight: 800, background: isActive ? '#363EE8' : '#ffffff', color: isActive ? '#ffffff' : '#363EE8' }}>
                       {tab.count}
                     </span>
                   ) : null}
@@ -944,14 +970,14 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
             })}
           </div>
         </div>
-      </div>
+      </header>
 
       <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
         {activeTab === 'personal' && (
           <div className="space-y-5">
             {/* Loading skeleton */}
             {profileLoading && (
-              <div className="rounded-xl border border-slate-200 bg-white p-5 animate-pulse">
+              <div className="rounded-xl border bg-white p-5 animate-pulse" style={{ borderColor: '#C8D1FF' }}>
                 <div className="h-5 w-48 rounded bg-slate-200 mb-4" />
                 <div className="space-y-3">
                   {[1, 2, 3, 4].map((n) => (
@@ -975,11 +1001,11 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
                 {saveSuccess}
               </p>
             )}
-            <section className="rounded-xl border border-slate-200 bg-white p-5">
+            <section className="rounded-xl border bg-white p-5" style={{ borderColor: '#C8D1FF' }}>
               <div className="mb-4 flex items-center justify-between">
                 <div>
-                  <h2 className="text-lg font-bold text-slate-900">Personal Information</h2>
-                  <p className="text-sm text-slate-500">
+                  <h2 className="text-lg font-bold" style={{ color: '#363EE8' }}>Personal Information</h2>
+                  <p className="text-sm" style={{ color: '#040E6B', opacity: 0.7 }}>
                     {profile.personalDetailsFinalized
                       ? 'Your personal details have been finalized and cannot be edited.'
                       : 'Edit your personal details. You can only do this once.'}
@@ -1064,203 +1090,55 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
               )}
             </section>
 
-            <section className="rounded-xl border border-slate-200 bg-white p-5">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-bold text-slate-900">Contact Information</h2>
-                  <p className="text-sm text-slate-500">You can edit and save your latest contact details.</p>
-                </div>
-                {editingSection === 'contact' ? (
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={cancelEditing}
-                      className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={saveContactInfo}
-                      className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700"
-                    >
-                      <Save className="h-3.5 w-3.5" />
-                      Save
-                    </button>
+            {/* Contact, Emergency, Gov ID — read-only in Personal Info; editable in Submission Bin */}
+            {[
+              {
+                title: 'Contact Information',
+                note: 'Manage your contact details in the Submission Bin.',
+                fields: [
+                  { label: 'Email Address', value: profile.email },
+                  { label: 'Phone Number', value: profile.mobileNumber },
+                  { label: 'Home Address', value: profile.homeAddress },
+                ],
+              },
+              {
+                title: 'Emergency Contact',
+                note: 'Manage your emergency contact in the Submission Bin.',
+                fields: [
+                  { label: 'Contact Name', value: profile.emergencyContactName },
+                  { label: 'Relationship', value: profile.emergencyRelationship },
+                  { label: 'Phone Number', value: profile.emergencyContactNumber },
+                ],
+              },
+              {
+                title: 'Government Identification',
+                note: 'Manage your government IDs in the Submission Bin.',
+                fields: [
+                  { label: 'SSS Number', value: profile.sssNumber },
+                  { label: 'PhilHealth Number', value: profile.philhealthNumber },
+                  { label: 'Pag-IBIG Number', value: profile.pagibigNumber },
+                  { label: 'TIN Number', value: profile.tinNumber },
+                ],
+              },
+            ].map((section) => (
+              <section key={section.title} className="rounded-xl border bg-white p-5" style={{ borderColor: '#C8D1FF' }}>
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-lg font-bold" style={{ color: '#363EE8' }}>{section.title}</h2>
+                    <p className="text-sm" style={{ color: '#040E6B', opacity: 0.65 }}>{section.note}</p>
                   </div>
-                ) : (
                   <button
                     type="button"
-                    onClick={() => startEditing('contact')}
-                    className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-200"
+                    onClick={() => handleTabSelect(tabs.find(t => t.id === 'submission')!)}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', borderRadius: 8, border: '1.5px solid #C8D1FF', background: '#EEF0FD', padding: '0.3rem 0.75rem', fontSize: '0.78rem', fontWeight: 700, color: '#363EE8', cursor: 'pointer' }}
                   >
-                    <Pencil className="h-3.5 w-3.5" />
-                    Edit
+                    <Pencil className="h-3 w-3" />
+                    Update in Submission Bin
                   </button>
-                )}
-              </div>
-              {editingSection === 'contact' ? (
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <EditableInput
-                    label="Mobile Number"
-                    value={contactDraft.mobileNumber}
-                    onChange={(value) => setContactDraft((prev) => ({ ...prev, mobileNumber: value }))}
-                  />
-                  <EditableInput
-                    label="Email Address"
-                    value={contactDraft.email}
-                    type="email"
-                    onChange={(value) => setContactDraft((prev) => ({ ...prev, email: value }))}
-                  />
-                  <div className="md:col-span-2">
-                    <EditableInput
-                      label="Home Address"
-                      value={contactDraft.homeAddress}
-                      onChange={(value) => setContactDraft((prev) => ({ ...prev, homeAddress: value }))}
-                    />
-                  </div>
                 </div>
-              ) : (
-                <>
-                  <FieldRow label="Email Address" value={profile.email} />
-                  <FieldRow label="Phone Number" value={profile.mobileNumber} />
-                  <FieldRow label="Home Address" value={profile.homeAddress} />
-                </>
-              )}
-            </section>
-
-            <section className="rounded-xl border border-slate-200 bg-white p-5">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-bold text-slate-900">Emergency Contact</h2>
-                  <p className="text-sm text-slate-500">Update your emergency contact person and details.</p>
-                </div>
-                {editingSection === 'emergency' ? (
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={cancelEditing}
-                      className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={saveEmergencyInfo}
-                      className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700"
-                    >
-                      <Save className="h-3.5 w-3.5" />
-                      Save
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => startEditing('emergency')}
-                    className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-200"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                    Edit
-                  </button>
-                )}
-              </div>
-              {editingSection === 'emergency' ? (
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                  <EditableInput
-                    label="Contact Person Name"
-                    value={emergencyDraft.emergencyContactName}
-                    onChange={(value) => setEmergencyDraft((prev) => ({ ...prev, emergencyContactName: value }))}
-                  />
-                  <EditableInput
-                    label="Relationship"
-                    value={emergencyDraft.emergencyRelationship}
-                    onChange={(value) => setEmergencyDraft((prev) => ({ ...prev, emergencyRelationship: value }))}
-                  />
-                  <EditableInput
-                    label="Contact Number"
-                    value={emergencyDraft.emergencyContactNumber}
-                    onChange={(value) => setEmergencyDraft((prev) => ({ ...prev, emergencyContactNumber: value }))}
-                  />
-                </div>
-              ) : (
-                <>
-                  <FieldRow label="Contact Name" value={profile.emergencyContactName} />
-                  <FieldRow label="Relationship" value={profile.emergencyRelationship} />
-                  <FieldRow label="Phone Number" value={profile.emergencyContactNumber} />
-                </>
-              )}
-            </section>
-
-            <section className="rounded-xl border border-slate-200 bg-white p-5">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-bold text-slate-900">Government Identification</h2>
-                  <p className="text-sm text-slate-500">Update your government membership and tax identifiers.</p>
-                </div>
-                {editingSection === 'government' ? (
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={cancelEditing}
-                      className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={saveGovernmentInfo}
-                      className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700"
-                    >
-                      <Save className="h-3.5 w-3.5" />
-                      Save
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => startEditing('government')}
-                    className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-200"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                    Edit
-                  </button>
-                )}
-              </div>
-              {editingSection === 'government' ? (
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <EditableInput
-                    label="SSS Number"
-                    value={governmentDraft.sssNumber}
-                    onChange={(value) => setGovernmentDraft((prev) => ({ ...prev, sssNumber: value }))}
-                  />
-                  <EditableInput
-                    label="PhilHealth Number"
-                    value={governmentDraft.philhealthNumber}
-                    onChange={(value) => setGovernmentDraft((prev) => ({ ...prev, philhealthNumber: value }))}
-                  />
-                  <EditableInput
-                    label="Pag-IBIG Number"
-                    value={governmentDraft.pagibigNumber}
-                    onChange={(value) => setGovernmentDraft((prev) => ({ ...prev, pagibigNumber: value }))}
-                  />
-                  <EditableInput
-                    label="TIN Number"
-                    value={governmentDraft.tinNumber}
-                    onChange={(value) => setGovernmentDraft((prev) => ({ ...prev, tinNumber: value }))}
-                  />
-                </div>
-              ) : (
-                <>
-                  <FieldRow label="SSS Number" value={profile.sssNumber} />
-                  <FieldRow label="PhilHealth Number" value={profile.philhealthNumber} />
-                  <FieldRow label="Pag-IBIG Number" value={profile.pagibigNumber} />
-                  <FieldRow label="TIN Number" value={profile.tinNumber} />
-                </>
-              )}
-            </section>
+                {section.fields.map(f => <FieldRow key={f.label} label={f.label} value={f.value ?? ''} />)}
+              </section>
+            ))}
           </div>
         )}
 
@@ -1379,6 +1257,138 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
 
         {activeTab === 'submission' && (
           <div className="space-y-4">
+
+            {/* ── Account Setup Banner ─────────────────────────────────── */}
+            {incompleteSetupCount > 0 && (
+              <div style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', borderRadius: 14, padding: '1rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <AlertCircle className="h-5 w-5 shrink-0" style={{ color: '#C8D1FF' }} />
+                <div>
+                  <p style={{ margin: 0, fontWeight: 700, color: '#ffffff', fontSize: '0.95rem' }}>
+                    Account setup incomplete — {incompleteSetupCount} item{incompleteSetupCount !== 1 ? 's' : ''} remaining
+                  </p>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: '#C8D1FF' }}>
+                    Please fill in the sections below to complete your employee profile.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* ── Contact Information Setup ─────────────────────────────── */}
+            <section className="rounded-xl border bg-white p-5" style={{ borderColor: '#C8D1FF' }}>
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold" style={{ color: '#363EE8' }}>Contact Information</h2>
+                  <p className="text-sm" style={{ color: '#040E6B', opacity: 0.7 }}>Your contact details for official communication.</p>
+                </div>
+                {editingSection === 'contact' ? (
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={cancelEditing} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', borderRadius: 7, border: '1.5px solid #C8D1FF', background: '#fff', padding: '0.3rem 0.7rem', fontSize: '0.78rem', fontWeight: 600, color: '#040E6B', cursor: 'pointer' }}>
+                      <X className="h-3.5 w-3.5" /> Cancel
+                    </button>
+                    <button type="button" onClick={saveContactInfo} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', borderRadius: 7, border: 'none', background: '#363EE8', padding: '0.3rem 0.7rem', fontSize: '0.78rem', fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
+                      <Save className="h-3.5 w-3.5" /> Save
+                    </button>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => startEditing('contact')} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', borderRadius: 7, border: '1.5px solid #C8D1FF', background: '#EEF0FD', padding: '0.3rem 0.75rem', fontSize: '0.78rem', fontWeight: 700, color: '#363EE8', cursor: 'pointer' }}>
+                    <Pencil className="h-3 w-3" /> Edit
+                  </button>
+                )}
+              </div>
+              {editingSection === 'contact' ? (
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <EditableInput label="Mobile Number" value={contactDraft.mobileNumber} onChange={(v) => setContactDraft((p) => ({ ...p, mobileNumber: v }))} />
+                  <EditableInput label="Email Address" value={contactDraft.email} type="email" onChange={(v) => setContactDraft((p) => ({ ...p, email: v }))} />
+                  <div className="md:col-span-2">
+                    <EditableInput label="Home Address" value={contactDraft.homeAddress} onChange={(v) => setContactDraft((p) => ({ ...p, homeAddress: v }))} />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <FieldRow label="Email Address" value={profile.email} />
+                  <FieldRow label="Phone Number" value={profile.mobileNumber} />
+                  <FieldRow label="Home Address" value={profile.homeAddress} />
+                </>
+              )}
+            </section>
+
+            {/* ── Emergency Contact Setup ───────────────────────────────── */}
+            <section className="rounded-xl border bg-white p-5" style={{ borderColor: '#C8D1FF' }}>
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold" style={{ color: '#363EE8' }}>Emergency Contact</h2>
+                  <p className="text-sm" style={{ color: '#040E6B', opacity: 0.7 }}>Person to contact in case of emergency.</p>
+                </div>
+                {editingSection === 'emergency' ? (
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={cancelEditing} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', borderRadius: 7, border: '1.5px solid #C8D1FF', background: '#fff', padding: '0.3rem 0.7rem', fontSize: '0.78rem', fontWeight: 600, color: '#040E6B', cursor: 'pointer' }}>
+                      <X className="h-3.5 w-3.5" /> Cancel
+                    </button>
+                    <button type="button" onClick={saveEmergencyInfo} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', borderRadius: 7, border: 'none', background: '#363EE8', padding: '0.3rem 0.7rem', fontSize: '0.78rem', fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
+                      <Save className="h-3.5 w-3.5" /> Save
+                    </button>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => startEditing('emergency')} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', borderRadius: 7, border: '1.5px solid #C8D1FF', background: '#EEF0FD', padding: '0.3rem 0.75rem', fontSize: '0.78rem', fontWeight: 700, color: '#363EE8', cursor: 'pointer' }}>
+                    <Pencil className="h-3 w-3" /> Edit
+                  </button>
+                )}
+              </div>
+              {editingSection === 'emergency' ? (
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <EditableInput label="Contact Person Name" value={emergencyDraft.emergencyContactName} onChange={(v) => setEmergencyDraft((p) => ({ ...p, emergencyContactName: v }))} />
+                  <EditableInput label="Relationship" value={emergencyDraft.emergencyRelationship} onChange={(v) => setEmergencyDraft((p) => ({ ...p, emergencyRelationship: v }))} />
+                  <EditableInput label="Contact Number" value={emergencyDraft.emergencyContactNumber} onChange={(v) => setEmergencyDraft((p) => ({ ...p, emergencyContactNumber: v }))} />
+                </div>
+              ) : (
+                <>
+                  <FieldRow label="Contact Name" value={profile.emergencyContactName} />
+                  <FieldRow label="Relationship" value={profile.emergencyRelationship} />
+                  <FieldRow label="Phone Number" value={profile.emergencyContactNumber} />
+                </>
+              )}
+            </section>
+
+            {/* ── Government Identification Setup ───────────────────────── */}
+            <section className="rounded-xl border bg-white p-5" style={{ borderColor: '#C8D1FF' }}>
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold" style={{ color: '#363EE8' }}>Government Identification</h2>
+                  <p className="text-sm" style={{ color: '#040E6B', opacity: 0.7 }}>Your government membership and tax ID numbers.</p>
+                </div>
+                {editingSection === 'government' ? (
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={cancelEditing} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', borderRadius: 7, border: '1.5px solid #C8D1FF', background: '#fff', padding: '0.3rem 0.7rem', fontSize: '0.78rem', fontWeight: 600, color: '#040E6B', cursor: 'pointer' }}>
+                      <X className="h-3.5 w-3.5" /> Cancel
+                    </button>
+                    <button type="button" onClick={saveGovernmentInfo} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', borderRadius: 7, border: 'none', background: '#363EE8', padding: '0.3rem 0.7rem', fontSize: '0.78rem', fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
+                      <Save className="h-3.5 w-3.5" /> Save
+                    </button>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => startEditing('government')} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', borderRadius: 7, border: '1.5px solid #C8D1FF', background: '#EEF0FD', padding: '0.3rem 0.75rem', fontSize: '0.78rem', fontWeight: 700, color: '#363EE8', cursor: 'pointer' }}>
+                    <Pencil className="h-3 w-3" /> Edit
+                  </button>
+                )}
+              </div>
+              {editingSection === 'government' ? (
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <EditableInput label="SSS Number" value={governmentDraft.sssNumber} onChange={(v) => setGovernmentDraft((p) => ({ ...p, sssNumber: v }))} />
+                  <EditableInput label="PhilHealth Number" value={governmentDraft.philhealthNumber} onChange={(v) => setGovernmentDraft((p) => ({ ...p, philhealthNumber: v }))} />
+                  <EditableInput label="Pag-IBIG Number" value={governmentDraft.pagibigNumber} onChange={(v) => setGovernmentDraft((p) => ({ ...p, pagibigNumber: v }))} />
+                  <EditableInput label="TIN Number" value={governmentDraft.tinNumber} onChange={(v) => setGovernmentDraft((p) => ({ ...p, tinNumber: v }))} />
+                </div>
+              ) : (
+                <>
+                  <FieldRow label="SSS Number" value={profile.sssNumber} />
+                  <FieldRow label="PhilHealth Number" value={profile.philhealthNumber} />
+                  <FieldRow label="Pag-IBIG Number" value={profile.pagibigNumber} />
+                  <FieldRow label="TIN Number" value={profile.tinNumber} />
+                </>
+              )}
+            </section>
+
+            {/* ── IPCR SUBMISSION BIN SECTION ─────────────────────────── */}
             {/* IPCR SUBMISSION BIN SECTION */}
             <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex flex-col justify-between gap-4 border-b border-slate-100 pb-4 mb-5 sm:flex-row sm:items-start">
@@ -2304,6 +2314,54 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
           </div>
         )}
       </main>
+
+      {/* ── Onboarding Modal ─────────────────────────────────────────── */}
+      {showOnboardingModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(4,14,107,0.55)', padding: '1rem', fontFamily: "'Poppins', sans-serif" }}>
+          <div style={{ background: '#ffffff', borderRadius: 20, boxShadow: '0 24px 80px rgba(54,62,232,0.22)', width: '100%', maxWidth: 460, overflow: 'hidden' }}>
+            {/* Modal header */}
+            <div style={{ background: 'linear-gradient(135deg, #5B65F0 0%, #363EE8 100%)', padding: '1.5rem 1.5rem 1.25rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ background: 'rgba(255,255,255,0.18)', borderRadius: 10, padding: '0.5rem', display: 'flex' }}>
+                  <AlertCircle className="h-5 w-5" style={{ color: '#ffffff' }} />
+                </div>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#ffffff' }}>Account Setup Required</h2>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: '#C8D1FF' }}>Welcome to the Employee Self-Service Portal</p>
+                </div>
+              </div>
+            </div>
+            {/* Modal body */}
+            <div style={{ padding: '1.5rem' }}>
+              <p style={{ margin: '0 0 0.75rem', fontSize: '0.95rem', fontWeight: 600, color: '#040E6B' }}>
+                There is more information required to set up your employee account.
+              </p>
+              <p style={{ margin: '0 0 1.25rem', fontSize: '0.85rem', color: '#5B65F0', lineHeight: 1.6 }}>
+                Please complete your Contact Information, Emergency Contact, and Government Identification in the Submission Bin to finish setting up your profile.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowOnboardingModal(false);
+                    handleTabSelect(tabs.find(t => t.id === 'submission')!);
+                  }}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', padding: '0.75rem 1rem', fontSize: '0.9rem', fontWeight: 700, color: '#ffffff', cursor: 'pointer', boxShadow: '0 4px 14px rgba(54,62,232,0.3)' }}
+                >
+                  Click to continue setting up
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowOnboardingModal(false)}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 10, border: '1.5px solid #C8D1FF', background: '#ffffff', padding: '0.65rem 1rem', fontSize: '0.85rem', fontWeight: 600, color: '#040E6B', cursor: 'pointer' }}
+                >
+                  Remind me later
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <DocumentPreviewModal
         open={previewDocument !== null}
