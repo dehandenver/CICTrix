@@ -22,6 +22,7 @@ import {
   Check,
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import abyanLogo from '../../assets/abyan-logo.png';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
 import {
@@ -936,9 +937,11 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
       <header style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', boxShadow: '0 2px 16px rgba(54,62,232,0.18)' }}>
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
-            <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: 10, padding: '0.45rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Home className="h-5 w-5" style={{ color: '#ffffff' }} />
-            </div>
+            <img
+              src={abyanLogo}
+              alt="Abyan HRIS"
+              style={{ height: 40, width: 'auto', objectFit: 'contain', mixBlendMode: 'screen' }}
+            />
             <div>
               <h1 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.01em' }}>Employee Self-Service Portal</h1>
               <p style={{ margin: 0, fontSize: '0.75rem', color: '#C8D1FF' }}>Human Resources Information System</p>
@@ -1024,92 +1027,17 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
               </p>
             )}
             <section className="rounded-xl border bg-white p-5" style={{ borderColor: '#C8D1FF' }}>
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-bold" style={{ color: '#363EE8' }}>Personal Information</h2>
-                  <p className="text-sm" style={{ color: '#040E6B', opacity: 0.7 }}>
-                    {profile.personalDetailsFinalized
-                      ? 'Your personal details have been finalized and cannot be edited.'
-                      : 'Edit your personal details. You can only do this once.'}
-                  </p>
-                </div>
-                {!profile.personalDetailsFinalized ? (
-                  editingSection === 'personal' ? (
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={cancelEditing}
-                        className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={savePersonalInfo}
-                        className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700"
-                      >
-                        <Save className="h-3.5 w-3.5" />
-                        Save
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => startEditing('personal')}
-                      className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-200"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                      Edit
-                    </button>
-                  )
-                ) : (
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">Locked</span>
-                )}
+              <div className="mb-4">
+                <h2 className="text-lg font-bold" style={{ color: '#363EE8' }}>Personal Information</h2>
               </div>
-              {editingSection === 'personal' ? (
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <EditableInput
-                    label="Full Name"
-                    value={personalDraft.fullName}
-                    onChange={(value) => setPersonalDraft((prev) => ({ ...prev, fullName: value }))}
-                  />
-                  <EditableInput
-                    label="Date of Birth"
-                    value={personalDraft.dateOfBirth}
-                    type="date"
-                    onChange={(value) => setPersonalDraft((prev) => ({ ...prev, dateOfBirth: value }))}
-                  />
-                  <EditableInput
-                    label="Place of Birth"
-                    value={personalDraft.placeOfBirth}
-                    onChange={(value) => setPersonalDraft((prev) => ({ ...prev, placeOfBirth: value }))}
-                  />
-                  <EditableInput
-                    label="Gender"
-                    value={personalDraft.gender}
-                    onChange={(value) => setPersonalDraft((prev) => ({ ...prev, gender: value }))}
-                  />
-                  <div className="md:col-span-2">
-                    <EditableInput
-                      label="Address"
-                      value={personalDraft.homeAddress}
-                      onChange={(value) => setPersonalDraft((prev) => ({ ...prev, homeAddress: value }))}
-                    />
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <FieldRow label="Full Name" value={profile.fullName} />
-                  <FieldRow label="Employee ID" value={profile.employeeId} />
-                  <FieldRow label="Date of Birth" value={profile.dateOfBirth} />
-                  <FieldRow label="Place of Birth" value={profile.placeOfBirth || '--'} />
-                  <FieldRow label="Gender" value={profile.gender || '--'} />
-                  <FieldRow label="Address" value={profile.homeAddress} />
-                  <FieldRow label="Position" value="Employee" />
-                  <FieldRow label="Department" value="Health Office" />
-                </>
-              )}
+              <FieldRow label="Full Name" value={profile.fullName} />
+              <FieldRow label="Employee ID" value={profile.employeeId} />
+              <FieldRow label="Date of Birth" value={profile.dateOfBirth} />
+              <FieldRow label="Place of Birth" value={profile.placeOfBirth || '--'} />
+              <FieldRow label="Gender" value={profile.gender || '--'} />
+              <FieldRow label="Address" value={profile.homeAddress} />
+              <FieldRow label="Position" value="Employee" />
+              <FieldRow label="Department" value="Health Office" />
             </section>
 
             {/* Contact, Emergency, Gov ID — read-only in Personal Info; editable in Submission Bin */}
