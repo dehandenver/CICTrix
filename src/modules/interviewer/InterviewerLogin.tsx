@@ -216,6 +216,11 @@ export function InterviewerLogin({ onLogin }: InterviewerLoginProps) {
               >
                 Evaluation &amp; Assessment
               </p>
+              <ul className="mt-10 space-y-3 text-center text-sm" style={{ color: 'rgba(255,255,255,0.85)' }}>
+                {['View Assigned Applicants', 'Conduct Evaluations', 'Submit Recommendations'].map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
             </div>
 
             <p className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.45)' }}>
