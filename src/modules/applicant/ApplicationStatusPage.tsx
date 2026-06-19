@@ -1,6 +1,6 @@
-import { CheckCircle2, FileText, Mail, Search } from 'lucide-react';
-import { useState } from 'react';
-import { supabase } from '../../lib/supabase';
+import { AlertCircle, CheckCircle2, FileText, Mail, RefreshCw, Search, Upload } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { ATTACHMENTS_BUCKET, supabase } from '../../lib/supabase';
 
 interface ApplicationRecord {
   id: string;
@@ -20,9 +20,26 @@ interface ApplicationRecord {
 interface AttachmentRow {
   id: string;
   file_name: string;
+  file_path: string;
   document_type: string | null;
   created_at: string;
 }
+
+type DocReviewStatus = 'pending' | 'approved' | 'resubmission_requested';
+interface DocReview { status: DocReviewStatus; remarks: string; reviewedAt: string; }
+const DOC_REVIEW_KEY = 'cictrix_doc_reviews';
+
+const loadDocReviews = (): Record<string, DocReview> => {
+  try { return JSON.parse(localStorage.getItem(DOC_REVIEW_KEY) ?? '{}') as Record<string, DocReview>; } catch { return {}; }
+};
+
+const clearDocReview = (key: string) => {
+  try {
+    const all = loadDocReviews();
+    delete all[key];
+    localStorage.setItem(DOC_REVIEW_KEY, JSON.stringify(all));
+  } catch { /* ignore */ }
+};
 
 type BadgeTone = 'approved' | 'in-review' | 'rejected' | 'new';
 
@@ -75,7 +92,6 @@ type StageState = 'done' | 'current' | 'pending' | 'rejected';
 
 const stageStatesForStatus = (rawStatus: string): StageState[] => {
   const status = rawStatus.toLowerCase();
-
   if (status.includes('reject') || status.includes('not qualified') || status.includes('disqual')) {
     return ['done', 'done', 'done', 'done', 'rejected'];
   }
@@ -122,8 +138,14 @@ export const ApplicationStatusPage = () => {
   const [loading, setLoading] = useState(false);
   const [record, setRecord] = useState<ApplicationRecord | null>(null);
   const [attachments, setAttachments] = useState<AttachmentRow[]>([]);
+  const [docReviews, setDocReviews] = useState<Record<string, DocReview>>({});
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState('');
+  const [uploadingKey, setUploadingKey] = useState<string | null>(null);
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  const getReviewKey = (applicantId: string, filePath: string) => `${applicantId}::${filePath}`;
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -138,6 +160,8 @@ export const ApplicationStatusPage = () => {
     setSearched(false);
     setRecord(null);
     setAttachments([]);
+    setDocReviews({});
+    setUploadSuccess(null);
 
     try {
       const looksLikeEmail = trimmed.includes('@');
@@ -176,12 +200,10 @@ export const ApplicationStatusPage = () => {
 
       setRecord(mapped);
 
-      // Pull submitted documents — table may not exist on every install, so
-      // a failure here shouldn't break the page.
       try {
         const { data: attachData, error: attachErr } = await (supabase as any)
           .from('applicant_attachments')
-          .select('id, file_name, document_type, created_at')
+          .select('id, file_name, file_path, document_type, created_at')
           .eq('applicant_id', mapped.id)
           .order('created_at', { ascending: false });
 
@@ -191,6 +213,10 @@ export const ApplicationStatusPage = () => {
       } catch {
         // Silently ignore — documents section will just render empty.
       }
+
+      // Load doc reviews from localStorage
+      const allReviews = loadDocReviews();
+      setDocReviews(allReviews);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to look up your application. Please try again.');
     } finally {
@@ -199,11 +225,72 @@ export const ApplicationStatusPage = () => {
     }
   };
 
+  const handleReupload = async (doc: AttachmentRow, file: File) => {
+    if (!record) return;
+    const key = getReviewKey(record.id, doc.file_path);
+    setUploadingKey(key);
+    try {
+      const ext = file.name.split('.').pop() ?? 'pdf';
+      const newPath = `${record.id}/${doc.document_type?.replace(/\s+/g, '_') ?? 'doc'}_${Date.now()}.${ext}`;
+      const { error: upErr } = await (supabase as any).storage
+        .from(ATTACHMENTS_BUCKET)
+        .upload(newPath, file, { upsert: false });
+      if (upErr) throw new Error(upErr.message);
+
+      const { error: insErr } = await (supabase as any)
+        .from('applicant_attachments')
+        .insert({
+          applicant_id: record.id,
+          file_name: file.name,
+          file_path: newPath,
+          document_type: doc.document_type,
+        });
+      if (insErr) throw new Error(insErr.message);
+
+      // Clear the resubmission review so the RSP side picks up the new doc
+      clearDocReview(key);
+      const updated = { ...docReviews };
+      delete updated[key];
+      setDocReviews(updated);
+
+      // Refresh attachments list
+      const { data: refreshed } = await (supabase as any)
+        .from('applicant_attachments')
+        .select('id, file_name, file_path, document_type, created_at')
+        .eq('applicant_id', record.id)
+        .order('created_at', { ascending: false });
+      if (Array.isArray(refreshed)) setAttachments(refreshed as AttachmentRow[]);
+
+      setUploadSuccess(key);
+      setTimeout(() => setUploadSuccess(null), 4000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed. Please try again.');
+    } finally {
+      setUploadingKey(null);
+    }
+  };
+
   const badge = record ? getBadge(record.status) : null;
   const stageStates = record ? stageStatesForStatus(record.status) : [];
   const fullName = record ? `${record.first_name} ${record.last_name}`.trim() : '';
   const programType =
     record?.application_type === 'promotion' ? 'Promotional Application' : 'Job Application';
+
+  // Deduplicate attachments by document_type (keep most recent per type)
+  const deduplicatedAttachments = (() => {
+    const seen = new Set<string>();
+    return attachments.filter((a) => {
+      const key = a.document_type ?? a.file_name;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  })();
+
+  const hasActionRequired = record && deduplicatedAttachments.some((a) => {
+    const key = getReviewKey(record.id, a.file_path);
+    return (docReviews[key]?.status ?? 'pending') === 'resubmission_requested';
+  });
 
   return (
     <div className="min-h-screen bg-white py-12 px-4" style={{ fontFamily: 'Poppins, sans-serif' }}>
@@ -226,18 +313,13 @@ export const ApplicationStatusPage = () => {
               onChange={(e) => { setQuery(e.target.value); setError(''); }}
               placeholder="e.g., ITEM-2026-0001 or your.email@example.com"
               className="flex-1 rounded-xl px-4 py-3 text-sm outline-none ring-1 ring-transparent focus:ring-2"
-              style={{
-                backgroundColor: '#C8D1FF',
-                color: '#040E6B',
-              }}
+              style={{ backgroundColor: '#C8D1FF', color: '#040E6B' }}
             />
             <button
               type="submit"
               disabled={loading}
               className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
-              style={{
-                backgroundColor: '#363EE8'
-              }}
+              style={{ backgroundColor: '#363EE8' }}
               onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#252AB5'}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#363EE8'}
             >
@@ -267,8 +349,21 @@ export const ApplicationStatusPage = () => {
         {/* Results */}
         {record && badge && (
           <>
+            {/* Action Required Banner */}
+            {hasActionRequired && (
+              <div className="mt-8 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
+                <AlertCircle size={20} className="mt-0.5 flex-shrink-0 text-amber-600" />
+                <div>
+                  <p className="font-bold text-amber-800">Action Required — Document Resubmission</p>
+                  <p className="mt-0.5 text-sm text-amber-700">
+                    One or more of your documents requires resubmission. Please review the details below and re-upload the corrected files.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Application Details */}
-            <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+            <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h3 className="text-xl font-bold" style={{ color: '#040E6B' }}>Application Details</h3>
@@ -281,7 +376,6 @@ export const ApplicationStatusPage = () => {
               </div>
 
               <div className="mt-6 grid grid-cols-1 gap-8 md:grid-cols-2">
-                {/* Applicant Information */}
                 <div>
                   <p className="text-sm font-semibold" style={{ color: '#363EE8' }}>Applicant Information</p>
                   <div className="mt-4 space-y-4">
@@ -300,7 +394,6 @@ export const ApplicationStatusPage = () => {
                   </div>
                 </div>
 
-                {/* Application Information */}
                 <div>
                   <p className="text-sm font-semibold" style={{ color: '#363EE8' }}>Application Information</p>
                   <div className="mt-4 space-y-4">
@@ -337,20 +430,15 @@ export const ApplicationStatusPage = () => {
                 {TIMELINE_STAGES.map((stage, index) => {
                   const state = stageStates[index] ?? 'pending';
                   const isLast = index === TIMELINE_STAGES.length - 1;
+                  const isVerification = stage.key === 'verification';
 
                   const iconWrap =
                     state === 'done'      ? 'bg-emerald-100 text-emerald-600' :
                     state === 'current'   ? 'text-white' :
                     state === 'rejected'  ? 'bg-rose-100 text-rose-600' :
                                             'text-slate-400';
-
                   const currentBg = state === 'current' ? { backgroundColor: '#363EE8' } : {};
-
-                  const titleClass =
-                    state === 'pending' ? 'text-slate-400' : '';
-
                   const titleStyle = state === 'pending' ? { color: '#C8D1FF' } : { color: '#040E6B' };
-
                   const dateForStage =
                     state === 'done' || state === 'current' || state === 'rejected'
                       ? (index === 0 ? formatShortDate(record.created_at) : formatShortDate(record.updated_at))
@@ -358,35 +446,35 @@ export const ApplicationStatusPage = () => {
 
                   return (
                     <li key={stage.key} className="relative flex gap-4 pb-6 last:pb-0">
-                      {/* Connector */}
                       {!isLast && (
                         <span
-                          className={`absolute left-[18px] top-9 h-[calc(100%-2rem)] w-px ${
-                            state === 'done' ? 'bg-emerald-200' : 'bg-slate-200'
-                          }`}
+                          className={`absolute left-[18px] top-9 h-[calc(100%-2rem)] w-px ${state === 'done' ? 'bg-emerald-200' : 'bg-slate-200'}`}
                           aria-hidden="true"
                         />
                       )}
 
-                      {/* Icon */}
                       <span className={`relative z-[1] flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full ${iconWrap}`} style={currentBg}>
                         {state === 'rejected'
                           ? <span className="text-base font-bold">×</span>
                           : <CheckCircle2 size={18} />}
                       </span>
 
-                      {/* Content */}
                       <div className="flex-1 pt-1">
                         <div className="flex flex-wrap items-baseline justify-between gap-2">
-                          <h4 className={`text-base font-semibold ${titleClass}`} style={titleStyle}>{stage.title}</h4>
+                          <h4 className="text-base font-semibold" style={titleStyle}>{stage.title}</h4>
                           {dateForStage && (
                             <span className="text-xs font-medium" style={{ color: '#363EE8' }}>{dateForStage}</span>
                           )}
                         </div>
                         <p className="mt-0.5 text-sm" style={{ color: '#363EE8' }}>{stage.subtitle}</p>
 
-                        {/* Inline detail boxes for done stages */}
-                        {state === 'done' && stage.key === 'verification' && (
+                        {/* Verification stage: show doc resubmission status inline */}
+                        {isVerification && hasActionRequired && (
+                          <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700">
+                            <AlertCircle size={12} /> Document resubmission required
+                          </div>
+                        )}
+                        {state === 'done' && stage.key === 'verification' && !hasActionRequired && (
                           <div className="mt-3 rounded-lg px-3 py-2 text-sm" style={{ backgroundColor: '#C8D1FF', color: '#040E6B' }}>
                             All required documents received
                           </div>
@@ -414,35 +502,84 @@ export const ApplicationStatusPage = () => {
               <p className="mt-1 text-sm" style={{ color: '#363EE8' }}>Status of your submitted documents</p>
 
               <div className="mt-5 space-y-3">
-                {attachments.length === 0 ? (
+                {deduplicatedAttachments.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center text-sm" style={{ backgroundColor: '#C8D1FF', color: '#040E6B' }}>
                     No documents on file for this application.
                   </div>
                 ) : (
-                  attachments.map((doc) => (
-                    <div
-                      key={doc.id}
-                      className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-white" style={{ backgroundColor: '#363EE8' }}>
-                          <FileText size={18} />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium" style={{ color: '#040E6B' }}>
-                            {doc.document_type || doc.file_name || 'Document'}
-                          </p>
-                          {doc.document_type && doc.file_name && (
-                            <p className="truncate text-xs" style={{ color: '#363EE8' }}>{doc.file_name}</p>
+                  deduplicatedAttachments.map((doc) => {
+                    const reviewKey = getReviewKey(record.id, doc.file_path);
+                    const review = docReviews[reviewKey];
+                    const docStatus: DocReviewStatus = review?.status ?? 'pending';
+                    const isUploading = uploadingKey === reviewKey;
+                    const justUploaded = uploadSuccess === reviewKey;
+
+                    return (
+                      <div key={doc.id} className={`rounded-xl border bg-white ${docStatus === 'resubmission_requested' ? 'border-amber-300' : 'border-slate-200'}`}>
+                        <div className="flex items-center justify-between px-4 py-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-white" style={{ backgroundColor: '#363EE8' }}>
+                              <FileText size={18} />
+                            </span>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium" style={{ color: '#040E6B' }}>
+                                {doc.document_type || doc.file_name || 'Document'}
+                              </p>
+                              {doc.document_type && doc.file_name && (
+                                <p className="truncate text-xs" style={{ color: '#363EE8' }}>{doc.file_name}</p>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Status badge */}
+                          {justUploaded ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 border border-blue-200">
+                              <RefreshCw size={12} /> Submitted for Review
+                            </span>
+                          ) : docStatus === 'resubmission_requested' ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 border border-amber-200">
+                              <AlertCircle size={12} /> Action Required
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
+                              <CheckCircle2 size={12} /> Verified
+                            </span>
                           )}
                         </div>
+
+                        {/* Resubmission detail row */}
+                        {docStatus === 'resubmission_requested' && !justUploaded && (
+                          <div className="border-t border-amber-100 bg-amber-50 px-4 py-3">
+                            {review?.remarks && (
+                              <p className="text-xs text-amber-800 mb-2">
+                                <span className="font-semibold">Reason:</span> {review.remarks}
+                              </p>
+                            )}
+                            <input
+                              type="file"
+                              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                              className="hidden"
+                              ref={(el) => { fileInputRefs.current[reviewKey] = el; }}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) void handleReupload(doc, file);
+                                e.target.value = '';
+                              }}
+                            />
+                            <button
+                              type="button"
+                              disabled={isUploading}
+                              onClick={() => fileInputRefs.current[reviewKey]?.click()}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:opacity-60"
+                            >
+                              <Upload size={12} />
+                              {isUploading ? 'Uploading…' : 'Re-upload Document'}
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
-                        <CheckCircle2 size={12} />
-                        Verified
-                      </span>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </section>
@@ -466,9 +603,6 @@ export const ApplicationStatusPage = () => {
             Need assistance? Contact our admissions office at{' '}
             <a
               className="font-medium underline-offset-2 hover:underline"
-              // Open Gmail's compose window directly (works in any browser
-              // even when no native mail client is configured). Falls back
-              // gracefully on right-click → "Copy email address".
               href="https://mail.google.com/mail/?view=cm&fs=1&to=cictrix23@gmail.com&su=Application%20Status%20Inquiry"
               target="_blank"
               rel="noopener noreferrer"

@@ -1356,10 +1356,8 @@ export function ApplicantDetailsPage() {
 
   const getDocReadiness = () => {
     if (attachments.length === 0) return { ready: false, reason: 'No documents uploaded yet' };
-    const hasUnreviewed = attachments.some((a) => (docReviews[getDocReviewKey(a.file_path)]?.status ?? 'pending') === 'pending');
     const hasRejected = attachments.some((a) => (docReviews[getDocReviewKey(a.file_path)]?.status ?? 'pending') === 'resubmission_requested');
-    if (hasRejected) return { ready: false, reason: 'Some documents require resubmission' };
-    if (hasUnreviewed) return { ready: false, reason: 'All documents must be reviewed before this action' };
+    if (hasRejected) return { ready: false, reason: 'Some documents require resubmission before proceeding' };
     return { ready: true, reason: '' };
   };
 
@@ -1593,7 +1591,7 @@ export function ApplicantDetailsPage() {
           <div className="h-[calc(100vh-165px)] overflow-hidden">
             <section className="h-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-4">
               {activeTab === 'overview' && (
-                <div className="space-y-3 max-w-2xl mx-auto">
+                <div className="space-y-3">
                   <article className="rounded-xl border border-slate-200">
                     <h3 className="border-b border-slate-200 px-4 py-2.5 text-sm font-bold uppercase tracking-wide text-slate-500">Personal Information</h3>
                     <div className="divide-y divide-slate-100 px-4">
@@ -1673,11 +1671,8 @@ export function ApplicantDetailsPage() {
 
               {activeTab === 'documents' && (
                 <article className="rounded-xl border border-slate-200">
-                  <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                  <div className="border-b border-slate-200 px-4 py-3">
                     <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Submitted Documents</h3>
-                    <button className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600" onClick={handleSendMessage}>
-                      <Mail className="h-3.5 w-3.5" /> Send Message
-                    </button>
                   </div>
 
                   {isDocLocked() && (
@@ -1710,44 +1705,35 @@ export function ApplicantDetailsPage() {
                                   <span className="rounded-full border border-red-200 bg-red-50 px-1.5 py-0.5 text-xs font-medium text-red-600">Required</span>
                                 )}
                               </div>
-                              {isSubmitted ? matched.map(doc => {
+                              {isSubmitted ? (() => {
+                                // Show only the most recent document per slot (first in desc order)
+                                const doc = matched[0];
                                 const reviewKey = getDocReviewKey(doc.file_path);
                                 const review = docReviews[reviewKey];
                                 const status: DocReviewStatus = review?.status ?? 'pending';
                                 const isExpanded = reviewExpandedKeys.has(reviewKey);
                                 const remarksVal = reviewRemarksInputs[reviewKey] ?? '';
                                 const locked = isDocLocked();
-                                const statusBadgeEl = status === 'approved'
-                                  ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">Approved</span>
-                                  : status === 'resubmission_requested'
+                                const statusBadgeEl = status === 'resubmission_requested'
                                   ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">Action Required</span>
                                   : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">Under Review</span>;
-
                                 return (
-                                  <div key={doc.id} className="mt-2">
-                                    <button
-                                      className="w-full text-left rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 hover:bg-slate-100 transition-colors"
-                                      onClick={() => void openDocument(doc.file_path)}
-                                    >
-                                      <p className="text-xs text-slate-500">Uploaded {formatDate(doc.created_at || applicant.created_at)}</p>
-                                      <div className="mt-1">{statusBadgeEl}</div>
-                                      {status === 'resubmission_requested' && review?.remarks && (
-                                        <p className="mt-1 text-xs text-amber-700">Reason: {review.remarks}</p>
-                                      )}
-                                    </button>
-                                    {!locked && (
-                                      <div className="mt-1.5 flex gap-1.5">
+                                  <div className="mt-2">
+                                    <div className="flex items-start justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                                      <button className="flex-1 text-left" onClick={() => void openDocument(doc.file_path)}>
+                                        <p className="text-xs text-slate-500">Uploaded {formatDate(doc.created_at || applicant.created_at)}</p>
+                                        <div className="mt-1">{statusBadgeEl}</div>
+                                        {status === 'resubmission_requested' && review?.remarks && (
+                                          <p className="mt-1 text-xs text-amber-700">Reason: {review.remarks}</p>
+                                        )}
+                                      </button>
+                                      {!locked && (
                                         <button
-                                          className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-semibold text-white disabled:opacity-40"
-                                          disabled={status === 'approved'}
-                                          onClick={() => handleApproveDoc(doc.file_path, slot.label)}
-                                        >Approve</button>
-                                        <button
-                                          className={`rounded-lg border px-3 py-1 text-xs font-semibold ${isExpanded ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-amber-300 bg-white text-amber-700'}`}
+                                          className={`shrink-0 rounded-lg border px-2.5 py-1 text-xs font-semibold ${isExpanded ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-amber-300 bg-white text-amber-700 hover:bg-amber-50'}`}
                                           onClick={() => setReviewExpandedKeys((prev) => { const n = new Set(prev); if (n.has(reviewKey)) n.delete(reviewKey); else n.add(reviewKey); return n; })}
                                         >Request Resubmission</button>
-                                      </div>
-                                    )}
+                                      )}
+                                    </div>
                                     {isExpanded && !locked && (
                                       <div className="mt-2 rounded-lg border border-amber-100 bg-amber-50 p-3 space-y-2">
                                         <p className="text-xs font-semibold text-amber-800">Select a reason:</p>
@@ -1774,7 +1760,7 @@ export function ApplicantDetailsPage() {
                                     )}
                                   </div>
                                 );
-                              }) : (
+                              })() : (
                                 <p className="mt-1 text-xs italic text-slate-400">Not yet submitted</p>
                               )}
                             </div>
