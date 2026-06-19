@@ -8,13 +8,14 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   icon?: React.ReactNode;
 }
 
-export const Input: React.FC<InputProps> = ({ 
-  label, 
-  error, 
-  helperText, 
-  className = '', 
+export const Input: React.FC<InputProps> = ({
+  label,
+  error,
+  helperText,
+  className = '',
   icon,
-  ...props 
+  readOnly,
+  ...props
 }) => {
   return (
     <div className="input-wrapper">
@@ -25,8 +26,9 @@ export const Input: React.FC<InputProps> = ({
             {icon}
           </div>
         )}
-        <input 
-          className={`input ${icon ? 'pl-10' : ''} ${error ? 'input-error' : ''} ${className}`}
+        <input
+          className={`input ${icon ? 'pl-10' : ''} ${error ? 'input-error' : ''} ${readOnly ? 'input-readonly' : ''} ${className}`}
+          readOnly={readOnly}
           {...props}
         />
       </div>

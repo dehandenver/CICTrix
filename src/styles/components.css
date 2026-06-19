@@ -51,14 +51,16 @@
   opacity: 0.6;
 }
 
-.input:read-only {
+.input:read-only,
+.input-readonly {
   background-color: #e5e7eb;
   cursor: default;
   color: #6b7280;
   border-color: #d1d5db;
 }
 
-.input:read-only:focus {
+.input:read-only:focus,
+.input-readonly:focus {
   background-color: #e5e7eb;
   border-color: #d1d5db;
   box-shadow: none;
