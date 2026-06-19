@@ -709,8 +709,13 @@ export function ApplicantDetailsPage() {
   const [evaluation, setEvaluation] = useState<EvaluationRecord | null>(null);
   const [, setToast] = useState<string | null>(null);
   const [docReviews, setDocReviews] = useState<Record<string, DocReview>>(loadDocReviews);
-  const [reviewRemarksInputs, setReviewRemarksInputs] = useState<Record<string, string>>({});
-  const [reviewExpandedKeys, setReviewExpandedKeys] = useState<Set<string>>(new Set());
+  const [docsValidated, setDocsValidated] = useState(false);
+  const [showResubmitModal, setShowResubmitModal] = useState(false);
+  const [resubmitSelectedSlot, setResubmitSelectedSlot] = useState('');
+  const [resubmitReason, setResubmitReason] = useState('');
+  const [resubmitSending, setResubmitSending] = useState(false);
+  const [resubmitSuccess, setResubmitSuccess] = useState<string | null>(null);
+  const [resubmitError, setResubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -730,6 +735,7 @@ export function ApplicantDetailsPage() {
       setWrittenScore(getStoredWrittenScore(id));
       setIsScoreFinalized(getStoredFinalizedState(id));
       setIsScoreDraft(getStoredDraftState(id));
+      setDocsValidated(localStorage.getItem(`cictrix_docs_validated_${id}`) === 'true');
 
       const loadFromClient = async (client: any) => {
         const applicantRes = await client.from('applicants').select('*').eq('id', id).single();
@@ -1344,9 +1350,53 @@ export function ApplicantDetailsPage() {
     if (!remarks.trim()) return;
     const key = getDocReviewKey(fileUrl);
     persistDocReview(key, { status: 'resubmission_requested', remarks: remarks.trim(), reviewedAt: new Date().toISOString() });
-    setReviewExpandedKeys((prev) => { const n = new Set(prev); n.delete(key); return n; });
     addDocTimeline(`Action Required: Resubmission requested for ${docType} — "${remarks.trim()}".`);
     setToast('Resubmission requested.');
+  };
+
+  const openResubmitModal = (slotLabel = '') => {
+    setResubmitSelectedSlot(slotLabel);
+    setResubmitReason('');
+    setResubmitSuccess(null);
+    setResubmitError(null);
+    setShowResubmitModal(true);
+  };
+
+  const handleSubmitResubmission = async () => {
+    if (!resubmitSelectedSlot || !resubmitReason.trim()) return;
+    if (!applicant) return;
+    setResubmitSending(true);
+    setResubmitError(null);
+    try {
+      const slot = DOCUMENT_SLOTS.find((s) => s.label === resubmitSelectedSlot);
+      if (!slot) throw new Error('Invalid document selection.');
+      const matchedAtt = attachments.find((a) => {
+        const resolvedType = a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other';
+        return resolvedType === slot.type;
+      });
+      if (matchedAtt) {
+        handleRequestResubmission(matchedAtt.file_path, resubmitSelectedSlot, resubmitReason.trim());
+      }
+      await sendEmail({
+        to: applicant.email,
+        subject: `Notice of Resubmission — ${resubmitSelectedSlot}`,
+        body: `Dear ${applicant.first_name},\n\nYour submitted document "${resubmitSelectedSlot}" requires resubmission.\n\nReason: ${resubmitReason.trim()}\n\nPlease log in to the Applicant Portal and re-upload the corrected document at your earliest convenience.\n\nThank you,\nRecruitment Office`,
+        applicantId: applicant.id,
+      });
+      setResubmitSuccess(`Resubmission notice sent to ${applicant.email}.`);
+    } catch (err) {
+      setResubmitError(err instanceof Error ? err.message : 'Failed to send notice. Please try again.');
+    } finally {
+      setResubmitSending(false);
+    }
+  };
+
+  const handleValidateDocs = () => {
+    if (!id) return;
+    localStorage.setItem(`cictrix_docs_validated_${id}`, 'true');
+    setDocsValidated(true);
+    addDocTimeline('Documents Validated: All submitted documents have been reviewed and accepted.');
+    setToast('Documents validated. Qualify button is now available.');
   };
 
   const isDocLocked = () => {
@@ -1508,23 +1558,15 @@ export function ApplicantDetailsPage() {
               )}
 
               {showJobPostActionButtons && (() => {
-                const docReady = getDocReadiness();
-                const decisionLocked = !docReady.ready;
+                const hasResubmissionPending = attachments.some((a) => (docReviews[getDocReviewKey(a.file_path)]?.status ?? 'pending') === 'resubmission_requested');
+                const qualifyLocked = !docsValidated || hasResubmissionPending;
+                const qualifyTitle = !docsValidated ? 'Validate documents first before qualifying' : hasResubmissionPending ? 'Some documents require resubmission' : undefined;
                 return (
                 <>
                   <button
                     type="button"
-                    onClick={handleSendMessage}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm"
-                  >
-                    <Send size={14} /> Send Message
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { if (!decisionLocked) { setConfirmAction('disqualify'); setConfirmReason(''); } }}
-                    disabled={decisionLocked}
-                    title={decisionLocked ? docReady.reason : undefined}
-                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+                    onClick={() => { setConfirmAction('disqualify'); setConfirmReason(''); }}
+                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm ${
                       isApplicantDisqualified
                         ? 'border-rose-500 bg-rose-500 text-white'
                         : 'border-rose-400 bg-white text-rose-600 hover:bg-rose-50'
@@ -1534,10 +1576,8 @@ export function ApplicantDetailsPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => { if (!decisionLocked) void persistStatus(isApplicantShortlisted ? 'unshortlist' : 'shortlist'); }}
-                    disabled={decisionLocked}
-                    title={decisionLocked ? docReady.reason : undefined}
-                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+                    onClick={() => void persistStatus(isApplicantShortlisted ? 'unshortlist' : 'shortlist')}
+                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm ${
                       isApplicantShortlisted
                         ? 'border-[#363EE8] bg-[#363EE8] text-white'
                         : 'border-[#363EE8] bg-white text-[#363EE8] hover:bg-blue-50'
@@ -1547,9 +1587,9 @@ export function ApplicantDetailsPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => { if (!decisionLocked) setConfirmAction('qualified'); }}
-                    disabled={decisionLocked}
-                    title={decisionLocked ? docReady.reason : undefined}
+                    onClick={() => { if (!qualifyLocked) setConfirmAction('qualified'); }}
+                    disabled={qualifyLocked}
+                    title={qualifyTitle}
                     className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
                       isApplicantQualified
                         ? 'border-emerald-600 bg-emerald-600 text-white'
@@ -1671,8 +1711,23 @@ export function ApplicantDetailsPage() {
 
               {activeTab === 'documents' && (
                 <article className="rounded-xl border border-slate-200">
-                  <div className="border-b border-slate-200 px-4 py-3">
+                  <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
                     <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Submitted Documents</h3>
+                    {!isDocLocked() && attachments.length > 0 && (
+                      docsValidated ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                          <CheckCircle2 size={12} /> Validated
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleValidateDocs}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                        >
+                          <CheckCircle2 size={12} /> Validate Documents
+                        </button>
+                      )
+                    )}
                   </div>
 
                   {isDocLocked() && (
@@ -1706,57 +1761,28 @@ export function ApplicantDetailsPage() {
                                 )}
                               </div>
                               {isSubmitted ? (() => {
-                                // Show only the most recent document per slot (first in desc order)
                                 const doc = matched[0];
                                 const reviewKey = getDocReviewKey(doc.file_path);
                                 const review = docReviews[reviewKey];
                                 const status: DocReviewStatus = review?.status ?? 'pending';
-                                const isExpanded = reviewExpandedKeys.has(reviewKey);
-                                const remarksVal = reviewRemarksInputs[reviewKey] ?? '';
                                 const locked = isDocLocked();
                                 const statusBadgeEl = status === 'resubmission_requested'
                                   ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">Action Required</span>
                                   : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-500">Under Review</span>;
                                 return (
-                                  <div className="mt-2">
-                                    <div className="flex items-start justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
-                                      <button className="flex-1 text-left" onClick={() => void openDocument(doc.file_path)}>
-                                        <p className="text-xs text-slate-500">Uploaded {formatDate(doc.created_at || applicant.created_at)}</p>
-                                        <div className="mt-1">{statusBadgeEl}</div>
-                                        {status === 'resubmission_requested' && review?.remarks && (
-                                          <p className="mt-1 text-xs text-amber-700">Reason: {review.remarks}</p>
-                                        )}
-                                      </button>
-                                      {!locked && (
-                                        <button
-                                          className={`shrink-0 rounded-lg border px-2.5 py-1 text-xs font-semibold ${isExpanded ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-amber-300 bg-white text-amber-700 hover:bg-amber-50'}`}
-                                          onClick={() => setReviewExpandedKeys((prev) => { const n = new Set(prev); if (n.has(reviewKey)) n.delete(reviewKey); else n.add(reviewKey); return n; })}
-                                        >Request Resubmission</button>
+                                  <div className="mt-2 flex items-start justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                                    <button className="flex-1 text-left" onClick={() => void openDocument(doc.file_path)}>
+                                      <p className="text-xs text-slate-500">Uploaded {formatDate(doc.created_at || applicant.created_at)}</p>
+                                      <div className="mt-1">{statusBadgeEl}</div>
+                                      {status === 'resubmission_requested' && review?.remarks && (
+                                        <p className="mt-1 text-xs text-amber-700">Reason: {review.remarks}</p>
                                       )}
-                                    </div>
-                                    {isExpanded && !locked && (
-                                      <div className="mt-2 rounded-lg border border-amber-100 bg-amber-50 p-3 space-y-2">
-                                        <p className="text-xs font-semibold text-amber-800">Select a reason:</p>
-                                        <div className="flex flex-wrap gap-1.5">
-                                          {RESUBMISSION_REASONS.map((r) => (
-                                            <button key={r} type="button"
-                                              className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${remarksVal === r ? 'border-amber-500 bg-amber-500 text-white' : 'border-amber-300 bg-white text-amber-700'}`}
-                                              onClick={() => setReviewRemarksInputs((prev) => ({ ...prev, [reviewKey]: r }))}
-                                            >{r}</button>
-                                          ))}
-                                        </div>
-                                        <div className="flex gap-2">
-                                          <input className="flex-1 rounded-lg border border-amber-300 bg-white px-2.5 py-1.5 text-xs placeholder-slate-400 focus:outline-none"
-                                            placeholder="Or type a custom reason..."
-                                            value={remarksVal}
-                                            onChange={(e) => setReviewRemarksInputs((prev) => ({ ...prev, [reviewKey]: e.target.value }))}
-                                          />
-                                          <button className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
-                                            disabled={!remarksVal.trim()}
-                                            onClick={() => handleRequestResubmission(doc.file_path, slot.label, remarksVal)}
-                                          >Submit</button>
-                                        </div>
-                                      </div>
+                                    </button>
+                                    {!locked && (
+                                      <button
+                                        className="shrink-0 rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50"
+                                        onClick={() => openResubmitModal(slot.label)}
+                                      >Request Resubmission</button>
                                     )}
                                   </div>
                                 );
@@ -1951,6 +1977,99 @@ export function ApplicantDetailsPage() {
                 >
                   <Send size={15} /> {emailSending ? 'Sending…' : 'Send Email'}
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notice of Resubmission modal */}
+      {showResubmitModal && (
+        <div className="fixed inset-0 z-[270] flex items-center justify-center bg-black/60 p-4" onClick={() => setShowResubmitModal(false)}>
+          <div className="flex w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center gap-4 bg-amber-600 px-6 py-5">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/20">
+                <Mail size={24} className="text-white" />
+              </div>
+              <div className="flex-1">
+                <h2 className="text-lg font-bold text-white">Notice of Resubmission</h2>
+              </div>
+              <button type="button" onClick={() => setShowResubmitModal(false)} className="rounded-lg p-2 text-white/80 hover:bg-white/10">
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+              {/* Recipient row */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-4 grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">TO:</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-800">{applicant?.email || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">APPLICANT NAME:</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-800">{fullName || '—'}</p>
+                </div>
+              </div>
+
+              {/* Document selector */}
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Document for Resubmission <span className="text-rose-500">*</span></label>
+                <select
+                  value={resubmitSelectedSlot}
+                  onChange={(e) => setResubmitSelectedSlot(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
+                >
+                  <option value="">Select document...</option>
+                  {DOCUMENT_SLOTS.filter((s) => attachments.some((a) => (a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other') === s.type)).map((s) => (
+                    <option key={s.type} value={s.label}>{s.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Reason */}
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Reason for Resubmission <span className="text-rose-500">*</span></label>
+                <select
+                  value={resubmitReason}
+                  onChange={(e) => setResubmitReason(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
+                >
+                  <option value="">Select a reason...</option>
+                  {RESUBMISSION_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-slate-200 bg-white px-6 py-4">
+              {resubmitError && (
+                <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{resubmitError}</p>
+              )}
+              {resubmitSuccess && (
+                <p className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{resubmitSuccess}</p>
+              )}
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowResubmitModal(false)}
+                  disabled={resubmitSending}
+                  className="rounded-2xl border border-slate-300 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                {!resubmitSuccess && (
+                  <button
+                    type="button"
+                    onClick={() => void handleSubmitResubmission()}
+                    disabled={!resubmitSelectedSlot || !resubmitReason.trim() || resubmitSending}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-amber-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Send size={15} /> {resubmitSending ? 'Sending…' : 'Send Notice'}
+                  </button>
+                )}
               </div>
             </div>
           </div>

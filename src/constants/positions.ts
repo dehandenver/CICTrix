@@ -62,9 +62,10 @@ export const COMPETENCIES = [
 export const EDUCATION_LEVELS = [
   'Elementary Graduate',
   'High School Graduate',
-  'Completion of 2 years studies in College',
-  'Bachelor\'s Degree',
-  'Master\'s Degree',
+  'Vocational / Technical Course',
+  'College Undergraduate',
+  'College Graduate',
+  "Master's Degree",
   'Doctorate Degree',
 ] as const;
 
