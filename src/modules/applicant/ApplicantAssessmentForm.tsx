@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Card, Checkbox, Input, Select } from '../../components';
+import { Card, Input, Select } from '../../components';
 import { DEPARTMENT_OPTIONS, POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import { ensureRecruitmentSeedData, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
 import type { ApplicantFormData, ValidationErrors } from '../../types/applicant.types';
@@ -406,11 +406,31 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
         )}
 
         <div className="md:col-span-2">
-          <Checkbox
-            label="I am a Person with Disability (PWD)"
-            checked={formData.is_pwd}
-            onChange={(e) => onChange('is_pwd', e.target.checked)}
-          />
+          <p className="mb-2 text-sm font-medium text-slate-700">Are you a Person with Disability (PWD)?</p>
+          <div className="flex gap-6">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+              <input
+                type="radio"
+                name="is_pwd"
+                value="yes"
+                checked={formData.is_pwd === true}
+                onChange={() => onChange('is_pwd', true)}
+                className="h-4 w-4 accent-blue-600"
+              />
+              Yes, I am a PWD
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+              <input
+                type="radio"
+                name="is_pwd"
+                value="no"
+                checked={formData.is_pwd === false}
+                onChange={() => onChange('is_pwd', false)}
+                className="h-4 w-4 accent-blue-600"
+              />
+              No
+            </label>
+          </div>
         </div>
       </div>
 

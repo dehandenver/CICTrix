@@ -1465,21 +1465,37 @@ export function ApplicantDetailsPage() {
       <div className={isRspAdmin ? 'admin-layout' : ''}>
         {isRspAdmin && <Sidebar activeModule="RSP" userRole="rsp" />}
       <main className={isRspAdmin ? 'admin-content bg-white !p-0' : 'bg-slate-100 !p-0'}>
-        <header className="border-b border-slate-200 bg-white px-8 py-6">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="mb-2 flex items-center gap-1.5 text-sm">
-                <button
-                  type="button"
-                  onClick={() => navigate(backTo)}
-                  className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
-                >
-                  <ChevronLeft size={13} /> {backLabel}
-                </button>
-                <ChevronRight size={13} className="text-slate-400" />
-                <span className="font-medium text-slate-700">{fullName}</span>
+        <header className="border-b border-slate-200 bg-white px-6 py-4">
+          {/* Breadcrumb */}
+          <div className="mb-3 flex items-center gap-1.5 text-xs">
+            <button type="button" onClick={() => navigate(backTo)} className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline">
+              <ChevronLeft size={12} /> {backLabel}
+            </button>
+            <ChevronRight size={12} className="text-slate-400" />
+            <span className="text-slate-500">{fullName}</span>
+          </div>
+
+          <div className="flex items-start justify-between gap-4">
+            {/* Profile card inline */}
+            <div className="flex items-center gap-4">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
+                <User size={28} />
               </div>
-              <h1 className="!mb-0 !text-2xl font-bold text-slate-900">{fullName}</h1>
+              <div>
+                <h1 className="!mb-0 text-xl font-bold text-slate-900">{fullName}</h1>
+                <p className="text-sm text-slate-500">{applicant.position || applicant.office || 'Applicant'}</p>
+                <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                  <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${normalizeText(resolvedStatus ?? '').includes('pending') || !resolvedStatus ? 'border-amber-300 bg-amber-100 text-amber-700' : badge.className}`}>
+                    {(normalizeText(resolvedStatus ?? '').includes('pending') || !resolvedStatus) ? 'Under Review' : badge.label}
+                  </span>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                    {applicant.item_number || applicant.id}
+                  </span>
+                  {applicant.office && (
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-600">{applicant.office}</span>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="flex flex-wrap items-center justify-end gap-2">
@@ -1574,29 +1590,8 @@ export function ApplicantDetailsPage() {
         </div>
 
         <section className="p-3">
-          <div className="grid h-[calc(100vh-150px)] grid-cols-1 gap-3 overflow-hidden lg:grid-cols-[260px_1fr]">
-            <aside className="overflow-y-auto rounded-xl border border-slate-200 bg-white p-3">
-              <div className="mx-auto mb-3 flex h-24 w-24 items-center justify-center rounded-full bg-blue-600 text-white">
-                <User className="h-11 w-11" />
-              </div>
-
-              <h2 className="text-center text-3xl font-semibold text-slate-900">{fullName}</h2>
-              <div className="mt-2 text-center">
-                <span className={`rounded-full border px-3 py-0.5 text-xs font-semibold ${normalizeText(resolvedStatus).includes('pending') || !resolvedStatus ? 'border-amber-300 bg-amber-100 text-amber-700' : badge.className}`}>
-                  {(normalizeText(resolvedStatus).includes('pending') || !resolvedStatus) ? 'PENDING' : badge.label.toUpperCase()}
-                </span>
-              </div>
-
-              <div className="mt-4 space-y-3 border-t border-slate-200 pt-3 text-sm">
-                <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Application ID</p><p className="font-semibold text-slate-800">{applicant.item_number || applicant.id}</p></div>
-                <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Date Applied</p><p className="font-semibold text-slate-800">{formatDate(applicant.created_at)}</p></div>
-                <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Email</p><p className="font-semibold text-slate-800">{applicant.email || '--'}</p></div>
-                <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Phone</p><p className="font-semibold text-slate-800">{applicant.contact_number || '--'}</p></div>
-                <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Location</p><p className="font-semibold text-slate-800">{applicant.address || applicant.office || '--'}</p></div>
-              </div>
-            </aside>
-
-            <section className="overflow-y-auto rounded-xl border border-slate-200 bg-white p-3">
+          <div className="h-[calc(100vh-165px)] overflow-hidden">
+            <section className="h-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-4">
               {activeTab === 'overview' && (
                 <div className="space-y-3 max-w-2xl mx-auto">
                   <article className="rounded-xl border border-slate-200">
@@ -1606,7 +1601,7 @@ export function ApplicantDetailsPage() {
                       <div className="flex items-start justify-between py-2.5"><span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Email Address</span><span className="text-sm text-slate-800 text-right">{applicant.email || '--'}</span></div>
                       <div className="flex items-start justify-between py-2.5"><span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Phone Number</span><span className="text-sm text-slate-800 text-right">{applicant.contact_number || '--'}</span></div>
                       <div className="flex items-start justify-between py-2.5"><span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Address</span><span className="text-sm text-slate-800 text-right">{applicant.address || '--'}</span></div>
-                      <div className="flex items-start justify-between py-2.5"><span className="text-xs font-semibold text-slate-500 w-36 shrink-0">PWD Status</span><span className="text-sm text-slate-800 text-right">{applicant.is_pwd ? <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">PWD</span> : 'Not Applicable'}</span></div>
+                      <div className="flex items-start justify-between py-2.5"><span className="text-xs font-semibold text-slate-500 w-36 shrink-0">PWD Status</span><span className="text-sm text-slate-800 text-right">{applicant.is_pwd === true ? <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">PWD</span> : 'Not a PWD'}</span></div>
                     </div>
                   </article>
 
