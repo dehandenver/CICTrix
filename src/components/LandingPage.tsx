@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Briefcase,
   Users,
@@ -56,6 +56,8 @@ export const LandingPage = () => {
   const [itemsPerPage, setItemsPerPage] = useState(5);
   const [currentPage, setCurrentPage] = useState(1);
   const [vacancyJobs, setVacancyJobs] = useState<any[]>(FALLBACK_JOB_VACANCIES);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState('newest');
 
   // Load jobs from Supabase and subscribe to updates
   useEffect(() => {
@@ -81,6 +83,8 @@ export const LandingPage = () => {
             postingDate: job.postedDate ? new Date(job.postedDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
             closingDate: job.applicationDeadline ? new Date(job.applicationDeadline).toISOString().split('T')[0] : new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
             type: job.employmentStatus === 'Permanent' ? 'Plantilla' : 'Contractual',
+            positionType: job.positionType || '',
+            employmentStatus: job.employmentStatus || '',
           }));
         
         console.log('[LandingPage] Display jobs after filtering:', displayJobs);
@@ -109,10 +113,43 @@ export const LandingPage = () => {
     jobsTableRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const totalPages = Math.ceil(vacancyJobs.length / itemsPerPage);
+  // Real-time Search and Sorting logic
+  const filteredAndSortedJobs = useMemo(() => {
+    let result = [...vacancyJobs];
+
+    // Search filter: keywords such as Position Title, Department, Employment Type (type), and Job Category (positionType / employmentStatus)
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        (job) =>
+          job.title.toLowerCase().includes(q) ||
+          job.department.toLowerCase().includes(q) ||
+          job.type.toLowerCase().includes(q) ||
+          job.positionType.toLowerCase().includes(q) ||
+          job.employmentStatus.toLowerCase().includes(q)
+      );
+    }
+
+    // Sort options: Newest to Oldest, Oldest to Newest, Position Title (A-Z), Position Title (Z-A), Department
+    if (sortBy === 'newest') {
+      result.sort((a, b) => new Date(b.postingDate).getTime() - new Date(a.postingDate).getTime());
+    } else if (sortBy === 'oldest') {
+      result.sort((a, b) => new Date(a.postingDate).getTime() - new Date(b.postingDate).getTime());
+    } else if (sortBy === 'title-az') {
+      result.sort((a, b) => a.title.localeCompare(b.title));
+    } else if (sortBy === 'title-za') {
+      result.sort((a, b) => b.title.localeCompare(a.title));
+    } else if (sortBy === 'department') {
+      result.sort((a, b) => a.department.localeCompare(b.department));
+    }
+
+    return result;
+  }, [vacancyJobs, searchQuery, sortBy]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredAndSortedJobs.length / itemsPerPage));
   const startIdx = (currentPage - 1) * itemsPerPage;
   const endIdx = startIdx + itemsPerPage;
-  const paginatedJobs = vacancyJobs.slice(startIdx, endIdx);
+  const paginatedJobs = filteredAndSortedJobs.slice(startIdx, endIdx);
 
   const handleItemsPerPageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newItemsPerPage = parseInt(e.target.value, 10);
@@ -229,7 +266,7 @@ export const LandingPage = () => {
           </p>
           <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <button
-              onClick={handleScrollToJobs}
+              onClick={() => navigate('/job-portal')}
               className="inline-flex items-center gap-2 rounded-[14px] bg-white px-6 py-3 text-sm font-semibold text-[#363EE8] shadow-lg transition hover:bg-[#EEF2FF]"
             >
               <Briefcase size={18} /> Apply for a Job
@@ -244,25 +281,99 @@ export const LandingPage = () => {
         </div>
       </section>
 
+      {/* ─── Quick View Section ─────────────────────────────────────────── */}
+      <section className="bg-slate-50 py-10 border-b border-slate-100">
+        <div className="mx-auto max-w-6xl px-6">
+          <div className="rounded-2xl border border-indigo-100 bg-white p-8 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
+            <div className="flex-grow">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#363EE8]/10 px-3 py-1 text-xs font-semibold text-[#363EE8] mb-3">
+                <Briefcase size={13} /> Quick View
+              </span>
+              <h2 className="text-2xl font-bold text-[#050D65] tracking-tight">
+                Active Job Vacancies Summary
+              </h2>
+              <p className="mt-2 text-slate-500 max-w-xl text-sm">
+                Explore the latest active career opportunities in public service. We have {vacancyJobs.length} active positions available.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-4 text-xs font-semibold text-slate-600">
+                <span className="bg-slate-100 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+                  💼 {vacancyJobs.length} Total Vacancies
+                </span>
+                <span className="bg-slate-100 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+                  🏢 {Array.from(new Set(vacancyJobs.map(j => j.department))).length} Departments Hiring
+                </span>
+                <span className="bg-slate-100 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+                  📋 {vacancyJobs.filter(j => j.type === 'Plantilla').length} Plantilla Openings
+                </span>
+              </div>
+            </div>
+            <div className="flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => navigate('/job-portal')}
+                className="inline-flex items-center gap-2 rounded-xl bg-[#363EE8] px-6 py-3.5 text-sm font-semibold text-white shadow-lg transition hover:bg-[#2e35d4] hover:shadow-[#363EE8]/20 cursor-pointer"
+              >
+                <Briefcase size={18} /> Apply for a Job
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ─── Vacant Jobs Table ─────────────────────────────────────────────── */}
       <section ref={jobsTableRef} className="bg-white py-16">
         <div className="mx-auto max-w-6xl px-6">
-          <div className="mb-8 flex items-center justify-between">
+          <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <h2 className="text-2xl font-bold text-[#050D65]">Currently Vacant Jobs</h2>
               <p className="mt-1 text-sm text-slate-500">Browse and apply for available positions</p>
             </div>
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-[#050D65]">Show</label>
+            
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Search Bar */}
+              <div className="relative">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search title, dept, type..."
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="pl-9 pr-4 py-2 text-sm rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30 focus:border-[#363EE8]"
+                />
+              </div>
+
+              {/* Sort Dropdown */}
               <select
-                value={itemsPerPage}
-                onChange={handleItemsPerPageChange}
-                className="rounded-lg border-2 border-[#363EE8] bg-white px-3 py-2 text-sm font-medium text-[#050D65] transition focus:outline-none focus:ring-2 focus:ring-[#363EE8]/20"
+                value={sortBy}
+                onChange={(e) => {
+                  setSortBy(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-[#050D65] focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30"
               >
-                <option value={5}>5</option>
-                <option value={10}>10</option>
+                <option value="newest">Newest to Oldest</option>
+                <option value="oldest">Oldest to Newest</option>
+                <option value="title-az">Position Title (A-Z)</option>
+                <option value="title-za">Position Title (Z-A)</option>
+                <option value="department">Department</option>
               </select>
-              <span className="text-sm font-medium text-[#050D65]">entries</span>
+
+              {/* Entries Limit */}
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-[#050D65]">Show</label>
+                <select
+                  value={itemsPerPage}
+                  onChange={handleItemsPerPageChange}
+                  className="rounded-lg border-2 border-[#363EE8] bg-white px-3 py-2 text-sm font-medium text-[#050D65] transition focus:outline-none focus:ring-2 focus:ring-[#363EE8]/20"
+                >
+                  <option value={5}>5</option>
+                  <option value={10}>10</option>
+                </select>
+                <span className="text-sm font-medium text-[#050D65]">entries</span>
+              </div>
             </div>
           </div>
 
@@ -317,7 +428,7 @@ export const LandingPage = () => {
           {/* Pagination Controls */}
           <div className="mt-6 flex items-center justify-between">
             <div className="text-sm text-slate-600">
-              Showing {startIdx + 1} to {Math.min(endIdx, vacancyJobs.length)} of {vacancyJobs.length} jobs
+              Showing {startIdx + 1} to {Math.min(endIdx, filteredAndSortedJobs.length)} of {filteredAndSortedJobs.length} jobs
             </div>
             <div className="flex items-center gap-2">
               <button
