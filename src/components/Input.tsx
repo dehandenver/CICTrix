@@ -15,11 +15,24 @@ export const Input: React.FC<InputProps> = ({
   className = '',
   icon,
   readOnly,
+  style,
   ...props
 }) => {
+  const readOnlyInputStyle: React.CSSProperties = readOnly
+    ? { backgroundColor: '#e5e7eb', color: '#6b7280', borderColor: '#d1d5db', cursor: 'default' }
+    : {};
+
+  const readOnlyLabelStyle: React.CSSProperties = readOnly
+    ? { color: '#9ca3af' }
+    : {};
+
   return (
     <div className="input-wrapper">
-      {label && <label className="input-label">{label}</label>}
+      {label && (
+        <label className="input-label" style={readOnlyLabelStyle}>
+          {label}
+        </label>
+      )}
       <div className="relative flex items-center">
         {icon && (
           <div className="absolute left-3 text-gray-400 pointer-events-none flex items-center">
@@ -27,8 +40,9 @@ export const Input: React.FC<InputProps> = ({
           </div>
         )}
         <input
-          className={`input ${icon ? 'pl-10' : ''} ${error ? 'input-error' : ''} ${readOnly ? 'input-readonly' : ''} ${className}`}
+          className={`input ${icon ? 'pl-10' : ''} ${error ? 'input-error' : ''} ${className}`}
           readOnly={readOnly}
+          style={{ ...readOnlyInputStyle, ...style }}
           {...props}
         />
       </div>
