@@ -25,6 +25,7 @@ import { ApplicantWizard } from './modules/applicant/ApplicantWizard';
 import { ApplicationStatusPage } from './modules/applicant/ApplicationStatusPage';
 import { LandingPage } from './components/LandingPage';
 import { AboutPage } from './components/AboutPage';
+import { JobPortalPage } from './components/JobPortalPage';
 import { EmployeeLoginPage, EmployeePage, SetInitialPasswordPage } from './modules/employee';
 import { ApplicantDetailsPage } from './modules/interviewer/ApplicantDetailsPage.tsx';
 import { EvaluationForm } from './modules/interviewer/EvaluationForm';
@@ -473,6 +474,7 @@ function AppContent() {
           <Route path="/contacts" element={<Navigate to="/" replace />} />
           <Route path="/apply" element={<ApplicantWizard />} />
           <Route path="/track" element={<ApplicationStatusPage />} />
+          <Route path="/job-portal" element={<JobPortalPage />} />
           <Route path="/succession" element={<SuccessionReadinessEngine />} />
           
           {/* Interviewer Routes */}
