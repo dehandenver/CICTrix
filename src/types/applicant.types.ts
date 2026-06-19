@@ -21,6 +21,11 @@ export interface ApplicantFormData {
   education_school: string;
   work_experience_years: string;
   work_experience_months: string;
+  relevant_experience_position: string;
+  relevant_experience_company: string;
+  relevant_experience_duties: string;
+  gov_id_type: string;
+  gov_id_expiration: string;
 }
 
 export interface ValidationErrors {
@@ -37,6 +42,11 @@ export interface ValidationErrors {
   employee_id?: string;
   current_position?: string;
   current_department?: string;
+  relevant_experience_position?: string;
+  relevant_experience_company?: string;
+  relevant_experience_duties?: string;
+  gov_id_type?: string;
+  gov_id_expiration?: string;
 }
 
 export interface UploadedFile {

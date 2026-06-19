@@ -491,19 +491,20 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
       {/* Work Experience */}
       <fieldset className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
         <legend className="px-2 text-sm font-semibold uppercase tracking-wide text-slate-700">
-          Work Experience
+          Relevant Work Experience
         </legend>
         <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
-          In Step 2, you will be asked to upload your <strong>Curriculum Vitae (CV)</strong> as supporting document for your work experience.
+          <strong>HR Policy Notice:</strong> Only work experience relevant to the position you are applying for should be entered if required by HR policies. In Step 2, you will be asked to upload your <strong>Curriculum Vitae (CV)</strong> as supporting document.
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Input
-            label="Years of Work Experience"
+            label="Years of Relevant Experience"
             type="number"
             min={0}
             placeholder="e.g. 5"
             value={formData.work_experience_years}
             onChange={(e) => onChange('work_experience_years', e.target.value)}
+            error={errors.work_experience_years}
           />
           <Input
             label="Additional Months"
@@ -514,6 +515,42 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
             value={formData.work_experience_months}
             onChange={(e) => onChange('work_experience_months', e.target.value)}
           />
+          <div className="sm:col-span-2">
+            <Input
+              label="Position Held"
+              placeholder="e.g. Senior Administrative Assistant"
+              value={formData.relevant_experience_position || ''}
+              onChange={(e) => onChange('relevant_experience_position', e.target.value)}
+              error={errors.relevant_experience_position}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <Input
+              label="Company / Organization"
+              placeholder="e.g. Department of Public Works and Highways"
+              value={formData.relevant_experience_company || ''}
+              onChange={(e) => onChange('relevant_experience_company', e.target.value)}
+              error={errors.relevant_experience_company}
+            />
+          </div>
+          <div className="sm:col-span-2 mb-2">
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">
+              Description of Duties (Related to the job applied for)
+            </label>
+            <textarea
+              placeholder="Describe your relevant duties and achievements..."
+              value={formData.relevant_experience_duties || ''}
+              onChange={(e) => onChange('relevant_experience_duties', e.target.value)}
+              className={`w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 min-h-[80px] ${
+                errors.relevant_experience_duties ? 'border-red-500 ring-1 ring-red-500' : ''
+              }`}
+            />
+            {errors.relevant_experience_duties && (
+              <span className="text-sm font-medium text-red-500 mt-1 block">
+                {errors.relevant_experience_duties}
+              </span>
+            )}
+          </div>
         </div>
       </fieldset>
     </Card>

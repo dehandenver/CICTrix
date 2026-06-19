@@ -113,6 +113,11 @@ const INITIAL_FORM_DATA: ApplicantFormData = {
   education_school: '',
   work_experience_years: '',
   work_experience_months: '',
+  relevant_experience_position: '',
+  relevant_experience_company: '',
+  relevant_experience_duties: '',
+  gov_id_type: '',
+  gov_id_expiration: '',
 };
 
 const buildApplicantItemNumber = (sequence: number): string => {
@@ -855,6 +860,9 @@ const handleNextToReview = () => {
                     error={fileError}
                     itemNumber={formData.item_number}
                     applicationType={applicationType}
+                    formData={formData}
+                    onChange={handleFormChange}
+                    errors={errors}
                   />
                 </div>
               </>
@@ -925,8 +933,8 @@ const handleNextToReview = () => {
                       <p>{formData.office || '-'}</p>
                     </div>
                     <div>
-                      <label>Item Number</label>
-                      <p>{formData.item_number || '-'}</p>
+                      <label>Item Number (Application ID)</label>
+                      <p className="font-semibold text-slate-700 bg-slate-100 px-2 py-1 rounded inline-block cursor-not-allowed select-none">{formData.item_number || '-'}</p>
                     </div>
                     <div>
                       <label>Contact Number</label>
@@ -936,24 +944,27 @@ const handleNextToReview = () => {
                       <label>PWD Status</label>
                       <p>{formData.is_pwd ? 'Yes' : 'No'}</p>
                     </div>
+                    {formData.gov_id_type && (
+                      <div>
+                        <label>Government ID Type</label>
+                        <p>{formData.gov_id_type} {formData.gov_id_expiration ? `(Expires: ${formData.gov_id_expiration})` : '(No Expiration)'}</p>
+                      </div>
+                    )}
                     {(formData.education_degree || formData.education_school) && (
                       <div>
                         <label>Educational Background</label>
                         <p>{[formData.education_degree, formData.education_school].filter(Boolean).join(', ') || '-'}</p>
                       </div>
                     )}
-                    {(formData.work_experience_years || formData.work_experience_months) && (
-                      <div>
-                        <label>Work Experience</label>
-                        <p>
-                          {formData.work_experience_years
-                            ? `${formData.work_experience_years} year${formData.work_experience_years === '1' ? '' : 's'}`
-                            : ''}
-                          {formData.work_experience_years && formData.work_experience_months ? ' ' : ''}
-                          {formData.work_experience_months
-                            ? `${formData.work_experience_months} month${formData.work_experience_months === '1' ? '' : 's'}`
-                            : ''}
-                        </p>
+                    {(formData.work_experience_years || formData.work_experience_months || formData.relevant_experience_position) && (
+                      <div className="sm:col-span-2 border-t border-slate-100 pt-3 mt-1">
+                        <label className="font-semibold text-slate-700">Relevant Work Experience</label>
+                        <div className="bg-slate-50 p-3 rounded-lg mt-1 space-y-1">
+                          <p><strong>Duration:</strong> {formData.work_experience_years ? `${formData.work_experience_years} years` : '0 years'} {formData.work_experience_months ? `${formData.work_experience_months} months` : ''}</p>
+                          {formData.relevant_experience_position && <p><strong>Position:</strong> {formData.relevant_experience_position}</p>}
+                          {formData.relevant_experience_company && <p><strong>Company:</strong> {formData.relevant_experience_company}</p>}
+                          {formData.relevant_experience_duties && <p className="text-xs text-slate-600 mt-2"><strong>Duties:</strong> {formData.relevant_experience_duties}</p>}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1133,6 +1144,24 @@ const handleNextToReview = () => {
             >
               Track Application
             </Button>
+          </div>
+      </Dialog>
+
+      <Dialog open={isSubmitting} onClose={() => {}}>
+        <div className="flex flex-col items-center justify-center p-6 text-center" style={{ minWidth: '320px' }}>
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-t-[#363EE8] border-slate-200 mb-4" />
+          <h3 className="text-lg font-bold text-[#050D65] mb-1">Submitting Application</h3>
+          <p className="text-xs text-slate-500 mb-6">Uploading files and finalizing records...</p>
+          
+          <div className="w-full space-y-2 text-left">
+            {files.map((f) => (
+              <div key={f.id} className="flex items-center justify-between text-xs border border-slate-100 bg-slate-50 p-2 rounded-lg">
+                <span className="font-medium text-slate-700 truncate max-w-[220px]">
+                  📄 {REQUIRED_DOCUMENTS.find(d => d.type === (f as any).documentType)?.label || f.file.name}
+                </span>
+                <span className="text-[#363EE8] font-bold animate-pulse">Uploading...</span>
+              </div>
+            ))}
           </div>
         </div>
       </Dialog>
