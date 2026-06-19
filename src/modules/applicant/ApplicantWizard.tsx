@@ -1145,6 +1145,7 @@ const handleNextToReview = () => {
               Track Application
             </Button>
           </div>
+        </div>
       </Dialog>
 
       <Dialog open={isSubmitting} onClose={() => {}}>
