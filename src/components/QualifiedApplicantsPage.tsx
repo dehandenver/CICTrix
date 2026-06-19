@@ -2052,13 +2052,19 @@ export const QualifiedApplicantsPage = () => {
                   >
                     <Star className="h-4 w-4" /> Shortlist
                   </button>
-                  <button
-                    className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    onClick={() => handleQualifyAction(activeApplicant.id)}
-                    disabled={lockDecisionButtons}
-                  >
-                    <CheckCircle2 className="h-4 w-4" /> Qualify
-                  </button>
+                  {(() => {
+                    const docReady = getDocReadiness(activeApplicant.id);
+                    return (
+                      <button
+                        className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={() => handleQualifyAction(activeApplicant.id)}
+                        disabled={lockDecisionButtons || !docReady.ready}
+                        title={!lockDecisionButtons && !docReady.ready ? docReady.reason : undefined}
+                      >
+                        <CheckCircle2 className="h-4 w-4" /> Qualify
+                      </button>
+                    );
+                  })()}
                       </>
                     );
                   })()}
@@ -2141,23 +2147,121 @@ export const QualifiedApplicantsPage = () => {
                 {activeTab === 'Documents' && (
                   <article className="rounded-xl border border-slate-200">
                     <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-                      <h4 className="text-lg font-semibold text-slate-900">Submitted Documents</h4>
+                      <h4 className="text-lg font-semibold" style={{ color: '#363EE8' }}>Submitted Documents</h4>
                       <button className="inline-flex items-center gap-2 text-base font-medium text-blue-600" onClick={handleBulkDownload}>
                         <Download className="h-5 w-5" /> Download All
                       </button>
                     </div>
+
+                    {isApplicantDocLocked(activeApplicant) && (
+                      <div className="mx-4 mt-4 flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+                        <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-rose-500" />
+                        <div>
+                          <p className="font-semibold text-rose-700">Application Closed</p>
+                          <p className="text-sm text-rose-600">This applicant has been disqualified or failed the qualification assessment. Document review and resubmission are locked.</p>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="space-y-3 p-4">
                       {attachmentsLoading ? (
                         <p className="text-slate-500">Loading uploaded documents...</p>
-                      ) : getModalDocuments().length > 0 ? getModalDocuments().map((doc) => (
-                        <article key={`${doc.type}-${doc.url}`} className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3">
-                          <div>
-                            <p className="text-lg font-semibold text-slate-900">{doc.type}</p>
-                            <p className="text-base text-slate-500">Uploaded {formatPHDate((doc as any).uploadedAt || activeApplicant.applicationDate)}</p>
-                          </div>
-                          <button className="text-base font-semibold text-blue-600" onClick={() => handlePreviewDocument({ type: doc.type, url: doc.url })} disabled={documentActionBusy !== null}>View</button>
-                        </article>
-                      )) : <p className="text-slate-500">No uploaded documents found for this applicant yet.</p>}
+                      ) : getModalDocuments().length === 0 ? (
+                        <p className="text-slate-500">No uploaded documents found for this applicant yet.</p>
+                      ) : getModalDocuments().map((doc) => {
+                        const reviewKey = getDocReviewKey(activeApplicant.id, doc.url);
+                        const review = docReviews[reviewKey];
+                        const status: DocReviewStatus = review?.status ?? 'pending';
+                        const isExpanded = reviewExpandedKeys.has(reviewKey);
+                        const remarksVal = reviewRemarksInputs[reviewKey] ?? '';
+                        const docLocked = isApplicantDocLocked(activeApplicant);
+
+                        const statusBadge = status === 'approved'
+                          ? <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">Approved</span>
+                          : status === 'resubmission_requested'
+                          ? <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Action Required</span>
+                          : <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">Under Review</span>;
+
+                        return (
+                          <article key={`${doc.type}-${doc.url}`} className="rounded-xl border border-slate-200">
+                            <div className="flex items-center justify-between px-4 py-3">
+                              <div className="flex flex-col gap-1">
+                                <p className="text-base font-semibold" style={{ color: '#040E6B' }}>{doc.type}</p>
+                                <p className="text-xs text-slate-500">Uploaded {formatPHDate((doc as any).uploadedAt || activeApplicant.applicationDate)}</p>
+                                <div className="mt-1">{statusBadge}</div>
+                                {status === 'resubmission_requested' && review?.remarks && (
+                                  <p className="mt-1 text-xs text-amber-700">Reason: {review.remarks}</p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  className="text-sm font-semibold text-blue-600 hover:underline"
+                                  onClick={() => handlePreviewDocument({ type: doc.type, url: doc.url })}
+                                  disabled={documentActionBusy !== null}
+                                >
+                                  View
+                                </button>
+                                {!docLocked && (
+                                  <>
+                                    <button
+                                      className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                      disabled={status === 'approved'}
+                                      onClick={() => handleApproveDoc(activeApplicant.id, doc.url, doc.type)}
+                                    >
+                                      Approve
+                                    </button>
+                                    <button
+                                      className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${isExpanded ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-amber-300 bg-white text-amber-700 hover:bg-amber-50'}`}
+                                      onClick={() => {
+                                        setReviewExpandedKeys((prev) => {
+                                          const next = new Set(prev);
+                                          if (next.has(reviewKey)) { next.delete(reviewKey); } else { next.add(reviewKey); }
+                                          return next;
+                                        });
+                                      }}
+                                    >
+                                      Request Resubmission
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+
+                            {isExpanded && !docLocked && (
+                              <div className="border-t border-amber-100 bg-amber-50 px-4 py-3 space-y-3">
+                                <p className="text-xs font-semibold text-amber-800">Select a reason (required):</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {RESUBMISSION_REASONS.map((reason) => (
+                                    <button
+                                      key={reason}
+                                      type="button"
+                                      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${remarksVal === reason ? 'border-amber-500 bg-amber-500 text-white' : 'border-amber-300 bg-white text-amber-700 hover:bg-amber-100'}`}
+                                      onClick={() => setReviewRemarksInputs((prev) => ({ ...prev, [reviewKey]: reason }))}
+                                    >
+                                      {reason}
+                                    </button>
+                                  ))}
+                                </div>
+                                <div className="flex gap-2">
+                                  <input
+                                    className="flex-1 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                    placeholder="Or type a custom reason..."
+                                    value={remarksVal}
+                                    onChange={(e) => setReviewRemarksInputs((prev) => ({ ...prev, [reviewKey]: e.target.value }))}
+                                  />
+                                  <button
+                                    className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                    disabled={!remarksVal.trim()}
+                                    onClick={() => handleRequestResubmission(activeApplicant.id, doc.url, doc.type, remarksVal)}
+                                  >
+                                    Submit
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </article>
+                        );
+                      })}
                     </div>
                   </article>
                 )}
