@@ -125,6 +125,23 @@ const ATTACHMENTS_STORAGE_KEY = 'cictrix_attachments';
 const ATTACHMENT_PREVIEW_CACHE_KEY = 'cictrix_attachment_previews';
 const AUDIT_LOG_STORAGE_KEY = 'cictrix_recruitment_audit_log';
 
+// ── Document Review ────────────────────────────────────────────────────────────
+type DocReviewStatus = 'pending' | 'approved' | 'resubmission_requested';
+interface DocReview { status: DocReviewStatus; remarks: string; reviewedAt: string; }
+const DOC_REVIEW_KEY = 'cictrix_doc_reviews';
+const loadDocReviews = (): Record<string, DocReview> => {
+  try { return JSON.parse(localStorage.getItem(DOC_REVIEW_KEY) ?? '{}'); } catch { return {}; }
+};
+const RESUBMISSION_REASONS = [
+  'Blurred image',
+  'Missing page',
+  'Incomplete document',
+  'Invalid document',
+  'Document expired',
+  'Wrong document submitted',
+  'Low resolution / unreadable',
+];
+
 type RecruitmentAuditLog = {
   id: string;
   timestamp: string;
@@ -462,6 +479,9 @@ export const QualifiedApplicantsPage = () => {
     action: 'qualify' | 'disqualify';
     nextStatus: ApplicantStatus;
   }>(null);
+  const [docReviews, setDocReviews] = useState<Record<string, DocReview>>(loadDocReviews);
+  const [reviewRemarksInputs, setReviewRemarksInputs] = useState<Record<string, string>>({});
+  const [reviewExpandedKeys, setReviewExpandedKeys] = useState<Set<string>>(new Set());
   const [selectedHireApplicantIds, setSelectedHireApplicantIds] = useState<string[]>([]);
   const [showHireConfirmModal, setShowHireConfirmModal] = useState(false);
   const [generatedCredentials, setGeneratedCredentials] = useState<Array<{
@@ -1345,6 +1365,74 @@ export const QualifiedApplicantsPage = () => {
     // Shortlist should not lock decision buttons.
     setStatusDecisionLocked(false);
     updateApplicantStatus([applicantId], 'Shortlisted');
+  };
+
+  // ── Document Review helpers ────────────────────────────────────────────────
+
+  const getDocReviewKey = (applicantId: string, fileUrl: string) => `${applicantId}::${fileUrl}`;
+
+  const persistDocReview = (key: string, review: DocReview) => {
+    const updated = { ...docReviews, [key]: review };
+    setDocReviews(updated);
+    localStorage.setItem(DOC_REVIEW_KEY, JSON.stringify(updated));
+    return updated;
+  };
+
+  const addTimelineEntry = (applicantId: string, event: string) => {
+    const ts = new Date().toISOString();
+    setApplicants((prev) =>
+      prev.map((a) => {
+        if (a.id !== applicantId) return a;
+        const tl = Array.isArray(a.timeline) ? a.timeline : [];
+        return { ...a, timeline: [...tl, { event, date: ts, actor: 'RSP Admin' }] };
+      }),
+    );
+  };
+
+  const handleApproveDoc = (applicantId: string, fileUrl: string, docType: string) => {
+    const key = getDocReviewKey(applicantId, fileUrl);
+    const review: DocReview = { status: 'approved', remarks: '', reviewedAt: new Date().toISOString() };
+    const updatedAll = persistDocReview(key, review);
+
+    // Check if every doc for this applicant is now approved.
+    const docs = getModalDocuments();
+    const allApproved =
+      docs.length > 0 &&
+      docs.every((doc) => (updatedAll[getDocReviewKey(applicantId, doc.url)]?.status ?? 'pending') === 'approved');
+
+    if (allApproved) {
+      addTimelineEntry(applicantId, 'Document Verified: All documents reviewed and approved.');
+      setToast('All documents approved — applicant is ready to be qualified.');
+    } else {
+      addTimelineEntry(applicantId, `Document Verified: ${docType} approved.`);
+      setToast(`${docType} approved.`);
+    }
+  };
+
+  const handleRequestResubmission = (applicantId: string, fileUrl: string, docType: string, remarks: string) => {
+    if (!remarks.trim()) return;
+    const key = getDocReviewKey(applicantId, fileUrl);
+    const review: DocReview = { status: 'resubmission_requested', remarks: remarks.trim(), reviewedAt: new Date().toISOString() };
+    persistDocReview(key, review);
+    setReviewExpandedKeys((prev) => { const n = new Set(prev); n.delete(key); return n; });
+    addTimelineEntry(applicantId, `Action Required: Resubmission requested for ${docType} — "${remarks.trim()}".`);
+    setToast('Resubmission requested.');
+  };
+
+  const isApplicantDocLocked = (applicant: { status: string } | null): boolean => {
+    if (!applicant) return false;
+    const s = normalizeText(applicant.status);
+    return s.includes('disqualif') || s.includes('not qualified') || s.includes('failed qualification');
+  };
+
+  const getDocReadiness = (applicantId: string) => {
+    const docs = getModalDocuments();
+    if (docs.length === 0) return { ready: false, reason: 'No documents uploaded yet' };
+    const hasUnreviewed = docs.some((doc) => (docReviews[getDocReviewKey(applicantId, doc.url)]?.status ?? 'pending') === 'pending');
+    const hasRejected   = docs.some((doc) => (docReviews[getDocReviewKey(applicantId, doc.url)]?.status ?? 'pending') === 'resubmission_requested');
+    if (hasRejected)   return { ready: false, reason: 'Some documents require resubmission' };
+    if (hasUnreviewed) return { ready: false, reason: 'All documents must be reviewed before qualifying' };
+    return { ready: true, reason: '' };
   };
 
   const confirmPendingStatusAction = () => {
