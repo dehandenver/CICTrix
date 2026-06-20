@@ -70,6 +70,7 @@ export interface Applicant {
   };
   qualificationScore: number;
   status: ApplicantStatus;
+  educationAttainment?: string;
   education: Array<{ degree: string; school: string; year: number }>;
   experience: Array<{ title: string; company: string; years: number }>;
   skills: string[];

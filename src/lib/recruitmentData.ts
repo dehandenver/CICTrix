@@ -904,6 +904,7 @@ type ApplicantSubmissionSyncInput = {
   };
   submittedAt?: string;
   attachments?: SyncAttachment[];
+  educationAttainment?: string;
   educationDegree?: string;
   educationSchool?: string;
   workExperienceYears?: number;
@@ -1076,6 +1077,7 @@ export const syncApplicantSubmissionToRecruitment = (
     },
     qualificationScore: 0,
     status: 'New Application',
+    educationAttainment: input.educationAttainment,
     education: input.educationDegree
       ? [{ degree: input.educationDegree, school: input.educationSchool ?? '', year: new Date().getFullYear() }]
       : [],

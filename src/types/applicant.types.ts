@@ -42,6 +42,7 @@ export interface ValidationErrors {
   employee_id?: string;
   current_position?: string;
   current_department?: string;
+  work_experience_years?: string;
   relevant_experience_position?: string;
   relevant_experience_company?: string;
   relevant_experience_duties?: string;
