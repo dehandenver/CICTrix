@@ -281,44 +281,6 @@ export const LandingPage = () => {
         </div>
       </section>
 
-      {/* ─── Quick View Section ─────────────────────────────────────────── */}
-      <section className="bg-slate-50 py-10 border-b border-slate-100">
-        <div className="mx-auto max-w-6xl px-6">
-          <div className="rounded-2xl border border-indigo-100 bg-white p-8 shadow-sm flex flex-col md:flex-row items-center justify-between gap-6">
-            <div className="flex-grow">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#363EE8]/10 px-3 py-1 text-xs font-semibold text-[#363EE8] mb-3">
-                <Briefcase size={13} /> Quick View
-              </span>
-              <h2 className="text-2xl font-bold text-[#050D65] tracking-tight">
-                Active Job Vacancies Summary
-              </h2>
-              <p className="mt-2 text-slate-500 max-w-xl text-sm">
-                Explore the latest active career opportunities in public service. We have {vacancyJobs.length} active positions available.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-4 text-xs font-semibold text-slate-600">
-                <span className="bg-slate-100 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
-                  💼 {vacancyJobs.length} Total Vacancies
-                </span>
-                <span className="bg-slate-100 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
-                  🏢 {Array.from(new Set(vacancyJobs.map(j => j.department))).length} Departments Hiring
-                </span>
-                <span className="bg-slate-100 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
-                  📋 {vacancyJobs.filter(j => j.type === 'Plantilla').length} Plantilla Openings
-                </span>
-              </div>
-            </div>
-            <div className="flex-shrink-0">
-              <button
-                type="button"
-                onClick={() => navigate('/job-portal')}
-                className="inline-flex items-center gap-2 rounded-xl bg-[#363EE8] px-6 py-3.5 text-sm font-semibold text-white shadow-lg transition hover:bg-[#2e35d4] hover:shadow-[#363EE8]/20 cursor-pointer"
-              >
-                <Briefcase size={18} /> Apply for a Job
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
 
       {/* ─── Vacant Jobs Table ─────────────────────────────────────────────── */}
       <section ref={jobsTableRef} className="bg-white py-16">
