@@ -442,7 +442,7 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
         <div className="space-y-3">
           <div>
             <label htmlFor="education-attainment" className="mb-1.5 block text-sm font-medium text-slate-700">
-              Educational Attainment
+              Highest Educational Attainment
             </label>
             <select
               id="education-attainment"
@@ -450,11 +450,10 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
               onChange={(e) => {
                 const next = e.target.value;
                 onChange('education_attainment', next);
-                // Clear degree/course if applicant drops below college graduate.
                 const needsDegree =
                   next === 'College Graduate' ||
-                  next === "Master's Degree" ||
-                  next === 'Doctorate Degree';
+                  next === 'Masteral Units' ||
+                  next === 'Graduate School';
                 if (!needsDegree && formData.education_degree) {
                   onChange('education_degree', '');
                 }
@@ -462,22 +461,20 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
               className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
             >
               <option value="">Select educational attainment...</option>
-              <option value="Can read and write">Can read and write</option>
-              <option value="Elementary Undergraduate">Elementary Undergraduate</option>
+              <option value="Elementary Level">Elementary Level</option>
               <option value="Elementary Graduate">Elementary Graduate</option>
-              <option value="High School Undergraduate">High School Undergraduate</option>
+              <option value="High School Level">High School Level</option>
               <option value="High School Graduate">High School Graduate</option>
-              <option value="Vocational / Technical Course">Vocational / Technical Course</option>
-              <option value="College Undergraduate">College Undergraduate</option>
+              <option value="College Level">College Level</option>
               <option value="College Graduate">College Graduate</option>
-              <option value="Master's Degree">Master's Degree</option>
-              <option value="Doctorate Degree">Doctorate Degree</option>
+              <option value="Masteral Units">Masteral Units</option>
+              <option value="Graduate School">Graduate School</option>
             </select>
           </div>
 
           {(formData.education_attainment === 'College Graduate' ||
-            formData.education_attainment === "Master's Degree" ||
-            formData.education_attainment === 'Doctorate Degree') && (
+            formData.education_attainment === 'Masteral Units' ||
+            formData.education_attainment === 'Graduate School') && (
             <Input
               label="Degree / Course"
               placeholder="e.g. Bachelor of Science in Information Technology"

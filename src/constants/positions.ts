@@ -60,13 +60,14 @@ export const COMPETENCIES = [
  * Education options for the Qualifications section on CREATE JOB.
  */
 export const EDUCATION_LEVELS = [
+  'Elementary Level',
   'Elementary Graduate',
+  'High School Level',
   'High School Graduate',
-  'Vocational / Technical Course',
-  'College Undergraduate',
+  'College Level',
   'College Graduate',
-  "Master's Degree",
-  'Doctorate Degree',
+  'Masteral Units',
+  'Graduate School',
 ] as const;
 
 /**
