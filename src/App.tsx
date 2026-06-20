@@ -26,6 +26,7 @@ import { ApplicationStatusPage } from './modules/applicant/ApplicationStatusPage
 import { LandingPage } from './components/LandingPage';
 import { AboutPage } from './components/AboutPage';
 import { JobPortalPage } from './components/JobPortalPage';
+import { UnauthorizedPage } from './components/UnauthorizedPage';
 import { EmployeeLoginPage, EmployeePage, SetInitialPasswordPage } from './modules/employee';
 import { ApplicantDetailsPage } from './modules/interviewer/ApplicantDetailsPage.tsx';
 import { EvaluationForm } from './modules/interviewer/EvaluationForm';
@@ -162,7 +163,7 @@ const AdminRoute = ({
   }
 
   if (allowedRoles && !allowedRoles.includes(session.role)) {
-    return <Navigate to={getRoleDefaultRoute(session.role)} replace />;
+    return <Navigate to="/unauthorized" replace />;
   }
 
   return children;
@@ -475,6 +476,7 @@ function AppContent() {
           <Route path="/apply" element={<ApplicantWizard />} />
           <Route path="/track" element={<ApplicationStatusPage />} />
           <Route path="/job-portal" element={<JobPortalPage />} />
+          <Route path="/unauthorized" element={<UnauthorizedPage />} />
           <Route path="/succession" element={<SuccessionReadinessEngine />} />
           
           {/* Interviewer Routes */}

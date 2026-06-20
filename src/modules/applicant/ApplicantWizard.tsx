@@ -26,6 +26,7 @@ import '../../styles/wizard.css';
 import type { ApplicantFormData, UploadedFile, ValidationErrors } from '../../types/applicant.types';
 import type { JobPosting } from '../../types/recruitment.types';
 import { validateApplicantForm, validateFiles } from '../../utils/validation';
+import { logErrorForAdmin } from '../../utils/errorLogger';
 import { ApplicantAssessmentForm } from './ApplicantAssessmentForm';
 import { AttachmentsUploadForm, REQUIRED_DOCUMENTS } from './AttachmentsUploadForm';
 
@@ -248,10 +249,13 @@ export const ApplicantWizard: React.FC = () => {
 
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
+      setSubmitError('Please complete all required fields before proceeding.');
+      logErrorForAdmin('Validation error on step 1 of Applicant Wizard', validationErrors, 'Form Validation');
       return;
     }
 
     setErrors({});
+    setSubmitError('');
     setCurrentStep(2);
   };
 
@@ -284,7 +288,8 @@ const handleNextToReview = () => {
 
       // Supabase is required for file storage
       if (!hasUpload) {
-        throw new Error('Supabase storage is not available. Please check your configuration.');
+        logErrorForAdmin('Supabase storage client upload function not found', null, 'File Upload');
+        throw new Error('File upload failed. Please check your internet connection and try again.');
       }
 
       let filePath = generatedPath;
@@ -292,10 +297,11 @@ const handleNextToReview = () => {
         const uploadResult = await storageBucket.upload(generatedPath, uploadedFile.file);
         const uploadError = (uploadResult as any).error;
         if (uploadError) {
-          throw new Error(`Failed to upload ${uploadedFile.file.name}: ${uploadError}`);
+          throw new Error(String(uploadError));
         }
       } catch (error) {
-        throw new Error(`Failed to upload ${uploadedFile.file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        logErrorForAdmin(`Failed to upload ${uploadedFile.file.name} to storage bucket`, error, 'File Upload');
+        throw new Error('File upload failed. Please check your internet connection and try again.');
       }
 
       const attachmentPayload = {
@@ -307,13 +313,18 @@ const handleNextToReview = () => {
         document_type: (uploadedFile as any).documentType || 'other',
       };
 
-      const insertResult = typeof client?.insertAttachment === 'function'
-        ? await client.insertAttachment(attachmentPayload)
-        : await client.from('applicant_attachments').insert(attachmentPayload);
+      try {
+        const insertResult = typeof client?.insertAttachment === 'function'
+          ? await client.insertAttachment(attachmentPayload)
+          : await client.from('applicant_attachments').insert(attachmentPayload);
 
-      const insertError = (insertResult as any).error;
-      if (insertError) {
-        throw new Error(`Failed to save ${uploadedFile.file.name} record`);
+        const insertError = (insertResult as any).error;
+        if (insertError) {
+          throw new Error(String(insertError));
+        }
+      } catch (error) {
+        logErrorForAdmin(`Failed to insert attachment metadata for ${uploadedFile.file.name} to DB`, error, 'File Upload');
+        throw new Error('File upload failed. Please check your internet connection and try again.');
       }
 
       persisted.push({
@@ -399,14 +410,21 @@ const handleNextToReview = () => {
       if (formData.employee_username) applicantPayload.employee_username = formData.employee_username;
     }
 
-    const { data: applicantData, error: applicantError } = await (supabase as any)
-      .from('applicants')
-      .insert(applicantPayload)
-      .select('id, item_number')
-      .single();
-
-    if (applicantError || !applicantData?.id) {
-      throw new Error(applicantError?.message || 'Failed to create applicant record. Please try again.');
+    let applicantData;
+    try {
+      const { data, error } = await (supabase as any)
+        .from('applicants')
+        .insert(applicantPayload)
+        .select('id, item_number')
+        .single();
+      
+      if (error || !data?.id) {
+        throw new Error(error?.message || 'Empty ID returned from database');
+      }
+      applicantData = data;
+    } catch (dbErr) {
+      logErrorForAdmin('Database insertion error during applicant record creation', dbErr, 'Database Submission');
+      throw new Error('The server is currently unavailable. Please try again later.');
     }
 
     saveApplicantAppointmentType(applicantData.id, applicationType);
@@ -1145,6 +1163,7 @@ const handleNextToReview = () => {
               Track Application
             </Button>
           </div>
+        </div>
       </Dialog>
 
       <Dialog open={isSubmitting} onClose={() => {}}>
