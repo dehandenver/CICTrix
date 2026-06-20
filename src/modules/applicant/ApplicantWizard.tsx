@@ -437,6 +437,7 @@ const handleNextToReview = () => {
         : undefined,
       submittedAt: new Date().toISOString(),
       attachments: syncedAttachments,
+      educationAttainment: formData.education_attainment || undefined,
       educationDegree: formData.education_degree || undefined,
       educationSchool: formData.education_school || undefined,
       workExperienceYears: (() => {

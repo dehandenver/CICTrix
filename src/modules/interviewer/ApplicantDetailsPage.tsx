@@ -978,11 +978,13 @@ export function ApplicantDetailsPage() {
     if (!id || educationAttainment) return;
     const stored = getStoredEducationAttainment(id);
     if (stored) return;
-    const rawEd = String((applicant as any)?.education_attainment ?? '').trim();
+    const rawEd =
+      String((applicant as any)?.education_attainment ?? '').trim() ||
+      String(recruitmentApplicant?.educationAttainment ?? '').trim();
     const mapped = formValueToEducationAttainmentValue(rawEd);
     if (mapped) setEducationAttainment(mapped);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applicant, id]);
+  }, [applicant, recruitmentApplicant, id]);
 
   const fullName = useMemo(() => (applicant ? getFullName(applicant) : ''), [applicant]);
   const resolvedStatus = recruitmentApplicant?.status || applicant?.status;
