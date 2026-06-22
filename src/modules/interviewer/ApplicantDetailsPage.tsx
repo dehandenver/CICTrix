@@ -1401,25 +1401,38 @@ export function ApplicantDetailsPage() {
     if (!applicant) return;
     setResubmitSending(true);
     setResubmitError(null);
+
+    // Always update the tracker and doc review status first, regardless of email.
+    const slot = DOCUMENT_SLOTS.find((s) => s.label === resubmitSelectedSlot);
+    if (!slot) {
+      setResubmitError('Invalid document selection.');
+      setResubmitSending(false);
+      return;
+    }
+    const matchedAtt = attachments.find((a) => {
+      const resolvedType = a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other';
+      return resolvedType === slot.type;
+    });
+    if (matchedAtt) {
+      handleRequestResubmission(matchedAtt.file_path, resubmitSelectedSlot, resubmitReason.trim());
+    } else {
+      // No attachment matched — still record in timeline so tracker reflects it.
+      addDocTimeline(`Action Required: Resubmission requested for ${resubmitSelectedSlot} — "${resubmitReason.trim()}".`);
+    }
+
+    // Attempt to send email; failure is non-blocking.
     try {
-      const slot = DOCUMENT_SLOTS.find((s) => s.label === resubmitSelectedSlot);
-      if (!slot) throw new Error('Invalid document selection.');
-      const matchedAtt = attachments.find((a) => {
-        const resolvedType = a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other';
-        return resolvedType === slot.type;
-      });
-      if (matchedAtt) {
-        handleRequestResubmission(matchedAtt.file_path, resubmitSelectedSlot, resubmitReason.trim());
-      }
       await sendEmail({
         to: applicant.email,
         subject: `Notice of Resubmission — ${resubmitSelectedSlot}`,
         body: `Dear ${applicant.first_name},\n\nYour submitted document "${resubmitSelectedSlot}" requires resubmission.\n\nReason: ${resubmitReason.trim()}\n\nPlease log in to the Applicant Portal and re-upload the corrected document at your earliest convenience.\n\nThank you,\nRecruitment Office`,
         applicantId: applicant.id,
       });
-      setResubmitSuccess(`Resubmission notice sent to ${applicant.email}.`);
+      setResubmitSuccess(`Resubmission notice sent to ${applicant.email}. Tracker has been updated.`);
     } catch (err) {
-      setResubmitError(err instanceof Error ? err.message : 'Failed to send notice. Please try again.');
+      // Tracker is already updated; just warn about the email.
+      const msg = err instanceof Error ? err.message : 'Email delivery failed.';
+      setResubmitSuccess(`Tracker updated — resubmission recorded. Note: ${msg}`);
     } finally {
       setResubmitSending(false);
     }
@@ -2152,7 +2165,7 @@ export function ApplicantDetailsPage() {
           <div className="mx-auto h-[96vh] w-full max-w-[1450px] overflow-y-auto rounded-2xl bg-white" onClick={(event) => event.stopPropagation()}>
             <div className="sticky top-0 z-10 flex items-center justify-between bg-blue-700 px-8 py-5 text-white">
               <div>
-                <h2 className="text-3xl font-bold">Applicant Evaluation & Scoring</h2>
+                <h2 className="text-3xl font-bold text-white">Applicant Evaluation & Scoring</h2>
                 <p className="text-lg text-blue-100">{fullName} - {applicant.position || '--'}</p>
               </div>
               <button type="button" onClick={() => setShowScoresModal(false)} className="rounded-lg p-2 text-white/90 hover:bg-white/10">
