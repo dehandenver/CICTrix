@@ -166,16 +166,14 @@ const DOC_TYPE_MAP: Record<CatKey, string[]> = {
 const educationLevelToPoints = (level: string | null | undefined): number | null => {
   if (!level) return null;
   const l = level.toLowerCase().trim();
-  if (l.includes('doctorate') || l.includes('phd') || l.includes('doctoral')) return 20;
-  if (l.includes('master')) return 18;
-  if (l.includes('college graduate') || l.includes('bachelor') || l.includes('college grad')) return 15;
-  if (l.includes('college undergraduate') || l.includes('college undergrad')) return 14;
-  if (l.includes('vocational') || l.includes('technical') || l.includes('tesda') || l.includes('trade')) return 13;
-  if (l.includes('high school graduate') || l.includes('senior high') || l.includes('secondary graduate')) return 11;
-  if (l.includes('high school') || l.includes('secondary')) return 9;
-  if (l.includes('elementary graduate') || l.includes('elem graduate') || l.includes('primary graduate')) return 7;
-  if (l.includes('elementary') || l.includes('primary') || l.includes('elem')) return 5;
-  if (l.includes('can read') || l.includes('literate')) return 3;
+  if (l.includes('graduate school') || l.includes('doctoral') || l.includes('doctorate') || l.includes('phd')) return 20;
+  if (l.includes('masteral') || l.includes('master')) return 18;
+  if (l.includes('college graduate') || l.includes('bachelor') || l.includes('college grad')) return 16;
+  if (l.includes('college level') || l.includes('college undergraduate') || l.includes('college undergrad')) return 14;
+  if (l.includes('high school graduate') || l.includes('senior high') || l.includes('secondary graduate')) return 13;
+  if (l.includes('high school level') || l.includes('high school') || l.includes('secondary')) return 12;
+  if (l.includes('elementary graduate') || l.includes('elem graduate') || l.includes('primary graduate')) return 11;
+  if (l.includes('elementary level') || l.includes('elementary') || l.includes('primary') || l.includes('elem')) return 10;
   return null;
 };
 
@@ -863,16 +861,14 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                         style={{ width: '100%', border: `1.5px solid ${meta.border}`, borderRadius: 8, padding: '0.6rem 0.75rem', fontSize: '0.9rem', outline: 'none', background: isFinalized ? '#F7F8FE' : '#ffffff', color: '#040E6B', boxSizing: 'border-box', marginBottom: '0.45rem', fontFamily: "'Poppins', sans-serif" }}
                       >
                         <option value="">Select Educational Attainment</option>
-                        <option value="3">Can Read and Write (3 pts)</option>
-                        <option value="5">Elementary Undergraduate (5 pts)</option>
-                        <option value="7">Elementary Graduate (7 pts)</option>
-                        <option value="9">High School Undergraduate (9 pts)</option>
-                        <option value="11">High School Graduate (11 pts)</option>
-                        <option value="13">Vocational / Technical Course (13 pts)</option>
-                        <option value="14">College Undergraduate (14 pts)</option>
-                        <option value="15">College Graduate / Bachelor's Degree (15 pts)</option>
-                        <option value="18">Master's Degree (18 pts)</option>
-                        <option value="20">Doctorate Degree (20 pts)</option>
+                        <option value="10">Elementary Level (10 pts)</option>
+                        <option value="11">Elementary Graduate (11 pts)</option>
+                        <option value="12">High School Level (12 pts)</option>
+                        <option value="13">High School Graduate (13 pts)</option>
+                        <option value="14">College Level (14 pts)</option>
+                        <option value="16">College Graduate (16 pts)</option>
+                        <option value="18">Masteral Units (18 pts)</option>
+                        <option value="20">Graduate School (20 pts)</option>
                       </select>
                     </>
                   );
