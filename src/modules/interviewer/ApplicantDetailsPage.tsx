@@ -710,6 +710,7 @@ export function ApplicantDetailsPage() {
   const [emailTemplate, setEmailTemplate] = useState('');
   const [emailSubject, setEmailSubject] = useState('');
   const [emailBody, setEmailBody] = useState('');
+  const [emailNotes, setEmailNotes] = useState('');
 
   const [applicantStatus, setApplicantStatus] = useState<null | 'shortlist' | 'qualified' | 'disqualify'>(null);
   const [confirmAction, setConfirmAction] = useState<null | 'qualified' | 'disqualify'>(null);
@@ -1140,6 +1141,7 @@ export function ApplicantDetailsPage() {
     setEmailTemplate('');
     setEmailSubject('');
     setEmailBody('');
+    setEmailNotes('');
     setShowSendEmailModal(true);
   };
 
@@ -1155,10 +1157,13 @@ export function ApplicantDetailsPage() {
     setEmailSuccess(null);
 
     try {
+      const fullBody = emailNotes.trim()
+        ? `${emailBody}\n\n---\nAdditional Notes from RSP Admin:\n${emailNotes.trim()}`
+        : emailBody;
       const result = await sendEmail({
         to: applicant.email,
         subject: emailSubject.trim(),
-        body: emailBody,
+        body: fullBody,
         applicantId: applicant.id,
         template: emailTemplate || undefined,
       });
@@ -1959,6 +1964,21 @@ export function ApplicantDetailsPage() {
                 <p className="mt-1 text-xs text-slate-400">Be clear and professional in your communication</p>
               </div>
 
+              {/* Additional Notes from RSP Admin */}
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                  Additional Notes from RSP Admin <span className="font-normal text-slate-400">(Optional)</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={emailNotes}
+                  onChange={(e) => setEmailNotes(e.target.value)}
+                  placeholder="Add any internal notes or specific instructions for the applicant..."
+                  className="w-full resize-none rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                />
+                <p className="mt-1 text-xs text-slate-400">These notes will be appended to the email message</p>
+              </div>
+
               {/* Applicant Documents Summary */}
               <div>
                 <p className="mb-3 text-sm font-bold text-slate-700">Applicant Documents Summary</p>
@@ -2026,7 +2046,7 @@ export function ApplicantDetailsPage() {
               <div className="flex justify-end gap-3">
                 <button
                   type="button"
-                  onClick={() => { setShowSendEmailModal(false); setEmailError(null); setEmailSuccess(null); }}
+                  onClick={() => { setShowSendEmailModal(false); setEmailError(null); setEmailSuccess(null); setEmailNotes(''); }}
                   disabled={emailSending}
                   className="rounded-2xl border border-slate-300 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
