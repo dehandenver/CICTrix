@@ -26,6 +26,16 @@ interface Applicant {
 const isShortlistedStatus = (status: string) =>
   status.trim().toLowerCase().includes('shortlist');
 
+const isQualifiedStatus = (status: string) => {
+  const s = status.trim().toLowerCase();
+  return s.includes('qualified') || s.includes('recommended') || s.includes('hired') || s.includes('accepted');
+};
+
+const isDisqualifiedStatus = (status: string) => {
+  const s = status.trim().toLowerCase();
+  return s.includes('not qualified') || s.includes('disqualif') || s.includes('reject');
+};
+
 const ITEMS_PER_PAGE = 10;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -94,6 +104,10 @@ export const ApplicationsListPage = () => {
     return applicants.filter(a => {
       // Shortlisted rows live in the dedicated section below the main table.
       if (isShortlistedStatus(a.status)) return false;
+      // Qualified applicants move to the Qualified Applicants tab.
+      if (isQualifiedStatus(a.status)) return false;
+      // Disqualified applicants are removed from all list views.
+      if (isDisqualifiedStatus(a.status)) return false;
       if (officeFilter   !== 'all' && a.office   !== officeFilter)   return false;
       if (positionFilter !== 'all' && a.position !== positionFilter) return false;
       if (typeFilter     !== 'all' && normalizeType(a.application_type) !== typeFilter) return false;

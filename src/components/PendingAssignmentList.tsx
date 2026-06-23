@@ -14,6 +14,7 @@ import {
   Pencil,
   Save,
   UserCheck,
+  Users,
   X,
 } from 'lucide-react';
 import {
@@ -69,7 +70,7 @@ const normalizeType = (t: string | null | undefined) =>
 export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: PendingAssignmentListProps) => {
   const navigate = useNavigate();
 
-  const [subTab, setSubTab] = useState<'pending' | 'scheduled'>('pending');
+  const [subTab, setSubTab] = useState<'pending' | 'scheduled' | 'rater-management'>('pending');
   const [interviewers, setInterviewers] = useState<InterviewerOption[]>([]);
   const [overrides, setOverrides] = useState<Record<string, ApplicantAssignmentFields>>({});
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -300,6 +301,17 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
             </span>
           )}
         </button>
+        <button
+          type="button"
+          onClick={() => setSubTab('rater-management')}
+          className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all"
+          style={subTab === 'rater-management'
+            ? { background: '#363EE8', color: '#ffffff' }
+            : { background: 'transparent', color: '#64748b' }}
+        >
+          <Users size={14} />
+          Rater Management
+        </button>
       </div>
 
       {/* ── PENDING ASSIGNMENT VIEW ── */}
@@ -392,23 +404,7 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
 
             {error && <p className="mt-3 text-sm font-medium text-rose-600">{error}</p>}
             {toast && <p className="mt-3 text-sm font-medium text-emerald-600">{toast}</p>}
-
-            <div className="mt-4 flex items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => void handleBulkSave()}
-                disabled={!allFieldsFilled || selectedIds.size === 0 || saving}
-                className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50"
-                style={{ background: '#363EE8' }}
-              >
-                <Save size={14} />
-                {saving ? 'Saving…' : `Save Assignment${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
-              </button>
-            </div>
           </section>
-
-          {/* Rater Management */}
-          <RaterManagementSubsection onAccessChange={() => void fetchActiveInterviewers().then(setInterviewers)} />
 
           {/* Pending applicants table */}
           {pendingApplicants.length === 0 ? (
@@ -489,7 +485,25 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
               </table>
             </div>
           )}
+          {/* Save Assignment — sticky bottom-right */}
+          <div className="flex items-center justify-end pt-2 pb-2">
+            <button
+              type="button"
+              onClick={() => void handleBulkSave()}
+              disabled={!allFieldsFilled || selectedIds.size === 0 || saving}
+              className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-md transition disabled:cursor-not-allowed disabled:opacity-50"
+              style={{ background: '#363EE8' }}
+            >
+              <Save size={14} />
+              {saving ? 'Saving…' : `Save Assignment${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
+            </button>
+          </div>
         </>
+      )}
+
+      {/* ── RATER MANAGEMENT TAB ── */}
+      {subTab === 'rater-management' && (
+        <RaterManagementSubsection onAccessChange={() => void fetchActiveInterviewers().then(setInterviewers)} />
       )}
 
       {/* ── SCHEDULED VIEW ── */}

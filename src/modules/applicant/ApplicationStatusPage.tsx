@@ -258,11 +258,23 @@ export const ApplicationStatusPage = () => {
         });
       if (insErr) throw new Error(insErr.message);
 
-      // Clear the resubmission review so the RSP side picks up the new doc
+      // Clear the localStorage resubmission review
       clearDocReview(key);
       const updated = { ...docReviews };
       delete updated[key];
       setDocReviews(updated);
+
+      // Mark Supabase resubmission notice as resolved so the "Action Required"
+      // badge and re-upload button disappear in real-time for both portals.
+      const notice = resubmissionNotices.find((n) => parseNotice(n).docType === doc.document_type);
+      if (notice) {
+        try {
+          await (supabase as any)
+            .from('applicant_attachments')
+            .update({ document_type: 'resubmission_resolved' })
+            .eq('id', notice.id);
+        } catch { /* best effort */ }
+      }
 
       // Refresh attachments list
       const { data: refreshed } = await (supabase as any)
@@ -287,6 +299,19 @@ export const ApplicationStatusPage = () => {
   const programType =
     record?.application_type === 'promotion' ? 'Promotional Application' : 'Job Application';
 
+  // Map from RSP document slot label → document_type key used in attachments
+  const LABEL_TO_DOC_TYPE: Record<string, string> = {
+    'Application Letter': 'application_letter',
+    'Personal Data Sheet': 'pds_with_photo',
+    'Curriculum Vitae': 'curriculum_vitae',
+    'Proof of Eligibility Rating/License': 'eligibility_proof',
+    'Certificate of Relevant Training/Seminars': 'training_certificate',
+    'Transcript of Records': 'transcript_of_records',
+    'Certificate from Previous Employer': 'previous_employer_certificate',
+    'Drug Test Result': 'drug_test',
+    'Other Supporting Documents': 'other',
+  };
+
   // RSP resubmission notices saved to Supabase — shown separately in tracker
   const resubmissionNotices = attachments.filter((a) => a.document_type === 'resubmission_request');
 
@@ -297,19 +322,31 @@ export const ApplicationStatusPage = () => {
       reason:   parts[2] ?? '',
       notes:    notice.file_path === '—' ? '' : notice.file_path,
       date:     notice.created_at,
+      docType:  LABEL_TO_DOC_TYPE[parts[1] ?? ''] ?? '',
     };
   };
+
+  // Set of document_types that RSP has requested resubmission for (via Supabase)
+  const pendingResubmissionTypes = new Set(
+    resubmissionNotices.map((n) => parseNotice(n).docType).filter(Boolean)
+  );
 
   // Deduplicate non-notice attachments by document_type (keep most recent per type)
   const deduplicatedAttachments = (() => {
     const seen = new Set<string>();
     return attachments
-      .filter((a) => a.document_type !== 'resubmission_request')
+      .filter((a) => a.document_type !== 'resubmission_request' && a.document_type !== 'resubmission_resolved')
       .filter((a) => {
         const key = a.document_type ?? a.file_name;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
+      })
+      // Sort: docs with pending resubmission requests come first
+      .sort((x, y) => {
+        const xPending = pendingResubmissionTypes.has(x.document_type ?? '') ? 0 : 1;
+        const yPending = pendingResubmissionTypes.has(y.document_type ?? '') ? 0 : 1;
+        return xPending - yPending;
       });
   })();
 
@@ -583,12 +620,18 @@ export const ApplicationStatusPage = () => {
                   deduplicatedAttachments.map((doc) => {
                     const reviewKey = getReviewKey(record.id, doc.file_path);
                     const review = docReviews[reviewKey];
-                    const docStatus: DocReviewStatus = review?.status ?? 'pending';
+                    const localStatus: DocReviewStatus = review?.status ?? 'pending';
+                    // Use Supabase-based pending resubmission as the primary source
+                    const hasResubmissionRequest = pendingResubmissionTypes.has(doc.document_type ?? '') || localStatus === 'resubmission_requested';
+                    // Find the matching Supabase notice for reason/notes
+                    const matchedNotice = resubmissionNotices.find((n) => parseNotice(n).docType === doc.document_type);
+                    const parsedNotice = matchedNotice ? parseNotice(matchedNotice) : null;
+
                     const isUploading = uploadingKey === reviewKey;
                     const justUploaded = uploadSuccess === reviewKey;
 
                     return (
-                      <div key={doc.id} className={`rounded-xl border bg-white ${docStatus === 'resubmission_requested' ? 'border-amber-300' : 'border-slate-200'}`}>
+                      <div key={doc.id} className={`rounded-xl border bg-white ${hasResubmissionRequest && !justUploaded ? 'border-amber-300' : 'border-slate-200'}`}>
                         <div className="flex items-center justify-between px-4 py-3">
                           <div className="flex items-center gap-3 min-w-0">
                             <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-white" style={{ backgroundColor: '#363EE8' }}>
@@ -609,7 +652,7 @@ export const ApplicationStatusPage = () => {
                             <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 border border-blue-200">
                               <RefreshCw size={12} /> Submitted for Review
                             </span>
-                          ) : docStatus === 'resubmission_requested' ? (
+                          ) : hasResubmissionRequest ? (
                             <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 border border-amber-200">
                               <AlertCircle size={12} /> Action Required
                             </span>
@@ -620,12 +663,17 @@ export const ApplicationStatusPage = () => {
                           )}
                         </div>
 
-                        {/* Resubmission detail row */}
-                        {docStatus === 'resubmission_requested' && !justUploaded && (
+                        {/* Resubmission detail + re-upload */}
+                        {hasResubmissionRequest && !justUploaded && (
                           <div className="border-t border-amber-100 bg-amber-50 px-4 py-3">
-                            {review?.remarks && (
-                              <p className="text-xs text-amber-800 mb-2">
-                                <span className="font-semibold">Reason:</span> {review.remarks}
+                            {(parsedNotice?.reason || review?.remarks) && (
+                              <p className="text-xs text-amber-800 mb-1">
+                                <span className="font-semibold">Reason:</span> {parsedNotice?.reason || review?.remarks}
+                              </p>
+                            )}
+                            {parsedNotice?.notes && (
+                              <p className="text-xs text-amber-700 mb-2">
+                                <span className="font-semibold">RSP Note:</span> {parsedNotice.notes}
                               </p>
                             )}
                             <input

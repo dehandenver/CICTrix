@@ -1429,7 +1429,7 @@ export const JobPostingsPage = () => {
                     <input
                       type="text"
                       className="w-full rounded-xl border border-slate-300 p-3 text-base"
-                      placeholder="e.g., None Required"
+                      placeholder="e.g., 8 hours of Leadership and Management Training"
                       value={form.qualTraining}
                       onChange={(event) => setForm((prev) => ({ ...prev, qualTraining: event.target.value }))}
                     />
