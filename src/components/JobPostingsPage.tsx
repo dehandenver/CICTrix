@@ -10,7 +10,8 @@ import {
     Search,
     Trash2,
     Unlock,
-    Users
+    Users,
+    X
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -1282,27 +1283,27 @@ export const JobPostingsPage = () => {
       <RecruitmentNavigationGuide open={showGuide} onClose={() => setShowGuide(false)} />
 
       {showModal && (
-        <div className="fixed inset-0 z-[110] bg-slate-900/60 p-4" onClick={() => setShowModal(false)}>
-          <div className="mx-auto flex h-[95vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white" onClick={(event) => event.stopPropagation()}>
-            <div className="flex items-start justify-between bg-blue-700 px-7 py-5 text-white">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 p-4" onClick={() => setShowModal(false)}>
+          <div className="flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" style={{ maxHeight: '88vh', fontFamily: 'Poppins, sans-serif' }} onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 py-4" style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)' }}>
               <div>
-                <h2 className="!mb-1 text-5xl font-bold">Create New Job Position</h2>
-                <p className="!mb-0 text-2xl text-blue-100">Fill in the details to create a new job posting</p>
+                <h2 className="text-xl font-bold text-white">Create New Job Position</h2>
+                <p className="text-sm" style={{ color: '#C8D1FF' }}>Fill in the details to create a new job posting</p>
               </div>
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
-                className="rounded-lg p-2 text-white/90 transition hover:bg-white/10 hover:text-white"
+                className="rounded-lg p-1.5 text-white/80 transition hover:bg-white/10"
                 aria-label="Close"
               >
-                <span className="text-5xl leading-none">×</span>
+                <X size={20} />
               </button>
             </div>
 
-            <div ref={modalBodyRef} className="flex-1 space-y-7 overflow-y-auto px-7 py-6">
+            <div ref={modalBodyRef} className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
               <section>
-                <h3 className="!mb-4 flex items-center gap-2 text-4xl font-bold text-slate-900">
-                  <FileText size={28} className="text-blue-600" /> Job Information
+                <h3 className="!mb-3 flex items-center gap-2 text-base font-bold" style={{ color: '#040E6B' }}>
+                  <FileText size={16} style={{ color: '#363EE8' }} /> Job Information
                 </h3>
                 <div className="space-y-4">
                   <div>
@@ -1379,8 +1380,8 @@ export const JobPostingsPage = () => {
               </section>
 
               <section>
-                <h3 className="!mb-4 flex items-center gap-2 text-4xl font-bold text-slate-900">
-                  <FileText size={28} className="text-blue-600" /> Qualifications
+                <h3 className="!mb-3 flex items-center gap-2 text-base font-bold" style={{ color: '#040E6B' }}>
+                  <FileText size={16} style={{ color: '#363EE8' }} /> Qualifications
                 </h3>
                 <div className="space-y-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-rose-600">Required</p>
@@ -1474,20 +1475,22 @@ export const JobPostingsPage = () => {
               </section>
             </div>
 
-            <div className="flex justify-end gap-3 border-t border-slate-200 px-7 py-4">
+            <div className="flex justify-end gap-3 border-t px-6 py-4" style={{ borderColor: '#C8D1FF' }}>
               <button
                 type="button"
                 onClick={() => setShowModal(false)}
-                className="rounded-2xl border border-slate-300 bg-white px-8 py-3 text-lg text-slate-700"
+                className="rounded-xl border px-5 py-2 text-sm font-semibold"
+                style={{ borderColor: '#C8D1FF', color: '#040E6B' }}
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={() => submitForm('Active')}
-                className="rounded-2xl bg-blue-600 px-8 py-3 text-lg font-semibold text-white"
+                className="inline-flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-semibold text-white"
+                style={{ backgroundColor: '#363EE8' }}
               >
-                <Plus size={18} className="mr-2 inline" /> Create Position
+                <Plus size={15} /> Create Position
               </button>
             </div>
           </div>

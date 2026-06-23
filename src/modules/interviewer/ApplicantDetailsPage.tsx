@@ -729,6 +729,7 @@ export function ApplicantDetailsPage() {
   const [showResubmitModal, setShowResubmitModal] = useState(false);
   const [resubmitSelectedSlot, setResubmitSelectedSlot] = useState('');
   const [resubmitReason, setResubmitReason] = useState('');
+  const [resubmitNotes, setResubmitNotes] = useState('');
   const [resubmitSending, setResubmitSending] = useState(false);
   const [resubmitSuccess, setResubmitSuccess] = useState<string | null>(null);
   const [resubmitError, setResubmitError] = useState<string | null>(null);
@@ -962,8 +963,8 @@ export function ApplicantDetailsPage() {
   useEffect(() => {
     if (!id || experienceYears.trim()) return;
     const submitted =
-      (applicant as any)?.work_experience_years ??
       (applicant as any)?.years_of_experience ??
+      (applicant as any)?.work_experience_years ??
       (recruitmentApplicant as any)?.workExperienceYears;
     if (submitted == null || submitted === '') return;
     const numeric = Number(submitted);
@@ -981,6 +982,7 @@ export function ApplicantDetailsPage() {
     if (stored) return;
     const rawEd =
       String((applicant as any)?.education_attainment ?? '').trim() ||
+      String((applicant as any)?.education_level ?? '').trim() ||
       String(recruitmentApplicant?.educationAttainment ?? '').trim();
     const mapped = formValueToEducationAttainmentValue(rawEd);
     if (mapped) setEducationAttainment(mapped);
@@ -1425,12 +1427,29 @@ export function ApplicantDetailsPage() {
       addDocTimeline(`Action Required: Resubmission requested for ${resubmitSelectedSlot} — "${resubmitReason.trim()}".`);
     }
 
+    // Save to Supabase so the applicant tracker can show it in real-time.
+    try {
+      await (supabase as any).from('applicant_attachments').insert({
+        applicant_id: applicant.id,
+        file_name: `RESUBMIT::${resubmitSelectedSlot}::${resubmitReason.trim()}`,
+        file_path: resubmitNotes.trim() || '—',
+        document_type: 'resubmission_request',
+        file_type: 'notice',
+        file_size: 0,
+      });
+    } catch (supaErr) {
+      console.warn('[handleSubmitResubmission] Supabase insert failed:', supaErr);
+    }
+
     // Attempt to send email; failure is non-blocking.
     try {
+      const notesSection = resubmitNotes.trim()
+        ? `\n\nAdditional Notes from RSP:\n${resubmitNotes.trim()}`
+        : '';
       await sendEmail({
         to: applicant.email,
         subject: `Notice of Resubmission — ${resubmitSelectedSlot}`,
-        body: `Dear ${applicant.first_name},\n\nYour submitted document "${resubmitSelectedSlot}" requires resubmission.\n\nReason: ${resubmitReason.trim()}\n\nPlease log in to the Applicant Portal and re-upload the corrected document at your earliest convenience.\n\nThank you,\nRecruitment Office`,
+        body: `Dear ${applicant.first_name},\n\nYour submitted document "${resubmitSelectedSlot}" requires resubmission.\n\nReason: ${resubmitReason.trim()}${notesSection}\n\nPlease log in to the Applicant Portal and re-upload the corrected document at your earliest convenience.\n\nThank you,\nRecruitment Office`,
         applicantId: applicant.id,
       });
       setResubmitSuccess(`Resubmission notice sent to ${applicant.email}. Tracker has been updated.`);
@@ -1439,6 +1458,7 @@ export function ApplicantDetailsPage() {
       const msg = err instanceof Error ? err.message : 'Email delivery failed.';
       setResubmitSuccess(`Tracker updated — resubmission recorded. Note: ${msg}`);
     } finally {
+      setResubmitNotes('');
       setResubmitSending(false);
     }
   };
@@ -1616,10 +1636,8 @@ export function ApplicantDetailsPage() {
                   .map((a) => a!.file_path);
                 const allDocsOpened = submittedFilePaths.length > 0 && submittedFilePaths.every((fp) => openedDocFilePaths.has(fp));
                 const hasResubmissionPending = attachments.some((a) => (docReviews[getDocReviewKey(a.file_path)]?.status ?? 'pending') === 'resubmission_requested');
-                const shortlistLocked = !allDocsOpened;
                 const qualifyLocked = !docsValidated || hasResubmissionPending;
-                const shortlistTitle = shortlistLocked ? 'Open all submitted documents first' : undefined;
-                const qualifyTitle = !docsValidated ? 'Validate documents first before qualifying' : hasResubmissionPending ? 'Some documents require resubmission' : undefined;
+                const qualifyTitle = !docsValidated ? 'Click "Validate Documents" in the Documents tab first' : hasResubmissionPending ? 'Some documents require resubmission' : undefined;
                 return (
                 <>
                   <button
@@ -1635,10 +1653,8 @@ export function ApplicantDetailsPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => { if (!shortlistLocked) void persistStatus(isApplicantShortlisted ? 'unshortlist' : 'shortlist'); }}
-                    disabled={shortlistLocked}
-                    title={shortlistTitle}
-                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+                    onClick={() => void persistStatus(isApplicantShortlisted ? 'unshortlist' : 'shortlist')}
+                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm ${
                       isApplicantShortlisted
                         ? 'border-[#363EE8] bg-[#363EE8] text-white'
                         : 'border-[#363EE8] bg-white text-[#363EE8] hover:bg-blue-50'
@@ -1789,9 +1805,7 @@ export function ApplicantDetailsPage() {
                             <button
                               type="button"
                               onClick={handleValidateDocs}
-                              disabled={!allDocsOpened}
-                              title={!allDocsOpened ? 'Open all submitted documents before validating' : undefined}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
                             >
                               <CheckCircle2 size={12} /> Validate Documents
                             </button>
@@ -2143,6 +2157,22 @@ export function ApplicantDetailsPage() {
                   </p>
                 )}
               </div>
+
+              {/* Message / Additional Notes */}
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold" style={{ color: '#040E6B' }}>
+                  Message <span className="font-normal text-slate-400">(Optional)</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={resubmitNotes}
+                  onChange={(e) => setResubmitNotes(e.target.value)}
+                  placeholder="Add specific instructions or details for the applicant regarding this resubmission..."
+                  className="w-full resize-none rounded-xl border px-4 py-3 text-sm outline-none focus:ring-2"
+                  style={{ borderColor: '#C8D1FF', color: '#040E6B' }}
+                />
+                <p className="mt-1 text-xs" style={{ color: '#363EE8' }}>This message will be included in the email and shown in the applicant's tracker.</p>
+              </div>
             </div>
 
             {/* Footer */}
@@ -2156,7 +2186,7 @@ export function ApplicantDetailsPage() {
               <div className="flex justify-end gap-3">
                 <button
                   type="button"
-                  onClick={() => setShowResubmitModal(false)}
+                  onClick={() => { setShowResubmitModal(false); setResubmitNotes(''); setResubmitReason(''); setResubmitSelectedSlot(''); setResubmitError(null); setResubmitSuccess(null); }}
                   disabled={resubmitSending}
                   className="rounded-xl border px-5 py-2 text-sm font-semibold disabled:opacity-50"
                   style={{ borderColor: '#C8D1FF', color: '#040E6B' }}
@@ -2183,10 +2213,10 @@ export function ApplicantDetailsPage() {
       {showScoresModal && (
         <div className="fixed inset-0 z-[260] bg-black/80 p-4" onClick={() => setShowScoresModal(false)}>
           <div className="mx-auto h-[96vh] w-full max-w-[1450px] overflow-y-auto rounded-2xl bg-white" onClick={(event) => event.stopPropagation()}>
-            <div className="sticky top-0 z-10 flex items-center justify-between bg-blue-700 px-8 py-5 text-white">
+            <div className="sticky top-0 z-10 flex items-center justify-between px-8 py-5 text-white" style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', fontFamily: 'Poppins, sans-serif' }}>
               <div>
                 <h2 className="text-3xl font-bold text-white">Applicant Evaluation & Scoring</h2>
-                <p className="text-lg text-blue-100">{fullName} - {applicant.position || '--'}</p>
+                <p className="text-lg" style={{ color: '#C8D1FF' }}>{fullName} — {applicant.position || '--'}</p>
               </div>
               <button type="button" onClick={() => setShowScoresModal(false)} className="rounded-lg p-2 text-white/90 hover:bg-white/10">
                 <X size={36} />
@@ -2304,7 +2334,14 @@ export function ApplicantDetailsPage() {
 
               <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="mb-2 text-xl font-semibold text-slate-800">I Education (20%)</p>
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xl font-semibold text-slate-800">I Education (20%)</p>
+                    {educationAttainment && (
+                      <span className="rounded-full px-2 py-0.5 text-xs font-semibold" style={{ backgroundColor: '#EEF0FD', color: '#363EE8' }}>
+                        Auto-filled · Editable
+                      </span>
+                    )}
+                  </div>
                   <select
                     value={educationAttainment}
                     onChange={(event) => setEducationAttainment(event.target.value as EducationAttainmentValue)}
@@ -2320,7 +2357,14 @@ export function ApplicantDetailsPage() {
                   <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-blue-700">{modalEducationScore}</span></p>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="mb-2 text-xl font-semibold text-slate-800">II Experience (20%)</p>
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xl font-semibold text-slate-800">II Experience (20%)</p>
+                    {experienceYears && (
+                      <span className="rounded-full px-2 py-0.5 text-xs font-semibold" style={{ backgroundColor: '#EEF0FD', color: '#363EE8' }}>
+                        Auto-filled · Editable
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="number"
                     min={0}

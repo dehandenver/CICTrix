@@ -386,6 +386,10 @@ const handleNextToReview = () => {
     const itemNumber = formData.item_number || buildApplicantItemNumber(Date.now() % 10000);
     const safe = (val: string | null | undefined) => (val == null ? '' : String(val));
 
+    const experienceYears = parseInt(formData.work_experience_years || '0', 10) || 0;
+    const experienceMonths = parseInt(formData.work_experience_months || '0', 10) || 0;
+    const totalExperienceYears = +(experienceYears + experienceMonths / 12).toFixed(2);
+
     const applicantPayload: Record<string, any> = {
       first_name: formData.first_name.trim(),
       middle_name: safe(formData.middle_name).trim() || null,
@@ -400,6 +404,8 @@ const handleNextToReview = () => {
       is_pwd: formData.is_pwd,
       application_type: applicationType,
       status: 'New Application',
+      education_level: formData.education_attainment || null,
+      years_of_experience: totalExperienceYears > 0 ? totalExperienceYears : null,
     };
 
     if (applicationType === 'promotion') {

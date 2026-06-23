@@ -1,5 +1,5 @@
 import { AlertCircle, CheckCircle2, FileText, Mail, RefreshCw, Search, Upload } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ATTACHMENTS_BUCKET, supabase } from '../../lib/supabase';
 
 interface ApplicationRecord {
@@ -142,6 +142,30 @@ export const ApplicationStatusPage = () => {
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState('');
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
+
+  const fetchAttachments = async (applicantId: string) => {
+    try {
+      const { data, error: err } = await (supabase as any)
+        .from('applicant_attachments')
+        .select('id, file_name, file_path, document_type, created_at')
+        .eq('applicant_id', applicantId)
+        .order('created_at', { ascending: false });
+      if (!err && Array.isArray(data)) setAttachments(data as AttachmentRow[]);
+    } catch { /* silently ignore */ }
+  };
+
+  // Real-time subscription — refreshes attachments whenever RSP posts a resubmission notice.
+  useEffect(() => {
+    if (!record?.id) return;
+    const channel = (supabase as any)
+      .channel(`applicant_attachments_${record.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'applicant_attachments', filter: `applicant_id=eq.${record.id}` }, () => {
+        void fetchAttachments(record.id);
+      })
+      .subscribe();
+    return () => { void (supabase as any).removeChannel(channel); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [record?.id]);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -199,20 +223,7 @@ export const ApplicationStatusPage = () => {
       };
 
       setRecord(mapped);
-
-      try {
-        const { data: attachData, error: attachErr } = await (supabase as any)
-          .from('applicant_attachments')
-          .select('id, file_name, file_path, document_type, created_at')
-          .eq('applicant_id', mapped.id)
-          .order('created_at', { ascending: false });
-
-        if (!attachErr && Array.isArray(attachData)) {
-          setAttachments(attachData as AttachmentRow[]);
-        }
-      } catch {
-        // Silently ignore — documents section will just render empty.
-      }
+      await fetchAttachments(mapped.id);
 
       // Load doc reviews from localStorage
       const allReviews = loadDocReviews();
@@ -276,21 +287,39 @@ export const ApplicationStatusPage = () => {
   const programType =
     record?.application_type === 'promotion' ? 'Promotional Application' : 'Job Application';
 
-  // Deduplicate attachments by document_type (keep most recent per type)
+  // RSP resubmission notices saved to Supabase — shown separately in tracker
+  const resubmissionNotices = attachments.filter((a) => a.document_type === 'resubmission_request');
+
+  const parseNotice = (notice: AttachmentRow) => {
+    const parts = notice.file_name.split('::');
+    return {
+      document: parts[1] ?? notice.file_name,
+      reason:   parts[2] ?? '',
+      notes:    notice.file_path === '—' ? '' : notice.file_path,
+      date:     notice.created_at,
+    };
+  };
+
+  // Deduplicate non-notice attachments by document_type (keep most recent per type)
   const deduplicatedAttachments = (() => {
     const seen = new Set<string>();
-    return attachments.filter((a) => {
-      const key = a.document_type ?? a.file_name;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    return attachments
+      .filter((a) => a.document_type !== 'resubmission_request')
+      .filter((a) => {
+        const key = a.document_type ?? a.file_name;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
   })();
 
-  const hasActionRequired = record && deduplicatedAttachments.some((a) => {
-    const key = getReviewKey(record.id, a.file_path);
-    return (docReviews[key]?.status ?? 'pending') === 'resubmission_requested';
-  });
+  const hasActionRequired = record && (
+    resubmissionNotices.length > 0 ||
+    deduplicatedAttachments.some((a) => {
+      const key = getReviewKey(record.id, a.file_path);
+      return (docReviews[key]?.status ?? 'pending') === 'resubmission_requested';
+    })
+  );
 
   return (
     <div className="min-h-screen bg-white py-12 px-4" style={{ fontFamily: 'Poppins, sans-serif' }}>
@@ -420,6 +449,50 @@ export const ApplicationStatusPage = () => {
                 </div>
               </div>
             </section>
+
+            {/* RSP Resubmission Notices — real-time from Supabase */}
+            {resubmissionNotices.length > 0 && (
+              <section className="mt-6 rounded-2xl border shadow-sm overflow-hidden" style={{ borderColor: '#C8D1FF' }}>
+                <div className="flex items-center gap-3 px-6 py-4" style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', fontFamily: 'Poppins, sans-serif' }}>
+                  <AlertCircle size={20} className="text-white" />
+                  <div>
+                    <h3 className="font-bold text-white">Notices from RSP Admin</h3>
+                    <p className="text-xs" style={{ color: '#C8D1FF' }}>Action may be required — review each notice below</p>
+                  </div>
+                </div>
+                <div className="divide-y bg-white" style={{ borderColor: '#EEF0FD' }}>
+                  {resubmissionNotices.map((notice) => {
+                    const n = parseNotice(notice);
+                    return (
+                      <div key={notice.id} className="px-6 py-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <FileText size={16} style={{ color: '#363EE8' }} />
+                            <p className="text-sm font-semibold" style={{ color: '#040E6B' }}>{n.document}</p>
+                          </div>
+                          <span className="shrink-0 inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold border" style={{ borderColor: '#F59E0B', backgroundColor: '#FFFBEB', color: '#92400E' }}>
+                            <AlertCircle size={11} /> Action Required
+                          </span>
+                        </div>
+                        {n.reason && (
+                          <p className="mt-2 text-xs" style={{ color: '#040E6B' }}>
+                            <span className="font-semibold">Reason:</span> {n.reason}
+                          </p>
+                        )}
+                        {n.notes && (
+                          <p className="mt-1.5 rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: '#EEF0FD', color: '#363EE8' }}>
+                            <span className="font-semibold">RSP Note:</span> {n.notes}
+                          </p>
+                        )}
+                        {n.date && (
+                          <p className="mt-2 text-xs" style={{ color: '#6B7280' }}>Issued: {new Date(n.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
 
             {/* Application Progress */}
             <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
