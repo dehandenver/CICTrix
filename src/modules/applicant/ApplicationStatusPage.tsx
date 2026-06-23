@@ -284,19 +284,8 @@ export const ApplicationStatusPage = () => {
       clearDocReview(key);
       setDocReviews((prev) => { const n = { ...prev }; delete n[key]; return n; });
 
-      // Mark Supabase resubmission notice as resolved so "Action Required"
-      // disappears in real-time for both portals.
-      const notice = resubmissionNotices.find((n) => parseNotice(n).docType === doc.document_type);
-      if (notice) {
-        try {
-          await (supabase as any)
-            .from('applicant_attachments')
-            .update({ document_type: 'resubmission_resolved' })
-            .eq('id', notice.id);
-        } catch { /* best effort */ }
-      }
-
-      // Refresh attachments list
+      // Refresh attachments list — the new row's created_at will be after the
+      // notice's created_at, so pendingResubmissionTypes auto-resolves on refetch.
       const { data: refreshed } = await (supabase as any)
         .from('applicant_attachments')
         .select('id, file_name, file_path, document_type, created_at')
@@ -340,9 +329,6 @@ export const ApplicationStatusPage = () => {
     'Other Supporting Documents': 'other',
   };
 
-  // RSP resubmission notices saved to Supabase — shown separately in tracker
-  const resubmissionNotices = attachments.filter((a) => a.document_type === 'resubmission_request');
-
   const parseNotice = (notice: AttachmentRow) => {
     const parts = notice.file_name.split('::');
     return {
@@ -354,9 +340,39 @@ export const ApplicationStatusPage = () => {
     };
   };
 
-  // Set of document_types that RSP has requested resubmission for (via Supabase)
-  const pendingResubmissionTypes = new Set(
-    resubmissionNotices.map((n) => parseNotice(n).docType).filter(Boolean)
+  // All RSP resubmission notice rows
+  const allNotices = attachments.filter((a) => a.document_type === 'resubmission_request');
+
+  // Keep only the latest notice per doc type, then check if a newer real upload
+  // exists after it. If yes → the applicant already re-submitted → notice resolved.
+  // This works purely from timestamps so no Supabase UPDATE is needed.
+  const latestNoticeByDocType = new Map<string, AttachmentRow>();
+  allNotices.forEach((notice) => {
+    const { docType } = parseNotice(notice);
+    if (!docType) return;
+    const existing = latestNoticeByDocType.get(docType);
+    if (!existing || new Date(notice.created_at).getTime() > new Date(existing.created_at).getTime()) {
+      latestNoticeByDocType.set(docType, notice);
+    }
+  });
+
+  // A notice is "pending" only when there is no real upload created after it.
+  const pendingResubmissionTypes = new Set<string>();
+  latestNoticeByDocType.forEach((notice, docType) => {
+    const noticeTime = new Date(notice.created_at).getTime();
+    const hasNewerUpload = attachments.some(
+      (a) =>
+        a.document_type === docType &&
+        a.document_type !== 'resubmission_request' &&
+        a.document_type !== 'resubmission_resolved' &&
+        new Date(a.created_at ?? '').getTime() > noticeTime,
+    );
+    if (!hasNewerUpload) pendingResubmissionTypes.add(docType);
+  });
+
+  // Only the still-pending notices (for display in the amber notice section)
+  const resubmissionNotices = [...latestNoticeByDocType.values()].filter((n) =>
+    pendingResubmissionTypes.has(parseNotice(n).docType),
   );
 
   // Deduplicate non-notice attachments by document_type (keep most recent per type)
