@@ -82,7 +82,7 @@ const NOTICE_MESSAGE: Record<BadgeTone, string> = {
 
 const TIMELINE_STAGES = [
   { key: 'submitted',     title: 'Application Submitted',  subtitle: 'Your application has been received' },
-  { key: 'verification',  title: 'Document Verification',  subtitle: 'Verifying submitted documents and credentials' },
+  { key: 'verification',  title: 'Uploaded Documents',  subtitle: 'View your uploaded documents, status, and RSP remarks' },
   { key: 'qualifications', title: 'Qualifications Assessment', subtitle: 'Reviewing educational background and experience' },
   { key: 'committee',     title: 'Committee Review',       subtitle: 'Application reviewed by admissions committee' },
   { key: 'final',         title: 'Final Decision',         subtitle: 'Final decision on application' },
