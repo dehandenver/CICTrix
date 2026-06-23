@@ -179,6 +179,9 @@ export const ApplicationStatusPage = () => {
   // so the amber panel disappears immediately even if the Supabase notice update
   // hasn't propagated back through the real-time subscription yet.
   const [resolvedDocTypes, setResolvedDocTypes] = useState<Set<string>>(new Set());
+  // Stores the newly uploaded file name per doc type so the header updates
+  // immediately after re-upload, without waiting for the real-time refetch.
+  const [submittedFileNames, setSubmittedFileNames] = useState<Record<string, string>>({});
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const getReviewKey = (applicantId: string, filePath: string) => `${applicantId}::${filePath}`;
@@ -199,6 +202,7 @@ export const ApplicationStatusPage = () => {
     setDocReviews({});
     setUploadSuccess(null);
     setResolvedDocTypes(new Set());
+    setSubmittedFileNames({});
 
     try {
       const looksLikeEmail = trimmed.includes('@');
@@ -300,10 +304,12 @@ export const ApplicationStatusPage = () => {
         .order('created_at', { ascending: false });
       if (Array.isArray(refreshed)) setAttachments(refreshed as AttachmentRow[]);
 
-      // Optimistically mark this doc type as resolved so the amber panel
-      // disappears immediately regardless of real-time propagation timing.
+      // Optimistically mark this doc type as resolved and store the new file
+      // name so the card header updates immediately without waiting for the
+      // real-time Supabase refetch.
       if (doc.document_type) {
         setResolvedDocTypes((prev) => new Set([...prev, doc.document_type!]));
+        setSubmittedFileNames((prev) => ({ ...prev, [doc.document_type!]: file.name }));
       }
       setUploadSuccess(key);
       setTimeout(() => setUploadSuccess(null), 5000);
@@ -673,8 +679,12 @@ export const ApplicationStatusPage = () => {
                               <p className="truncate text-sm font-medium" style={{ color: '#040E6B' }}>
                                 {doc.document_type || doc.file_name || 'Document'}
                               </p>
-                              {doc.document_type && doc.file_name && (
-                                <p className="truncate text-xs" style={{ color: '#363EE8' }}>{doc.file_name}</p>
+                              {doc.document_type && (
+                                <p className="truncate text-xs" style={{ color: '#363EE8' }}>
+                                  {alreadyResolved && submittedFileNames[doc.document_type]
+                                    ? submittedFileNames[doc.document_type]
+                                    : doc.file_name}
+                                </p>
                               )}
                             </div>
                           </div>

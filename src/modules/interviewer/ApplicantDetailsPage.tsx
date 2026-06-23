@@ -2249,7 +2249,7 @@ export function ApplicantDetailsPage() {
       {/* Notice of Resubmission modal */}
       {showResubmitModal && (
         <div className="fixed inset-0 z-[270] flex items-center justify-center bg-black/60 p-4" onClick={() => setShowResubmitModal(false)}>
-          <div className="flex w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" style={{ fontFamily: 'Poppins, sans-serif' }} onClick={(e) => e.stopPropagation()}>
+          <div className="flex w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" style={{ fontFamily: 'Poppins, sans-serif', maxHeight: '90vh' }} onClick={(e) => e.stopPropagation()}>
 
             {/* Header — brand gradient */}
             <div className="flex items-center gap-3 px-6 py-4" style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)' }}>
