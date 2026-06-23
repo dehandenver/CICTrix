@@ -1986,18 +1986,31 @@ export function ApplicantDetailsPage() {
                         byType.set(key, [...existing, a]);
                       });
 
+                      // Collect initial uploads (first version per type) into one batch event;
+                      // re-uploads (version 2+) remain individual since they are intentional actions.
+                      const initialBatch: { label: string; date: string }[] = [];
                       byType.forEach((docs) => {
-                        // Sort oldest first
                         const sorted = [...docs].sort((x, y) => new Date(x.created_at ?? '').getTime() - new Date(y.created_at ?? '').getTime());
                         sorted.forEach((doc, i) => {
                           const label = labelize(doc.document_type || doc.file_name || 'Document');
                           if (i === 0) {
-                            events.push({ event: `Document Uploaded — ${label}`, detail: `File: ${doc.file_name}`, actor: fullName || 'Applicant', date: doc.created_at ?? applicant?.created_at ?? '', tone: 'blue' });
+                            initialBatch.push({ label, date: doc.created_at ?? applicant?.created_at ?? '' });
                           } else {
                             events.push({ event: `Document Re-uploaded — ${label}`, detail: `Applicant submitted a new version. File: ${doc.file_name}`, actor: fullName || 'Applicant', date: doc.created_at ?? '', tone: 'emerald' });
                           }
                         });
                       });
+                      if (initialBatch.length > 0) {
+                        const earliest = initialBatch.reduce((min, d) => d.date < min ? d.date : min, initialBatch[0].date);
+                        const labels = initialBatch.map((d) => d.label).join(', ');
+                        events.push({
+                          event: `Documents Submitted — ${initialBatch.length} file${initialBatch.length > 1 ? 's' : ''}`,
+                          detail: labels,
+                          actor: fullName || 'Applicant',
+                          date: earliest,
+                          tone: 'blue',
+                        });
+                      }
 
                       // 3. Resubmission notices
                       noticeAttachments.forEach((notice) => {

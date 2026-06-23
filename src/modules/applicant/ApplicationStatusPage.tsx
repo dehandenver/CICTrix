@@ -167,6 +167,7 @@ export const ApplicationStatusPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [record?.id]);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
+  const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const getReviewKey = (applicantId: string, filePath: string) => `${applicantId}::${filePath}`;
@@ -240,13 +241,16 @@ export const ApplicationStatusPage = () => {
     if (!record) return;
     const key = getReviewKey(record.id, doc.file_path);
     setUploadingKey(key);
+    // Clear any prior inline error for this card
+    setUploadErrors((prev) => { const n = { ...prev }; delete n[key]; return n; });
     try {
-      const ext = file.name.split('.').pop() ?? 'pdf';
-      const newPath = `${record.id}/${doc.document_type?.replace(/\s+/g, '_') ?? 'doc'}_${Date.now()}.${ext}`;
-      const { error: upErr } = await (supabase as any).storage
+      const newPath = `${record.id}/${Date.now()}-${file.name}`;
+
+      const uploadResult = await (supabase as any).storage
         .from(ATTACHMENTS_BUCKET)
-        .upload(newPath, file, { upsert: false });
-      if (upErr) throw new Error(upErr.message);
+        .upload(newPath, file);
+      const uploadError = uploadResult?.error ?? null;
+      if (uploadError) throw new Error(String(uploadError.message ?? uploadError));
 
       const { error: insErr } = await (supabase as any)
         .from('applicant_attachments')
@@ -254,18 +258,18 @@ export const ApplicationStatusPage = () => {
           applicant_id: record.id,
           file_name: file.name,
           file_path: newPath,
+          file_type: file.type,
+          file_size: file.size,
           document_type: doc.document_type,
         });
       if (insErr) throw new Error(insErr.message);
 
-      // Clear the localStorage resubmission review
+      // Clear localStorage resubmission review for this doc
       clearDocReview(key);
-      const updated = { ...docReviews };
-      delete updated[key];
-      setDocReviews(updated);
+      setDocReviews((prev) => { const n = { ...prev }; delete n[key]; return n; });
 
-      // Mark Supabase resubmission notice as resolved so the "Action Required"
-      // badge and re-upload button disappear in real-time for both portals.
+      // Mark Supabase resubmission notice as resolved so "Action Required"
+      // disappears in real-time for both portals.
       const notice = resubmissionNotices.find((n) => parseNotice(n).docType === doc.document_type);
       if (notice) {
         try {
@@ -285,9 +289,10 @@ export const ApplicationStatusPage = () => {
       if (Array.isArray(refreshed)) setAttachments(refreshed as AttachmentRow[]);
 
       setUploadSuccess(key);
-      setTimeout(() => setUploadSuccess(null), 4000);
+      setTimeout(() => setUploadSuccess(null), 5000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed. Please try again.');
+      const msg = err instanceof Error ? err.message : 'Upload failed. Please try again.';
+      setUploadErrors((prev) => ({ ...prev, [key]: msg }));
     } finally {
       setUploadingKey(null);
     }
@@ -342,10 +347,12 @@ export const ApplicationStatusPage = () => {
         seen.add(key);
         return true;
       })
-      // Sort: docs with pending resubmission requests come first
+      // Sort: docs with pending resubmission (Supabase OR localStorage) come first
       .sort((x, y) => {
-        const xPending = pendingResubmissionTypes.has(x.document_type ?? '') ? 0 : 1;
-        const yPending = pendingResubmissionTypes.has(y.document_type ?? '') ? 0 : 1;
+        const xLocalKey = record ? getReviewKey(record.id, x.file_path) : '';
+        const yLocalKey = record ? getReviewKey(record.id, y.file_path) : '';
+        const xPending = (pendingResubmissionTypes.has(x.document_type ?? '') || docReviews[xLocalKey]?.status === 'resubmission_requested') ? 0 : 1;
+        const yPending = (pendingResubmissionTypes.has(y.document_type ?? '') || docReviews[yLocalKey]?.status === 'resubmission_requested') ? 0 : 1;
         return xPending - yPending;
       });
   })();
@@ -629,6 +636,7 @@ export const ApplicationStatusPage = () => {
 
                     const isUploading = uploadingKey === reviewKey;
                     const justUploaded = uploadSuccess === reviewKey;
+                    const uploadError = uploadErrors[reviewKey];
 
                     return (
                       <div key={doc.id} className={`rounded-xl border bg-white ${hasResubmissionRequest && !justUploaded ? 'border-amber-300' : 'border-slate-200'}`}>
@@ -696,6 +704,11 @@ export const ApplicationStatusPage = () => {
                               <Upload size={12} />
                               {isUploading ? 'Uploading…' : 'Re-upload Document'}
                             </button>
+                            {uploadError && (
+                              <p className="mt-2 text-xs font-medium text-red-600">
+                                Upload failed: {uploadError}
+                              </p>
+                            )}
                           </div>
                         )}
                       </div>
