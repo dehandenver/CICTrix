@@ -175,6 +175,10 @@ export const ApplicationStatusPage = () => {
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
   const [pendingFiles, setPendingFiles] = useState<Record<string, File>>({});
+  // Tracks doc types the applicant has successfully re-uploaded this session,
+  // so the amber panel disappears immediately even if the Supabase notice update
+  // hasn't propagated back through the real-time subscription yet.
+  const [resolvedDocTypes, setResolvedDocTypes] = useState<Set<string>>(new Set());
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const getReviewKey = (applicantId: string, filePath: string) => `${applicantId}::${filePath}`;
@@ -194,6 +198,7 @@ export const ApplicationStatusPage = () => {
     setAttachments([]);
     setDocReviews({});
     setUploadSuccess(null);
+    setResolvedDocTypes(new Set());
 
     try {
       const looksLikeEmail = trimmed.includes('@');
@@ -295,6 +300,11 @@ export const ApplicationStatusPage = () => {
         .order('created_at', { ascending: false });
       if (Array.isArray(refreshed)) setAttachments(refreshed as AttachmentRow[]);
 
+      // Optimistically mark this doc type as resolved so the amber panel
+      // disappears immediately regardless of real-time propagation timing.
+      if (doc.document_type) {
+        setResolvedDocTypes((prev) => new Set([...prev, doc.document_type!]));
+      }
       setUploadSuccess(key);
       setTimeout(() => setUploadSuccess(null), 5000);
     } catch (err) {
@@ -635,7 +645,11 @@ export const ApplicationStatusPage = () => {
                     const reviewKey = getReviewKey(record.id, doc.file_path);
                     const review = docReviews[reviewKey];
                     const localStatus: DocReviewStatus = review?.status ?? 'pending';
-                    const hasResubmissionRequest = pendingResubmissionTypes.has(doc.document_type ?? '') || localStatus === 'resubmission_requested';
+                    // Applicant already re-uploaded this doc in the current session
+                    const alreadyResolved = resolvedDocTypes.has(doc.document_type ?? '');
+                    const hasResubmissionRequest =
+                      !alreadyResolved &&
+                      (pendingResubmissionTypes.has(doc.document_type ?? '') || localStatus === 'resubmission_requested');
                     const matchedNotice = resubmissionNotices.find((n) => parseNotice(n).docType === doc.document_type);
                     const parsedNotice = matchedNotice ? parseNotice(matchedNotice) : null;
 
@@ -666,7 +680,7 @@ export const ApplicationStatusPage = () => {
                           </div>
 
                           {/* Status badge */}
-                          {justUploaded ? (
+                          {justUploaded || alreadyResolved ? (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 border border-blue-200">
                               <RefreshCw size={12} /> Submitted · Under Review
                             </span>
