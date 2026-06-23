@@ -130,6 +130,12 @@ const formatShortDate = (iso: string | null) => {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
 
+const formatFileSize = (bytes: number) => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
 const getBadge = (status: string) =>
   STATUS_BADGE[status] ?? { label: status || 'Pending', tone: 'new' as BadgeTone };
 
@@ -168,6 +174,7 @@ export const ApplicationStatusPage = () => {
   }, [record?.id]);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
+  const [pendingFiles, setPendingFiles] = useState<Record<string, File>>({});
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const getReviewKey = (applicantId: string, filePath: string) => `${applicantId}::${filePath}`;
@@ -628,18 +635,21 @@ export const ApplicationStatusPage = () => {
                     const reviewKey = getReviewKey(record.id, doc.file_path);
                     const review = docReviews[reviewKey];
                     const localStatus: DocReviewStatus = review?.status ?? 'pending';
-                    // Use Supabase-based pending resubmission as the primary source
                     const hasResubmissionRequest = pendingResubmissionTypes.has(doc.document_type ?? '') || localStatus === 'resubmission_requested';
-                    // Find the matching Supabase notice for reason/notes
                     const matchedNotice = resubmissionNotices.find((n) => parseNotice(n).docType === doc.document_type);
                     const parsedNotice = matchedNotice ? parseNotice(matchedNotice) : null;
 
                     const isUploading = uploadingKey === reviewKey;
                     const justUploaded = uploadSuccess === reviewKey;
                     const uploadError = uploadErrors[reviewKey];
+                    const selectedFile = pendingFiles[reviewKey];
+
+                    const clearPending = () =>
+                      setPendingFiles((prev) => { const n = { ...prev }; delete n[reviewKey]; return n; });
 
                     return (
-                      <div key={doc.id} className={`rounded-xl border bg-white ${hasResubmissionRequest && !justUploaded ? 'border-amber-300' : 'border-slate-200'}`}>
+                      <div key={doc.id} className={`rounded-xl border bg-white overflow-hidden ${hasResubmissionRequest && !justUploaded ? 'border-amber-300' : 'border-slate-200'}`}>
+                        {/* Document header row */}
                         <div className="flex items-center justify-between px-4 py-3">
                           <div className="flex items-center gap-3 min-w-0">
                             <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-white" style={{ backgroundColor: '#363EE8' }}>
@@ -657,33 +667,36 @@ export const ApplicationStatusPage = () => {
 
                           {/* Status badge */}
                           {justUploaded ? (
-                            <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 border border-blue-200">
-                              <RefreshCw size={12} /> Submitted for Review
+                            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 border border-blue-200">
+                              <RefreshCw size={12} /> Submitted · Under Review
                             </span>
                           ) : hasResubmissionRequest ? (
-                            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 border border-amber-200">
+                            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 border border-amber-200">
                               <AlertCircle size={12} /> Action Required
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
-                              <CheckCircle2 size={12} /> Verified
+                            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border" style={{ backgroundColor: '#EEF0FD', color: '#363EE8', borderColor: '#C8D1FF' }}>
+                              <CheckCircle2 size={12} /> Submitted
                             </span>
                           )}
                         </div>
 
-                        {/* Resubmission detail + re-upload */}
+                        {/* Resubmission action panel */}
                         {hasResubmissionRequest && !justUploaded && (
-                          <div className="border-t border-amber-100 bg-amber-50 px-4 py-3">
+                          <div className="border-t border-amber-100 bg-amber-50 px-4 py-3 space-y-2">
+                            {/* Reason / RSP note */}
                             {(parsedNotice?.reason || review?.remarks) && (
-                              <p className="text-xs text-amber-800 mb-1">
+                              <p className="text-xs text-amber-800">
                                 <span className="font-semibold">Reason:</span> {parsedNotice?.reason || review?.remarks}
                               </p>
                             )}
                             {parsedNotice?.notes && (
-                              <p className="text-xs text-amber-700 mb-2">
+                              <p className="text-xs text-amber-700">
                                 <span className="font-semibold">RSP Note:</span> {parsedNotice.notes}
                               </p>
                             )}
+
+                            {/* Hidden file input */}
                             <input
                               type="file"
                               accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
@@ -691,22 +704,73 @@ export const ApplicationStatusPage = () => {
                               ref={(el) => { fileInputRefs.current[reviewKey] = el; }}
                               onChange={(e) => {
                                 const file = e.target.files?.[0];
-                                if (file) void handleReupload(doc, file);
+                                if (file) setPendingFiles((prev) => ({ ...prev, [reviewKey]: file }));
                                 e.target.value = '';
                               }}
                             />
-                            <button
-                              type="button"
-                              disabled={isUploading}
-                              onClick={() => fileInputRefs.current[reviewKey]?.click()}
-                              className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:opacity-60"
-                            >
-                              <Upload size={12} />
-                              {isUploading ? 'Uploading…' : 'Re-upload Document'}
-                            </button>
+
+                            {/* Step 1 — no file chosen yet */}
+                            {!selectedFile && !isUploading && (
+                              <button
+                                type="button"
+                                onClick={() => fileInputRefs.current[reviewKey]?.click()}
+                                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
+                                style={{ backgroundColor: '#363EE8' }}
+                              >
+                                <Upload size={12} />
+                                Choose File to Re-upload
+                              </button>
+                            )}
+
+                            {/* Step 2 — file chosen, waiting for confirmation */}
+                            {selectedFile && !isUploading && (
+                              <div className="rounded-lg border border-amber-200 bg-white px-3 py-2.5 space-y-2">
+                                <div className="flex items-start gap-2">
+                                  <FileText size={14} className="mt-0.5 shrink-0 text-slate-500" />
+                                  <div className="min-w-0">
+                                    <p className="truncate text-xs font-semibold text-slate-800">{selectedFile.name}</p>
+                                    <p className="text-xs text-slate-500">{formatFileSize(selectedFile.size)} · {selectedFile.type || 'document'}</p>
+                                  </div>
+                                </div>
+                                <p className="text-xs text-slate-600">Please confirm this is the correct file before submitting.</p>
+                                <div className="flex items-center gap-2 pt-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => { void handleReupload(doc, selectedFile); clearPending(); }}
+                                    className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
+                                    style={{ backgroundColor: '#363EE8' }}
+                                  >
+                                    <CheckCircle2 size={12} /> Confirm &amp; Submit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => { clearPending(); fileInputRefs.current[reviewKey]?.click(); }}
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                                  >
+                                    Change File
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={clearPending}
+                                    className="ml-auto text-xs text-slate-400 hover:text-slate-600 transition"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Step 3 — uploading in progress */}
+                            {isUploading && (
+                              <div className="flex items-center gap-2 text-xs text-amber-800 font-medium">
+                                <RefreshCw size={12} className="animate-spin" />
+                                Uploading your document, please wait…
+                              </div>
+                            )}
+
                             {uploadError && (
-                              <p className="mt-2 text-xs font-medium text-red-600">
-                                Upload failed: {uploadError}
+                              <p className="text-xs font-medium text-red-600">
+                                Upload failed: {uploadError} — please try again.
                               </p>
                             )}
                           </div>
