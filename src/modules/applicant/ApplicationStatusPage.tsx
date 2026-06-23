@@ -725,13 +725,22 @@ export const ApplicationStatusPage = () => {
                             {/* Step 2 — file chosen, waiting for confirmation */}
                             {selectedFile && !isUploading && (
                               <div className="rounded-lg border border-amber-200 bg-white px-3 py-2.5 space-y-2">
-                                <div className="flex items-start gap-2">
-                                  <FileText size={14} className="mt-0.5 shrink-0 text-slate-500" />
+                                <button
+                                  type="button"
+                                  title="Click to preview the selected file"
+                                  onClick={() => {
+                                    const url = URL.createObjectURL(selectedFile);
+                                    window.open(url, '_blank', 'noopener,noreferrer');
+                                    setTimeout(() => URL.revokeObjectURL(url), 10000);
+                                  }}
+                                  className="flex items-start gap-2 w-full text-left rounded-md px-1 py-0.5 transition hover:bg-amber-50 group"
+                                >
+                                  <FileText size={14} className="mt-0.5 shrink-0 text-slate-400 group-hover:text-blue-600 transition" />
                                   <div className="min-w-0">
-                                    <p className="truncate text-xs font-semibold text-slate-800">{selectedFile.name}</p>
-                                    <p className="text-xs text-slate-500">{formatFileSize(selectedFile.size)} · {selectedFile.type || 'document'}</p>
+                                    <p className="truncate text-xs font-semibold text-blue-600 underline underline-offset-2 group-hover:text-blue-800">{selectedFile.name}</p>
+                                    <p className="text-xs text-slate-500">{formatFileSize(selectedFile.size)} · {selectedFile.type || 'document'} · <span className="text-blue-500">Click to preview</span></p>
                                   </div>
-                                </div>
+                                </button>
                                 <p className="text-xs text-slate-600">Please confirm this is the correct file before submitting.</p>
                                 <div className="flex items-center gap-2 pt-0.5">
                                   <button
