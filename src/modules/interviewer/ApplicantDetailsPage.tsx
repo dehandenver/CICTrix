@@ -1663,8 +1663,40 @@ export function ApplicantDetailsPage() {
                   .map((a) => a!.file_path);
                 const allDocsOpened = submittedFilePaths.length > 0 && submittedFilePaths.every((fp) => openedDocFilePaths.has(fp));
                 const hasResubmissionPending = attachments.some((a) => (docReviews[getDocReviewKey(a.file_path)]?.status ?? 'pending') === 'resubmission_requested');
-                const qualifyLocked = !docsValidated || hasResubmissionPending;
-                const qualifyTitle = !docsValidated ? 'Click "Validate Documents" in the Documents tab first' : hasResubmissionPending ? 'Some documents require resubmission' : undefined;
+
+                // Spec (Qualification Verification Requirement → Document
+                // Completion Validation): the Qualify button must remain
+                // disabled until every required document has been uploaded,
+                // reviewed, AND approved. Auto-derive these so the lock is
+                // automatic, not dependent on the manual "Validate Documents"
+                // click.
+                const requiredSlotTypes = DOCUMENT_SLOTS.filter((s) => s.required).map((s) => s.type);
+                const requiredAttachments = requiredSlotTypes.map((type) =>
+                  attachments.find((a) => (a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other') === type)
+                );
+                const allRequiredUploaded = requiredAttachments.every(Boolean);
+                const allRequiredReviewed = requiredAttachments.every((a) => {
+                  if (!a) return false;
+                  const review = docReviews[getDocReviewKey(a.file_path)];
+                  return review?.status === 'approved' || review?.status === 'resubmission_requested';
+                });
+                const allRequiredApproved = requiredAttachments.every((a) => {
+                  if (!a) return false;
+                  return docReviews[getDocReviewKey(a.file_path)]?.status === 'approved';
+                });
+                const autoDocsCleared = allRequiredUploaded && allRequiredReviewed && allRequiredApproved;
+
+                const qualifyLocked = !(docsValidated || autoDocsCleared) || hasResubmissionPending;
+                const qualifyTitle =
+                  hasResubmissionPending
+                    ? 'Some documents require resubmission'
+                    : !allRequiredUploaded
+                      ? 'All required documents must be uploaded before qualification.'
+                      : !allRequiredReviewed
+                        ? 'All required documents must be reviewed before qualification.'
+                        : !allRequiredApproved
+                          ? 'All required documents must be approved before qualification.'
+                          : undefined;
                 return (
                 <>
                   <button
