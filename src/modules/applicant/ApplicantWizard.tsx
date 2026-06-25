@@ -390,6 +390,11 @@ const handleNextToReview = () => {
     const experienceMonths = parseInt(formData.work_experience_months || '0', 10) || 0;
     const totalExperienceYears = +(experienceYears + experienceMonths / 12).toFixed(2);
 
+    // Only include columns we know exist on the Supabase `applicants` table.
+    // Spec-added fields (educational attainment, relevant work experience,
+    // government ID details) are persisted client-side via
+    // syncApplicantSubmissionToRecruitment below; once a migration adds the
+    // matching columns, re-add them here.
     const applicantPayload: Record<string, any> = {
       first_name: formData.first_name.trim(),
       middle_name: safe(formData.middle_name).trim() || null,
@@ -404,8 +409,6 @@ const handleNextToReview = () => {
       is_pwd: formData.is_pwd,
       application_type: applicationType,
       status: 'New Application',
-      education_level: formData.education_attainment || null,
-      years_of_experience: totalExperienceYears > 0 ? totalExperienceYears : null,
     };
 
     if (applicationType === 'promotion') {
