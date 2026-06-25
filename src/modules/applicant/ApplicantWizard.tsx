@@ -423,14 +423,42 @@ const handleNextToReview = () => {
         .insert(applicantPayload)
         .select('id, item_number')
         .single();
-      
+
       if (error || !data?.id) {
-        throw new Error(error?.message || 'Empty ID returned from database');
+        throw error || new Error('Empty ID returned from database');
       }
       applicantData = data;
-    } catch (dbErr) {
+    } catch (dbErr: any) {
       logErrorForAdmin('Database insertion error during applicant record creation', dbErr, 'Database Submission');
-      throw new Error('The server is currently unavailable. Please try again later.');
+
+      // Classify the failure so the applicant sees a useful message rather
+      // than the generic "server unavailable" string — and so HR can tell at
+      // a glance what to fix.
+      const rawMessage = String(dbErr?.message ?? dbErr ?? '');
+      const code = String(dbErr?.code ?? '');
+      const lower = rawMessage.toLowerCase();
+
+      let userMessage: string;
+      if (code === '23505' || lower.includes('duplicate')) {
+        userMessage = 'An application with this email or item number already exists. Please check your previous submission.';
+      } else if (code === '23502' || lower.includes('null value') || lower.includes('not-null')) {
+        userMessage = 'A required field is missing. Please go back and review the form.';
+      } else if (
+        code === '42703' ||
+        code === 'PGRST204' ||
+        lower.includes("could not find the") ||
+        lower.includes('column') && lower.includes('does not exist')
+      ) {
+        userMessage = `Your application form is newer than the database schema. Please contact HR. (Schema: ${rawMessage.slice(0, 140)})`;
+      } else if (code === '42501' || lower.includes('row-level security') || lower.includes('permission denied')) {
+        userMessage = 'Permission denied by database security policies. Please contact HR. (RLS)';
+      } else if (lower.includes('failed to fetch') || lower.includes('networkerror')) {
+        userMessage = 'Network connection lost. Please check your internet and try again.';
+      } else {
+        userMessage = `Submission failed: ${rawMessage.slice(0, 200)} — please try again, or contact HR if this keeps happening.`;
+      }
+
+      throw new Error(userMessage);
     }
 
     saveApplicantAppointmentType(applicantData.id, applicationType);
