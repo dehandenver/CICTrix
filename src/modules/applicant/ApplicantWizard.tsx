@@ -192,10 +192,45 @@ export const ApplicantWizard: React.FC = () => {
     const itemNumberFromQuery = searchParams.get('itemNumber') || undefined;
     const officeFromQuery = searchParams.get('office') || undefined;
 
+    // If the applicant has already started filling the wizard in this tab
+    // (sessionStorage has formData with any user input), we must NOT reset
+    // their work just because location.state.landingJob or the URL params
+    // are still present after a page refresh. Lock the position fields and
+    // keep their existing input.
+    const hasInProgressFormData = Boolean(
+      formData.first_name ||
+      formData.last_name ||
+      formData.middle_name ||
+      formData.email ||
+      formData.contact_number ||
+      formData.address ||
+      formData.work_experience_years ||
+      formData.relevant_experience_position ||
+      formData.relevant_experience_company ||
+      formData.relevant_experience_duties ||
+      formData.education_attainment
+    );
+
     if (landingJob && !landingJobAppliedRef.current) {
       landingJobAppliedRef.current = true;
       setPrefilledFromLanding(true);
       setEntryMode('wizard');
+      setIsLockedPosition(true);
+      setSubmitError('');
+
+      if (hasInProgressFormData) {
+        // Preserve everything the applicant has already filled in; only make
+        // sure the position/office/item match the landing job they clicked.
+        setFormData((prev) => ({
+          ...prev,
+          application_type: 'job',
+          position: landingJob.title,
+          office: landingJob.department,
+          item_number: landingJob.itemNumber,
+        }));
+        return;
+      }
+
       setApplicationType('job');
       setCurrentStep(1);
       setAuthenticatedEmployeeAccount(null);
@@ -206,9 +241,7 @@ export const ApplicantWizard: React.FC = () => {
         office: landingJob.department,
         item_number: landingJob.itemNumber,
       });
-      setIsLockedPosition(true);
       setFiles([]);
-      setSubmitError('');
       return;
     }
 
@@ -216,6 +249,20 @@ export const ApplicantWizard: React.FC = () => {
       landingJobAppliedRef.current = true;
       setPrefilledFromLanding(true);
       setEntryMode('wizard');
+      setIsLockedPosition(true);
+      setSubmitError('');
+
+      if (hasInProgressFormData) {
+        setFormData((prev) => ({
+          ...prev,
+          application_type: 'job',
+          position: positionFromQuery || prev.position,
+          office: officeFromQuery || POSITION_TO_DEPARTMENT_MAP[positionFromQuery || ''] || prev.office,
+          item_number: itemNumberFromQuery || prev.item_number,
+        }));
+        return;
+      }
+
       setApplicationType('job');
       setCurrentStep(1);
       setAuthenticatedEmployeeAccount(null);
@@ -226,9 +273,7 @@ export const ApplicantWizard: React.FC = () => {
         office: officeFromQuery || POSITION_TO_DEPARTMENT_MAP[positionFromQuery || ''] || '',
         item_number: itemNumberFromQuery || '',
       });
-      setIsLockedPosition(true);
       setFiles([]);
-      setSubmitError('');
     }
   }, [location.state, location.search]);
 
