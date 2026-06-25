@@ -245,7 +245,7 @@ export const ApplicantWizard: React.FC = () => {
   };
 
   const handleNext = () => {
-    const validationErrors = validateApplicantForm(formData);
+    const validationErrors = validateApplicantForm(formData, 1);
 
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);

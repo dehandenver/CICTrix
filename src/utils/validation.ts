@@ -1,6 +1,13 @@
 import type { ApplicantFormData, ValidationErrors } from '../types/applicant.types';
 
-export const validateApplicantForm = (data: ApplicantFormData): ValidationErrors => {
+export const validateApplicantForm = (
+  data: ApplicantFormData,
+  // Step 1 = Personal & Application Info (Government ID fields live on Step 2
+  // and must NOT be required by step-1's "Next" handler — that was the bug
+  // where Next stayed blocked even after every visible field was filled).
+  // Pass 'all' / 'submit' when validating the full payload before submission.
+  step: 1 | 2 | 3 | 'all' | 'submit' = 'all',
+): ValidationErrors => {
   const errors: ValidationErrors = {};
 
   // First name validation
@@ -85,12 +92,14 @@ export const validateApplicantForm = (data: ApplicantFormData): ValidationErrors
     }
   }
 
-  // Government ID validation for original application
-  if (data.application_type === 'job') {
+  // Government ID validation for original application. These inputs render on
+  // Step 2 (Upload Requirements), so skip them when validating Step 1.
+  const checkGovId = data.application_type === 'job' && step !== 1;
+  if (checkGovId) {
     if (!data.gov_id_type) {
       errors.gov_id_type = 'Government ID type is required';
     }
-    
+
     const needsExpiration = ['Passport', "Driver's License", 'PRC ID', 'Postal ID'].includes(data.gov_id_type);
     if (needsExpiration) {
       if (!data.gov_id_expiration) {
