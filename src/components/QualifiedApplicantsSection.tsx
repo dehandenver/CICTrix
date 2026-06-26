@@ -670,7 +670,7 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
           {/* Branded header */}
           <div style={{ background: 'linear-gradient(135deg, #5B65F0 0%, #363EE8 100%)', padding: '1.35rem 1.5rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexShrink: 0 }}>
             <div>
-              <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.01em', textShadow: '0 1px 4px rgba(4,14,107,0.25)' }}>Applicant Evaluation &amp; Scoring</h2>
+              <h2 className="scoring-modal-title" style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.01em', textShadow: '0 1px 4px rgba(4,14,107,0.25)' }}>Applicant Evaluation &amp; Scoring</h2>
               <p style={{ margin: 0, fontSize: '0.85rem', color: 'rgba(255,255,255,0.85)', marginTop: 3 }}>
                 {applicant.full_name} &mdash; {applicant.position}
               </p>

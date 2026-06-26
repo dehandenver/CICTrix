@@ -8,6 +8,42 @@
 
 import { supabase } from './supabase';
 
+const SCHEDULE_CACHE_KEY = 'cictrix_applicant_schedules';
+
+type ScheduleCache = Record<string, ApplicantAssignmentFields>;
+
+const loadScheduleCache = (): ScheduleCache => {
+  try { return JSON.parse(localStorage.getItem(SCHEDULE_CACHE_KEY) ?? '{}'); } catch { return {}; }
+};
+
+const writeScheduleCache = (cache: ScheduleCache) => {
+  try { localStorage.setItem(SCHEDULE_CACHE_KEY, JSON.stringify(cache)); } catch { /* best-effort */ }
+};
+
+/** Returns the locally cached schedule for a given applicant id, or null. */
+export const getLocalSchedule = (applicantId: string): ApplicantAssignmentFields | null =>
+  loadScheduleCache()[applicantId] ?? null;
+
+/** Merges all locally cached schedules into an applicant list, filling null
+ *  schedule fields that Supabase did not return (e.g. migration not yet run). */
+export const mergeLocalSchedules = <T extends { id: string } & Partial<ApplicantAssignmentFields>>(
+  applicants: T[],
+): T[] => {
+  const cache = loadScheduleCache();
+  return applicants.map((a) => {
+    const cached = cache[a.id];
+    if (!cached) return a;
+    return {
+      ...a,
+      exam_date:                  a.exam_date                  ?? cached.exam_date,
+      exam_time:                  a.exam_time                  ?? cached.exam_time,
+      interview_date:             a.interview_date             ?? cached.interview_date,
+      interview_time:             a.interview_time             ?? cached.interview_time,
+      assigned_interviewer_email: a.assigned_interviewer_email ?? cached.assigned_interviewer_email,
+    };
+  });
+};
+
 export interface ApplicantAssignmentFields {
   exam_date: string | null;
   exam_time: string | null;
@@ -63,6 +99,18 @@ export async function saveApplicantAssignment(
     console.error('[saveApplicantAssignment] update failed:', error);
     return { success: false, error: error.message ?? 'Could not save assignment.' };
   }
+
+  // Mirror to localStorage so Applicant Score can read schedule data even if
+  // the Supabase columns aren't yet in the DB (migration pending).
+  const cache = loadScheduleCache();
+  cache[applicantId] = {
+    exam_date: fields.exam_date || null,
+    exam_time: fields.exam_time || null,
+    interview_date: fields.interview_date || null,
+    interview_time: fields.interview_time || null,
+    assigned_interviewer_email: fields.assigned_interviewer_email || null,
+  };
+  writeScheduleCache(cache);
 
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('cictrix:applicants-updated'));

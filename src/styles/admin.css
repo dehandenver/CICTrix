@@ -1319,3 +1319,8 @@
   color: #363EE8 !important;
 }
 
+/* Scoring modal header title must stay white despite the admin-content h2 override */
+.scoring-modal-title {
+  color: #ffffff !important;
+}
+
