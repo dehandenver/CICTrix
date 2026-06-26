@@ -192,10 +192,45 @@ export const ApplicantWizard: React.FC = () => {
     const itemNumberFromQuery = searchParams.get('itemNumber') || undefined;
     const officeFromQuery = searchParams.get('office') || undefined;
 
+    // If the applicant has already started filling the wizard in this tab
+    // (sessionStorage has formData with any user input), we must NOT reset
+    // their work just because location.state.landingJob or the URL params
+    // are still present after a page refresh. Lock the position fields and
+    // keep their existing input.
+    const hasInProgressFormData = Boolean(
+      formData.first_name ||
+      formData.last_name ||
+      formData.middle_name ||
+      formData.email ||
+      formData.contact_number ||
+      formData.address ||
+      formData.work_experience_years ||
+      formData.relevant_experience_position ||
+      formData.relevant_experience_company ||
+      formData.relevant_experience_duties ||
+      formData.education_attainment
+    );
+
     if (landingJob && !landingJobAppliedRef.current) {
       landingJobAppliedRef.current = true;
       setPrefilledFromLanding(true);
       setEntryMode('wizard');
+      setIsLockedPosition(true);
+      setSubmitError('');
+
+      if (hasInProgressFormData) {
+        // Preserve everything the applicant has already filled in; only make
+        // sure the position/office/item match the landing job they clicked.
+        setFormData((prev) => ({
+          ...prev,
+          application_type: 'job',
+          position: landingJob.title,
+          office: landingJob.department,
+          item_number: landingJob.itemNumber,
+        }));
+        return;
+      }
+
       setApplicationType('job');
       setCurrentStep(1);
       setAuthenticatedEmployeeAccount(null);
@@ -206,9 +241,7 @@ export const ApplicantWizard: React.FC = () => {
         office: landingJob.department,
         item_number: landingJob.itemNumber,
       });
-      setIsLockedPosition(true);
       setFiles([]);
-      setSubmitError('');
       return;
     }
 
@@ -216,6 +249,20 @@ export const ApplicantWizard: React.FC = () => {
       landingJobAppliedRef.current = true;
       setPrefilledFromLanding(true);
       setEntryMode('wizard');
+      setIsLockedPosition(true);
+      setSubmitError('');
+
+      if (hasInProgressFormData) {
+        setFormData((prev) => ({
+          ...prev,
+          application_type: 'job',
+          position: positionFromQuery || prev.position,
+          office: officeFromQuery || POSITION_TO_DEPARTMENT_MAP[positionFromQuery || ''] || prev.office,
+          item_number: itemNumberFromQuery || prev.item_number,
+        }));
+        return;
+      }
+
       setApplicationType('job');
       setCurrentStep(1);
       setAuthenticatedEmployeeAccount(null);
@@ -226,9 +273,7 @@ export const ApplicantWizard: React.FC = () => {
         office: officeFromQuery || POSITION_TO_DEPARTMENT_MAP[positionFromQuery || ''] || '',
         item_number: itemNumberFromQuery || '',
       });
-      setIsLockedPosition(true);
       setFiles([]);
-      setSubmitError('');
     }
   }, [location.state, location.search]);
 
@@ -245,7 +290,7 @@ export const ApplicantWizard: React.FC = () => {
   };
 
   const handleNext = () => {
-    const validationErrors = validateApplicantForm(formData);
+    const validationErrors = validateApplicantForm(formData, 1);
 
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
@@ -390,6 +435,11 @@ const handleNextToReview = () => {
     const experienceMonths = parseInt(formData.work_experience_months || '0', 10) || 0;
     const totalExperienceYears = +(experienceYears + experienceMonths / 12).toFixed(2);
 
+    // Only include columns we know exist on the Supabase `applicants` table.
+    // Spec-added fields (educational attainment, relevant work experience,
+    // government ID details) are persisted client-side via
+    // syncApplicantSubmissionToRecruitment below; once a migration adds the
+    // matching columns, re-add them here.
     const applicantPayload: Record<string, any> = {
       first_name: formData.first_name.trim(),
       middle_name: safe(formData.middle_name).trim() || null,
@@ -404,8 +454,6 @@ const handleNextToReview = () => {
       is_pwd: formData.is_pwd,
       application_type: applicationType,
       status: 'New Application',
-      education_level: formData.education_attainment || null,
-      years_of_experience: totalExperienceYears > 0 ? totalExperienceYears : null,
     };
 
     if (applicationType === 'promotion') {
@@ -423,14 +471,42 @@ const handleNextToReview = () => {
         .insert(applicantPayload)
         .select('id, item_number')
         .single();
-      
+
       if (error || !data?.id) {
-        throw new Error(error?.message || 'Empty ID returned from database');
+        throw error || new Error('Empty ID returned from database');
       }
       applicantData = data;
-    } catch (dbErr) {
+    } catch (dbErr: any) {
       logErrorForAdmin('Database insertion error during applicant record creation', dbErr, 'Database Submission');
-      throw new Error('The server is currently unavailable. Please try again later.');
+
+      // Classify the failure so the applicant sees a useful message rather
+      // than the generic "server unavailable" string — and so HR can tell at
+      // a glance what to fix.
+      const rawMessage = String(dbErr?.message ?? dbErr ?? '');
+      const code = String(dbErr?.code ?? '');
+      const lower = rawMessage.toLowerCase();
+
+      let userMessage: string;
+      if (code === '23505' || lower.includes('duplicate')) {
+        userMessage = 'An application with this email or item number already exists. Please check your previous submission.';
+      } else if (code === '23502' || lower.includes('null value') || lower.includes('not-null')) {
+        userMessage = 'A required field is missing. Please go back and review the form.';
+      } else if (
+        code === '42703' ||
+        code === 'PGRST204' ||
+        lower.includes("could not find the") ||
+        lower.includes('column') && lower.includes('does not exist')
+      ) {
+        userMessage = `Your application form is newer than the database schema. Please contact HR. (Schema: ${rawMessage.slice(0, 140)})`;
+      } else if (code === '42501' || lower.includes('row-level security') || lower.includes('permission denied')) {
+        userMessage = 'Permission denied by database security policies. Please contact HR. (RLS)';
+      } else if (lower.includes('failed to fetch') || lower.includes('networkerror')) {
+        userMessage = 'Network connection lost. Please check your internet and try again.';
+      } else {
+        userMessage = `Submission failed: ${rawMessage.slice(0, 200)} — please try again, or contact HR if this keeps happening.`;
+      }
+
+      throw new Error(userMessage);
     }
 
     saveApplicantAppointmentType(applicantData.id, applicationType);

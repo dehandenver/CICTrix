@@ -82,7 +82,7 @@ const NOTICE_MESSAGE: Record<BadgeTone, string> = {
 
 const TIMELINE_STAGES = [
   { key: 'submitted',     title: 'Application Submitted',  subtitle: 'Your application has been received' },
-  { key: 'verification',  title: 'Document Verification',  subtitle: 'Verifying submitted documents and credentials' },
+  { key: 'verification',  title: 'Uploaded Documents',  subtitle: 'View your uploaded documents, status, and RSP remarks' },
   { key: 'qualifications', title: 'Qualifications Assessment', subtitle: 'Reviewing educational background and experience' },
   { key: 'committee',     title: 'Committee Review',       subtitle: 'Application reviewed by admissions committee' },
   { key: 'final',         title: 'Final Decision',         subtitle: 'Final decision on application' },
@@ -396,7 +396,16 @@ export const ApplicationStatusPage = () => {
       });
   })();
 
-  const hasActionRequired = record && (
+  // Spec (Qualification Assessment Restriction): when the applicant is
+  // disqualified / failed assessment, disable resubmission, lock upload, and
+  // show a closed-application banner.
+  const isApplicationClosed = (() => {
+    if (!record) return false;
+    const s = String(record.status ?? '').toLowerCase();
+    return s.includes('disqualif') || s.includes('not qualified') || s.includes('failed') || s.includes('rejected');
+  })();
+
+  const hasActionRequired = record && !isApplicationClosed && (
     resubmissionNotices.length > 0 ||
     deduplicatedAttachments.some((a) => {
       const key = getReviewKey(record.id, a.file_path);
@@ -461,6 +470,20 @@ export const ApplicationStatusPage = () => {
         {/* Results */}
         {record && badge && (
           <>
+            {/* Application Closed banner (spec: Qualification Assessment Restriction) */}
+            {isApplicationClosed && (
+              <div className="mt-8 flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4">
+                <AlertCircle size={20} className="mt-0.5 flex-shrink-0 text-rose-600" />
+                <div>
+                  <p className="font-bold text-rose-800">Application Closed</p>
+                  <p className="mt-0.5 text-sm text-rose-700">
+                    This application is no longer active. Document resubmission and re-upload have been disabled.
+                    For questions, please contact the Recruitment Office.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Action Required Banner */}
             {hasActionRequired && (
               <div className="mt-8 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
@@ -670,6 +693,7 @@ export const ApplicationStatusPage = () => {
                     // Applicant already re-uploaded this doc in the current session
                     const alreadyResolved = resolvedDocTypes.has(doc.document_type ?? '');
                     const hasResubmissionRequest =
+                      !isApplicationClosed &&
                       !alreadyResolved &&
                       (pendingResubmissionTypes.has(doc.document_type ?? '') || localStatus === 'resubmission_requested');
                     const matchedNotice = resubmissionNotices.find((n) => parseNotice(n).docType === doc.document_type);
