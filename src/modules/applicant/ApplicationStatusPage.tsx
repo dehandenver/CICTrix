@@ -1,6 +1,7 @@
 import { AlertCircle, CheckCircle2, FileText, Mail, RefreshCw, Search, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { ATTACHMENTS_BUCKET, supabase } from '../../lib/supabase';
+import { getApplicants, saveApplicants } from '../../lib/recruitmentData';
 
 interface ApplicationRecord {
   id: string;
@@ -46,7 +47,7 @@ type BadgeTone = 'approved' | 'in-review' | 'rejected' | 'new';
 const STATUS_BADGE: Record<string, { label: string; tone: BadgeTone }> = {
   'New Application':         { label: 'New',         tone: 'new' },
   'Pending':                 { label: 'New',         tone: 'new' },
-  'Under Review':            { label: 'In Review',   tone: 'in-review' },
+  'Under Review':            { label: 'Under Review',tone: 'in-review' },
   'Shortlisted':             { label: 'In Review',   tone: 'in-review' },
   'For Interview':           { label: 'In Review',   tone: 'in-review' },
   'Interview Scheduled':     { label: 'In Review',   tone: 'in-review' },
@@ -57,6 +58,8 @@ const STATUS_BADGE: Record<string, { label: string; tone: BadgeTone }> = {
   'Not Qualified':           { label: 'Rejected',    tone: 'rejected' },
   'Rejected':                { label: 'Rejected',    tone: 'rejected' },
   'Disqualified':            { label: 'Rejected',    tone: 'rejected' },
+  'Document Verified':       { label: 'Document Verified', tone: 'approved' },
+  'Action Required':         { label: 'Action Required',   tone: 'new' },
 };
 
 const BADGE_CLASS: Record<BadgeTone, string> = {
@@ -78,6 +81,19 @@ const NOTICE_MESSAGE: Record<BadgeTone, string> = {
   'in-review': 'Your application is currently being reviewed. We will notify you by email once a decision is reached.',
   rejected:    'We regret to inform you that your application was not selected for this position. Thank you for your interest.',
   new:         'Your application has been received. We will begin reviewing it shortly.',
+};
+
+const getNoticeMessage = (status: string, tone: BadgeTone): string => {
+  if (status === 'Document Verified') {
+    return 'Your submitted documents have been successfully reviewed and verified by RSP personnel. Your application is proceeding to the next evaluation stage.';
+  }
+  if (status === 'Action Required') {
+    return 'Action is required on your application: one or more documents require resubmission. Please check the notices below for details.';
+  }
+  if (status === 'Under Review') {
+    return 'Your application and uploaded documents are currently under review by our recruitment team.';
+  }
+  return NOTICE_MESSAGE[tone];
 };
 
 const TIMELINE_STAGES = [
@@ -110,7 +126,10 @@ const stageStatesForStatus = (rawStatus: string): StageState[] => {
   if (status.includes('shortlist')) {
     return ['done', 'done', 'current', 'pending', 'pending'];
   }
-  if (status.includes('under review') || status.includes('reviewing')) {
+  if (status.includes('document verified')) {
+    return ['done', 'done', 'current', 'pending', 'pending'];
+  }
+  if (status.includes('under review') || status.includes('reviewing') || status.includes('action required')) {
     return ['done', 'current', 'pending', 'pending', 'pending'];
   }
   return ['done', 'pending', 'pending', 'pending', 'pending'];
@@ -292,6 +311,36 @@ export const ApplicationStatusPage = () => {
         .eq('applicant_id', record.id)
         .order('created_at', { ascending: false });
       if (Array.isArray(refreshed)) setAttachments(refreshed as AttachmentRow[]);
+
+      // Update overall applicant status to "Under Review" (Status Synchronization)
+      try {
+        await (supabase as any)
+          .from('applicants')
+          .update({ status: 'Under Review', updated_at: new Date().toISOString() })
+          .eq('id', record.id);
+      } catch (dbErr) {
+        console.warn('Failed to update status in Supabase:', dbErr);
+      }
+
+      try {
+        const recruitmentRows = getApplicants();
+        const updatedRecruitmentRows = recruitmentRows.map((entry) => {
+          if (entry.id !== record.id) return entry;
+          return {
+            ...entry,
+            status: 'Under Review' as 'Under Review',
+            timeline: [
+              ...(entry.timeline ?? []),
+              { event: 'Document Re-uploaded: Status set to Under Review', date: new Date().toISOString(), actor: 'Applicant' }
+            ]
+          };
+        });
+        saveApplicants(updatedRecruitmentRows);
+      } catch (lsErr) {
+        console.warn('Failed to update status in localStorage:', lsErr);
+      }
+
+      setRecord((prev) => prev ? { ...prev, status: 'Under Review', updated_at: new Date().toISOString() } : null);
 
       // Optimistically mark this doc type as resolved and store the new file
       // name so the card header updates immediately without waiting for the
@@ -738,12 +787,25 @@ export const ApplicationStatusPage = () => {
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 border border-amber-200">
                               <AlertCircle size={12} /> Action Required
                             </span>
+                          ) : localStatus === 'approved' ? (
+                            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
+                              <CheckCircle2 size={12} /> Approved
+                            </span>
                           ) : (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border" style={{ backgroundColor: '#EEF0FD', color: '#363EE8', borderColor: '#C8D1FF' }}>
                               <CheckCircle2 size={12} /> Submitted
                             </span>
                           )}
                         </div>
+
+                        {/* Optional RSP Remarks for Approved/Other states */}
+                        {review?.remarks && localStatus === 'approved' && (
+                          <div className="px-4 pb-3 pt-0">
+                            <p className="text-xs text-emerald-700">
+                              <span className="font-semibold">RSP Note:</span> {review.remarks}
+                            </p>
+                          </div>
+                        )}
 
                         {/* Resubmission action panel */}
                         {hasResubmissionRequest && !justUploaded && (
@@ -861,7 +923,7 @@ export const ApplicationStatusPage = () => {
                 <Mail size={20} className="mt-0.5 flex-shrink-0" />
                 <div>
                   <p className="font-bold" style={{ color: '#040E6B' }}>Important Notice</p>
-                  <p className="mt-1 text-sm" style={{ color: '#040E6B' }}>{NOTICE_MESSAGE[badge.tone]}</p>
+                  <p className="mt-1 text-sm" style={{ color: '#040E6B' }}>{getNoticeMessage(record.status, badge.tone)}</p>
                 </div>
               </div>
             </section>

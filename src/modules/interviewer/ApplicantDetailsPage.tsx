@@ -1238,7 +1238,7 @@ export function ApplicantDetailsPage() {
   };
 
   const persistStatus = async (
-    action: 'shortlist' | 'unshortlist' | 'qualified' | 'disqualify',
+    action: 'shortlist' | 'unshortlist' | 'qualified' | 'disqualify' | 'document_verified' | 'action_required' | 'under_review',
     reasonInput?: string,
   ) => {
     // Only `applicant` (the ApplicantRecord from DB) is required. The richer
@@ -1250,13 +1250,20 @@ export function ApplicantDetailsPage() {
     }
 
     // Immediately update local status for instant UI feedback
-    setApplicantStatus(action === 'unshortlist' ? null : action);
+    if (action === 'shortlist' || action === 'qualified' || action === 'disqualify') {
+      setApplicantStatus(action);
+    } else if (action === 'unshortlist') {
+      setApplicantStatus(null);
+    }
 
-    const statusMap: Record<'shortlist' | 'unshortlist' | 'qualified' | 'disqualify', Applicant['status']> = {
+    const statusMap: Record<string, Applicant['status']> = {
       shortlist: 'Shortlisted',
       unshortlist: 'Under Review',
       qualified: 'Recommended for Hiring',
       disqualify: 'Not Qualified',
+      document_verified: 'Document Verified',
+      action_required: 'Action Required',
+      under_review: 'Under Review',
     };
     const nextStatus = statusMap[action];
     const reason = action === 'disqualify' ? (reasonInput ?? '').trim() : null;
@@ -1400,21 +1407,29 @@ export function ApplicantDetailsPage() {
     });
   };
 
-  const handleApproveDoc = (fileUrl: string, docType: string) => {
+  const handleApproveDoc = async (fileUrl: string, docType: string) => {
     const key = getDocReviewKey(fileUrl);
     const updatedAll = persistDocReview(key, { status: 'approved', remarks: '', reviewedAt: new Date().toISOString() });
     const allKeys = attachments.map((a) => getDocReviewKey(a.file_path)).filter(Boolean);
     const allApproved = allKeys.length > 0 && allKeys.every((k) => (updatedAll[k]?.status ?? 'pending') === 'approved');
-    addDocTimeline(allApproved ? 'Document Verified: All documents reviewed and approved.' : `Document Verified: ${docType} approved.`);
-    setToast(allApproved ? 'All documents approved.' : `${docType} approved.`);
+    
+    if (allApproved) {
+      await persistStatus('document_verified');
+      addDocTimeline('Document Verified: All documents reviewed and approved.');
+      setToast('All documents approved. Status updated to Document Verified.');
+    } else {
+      addDocTimeline(`Document Verified: ${docType} approved.`);
+      setToast(`${docType} approved.`);
+    }
   };
 
-  const handleRequestResubmission = (fileUrl: string, docType: string, remarks: string) => {
+  const handleRequestResubmission = async (fileUrl: string, docType: string, remarks: string) => {
     if (!remarks.trim()) return;
     const key = getDocReviewKey(fileUrl);
     persistDocReview(key, { status: 'resubmission_requested', remarks: remarks.trim(), reviewedAt: new Date().toISOString() });
     addDocTimeline(`Action Required: Resubmission requested for ${docType} — "${remarks.trim()}".`);
     setToast('Resubmission requested.');
+    await persistStatus('action_required');
   };
 
   const handleOpenDocument = async (filePath: string) => {
@@ -1448,10 +1463,11 @@ export function ApplicantDetailsPage() {
       return resolvedType === slot.type;
     });
     if (matchedAtt) {
-      handleRequestResubmission(matchedAtt.file_path, resubmitSelectedSlot, resubmitReason.trim());
+      await handleRequestResubmission(matchedAtt.file_path, resubmitSelectedSlot, resubmitReason.trim());
     } else {
       // No attachment matched — still record in timeline so tracker reflects it.
       addDocTimeline(`Action Required: Resubmission requested for ${resubmitSelectedSlot} — "${resubmitReason.trim()}".`);
+      await persistStatus('action_required');
     }
 
     // Save to Supabase so the applicant tracker can show it in real-time.
@@ -1950,38 +1966,61 @@ export function ApplicantDetailsPage() {
 
                                 return (
                                   <div key={doc.id} className={`mt-2 rounded-lg border px-3 py-2 ${isResubmission ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-100 bg-slate-50'}`}>
-                                    <div className="flex items-start justify-between gap-2">
+                                    <div className="flex items-start justify-between gap-4">
                                       <button className="flex-1 text-left" onClick={() => void handleOpenDocument(doc.file_path)}>
-                                        <div className="flex items-center gap-1.5">
+                                        <div className="flex items-center gap-1.5 flex-wrap">
                                           <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${isResubmission ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
                                             {versionLabel}
                                           </span>
-                                          {isLatest && !hasSupabaseResubmissionRequest && (
+                                          {isLatest && (
                                             <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">Current</span>
+                                          )}
+                                          {localStatus === 'approved' && (
+                                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">✓ Approved</span>
+                                          )}
+                                          {localStatus === 'resubmission_requested' && (
+                                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">⚠ Resubmission</span>
                                           )}
                                         </div>
                                         <p className="mt-1 truncate text-xs text-slate-500">{doc.file_name}</p>
                                         <p className="text-xs text-slate-400">Uploaded {formatDate(doc.created_at || applicant.created_at)}</p>
                                         {localStatus === 'resubmission_requested' && review?.remarks && (
-                                          <p className="mt-0.5 text-xs text-amber-700">Reason (local): {review.remarks}</p>
+                                          <p className="mt-0.5 text-xs text-amber-700 font-medium">Reason: {review.remarks}</p>
                                         )}
                                       </button>
+                                      
+                                      {!locked && (
+                                        <div className="flex items-center gap-1.5 self-center">
+                                          <button
+                                            type="button"
+                                            onClick={() => void handleApproveDoc(doc.file_path, slot.label)}
+                                            className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
+                                              localStatus === 'approved'
+                                                ? 'bg-emerald-600 text-white cursor-default'
+                                                : 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100'
+                                            }`}
+                                            disabled={localStatus === 'approved'}
+                                          >
+                                            Approve
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => openResubmitModal(slot.label)}
+                                            className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
+                                              localStatus === 'resubmission_requested'
+                                                ? 'bg-amber-600 text-white cursor-default'
+                                                : 'bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100'
+                                            }`}
+                                            disabled={localStatus === 'resubmission_requested'}
+                                          >
+                                            Request Resubmission
+                                          </button>
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 );
                               })}
-
-                              {/* Request Resubmission button — only on latest, non-locked */}
-                              {isSubmitted && !locked && (
-                                <div className="mt-2 flex justify-end">
-                                  <button
-                                    className="rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50"
-                                    onClick={() => openResubmitModal(slot.label)}
-                                  >
-                                    {hasSupabaseResubmissionRequest ? 'Send Another Request' : 'Request Resubmission'}
-                                  </button>
-                                </div>
-                              )}
                             </div>
                           </div>
                         </article>

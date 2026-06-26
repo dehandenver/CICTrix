@@ -46,7 +46,9 @@ export type ApplicantStatus =
   | 'Interview Completed'
   | 'Recommended for Hiring'
   | 'Not Qualified'
-  | 'Rejected';
+  | 'Rejected'
+  | 'Document Verified'
+  | 'Action Required';
 
 export interface Applicant {
   id: string;

@@ -222,6 +222,8 @@ const STATUS_COLORS: Record<ApplicantStatus, string> = {
   'Recommended for Hiring': 'bg-green-100 text-green-800',
   'Not Qualified': 'bg-rose-100 text-rose-800',
   Rejected: 'bg-slate-200 text-slate-800',
+  'Document Verified': 'bg-emerald-100 text-emerald-800',
+  'Action Required': 'bg-amber-100 text-amber-800',
 };
 
 const normalizeText = (value: string) => String(value ?? '').trim().toLowerCase();
