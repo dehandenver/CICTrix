@@ -1428,6 +1428,21 @@ export const QualifiedApplicantsPage = () => {
     const review: DocReview = { status: 'resubmission_requested', remarks: remarks.trim(), reviewedAt: new Date().toISOString() };
     persistDocReview(key, review);
     setReviewExpandedKeys((prev) => { const n = new Set(prev); n.delete(key); return n; });
+
+    // Persist to Supabase so the applicant portal (different device/browser) can
+    // detect the request. file_name format matches parseNotice() in ApplicationStatusPage.
+    void (supabase as any)
+      .from('applicant_attachments')
+      .insert({
+        applicant_id: applicantId,
+        file_name: `resubmission_request::${docType}::${remarks.trim()}`,
+        file_path: '—',
+        document_type: 'resubmission_request',
+      })
+      .then(({ error }: { error: any }) => {
+        if (error) console.error('[handleRequestResubmission] supabase insert failed:', error);
+      });
+
     addTimelineEntry(applicantId, `Action Required: Resubmission requested for ${docType} — "${remarks.trim()}".`);
     setToast('Resubmission requested.');
   };
