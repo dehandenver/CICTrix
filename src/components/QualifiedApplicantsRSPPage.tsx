@@ -4,12 +4,12 @@ import { ApplicantsTabBar } from './ApplicantsTabBar';
 import { PendingAssignmentList } from './PendingAssignmentList';
 import { QualifiedApplicantsSection } from './QualifiedApplicantsSection';
 import { Sidebar } from './Sidebar';
-import { ATTACHMENTS_BUCKET, supabase } from '../lib/supabase';
-import { runSingleFlight } from '../lib/singleFlight';
+import { supabase } from '../lib/supabase';
 import { buildEvaluationSnapshotMap, subscribeToEvaluationChanges, type EvaluationSnapshot } from '../lib/evaluationScores';
 import { mockDatabase } from '../lib/mockDatabase';
 import { getPreferredDataSourceMode } from '../lib/dataSourceMode';
 import { isMockModeEnabled } from '../lib/supabase';
+import { mergeLocalSchedules } from '../lib/applicantSchedule';
 
 export interface ApplicantRecord {
   id: string;
@@ -142,7 +142,10 @@ export const QualifiedApplicantsRSPPage = ({ mode = 'score' }: QualifiedApplican
           };
         });
 
-        setApplicants(mappedApplicants);
+        // Fill any null schedule fields from the localStorage cache written by
+        // saveApplicantAssignment — handles cases where Supabase columns are
+        // not yet in the DB or the fetch races with a recent save.
+        setApplicants(mergeLocalSchedules(mappedApplicants));
 
         const evaluationMap = buildEvaluationSnapshotMap(dbEvaluations);
         const completedIds = new Set<string>();
