@@ -73,8 +73,18 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Shared bulk-assignment fields.
+  // examDate/examTime cover the Written Examination per spec section 7.
   const [examDate, setExamDate] = useState('');
   const [examTime, setExamTime] = useState('');
+  // Oral Examination + Venue + Additional Instructions are spec-added UI
+  // fields. They are not yet persisted server-side (the applicants table only
+  // has columns for the written exam + interview + interviewer), so they
+  // surface in the form and the in-memory override but a DB migration is
+  // needed to round-trip them.
+  const [oralExamDate, setOralExamDate] = useState('');
+  const [oralExamTime, setOralExamTime] = useState('');
+  const [venue, setVenue] = useState('');
+  const [additionalInstructions, setAdditionalInstructions] = useState('');
   const [interviewDate, setInterviewDate] = useState('');
   const [interviewTime, setInterviewTime] = useState('');
   const [interviewerEmail, setInterviewerEmail] = useState('');
@@ -322,69 +332,131 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
             </p>
           </section>
 
-          {/* Bulk assignment panel */}
+          {/* Interview & Exam Schedule panel (spec §7) */}
           <section className="rounded-2xl border border-slate-200 bg-white p-5">
             <div className="mb-4 flex items-center justify-between gap-3">
-              <h4 className="text-sm font-bold" style={{ color: '#040E6B' }}>Publish Schedule</h4>
+              <div>
+                <h4 className="text-sm font-bold" style={{ color: '#040E6B' }}>Interview &amp; Exam Schedule</h4>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Fill in the dates and times for each stage, then publish to the selected applicants.
+                </p>
+              </div>
               <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700">
                 {selectedIds.size} selected
               </span>
             </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+
+            {/* Written Examination */}
+            <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-600">Written Examination</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    <Calendar size={12} /> Date
+                  </label>
+                  <input
+                    type="date"
+                    value={examDate}
+                    onChange={(e) => setExamDate(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    <Clock size={12} /> Time
+                  </label>
+                  <input
+                    type="time"
+                    value={examTime}
+                    onChange={(e) => setExamTime(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Oral Examination */}
+            <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-600">Oral Examination</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    <Calendar size={12} /> Date
+                  </label>
+                  <input
+                    type="date"
+                    value={oralExamDate}
+                    onChange={(e) => setOralExamDate(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    <Clock size={12} /> Time
+                  </label>
+                  <input
+                    type="time"
+                    value={oralExamTime}
+                    onChange={(e) => setOralExamTime(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Interview */}
+            <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-600">Interview</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    <Calendar size={12} /> Date
+                  </label>
+                  <input
+                    type="date"
+                    value={interviewDate}
+                    onChange={(e) => setInterviewDate(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    <Clock size={12} /> Time
+                  </label>
+                  <input
+                    type="time"
+                    value={interviewTime}
+                    onChange={(e) => setInterviewTime(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Venue + Evaluator + Instructions */}
+            <div className="grid grid-cols-1 gap-4">
               <div>
                 <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  <Calendar size={12} /> Exam Date
+                  Venue
                 </label>
                 <input
-                  type="date"
-                  value={examDate}
-                  onChange={(e) => setExamDate(e.target.value)}
+                  type="text"
+                  value={venue}
+                  onChange={(e) => setVenue(e.target.value)}
+                  placeholder="e.g. City Hall Conference Room 3"
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 />
               </div>
               <div>
                 <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  <Clock size={12} /> Exam Time
-                </label>
-                <input
-                  type="time"
-                  value={examTime}
-                  onChange={(e) => setExamTime(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  <Calendar size={12} /> Interview Date
-                </label>
-                <input
-                  type="date"
-                  value={interviewDate}
-                  onChange={(e) => setInterviewDate(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  <Clock size={12} /> Interview Time
-                </label>
-                <input
-                  type="time"
-                  value={interviewTime}
-                  onChange={(e) => setInterviewTime(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  <UserCheck size={12} /> Assigned Interviewer
+                  <UserCheck size={12} /> Assigned Evaluators
                 </label>
                 <select
                   value={interviewerEmail}
                   onChange={(e) => setInterviewerEmail(e.target.value)}
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 >
-                  <option value="">Select an interviewer…</option>
+                  <option value="">Select an evaluator…</option>
                   {interviewers.map((i) => (
                     <option key={i.email} value={i.email}>
                       {i.name}{i.designation ? ` — ${i.designation}` : ''} ({i.email})
@@ -393,9 +465,21 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
                 </select>
                 {interviewers.length === 0 && (
                   <p className="mt-1 text-xs text-amber-600">
-                    No active raters found. Grant access to raters below or in Rater Management first.
+                    No active raters found. Grant access in the Rater Management tab first.
                   </p>
                 )}
+              </div>
+              <div>
+                <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                  Additional Instructions
+                </label>
+                <textarea
+                  rows={3}
+                  value={additionalInstructions}
+                  onChange={(e) => setAdditionalInstructions(e.target.value)}
+                  placeholder="What to bring, dress code, contact person, etc."
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-y"
+                />
               </div>
             </div>
 
