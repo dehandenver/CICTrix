@@ -388,7 +388,7 @@ export const ApplicationStatusPage = () => {
   const deduplicatedAttachments = (() => {
     const seen = new Set<string>();
     return attachments
-      .filter((a) => a.document_type !== 'resubmission_request' && a.document_type !== 'resubmission_resolved')
+      .filter((a) => a.document_type !== 'resubmission_request' && a.document_type !== 'resubmission_resolved' && a.document_type !== 'doc_validated')
       .filter((a) => {
         const key = a.document_type ?? a.file_name;
         if (seen.has(key)) return false;
