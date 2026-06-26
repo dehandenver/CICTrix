@@ -1361,8 +1361,12 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
   const qualifiedBase = useMemo(() =>
     applicants.filter(a => {
       const s = a.status.toLowerCase();
-      // Match both database status ("qualified", "shortlist") and recruitment UI status ("recommended for hiring", "shortlisted")
-      return s.includes('qualified') || s.includes('shortlist') || s.includes('recommended') || completedEvaluationIds.has(a.id);
+      // Exclude disqualified/rejected — they are removed from all list views.
+      if (s.includes('not qualified') || s.includes('disqualif') || s.includes('reject')) return false;
+      // Exclude fully qualified applicants — they belong in the Qualified Applicants tab.
+      if (s === 'qualified' || s.includes('recommended for hiring') || s.includes('accepted') || s.includes('hired')) return false;
+      // Include shortlisted and applicants in the interview/evaluation pipeline.
+      return s.includes('shortlist') || s.includes('interview') || s.includes('review') || completedEvaluationIds.has(a.id);
     }),
     [applicants, completedEvaluationIds],
   );

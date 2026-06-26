@@ -4,9 +4,7 @@
 //   "Scheduled"         — applicants with a complete schedule, awaiting evaluation.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
-  ArrowRight,
   Calendar,
   CalendarCheck,
   CheckCircle2,
@@ -68,7 +66,6 @@ const normalizeType = (t: string | null | undefined) =>
   (t ?? '').toLowerCase().includes('promot') ? 'Promotional' : 'Original';
 
 export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: PendingAssignmentListProps) => {
-  const navigate = useNavigate();
 
   const [subTab, setSubTab] = useState<'pending' | 'scheduled' | 'rater-management'>('pending');
   const [interviewers, setInterviewers] = useState<InterviewerOption[]>([]);
@@ -407,6 +404,7 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
           </section>
 
           {/* Pending applicants table */}
+
           {pendingApplicants.length === 0 ? (
             <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white py-16 text-center">
               <CheckCircle2 size={40} className="mb-3 text-emerald-400" />
@@ -485,19 +483,6 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
               </table>
             </div>
           )}
-          {/* Save Assignment — sticky bottom-right */}
-          <div className="flex items-center justify-end pt-2 pb-2">
-            <button
-              type="button"
-              onClick={() => void handleBulkSave()}
-              disabled={!allFieldsFilled || selectedIds.size === 0 || saving}
-              className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-md transition disabled:cursor-not-allowed disabled:opacity-50"
-              style={{ background: '#363EE8' }}
-            >
-              <Save size={14} />
-              {saving ? 'Saving…' : `Save Assignment${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
-            </button>
-          </div>
         </>
       )}
 
@@ -512,9 +497,8 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
           <section className="rounded-2xl border border-slate-200 bg-white p-5">
             <h3 className="text-base font-bold" style={{ color: '#363EE8' }}>Scheduled Applicants</h3>
             <p className="mt-1 text-sm text-slate-500">
-              These applicants have a published exam &amp; interview schedule. Click{' '}
-              <span className="font-semibold">Proceed to Evaluation</span> once the interview is complete
-              to begin scoring in the <span className="font-semibold">Applicant Score</span> tab.
+              These applicants have a published exam &amp; interview schedule. Once the interview is complete,
+              their scores will be recorded in the <span className="font-semibold">Applicant Score</span> tab.
             </p>
           </section>
 
@@ -597,23 +581,13 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
                           </div>
                         </td>
                         <td className="px-5 py-4">
-                          <div className="flex flex-col items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => openEditModal(a)}
-                              className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-                            >
-                              <Pencil size={11} /> Edit Schedule
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => navigate('/admin/rsp/applicant-score')}
-                              className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition"
-                              style={{ background: '#363EE8' }}
-                            >
-                              Proceed to Evaluation <ArrowRight size={11} />
-                            </button>
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(a)}
+                            className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                          >
+                            <Pencil size={11} /> Edit Schedule
+                          </button>
                         </td>
                       </tr>
                     );
@@ -623,6 +597,22 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
             </div>
           )}
         </>
+      )}
+
+      {/* Save Assignment — bottom-right of page, only shown on pending tab */}
+      {subTab === 'pending' && (
+        <div className="flex items-center justify-end pt-2 pb-2">
+          <button
+            type="button"
+            onClick={() => void handleBulkSave()}
+            disabled={!allFieldsFilled || selectedIds.size === 0 || saving}
+            className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-md transition disabled:cursor-not-allowed disabled:opacity-50"
+            style={{ background: '#363EE8' }}
+          >
+            <Save size={14} />
+            {saving ? 'Saving…' : `Save Assignment${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`}
+          </button>
+        </div>
       )}
 
       {/* ── EDIT SCHEDULE MODAL ── */}

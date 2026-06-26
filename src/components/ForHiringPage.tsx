@@ -49,6 +49,8 @@ const EXACT_QUALIFY = ['hired'];
 
 const isForHiring = (status: string) => {
   const s = status.toLowerCase().trim();
+  // Exclude disqualified/rejected statuses — "not qualified" contains "qualified" so check this first.
+  if (s.includes('not qualified') || s.includes('disqualif') || s.includes('reject')) return false;
   return QUALIFY_STATUSES.some(q => s.includes(q)) || EXACT_QUALIFY.includes(s);
 };
 
