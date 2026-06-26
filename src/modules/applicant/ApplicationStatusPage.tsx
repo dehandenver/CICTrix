@@ -90,8 +90,10 @@ const TIMELINE_STAGES = [
 
 type StageState = 'done' | 'current' | 'pending' | 'rejected';
 
-const stageStatesForStatus = (rawStatus: string): StageState[] => {
+const stageStatesForStatus = (rawStatus: string, docsValidated: boolean): StageState[] => {
   const status = rawStatus.toLowerCase();
+  // v = verification stage state: 'done' only when RSP has validated docs
+  const v: StageState = docsValidated ? 'done' : 'current';
   if (status.includes('reject') || status.includes('not qualified') || status.includes('disqual')) {
     return ['done', 'done', 'done', 'done', 'rejected'];
   }
@@ -102,18 +104,19 @@ const stageStatesForStatus = (rawStatus: string): StageState[] => {
     return ['done', 'done', 'done', 'done', 'current'];
   }
   if (status.includes('interview completed')) {
-    return ['done', 'done', 'done', 'current', 'pending'];
+    return ['done', v, 'done', 'current', 'pending'];
   }
   if (status.includes('interview')) {
-    return ['done', 'done', 'done', 'current', 'pending'];
+    return ['done', v, 'done', 'current', 'pending'];
   }
   if (status.includes('shortlist')) {
-    return ['done', 'done', 'current', 'pending', 'pending'];
+    return ['done', v, 'current', 'pending', 'pending'];
   }
   if (status.includes('under review') || status.includes('reviewing')) {
-    return ['done', 'current', 'pending', 'pending', 'pending'];
+    return ['done', v, 'pending', 'pending', 'pending'];
   }
-  return ['done', 'pending', 'pending', 'pending', 'pending'];
+  // New application — verification only checked once RSP validates
+  return ['done', docsValidated ? 'done' : 'pending', 'pending', 'pending', 'pending'];
 };
 
 const formatDate = (iso: string | null) => {
@@ -310,8 +313,14 @@ export const ApplicationStatusPage = () => {
     }
   };
 
+  // File paths that RSP has explicitly validated (doc_validated rows written by handleApproveDoc).
+  const validatedFilePaths = new Set(
+    attachments.filter(a => a.document_type === 'doc_validated').map(a => a.file_path),
+  );
+  const docsValidated = validatedFilePaths.size > 0;
+
   const badge = record ? getBadge(record.status) : null;
-  const stageStates = record ? stageStatesForStatus(record.status) : [];
+  const stageStates = record ? stageStatesForStatus(record.status, docsValidated) : [];
   const fullName = record ? `${record.first_name} ${record.last_name}`.trim() : '';
   const programType =
     record?.application_type === 'promotion' ? 'Promotional Application' : 'Job Application';
@@ -655,7 +664,7 @@ export const ApplicationStatusPage = () => {
                         )}
                         {state === 'done' && stage.key === 'verification' && !hasActionRequired && (
                           <div className="mt-3 rounded-lg px-3 py-2 text-sm" style={{ backgroundColor: '#C8D1FF', color: '#040E6B' }}>
-                            All required documents received
+                            {docsValidated ? 'All documents verified by RSP Admin' : 'All required documents received'}
                           </div>
                         )}
                         {state === 'done' && stage.key === 'committee' && badge.tone === 'approved' && (
@@ -737,6 +746,10 @@ export const ApplicationStatusPage = () => {
                           ) : hasResubmissionRequest ? (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 border border-amber-200">
                               <AlertCircle size={12} /> Action Required
+                            </span>
+                          ) : validatedFilePaths.has(doc.file_path) ? (
+                            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
+                              <CheckCircle2 size={12} /> Verified
                             </span>
                           ) : (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border" style={{ backgroundColor: '#EEF0FD', color: '#363EE8', borderColor: '#C8D1FF' }}>
