@@ -149,7 +149,16 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     'Certificate of Training',
     'Performance Evaluation Form',
     'Updated Resume/CV',
+    'IPCR Submission',
   ];
+
+  const triggerIPCRBulkRequest = () => {
+    setBulkDocName('IPCR Submission');
+    setBulkDescription('Please submit your Individual Performance Commitment and Review (IPCR) for the rating period. In this phase (first 6 months), you are required to submit your Core/Support Functions and Target/Success Indicators.');
+    setBulkSendTo('all');
+    setShowBulkRequestModal(true);
+  };
+
 
   const openRequestModal = (employee?: { id?: string; name: string; role: string; dept: string; initials: string }) => {
     setRequestEmployee(employee || null);
@@ -813,6 +822,26 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                 </div>
                 <h2 className="text-2xl font-bold text-slate-900 tracking-tight">PM Dashboard</h2>
                 <p className="text-sm text-slate-500 mt-0.5">Performance evaluation overview — FY 2025</p>
+
+                {/* IPCR Initiation Banner */}
+                <div className="mt-4 p-4 rounded-xl border border-blue-200 bg-blue-50/70 flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white">
+                      <Bell className="h-5 w-5" />
+                    </span>
+                    <div>
+                      <h4 className="text-sm font-bold text-blue-900">Phase 1: IPCR Initial Submission (First 6 Months)</h4>
+                      <p className="text-xs text-blue-700 mt-0.5">Stating employees need to submit their IPCR. This activates the IPCR tab in their portals and restricts them to editing Core/Support Functions, Targets, and Weights.</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={triggerIPCRBulkRequest}
+                    className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 transition shadow-sm"
+                  >
+                    Initiate IPCR Submission
+                  </button>
+                </div>
 
                 {errorMessage && (
                   <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">

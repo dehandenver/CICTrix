@@ -149,6 +149,7 @@ export interface IPCRRowDraft {
   competency_id: number;
   mapped_competency_standard: string;
   remarks: string;
+  weight?: number;
 }
 
 export interface IPCRDetails {

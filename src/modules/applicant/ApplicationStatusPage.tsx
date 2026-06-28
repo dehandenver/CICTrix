@@ -45,42 +45,42 @@ const clearDocReview = (key: string) => {
 type BadgeTone = 'approved' | 'in-review' | 'rejected' | 'new';
 
 const STATUS_BADGE: Record<string, { label: string; tone: BadgeTone }> = {
-  'New Application':         { label: 'New',         tone: 'new' },
-  'Pending':                 { label: 'New',         tone: 'new' },
-  'Under Review':            { label: 'Under Review',tone: 'in-review' },
-  'Shortlisted':             { label: 'In Review',   tone: 'in-review' },
-  'For Interview':           { label: 'In Review',   tone: 'in-review' },
-  'Interview Scheduled':     { label: 'In Review',   tone: 'in-review' },
-  'Interview Completed':     { label: 'In Review',   tone: 'in-review' },
-  'Recommended for Hiring':  { label: 'Approved',    tone: 'approved' },
-  'Hired':                   { label: 'Approved',    tone: 'approved' },
-  'Accepted':                { label: 'Approved',    tone: 'approved' },
-  'Not Qualified':           { label: 'Rejected',    tone: 'rejected' },
-  'Rejected':                { label: 'Rejected',    tone: 'rejected' },
-  'Disqualified':            { label: 'Rejected',    tone: 'rejected' },
-  'Document Verified':       { label: 'Document Verified', tone: 'approved' },
-  'Action Required':         { label: 'Action Required',   tone: 'new' },
+  'New Application': { label: 'New', tone: 'new' },
+  'Pending': { label: 'New', tone: 'new' },
+  'Under Review': { label: 'Under Review', tone: 'in-review' },
+  'Shortlisted': { label: 'In Review', tone: 'in-review' },
+  'For Interview': { label: 'In Review', tone: 'in-review' },
+  'Interview Scheduled': { label: 'In Review', tone: 'in-review' },
+  'Interview Completed': { label: 'In Review', tone: 'in-review' },
+  'Recommended for Hiring': { label: 'Approved', tone: 'approved' },
+  'Hired': { label: 'Approved', tone: 'approved' },
+  'Accepted': { label: 'Approved', tone: 'approved' },
+  'Not Qualified': { label: 'Rejected', tone: 'rejected' },
+  'Rejected': { label: 'Rejected', tone: 'rejected' },
+  'Disqualified': { label: 'Rejected', tone: 'rejected' },
+  'Document Verified': { label: 'Document Verified', tone: 'approved' },
+  'Action Required': { label: 'Action Required', tone: 'new' },
 };
 
 const BADGE_CLASS: Record<BadgeTone, string> = {
-  approved:    'bg-emerald-50 text-emerald-700 border border-emerald-200',
+  approved: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
   'in-review': 'bg-blue-50 text-blue-700 border border-blue-200',
-  rejected:    'bg-rose-50 text-rose-700 border border-rose-200',
-  new:         'bg-amber-50 text-amber-700 border border-amber-200',
+  rejected: 'bg-rose-50 text-rose-700 border border-rose-200',
+  new: 'bg-amber-50 text-amber-700 border border-amber-200',
 };
 
 const NOTICE_CLASS: Record<BadgeTone, string> = {
-  approved:    'bg-emerald-50 border-emerald-200 text-emerald-800',
+  approved: 'bg-emerald-50 border-emerald-200 text-emerald-800',
   'in-review': 'bg-blue-50 border-blue-200 text-blue-800',
-  rejected:    'bg-rose-50 border-rose-200 text-rose-800',
-  new:         'bg-amber-50 border-amber-200 text-amber-800',
+  rejected: 'bg-rose-50 border-rose-200 text-rose-800',
+  new: 'bg-amber-50 border-amber-200 text-amber-800',
 };
 
 const NOTICE_MESSAGE: Record<BadgeTone, string> = {
-  approved:    'Congratulations! Your application has been approved. You will receive an official notice via email within 3–5 business days.',
+  approved: 'Congratulations! Your application has been approved. You will receive an official notice via email within 3–5 business days.',
   'in-review': 'Your application is currently being reviewed. We will notify you by email once a decision is reached.',
-  rejected:    'We regret to inform you that your application was not selected for this position. Thank you for your interest.',
-  new:         'Your application has been received. We will begin reviewing it shortly.',
+  rejected: 'We regret to inform you that your application was not selected for this position. Thank you for your interest.',
+  new: 'Your application has been received. We will begin reviewing it shortly.',
 };
 
 const getNoticeMessage = (status: string, tone: BadgeTone): string => {
@@ -97,11 +97,11 @@ const getNoticeMessage = (status: string, tone: BadgeTone): string => {
 };
 
 const TIMELINE_STAGES = [
-  { key: 'submitted',     title: 'Application Submitted',  subtitle: 'Your application has been received' },
-  { key: 'verification',  title: 'Uploaded Documents',  subtitle: 'View your uploaded documents, status, and RSP remarks' },
+  { key: 'submitted', title: 'Application Submitted', subtitle: 'Your application has been received' },
+  { key: 'verification', title: 'Uploaded Documents', subtitle: 'View your uploaded documents, status, and RSP remarks' },
   { key: 'qualifications', title: 'Qualifications Assessment', subtitle: 'Reviewing educational background and experience' },
-  { key: 'committee',     title: 'Committee Review',       subtitle: 'Application reviewed by admissions committee' },
-  { key: 'final',         title: 'Final Decision',         subtitle: 'Final decision on application' },
+  { key: 'committee', title: 'Committee Review', subtitle: 'Application reviewed by admissions committee' },
+  { key: 'final', title: 'Final Decision', subtitle: 'Final decision on application' },
 ] as const;
 
 type StageState = 'done' | 'current' | 'pending' | 'rejected';
@@ -128,16 +128,8 @@ const stageStatesForStatus = (rawStatus: string, docsValidated: boolean): StageS
   if (status.includes('shortlist')) {
     return ['done', v, 'current', 'pending', 'pending'];
   }
-<<<<<<< HEAD
-  if (status.includes('document verified')) {
-    return ['done', 'done', 'current', 'pending', 'pending'];
-  }
-  if (status.includes('under review') || status.includes('reviewing') || status.includes('action required')) {
-    return ['done', 'current', 'pending', 'pending', 'pending'];
-=======
   if (status.includes('under review') || status.includes('reviewing')) {
-    return ['done', v, 'pending', 'pending', 'pending'];
->>>>>>> 2a863ef50ed4fe1d5d54e475893762a65a7e2ff4
+    return ['done', 'current', 'pending', 'pending', 'pending'];
   }
   // New application — verification only checked once RSP validates
   return ['done', docsValidated ? 'done' : 'pending', 'pending', 'pending', 'pending'];
@@ -396,10 +388,10 @@ export const ApplicationStatusPage = () => {
     const parts = notice.file_name.split('::');
     return {
       document: parts[1] ?? notice.file_name,
-      reason:   parts[2] ?? '',
-      notes:    notice.file_path === '—' ? '' : notice.file_path,
-      date:     notice.created_at,
-      docType:  LABEL_TO_DOC_TYPE[parts[1] ?? ''] ?? '',
+      reason: parts[2] ?? '',
+      notes: notice.file_path === '—' ? '' : notice.file_path,
+      date: notice.created_at,
+      docType: LABEL_TO_DOC_TYPE[parts[1] ?? ''] ?? '',
     };
   };
 
@@ -675,10 +667,10 @@ export const ApplicationStatusPage = () => {
                   const isVerification = stage.key === 'verification';
 
                   const iconWrap =
-                    state === 'done'      ? 'bg-emerald-100 text-emerald-600' :
-                    state === 'current'   ? 'text-white' :
-                    state === 'rejected'  ? 'bg-rose-100 text-rose-600' :
-                                            'text-slate-400';
+                    state === 'done' ? 'bg-emerald-100 text-emerald-600' :
+                      state === 'current' ? 'text-white' :
+                        state === 'rejected' ? 'bg-rose-100 text-rose-600' :
+                          'text-slate-400';
                   const currentBg = state === 'current' ? { backgroundColor: '#363EE8' } : {};
                   const titleStyle = state === 'pending' ? { color: '#C8D1FF' } : { color: '#040E6B' };
                   const dateForStage =
@@ -800,16 +792,6 @@ export const ApplicationStatusPage = () => {
                           ) : hasResubmissionRequest ? (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 border border-amber-200">
                               <AlertCircle size={12} /> Action Required
-                            </span>
-<<<<<<< HEAD
-                          ) : localStatus === 'approved' ? (
-                            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
-                              <CheckCircle2 size={12} /> Approved
-=======
-                          ) : validatedFilePaths.has(doc.file_path) ? (
-                            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
-                              <CheckCircle2 size={12} /> Verified
->>>>>>> 2a863ef50ed4fe1d5d54e475893762a65a7e2ff4
                             </span>
                           ) : (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border" style={{ backgroundColor: '#EEF0FD', color: '#363EE8', borderColor: '#C8D1FF' }}>
