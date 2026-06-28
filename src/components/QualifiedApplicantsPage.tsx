@@ -1396,6 +1396,19 @@ export const QualifiedApplicantsPage = () => {
     const review: DocReview = { status: 'approved', remarks: '', reviewedAt: new Date().toISOString() };
     const updatedAll = persistDocReview(key, review);
 
+    // Persist validation to Supabase so the applicant portal can show "Verified".
+    void (supabase as any)
+      .from('applicant_attachments')
+      .insert({
+        applicant_id: applicantId,
+        file_name: docType,
+        file_path: fileUrl,
+        document_type: 'doc_validated',
+      })
+      .then(({ error }: { error: any }) => {
+        if (error) console.error('[handleApproveDoc] supabase insert failed:', error);
+      });
+
     // Check if every doc for this applicant is now approved.
     const docs = getModalDocuments();
     const allApproved =
@@ -1403,11 +1416,11 @@ export const QualifiedApplicantsPage = () => {
       docs.every((doc) => (updatedAll[getDocReviewKey(applicantId, doc.url)]?.status ?? 'pending') === 'approved');
 
     if (allApproved) {
-      addTimelineEntry(applicantId, 'Document Verified: All documents reviewed and approved.');
-      setToast('All documents approved — applicant is ready to be qualified.');
+      addTimelineEntry(applicantId, 'Document Verified: All documents reviewed and validated.');
+      setToast('All documents validated — applicant is ready to be qualified.');
     } else {
-      addTimelineEntry(applicantId, `Document Verified: ${docType} approved.`);
-      setToast(`${docType} approved.`);
+      addTimelineEntry(applicantId, `Document Validated: ${docType}.`);
+      setToast(`${docType} validated.`);
     }
   };
 
@@ -1417,6 +1430,21 @@ export const QualifiedApplicantsPage = () => {
     const review: DocReview = { status: 'resubmission_requested', remarks: remarks.trim(), reviewedAt: new Date().toISOString() };
     persistDocReview(key, review);
     setReviewExpandedKeys((prev) => { const n = new Set(prev); n.delete(key); return n; });
+
+    // Persist to Supabase so the applicant portal (different device/browser) can
+    // detect the request. file_name format matches parseNotice() in ApplicationStatusPage.
+    void (supabase as any)
+      .from('applicant_attachments')
+      .insert({
+        applicant_id: applicantId,
+        file_name: `resubmission_request::${docType}::${remarks.trim()}`,
+        file_path: '—',
+        document_type: 'resubmission_request',
+      })
+      .then(({ error }: { error: any }) => {
+        if (error) console.error('[handleRequestResubmission] supabase insert failed:', error);
+      });
+
     addTimelineEntry(applicantId, `Action Required: Resubmission requested for ${docType} — "${remarks.trim()}".`);
     setToast('Resubmission requested.');
   };
@@ -2179,7 +2207,7 @@ export const QualifiedApplicantsPage = () => {
                         const docLocked = isApplicantDocLocked(activeApplicant);
 
                         const statusBadge = status === 'approved'
-                          ? <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">Approved</span>
+                          ? <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">Validated</span>
                           : status === 'resubmission_requested'
                           ? <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Action Required</span>
                           : <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">Under Review</span>;
@@ -2210,7 +2238,7 @@ export const QualifiedApplicantsPage = () => {
                                       disabled={status === 'approved'}
                                       onClick={() => handleApproveDoc(activeApplicant.id, doc.url, doc.type)}
                                     >
-                                      Approve
+                                      Validated
                                     </button>
                                     <button
                                       className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${isExpanded ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-amber-300 bg-white text-amber-700 hover:bg-amber-50'}`}
