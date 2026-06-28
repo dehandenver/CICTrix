@@ -40,6 +40,10 @@ export const mergeLocalSchedules = <T extends { id: string } & Partial<Applicant
       interview_date:             a.interview_date             ?? cached.interview_date,
       interview_time:             a.interview_time             ?? cached.interview_time,
       assigned_interviewer_email: a.assigned_interviewer_email ?? cached.assigned_interviewer_email,
+      oral_exam_date:             (a as any).oral_exam_date    ?? cached.oral_exam_date,
+      oral_exam_time:             (a as any).oral_exam_time    ?? cached.oral_exam_time,
+      venue:                      (a as any).venue             ?? cached.venue,
+      schedule_instructions:      (a as any).schedule_instructions ?? cached.schedule_instructions,
     };
   });
 };
@@ -50,6 +54,11 @@ export interface ApplicantAssignmentFields {
   interview_date: string | null;
   interview_time: string | null;
   assigned_interviewer_email: string | null;
+  // Spec §7 additions (migration adds the four columns below).
+  oral_exam_date?: string | null;
+  oral_exam_time?: string | null;
+  venue?: string | null;
+  schedule_instructions?: string | null;
 }
 
 export interface InterviewerOption {
@@ -88,6 +97,10 @@ export async function saveApplicantAssignment(
     interview_date: fields.interview_date || null,
     interview_time: fields.interview_time || null,
     assigned_interviewer_email: fields.assigned_interviewer_email || null,
+    oral_exam_date: fields.oral_exam_date || null,
+    oral_exam_time: fields.oral_exam_time || null,
+    venue: fields.venue || null,
+    schedule_instructions: fields.schedule_instructions || null,
   };
 
   const { error } = await (supabase as any)
@@ -104,11 +117,15 @@ export async function saveApplicantAssignment(
   // the Supabase columns aren't yet in the DB (migration pending).
   const cache = loadScheduleCache();
   cache[applicantId] = {
-    exam_date: fields.exam_date || null,
-    exam_time: fields.exam_time || null,
-    interview_date: fields.interview_date || null,
-    interview_time: fields.interview_time || null,
-    assigned_interviewer_email: fields.assigned_interviewer_email || null,
+    exam_date: payload.exam_date,
+    exam_time: payload.exam_time,
+    interview_date: payload.interview_date,
+    interview_time: payload.interview_time,
+    assigned_interviewer_email: payload.assigned_interviewer_email,
+    oral_exam_date: payload.oral_exam_date,
+    oral_exam_time: payload.oral_exam_time,
+    venue: payload.venue,
+    schedule_instructions: payload.schedule_instructions,
   };
   writeScheduleCache(cache);
 

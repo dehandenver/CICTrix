@@ -181,6 +181,10 @@ export const PendingAssignmentList = ({ applicants, completedEvaluationIds }: Pe
       interview_date: interviewDate,
       interview_time: interviewTime,
       assigned_interviewer_email: interviewerEmail,
+      oral_exam_date: oralExamDate || null,
+      oral_exam_time: oralExamTime || null,
+      venue: venue.trim() || null,
+      schedule_instructions: additionalInstructions.trim() || null,
     };
 
     const ids = Array.from(selectedIds);
