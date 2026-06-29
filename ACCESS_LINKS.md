@@ -6,13 +6,13 @@ Reference for local development access to frontend pages and backend API endpoin
 
 | Service / Portal | Live URL | Description / Access |
 |---|---|---|
-| **1. Applicant Portal (Home)** | [https://cic-trix.vercel.app/](https://cic-trix.vercel.app/) | Public — submit a new application |
-| **2. Interviewer Portal** | [https://cic-trix.vercel.app/interviewer/login](https://cic-trix.vercel.app/interviewer/login) | Set up via Admin portal |
-| **3. Employee Portal** | [https://cic-trix.vercel.app/employee/login](https://cic-trix.vercel.app/employee/login) | Employee credentials |
-| **4. Admin Portal** | [https://cic-trix.vercel.app/admin/login](https://cic-trix.vercel.app/admin/login) | Super Admin, RSP, LND, PM |
-| **5. Application Status Tracker** | [https://cic-trix.vercel.app/track](https://cic-trix.vercel.app/track) | Public — look up application status by applicant ID |
-| **Backend API** | [https://cic-trix.vercel.app/api](https://cic-trix.vercel.app/api) | Production API endpoints |
-| **API Docs (Swagger)** | [https://cic-trix.vercel.app/api/docs](https://cic-trix.vercel.app/api/docs) | Production API Documentation |
+| **1. Applicant Portal (Home)** | [https://cic-trix-jet.vercel.app/](https://cic-trix-jet.vercel.app/) | Public — submit a new application |
+| **2. Interviewer Portal** | [https://cic-trix-jet.vercel.app/interviewer/login](https://cic-trix-jet.vercel.app/interviewer/login) | Set up via Admin portal |
+| **3. Employee Portal** | [https://cic-trix-jet.vercel.app/employee/login](https://cic-trix-jet.vercel.app/employee/login) | Employee credentials |
+| **4. Admin Portal** | [https://cic-trix-jet.vercel.app/admin/login](https://cic-trix-jet.vercel.app/admin/login) | Super Admin, RSP, LND, PM |
+| **5. Application Status Tracker** | [https://cic-trix-jet.vercel.app/track](https://cic-trix-jet.vercel.app/track) | Public — look up application status by applicant ID |
+| **Backend API** | [https://cic-trix-jet.vercel.app/api](https://cic-trix-jet.vercel.app/api) | Production API endpoints |
+| **API Docs (Swagger)** | [https://cic-trix-jet.vercel.app/api/docs](https://cic-trix-jet.vercel.app/api/docs) | Production API Documentation |
 
 ## Local Environment URLs
 
