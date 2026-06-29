@@ -1784,17 +1784,29 @@ export const QualifiedApplicantsPage = () => {
     setToast(`Started ${downloaded} document download${downloaded > 1 ? 's' : ''}.`);
   };
 
+  const META_DOC_TYPES = new Set(['resubmission_request', 'resubmission_resolved', 'doc_validated']);
+
   const getModalDocuments = () => {
     if (!activeApplicant) return [] as Array<{ type: string; url: string; verified: boolean; uploadedAt?: string }>;
 
     const liveRows = attachmentsByApplicant[activeApplicant.id] || [];
     if (liveRows.length > 0) {
-      return liveRows.map((row) => ({
-        type: toDocumentLabel(row.document_type || row.file_name || 'document'),
-        url: row.file_path || '#',
-        verified: false,
-        uploadedAt: row.created_at,
-      }));
+      // Rows are already sorted created_at DESC; keep only real docs, deduplicate to most-recent per type.
+      const seen = new Set<string>();
+      return liveRows
+        .filter((row) => !META_DOC_TYPES.has(row.document_type ?? ''))
+        .filter((row) => {
+          const key = row.document_type || row.file_name || '';
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .map((row) => ({
+          type: toDocumentLabel(row.document_type || row.file_name || 'document'),
+          url: row.file_path || '#',
+          verified: false,
+          uploadedAt: row.created_at,
+        }));
     }
 
     return [];
