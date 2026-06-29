@@ -286,8 +286,9 @@ export async function saveOrSubmitEmployeeIPCR(params: {
   plantillaNum: string | null;
   ratingPeriod: string;
   cycleId: number | null;
-  status: 'Self Evaluation' | 'Supervisor Review';
+  status: 'Self Evaluation' | 'Supervisor Review' | 'Approved' | 'Rejected';
   rows: IPCRRowDraft[];
+  rejectionReason?: string | null;
 }) {
   try {
     const {
@@ -299,7 +300,8 @@ export async function saveOrSubmitEmployeeIPCR(params: {
       ratingPeriod,
       cycleId,
       status,
-      rows
+      rows,
+      rejectionReason
     } = params;
 
     // 1. Fetch raw employee details to get reports_to (supervisor) if not provided,
@@ -375,11 +377,20 @@ export async function saveOrSubmitEmployeeIPCR(params: {
 
     const { data: existingEval } = await existingEvalQuery.maybeSingle();
 
-    const timestampFields: Record<string, string> = {
+    const timestampFields: Record<string, any> = {
       updated_at: new Date().toISOString()
     };
     if (status === 'Supervisor Review') {
       timestampFields.submitted_at = new Date().toISOString();
+    } else if (status === 'Approved') {
+      timestampFields.approved_at = new Date().toISOString();
+    }
+
+    const extraFields: Record<string, any> = {};
+    if (status === 'Rejected') {
+      extraFields.rejection_reason = rejectionReason || null;
+    } else if (status === 'Approved') {
+      extraFields.rejection_reason = null;
     }
 
     if (existingEval) {
@@ -389,7 +400,8 @@ export async function saveOrSubmitEmployeeIPCR(params: {
           status,
           final_score: finalScore,
           supervisor_id: supervisorId,
-          ...timestampFields
+          ...timestampFields,
+          ...extraFields
         })
         .eq('id', existingEval.id);
 
@@ -404,7 +416,8 @@ export async function saveOrSubmitEmployeeIPCR(params: {
           final_score: finalScore,
           period: ratingPeriod,
           supervisor_id: supervisorId,
-          ...timestampFields
+          ...timestampFields,
+          ...extraFields
         });
 
       if (insertError) throw insertError;

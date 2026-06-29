@@ -239,6 +239,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   const [ipcrRows, setIpcrRows] = useState<IPCRRowDraft[]>([]);
   const [ipcrEvaluation, setIpcrEvaluation] = useState<any | null>(null);
   const [isEditingIPCR, setIsEditingIPCR] = useState(false);
+  const isPhase3 = !!(ipcrEvaluation && ipcrEvaluation.status === 'Self Evaluation' && ipcrEvaluation.approved_at);
   const [ipcrLoading, setIpcrLoading] = useState(false);
   const [ipcrSaving, setIpcrSaving] = useState(false);
   const [ipcrError, setIpcrError] = useState<string | null>(null);

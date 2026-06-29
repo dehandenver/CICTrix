@@ -68,9 +68,14 @@ import {
   getEvaluationStatusCounts,
   getEvaluationsWithEmployee,
   getPerformanceDistribution,
+  getEmployeeIPCR,
+  saveOrSubmitEmployeeIPCR,
+  getCompetenciesList,
+  getEmployeeRawDetails,
   type DistributionBucket,
   type EvaluationStatus,
   type PerformanceEvaluation,
+  type IPCRRowDraft,
 } from '../../lib/api/performanceEvaluations';
 import { supabase } from '../../lib/supabase';
 import '../../styles/admin.css';
@@ -150,6 +155,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     'Performance Evaluation Form',
     'Updated Resume/CV',
     'IPCR Submission',
+    'IPCR Accomplishments & Ratings',
   ];
 
   const triggerIPCRBulkRequest = () => {
@@ -158,6 +164,34 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     setBulkSendTo('all');
     setShowBulkRequestModal(true);
   };
+
+  const triggerIPCRPhase3BulkRequest = async () => {
+    setBulkDocName('IPCR Accomplishments & Ratings');
+    setBulkDescription('After 6 months, please submit your Actual Accomplishments and Q/E/T Ratings for the rating period. Your listed Core/Support Functions, Targets, and Weights are locked.');
+    setBulkSendTo('all');
+    setShowBulkRequestModal(true);
+
+    try {
+      const activeCycle = cycles.find(c => c.status === 'Active') || cycles[0];
+      if (activeCycle) {
+        const { error } = await (supabase as any)
+          .from('performance_evaluations')
+          .update({ status: 'Self Evaluation' })
+          .eq('cycle_id', activeCycle.id)
+          .eq('status', 'Approved');
+
+        if (error) throw error;
+        
+        const evalsRes = await getEvaluationsWithEmployee();
+        if (evalsRes.success) {
+          setEvaluations(evalsRes.data || []);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to transition Approved evaluations to Self Evaluation:', err);
+    }
+  };
+
 
 
   const openRequestModal = (employee?: { id?: string; name: string; role: string; dept: string; initials: string }) => {
@@ -402,6 +436,204 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const [reviewingRequest, setReviewingRequest] = useState<DocumentRequest | null>(null);
   const [reviewDecisionPending, setReviewDecisionPending] = useState<'Approved' | 'Rejected' | null>(null);
 
+  // IPCR Office Review States
+  const [reviewingIPCREval, setReviewingIPCREval] = useState<PerformanceEvaluation | null>(null);
+  const [reviewingIPCRRows, setReviewingIPCRRows] = useState<IPCRRowDraft[]>([]);
+  const [isEditingReviewIPCR, setIsEditingReviewIPCR] = useState(false);
+  const [ipcrLoading, setIpcrLoading] = useState(false);
+  const [ipcrSaving, setIpcrSaving] = useState(false);
+  const [ipcrError, setIpcrError] = useState<string | null>(null);
+  const [ipcrSuccess, setIpcrSuccess] = useState<string | null>(null);
+  const [competencies, setCompetencies] = useState<any[]>([]);
+  const [showRejectionInput, setShowRejectionInput] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [reviewingEmpNum, setReviewingEmpNum] = useState('');
+  const [reviewingPositionId, setReviewingPositionId] = useState<number | null>(null);
+  const [reviewingPlantillaNum, setReviewingPlantillaNum] = useState<string | null>(null);
+
+  const parseWeightFromRemarks = (remarksStr: string): { weight: number; remarks: string } => {
+    const match = (remarksStr || '').match(/^\[Weight:\s*(\d+)%\]\s*(.*)/s);
+    if (match) {
+      return {
+        weight: parseInt(match[1], 10),
+        remarks: match[2].trim()
+      };
+    }
+    return { weight: 0, remarks: remarksStr || '' };
+  };
+
+  const formatRemarksWithWeight = (weight: number, remarksStr: string): string => {
+    const cleanRemarks = (remarksStr || '').replace(/^\[Weight:\s*\d+%\]\s*/g, '').trim();
+    return `[Weight: ${weight}%] ${cleanRemarks}`;
+  };
+
+  const loadReviewIPCRData = async (evaluation: PerformanceEvaluation) => {
+    setIpcrLoading(true);
+    setIpcrError(null);
+    setIpcrSuccess(null);
+    setReviewingIPCREval(evaluation);
+    setIsEditingReviewIPCR(false);
+    setShowRejectionInput(false);
+    setRejectionReason('');
+
+    try {
+      if (competencies.length === 0) {
+        const compRes = await getCompetenciesList();
+        if (compRes.success) {
+          setCompetencies(compRes.data || []);
+        }
+      }
+
+      const empDetails = await getEmployeeRawDetails(evaluation.employee_id);
+      const employeeNum = empDetails.success ? empDetails.data?.employee_number : '';
+      const positionId = empDetails.success ? empDetails.data?.position_id : null;
+      const plantillaNum = empDetails.success ? empDetails.data?.plantilla_num : null;
+      
+      setReviewingEmpNum(employeeNum || '');
+      setReviewingPositionId(positionId ? Number(positionId) : null);
+      setReviewingPlantillaNum(plantillaNum || null);
+
+      const result = await getEmployeeIPCR(
+        employeeNum || '',
+        evaluation.period || 'Annual 2026',
+        evaluation.employee_id,
+        evaluation.cycle_id
+      );
+      if (result.success) {
+        const mappedRows = (result.data.rows || []).map((row: any) => {
+          const { weight, remarks } = parseWeightFromRemarks(row.remarks || '');
+          return {
+            ...row,
+            weight,
+            remarks
+          };
+        });
+        setReviewingIPCRRows(mappedRows);
+      } else {
+        setIpcrError(result.error || 'Failed to fetch IPCR data.');
+        setReviewingIPCRRows([]);
+      }
+    } catch (err: any) {
+      console.error('Error loading IPCR review data:', err);
+      setIpcrError('Error loading IPCR review data.');
+    } finally {
+      setIpcrLoading(false);
+    }
+  };
+
+  const updateReviewRowField = (index: number, field: keyof IPCRRowDraft, value: any) => {
+    setReviewingIPCRRows((prev) => {
+      const copy = [...prev];
+      const target = { ...copy[index], [field]: value };
+      
+      if (field === 'q_rating' || field === 'e_rating' || field === 't_rating') {
+        const q = field === 'q_rating' ? value : target.q_rating;
+        const e = field === 'e_rating' ? value : target.e_rating;
+        const t = field === 't_rating' ? value : target.t_rating;
+        
+        const ratings = [q, e, t].filter((val) => val !== null && val !== undefined && val !== '');
+        target.ave_rating = ratings.length > 0 ? ratings.reduce((sum, val) => sum + Number(val), 0) / ratings.length : 0;
+      }
+      
+      copy[index] = target;
+      return copy;
+    });
+  };
+
+  const addReviewIPCRRow = () => {
+    const newRow: IPCRRowDraft = {
+      function_type: 'CORE',
+      target_text: '',
+      accomplishment_text: '',
+      q_rating: null,
+      e_rating: null,
+      t_rating: null,
+      ave_rating: 0,
+      competency_id: competencies[0]?.competency_id || 0,
+      mapped_competency_standard: competencies[0]?.competency_standard || '',
+      weight: 0,
+      remarks: ''
+    };
+    setReviewingIPCRRows((prev) => [...prev, newRow]);
+  };
+
+  const deleteReviewIPCRRow = (index: number) => {
+    setReviewingIPCRRows((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleSaveReviewIPCR = async (status: 'Approved' | 'Rejected' | 'Supervisor Review') => {
+    if (!reviewingIPCREval) return;
+
+    if (status === 'Approved') {
+      const totalWeight = reviewingIPCRRows.reduce((acc, r) => acc + (r.weight || 0), 0);
+      if (totalWeight !== 100) {
+        setIpcrError(`Total weight must equal 100% (currently ${totalWeight}%).`);
+        return;
+      }
+    }
+
+    setIpcrSaving(true);
+    setIpcrError(null);
+    setIpcrSuccess(null);
+
+    const serializedRows = reviewingIPCRRows.map((row) => ({
+      ...row,
+      remarks: formatRemarksWithWeight(row.weight || 0, row.remarks),
+    }));
+
+    const result = await saveOrSubmitEmployeeIPCR({
+      employeeUuid: reviewingIPCREval.employee_id,
+      employeeNum: reviewingEmpNum,
+      positionId: reviewingPositionId,
+      position: reviewingIPCREval.employee_position || null,
+      plantillaNum: reviewingPlantillaNum,
+      ratingPeriod: reviewingIPCREval.period || 'Annual 2026',
+      cycleId: reviewingIPCREval.cycle_id,
+      status,
+      rows: serializedRows,
+      rejectionReason: status === 'Rejected' ? rejectionReason : null,
+    });
+
+    if (result.success) {
+      try {
+        const { data: requestDocs } = await (supabase as any)
+          .from('employee_documents')
+          .select('id')
+          .eq('employee_id', reviewingIPCREval.employee_id)
+          .eq('category', 'hr_request')
+          .ilike('document_name', '%ipcr%')
+          .neq('status', 'Approved');
+
+        if (requestDocs && requestDocs.length > 0) {
+          const docId = requestDocs[0].id;
+          const newDocStatus = status === 'Approved' ? 'Approved' : 'Rejected';
+          await (supabase as any)
+            .from('employee_documents')
+            .update({ status: newDocStatus })
+            .eq('id', docId);
+        }
+      } catch (err) {
+        console.error('Failed to sync document request status:', err);
+      }
+
+      setIpcrSuccess(status === 'Approved' ? 'IPCR Approved and stored successfully!' : 'IPCR Rejected and returned to employee.');
+      setIsEditingReviewIPCR(false);
+      setShowRejectionInput(false);
+      
+      const fetchEvals = async () => {
+        const evalsRes = await getEvaluationsWithEmployee();
+        if (evalsRes.success) {
+          setEvaluations(evalsRes.data || []);
+        }
+      };
+      await fetchEvals();
+      await refreshDocumentRequests();
+    } else {
+      setIpcrError(result.error || 'Failed to save IPCR data.');
+    }
+    setIpcrSaving(false);
+  };
+
   const refreshDocumentRequests = async () => {
     const result = await getDocumentRequests({ source: 'PM' });
     if (result.success) setDocumentRequests(result.data);
@@ -425,9 +657,15 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const reviewStartIdx = (reviewPage - 1) * reviewRowsPerPage;
   const reviewPageData = reviewsData.slice(reviewStartIdx, reviewStartIdx + reviewRowsPerPage);
 
-  // Action-required queue: pending document requests + evaluations awaiting review.
   const actionRequiredQueue = (() => {
-    const items: Array<{ name: string; dept: string; type: string; typeColor: string }> = [];
+    const items: Array<{
+      name: string;
+      dept: string;
+      type: string;
+      typeColor: string;
+      evaluation?: PerformanceEvaluation;
+      documentRequest?: DocumentRequest;
+    }> = [];
     for (const e of evaluations) {
       if (e.status === 'Supervisor Review' || e.status === 'Self Evaluation') {
         items.push({
@@ -435,6 +673,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
           dept: e.department ?? 'Unassigned',
           type: e.status === 'Supervisor Review' ? 'IPCR Validation' : 'Self Evaluation',
           typeColor: 'bg-emerald-100 text-emerald-700',
+          evaluation: e,
         });
       }
     }
@@ -445,6 +684,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
           dept: d.department ?? 'Unassigned',
           type: d.document_type,
           typeColor: 'bg-slate-100 text-slate-600',
+          documentRequest: d,
         });
       }
     }
@@ -467,10 +707,11 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
         ? 'Under Review'
         : 'Submitted',
       statusColor: e.status === 'Approved'
-        ? 'bg-emerald-100 text-emerald-700'
+        ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
         : e.status === 'Supervisor Review'
-        ? 'bg-orange-100 text-orange-700'
-        : 'bg-blue-100 text-blue-700',
+        ? 'bg-blue-100 text-blue-700 border-blue-200'
+        : 'bg-amber-100 text-amber-700 border-amber-200',
+      evaluation: e,
     }));
 
   // Department-grouped employees from the central employees table.
@@ -823,24 +1064,47 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                 <h2 className="text-2xl font-bold text-slate-900 tracking-tight">PM Dashboard</h2>
                 <p className="text-sm text-slate-500 mt-0.5">Performance evaluation overview — FY 2025</p>
 
-                {/* IPCR Initiation Banner */}
-                <div className="mt-4 p-4 rounded-xl border border-blue-200 bg-blue-50/70 flex flex-col md:flex-row items-center justify-between gap-4 shadow-sm">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white">
-                      <Bell className="h-5 w-5" />
-                    </span>
-                    <div>
-                      <h4 className="text-sm font-bold text-blue-900">Phase 1: IPCR Initial Submission (First 6 Months)</h4>
-                      <p className="text-xs text-blue-700 mt-0.5">Stating employees need to submit their IPCR. This activates the IPCR tab in their portals and restricts them to editing Core/Support Functions, Targets, and Weights.</p>
+                {/* IPCR Phase Banners */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+                  {/* Phase 1 */}
+                  <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/70 flex flex-col justify-between gap-4 shadow-sm">
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white">
+                        <Bell className="h-5 w-5" />
+                      </span>
+                      <div>
+                        <h4 className="text-sm font-bold text-blue-900 font-sans">Phase 1: Initiate IPCR Targets (First 6 Months)</h4>
+                        <p className="text-xs text-blue-700 mt-1 leading-relaxed">Stating employees need to submit their IPCR. This activates the IPCR tab in their portals and restricts them to editing Core/Support Functions, Targets, and Weights.</p>
+                      </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={triggerIPCRBulkRequest}
+                      className="w-full mt-2 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 transition shadow-sm"
+                    >
+                      Initiate IPCR Submission
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={triggerIPCRBulkRequest}
-                    className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 transition shadow-sm"
-                  >
-                    Initiate IPCR Submission
-                  </button>
+
+                  {/* Phase 3 */}
+                  <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/70 flex flex-col justify-between gap-4 shadow-sm">
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white">
+                        <Bell className="h-5 w-5" />
+                      </span>
+                      <div>
+                        <h4 className="text-sm font-bold text-emerald-900 font-sans">Phase 3: Accomplishments & Ratings (After 6 Months)</h4>
+                        <p className="text-xs text-emerald-700 mt-1 leading-relaxed font-medium">Sends IPCRs back to employees as Self Evaluation draft, locking their targets/weights, and enabling them to input Accomplishments & Ratings for supervisor validation.</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={triggerIPCRPhase3BulkRequest}
+                      className="w-full mt-2 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition shadow-sm"
+                    >
+                      Initiate Accomplishments & Ratings
+                    </button>
+                  </div>
                 </div>
 
                 {errorMessage && (
@@ -921,7 +1185,17 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                               <span className={`inline-block rounded-full px-3 py-0.5 text-xs font-semibold ${row.typeColor}`}>{row.type}</span>
                             </div>
                             <div className="col-span-3 text-right">
-                              <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (row.evaluation) {
+                                    void loadReviewIPCRData(row.evaluation);
+                                  } else if (row.documentRequest) {
+                                    setReviewingRequest(row.documentRequest);
+                                  }
+                                }}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                              >
                                 Review <span className="text-slate-400">&gt;</span>
                               </button>
                             </div>
@@ -1099,7 +1373,12 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                                   </span>
                                 </td>
                                 <td className="px-4 py-3 text-center">
-                                  <button type="button" className="rounded-md p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition" title="View">
+                                  <button
+                                    type="button"
+                                    onClick={() => void loadReviewIPCRData(row.evaluation)}
+                                    className="rounded-md p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition"
+                                    title="View"
+                                  >
                                     <Eye className="h-4 w-4" />
                                   </button>
                                 </td>
@@ -2385,6 +2664,370 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
               </div>
             </div>
           </div>
+        )}
+
+
+        {reviewingIPCREval && (
+          <Dialog
+            open={!!reviewingIPCREval}
+            onClose={() => { if (!ipcrSaving) setReviewingIPCREval(null); }}
+            title={`IPCR Office Review: ${reviewingIPCREval.employee_name}`}
+            size="lg"
+          >
+            <div className="space-y-6 max-h-[80vh] overflow-y-auto px-1">
+              {/* Alert messages */}
+              {ipcrError && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>{ipcrError}</span>
+                </div>
+              )}
+              {ipcrSuccess && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  <span>{ipcrSuccess}</span>
+                </div>
+              )}
+
+              {/* Progress Steps / Status */}
+              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-bold text-slate-800 mb-3">Workflow State</h3>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-6 w-6 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center text-xs font-bold">✓</span>
+                    <span className="text-xs font-semibold text-slate-700">Self Evaluation</span>
+                  </div>
+                  <div className="h-px bg-slate-200 flex-1 mx-2" />
+                  <div className="flex items-center gap-1.5">
+                    <span className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                      reviewingIPCREval.status === 'Supervisor Review' ? 'bg-blue-600 text-white animate-pulse' : 'bg-emerald-100 text-emerald-800'
+                    }`}>
+                      {reviewingIPCREval.status === 'Supervisor Review' ? '2' : '✓'}
+                    </span>
+                    <span className="text-xs font-semibold text-slate-700">Office Review</span>
+                  </div>
+                  <div className="h-px bg-slate-200 flex-1 mx-2" />
+                  <div className="flex items-center gap-1.5">
+                    <span className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                      reviewingIPCREval.status === 'Approved' ? 'bg-emerald-600 text-white font-bold' : 'bg-slate-100 text-slate-400'
+                    }`}>
+                      3
+                    </span>
+                    <span className="text-xs font-semibold text-slate-700">PM Archive</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Employee & Cycle metadata */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200 text-sm">
+                <div>
+                  <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Employee Details</span>
+                  <span className="font-semibold text-slate-800 block mt-1">{reviewingIPCREval.employee_name}</span>
+                  <span className="text-slate-500 text-xs block">ID: {reviewingEmpNum || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Position & Department</span>
+                  <span className="font-semibold text-slate-800 block mt-1">{reviewingIPCREval.employee_position || 'Employee'}</span>
+                  <span className="text-slate-500 text-xs block">{reviewingIPCREval.department || 'Unassigned'}</span>
+                </div>
+                <div>
+                  <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Rating Period</span>
+                  <span className="font-semibold text-slate-800 block mt-1">{reviewingIPCREval.period || 'Annual 2026'}</span>
+                </div>
+                <div>
+                  <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Status</span>
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold mt-1 ${
+                    reviewingIPCREval.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' :
+                    reviewingIPCREval.status === 'Supervisor Review' ? 'bg-blue-100 text-blue-800 animate-pulse' :
+                    reviewingIPCREval.status === 'Rejected' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'
+                  }`}>
+                    {reviewingIPCREval.status}
+                  </span>
+                </div>
+              </div>
+
+              {/* Rejection comment display/input */}
+              {showRejectionInput && (
+                <div className="p-4 rounded-xl border border-rose-200 bg-rose-50 space-y-3">
+                  <label className="block text-xs font-bold text-rose-900 uppercase tracking-wider">Provide Rejection Reason / Directives</label>
+                  <textarea
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    placeholder="Provide details on what needs to be revised..."
+                    className="w-full text-sm rounded-lg border border-slate-300 bg-white p-2.5 focus:border-rose-500 focus:ring-1 focus:ring-rose-500 outline-none"
+                    rows={3}
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowRejectionInput(false)}
+                      className="px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={ipcrSaving || !rejectionReason.trim()}
+                      onClick={() => void handleSaveReviewIPCR('Rejected')}
+                      className="px-3 py-1.5 rounded-lg bg-rose-600 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+                    >
+                      Submit Rejection
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* IPCR Table view or edit */}
+              {ipcrLoading ? (
+                <div className="py-12 text-center text-slate-500 animate-pulse">Loading IPCR rows...</div>
+              ) : (
+                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                  <table className="min-w-full divide-y divide-slate-200">
+                    <thead className="bg-slate-50">
+                      {isEditingReviewIPCR ? (
+                        <tr>
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider w-[120px]">Type</th>
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider w-[220px]">Competency Map</th>
+                          <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-slate-700 uppercase tracking-wider w-[90px]">Weight (%)</th>
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">Targets & Success Indicators</th>
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">Accomplishments</th>
+                          <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-slate-700 uppercase tracking-wider w-[180px]">Ratings (Q/E/T)</th>
+                          <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-slate-700 uppercase tracking-wider w-[60px]">Ave</th>
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider w-[120px]">Remarks</th>
+                          <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-slate-700 uppercase tracking-wider w-[50px]">Del</th>
+                        </tr>
+                      ) : (
+                        <tr>
+                          <th scope="col" className="px-4 py-2.5 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-[90px]">Type</th>
+                          <th scope="col" className="px-4 py-2.5 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-[180px]">Mapped Competency</th>
+                          <th scope="col" className="px-4 py-2.5 text-center text-xs font-bold text-slate-600 uppercase tracking-wider w-[80px]">Weight</th>
+                          <th scope="col" className="px-4 py-2.5 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Targets</th>
+                          <th scope="col" className="px-4 py-2.5 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Accomplishments</th>
+                          <th scope="col" className="px-4 py-2.5 text-center text-xs font-bold text-slate-600 uppercase tracking-wider w-[100px]">Q/E/T</th>
+                          <th scope="col" className="px-4 py-2.5 text-center text-xs font-bold text-slate-600 uppercase tracking-wider w-[60px]">Ave</th>
+                          <th scope="col" className="px-4 py-2.5 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-[120px]">Remarks</th>
+                        </tr>
+                      )}
+                    </thead>
+                    <tbody className="bg-white divide-y divide-slate-200">
+                      {reviewingIPCRRows.map((row, index) => (
+                        <tr key={index} className="hover:bg-slate-50/50">
+                          {isEditingReviewIPCR ? (
+                            <>
+                              <td className="px-3 py-3 align-top">
+                                <select
+                                  value={row.function_type}
+                                  onChange={(e) => updateReviewRowField(index, 'function_type', e.target.value)}
+                                  className="w-full text-xs rounded-lg border border-slate-300 bg-white p-1.5 focus:border-blue-500 focus:outline-none"
+                                >
+                                  <option value="CORE">CORE</option>
+                                  <option value="SUPPORT">SUPPORT</option>
+                                </select>
+                              </td>
+                              <td className="px-3 py-3 align-top space-y-2">
+                                <select
+                                  value={row.competency_id || ''}
+                                  onChange={(e) => updateReviewRowField(index, 'competency_id', Number(e.target.value))}
+                                  className="w-full text-xs rounded-lg border border-slate-300 bg-white p-1.5 focus:border-blue-500 focus:outline-none"
+                                >
+                                  <option value="" disabled>-- Select Competency --</option>
+                                  {competencies.map(c => (
+                                    <option key={c.competency_id} value={c.competency_id}>
+                                      {c.competency_standard}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="px-3 py-3 align-top">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  value={row.weight || 0}
+                                  onChange={(e) => updateReviewRowField(index, 'weight', Number(e.target.value))}
+                                  className="w-full text-xs rounded-lg border border-slate-300 bg-white p-1.5 focus:border-blue-500 focus:outline-none text-center font-bold"
+                                />
+                              </td>
+                              <td className="px-3 py-3 align-top">
+                                <textarea
+                                  value={row.target_text}
+                                  onChange={(e) => updateReviewRowField(index, 'target_text', e.target.value)}
+                                  className="w-full text-xs rounded-lg border border-slate-300 bg-white p-1.5 focus:border-blue-500 focus:outline-none min-h-[60px]"
+                                />
+                              </td>
+                              <td className="px-3 py-3 align-top">
+                                <textarea
+                                  value={row.accomplishment_text}
+                                  onChange={(e) => updateReviewRowField(index, 'accomplishment_text', e.target.value)}
+                                  className="w-full text-xs rounded-lg border border-slate-300 bg-white p-1.5 focus:border-blue-500 focus:outline-none min-h-[60px]"
+                                />
+                              </td>
+                              <td className="px-3 py-3 align-top">
+                                <div className="flex gap-1 justify-center">
+                                  <div>
+                                    <span className="text-[9px] text-slate-400 font-bold block mb-1">Q</span>
+                                    <select
+                                      value={row.q_rating !== null ? row.q_rating : ''}
+                                      onChange={(e) => updateReviewRowField(index, 'q_rating', e.target.value ? Number(e.target.value) : null)}
+                                      className="text-xs rounded-md border border-slate-300 bg-white p-1 focus:outline-none w-[42px]"
+                                    >
+                                      <option value="">—</option>
+                                      {[5, 4, 3, 2, 1].map(n => <option key={n} value={n}>{n}</option>)}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <span className="text-[9px] text-slate-400 font-bold block mb-1">E</span>
+                                    <select
+                                      value={row.e_rating !== null ? row.e_rating : ''}
+                                      onChange={(e) => updateReviewRowField(index, 'e_rating', e.target.value ? Number(e.target.value) : null)}
+                                      className="text-xs rounded-md border border-slate-300 bg-white p-1 focus:outline-none w-[42px]"
+                                    >
+                                      <option value="">—</option>
+                                      {[5, 4, 3, 2, 1].map(n => <option key={n} value={n}>{n}</option>)}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <span className="text-[9px] text-slate-400 font-bold block mb-1">T</span>
+                                    <select
+                                      value={row.t_rating !== null ? row.t_rating : ''}
+                                      onChange={(e) => updateReviewRowField(index, 't_rating', e.target.value ? Number(e.target.value) : null)}
+                                      className="text-xs rounded-md border border-slate-300 bg-white p-1 focus:outline-none w-[42px]"
+                                    >
+                                      <option value="">—</option>
+                                      {[5, 4, 3, 2, 1].map(n => <option key={n} value={n}>{n}</option>)}
+                                    </select>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-3 py-3 text-center align-middle font-bold text-slate-800 text-xs">
+                                {row.ave_rating ? row.ave_rating.toFixed(2) : '0.00'}
+                              </td>
+                              <td className="px-3 py-3 align-top">
+                                <input
+                                  type="text"
+                                  value={row.remarks}
+                                  onChange={(e) => updateReviewRowField(index, 'remarks', e.target.value)}
+                                  className="w-full text-xs rounded-lg border border-slate-300 bg-white p-1.5 focus:border-blue-500 focus:outline-none"
+                                />
+                              </td>
+                              <td className="px-3 py-3 text-center align-top pt-4">
+                                <button
+                                  type="button"
+                                  onClick={() => deleteReviewIPCRRow(index)}
+                                  className="p-1 text-red-500 hover:bg-red-50 rounded"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="px-4 py-3 align-top font-semibold text-slate-600 text-xs">{row.function_type}</td>
+                              <td className="px-4 py-3 align-top text-slate-700 font-medium text-xs">{row.mapped_competency_standard || '—'}</td>
+                              <td className="px-4 py-3 align-top text-center font-bold text-slate-700 text-xs">{row.weight || 0}%</td>
+                              <td className="px-4 py-3 align-top whitespace-pre-line text-slate-700 text-xs">{row.target_text}</td>
+                              <td className="px-4 py-3 align-top whitespace-pre-line text-slate-700 text-xs">{row.accomplishment_text || '—'}</td>
+                              <td className="px-4 py-3 align-top text-center text-xs">
+                                <div className="flex justify-center gap-1.5">
+                                  <span>{row.q_rating || '—'}</span>
+                                  <span className="text-slate-300">/</span>
+                                  <span>{row.e_rating || '—'}</span>
+                                  <span className="text-slate-300">/</span>
+                                  <span>{row.t_rating || '—'}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 align-top text-center font-bold text-slate-800 text-xs">
+                                {row.ave_rating ? row.ave_rating.toFixed(2) : '0.00'}
+                              </td>
+                              <td className="px-4 py-3 align-top text-slate-600 text-xs">{row.remarks || '—'}</td>
+                            </>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Add row in edit mode */}
+              {isEditingReviewIPCR && (
+                <div className="flex justify-start">
+                  <button
+                    type="button"
+                    onClick={addReviewIPCRRow}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add Performance Row
+                  </button>
+                </div>
+              )}
+
+              {/* Actions Footer */}
+              <div className="flex justify-between items-center pt-4 border-t border-slate-200">
+                <div>
+                  {reviewingIPCREval.status === 'Supervisor Review' && !isEditingReviewIPCR && (
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingReviewIPCR(true)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+                    >
+                      <Edit2 className="h-4 w-4" /> Edit Directly
+                    </button>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  {isEditingReviewIPCR ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditingReviewIPCR(false);
+                          void loadReviewIPCRData(reviewingIPCREval);
+                        }}
+                        className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-semibold text-slate-700 bg-white hover:bg-slate-50"
+                      >
+                        Cancel Edits
+                      </button>
+                      <button
+                        type="button"
+                        disabled={ipcrSaving}
+                        onClick={() => void handleSaveReviewIPCR('Supervisor Review')}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition disabled:opacity-50"
+                      >
+                        {ipcrSaving ? 'Saving...' : 'Save Changes'}
+                      </button>
+                    </>
+                  ) : reviewingIPCREval.status === 'Supervisor Review' && !showRejectionInput ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setShowRejectionInput(true)}
+                        className="px-4 py-2 rounded-lg border border-red-200 text-sm font-semibold text-red-600 bg-white hover:bg-red-50 transition"
+                      >
+                        Reject IPCR
+                      </button>
+                      <button
+                        type="button"
+                        disabled={ipcrSaving}
+                        onClick={() => void handleSaveReviewIPCR('Approved')}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 transition disabled:opacity-50"
+                      >
+                        Approve & Route to PM
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setReviewingIPCREval(null)}
+                      className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-semibold text-slate-700 bg-white hover:bg-slate-50"
+                    >
+                      Close View
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </Dialog>
         )}
 
         <DocumentPreviewModal
