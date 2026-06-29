@@ -2178,9 +2178,27 @@ export const QualifiedApplicantsPage = () => {
                   <article className="rounded-xl border border-slate-200">
                     <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
                       <h4 className="text-lg font-semibold" style={{ color: '#363EE8' }}>Submitted Documents</h4>
-                      <button className="inline-flex items-center gap-2 text-base font-medium text-blue-600" onClick={handleBulkDownload}>
-                        <Download className="h-5 w-5" /> Download All
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {(() => {
+                          const docReady = getDocReadiness(activeApplicant.id);
+                          const hasAnyDocs = getModalDocuments().length > 0;
+                          const allValidated = docReady.ready && hasAnyDocs;
+                          return (
+                            <button
+                              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
+                              style={allValidated ? { borderColor: '#059669', color: '#059669' } : { borderColor: '#d1d5db', color: '#9ca3af' }}
+                              disabled={!allValidated}
+                              onClick={() => setToast('All documents have been validated.')}
+                              title={!allValidated ? (docReady.reason || 'Validate all documents first') : 'All documents are validated'}
+                            >
+                              <CheckCircle2 className="h-4 w-4" /> Validate Documents
+                            </button>
+                          );
+                        })()}
+                        <button className="inline-flex items-center gap-2 text-base font-medium text-blue-600" onClick={handleBulkDownload}>
+                          <Download className="h-5 w-5" /> Download All
+                        </button>
+                      </div>
                     </div>
 
                     {isApplicantDocLocked(activeApplicant) && (
