@@ -18,6 +18,7 @@ import {
   Download,
   Edit2,
   Eye,
+  Lock as LockIcon,
   FileCheck2,
   FileText,
   Globe,
@@ -790,7 +791,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
       // Calculate three-tier SPMS consolidation stats
       try {
         const { data: rawEmployees } = await supabase.from('employees').select('id, employee_number, reports_to');
-        const employeeList = rawEmployees || [];
+        const employeeList = (rawEmployees as any[]) || [];
 
         const supervisorIds = new Set(employeeList.map(e => e.reports_to).filter(Boolean));
         const supervisors = employeeList.filter(e => supervisorIds.has(e.id));
@@ -1810,7 +1811,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                         if (!activeCycleId) return;
                         if (!confirm('Are you sure you want to finalize the current cycle and lock all performance records? This action is secure and irreversible.')) return;
                         try {
-                          const { error } = await supabase
+                          const { error } = await (supabase as any)
                             .from('performance_cycles')
                             .update({ status: 'Completed' })
                             .eq('id', activeCycleId);
@@ -1827,7 +1828,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                           : 'bg-slate-300 cursor-not-allowed opacity-60'
                       }`}
                     >
-                      <Lock className="h-4 w-4" />
+                      <LockIcon className="h-4 w-4" />
                       {stats.activeCycle === 'Completed' ? 'Cycle Transmitted & Archived' : 'Finalize & Transmit to PM'}
                     </button>
                   </div>

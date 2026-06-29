@@ -1724,7 +1724,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
                             if (updatedIPCR.success) {
                               setIpcrEvaluation(updatedIPCR.data.evaluation);
                               const mappedRows = (updatedIPCR.data.rows || []).map((row) => {
-                                const { weight, remarks: rem } = parseWeightFromRemarks(row.remarks || '');
+                                const { weight, cleanRemarks: rem } = parseWeightFromRemarks(row.remarks || '');
                                 return { ...row, weight, remarks: rem };
                               });
                               setIpcrRows(mappedRows);
