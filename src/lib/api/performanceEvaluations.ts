@@ -556,3 +556,236 @@ export async function getEmployeeEvaluations(employeeUuid: string): Promise<{ su
     return { success: false, error: String(error), data: [] };
   }
 }
+
+export async function getSubordinatesEvaluations(supervisorUuid: string, cycleId: number | null): Promise<{
+  success: boolean;
+  data: {
+    subordinates: any[];
+    evaluations: any[];
+    isFullyValidated: boolean;
+    missingCount: number;
+  };
+  error?: string;
+}> {
+  try {
+    const { data: subordinates, error: subError } = await supabase
+      .from('employees')
+      .select('id, employee_number, first_name, last_name, position, department')
+      .eq('reports_to', supervisorUuid);
+
+    if (subError) throw subError;
+    if (!subordinates || subordinates.length === 0) {
+      return {
+        success: true,
+        data: { subordinates: [], evaluations: [], isFullyValidated: true, missingCount: 0 }
+      };
+    }
+
+    const subIds = subordinates.map(s => s.id);
+
+    let query = supabase
+      .from('performance_evaluations')
+      .select('*')
+      .in('employee_id', subIds);
+
+    if (cycleId !== null) {
+      query = query.eq('cycle_id', cycleId);
+    }
+
+    const { data: evals, error: evalError } = await query;
+    if (evalError) throw evalError;
+
+    const hydratedEvals = (evals || []).map(ev => {
+      const sub = subordinates.find(s => s.id === ev.employee_id);
+      return {
+        ...ev,
+        employee_name: sub ? `${sub.first_name} ${sub.last_name}` : 'Unknown Subordinate',
+        employee_position: sub ? sub.position : '—',
+        department: sub ? sub.department : '—',
+        employee_number: sub ? sub.employee_number : ''
+      };
+    });
+
+    const approvedCount = hydratedEvals.filter(e => e.status === 'Approved').length;
+    const isFullyValidated = approvedCount === subordinates.length;
+    const missingCount = subordinates.length - approvedCount;
+
+    return {
+      success: true,
+      data: {
+        subordinates,
+        evaluations: hydratedEvals,
+        isFullyValidated,
+        missingCount
+      }
+    };
+  } catch (err: any) {
+    console.error('Error fetching subordinates evaluations:', err);
+    return {
+      success: false,
+      error: String(err),
+      data: { subordinates: [], evaluations: [], isFullyValidated: false, missingCount: 0 }
+    };
+  }
+}
+
+export async function consolidateSubordinatesIPCR(
+  supervisorUuid: string,
+  supervisorEmpNum: string,
+  supervisorPosition: string,
+  ratingPeriod: string,
+  cycleId: number | null
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const subsRes = await getSubordinatesEvaluations(supervisorUuid, cycleId);
+    if (!subsRes.success) throw new Error(subsRes.error || 'Failed to fetch subordinate evaluations');
+    const { evaluations: subEvals, isFullyValidated } = subsRes.data;
+
+    if (!isFullyValidated) {
+      return {
+        success: false,
+        error: 'Cannot consolidate. Not all subordinate forms are approved by the office.'
+      };
+    }
+
+    const subEmpNums = subEvals.map(e => e.employee_number).filter(Boolean);
+    if (subEmpNums.length === 0) {
+      return { success: false, error: 'No subordinates have employee numbers.' };
+    }
+
+    const { data: rawRows, error: rowsError } = await supabase
+      .from('ipcr_performance')
+      .select('*')
+      .in('employee_num', subEmpNums)
+      .eq('rating_period', ratingPeriod);
+
+    if (rowsError) throw rowsError;
+
+    const groups: Record<string, {
+      function_type: string;
+      competency_id: number;
+      mapped_competency_standard: string;
+      targets: string[];
+      accomplishments: string[];
+      weights: number[];
+      q_ratings: number[];
+      e_ratings: number[];
+      t_ratings: number[];
+      ave_ratings: number[];
+    }> = {};
+
+    (rawRows || []).forEach(row => {
+      const key = `${row.function_type}-${row.competency_id || 'no-comp'}`;
+      if (!groups[key]) {
+        groups[key] = {
+          function_type: row.function_type,
+          competency_id: row.competency_id,
+          mapped_competency_standard: row.mapped_competency_standard || '',
+          targets: [],
+          accomplishments: [],
+          weights: [],
+          q_ratings: [],
+          e_ratings: [],
+          t_ratings: [],
+          ave_ratings: []
+        };
+      }
+      const g = groups[key];
+      if (row.target_text) g.targets.push(row.target_text.trim());
+      if (row.accomplishment_text) g.accomplishments.push(row.accomplishment_text.trim());
+      
+      const { remarks } = row;
+      const weightMatch = (remarks || '').match(/\[Weight:\s*(\d+)%\]/);
+      const weight = weightMatch ? Number(weightMatch[1]) : 0;
+      g.weights.push(weight);
+
+      if (row.q_rating) g.q_ratings.push(row.q_rating);
+      if (row.e_rating) g.e_ratings.push(row.e_rating);
+      if (row.t_rating) g.t_ratings.push(row.t_rating);
+      if (row.ave_rating) g.ave_ratings.push(row.ave_rating);
+    });
+
+    const consolidatedRows: IPCRRowDraft[] = Object.values(groups).map((g) => {
+      const uniqTargets = Array.from(new Set(g.targets));
+      const uniqAccs = Array.from(new Set(g.accomplishments));
+
+      const avgWeight = g.weights.length > 0 ? g.weights.reduce((s, w) => s + w, 0) / g.weights.length : 0;
+      const avgQ = g.q_ratings.length > 0 ? g.q_ratings.reduce((s, r) => s + r, 0) / g.q_ratings.length : null;
+      const avgE = g.e_ratings.length > 0 ? g.e_ratings.reduce((s, r) => s + r, 0) / g.e_ratings.length : null;
+      const avgT = g.t_ratings.length > 0 ? g.t_ratings.reduce((s, r) => s + r, 0) / g.t_ratings.length : null;
+      const avgAve = g.ave_ratings.length > 0 ? g.ave_ratings.reduce((s, r) => s + r, 0) / g.ave_ratings.length : 0;
+
+      return {
+        function_type: g.function_type as 'CORE' | 'SUPPORT',
+        target_text: uniqTargets.map(t => `• ${t}`).join('\n'),
+        accomplishment_text: uniqAccs.map(a => `• ${a}`).join('\n'),
+        q_rating: avgQ ? Math.round(avgQ) : null,
+        e_rating: avgE ? Math.round(avgE) : null,
+        t_rating: avgT ? Math.round(avgT) : null,
+        ave_rating: Number(avgAve.toFixed(2)),
+        competency_id: g.competency_id,
+        mapped_competency_standard: g.mapped_competency_standard,
+        weight: Math.round(avgWeight) || 10,
+        remarks: ''
+      };
+    });
+
+    const totalWeight = consolidatedRows.reduce((sum, r) => sum + r.weight, 0);
+    if (totalWeight > 0 && totalWeight !== 100) {
+      consolidatedRows.forEach(r => {
+        r.weight = Math.round((r.weight / totalWeight) * 100);
+      });
+      const newTotal = consolidatedRows.reduce((sum, r) => sum + r.weight, 0);
+      if (newTotal !== 100 && consolidatedRows.length > 0) {
+        consolidatedRows[consolidatedRows.length - 1].weight += (100 - newTotal);
+      }
+    }
+
+    let { data: supervisorEval } = await supabase
+      .from('performance_evaluations')
+      .select('*')
+      .eq('employee_id', supervisorUuid)
+      .eq('cycle_id', cycleId)
+      .maybeSingle();
+
+    if (!supervisorEval) {
+      const { data: newEval, error: createError } = await supabase
+        .from('performance_evaluations')
+        .insert([{
+          employee_id: supervisorUuid,
+          cycle_id: cycleId,
+          status: 'Self Evaluation',
+          period: ratingPeriod
+        }])
+        .select()
+        .single();
+      if (createError) throw createError;
+      supervisorEval = newEval;
+    }
+
+    const serializedRows = consolidatedRows.map(row => {
+      const cleanRemarks = `[Weight: ${row.weight}%] Consolidated DPCR`;
+      return {
+        ...row,
+        remarks: cleanRemarks
+      };
+    });
+
+    const saveRes = await saveOrSubmitEmployeeIPCR({
+      employeeUuid: supervisorUuid,
+      employeeNum: supervisorEmpNum,
+      positionId: null,
+      position: supervisorPosition,
+      plantillaNum: null,
+      ratingPeriod,
+      cycleId,
+      status: 'Self Evaluation',
+      rows: serializedRows
+    });
+
+    return saveRes;
+  } catch (err: any) {
+    console.error('Error consolidating subordinates IPCR to DPCR:', err);
+    return { success: false, error: String(err) };
+  }
+}

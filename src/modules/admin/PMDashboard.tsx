@@ -716,6 +716,12 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
   // Department-grouped employees from the central employees table.
   const [dbEvaluationGroups, setDbEvaluationGroups] = useState<EvaluationGroup[]>([]);
+  const [hierarchyStats, setHierarchyStats] = useState({
+    ipcr: { approved: 0, total: 0, percent: 0 },
+    dpcr: { approved: 0, total: 0, percent: 0 },
+    opcr: { approved: 0, total: 0, percent: 0 },
+    isAllTiersApproved: false
+  });
 
   useEffect(() => {
     fetchCycles();
@@ -781,6 +787,47 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
         })
         .sort((a, b) => a.dept.localeCompare(b.dept));
 
+      // Calculate three-tier SPMS consolidation stats
+      try {
+        const { data: rawEmployees } = await supabase.from('employees').select('id, employee_number, reports_to');
+        const employeeList = rawEmployees || [];
+
+        const supervisorIds = new Set(employeeList.map(e => e.reports_to).filter(Boolean));
+        const supervisors = employeeList.filter(e => supervisorIds.has(e.id));
+
+        const deptHeadIds = new Set();
+        supervisors.forEach(sup => {
+          const parent = employeeList.find(e => e.id === sup.reports_to);
+          if (parent && supervisorIds.has(parent.id)) {
+            deptHeadIds.add(parent.id);
+          }
+        });
+        const deptHeads = supervisors.filter(e => deptHeadIds.has(e.id));
+        const divChiefs = supervisors.filter(e => !deptHeadIds.has(e.id));
+        const regularEmps = employeeList.filter(e => !supervisorIds.has(e.id));
+
+        const getStatsForGroup = (groupList: any[]) => {
+          const ids = groupList.map(e => e.id);
+          const groupEvals = evaluations.filter(ev => ids.includes(ev.employee_id));
+          const total = groupList.length;
+          const approved = groupEvals.filter(ev => ev.status === 'Approved').length;
+          const percent = total > 0 ? Math.round((approved / total) * 100) : 100;
+          return { approved, total, percent };
+        };
+
+        const ipcrStats = getStatsForGroup(regularEmps);
+        const dpcrStats = getStatsForGroup(divChiefs);
+        const opcrStats = getStatsForGroup(deptHeads);
+
+        setHierarchyStats({
+          ipcr: ipcrStats,
+          dpcr: dpcrStats,
+          opcr: opcrStats,
+          isAllTiersApproved: ipcrStats.percent === 100 && dpcrStats.percent === 100 && opcrStats.percent === 100
+        });
+      } catch (err) {
+        console.error('Failed to compute SPMS validation stats:', err);
+      }
       setDbEvaluationGroups(groups);
     })();
     return () => {
@@ -1748,6 +1795,95 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   </button>
                 </div>
                 <div className="h-1 w-full bg-gradient-to-r from-blue-500 to-blue-300 rounded-full mb-6" />
+
+                {/* Consolidation Stepper Tracker */}
+                <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm mb-6 space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-800">SPMS Validation & Finalization Workflow</h4>
+                      <p className="text-xs text-slate-500 mt-1">Ensure all three tiers (IPCR, DPCR, OPCR) are fully approved and validated before final transmission to the PM database.</p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!hierarchyStats.isAllTiersApproved || stats.activeCycle === 'Completed'}
+                      onClick={async () => {
+                        if (!activeCycleId) return;
+                        if (!confirm('Are you sure you want to finalize the current cycle and lock all performance records? This action is secure and irreversible.')) return;
+                        try {
+                          const { error } = await supabase
+                            .from('performance_cycles')
+                            .update({ status: 'Completed' })
+                            .eq('id', activeCycleId);
+                          if (error) throw error;
+                          alert('Performance cycle successfully finalized and locked!');
+                          window.location.reload();
+                        } catch (err) {
+                          alert('Error completing cycle: ' + err.message);
+                        }
+                      }}
+                      className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-xs font-bold text-white shadow-sm transition ${
+                        hierarchyStats.isAllTiersApproved && stats.activeCycle !== 'Completed'
+                          ? 'bg-blue-600 hover:bg-blue-700'
+                          : 'bg-slate-300 cursor-not-allowed opacity-60'
+                      }`}
+                    >
+                      <Lock className="h-4 w-4" />
+                      {stats.activeCycle === 'Completed' ? 'Cycle Transmitted & Archived' : 'Finalize & Transmit to PM'}
+                    </button>
+                  </div>
+
+                  {/* Validation Indicators */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Tier 1: IPCR */}
+                    <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs flex flex-col justify-between h-[110px]">
+                      <div>
+                        <span className="font-bold text-slate-850 uppercase tracking-wider text-[10px] block">Tier 1: IPCR Submissions</span>
+                        <span className="text-slate-500 text-[11px] block mt-1">Regular employee individual targets.</span>
+                      </div>
+                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+                        <span className="font-semibold text-slate-650">{hierarchyStats.ipcr.approved} of {hierarchyStats.ipcr.total} Approved</span>
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 font-bold ${
+                          hierarchyStats.ipcr.percent === 100 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {hierarchyStats.ipcr.percent}%
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Tier 2: DPCR */}
+                    <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs flex flex-col justify-between h-[110px]">
+                      <div>
+                        <span className="font-bold text-slate-850 uppercase tracking-wider text-[10px] block">Tier 2: DPCR Consolidation</span>
+                        <span className="text-slate-500 text-[11px] block mt-1">Division chiefs / Supervisors reports.</span>
+                      </div>
+                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+                        <span className="font-semibold text-slate-650">{hierarchyStats.dpcr.approved} of {hierarchyStats.dpcr.total} Approved</span>
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 font-bold ${
+                          hierarchyStats.dpcr.percent === 100 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {hierarchyStats.dpcr.percent}%
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Tier 3: OPCR */}
+                    <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs flex flex-col justify-between h-[110px]">
+                      <div>
+                        <span className="font-bold text-slate-850 uppercase tracking-wider text-[10px] block">Tier 3: OPCR Validation</span>
+                        <span className="text-slate-500 text-[11px] block mt-1">Department Heads final summaries.</span>
+                      </div>
+                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+                        <span className="font-semibold text-slate-650">{hierarchyStats.opcr.approved} of {hierarchyStats.opcr.total} Approved</span>
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 font-bold ${
+                          hierarchyStats.opcr.percent === 100 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {hierarchyStats.opcr.percent}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
 
                 {/* Department IPCR Reports */}
                 <h3 className="text-base font-bold text-slate-800 mb-1">Department IPCR Reports</h3>

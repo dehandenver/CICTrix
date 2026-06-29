@@ -20,6 +20,9 @@ import {
   AlertCircle,
   FileSpreadsheet,
   Check,
+  Users,
+  FolderSync,
+  AlertTriangle,
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import abyanLogo from '../../assets/abyan-logo.png';
@@ -38,6 +41,8 @@ import {
   getEmployeeRawDetails,
   getLatestEmployeeIPCR,
   getEmployeeEvaluations,
+  getSubordinatesEvaluations,
+  consolidateSubordinatesIPCR,
   type IPCRRowDraft,
 } from '../../lib/api/performanceEvaluations';
 import {
@@ -246,6 +251,13 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   const [ipcrSuccess, setIpcrSuccess] = useState<string | null>(null);
   const [ipcrRatingPeriod, setIpcrRatingPeriod] = useState<string>('');
   const [employeeEvaluations, setEmployeeEvaluations] = useState<any[]>([]);
+  const [subordinatesData, setSubordinatesData] = useState<{
+    subordinates: any[];
+    evaluations: any[];
+    isFullyValidated: boolean;
+    missingCount: number;
+  } | null>(null);
+  const [loadingSubs, setLoadingSubs] = useState(false);
 
   const calculateRowAverage = (q: number | null, e: number | null, t: number | null): number => {
     const ratings = [q, e, t].filter((r): r is number => typeof r === 'number' && r !== null);
@@ -307,6 +319,14 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
         setIpcrRatingPeriod(fallbackPeriod);
       }
 
+      if (rawData && rawData.id) {
+        const subsRes = await getSubordinatesEvaluations(rawData.id, cycle ? cycle.id : null);
+        if (subsRes.success && subsRes.data.subordinates.length > 0) {
+          setSubordinatesData(subsRes.data);
+        } else {
+          setSubordinatesData(null);
+        }
+      }
       const evalsRes = await getEmployeeEvaluations(currentUser.supabaseId);
       if (evalsRes.success) {
         setEmployeeEvaluations(evalsRes.data);
@@ -1663,6 +1683,117 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
 
         {activeTab === 'ipcr' && (
           <div className="space-y-4">
+
+            {subordinatesData && (
+              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4 mb-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                      <Users className="h-5 w-5 text-blue-600" />
+                      Division & Department Consolidation Console (DPCR / OPCR)
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Monitor your subordinates' submissions and consolidate their verified IPCRs into a Division (DPCR) or Office (OPCR) report.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!subordinatesData.isFullyValidated || ipcrSaving}
+                    onClick={async () => {
+                      if (!employeeRawDetails) return;
+                      setIpcrSaving(true);
+                      setIpcrError(null);
+                      setIpcrSuccess(null);
+                      try {
+                        const res = await consolidateSubordinatesIPCR(
+                          employeeRawDetails.id,
+                          employeeRawDetails.employee_id,
+                          employeeRawDetails.current_position || 'Supervisor',
+                          activeCycle?.title || ipcrRatingPeriod || 'Annual 2026',
+                          activeCycle?.id || null
+                        );
+                        if (res.success) {
+                          setIpcrSuccess('Consolidated DPCR/OPCR successfully generated as draft!');
+                          if (activeCycle?.id) {
+                            const updatedIPCR = await getEmployeeIPCR(
+                              employeeRawDetails.employee_id,
+                              activeCycle.title || ipcrRatingPeriod || 'Annual 2026',
+                              employeeRawDetails.id,
+                              activeCycle.id
+                            );
+                            if (updatedIPCR.success) {
+                              setIpcrEvaluation(updatedIPCR.data.evaluation);
+                              const mappedRows = (updatedIPCR.data.rows || []).map((row) => {
+                                const { weight, remarks: rem } = parseWeightFromRemarks(row.remarks || '');
+                                return { ...row, weight, remarks: rem };
+                              });
+                              setIpcrRows(mappedRows);
+                            }
+                          }
+                        } else {
+                          setIpcrError(res.error || 'Failed to consolidate.');
+                        }
+                      } catch (err) {
+                        setIpcrError('Error during consolidation: ' + err.message);
+                      } finally {
+                        setIpcrSaving(false);
+                      }
+                    }}
+                    className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors ${
+                      subordinatesData.isFullyValidated
+                        ? 'bg-emerald-600 hover:bg-emerald-700'
+                        : 'bg-slate-300 cursor-not-allowed opacity-60'
+                    }`}
+                  >
+                    <FolderSync className="h-4 w-4" />
+                    Consolidate Subordinate Reports
+                  </button>
+                </div>
+
+                {!subordinatesData.isFullyValidated && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-800 flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                    <span>
+                      <strong>Consolidation Locked:</strong> {subordinatesData.missingCount} subordinate forms are still pending office review and approval. All subordinate forms must be "Approved" before you can consolidate.
+                    </span>
+                  </div>
+                )}
+
+                <div className="overflow-x-auto rounded-lg border border-slate-100">
+                  <table className="min-w-full divide-y divide-slate-100 text-left">
+                    <thead className="bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      <tr>
+                        <th className="px-4 py-2.5">Subordinate Name</th>
+                        <th className="px-4 py-2.5">Position</th>
+                        <th className="px-4 py-2.5">Department</th>
+                        <th className="px-4 py-2.5 text-center">IPCR/DPCR Status</th>
+                        <th className="px-4 py-2.5 text-center">Score</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs text-slate-750">
+                      {subordinatesData.evaluations.map((ev) => (
+                        <tr key={ev.id} className="hover:bg-slate-50/40">
+                          <td className="px-4 py-3 font-semibold">{ev.employee_name}</td>
+                          <td className="px-4 py-3 text-slate-500">{ev.employee_position}</td>
+                          <td className="px-4 py-3 text-slate-500">{ev.department}</td>
+                          <td className="px-4 py-3 text-center">
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                              ev.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' :
+                              ev.status === 'Supervisor Review' ? 'bg-amber-100 text-amber-800 animate-pulse' :
+                              ev.status === 'Rejected' ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-800'
+                            }`}>
+                              {ev.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-center font-bold text-slate-800">{ev.final_score !== null ? ev.final_score.toFixed(2) : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {/* Visual Workflow Step Tracker */}
             <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm animate-fade-in">
               <h3 className="text-sm font-bold text-slate-800 mb-3">IPCR Submission Progress</h3>
