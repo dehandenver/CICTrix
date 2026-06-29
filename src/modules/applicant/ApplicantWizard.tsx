@@ -428,7 +428,19 @@ const handleNextToReview = () => {
   };
 
   const submitWithClient = async (): Promise<string> => {
-    const itemNumber = formData.item_number || buildApplicantItemNumber(Date.now() % 10000);
+    // Always generate a unique applicant tracking number from the current DB
+    // count — never reuse the job posting's item number, which is shared by all
+    // applicants for that position.
+    let trackingSequence: number;
+    try {
+      const countResult = await (supabase as any)
+        .from('applicants')
+        .select('id', { count: 'exact', head: true });
+      trackingSequence = (Number((countResult as any).count) || 0) + 1;
+    } catch {
+      trackingSequence = Date.now() % 100000;
+    }
+    const itemNumber = buildApplicantItemNumber(trackingSequence);
     const safe = (val: string | null | undefined) => (val == null ? '' : String(val));
 
     const experienceYears = parseInt(formData.work_experience_years || '0', 10) || 0;
