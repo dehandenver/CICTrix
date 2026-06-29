@@ -1061,6 +1061,20 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
               <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 700, color: '#ffffff' }}>Welcome, {currentUser.fullName}</p>
               <p style={{ margin: 0, fontSize: '0.72rem', color: '#C8D1FF' }}>Employee ID: {currentUser.employeeId}</p>
             </div>
+            {currentUser.employeeId === 'EMP-2024-001' && (
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.setItem('cictrix_admin_session', JSON.stringify({ email: 'pm@cictrix.gov.ph', role: 'pm' }));
+                  window.location.href = '/admin/pm?module=pm';
+                }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', borderRadius: 8, border: '1.5px solid #10B981', background: '#10B981', padding: '0.4rem 0.85rem', fontSize: '0.85rem', fontWeight: 600, color: '#ffffff', cursor: 'pointer', transition: 'background 0.15s' }}
+                className="hover:bg-emerald-600 transition"
+              >
+                <FolderSync className="h-4 w-4" />
+                Switch to Office Account
+              </button>
+            )}
             <button
               onClick={onLogout}
               style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', borderRadius: 8, border: '1.5px solid rgba(255,255,255,0.35)', background: 'rgba(255,255,255,0.12)', padding: '0.4rem 0.85rem', fontSize: '0.85rem', fontWeight: 600, color: '#ffffff', cursor: 'pointer', transition: 'background 0.15s' }}
