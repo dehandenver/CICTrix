@@ -16,6 +16,7 @@ interface ApplicationRecord {
   created_at: string;
   updated_at: string | null;
   application_type: string | null;
+  disqualification_reason: string | null;
 }
 
 interface AttachmentRow {
@@ -110,26 +111,30 @@ const stageStatesForStatus = (rawStatus: string, docsValidated: boolean): StageS
   const status = rawStatus.toLowerCase();
   // v = verification stage state: 'done' only when RSP has validated docs
   const v: StageState = docsValidated ? 'done' : 'current';
+  // Disqualified/Not Qualified: red X at Qualifications Assessment (stage 2), not Final Decision
   if (status.includes('reject') || status.includes('not qualified') || status.includes('disqual')) {
-    return ['done', 'done', 'done', 'done', 'rejected'];
+    return ['done', v, 'rejected', 'pending', 'pending'];
   }
   if (status.includes('hired') || status.includes('accept')) {
     return ['done', 'done', 'done', 'done', 'done'];
   }
+  // Qualifications Assessment (stage 2) is 'done' ONLY after RSP clicks 'Qualify'
   if (status.includes('recommend')) {
     return ['done', 'done', 'done', 'done', 'current'];
   }
+  // Interview stages: qualifications still in progress, committee review active
   if (status.includes('interview completed')) {
-    return ['done', v, 'done', 'current', 'pending'];
+    return ['done', v, 'current', 'done', 'pending'];
   }
   if (status.includes('interview')) {
-    return ['done', v, 'done', 'current', 'pending'];
+    return ['done', v, 'current', 'current', 'pending'];
   }
+  // Shortlisted: qualifications in progress — shortlist notice shown below
   if (status.includes('shortlist')) {
     return ['done', v, 'current', 'pending', 'pending'];
   }
   if (status.includes('under review') || status.includes('reviewing')) {
-    return ['done', 'current', 'pending', 'pending', 'pending'];
+    return ['done', v, 'pending', 'pending', 'pending'];
   }
   // New application — verification only checked once RSP validates
   return ['done', docsValidated ? 'done' : 'pending', 'pending', 'pending', 'pending'];
@@ -256,6 +261,7 @@ export const ApplicationStatusPage = () => {
         created_at: String(row.created_at ?? new Date().toISOString()),
         updated_at: row.updated_at ? String(row.updated_at) : null,
         application_type: row.application_type ? String(row.application_type) : null,
+        disqualification_reason: row.disqualification_reason ? String(row.disqualification_reason) : null,
       };
 
       setRecord(mapped);
@@ -718,9 +724,19 @@ export const ApplicationStatusPage = () => {
                             Recommended for admission
                           </div>
                         )}
+                        {/* Shortlist notice — shown when shortlisted and at qualifications stage */}
+                        {stage.key === 'qualifications' && state === 'current' && record && record.status.toLowerCase().includes('shortlist') && (
+                          <div className="mt-3 rounded-lg border px-3 py-2 text-sm font-medium" style={{ backgroundColor: '#EEF0FD', borderColor: '#C8D1FF', color: '#040E6B' }}>
+                            Your application has been shortlisted and is undergoing further committee evaluation.
+                          </div>
+                        )}
+                        {/* Disqualification: red X with reason at Qualifications Assessment */}
                         {state === 'rejected' && (
-                          <div className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
-                            Application not selected
+                          <div className="mt-3 rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-sm text-rose-700">
+                            {stage.key === 'qualifications' && record?.disqualification_reason
+                              ? <><p className="font-semibold mb-0.5">Reason for disqualification:</p><p>{record.disqualification_reason}</p></>
+                              : 'Application not selected'
+                            }
                           </div>
                         )}
                       </div>
@@ -792,6 +808,10 @@ export const ApplicationStatusPage = () => {
                           ) : hasResubmissionRequest ? (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 border border-amber-200">
                               <AlertCircle size={12} /> Action Required
+                            </span>
+                          ) : validatedFilePaths.has(doc.file_path) ? (
+                            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
+                              <CheckCircle2 size={12} /> Verified
                             </span>
                           ) : (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border" style={{ backgroundColor: '#EEF0FD', color: '#363EE8', borderColor: '#C8D1FF' }}>

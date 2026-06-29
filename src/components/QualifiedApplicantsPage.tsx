@@ -1784,17 +1784,29 @@ export const QualifiedApplicantsPage = () => {
     setToast(`Started ${downloaded} document download${downloaded > 1 ? 's' : ''}.`);
   };
 
+  const META_DOC_TYPES = new Set(['resubmission_request', 'resubmission_resolved', 'doc_validated']);
+
   const getModalDocuments = () => {
     if (!activeApplicant) return [] as Array<{ type: string; url: string; verified: boolean; uploadedAt?: string }>;
 
     const liveRows = attachmentsByApplicant[activeApplicant.id] || [];
     if (liveRows.length > 0) {
-      return liveRows.map((row) => ({
-        type: toDocumentLabel(row.document_type || row.file_name || 'document'),
-        url: row.file_path || '#',
-        verified: false,
-        uploadedAt: row.created_at,
-      }));
+      // Rows are already sorted created_at DESC; keep only real docs, deduplicate to most-recent per type.
+      const seen = new Set<string>();
+      return liveRows
+        .filter((row) => !META_DOC_TYPES.has(row.document_type ?? ''))
+        .filter((row) => {
+          const key = row.document_type || row.file_name || '';
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .map((row) => ({
+          type: toDocumentLabel(row.document_type || row.file_name || 'document'),
+          url: row.file_path || '#',
+          verified: false,
+          uploadedAt: row.created_at,
+        }));
     }
 
     return [];
@@ -2178,9 +2190,27 @@ export const QualifiedApplicantsPage = () => {
                   <article className="rounded-xl border border-slate-200">
                     <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
                       <h4 className="text-lg font-semibold" style={{ color: '#363EE8' }}>Submitted Documents</h4>
-                      <button className="inline-flex items-center gap-2 text-base font-medium text-blue-600" onClick={handleBulkDownload}>
-                        <Download className="h-5 w-5" /> Download All
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {(() => {
+                          const docReady = getDocReadiness(activeApplicant.id);
+                          const hasAnyDocs = getModalDocuments().length > 0;
+                          const allValidated = docReady.ready && hasAnyDocs;
+                          return (
+                            <button
+                              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
+                              style={allValidated ? { borderColor: '#059669', color: '#059669' } : { borderColor: '#d1d5db', color: '#9ca3af' }}
+                              disabled={!allValidated}
+                              onClick={() => setToast('All documents have been validated.')}
+                              title={!allValidated ? (docReady.reason || 'Validate all documents first') : 'All documents are validated'}
+                            >
+                              <CheckCircle2 className="h-4 w-4" /> Validate Documents
+                            </button>
+                          );
+                        })()}
+                        <button className="inline-flex items-center gap-2 text-base font-medium text-blue-600" onClick={handleBulkDownload}>
+                          <Download className="h-5 w-5" /> Download All
+                        </button>
+                      </div>
                     </div>
 
                     {isApplicantDocLocked(activeApplicant) && (
