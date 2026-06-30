@@ -151,6 +151,21 @@ const formatDate = (iso: string | null) => {
   return d.toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
 };
 
+const formatTime12h = (time: string | null | undefined): string => {
+  if (!time) return '';
+  try {
+    const [hStr, mStr] = time.split(':');
+    const h = parseInt(hStr, 10);
+    const m = parseInt(mStr, 10);
+    if (Number.isNaN(h) || Number.isNaN(m)) return time;
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 || 12;
+    return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+  } catch {
+    return time;
+  }
+};
+
 const formatShortDate = (iso: string | null) => {
   if (!iso) return '';
   const d = new Date(iso);
@@ -817,7 +832,7 @@ export const ApplicationStatusPage = () => {
                                 <div className="px-3 py-2 flex items-start gap-2">
                                   <span className="mt-0.5 text-xs font-bold uppercase tracking-wide w-28 shrink-0" style={{ color: '#363EE8' }}>Written Exam</span>
                                   <span className="text-sm font-medium" style={{ color: '#040E6B' }}>
-                                    {[record.exam_date && formatDate(record.exam_date), record.exam_time].filter(Boolean).join(' · ')}
+                                    {[record.exam_date && formatDate(record.exam_date), record.exam_time && formatTime12h(record.exam_time)].filter(Boolean).join(' · ')}
                                   </span>
                                 </div>
                               )}
@@ -825,7 +840,7 @@ export const ApplicationStatusPage = () => {
                                 <div className="px-3 py-2 flex items-start gap-2">
                                   <span className="mt-0.5 text-xs font-bold uppercase tracking-wide w-28 shrink-0" style={{ color: '#363EE8' }}>Oral Exam</span>
                                   <span className="text-sm font-medium" style={{ color: '#040E6B' }}>
-                                    {[record.oral_exam_date && formatDate(record.oral_exam_date), record.oral_exam_time].filter(Boolean).join(' · ')}
+                                    {[record.oral_exam_date && formatDate(record.oral_exam_date), record.oral_exam_time && formatTime12h(record.oral_exam_time)].filter(Boolean).join(' · ')}
                                   </span>
                                 </div>
                               )}
@@ -833,7 +848,7 @@ export const ApplicationStatusPage = () => {
                                 <div className="px-3 py-2 flex items-start gap-2">
                                   <span className="mt-0.5 text-xs font-bold uppercase tracking-wide w-28 shrink-0" style={{ color: '#363EE8' }}>Interview</span>
                                   <span className="text-sm font-medium" style={{ color: '#040E6B' }}>
-                                    {[record.interview_date && formatDate(record.interview_date), record.interview_time].filter(Boolean).join(' · ')}
+                                    {[record.interview_date && formatDate(record.interview_date), record.interview_time && formatTime12h(record.interview_time)].filter(Boolean).join(' · ')}
                                   </span>
                                 </div>
                               )}
