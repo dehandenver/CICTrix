@@ -107,14 +107,14 @@ const CAT_META: Record<CatKey, {
     guide: "Can Read/Write = 3 | Elem Undergrad = 5 | Elem Graduate = 7 | HS Undergrad = 9 | HS Graduate = 11 | Vocational = 13 | College Undergrad = 14 | College Graduate = 15 | Master's = 18 | Doctorate = 20",
   },
   experience:  {
-    roman: 'II',  label: 'Experience',         maxOriginal: 25, maxPromotional: 25,
+    roman: 'II',  label: 'Experience',         maxOriginal: 20, maxPromotional: 20,
     color: '#040E6B', bg: '#E8EBF9', border: '#A5ACEE', badgeBg: '#E8EBF9', rspOwned: true,
-    guide: '1-5 yrs = 12 pts | 6-10 yrs = 14 pts | 11-15 yrs = 16 pts | 16-20 yrs = 18 pts | 21+ yrs = 25 pts',
+    guide: '1-5 yrs = 12 pts | 6-10 yrs = 14 pts | 11-15 yrs = 16 pts | 16-20 yrs = 18 pts | 21+ yrs = 20 pts',
   },
   performance: {
     roman: 'III', label: 'Performance Rating', maxOriginal: 0,  maxPromotional: 20,
     color: '#5B65F0', bg: '#ECEEFF', border: '#C8D1FF', badgeBg: '#ECEEFF', rspOwned: true,
-    guide: 'Outstanding = 20 pts | Very Satisfactory = 18 pts | Satisfactory = 15 pts | Unsatisfactory = 0 pts',
+    guide: 'Outstanding = 14 pts (Equiv 70) | Very Satisfactory = 12 pts (Equiv 60)',
   },
   pcpt:        {
     roman: 'IV',  label: 'PCPT',               maxOriginal: 20, maxPromotional: 10,
@@ -122,9 +122,9 @@ const CAT_META: Record<CatKey, {
     guide: '20-22 = 10 pts | 23-25 = 12 pts | 26-28 = 14 pts | 29-31 = 16 pts | 32-34 = 18 pts | 35 = 20 pts',
   },
   potential:   {
-    roman: 'V',   label: 'Potential',           maxOriginal: 0,  maxPromotional: 25,
+    roman: 'V',   label: 'Potential',           maxOriginal: 0,  maxPromotional: 20,
     color: '#2A31C4', bg: '#E8EAF5', border: '#B5BCEC', badgeBg: '#E8EAF5', rspOwned: false,
-    guide: '51-60 = 12 pts | 61-70 = 14 pts | 71-80 = 16 pts | 81-90 = 18 pts | 91-100 = 25 pts',
+    guide: '51-60 = 12 pts | 61-70 = 14 pts | 71-80 = 16 pts | 81-90 = 18 pts | 91-100 = 20 pts',
   },
   writtenExam: {
     roman: '—',   label: 'Written Exam',        maxOriginal: 100, maxPromotional: 100,
@@ -151,7 +151,7 @@ const MAX_TOTAL = 130;
 
 const DOC_TYPE_MAP: Record<CatKey, string[]> = {
   education:   ['transcript_of_records', 'tor'],
-  experience:  ['previous_employer_certificate', 'service_record'],
+  experience:  ['previous_employer_certificate', 'service_record', 'curriculum_vitae'],
   performance: ['performance_evaluation', 'performance_rating'],
   pcpt:        ['pcpt', 'psychometric'],
   potential:   ['potential_assessment', 'potential'],
@@ -265,7 +265,7 @@ const pcptRawToConvertedScore = (raw: number) => {
 
 const writtenExamRawToConvertedScore = (raw: number) => +((raw || 0) * 0.30).toFixed(2);
 
-const oralRawToConvertedScore = (raw: number) => +Math.min(20, Math.max(0, (raw / 100) * 20)).toFixed(2);
+const oralRawToConvertedScore = (raw: number) => +Math.min(20, Math.max(0, (raw / 5) * 20)).toFixed(2);
 
 const getAdjectival = (score: number) =>
   ADJECTIVAL_RANGES.find(r => score >= r.min && score <= r.max) ?? ADJECTIVAL_RANGES[4];
@@ -838,7 +838,6 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
               {rspCategories.map((catKey) => {
                 const meta = CAT_META[catKey];
                 const cat  = scores[catKey];
-                const max  = apptType === 'promotional' ? meta.maxPromotional : meta.maxOriginal;
                 const catFiles = getFilesForCat(catKey);
                 const rawVal = cat.finalScore === null ? '' : String(cat.finalScore);
                 const percentLabel = catKey === 'education' ? '20%' : catKey === 'experience' ? '25%' : catKey === 'performance' ? '20%' : '25%';
@@ -874,7 +873,7 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                   );
                 } else if (catKey === 'experience') {
                   const yearsToPoints = (y: number) => {
-                    if (y >= 21) return 25;
+                    if (y >= 21) return 20;
                     if (y >= 16) return 18;
                     if (y >= 11) return 16;
                     if (y >= 6)  return 14;
@@ -914,16 +913,14 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                       style={{ width: '100%', border: `1.5px solid ${meta.border}`, borderRadius: 8, padding: '0.6rem 0.75rem', fontSize: '0.9rem', outline: 'none', background: isFinalized ? '#F7F8FE' : '#ffffff', color: '#040E6B', boxSizing: 'border-box', marginBottom: '0.45rem', fontFamily: "'Poppins', sans-serif" }}
                     >
                       <option value="">Select Performance Rating</option>
-                      <option value="20">Outstanding (20 pts)</option>
-                      <option value="18">Very Satisfactory (18 pts)</option>
-                      <option value="15">Satisfactory (15 pts)</option>
-                      <option value="0">Unsatisfactory (0 pts)</option>
+                      <option value="14">Outstanding — Equiv 70 (14 pts)</option>
+                      <option value="12">Very Satisfactory — Equiv 60 (12 pts)</option>
                     </select>
                   );
                 } else {
                   // potential: raw score 51-100 → converted
                   const rawToPoints = (r: number) => {
-                    if (r >= 91) return 25;
+                    if (r >= 91) return 20;
                     if (r >= 81) return 18;
                     if (r >= 71) return 16;
                     if (r >= 61) return 14;
@@ -992,10 +989,29 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                       Score: {cat.finalScore ?? 0}
                     </p>
 
-                    {/* View files */}
+                    {/* View files — experience opens CV directly in new tab */}
                     <button
                       type="button"
-                      onClick={() => setFilesModal({ catKey, files: catFiles })}
+                      onClick={async () => {
+                        if (catKey === 'experience') {
+                          const cvRow = attachments.find(a => (a.document_type ?? '').includes('curriculum_vitae'));
+                          const targetRow = cvRow ?? catFiles[0];
+                          if (targetRow) {
+                            try {
+                              const { data } = await (supabase as any).storage
+                                .from(ATTACHMENTS_BUCKET)
+                                .createSignedUrl(targetRow.file_path, 300);
+                              window.open(data?.signedUrl ?? targetRow.file_path, '_blank', 'noopener,noreferrer');
+                            } catch {
+                              window.open(targetRow.file_path, '_blank', 'noopener,noreferrer');
+                            }
+                          } else {
+                            setFilesModal({ catKey, files: catFiles });
+                          }
+                        } else {
+                          setFilesModal({ catKey, files: catFiles });
+                        }
+                      }}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem', color: meta.color, fontSize: '0.78rem', fontWeight: 600, padding: 0 }}
                     >
                       <FileText size={13} />
@@ -1043,7 +1059,7 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                     : (cat.initialScore === 0 ? '' : String(cat.initialScore));
                   const convertedScore =
                     catKey === 'pcpt'     ? (typeof cat.finalScore === 'number' ? cat.finalScore : 0) :
-                    catKey === 'oralExam' ? oralRawToConvertedScore(typeof cat.finalScore === 'number' ? cat.finalScore : (cat.initialScore ?? 0)) :
+                    catKey === 'oralExam' ? (typeof cat.finalScore === 'number' ? cat.finalScore : oralRawToConvertedScore(cat.initialScore ?? 0)) :
                                            writtenExamRawToConvertedScore(typeof cat.finalScore === 'number' ? cat.finalScore : 0);
                   const convertedMax = catKey === 'writtenExam' ? 30 : max;
                   return (

@@ -484,6 +484,7 @@ export const QualifiedApplicantsPage = () => {
   const [docReviews, setDocReviews] = useState<Record<string, DocReview>>(loadDocReviews);
   const [reviewRemarksInputs, setReviewRemarksInputs] = useState<Record<string, string>>({});
   const [reviewExpandedKeys, setReviewExpandedKeys] = useState<Set<string>>(new Set());
+  const [confirmApprove, setConfirmApprove] = useState<{ applicantId: string; fileUrl: string; docType: string; rawDocType: string } | null>(null);
   const [selectedHireApplicantIds, setSelectedHireApplicantIds] = useState<string[]>([]);
   const [showHireConfirmModal, setShowHireConfirmModal] = useState(false);
   const [generatedCredentials, setGeneratedCredentials] = useState<Array<{
@@ -1391,17 +1392,19 @@ export const QualifiedApplicantsPage = () => {
     );
   };
 
-  const handleApproveDoc = (applicantId: string, fileUrl: string, docType: string) => {
+  const handleApproveDoc = (applicantId: string, fileUrl: string, docType: string, rawDocType?: string) => {
     const key = getDocReviewKey(applicantId, fileUrl);
     const review: DocReview = { status: 'approved', remarks: '', reviewedAt: new Date().toISOString() };
     const updatedAll = persistDocReview(key, review);
 
     // Persist validation to Supabase so the applicant portal can show "Verified".
+    // file_name stores the raw document_type (snake_case) for robust matching on the applicant side.
+    // file_path stores the original storage path as a secondary matching key.
     void (supabase as any)
       .from('applicant_attachments')
       .insert({
         applicant_id: applicantId,
-        file_name: docType,
+        file_name: rawDocType || docType,
         file_path: fileUrl,
         document_type: 'doc_validated',
       })
@@ -1787,7 +1790,7 @@ export const QualifiedApplicantsPage = () => {
   const META_DOC_TYPES = new Set(['resubmission_request', 'resubmission_resolved', 'doc_validated']);
 
   const getModalDocuments = () => {
-    if (!activeApplicant) return [] as Array<{ type: string; url: string; verified: boolean; uploadedAt?: string }>;
+    if (!activeApplicant) return [] as Array<{ type: string; rawType: string; url: string; verified: boolean; uploadedAt?: string }>;
 
     const liveRows = attachmentsByApplicant[activeApplicant.id] || [];
     if (liveRows.length > 0) {
@@ -1803,6 +1806,7 @@ export const QualifiedApplicantsPage = () => {
         })
         .map((row) => ({
           type: toDocumentLabel(row.document_type || row.file_name || 'document'),
+          rawType: row.document_type || row.file_name || '',
           url: row.file_path || '#',
           verified: false,
           uploadedAt: row.created_at,
@@ -2243,7 +2247,7 @@ export const QualifiedApplicantsPage = () => {
                           : <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">Under Review</span>;
 
                         return (
-                          <article key={`${doc.type}-${doc.url}`} className="rounded-xl border border-slate-200">
+                          <article key={`${doc.type}-${doc.url}`} className={`rounded-xl border ${status === 'approved' ? 'border-emerald-300 bg-emerald-50' : status === 'resubmission_requested' ? 'border-amber-200 bg-amber-50/40' : 'border-blue-200 bg-blue-50/30'}`}>
                             <div className="flex items-center justify-between px-4 py-3">
                               <div className="flex flex-col gap-1">
                                 <p className="text-base font-semibold" style={{ color: '#040E6B' }}>{doc.type}</p>
@@ -2266,9 +2270,9 @@ export const QualifiedApplicantsPage = () => {
                                     <button
                                       className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                                       disabled={status === 'approved'}
-                                      onClick={() => handleApproveDoc(activeApplicant.id, doc.url, doc.type)}
+                                      onClick={() => setConfirmApprove({ applicantId: activeApplicant.id, fileUrl: doc.url, docType: doc.type, rawDocType: (doc as any).rawType ?? '' })}
                                     >
-                                      Validated
+                                      Approve
                                     </button>
                                     <button
                                       className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${isExpanded ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-amber-300 bg-white text-amber-700 hover:bg-amber-50'}`}
@@ -2326,23 +2330,103 @@ export const QualifiedApplicantsPage = () => {
                   </article>
                 )}
 
-                {activeTab === 'Activity' && (
-                  <article className="rounded-xl border border-slate-200">
-                    <h4 className="border-b border-slate-200 px-4 py-3 text-lg font-semibold text-slate-900">Activity Timeline</h4>
-                    <div className="space-y-4 p-4">
-                      {activeApplicant.timeline.map((entry, index) => (
-                        <div key={`${entry.event}-${index}`} className="flex gap-3">
-                          <span className="mt-2 h-3 w-3 rounded-full bg-blue-600" />
-                          <div>
-                            <p className="text-lg font-semibold text-slate-900">{entry.event}</p>
-                            <p className="text-base text-slate-500">{formatPHDateTime(entry.date)} • {entry.actor}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </article>
-                )}
+                {activeTab === 'Activity' && (() => {
+                  // Derive persisted activity entries from Supabase attachment meta rows.
+                  const metaRows = (attachmentsByApplicant[activeApplicant.id] ?? []).filter(
+                    (row) => row.document_type === 'doc_validated' || row.document_type === 'resubmission_request' || row.document_type === 'resubmission_resolved',
+                  );
+                  const derivedEntries = metaRows.map((row) => {
+                    if (row.document_type === 'doc_validated') {
+                      return { event: `Document Validated: ${toDocumentLabel(row.file_name || 'document')}`, date: row.created_at || new Date().toISOString(), actor: 'RSP Admin' };
+                    }
+                    if (row.document_type === 'resubmission_request') {
+                      const parts = (row.file_name || '').split('::');
+                      const docLabel = toDocumentLabel(parts[1] || 'document');
+                      const reason = parts[2] || '';
+                      return { event: `Resubmission Requested: ${docLabel}${reason ? ` — "${reason}"` : ''}`, date: row.created_at || new Date().toISOString(), actor: 'RSP Admin' };
+                    }
+                    return { event: `Resubmission Resolved: ${toDocumentLabel(row.file_name || 'document')}`, date: row.created_at || new Date().toISOString(), actor: 'Applicant' };
+                  });
+
+                  const allEntries = [
+                    ...(activeApplicant.timeline ?? []),
+                    ...derivedEntries,
+                  ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+                  // Deduplicate same-event same-minute entries that may appear from both local state and DB.
+                  const seen = new Set<string>();
+                  const unique = allEntries.filter((entry) => {
+                    const key = `${entry.event}::${entry.date.slice(0, 16)}`;
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                  });
+
+                  const iconFor = (event: string) => {
+                    if (event.toLowerCase().includes('validated')) return <span className="mt-1 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 text-xs">✓</span>;
+                    if (event.toLowerCase().includes('resubmission')) return <span className="mt-1 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600 text-xs">↩</span>;
+                    if (event.toLowerCase().includes('status')) return <span className="mt-1 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 text-xs">⬆</span>;
+                    return <span className="mt-1 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 text-xs">•</span>;
+                  };
+
+                  return (
+                    <article className="rounded-xl border border-slate-200">
+                      <h4 className="border-b border-slate-200 px-4 py-3 text-lg font-semibold text-slate-900">Activity Timeline</h4>
+                      {unique.length === 0 ? (
+                        <p className="px-4 py-6 text-center text-sm text-slate-400">No activity recorded yet.</p>
+                      ) : (
+                        <ol className="relative px-4 py-4">
+                          {unique.map((entry, index) => (
+                            <li key={`${entry.event}-${index}`} className={`flex gap-3 pb-5 ${index < unique.length - 1 ? 'border-l-2 border-dashed border-slate-200 ml-3 pl-5 -ml-0' : ''}`}>
+                              {iconFor(entry.event)}
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold text-slate-900">{entry.event}</p>
+                                <p className="text-xs text-slate-500">{formatPHDateTime(entry.date)} · {entry.actor}</p>
+                              </div>
+                            </li>
+                          ))}
+                        </ol>
+                      )}
+                    </article>
+                  );
+                })()}
               </section>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Approve document confirmation modal */}
+      {confirmApprove && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4" onClick={() => setConfirmApprove(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 pt-6 pb-4">
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
+                <CheckCircle2 size={24} className="text-emerald-600" />
+              </div>
+              <h3 className="text-base font-bold text-slate-900">Approve Document?</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                You are about to approve <span className="font-semibold text-slate-800">{confirmApprove.docType}</span>. This will mark the document as validated and cannot be undone easily.
+              </p>
+            </div>
+            <div className="flex gap-3 border-t border-slate-100 px-6 py-4">
+              <button
+                type="button"
+                className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                onClick={() => setConfirmApprove(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="flex-1 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                onClick={() => {
+                  handleApproveDoc(confirmApprove.applicantId, confirmApprove.fileUrl, confirmApprove.docType, confirmApprove.rawDocType);
+                  setConfirmApprove(null);
+                }}
+              >
+                Yes, Approve
+              </button>
             </div>
           </div>
         </div>

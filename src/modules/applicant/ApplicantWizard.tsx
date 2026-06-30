@@ -121,9 +121,13 @@ const INITIAL_FORM_DATA: ApplicantFormData = {
   gov_id_expiration: '',
 };
 
-const buildApplicantItemNumber = (sequence: number): string => {
+const buildApplicantItemNumber = (): string => {
   const year = new Date().getFullYear();
-  return `ITEM-${year}-${String(sequence).padStart(4, '0')}`;
+  // Random 7-char alphanumeric suffix — avoids collision with plantilla item numbers
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let suffix = '';
+  for (let i = 0; i < 7; i++) suffix += chars[Math.floor(Math.random() * chars.length)];
+  return `APP-${year}-${suffix}`;
 };
 
 const normalizeAuthValue = (value: string) => String(value ?? '').trim().toLowerCase();
@@ -226,7 +230,6 @@ export const ApplicantWizard: React.FC = () => {
           application_type: 'job',
           position: landingJob.title,
           office: landingJob.department,
-          item_number: landingJob.itemNumber,
         }));
         return;
       }
@@ -239,7 +242,6 @@ export const ApplicantWizard: React.FC = () => {
         application_type: 'job',
         position: landingJob.title,
         office: landingJob.department,
-        item_number: landingJob.itemNumber,
       });
       setFiles([]);
       return;
@@ -258,7 +260,6 @@ export const ApplicantWizard: React.FC = () => {
           application_type: 'job',
           position: positionFromQuery || prev.position,
           office: officeFromQuery || POSITION_TO_DEPARTMENT_MAP[positionFromQuery || ''] || prev.office,
-          item_number: itemNumberFromQuery || prev.item_number,
         }));
         return;
       }
@@ -271,7 +272,6 @@ export const ApplicantWizard: React.FC = () => {
         application_type: 'job',
         position: positionFromQuery || '',
         office: officeFromQuery || POSITION_TO_DEPARTMENT_MAP[positionFromQuery || ''] || '',
-        item_number: itemNumberFromQuery || '',
       });
       setFiles([]);
     }
@@ -428,30 +428,15 @@ const handleNextToReview = () => {
   };
 
   const submitWithClient = async (): Promise<string> => {
-    // Always generate a unique applicant tracking number from the current DB
-    // count — never reuse the job posting's item number, which is shared by all
-    // applicants for that position.
-    let trackingSequence: number;
-    try {
-      const countResult = await (supabase as any)
-        .from('applicants')
-        .select('id', { count: 'exact', head: true });
-      trackingSequence = (Number((countResult as any).count) || 0) + 1;
-    } catch {
-      trackingSequence = Date.now() % 100000;
-    }
-    const itemNumber = buildApplicantItemNumber(trackingSequence);
+    // Generate a unique random application tracking code.
+    // Use the one already shown in the form if set, otherwise generate fresh.
+    const itemNumber = formData.item_number || buildApplicantItemNumber();
     const safe = (val: string | null | undefined) => (val == null ? '' : String(val));
 
     const experienceYears = parseInt(formData.work_experience_years || '0', 10) || 0;
     const experienceMonths = parseInt(formData.work_experience_months || '0', 10) || 0;
     const totalExperienceYears = +(experienceYears + experienceMonths / 12).toFixed(2);
 
-    // Only include columns we know exist on the Supabase `applicants` table.
-    // Spec-added fields (educational attainment, relevant work experience,
-    // government ID details) are persisted client-side via
-    // syncApplicantSubmissionToRecruitment below; once a migration adds the
-    // matching columns, re-add them here.
     const applicantPayload: Record<string, any> = {
       first_name: formData.first_name.trim(),
       middle_name: safe(formData.middle_name).trim() || null,
@@ -466,6 +451,7 @@ const handleNextToReview = () => {
       is_pwd: formData.is_pwd,
       application_type: applicationType,
       status: 'New Application',
+      years_of_experience: totalExperienceYears > 0 ? totalExperienceYears : null,
     };
 
     if (applicationType === 'promotion') {
@@ -765,47 +751,13 @@ const handleNextToReview = () => {
     if (entryMode !== 'wizard' || currentStep !== 1 || !hasStartedAssessment || formData.item_number) {
       return;
     }
-
-    if (isGeneratingItemNumberRef.current) {
-      return;
-    }
-
-    let cancelled = false;
-
-    const generateItemNumber = async () => {
-      isGeneratingItemNumberRef.current = true;
-      try {
-        const supabaseCountResult = await supabase
-          .from('applicants')
-          .select('id', { count: 'exact', head: true });
-        const supabaseCount = Number((supabaseCountResult as any).count ?? 0);
-
-        if (!cancelled) {
-          setFormData((prev) => {
-            if (prev.item_number) return prev;
-            return { ...prev, item_number: buildApplicantItemNumber(supabaseCount + 1) };
-          });
-        }
-      } catch (error) {
-        console.error('Failed to generate item number from Supabase:', error);
-        if (!cancelled) {
-          // Generate a unique sequence based on timestamp as last resort
-          const fallbackSequence = Date.now() % 10000;
-          setFormData((prev) => {
-            if (prev.item_number) return prev;
-            return { ...prev, item_number: buildApplicantItemNumber(fallbackSequence) };
-          });
-        }
-      } finally {
-        isGeneratingItemNumberRef.current = false;
-      }
-    };
-
-    void generateItemNumber();
-
-    return () => {
-      cancelled = true;
-    };
+    if (isGeneratingItemNumberRef.current) return;
+    isGeneratingItemNumberRef.current = true;
+    setFormData((prev) => {
+      if (prev.item_number) return prev;
+      return { ...prev, item_number: buildApplicantItemNumber() };
+    });
+    isGeneratingItemNumberRef.current = false;
   }, [currentStep, entryMode, formData.item_number, hasStartedAssessment]);
 
   useEffect(() => {
@@ -1237,7 +1189,7 @@ const handleNextToReview = () => {
             <p className="submission-reference-label">Your Application Item Number</p>
             <p className="submission-reference">{submissionReference}</p>
             <p className="submission-reference-hint">
-              Save this number. You can use it at <strong>/track</strong> to check your application status anytime.
+              You can track your application status anytime using this code or your email address.
             </p>
           </div>
           <div className="flex gap-3 mt-6">

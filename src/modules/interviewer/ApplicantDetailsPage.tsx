@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { AdminHeader } from '../../components/AdminHeader';
 import { Sidebar } from '../../components/Sidebar';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import { mockDatabase } from '../../lib/mockDatabase';
@@ -723,9 +723,11 @@ export function ApplicantDetailsPage() {
   const [attachments, setAttachments] = useState<AttachmentRecord[]>([]);
   const [evaluation, setEvaluation] = useState<EvaluationRecord | null>(null);
   const [, setToast] = useState<string | null>(null);
+  const [approveToast, setApproveToast] = useState<{ ok: boolean; msg: string } | null>(null);
   const [docReviews, setDocReviews] = useState<Record<string, DocReview>>(loadDocReviews);
   const [openedDocFilePaths, setOpenedDocFilePaths] = useState<Set<string>>(new Set());
   const [docsValidated, setDocsValidated] = useState(false);
+  const [confirmApproveDoc, setConfirmApproveDoc] = useState<{ fileUrl: string; docType: string; rawDocType: string } | null>(null);
   const [showResubmitModal, setShowResubmitModal] = useState(false);
   const [resubmitSelectedSlot, setResubmitSelectedSlot] = useState('');
   const [resubmitReason, setResubmitReason] = useState('');
@@ -733,6 +735,46 @@ export function ApplicantDetailsPage() {
   const [resubmitSending, setResubmitSending] = useState(false);
   const [resubmitSuccess, setResubmitSuccess] = useState<string | null>(null);
   const [resubmitError, setResubmitError] = useState<string | null>(null);
+  const syncedValidatedRef = useRef<Set<string>>(new Set());
+
+  // Self-healing sync: if localStorage says a doc is approved but Supabase has no
+  // doc_validated row for it (e.g., insert failed in a previous session), create it now.
+  // Also pings applicants.updated_at so the tracker's realtime subscription fires.
+  useEffect(() => {
+    if (!applicant?.id || !attachments.length) return;
+    const existingValidatedTypes = new Set(
+      attachments.filter((a) => a.document_type === 'doc_validated').map((a) => a.file_name),
+    );
+    const realDocs = attachments.filter(
+      (a) => a.document_type !== 'resubmission_request' && a.document_type !== 'resubmission_resolved' && a.document_type !== 'doc_validated',
+    );
+    let synced = false;
+    for (const att of realDocs) {
+      const key = `${id}::${att.file_path}`;
+      const rawDocType = (att.document_type as string | null) || FILE_NAME_TO_TYPE[att.file_name] || 'other';
+      if (
+        docReviews[key]?.status === 'approved' &&
+        !existingValidatedTypes.has(rawDocType) &&
+        !syncedValidatedRef.current.has(rawDocType)
+      ) {
+        syncedValidatedRef.current.add(rawDocType);
+        synced = true;
+        void (supabase as any).from('applicant_attachments').insert({
+          applicant_id: applicant.id,
+          file_name: rawDocType,
+          file_path: `validated::${rawDocType}`,
+          document_type: 'doc_validated',
+          file_type: 'validation',
+          file_size: 0,
+        });
+      }
+    }
+    // Ping the tracker via the applicants subscription after creating missing rows.
+    if (synced) {
+      void (supabase as any).from('applicants').update({ updated_at: new Date().toISOString() }).eq('id', applicant.id);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applicant?.id, attachments, docReviews]);
 
   useEffect(() => {
     const load = async () => {
@@ -1407,18 +1449,52 @@ export function ApplicantDetailsPage() {
     });
   };
 
-  const handleApproveDoc = async (fileUrl: string, docType: string) => {
+  const handleApproveDoc = async (fileUrl: string, docType: string, rawDocType: string) => {
     const key = getDocReviewKey(fileUrl);
     const updatedAll = persistDocReview(key, { status: 'approved', remarks: '', reviewedAt: new Date().toISOString() });
-    const allKeys = attachments.map((a) => getDocReviewKey(a.file_path)).filter(Boolean);
+
+    // Persist doc_validated to Supabase so the applicant portal shows "Verified".
+    // file_path uses a sentinel (not the real storage path) to avoid UNIQUE constraint
+    // conflicts — the original document row already has the same applicant_id+file_path.
+    const safeApplicantId = applicant?.id ?? id ?? '';
+    const { error: insertErr } = await (supabase as any)
+      .from('applicant_attachments')
+      .insert({
+        applicant_id: safeApplicantId,
+        file_name: rawDocType,
+        file_path: `validated::${rawDocType}`,
+        document_type: 'doc_validated',
+        file_type: 'validation',
+        file_size: 0,
+      });
+    if (insertErr) {
+      console.error('[handleApproveDoc] Supabase insert failed:', insertErr);
+      setApproveToast({ ok: false, msg: `Supabase error: ${insertErr.message ?? 'insert failed'}` });
+    } else {
+      setApproveToast({ ok: true, msg: `${docType} approved and synced to Supabase.` });
+      // Touch applicants.updated_at so the tracker's applicants subscription fires
+      // as a second realtime signal in case the applicant_attachments subscription
+      // doesn't fire (e.g. REPLICA IDENTITY not yet set on that table).
+      void (supabase as any)
+        .from('applicants')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', safeApplicantId);
+    }
+    setTimeout(() => setApproveToast(null), 5000);
+
+    // Check if every REAL (non-meta) attachment is now approved.
+    const realAttachments = attachments.filter(
+      (a) => a.document_type !== 'resubmission_request' && a.document_type !== 'resubmission_resolved' && a.document_type !== 'doc_validated',
+    );
+    const allKeys = realAttachments.map((a) => getDocReviewKey(a.file_path)).filter(Boolean);
     const allApproved = allKeys.length > 0 && allKeys.every((k) => (updatedAll[k]?.status ?? 'pending') === 'approved');
-    
+
     if (allApproved) {
       await persistStatus('document_verified');
       addDocTimeline('Document Verified: All documents reviewed and approved.');
       setToast('All documents approved. Status updated to Document Verified.');
     } else {
-      addDocTimeline(`Document Verified: ${docType} approved.`);
+      addDocTimeline(`Document Approved: ${docType}.`);
       setToast(`${docType} approved.`);
     }
   };
@@ -1506,12 +1582,38 @@ export function ApplicantDetailsPage() {
     }
   };
 
-  const handleValidateDocs = () => {
-    if (!id) return;
+  const handleValidateDocs = async () => {
+    if (!id || !applicant?.id) return;
     localStorage.setItem(`cictrix_docs_validated_${id}`, 'true');
     setDocsValidated(true);
     addDocTimeline('Documents Validated: All submitted documents have been reviewed and accepted.');
     setToast('Documents validated. Qualify button is now available.');
+
+    // Sync all approved docs to Supabase so the applicant tracker shows "Verified".
+    const realDocs = attachments.filter(
+      (a) => a.document_type !== 'resubmission_request' &&
+             a.document_type !== 'resubmission_resolved' &&
+             a.document_type !== 'doc_validated',
+    );
+    const existingValidated = new Set(
+      attachments.filter((a) => a.document_type === 'doc_validated').map((a) => a.file_name),
+    );
+    for (const att of realDocs) {
+      const rawDocType = (att.document_type as string | null) || FILE_NAME_TO_TYPE[att.file_name] || 'other';
+      if (docReviews[getDocReviewKey(att.file_path)]?.status === 'approved' && !existingValidated.has(rawDocType)) {
+        void (supabase as any).from('applicant_attachments').insert({
+          applicant_id: applicant.id,
+          file_name: rawDocType,
+          file_path: `validated::${rawDocType}`,
+          document_type: 'doc_validated',
+          file_type: 'validation',
+          file_size: 0,
+        });
+        existingValidated.add(rawDocType);
+      }
+    }
+    // Ping the tracker's applicants subscription so it refreshes immediately.
+    void (supabase as any).from('applicants').update({ updated_at: new Date().toISOString() }).eq('id', applicant.id);
   };
 
   const isDocLocked = () => {
@@ -1867,11 +1969,15 @@ export function ApplicantDetailsPage() {
                     const submittedFilePaths = DOCUMENT_SLOTS
                       .map((s) => attachments.find((a) => (a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other') === s.type))
                       .filter(Boolean).map((a) => a!.file_path);
-                    const allDocsOpened = submittedFilePaths.length > 0 && submittedFilePaths.every((fp) => openedDocFilePaths.has(fp));
+                    const realAttachments = attachments.filter(
+                      (a) => a.document_type !== 'resubmission_request' && a.document_type !== 'resubmission_resolved' && a.document_type !== 'doc_validated',
+                    );
+                    const allSubmittedApproved = submittedFilePaths.length > 0 &&
+                      submittedFilePaths.every((fp) => docReviews[getDocReviewKey(fp)]?.status === 'approved');
                     return (
                       <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
                         <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Submitted Documents</h3>
-                        {!isDocLocked() && attachments.length > 0 && (
+                        {!isDocLocked() && realAttachments.length > 0 && (
                           docsValidated ? (
                             <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
                               <CheckCircle2 size={12} /> Validated
@@ -1880,7 +1986,10 @@ export function ApplicantDetailsPage() {
                             <button
                               type="button"
                               onClick={handleValidateDocs}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                              disabled={!allSubmittedApproved}
+                              title={!allSubmittedApproved ? 'All documents must be individually approved first' : 'Validate all documents'}
+                              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
+                              style={allSubmittedApproved ? { borderColor: '#059669', color: '#059669', backgroundColor: '#f0fdf4' } : { borderColor: '#d1d5db', color: '#9ca3af', backgroundColor: '#f9fafb' }}
                             >
                               <CheckCircle2 size={12} /> Validate Documents
                             </button>
@@ -1919,9 +2028,11 @@ export function ApplicantDetailsPage() {
                       const isSubmitted = matched.length > 0;
                       const hasSupabaseResubmissionRequest = Boolean(slotNotice);
                       const locked = isDocLocked();
+                      const latestDoc = matched[matched.length - 1];
+                      const latestApproved = latestDoc ? docReviews[getDocReviewKey(latestDoc.file_path)]?.status === 'approved' : false;
 
                       return (
-                        <article key={slot.type} className={`rounded-xl border ${hasSupabaseResubmissionRequest ? 'border-amber-300 bg-amber-50/30' : isSubmitted ? 'border-slate-200' : 'border-dashed border-slate-200 bg-slate-50/50'}`}>
+                        <article key={slot.type} className={`rounded-xl border ${hasSupabaseResubmissionRequest ? 'border-amber-300 bg-amber-50/30' : latestApproved ? 'border-emerald-300 bg-emerald-50/40' : isSubmitted ? 'border-blue-200 bg-blue-50/20' : 'border-dashed border-slate-200 bg-slate-50/50'}`}>
                           <div className="flex items-start gap-2.5 px-3 py-3">
                             <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-bold ${hasSupabaseResubmissionRequest ? 'bg-amber-100 text-amber-700' : isSubmitted ? 'bg-[#363EE8]/10 text-[#363EE8]' : 'bg-slate-100 text-slate-400'}`}>
                               {idx + 1}
@@ -1991,30 +2102,29 @@ export function ApplicantDetailsPage() {
                                       
                                       {!locked && (
                                         <div className="flex items-center gap-1.5 self-center">
-                                          <button
-                                            type="button"
-                                            onClick={() => void handleApproveDoc(doc.file_path, slot.label)}
-                                            className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
-                                              localStatus === 'approved'
-                                                ? 'bg-emerald-600 text-white cursor-default'
-                                                : 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100'
-                                            }`}
-                                            disabled={localStatus === 'approved'}
-                                          >
-                                            Approve
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => openResubmitModal(slot.label)}
-                                            className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
-                                              localStatus === 'resubmission_requested'
-                                                ? 'bg-amber-600 text-white cursor-default'
-                                                : 'bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100'
-                                            }`}
-                                            disabled={localStatus === 'resubmission_requested'}
-                                          >
-                                            Request Resubmission
-                                          </button>
+                                          {localStatus !== 'approved' && (
+                                            <button
+                                              type="button"
+                                              onClick={() => setConfirmApproveDoc({ fileUrl: doc.file_path, docType: slot.label, rawDocType: slot.type })}
+                                              className="rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 border border-emerald-300 hover:bg-emerald-100 transition"
+                                            >
+                                              Approve
+                                            </button>
+                                          )}
+                                          {localStatus !== 'approved' && (
+                                            <button
+                                              type="button"
+                                              onClick={() => openResubmitModal(slot.label)}
+                                              className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
+                                                localStatus === 'resubmission_requested'
+                                                  ? 'bg-amber-600 text-white cursor-default'
+                                                  : 'bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100'
+                                              }`}
+                                              disabled={localStatus === 'resubmission_requested'}
+                                            >
+                                              Request Resubmission
+                                            </button>
+                                          )}
                                         </div>
                                       )}
                                     </div>
@@ -2312,6 +2422,42 @@ export function ApplicantDetailsPage() {
                   <Send size={15} /> {emailSending ? 'Sending…' : 'Send Email'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Approve document confirmation modal */}
+      {confirmApproveDoc && (
+        <div className="fixed inset-0 z-[280] flex items-center justify-center bg-black/40 p-4" onClick={() => setConfirmApproveDoc(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 pt-6 pb-4">
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
+                <CheckCircle2 size={24} className="text-emerald-600" />
+              </div>
+              <h3 className="text-base font-bold text-slate-900">Approve Document?</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                You are about to approve <span className="font-semibold text-slate-800">{confirmApproveDoc.docType}</span>. This action marks the document as validated.
+              </p>
+            </div>
+            <div className="flex gap-3 border-t border-slate-100 px-6 py-4">
+              <button
+                type="button"
+                className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                onClick={() => setConfirmApproveDoc(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="flex-1 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                onClick={() => {
+                  void handleApproveDoc(confirmApproveDoc.fileUrl, confirmApproveDoc.docType, confirmApproveDoc.rawDocType);
+                  setConfirmApproveDoc(null);
+                }}
+              >
+                Yes, Approve
+              </button>
             </div>
           </div>
         </div>
@@ -2888,6 +3034,13 @@ export function ApplicantDetailsPage() {
           </div>
         );
       })()}
+      {/* Approve doc toast — shows success or error after Supabase insert */}
+      {approveToast && (
+        <div className={`fixed bottom-6 right-6 z-[350] flex items-center gap-3 rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-xl ${approveToast.ok ? 'bg-emerald-600' : 'bg-rose-600'}`}>
+          {approveToast.ok ? <CheckCircle2 size={18} /> : null}
+          {approveToast.msg}
+        </div>
+      )}
       </div>{/* /admin-layout wrapper */}
     </div>
   );

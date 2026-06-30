@@ -506,12 +506,12 @@ const convertEducationScore = (level: string): number => {
 };
 
 const convertExperienceScore = (years: number): number => {
-  if (years >= 21) return 18;
+  if (years >= 21) return 20;
   if (years >= 16) return 18;
   if (years >= 11) return 16;
   if (years >= 6) return 14;
   if (years >= 1) return 12;
-  return 10;
+  return 0;
 };
 
 const convertPerformanceScore = (rating: string): number => {
@@ -3724,31 +3724,31 @@ export const RSPDashboard = () => {
                     <p className="!mb-0 text-sm text-[var(--text-secondary)]">{selectedPositionEmployees.length} employee{selectedPositionEmployees.length === 1 ? '' : 's'}</p>
                   </div>
 
-                  <section className="overflow-hidden rounded-2xl border border-[var(--border-color)] bg-white">
-                    <table className="w-full border-collapse">
-                      <thead className="bg-slate-50 text-left text-sm uppercase tracking-wide text-[var(--text-secondary)]">
+                  <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                    <table className="w-full border-collapse text-sm">
+                      <thead className="bg-slate-50 text-left">
                         <tr>
-                          <th className="px-5 py-4">Employee Name</th>
-                          <th className="px-5 py-4">Employee Number</th>
-                          <th className="px-5 py-4">Position</th>
-                          <th className="px-5 py-4">Department</th>
-                          <th className="px-5 py-4">Status</th>
+                          <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Employee Name</th>
+                          <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
+                          <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Department</th>
+                          <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody className="divide-y divide-slate-100">
                         {selectedPositionEmployees.map((employee) => {
                           const statusLabel = employee.status.toLowerCase().includes('inactive') ? 'Inactive' : 'Active';
+                          const empNum = employeeNumberById.get(employee.id) ?? '';
                           return (
-                            <tr key={employee.id} onClick={() => openEmployeeDetails(employee.id)} className="border-t border-[var(--border-color)] text-lg cursor-pointer hover:bg-slate-50 transition-colors">
-                              <td className="px-5 py-4">
-                                <p className="!mb-0 font-semibold text-[var(--text-primary)]">{employee.full_name}</p>
-                                <p className="!mb-0 text-base text-[var(--text-secondary)]">{employee.email || '--'}</p>
+                            <tr key={employee.id} onClick={() => openEmployeeDetails(employee.id)} className="cursor-pointer hover:bg-slate-50 transition-colors">
+                              <td className="px-5 py-3.5">
+                                <p className="!mb-0 font-semibold" style={{ color: '#040E6B' }}>{employee.full_name}</p>
+                                {empNum && <p className="!mb-0 mt-0.5 text-xs font-medium" style={{ color: '#363EE8' }}>{empNum}</p>}
+                                <p className="!mb-0 mt-0.5 text-xs text-slate-400">{employee.email || '--'}</p>
                               </td>
-                              <td className="px-5 py-4 text-[var(--text-secondary)]">{employeeNumberById.get(employee.id) ?? '--'}</td>
-                              <td className="px-5 py-4 text-[var(--text-secondary)]">{employee.position || '--'}</td>
-                              <td className="px-5 py-4 text-[var(--text-secondary)]">{employee.office || '--'}</td>
-                              <td className="px-5 py-4">
-                                <span className={`rounded-full px-3 py-1 text-sm font-semibold ${statusLabel === 'Active' ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-700'}`}>
+                              <td className="px-5 py-3.5 text-slate-600">{employee.position || '--'}</td>
+                              <td className="px-5 py-3.5 text-slate-600">{employee.office || '--'}</td>
+                              <td className="px-5 py-3.5">
+                                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusLabel === 'Active' ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-700'}`}>
                                   {statusLabel}
                                 </span>
                               </td>
@@ -3757,7 +3757,7 @@ export const RSPDashboard = () => {
                         })}
                         {selectedPositionEmployees.length === 0 && (
                           <tr>
-                            <td colSpan={5} className="px-5 py-8 text-center text-base text-[var(--text-secondary)]">No employees found for this position.</td>
+                            <td colSpan={4} className="px-5 py-8 text-center text-sm text-slate-400">No employees found for this position.</td>
                           </tr>
                         )}
                       </tbody>
@@ -3766,211 +3766,201 @@ export const RSPDashboard = () => {
                 </>
               ) : (
                 <>
-                  <section>
-                    <div className="mb-2 flex items-center gap-1.5 text-sm">
+                  {/* Breadcrumb */}
+                  <div className="flex items-center gap-1.5 text-sm">
+                    <button
+                      type="button"
+                      onClick={() => setAccountsView('position')}
+                      className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
+                    >
+                      <ChevronLeft size={13} /> {selectedDirectoryCard?.position ?? 'Position'}
+                    </button>
+                    <ChevronRight size={13} className="text-slate-400" />
+                    <span className="font-medium text-slate-700">{selectedEmployeeDetails?.full_name ?? 'Employee'}</span>
+                  </div>
+
+                  {/* Header — matches Applicant detail style */}
+                  <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-5">
+                    <div className="flex items-start gap-4">
+                      <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-blue-100">
+                        <User size={24} className="text-blue-600" />
+                      </div>
+                      <div>
+                        <h2 className="!mb-0.5 text-xl font-bold" style={{ color: '#040E6B' }}>
+                          {selectedEmployeeDetails?.full_name ?? 'Employee'}
+                        </h2>
+                        <p className="!mb-2 text-sm text-slate-500">{selectedEmployeeDetails?.position || '—'}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${selectedEmployeeDetails?.status?.toLowerCase().includes('inactive') ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                            {selectedEmployeeDetails?.status?.toLowerCase().includes('inactive') ? 'Inactive' : 'Active'}
+                          </span>
+                          {selectedEmployeeDetails && employeeNumberById.get(selectedEmployeeDetails.id) && (
+                            <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                              {employeeNumberById.get(selectedEmployeeDetails.id)}
+                            </span>
+                          )}
+                          <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                            {selectedEmployeeDetails?.office || 'Unassigned Office'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex flex-shrink-0 items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => setAccountsView('position')}
-                        className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
+                        onClick={() => setShowPositionChangeModal(true)}
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                       >
-                        <ChevronLeft size={13} /> {selectedDirectoryCard?.position ?? 'Position'}
+                        Edit
                       </button>
-                      <ChevronRight size={13} className="text-slate-400" />
-                      <span className="font-medium text-slate-700">{selectedEmployeeDetails?.full_name ?? 'Employee'}</span>
+                      <button
+                        type="button"
+                        onClick={() => { setResetPwState('confirm'); setResetPwError(null); }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-sm font-semibold text-rose-600 hover:bg-rose-50"
+                      >
+                        <Lock size={13} /> Reset Password
+                      </button>
                     </div>
+                  </div>
 
-                    <div className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
-                      <div className="mb-5 flex items-start gap-5">
-                        <div className="rounded-2xl bg-blue-100 p-5 text-blue-600"><User size={48} /></div>
-                        <div>
-                          <h2 className="!mb-1 text-2xl font-bold text-[var(--text-primary)]">{selectedEmployeeDetails?.full_name ?? 'Employee'}</h2>
-                          <p className="!mb-3 text-base text-[var(--text-secondary)]">{selectedEmployeeDetails?.position || '--'}</p>
-                          <div className="flex flex-wrap gap-2 text-base">
-                            <span className="rounded-full bg-blue-100 px-3 py-1 text-blue-700">{selectedEmployeeDetails?.office || 'Unassigned Office'}</span>
-                            <span className="rounded-full bg-green-100 px-3 py-1 text-green-700">
-                              {selectedEmployeeDetails?.status?.toLowerCase().includes('inactive') ? 'Inactive' : 'Active'}
-                            </span>
-                            <span className="rounded-full bg-slate-100 px-3 py-1 text-[var(--text-secondary)]">{selectedEmployeeDetails ? employeeNumberById.get(selectedEmployeeDetails.id) : '--'}</span>
-                          </div>
-                        </div>
-                      </div>
+                  {/* Tab bar — matches Applicant detail style */}
+                  <div className="flex items-center gap-0 border-b border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setEmployeeDetailsTab('personal')}
+                      className={`flex items-center gap-1.5 border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${employeeDetailsTab === 'personal' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                    >
+                      <User size={14} /> Overview
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEmployeeDetailsTab('documents')}
+                      className={`flex items-center gap-1.5 border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${employeeDetailsTab === 'documents' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                    >
+                      <FileText size={14} /> Documents
+                      {selectedEmployeeDocuments.length > 0 && (
+                        <span className="ml-0.5 rounded-full bg-blue-600 px-2 py-0.5 text-xs text-white">{selectedEmployeeDocuments.length}</span>
+                      )}
+                    </button>
+                  </div>
 
-                      <div className="mt-2 border-b border-[var(--border-color)]">
-                        <button
-                          type="button"
-                          onClick={() => setEmployeeDetailsTab('personal')}
-                          className={`mr-6 border-b-2 px-2 py-3 text-xl font-semibold ${employeeDetailsTab === 'personal' ? 'border-blue-600 text-blue-600' : 'border-transparent text-[var(--text-secondary)]'}`}
-                        >
-                          Personal Details
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setEmployeeDetailsTab('documents')}
-                          className={`border-b-2 px-2 py-3 text-xl font-semibold ${employeeDetailsTab === 'documents' ? 'border-blue-600 text-blue-600' : 'border-transparent text-[var(--text-secondary)]'}`}
-                        >
-                          Documents & Requirements <span className="ml-1 rounded-full bg-blue-600 px-2 py-0.5 text-sm text-white">{selectedEmployeeDocuments.length}</span>
-                        </button>
-                      </div>
-
-                      {employeeDetailsTab === 'personal' ? (
-                        <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-                          <div className="space-y-5">
-                            <section className="rounded-2xl border border-[var(--border-color)] p-5">
-                              <h3 className="!mb-3 flex items-center gap-2 text-2xl font-semibold text-[var(--text-primary)]"><Mail size={20} className="text-blue-600" /> Contact Information</h3>
-                              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                                <div>
-                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Email Address</p>
-                                  <p className="!mb-0 text-xl text-[var(--text-primary)]">{selectedEmployeeDetails?.email || '--'}</p>
-                                </div>
-                                <div>
-                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Contact Number</p>
-                                  <p className="!mb-0 flex items-center gap-2 text-xl text-[var(--text-primary)]"><Phone size={16} className="text-[var(--text-muted)]" /> {selectedEmployeeDetails?.contact_number || '--'}</p>
-                                </div>
-                                <div className="xl:col-span-2">
-                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Address</p>
-                                  <p className="!mb-0 flex items-center gap-2 text-xl text-[var(--text-primary)]"><MapPin size={16} className="text-[var(--text-muted)]" /> {selectedEmployeeProfile?.address || '--'}</p>
-                                </div>
-                              </div>
-                            </section>
-
-                            <section className="rounded-2xl border border-[var(--border-color)] p-5">
-                              <h3 className="!mb-3 text-2xl font-semibold text-[var(--text-primary)]">Personal Details</h3>
-                              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                                <div>
-                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Date of Birth</p>
-                                  <p className="!mb-0 text-xl text-[var(--text-primary)]">{selectedEmployeeProfile?.dateOfBirth || '--'}</p>
-                                </div>
-                                <div>
-                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Place of Birth</p>
-                                  <p className="!mb-0 text-xl text-[var(--text-primary)]">{selectedEmployeeProfile?.placeOfBirth || '--'}</p>
-                                </div>
-                                <div>
-                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Age</p>
-                                  <p className="!mb-0 text-xl text-[var(--text-primary)]">{selectedEmployeeProfile?.age || '--'}</p>
-                                </div>
-                                <div>
-                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Sex</p>
-                                  <p className="!mb-0 text-xl text-[var(--text-primary)]">{selectedEmployeeProfile?.sex || '--'}</p>
-                                </div>
-                                <div>
-                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Civil Status</p>
-                                  <p className="!mb-0 text-xl text-[var(--text-primary)]">{selectedEmployeeProfile?.civilStatus || '--'}</p>
-                                </div>
-                              </div>
-                            </section>
-
-                            <section className="rounded-2xl border border-[var(--border-color)] p-5">
-                              <h3 className="!mb-3 flex items-center gap-2 text-2xl font-semibold text-[var(--text-primary)]"><AlertCircle size={20} className="text-red-500" /> Emergency Contact</h3>
-                              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                                <div>
-                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Contact Person</p>
-                                  <p className="!mb-0 text-xl text-[var(--text-primary)]">{selectedEmployeeProfile?.emergencyContactName || '--'}</p>
-                                </div>
-                                <div>
-                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Relationship</p>
-                                  <p className="!mb-0 text-xl text-[var(--text-primary)]">{selectedEmployeeProfile?.emergencyContactRelationship || '--'}</p>
-                                </div>
-                                <div>
-                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Phone Number</p>
-                                  <p className="!mb-0 text-xl text-[var(--text-primary)]">{selectedEmployeeProfile?.emergencyContactPhone || '--'}</p>
-                                </div>
-                              </div>
-                            </section>
-                          </div>
-
-                          <div className="space-y-4">
-                            <section className="rounded-2xl border border-[var(--border-color)] p-5">
-                              <div className="mb-3 flex items-center justify-between">
-                                <h3 className="!mb-0 text-2xl font-semibold text-[var(--text-primary)]">Employment Details</h3>
-                                <button
-                                  type="button"
-                                  onClick={() => setShowPositionChangeModal(true)}
-                                  className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white"
-                                >
-                                  Edit
-                                </button>
-                              </div>
-                              <p className="!mb-1 text-base text-[var(--text-secondary)]">Employee Number</p>
-                              <p className="!mb-3 text-xl font-semibold text-[var(--text-primary)]">{selectedEmployeeDetails ? employeeNumberById.get(selectedEmployeeDetails.id) : '--'}</p>
-                              <p className="!mb-1 text-base text-[var(--text-secondary)]">Position</p>
-                              <p className="!mb-3 text-xl text-[var(--text-primary)]">{selectedEmployeeDetails?.position || '--'}</p>
-                              <p className="!mb-1 text-base text-[var(--text-secondary)]">Department</p>
-                              <p className="!mb-3 text-xl text-[var(--text-primary)]">{selectedEmployeeDetails?.office || '--'}</p>
-                              <p className="!mb-1 text-base text-[var(--text-secondary)]">Date Hired</p>
-                              <p className="!mb-3 text-xl text-[var(--text-primary)]">{selectedEmployeeProfile?.dateHired || '--'}</p>
-                              <p className="!mb-1 text-base text-[var(--text-secondary)]">Employment Status</p>
-                              <p className="!mb-0 text-xl text-green-700">{selectedEmployeeDetails?.status?.toLowerCase().includes('inactive') ? 'Inactive' : 'Active'}</p>
-                            </section>
-
-                            <section className="rounded-2xl border border-[var(--border-color)] p-5">
-                              <h3 className="!mb-3 text-2xl font-semibold text-[var(--text-primary)]">Reset Password</h3>
-                              <button
-                                type="button"
-                                onClick={() => { setResetPwState('confirm'); setResetPwError(null); }}
-                                className="w-full rounded-xl bg-red-600 px-4 py-3 text-base font-semibold text-white"
-                              >
-                                <Lock size={16} className="mr-2 inline" /> Reset Password
-                              </button>
-                            </section>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="mt-5 space-y-5">
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <h3 className="!mb-1 text-3xl font-bold text-[var(--text-primary)]">Document Requirements</h3>
-                              <p className="!mb-0 text-lg text-[var(--text-secondary)]">Manage and review employee document submissions</p>
+                  {/* Overview tab content */}
+                  {employeeDetailsTab === 'personal' ? (
+                    <div className="space-y-4">
+                      {/* Personal Information */}
+                      <section className="rounded-2xl border border-slate-200 bg-white p-5">
+                        <h3 className="!mb-4 text-xs font-bold uppercase tracking-widest" style={{ color: '#363EE8' }}>Personal Information</h3>
+                        <div className="divide-y divide-slate-100">
+                          {([
+                            ['Full Name', selectedEmployeeDetails?.full_name],
+                            ['Email Address', selectedEmployeeDetails?.email],
+                            ['Phone Number', selectedEmployeeDetails?.contact_number],
+                            ['Address', selectedEmployeeProfile?.address],
+                            ['Date of Birth', selectedEmployeeProfile?.dateOfBirth],
+                            ['Place of Birth', selectedEmployeeProfile?.placeOfBirth],
+                            ['Age', selectedEmployeeProfile?.age],
+                            ['Sex', selectedEmployeeProfile?.sex],
+                            ['Civil Status', selectedEmployeeProfile?.civilStatus],
+                          ] as [string, string | null | undefined][]).map(([label, value]) => (
+                            <div key={label} className="flex items-center justify-between py-3">
+                              <p className="!mb-0 text-sm text-slate-500">{label}</p>
+                              <p className="!mb-0 text-sm font-medium" style={{ color: '#040E6B' }}>{value || '—'}</p>
                             </div>
-                            <button type="button" className="rounded-xl bg-blue-600 px-4 py-2 text-lg font-semibold text-white">
-                              <FileText size={16} className="mr-2 inline" /> Request Document
-                            </button>
-                          </div>
-
-                          {selectedEmployeeDocuments.map((doc) => (
-                            <article key={doc.id} className="rounded-2xl border border-[var(--border-color)] bg-white p-5">
-                              <div className="mb-2 flex items-center gap-3">
-                                <h4 className="!mb-0 text-2xl font-semibold text-[var(--text-primary)]">{doc.name}</h4>
-                                {doc.status === 'awaiting_review' && <span className="rounded-full bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-700">Awaiting Review</span>}
-                                {doc.status === 'rejected' && <span className="rounded-full bg-red-100 px-3 py-1 text-sm font-semibold text-red-700">Rejected</span>}
-                                {doc.status === 'pending_submission' && <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-700">Pending Submission</span>}
-                              </div>
-                              <p className="!mb-2 text-lg text-[var(--text-secondary)]">{doc.description}</p>
-                              <p className="!mb-2 text-base text-[var(--text-secondary)]">
-                                <Calendar size={16} className="mr-1 inline" /> Requested: {doc.requestedAt}
-                                {'  '}•{'  '}
-                                <Calendar size={16} className="mr-1 inline" /> Due: {doc.dueAt}
-                                {doc.submittedAt ? (
-                                  <>
-                                    {'  '}•{'  '}
-                                    <Download size={16} className="mr-1 inline" /> Submitted: {doc.submittedAt}
-                                  </>
-                                ) : null}
-                              </p>
-
-                              {doc.status === 'awaiting_review' && (
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                  <button type="button" className="rounded-xl bg-blue-100 px-4 py-2 text-base text-blue-700"><Eye size={16} className="mr-1 inline" /> View Document</button>
-                                  <button type="button" className="rounded-xl bg-green-600 px-4 py-2 text-base text-white"><Check size={16} className="mr-1 inline" /> Approve</button>
-                                  <button type="button" className="rounded-xl bg-red-600 px-4 py-2 text-base text-white"><X size={16} className="mr-1 inline" /> Request Resubmission</button>
-                                </div>
-                              )}
-
-                              {doc.status === 'rejected' && (
-                                <>
-                                  <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-lg text-red-700">
-                                    <strong>Rejection Reason:</strong> {doc.rejectionReason}
-                                  </div>
-                                  <p className="!mb-0 mt-3 text-base font-semibold text-red-700">
-                                    <AlertCircle size={16} className="mr-1 inline" /> Awaiting resubmission from employee
-                                  </p>
-                                </>
-                              )}
-                            </article>
                           ))}
                         </div>
-                      )}
+                      </section>
+
+                      {/* Employment Details */}
+                      <section className="rounded-2xl border border-slate-200 bg-white p-5">
+                        <h3 className="!mb-4 text-xs font-bold uppercase tracking-widest" style={{ color: '#363EE8' }}>Employment Details</h3>
+                        <div className="divide-y divide-slate-100">
+                          {([
+                            ['Employee Number', selectedEmployeeDetails ? (employeeNumberById.get(selectedEmployeeDetails.id) ?? null) : null],
+                            ['Position', selectedEmployeeDetails?.position],
+                            ['Department / Office', selectedEmployeeDetails?.office],
+                            ['Date Hired', selectedEmployeeProfile?.dateHired],
+                            ['Employment Status', selectedEmployeeDetails?.status?.toLowerCase().includes('inactive') ? 'Inactive' : 'Active'],
+                          ] as [string, string | null | undefined][]).map(([label, value]) => (
+                            <div key={label} className="flex items-center justify-between py-3">
+                              <p className="!mb-0 text-sm text-slate-500">{label}</p>
+                              <p className="!mb-0 text-sm font-medium" style={{ color: '#040E6B' }}>{value || '—'}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+
+                      {/* Emergency Contact */}
+                      <section className="rounded-2xl border border-slate-200 bg-white p-5">
+                        <h3 className="!mb-4 text-xs font-bold uppercase tracking-widest" style={{ color: '#363EE8' }}>Emergency Contact</h3>
+                        <div className="divide-y divide-slate-100">
+                          {([
+                            ['Contact Person', selectedEmployeeProfile?.emergencyContactName],
+                            ['Relationship', selectedEmployeeProfile?.emergencyContactRelationship],
+                            ['Phone Number', selectedEmployeeProfile?.emergencyContactPhone],
+                          ] as [string, string | null | undefined][]).map(([label, value]) => (
+                            <div key={label} className="flex items-center justify-between py-3">
+                              <p className="!mb-0 text-sm text-slate-500">{label}</p>
+                              <p className="!mb-0 text-sm font-medium" style={{ color: '#040E6B' }}>{value || '—'}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
                     </div>
-                  </section>
+                  ) : (
+                    /* Documents tab content */
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h3 className="!mb-0.5 text-base font-bold" style={{ color: '#040E6B' }}>Document Requirements</h3>
+                          <p className="!mb-0 text-sm text-slate-500">Manage and review employee document submissions</p>
+                        </div>
+                        <button type="button" className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white">
+                          <FileText size={14} /> Request Document
+                        </button>
+                      </div>
+
+                      {selectedEmployeeDocuments.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-400">
+                          No documents requested yet.
+                        </div>
+                      ) : selectedEmployeeDocuments.map((doc) => (
+                        <article key={doc.id} className="rounded-2xl border border-slate-200 bg-white p-5">
+                          <div className="mb-2 flex items-center gap-3">
+                            <h4 className="!mb-0 text-sm font-bold" style={{ color: '#040E6B' }}>{doc.name}</h4>
+                            {doc.status === 'awaiting_review' && <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-700">Awaiting Review</span>}
+                            {doc.status === 'rejected' && <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700">Rejected</span>}
+                            {doc.status === 'pending_submission' && <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Pending Submission</span>}
+                          </div>
+                          <p className="!mb-2 text-xs text-slate-500">{doc.description}</p>
+                          <p className="!mb-2 text-xs text-slate-400">
+                            <Calendar size={11} className="mr-1 inline" /> Requested: {doc.requestedAt}
+                            {' · '}
+                            <Calendar size={11} className="mr-1 inline" /> Due: {doc.dueAt}
+                            {doc.submittedAt && (
+                              <> · <Download size={11} className="mr-1 inline" /> Submitted: {doc.submittedAt}</>
+                            )}
+                          </p>
+                          {doc.status === 'awaiting_review' && (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <button type="button" className="inline-flex items-center gap-1 rounded-xl bg-blue-100 px-3 py-1.5 text-xs font-semibold text-blue-700"><Eye size={13} /> View Document</button>
+                              <button type="button" className="inline-flex items-center gap-1 rounded-xl bg-green-600 px-3 py-1.5 text-xs font-semibold text-white"><Check size={13} /> Approve</button>
+                              <button type="button" className="inline-flex items-center gap-1 rounded-xl bg-red-600 px-3 py-1.5 text-xs font-semibold text-white"><X size={13} /> Request Resubmission</button>
+                            </div>
+                          )}
+                          {doc.status === 'rejected' && (
+                            <>
+                              <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
+                                <strong>Rejection Reason:</strong> {doc.rejectionReason}
+                              </div>
+                              <p className="!mb-0 mt-2 text-xs font-semibold text-red-700">
+                                <AlertCircle size={12} className="mr-1 inline" /> Awaiting resubmission from employee
+                              </p>
+                            </>
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                  )}
 
                   {showPositionChangeModal && selectedEmployeeDetails && (
                     <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/50 p-4" onClick={() => setShowPositionChangeModal(false)}>
@@ -5545,7 +5535,8 @@ export const RSPDashboard = () => {
                     let performanceScore = null;
                     if (appointmentType === 'promotional') {
                       const perfRaw = resolveScoreValue(stored?.performance);
-                      performanceScore = typeof perfRaw === 'number' && perfRaw > 0 ? clamp20((perfRaw / 5.0) * 20) : null;
+                      // finalScore is already the converted score (12 for VS, 14 for O)
+                      performanceScore = typeof perfRaw === 'number' && perfRaw > 0 ? clamp20(perfRaw) : null;
                     }
 
                     // --- PCPT (both) ---
