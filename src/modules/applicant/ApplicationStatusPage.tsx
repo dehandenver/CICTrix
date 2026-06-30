@@ -184,7 +184,7 @@ export const ApplicationStatusPage = () => {
     } catch { /* silently ignore */ }
   };
 
-  // Real-time subscription — refreshes attachments whenever RSP posts a resubmission notice.
+  // Real-time subscription — refreshes attachments when RSP posts any change.
   useEffect(() => {
     if (!record?.id) return;
     const channel = (supabase as any)
@@ -194,6 +194,15 @@ export const ApplicationStatusPage = () => {
       })
       .subscribe();
     return () => { void (supabase as any).removeChannel(channel); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [record?.id]);
+
+  // Polling fallback — fires every 12 s in case Supabase Realtime is not
+  // enabled for the applicant_attachments table in this project's settings.
+  useEffect(() => {
+    if (!record?.id) return;
+    const interval = setInterval(() => { void fetchAttachments(record.id); }, 12000);
+    return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [record?.id]);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
@@ -437,6 +446,13 @@ export const ApplicationStatusPage = () => {
   const resubmissionNotices = [...latestNoticeByDocType.values()].filter((n) =>
     pendingResubmissionTypes.has(parseNotice(n).docType),
   );
+
+  // Doc types where the applicant already resubmitted (newer upload exists after the notice)
+  // but RSP has not yet approved — should show "Resubmitted" badge, not "Submitted".
+  const resubmittedDocTypes = new Set<string>();
+  latestNoticeByDocType.forEach((_notice, docType) => {
+    if (!pendingResubmissionTypes.has(docType)) resubmittedDocTypes.add(docType);
+  });
 
   // Deduplicate non-notice attachments by document_type (keep most recent per type)
   const deduplicatedAttachments = (() => {
@@ -802,18 +818,22 @@ export const ApplicationStatusPage = () => {
                             </div>
                           </div>
 
-                          {/* Status badge */}
-                          {justUploaded || alreadyResolved ? (
-                            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 border border-blue-200">
-                              <RefreshCw size={12} /> Submitted · Under Review
+                          {/* Status badge — priority: Verified > Action Required > Resubmitted > Under Review > Submitted */}
+                          {(validatedFilePaths.has(doc.file_path) || validatedDocTypes.has(doc.document_type ?? '')) ? (
+                            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
+                              <CheckCircle2 size={12} /> Verified
                             </span>
                           ) : hasResubmissionRequest ? (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 border border-amber-200">
                               <AlertCircle size={12} /> Action Required
                             </span>
-                          ) : (validatedFilePaths.has(doc.file_path) || validatedDocTypes.has(doc.document_type ?? '')) ? (
-                            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
-                              <CheckCircle2 size={12} /> Verified
+                          ) : resubmittedDocTypes.has(doc.document_type ?? '') ? (
+                            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 border border-blue-200">
+                              <RefreshCw size={12} /> Resubmitted
+                            </span>
+                          ) : justUploaded || alreadyResolved ? (
+                            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 border border-blue-200">
+                              <RefreshCw size={12} /> Submitted · Under Review
                             </span>
                           ) : (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border" style={{ backgroundColor: '#EEF0FD', color: '#363EE8', borderColor: '#C8D1FF' }}>
