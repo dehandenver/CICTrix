@@ -59,6 +59,7 @@ import {
     type DeletedJobReport,
 } from '../../lib/recruitmentData';
 import { runSingleFlight, invalidateCacheKey } from '../../lib/singleFlight';
+import { mergeLocalSchedules } from '../../lib/applicantSchedule';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
 import { hireApplicant } from '../../lib/api/employeesApi';
 import {
@@ -103,8 +104,13 @@ interface ApplicantRecord {
   created_at: string;
   total_score: number | null;
   qualification_score?: number | null;
+  // Schedule fields set by PendingAssignmentList / Rater Management.
+  exam_date?: string | null;
+  exam_time?: string | null;
+  interview_date?: string | null;
+  interview_time?: string | null;
+  assigned_interviewer_email?: string | null;
   // Optional metadata used by the assessment-form rendering paths.
-  // Persisted on the applicant record when scoring is finalized.
   appointmentType?: 'original' | 'promotional';
   positionType?: 'rank-and-file' | 'executive';
 }
@@ -1145,6 +1151,11 @@ export const RSPDashboard = () => {
             status: resolvedStatus,
             created_at: String(item?.created_at ?? new Date().toISOString()),
             total_score: resolvedScore > 0 ? resolvedScore : null,
+            exam_date: item?.exam_date ?? null,
+            exam_time: item?.exam_time ?? null,
+            interview_date: item?.interview_date ?? null,
+            interview_time: item?.interview_time ?? null,
+            assigned_interviewer_email: item?.assigned_interviewer_email ?? null,
           };
         });
 
@@ -1173,8 +1184,10 @@ export const RSPDashboard = () => {
 
         // Store evaluations in state for use in Assessment Forms
         (window as any).__evaluationsByApplicantId = evaluationsByApplicantId;
-        
-        setApplicants(Array.from(mergedById.values()));
+
+        // Merge localStorage schedule cache so schedule columns show immediately
+        // even when the Supabase columns are present but the fetch raced a save.
+        setApplicants(mergeLocalSchedules(Array.from(mergedById.values())));
       } else {
         setApplicants([]);
       }
