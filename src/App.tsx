@@ -542,6 +542,7 @@ function AppContent() {
                 {currentEmployee ? (
                   <EmployeePage
                     currentUser={currentEmployee}
+                    loginUsername={employeeSession?.loginUsername}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -559,6 +560,7 @@ function AppContent() {
                 {currentEmployee ? (
                   <EmployeePage
                     currentUser={currentEmployee}
+                    loginUsername={employeeSession?.loginUsername}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -576,6 +578,7 @@ function AppContent() {
                 {currentEmployee ? (
                   <EmployeePage
                     currentUser={currentEmployee}
+                    loginUsername={employeeSession?.loginUsername}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -593,6 +596,7 @@ function AppContent() {
                 {currentEmployee ? (
                   <EmployeePage
                     currentUser={currentEmployee}
+                    loginUsername={employeeSession?.loginUsername}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -610,6 +614,7 @@ function AppContent() {
                 {currentEmployee ? (
                   <EmployeePage
                     currentUser={currentEmployee}
+                    loginUsername={employeeSession?.loginUsername}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (

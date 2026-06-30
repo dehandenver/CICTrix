@@ -75,6 +75,7 @@ import { Employee } from '../../types/employee.types';
 
 interface EmployeePageProps {
   currentUser: Employee;
+  loginUsername?: string;
   onLogout: () => void;
 }
 
@@ -206,8 +207,9 @@ const EditableInput: React.FC<EditableInputProps> = ({ label, value, onChange, t
   </label>
 );
 
-export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogout }) => {
+export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUsername, onLogout }) => {
   const navigate = useNavigate();
+  const [showSwitchModal, setShowSwitchModal] = useState(false);
   const location = useLocation();
   const [selectedFile, setSelectedFile] = useState<Record<string, File | null>>({});
   const [uploadingId, setUploadingId] = useState<string | null>(null);
@@ -949,9 +951,91 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="hidden text-right sm:block">
-              <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 700, color: '#ffffff' }}>Welcome, {currentUser.fullName}</p>
-              <p style={{ margin: 0, fontSize: '0.72rem', color: '#C8D1FF' }}>Employee ID: {currentUser.employeeId}</p>
+            <div className="flex items-center gap-2">
+              <div className="hidden text-right sm:block">
+                <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 700, color: '#ffffff' }}>Welcome, {currentUser.fullName}</p>
+                <p style={{ margin: 0, fontSize: '0.72rem', color: '#C8D1FF' }}>Employee ID: {currentUser.employeeId}</p>
+              </div>
+              {loginUsername === 'employee01' && (
+                <div className="relative">
+                  <button
+                    onClick={() => setShowSwitchModal(!showSwitchModal)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      height: '34px',
+                      width: '34px',
+                      borderRadius: '50%',
+                      border: '1.5px solid rgba(255,255,255,0.4)',
+                      background: 'rgba(255,255,255,0.15)',
+                      color: '#ffffff',
+                      cursor: 'pointer',
+                      padding: 0
+                    }}
+                    title="Switch Account"
+                  >
+                    <User className="h-4.5 w-4.5 text-white" />
+                  </button>
+                  {showSwitchModal && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        right: 0,
+                        top: '40px',
+                        zIndex: 100,
+                        width: '240px',
+                        background: '#ffffff',
+                        border: '1.5px solid #C8D1FF',
+                        borderRadius: '12px',
+                        boxShadow: '0 4px 20px rgba(54,62,232,0.15)',
+                        padding: '16px',
+                        textAlign: 'left'
+                      }}
+                    >
+                      <p style={{ margin: '0 0 12px 0', fontSize: '0.8rem', fontWeight: 650, color: '#040E6B', lineHeight: 1.4 }}>
+                        Would you like to switch to your Office Account dashboard?
+                      </p>
+                      <div className="flex gap-2 justify-end">
+                        <button
+                          onClick={() => {
+                            setShowSwitchModal(false);
+                            navigate('/office/dashboard');
+                          }}
+                          style={{
+                            background: '#363EE8',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '6px',
+                            padding: '4px 10px',
+                            fontSize: '0.75rem',
+                            fontWeight: 650,
+                            cursor: 'pointer',
+                            boxShadow: '0 2px 6px rgba(54,62,232,0.3)'
+                          }}
+                        >
+                          Yes, Switch
+                        </button>
+                        <button
+                          onClick={() => setShowSwitchModal(false)}
+                          style={{
+                            background: '#F0F2FD',
+                            color: '#040E6B',
+                            border: '1px solid #C8D1FF',
+                            borderRadius: '6px',
+                            padding: '4px 10px',
+                            fontSize: '0.75rem',
+                            fontWeight: 650,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <button
               onClick={onLogout}
