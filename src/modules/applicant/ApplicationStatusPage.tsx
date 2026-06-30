@@ -434,7 +434,17 @@ export const ApplicationStatusPage = () => {
   // file_path is a sentinel ('validated::<type>') not a real storage path.
   const docValidatedRows = attachments.filter(a => a.document_type === 'doc_validated');
   const validatedDocTypes  = new Set(docValidatedRows.map(a => a.file_name));
-  const docsValidated = docValidatedRows.length > 0;
+
+  // If the applicant status is at or beyond "Document Verified", all documents
+  // are considered verified even if doc_validated rows haven't synced yet.
+  const statusImpliesVerified = (() => {
+    const s = (record?.status ?? '').toLowerCase();
+    return s.includes('document verified') || s.includes('shortlist') ||
+           s.includes('interview') || s.includes('hired') ||
+           s.includes('accept') || s.includes('recommend');
+  })();
+
+  const docsValidated = docValidatedRows.length > 0 || statusImpliesVerified;
 
   const badge = record ? getBadge(record.status) : null;
   const hasSchedule = !!(record?.exam_date || record?.interview_date);
@@ -942,14 +952,14 @@ export const ApplicationStatusPage = () => {
                             </div>
                           </div>
 
-                          {/* Status badge — priority: Verified > Action Required > Resubmitted > Under Review > Submitted */}
-                          {validatedDocTypes.has(doc.document_type ?? '') ? (
-                            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
-                              <CheckCircle2 size={12} /> Verified
-                            </span>
-                          ) : hasResubmissionRequest ? (
+                          {/* Status badge — priority: Action Required > Verified > Resubmitted > Submitted */}
+                          {hasResubmissionRequest ? (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 border border-amber-200">
                               <AlertCircle size={12} /> Action Required
+                            </span>
+                          ) : (validatedDocTypes.has(doc.document_type ?? '') || statusImpliesVerified) ? (
+                            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
+                              <CheckCircle2 size={12} /> Verified
                             </span>
                           ) : resubmittedDocTypes.has(doc.document_type ?? '') ? (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 border border-blue-200">
