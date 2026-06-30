@@ -151,7 +151,7 @@ const MAX_TOTAL = 130;
 
 const DOC_TYPE_MAP: Record<CatKey, string[]> = {
   education:   ['transcript_of_records', 'tor'],
-  experience:  ['previous_employer_certificate', 'service_record'],
+  experience:  ['previous_employer_certificate', 'service_record', 'curriculum_vitae'],
   performance: ['performance_evaluation', 'performance_rating'],
   pcpt:        ['pcpt', 'psychometric'],
   potential:   ['potential_assessment', 'potential'],
@@ -992,10 +992,29 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                       Score: {cat.finalScore ?? 0}
                     </p>
 
-                    {/* View files */}
+                    {/* View files — experience opens CV directly in new tab */}
                     <button
                       type="button"
-                      onClick={() => setFilesModal({ catKey, files: catFiles })}
+                      onClick={async () => {
+                        if (catKey === 'experience') {
+                          const cvRow = attachments.find(a => (a.document_type ?? '').includes('curriculum_vitae'));
+                          const targetRow = cvRow ?? catFiles[0];
+                          if (targetRow) {
+                            try {
+                              const { data } = await (supabase as any).storage
+                                .from(ATTACHMENTS_BUCKET)
+                                .createSignedUrl(targetRow.file_path, 300);
+                              window.open(data?.signedUrl ?? targetRow.file_path, '_blank', 'noopener,noreferrer');
+                            } catch {
+                              window.open(targetRow.file_path, '_blank', 'noopener,noreferrer');
+                            }
+                          } else {
+                            setFilesModal({ catKey, files: catFiles });
+                          }
+                        } else {
+                          setFilesModal({ catKey, files: catFiles });
+                        }
+                      }}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.35rem', color: meta.color, fontSize: '0.78rem', fontWeight: 600, padding: 0 }}
                     >
                       <FileText size={13} />
