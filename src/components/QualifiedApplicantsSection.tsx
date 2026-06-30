@@ -265,7 +265,7 @@ const pcptRawToConvertedScore = (raw: number) => {
 
 const writtenExamRawToConvertedScore = (raw: number) => +((raw || 0) * 0.30).toFixed(2);
 
-const oralRawToConvertedScore = (raw: number) => +Math.min(20, Math.max(0, (raw / 100) * 20)).toFixed(2);
+const oralRawToConvertedScore = (raw: number) => +Math.min(20, Math.max(0, (raw / 5) * 20)).toFixed(2);
 
 const getAdjectival = (score: number) =>
   ADJECTIVAL_RANGES.find(r => score >= r.min && score <= r.max) ?? ADJECTIVAL_RANGES[4];
@@ -1059,7 +1059,7 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                     : (cat.initialScore === 0 ? '' : String(cat.initialScore));
                   const convertedScore =
                     catKey === 'pcpt'     ? (typeof cat.finalScore === 'number' ? cat.finalScore : 0) :
-                    catKey === 'oralExam' ? oralRawToConvertedScore(typeof cat.finalScore === 'number' ? cat.finalScore : (cat.initialScore ?? 0)) :
+                    catKey === 'oralExam' ? (typeof cat.finalScore === 'number' ? cat.finalScore : oralRawToConvertedScore(cat.initialScore ?? 0)) :
                                            writtenExamRawToConvertedScore(typeof cat.finalScore === 'number' ? cat.finalScore : 0);
                   const convertedMax = catKey === 'writtenExam' ? 30 : max;
                   return (
