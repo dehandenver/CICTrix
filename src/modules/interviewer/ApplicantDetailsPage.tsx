@@ -2013,18 +2013,15 @@ export function ApplicantDetailsPage() {
                                       
                                       {!locked && (
                                         <div className="flex items-center gap-1.5 self-center">
-                                          <button
-                                            type="button"
-                                            onClick={() => localStatus !== 'approved' && setConfirmApproveDoc({ fileUrl: doc.file_path, docType: slot.label })}
-                                            className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
-                                              localStatus === 'approved'
-                                                ? 'bg-emerald-600 text-white cursor-default'
-                                                : 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-100'
-                                            }`}
-                                            disabled={localStatus === 'approved'}
-                                          >
-                                            Approve
-                                          </button>
+                                          {localStatus !== 'approved' && (
+                                            <button
+                                              type="button"
+                                              onClick={() => setConfirmApproveDoc({ fileUrl: doc.file_path, docType: slot.label })}
+                                              className="rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 border border-emerald-300 hover:bg-emerald-100 transition"
+                                            >
+                                              Approve
+                                            </button>
+                                          )}
                                           <button
                                             type="button"
                                             onClick={() => openResubmitModal(slot.label)}
