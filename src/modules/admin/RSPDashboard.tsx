@@ -3724,31 +3724,31 @@ export const RSPDashboard = () => {
                     <p className="!mb-0 text-sm text-[var(--text-secondary)]">{selectedPositionEmployees.length} employee{selectedPositionEmployees.length === 1 ? '' : 's'}</p>
                   </div>
 
-                  <section className="overflow-hidden rounded-2xl border border-[var(--border-color)] bg-white">
-                    <table className="w-full border-collapse">
-                      <thead className="bg-slate-50 text-left text-sm uppercase tracking-wide text-[var(--text-secondary)]">
+                  <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                    <table className="w-full border-collapse text-sm">
+                      <thead className="bg-slate-50 text-left">
                         <tr>
-                          <th className="px-5 py-4">Employee Name</th>
-                          <th className="px-5 py-4">Employee Number</th>
-                          <th className="px-5 py-4">Position</th>
-                          <th className="px-5 py-4">Department</th>
-                          <th className="px-5 py-4">Status</th>
+                          <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Employee Name</th>
+                          <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
+                          <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Department</th>
+                          <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody className="divide-y divide-slate-100">
                         {selectedPositionEmployees.map((employee) => {
                           const statusLabel = employee.status.toLowerCase().includes('inactive') ? 'Inactive' : 'Active';
+                          const empNum = employeeNumberById.get(employee.id) ?? '';
                           return (
-                            <tr key={employee.id} onClick={() => openEmployeeDetails(employee.id)} className="border-t border-[var(--border-color)] text-lg cursor-pointer hover:bg-slate-50 transition-colors">
-                              <td className="px-5 py-4">
-                                <p className="!mb-0 font-semibold text-[var(--text-primary)]">{employee.full_name}</p>
-                                <p className="!mb-0 text-base text-[var(--text-secondary)]">{employee.email || '--'}</p>
+                            <tr key={employee.id} onClick={() => openEmployeeDetails(employee.id)} className="cursor-pointer hover:bg-slate-50 transition-colors">
+                              <td className="px-5 py-3.5">
+                                <p className="!mb-0 font-semibold" style={{ color: '#040E6B' }}>{employee.full_name}</p>
+                                {empNum && <p className="!mb-0 mt-0.5 text-xs font-medium" style={{ color: '#363EE8' }}>{empNum}</p>}
+                                <p className="!mb-0 mt-0.5 text-xs text-slate-400">{employee.email || '--'}</p>
                               </td>
-                              <td className="px-5 py-4 text-[var(--text-secondary)]">{employeeNumberById.get(employee.id) ?? '--'}</td>
-                              <td className="px-5 py-4 text-[var(--text-secondary)]">{employee.position || '--'}</td>
-                              <td className="px-5 py-4 text-[var(--text-secondary)]">{employee.office || '--'}</td>
-                              <td className="px-5 py-4">
-                                <span className={`rounded-full px-3 py-1 text-sm font-semibold ${statusLabel === 'Active' ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-700'}`}>
+                              <td className="px-5 py-3.5 text-slate-600">{employee.position || '--'}</td>
+                              <td className="px-5 py-3.5 text-slate-600">{employee.office || '--'}</td>
+                              <td className="px-5 py-3.5">
+                                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusLabel === 'Active' ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-700'}`}>
                                   {statusLabel}
                                 </span>
                               </td>
@@ -3757,7 +3757,7 @@ export const RSPDashboard = () => {
                         })}
                         {selectedPositionEmployees.length === 0 && (
                           <tr>
-                            <td colSpan={5} className="px-5 py-8 text-center text-base text-[var(--text-secondary)]">No employees found for this position.</td>
+                            <td colSpan={4} className="px-5 py-8 text-center text-sm text-slate-400">No employees found for this position.</td>
                           </tr>
                         )}
                       </tbody>
