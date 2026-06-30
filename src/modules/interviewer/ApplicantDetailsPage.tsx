@@ -2022,18 +2022,20 @@ export function ApplicantDetailsPage() {
                                               Approve
                                             </button>
                                           )}
-                                          <button
-                                            type="button"
-                                            onClick={() => openResubmitModal(slot.label)}
-                                            className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
-                                              localStatus === 'resubmission_requested'
-                                                ? 'bg-amber-600 text-white cursor-default'
-                                                : 'bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100'
-                                            }`}
-                                            disabled={localStatus === 'resubmission_requested'}
-                                          >
-                                            Request Resubmission
-                                          </button>
+                                          {localStatus !== 'approved' && (
+                                            <button
+                                              type="button"
+                                              onClick={() => openResubmitModal(slot.label)}
+                                              className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
+                                                localStatus === 'resubmission_requested'
+                                                  ? 'bg-amber-600 text-white cursor-default'
+                                                  : 'bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100'
+                                              }`}
+                                              disabled={localStatus === 'resubmission_requested'}
+                                            >
+                                              Request Resubmission
+                                            </button>
+                                          )}
                                         </div>
                                       )}
                                     </div>
