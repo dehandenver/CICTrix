@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { AdminHeader } from '../../components/AdminHeader';
 import { Sidebar } from '../../components/Sidebar';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import { mockDatabase } from '../../lib/mockDatabase';
@@ -735,6 +735,39 @@ export function ApplicantDetailsPage() {
   const [resubmitSending, setResubmitSending] = useState(false);
   const [resubmitSuccess, setResubmitSuccess] = useState<string | null>(null);
   const [resubmitError, setResubmitError] = useState<string | null>(null);
+  const syncedValidatedRef = useRef<Set<string>>(new Set());
+
+  // Self-healing sync: if localStorage says a doc is approved but Supabase has no
+  // doc_validated row for it (e.g., insert failed in a previous session), create it now.
+  useEffect(() => {
+    if (!applicant?.id || !attachments.length) return;
+    const existingValidatedTypes = new Set(
+      attachments.filter((a) => a.document_type === 'doc_validated').map((a) => a.file_name),
+    );
+    const realDocs = attachments.filter(
+      (a) => a.document_type !== 'resubmission_request' && a.document_type !== 'resubmission_resolved' && a.document_type !== 'doc_validated',
+    );
+    for (const att of realDocs) {
+      const key = `${id}::${att.file_path}`;
+      const rawDocType = (att.document_type as string | null) || FILE_NAME_TO_TYPE[att.file_name] || 'other';
+      if (
+        docReviews[key]?.status === 'approved' &&
+        !existingValidatedTypes.has(rawDocType) &&
+        !syncedValidatedRef.current.has(rawDocType)
+      ) {
+        syncedValidatedRef.current.add(rawDocType);
+        void (supabase as any).from('applicant_attachments').insert({
+          applicant_id: applicant.id,
+          file_name: rawDocType,
+          file_path: `validated::${rawDocType}`,
+          document_type: 'doc_validated',
+          file_type: 'validation',
+          file_size: 0,
+        });
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applicant?.id, attachments, docReviews]);
 
   useEffect(() => {
     const load = async () => {
@@ -1414,15 +1447,15 @@ export function ApplicantDetailsPage() {
     const updatedAll = persistDocReview(key, { status: 'approved', remarks: '', reviewedAt: new Date().toISOString() });
 
     // Persist doc_validated to Supabase so the applicant portal shows "Verified".
-    // rawDocType is the snake_case DOCUMENT_SLOTS key (e.g. 'drug_test'), not the human label.
-    // Use applicant?.id (fetched from DB) as the authoritative applicant_id.
+    // file_path uses a sentinel (not the real storage path) to avoid UNIQUE constraint
+    // conflicts — the original document row already has the same applicant_id+file_path.
     const safeApplicantId = applicant?.id ?? id ?? '';
     const { error: insertErr } = await (supabase as any)
       .from('applicant_attachments')
       .insert({
         applicant_id: safeApplicantId,
         file_name: rawDocType,
-        file_path: fileUrl,
+        file_path: `validated::${rawDocType}`,
         document_type: 'doc_validated',
         file_type: 'validation',
         file_size: 0,
