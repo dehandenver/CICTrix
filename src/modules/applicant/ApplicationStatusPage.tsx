@@ -188,7 +188,33 @@ export const ApplicationStatusPage = () => {
     } catch { /* silently ignore */ }
   };
 
-  // Real-time subscription — refreshes attachments when RSP posts any change.
+  const fetchRecord = async (applicantId: string) => {
+    try {
+      const { data, error: err } = await (supabase as any)
+        .from('applicants')
+        .select('*')
+        .eq('id', applicantId)
+        .limit(1);
+      if (!err && Array.isArray(data) && data.length > 0) {
+        const row = data[0];
+        setRecord((prev) => prev ? {
+          ...prev,
+          status: String(row.status ?? prev.status),
+          updated_at: row.updated_at ? String(row.updated_at) : prev.updated_at,
+          exam_date: row.exam_date ? String(row.exam_date) : null,
+          exam_time: row.exam_time ? String(row.exam_time) : null,
+          oral_exam_date: row.oral_exam_date ? String(row.oral_exam_date) : null,
+          oral_exam_time: row.oral_exam_time ? String(row.oral_exam_time) : null,
+          interview_date: row.interview_date ? String(row.interview_date) : null,
+          interview_time: row.interview_time ? String(row.interview_time) : null,
+          venue: row.venue ? String(row.venue) : null,
+          schedule_instructions: row.schedule_instructions ? String(row.schedule_instructions) : null,
+        } : prev);
+      }
+    } catch { /* silently ignore */ }
+  };
+
+  // Real-time subscription — refreshes attachments when RSP approves/resubmits.
   useEffect(() => {
     if (!record?.id) return;
     const channel = (supabase as any)
@@ -201,11 +227,28 @@ export const ApplicationStatusPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [record?.id]);
 
-  // Polling fallback — fires every 12 s in case Supabase Realtime is not
-  // enabled for the applicant_attachments table in this project's settings.
+  // Real-time subscription — refreshes applicant status when RSP updates it
+  // (e.g., "Document Verified", "Shortlisted", schedule changes).
   useEffect(() => {
     if (!record?.id) return;
-    const interval = setInterval(() => { void fetchAttachments(record.id); }, 12000);
+    const channel = (supabase as any)
+      .channel(`applicants_${record.id}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'applicants', filter: `id=eq.${record.id}` }, () => {
+        void fetchRecord(record.id);
+      })
+      .subscribe();
+    return () => { void (supabase as any).removeChannel(channel); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [record?.id]);
+
+  // Polling fallback — fires every 12 s for both tables in case Supabase
+  // Realtime is not yet enabled for one of them.
+  useEffect(() => {
+    if (!record?.id) return;
+    const interval = setInterval(() => {
+      void fetchAttachments(record.id);
+      void fetchRecord(record.id);
+    }, 12000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [record?.id]);
