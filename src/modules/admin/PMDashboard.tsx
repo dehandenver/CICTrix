@@ -24,6 +24,7 @@ import {
   HelpCircle,
   Info,
   LayoutDashboard,
+  Lock,
   Mail,
   MoreHorizontal,
   Palette,
@@ -121,8 +122,47 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<
-    'dashboard' | 'employees' | 'evaluation-status' | 'performance-reviews' | 'goals' | 'ipcr' | 'analytics' | 'reports' | 'settings'
+    'dashboard' | 'employees' | 'evaluation-status' | 'performance-reviews' | 'goals' | 'ipcr' | 'analytics' | 'reports' | 'settings' | 'registry' | 'timeline' | 'compliance'
   >('dashboard');
+
+  // Module 1 System Administration State
+  const [registrySubtab, setRegistrySubtab] = useState<'directory' | 'access'>('directory');
+  const [timelineSubtab, setTimelineSubtab] = useState<'scheduler' | 'vault'>('scheduler');
+  const [complianceSubtab, setComplianceSubtab] = useState<'tracker' | 'closeout'>('tracker');
+  const [registrySearch, setRegistrySearch] = useState('');
+  const [showAddPersonnelModal, setShowAddPersonnelModal] = useState(false);
+  const [newRaterEmail, setNewRaterEmail] = useState('');
+  const [newRaterRole, setNewRaterRole] = useState<'supervisor' | 'dept_head'>('supervisor');
+  const [newRaterDept, setNewRaterDept] = useState('Health Office');
+
+  // Succession Transfer Tool State
+  const [showSuccessionModal, setShowSuccessionModal] = useState(false);
+  const [leavingRater, setLeavingRater] = useState<'supervisor' | 'dept_head' | null>(null);
+  const [successionRerouted, setSuccessionRerouted] = useState(false);
+
+  // Phase Scheduler Dates State
+  const [targetSettingOpen, setTargetSettingOpen] = useState(true);
+  const [ratingPhaseOpen, setRatingPhaseOpen] = useState(false);
+  const [schedulerDates, setSchedulerDates] = useState<Record<string, { targetStart: string; targetEnd: string; ratingStart: string; ratingEnd: string }>>({
+    'IT Division': { targetStart: '2026-01-01', targetEnd: '2026-02-28', ratingStart: '2026-06-01', ratingEnd: '2026-07-15' },
+    'Health Office': { targetStart: '2026-01-01', targetEnd: '2026-02-28', ratingStart: '2026-06-01', ratingEnd: '2026-07-15' },
+    'HR Department': { targetStart: '2026-01-05', targetEnd: '2026-03-05', ratingStart: '2026-06-05', ratingEnd: '2026-07-20' },
+    'Treasury Department': { targetStart: '2026-01-05', targetEnd: '2026-03-05', ratingStart: '2026-06-05', ratingEnd: '2026-07-20' }
+  });
+
+  // Audit Logs (Access changes & Locked Targets) State
+  const [accessAuditLogs, setAccessAuditLogs] = useState<Array<{ id: string; user: string; role: string; action: string; time: string }>>([
+    { id: 'LOG-001', user: 'admin@abyan.gov.ph', role: 'supervisor', action: 'Assigned supervisor role to maria.santos@ilongcity.gov.ph', time: '2026-06-28 10:15' },
+    { id: 'LOG-002', user: 'admin@abyan.gov.ph', role: 'dept_head', action: 'Transferred Department Head role in Treasury Office to successor', time: '2026-06-29 14:22' }
+  ]);
+  const [vaultAuditLogs, setVaultAuditLogs] = useState<Array<{ id: string; employee: string; dept: string; lockedAt: string; verifiedBy: string }>>([
+    { id: 'VLT-101', employee: 'Alice Vance', dept: 'HR Department', lockedAt: '2026-02-20 16:30', verifiedBy: 'Supervisor Rater' },
+    { id: 'VLT-102', employee: 'Bob Miller', dept: 'IT Division', lockedAt: '2026-02-22 09:15', verifiedBy: 'Supervisor Rater' }
+  ]);
+
+  // Final Closeout Checks State
+  const [healthOfficeClosed, setHealthOfficeClosed] = useState(false);
+  const [itDivisionClosed, setItDivisionClosed] = useState(false);
   const [newCycle, setNewCycle] = useState<{
     title: string;
     start_date: string;
@@ -730,6 +770,9 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   if (isDashboardView) {
     const sideNavItems = [
       { key: 'dashboard', label: 'Dashboard', subtitle: '', icon: LayoutDashboard },
+      { key: 'registry', label: 'Personnel & Office Registry', subtitle: 'Tab 1.1: Org Architecture', icon: Building2 },
+      { key: 'timeline', label: 'Cycle & Timeline Settings', subtitle: 'Tab 1.2: Switches & Vault', icon: Clock },
+      { key: 'compliance', label: 'Submission Compliance & Closeout', subtitle: 'Tab 1.3: Compliance tracker', icon: FileCheck2 },
       { key: 'employees', label: 'Employees', subtitle: 'Employee Directory', icon: Users },
       { key: 'evaluation-status', label: 'Employee Evaluation Status', subtitle: 'Track progress', icon: ClipboardList },
       { key: 'performance-reviews', label: 'Performance Reviews', subtitle: 'Upcoming reviews', icon: CalendarCheck2 },
@@ -802,6 +845,658 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
           </aside>
 
           <main className="flex-1 p-6">
+
+            {activeSection === 'registry' && (
+              <div className="space-y-6" style={{ fontFamily: "'Poppins', sans-serif" }}>
+                {/* Subtabs Header */}
+                <div className="flex border-b border-slate-200 bg-white rounded-xl p-2 shadow-sm gap-2">
+                  <button
+                    onClick={() => setRegistrySubtab('directory')}
+                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
+                      registrySubtab === 'directory' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    Office Directory
+                  </button>
+                  <button
+                    onClick={() => setRegistrySubtab('access')}
+                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
+                      registrySubtab === 'access' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    Access & Role Management
+                  </button>
+                </div>
+
+                {registrySubtab === 'directory' && (
+                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-800">Office Directory Matrix</h3>
+                        <p className="text-xs text-slate-500 mt-0.5">Read-mostly single source of truth for assigned signing authorities.</p>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Search office or name..."
+                        value={registrySearch}
+                        onChange={(e) => setRegistrySearch(e.target.value)}
+                        className="rounded-lg border border-slate-350 px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#363EE8]"
+                      />
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-left">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold">
+                            <th className="px-4 py-2.5">Office Name</th>
+                            <th className="px-4 py-2.5">Department Head</th>
+                            <th className="px-4 py-2.5">Assigned Supervisor(s)</th>
+                            <th className="px-4 py-2.5 text-right">Employees</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                          {[
+                            { office: 'HR Department', head: 'John Doe (john.doe@ilongcity.gov.ph)', status: 'Active', supervisors: 'Alice Vance', count: 12 },
+                            { office: 'Health Office', head: 'Dr. Jane Smith (jane.smith@ilongcity.gov.ph)', status: 'Active', supervisors: 'Maria Santos', count: 24 },
+                            { office: 'Treasury Department', head: 'Robert Johnson (robert.j@ilongcity.gov.ph)', status: 'Active', supervisors: 'Charlie Green, Diane Prince', count: 18 },
+                            { office: 'IT Division', head: 'Michael Chang (michael.c@ilongcity.gov.ph)', status: 'Active', supervisors: 'Bob Miller', count: 8 }
+                          ]
+                            .filter(row => 
+                              row.office.toLowerCase().includes(registrySearch.toLowerCase()) ||
+                              row.head.toLowerCase().includes(registrySearch.toLowerCase()) ||
+                              row.supervisors.toLowerCase().includes(registrySearch.toLowerCase())
+                            )
+                            .map((row, idx) => (
+                              <tr key={idx} className="hover:bg-slate-50/50">
+                                <td className="px-4 py-3 text-slate-800">{row.office}</td>
+                                <td className="px-4 py-3">
+                                  <p>{row.head}</p>
+                                  <span className="inline-block mt-1 text-[9px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full uppercase font-bold">{row.status}</span>
+                                </td>
+                                <td className="px-4 py-3 text-slate-600">{row.supervisors}</td>
+                                <td className="px-4 py-3 text-right text-slate-800">{row.count}</td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {registrySubtab === 'access' && (
+                  <div className="space-y-6">
+                    {/* Access Controls */}
+                    <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-800">Access & Role Registry</h3>
+                          <p className="text-xs text-slate-500 mt-0.5">Assign, remove, or transfer Supervisor and Department Head roles.</p>
+                        </div>
+                        <button
+                          onClick={() => setShowAddPersonnelModal(true)}
+                          className="bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition"
+                        >
+                          Add Personnel Role
+                        </button>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-left">
+                          <thead>
+                            <tr className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold">
+                              <th className="px-4 py-2.5">Email</th>
+                              <th className="px-4 py-2.5">Role</th>
+                              <th className="px-4 py-2.5">Office</th>
+                              <th className="px-4 py-2.5 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                            <tr className="hover:bg-slate-50/50">
+                              <td className="px-4 py-3">maria.santos@ilongcity.gov.ph</td>
+                              <td className="px-4 py-3"><span className="bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full">Supervisor</span></td>
+                              <td className="px-4 py-3">Health Office</td>
+                              <td className="px-4 py-3 text-right">
+                                <button
+                                  onClick={() => {
+                                    setLeavingRater('supervisor');
+                                    setShowSuccessionModal(true);
+                                  }}
+                                  className="text-red-600 hover:text-red-800 hover:underline"
+                                >
+                                  Remove/Transfer
+                                </button>
+                              </td>
+                            </tr>
+                            <tr className="hover:bg-slate-50/50">
+                              <td className="px-4 py-3">michael.c@ilongcity.gov.ph</td>
+                              <td className="px-4 py-3"><span className="bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-full">Department Head</span></td>
+                              <td className="px-4 py-3">IT Division</td>
+                              <td className="px-4 py-3 text-right">
+                                <button
+                                  onClick={() => {
+                                    setLeavingRater('dept_head');
+                                    setShowSuccessionModal(true);
+                                  }}
+                                  className="text-red-600 hover:text-red-800 hover:underline"
+                                >
+                                  Remove/Transfer
+                                </button>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Audit Trail Log */}
+                    <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-800">Access Management Audit Trail</h3>
+                        <p className="text-xs text-slate-500 mt-0.5">Logs of all supervisor and department head role modifications.</p>
+                      </div>
+
+                      <div className="overflow-y-auto max-h-48 divide-y divide-slate-100 text-xs">
+                        {accessAuditLogs.map((log) => (
+                          <div key={log.id} className="py-2.5 flex justify-between gap-3">
+                            <div>
+                              <p className="font-semibold text-slate-850">{log.action}</p>
+                              <p className="text-[10px] text-slate-400 mt-0.5">Authorized by: {log.user}</p>
+                            </div>
+                            <span className="shrink-0 text-slate-400 text-[10px] font-bold">{log.time}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Add Personnel Modal */}
+                {showAddPersonnelModal && (
+                  <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 space-y-4">
+                      <div>
+                        <h3 className="text-base font-bold text-slate-800">Add Personnel Signing Authority</h3>
+                        <p className="text-xs text-slate-500 mt-0.5">Assign a role and map it to an office registry.</p>
+                      </div>
+                      <div className="space-y-3 text-xs">
+                        <div className="space-y-1">
+                          <label className="block font-bold text-slate-700">Employee Email</label>
+                          <input
+                            type="email"
+                            placeholder="e.g. employee@ilongcity.gov.ph"
+                            value={newRaterEmail}
+                            onChange={(e) => setNewRaterEmail(e.target.value)}
+                            className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[#363EE8]"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block font-bold text-slate-700">Role Designation</label>
+                          <select
+                            value={newRaterRole}
+                            onChange={(e) => setNewRaterRole(e.target.value as any)}
+                            className="w-full rounded-lg border border-slate-200 px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[#363EE8]"
+                          >
+                            <option value="supervisor">Supervisor</option>
+                            <option value="dept_head">Department Head</option>
+                          </select>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block font-bold text-slate-700">Assigned Office</label>
+                          <select
+                            value={newRaterDept}
+                            onChange={(e) => setNewRaterDept(e.target.value)}
+                            className="w-full rounded-lg border border-slate-200 px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[#363EE8]"
+                          >
+                            <option value="Health Office">Health Office</option>
+                            <option value="IT Division">IT Division</option>
+                            <option value="HR Department">HR Department</option>
+                            <option value="Treasury Department">Treasury Department</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-2 text-xs font-semibold">
+                        <button
+                          onClick={() => {
+                            if (!newRaterEmail.trim()) { alert('Please enter email.'); return; }
+                            const newLog = {
+                              id: `LOG-00${accessAuditLogs.length + 1}`,
+                              user: 'admin@abyan.gov.ph',
+                              role: newRaterRole,
+                              action: `Assigned ${newRaterRole} role in ${newRaterDept} to ${newRaterEmail}`,
+                              time: new Date().toISOString().replace('T', ' ').slice(0, 16)
+                            };
+                            setAccessAuditLogs([newLog, ...accessAuditLogs]);
+                            setShowAddPersonnelModal(false);
+                            setNewRaterEmail('');
+                          }}
+                          className="bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2"
+                        >
+                          Save Assignment
+                        </button>
+                        <button
+                          onClick={() => setShowAddPersonnelModal(false)}
+                          className="border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 rounded-lg px-4 py-2"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Succession Transfer Tool Modal */}
+                {showSuccessionModal && (
+                  <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 space-y-4 text-xs">
+                      <div>
+                        <h3 className="text-base font-bold text-slate-800 flex items-center gap-1.5">
+                          <AlertTriangle className="h-5 w-5 text-amber-500" />
+                          Succession Transfer Tool
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-0.5">Safely reroute active pending performance bundles to prevent sign-off blocks.</p>
+                      </div>
+
+                      <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-lg leading-relaxed">
+                        <p className="font-bold">Important Notice:</p>
+                        <p className="mt-0.5">Removing the active signing authority in this office requires transitioning all active employee IPCR files awaiting verification.</p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <p className="font-bold text-slate-700">Active Awaiting Sign-offs (Succession Queue):</p>
+                        <div className="divide-y divide-slate-100 border border-slate-100 rounded-lg p-3 bg-slate-50 max-h-32 overflow-y-auto">
+                          <p className="py-1">📄 IPCR target validation: <strong>Alice Vance</strong> (Pending Rater Verification)</p>
+                          <p className="py-1">📄 IPCR target validation: <strong>Bob Miller</strong> (Pending Rater Verification)</p>
+                          <p className="py-1">📄 DPCR compilation cycle: <strong>IT Division Group</strong> (Awaiting supervisor summary)</p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block font-bold text-slate-700">Incoming Successor Replacement</label>
+                        <select className="w-full rounded-lg border border-slate-200 px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[#363EE8]">
+                          <option value="new_officer@ilongcity.gov.ph">New Designated Officer (new_officer@ilongcity.gov.ph)</option>
+                          <option value="alternate_head@ilongcity.gov.ph">Alternate Administrator (alternate_head@ilongcity.gov.ph)</option>
+                        </select>
+                      </div>
+
+                      <div className="flex justify-end gap-2 font-semibold">
+                        <button
+                          onClick={() => {
+                            setSuccessionRerouted(true);
+                            const newLog = {
+                              id: `LOG-00${accessAuditLogs.length + 1}`,
+                              user: 'admin@abyan.gov.ph',
+                              role: leavingRater || 'supervisor',
+                              action: `Revoked access for outgoing ${leavingRater}. Succession tool reassigned 3 pending submissions to successor.`,
+                              time: new Date().toISOString().replace('T', ' ').slice(0, 16)
+                            };
+                            setAccessAuditLogs([newLog, ...accessAuditLogs]);
+                            setShowSuccessionModal(false);
+                            alert('Succession transition complete. 3 files rerouted successfully.');
+                          }}
+                          className="bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2"
+                        >
+                          Confirm & Transition Succession
+                        </button>
+                        <button
+                          onClick={() => setShowSuccessionModal(false)}
+                          className="border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 rounded-lg px-4 py-2"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeSection === 'timeline' && (
+              <div className="space-y-6" style={{ fontFamily: "'Poppins', sans-serif" }}>
+                {/* Subtabs Header */}
+                <div className="flex border-b border-slate-200 bg-white rounded-xl p-2 shadow-sm gap-2">
+                  <button
+                    onClick={() => setTimelineSubtab('scheduler')}
+                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
+                      timelineSubtab === 'scheduler' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-650 hover:bg-slate-50'
+                    }`}
+                  >
+                    Phase Scheduler
+                  </button>
+                  <button
+                    onClick={() => setTimelineSubtab('vault')}
+                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
+                      timelineSubtab === 'vault' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-650 hover:bg-slate-50'
+                    }`}
+                  >
+                    Locked Targets Vault
+                  </button>
+                </div>
+
+                {timelineSubtab === 'scheduler' && (
+                  <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-6">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-800">Global Timeline Switchboard</h3>
+                        <p className="text-xs text-slate-500 mt-0.5">Toggle editing access parameters for employees and supervisor consoles.</p>
+                      </div>
+                    </div>
+
+                    {/* Hard Lock Switches */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="border border-slate-150 rounded-xl p-4 flex items-center justify-between bg-slate-50/50">
+                        <div>
+                          <p className="text-xs font-bold text-slate-800">Target-Setting Phase</p>
+                          <p className="text-[11px] text-slate-500 mt-0.5">Enables encoding IPCR target rows</p>
+                        </div>
+                        <button
+                          onClick={() => setTargetSettingOpen(!targetSettingOpen)}
+                          className={`w-12 h-6 rounded-full transition-colors relative ${targetSettingOpen ? 'bg-emerald-500' : 'bg-slate-350'}`}
+                        >
+                          <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${targetSettingOpen ? 'right-0.5' : 'left-0.5'}`} />
+                        </button>
+                      </div>
+
+                      <div className="border border-slate-150 rounded-xl p-4 flex items-center justify-between bg-slate-50/50">
+                        <div>
+                          <p className="text-xs font-bold text-slate-800">Rating Phase (Accomplishments)</p>
+                          <p className="text-[11px] text-slate-500 mt-0.5">Enables accomplishment inputs & ratings override</p>
+                        </div>
+                        <button
+                          onClick={() => setRatingPhaseOpen(!ratingPhaseOpen)}
+                          className={`w-12 h-6 rounded-full transition-colors relative ${ratingPhaseOpen ? 'bg-emerald-500' : 'bg-slate-350'}`}
+                        >
+                          <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${ratingPhaseOpen ? 'right-0.5' : 'left-0.5'}`} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Calendar Timelines per Office */}
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-bold text-slate-700">Office-Staggered Deadlines Configurations</h4>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-left">
+                          <thead>
+                            <tr className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold">
+                              <th className="px-4 py-2">Office</th>
+                              <th className="px-4 py-2">Target-Setting Period</th>
+                              <th className="px-4 py-2">Rating period</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                            {Object.entries(schedulerDates).map(([office, dates]) => (
+                              <tr key={office} className="hover:bg-slate-50/50">
+                                <td className="px-4 py-3 text-slate-850">{office}</td>
+                                <td className="px-4 py-3">
+                                  <div className="flex gap-2">
+                                    <input
+                                      type="date"
+                                      value={dates.targetStart}
+                                      onChange={(e) => setSchedulerDates(prev => ({ ...prev, [office]: { ...dates, targetStart: e.target.value } }))}
+                                      className="border rounded px-1.5 py-0.5 focus:outline-none"
+                                    />
+                                    <span>to</span>
+                                    <input
+                                      type="date"
+                                      value={dates.targetEnd}
+                                      onChange={(e) => setSchedulerDates(prev => ({ ...prev, [office]: { ...dates, targetEnd: e.target.value } }))}
+                                      className="border rounded px-1.5 py-0.5 focus:outline-none"
+                                    />
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex gap-2">
+                                    <input
+                                      type="date"
+                                      value={dates.ratingStart}
+                                      onChange={(e) => setSchedulerDates(prev => ({ ...prev, [office]: { ...dates, ratingStart: e.target.value } }))}
+                                      className="border rounded px-1.5 py-0.5 focus:outline-none"
+                                    />
+                                    <span>to</span>
+                                    <input
+                                      type="date"
+                                      value={dates.ratingEnd}
+                                      onChange={(e) => setSchedulerDates(prev => ({ ...prev, [office]: { ...dates, ratingEnd: e.target.value } }))}
+                                      className="border rounded px-1.5 py-0.5 focus:outline-none"
+                                    />
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {timelineSubtab === 'vault' && (
+                  <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-6">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-800">Locked Targets Vault</h3>
+                        <p className="text-xs text-slate-500 mt-0.5">Secure, read-only data store for office-verified targets. Modifications disabled during evaluation cycle.</p>
+                      </div>
+                    </div>
+
+                    {/* Locked targets list */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-left">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold">
+                            <th className="px-4 py-2.5">Employee Name</th>
+                            <th className="px-4 py-2.5">Department</th>
+                            <th className="px-4 py-2.5">Lock Status</th>
+                            <th className="px-4 py-2.5">Last Verified By</th>
+                            <th className="px-4 py-2.5">Timestamp locked</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                          <tr className="hover:bg-slate-50/50">
+                            <td className="px-4 py-3 text-slate-800">Alice Vance</td>
+                            <td className="px-4 py-3">HR Department</td>
+                            <td className="px-4 py-3">
+                              <span className="inline-flex items-center gap-1.5 text-indigo-700 font-bold"><Lock className="h-3.5 w-3.5" /> Frozen</span>
+                            </td>
+                            <td className="px-4 py-3">Supervisor Rater</td>
+                            <td className="px-4 py-3 text-slate-500">2026-02-20 16:30</td>
+                          </tr>
+                          <tr className="hover:bg-slate-50/50">
+                            <td className="px-4 py-3 text-slate-800">Bob Miller</td>
+                            <td className="px-4 py-3">IT Division</td>
+                            <td className="px-4 py-3">
+                              <span className="inline-flex items-center gap-1.5 text-indigo-700 font-bold"><Lock className="h-3.5 w-3.5" /> Frozen</span>
+                            </td>
+                            <td className="px-4 py-3">Supervisor Rater</td>
+                            <td className="px-4 py-3 text-slate-500">2026-02-22 09:15</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Audit Log list */}
+                    <div className="border border-slate-100 bg-slate-50/50 rounded-xl p-4 space-y-3">
+                      <p className="font-bold text-slate-700 text-xs">Vault Verification Audit Logs:</p>
+                      <div className="divide-y divide-slate-100 text-[11px] text-slate-600 max-h-32 overflow-y-auto">
+                        {vaultAuditLogs.map(log => (
+                          <div key={log.id} className="py-2 flex justify-between">
+                            <span>📄 Target Vault Lock: Verified targets for <strong>{log.employee}</strong> ({log.dept}) - locked in container.</span>
+                            <span className="font-bold text-slate-400">{log.lockedAt}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeSection === 'compliance' && (
+              <div className="space-y-6" style={{ fontFamily: "'Poppins', sans-serif" }}>
+                {/* Subtabs Header */}
+                <div className="flex border-b border-slate-200 bg-white rounded-xl p-2 shadow-sm gap-2">
+                  <button
+                    onClick={() => setComplianceSubtab('tracker')}
+                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
+                      complianceSubtab === 'tracker' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-650 hover:bg-slate-50'
+                    }`}
+                  >
+                    Compliance Tracker
+                  </button>
+                  <button
+                    onClick={() => setComplianceSubtab('closeout')}
+                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
+                      complianceSubtab === 'closeout' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-650 hover:bg-slate-50'
+                    }`}
+                  >
+                    Final Review & Closeout
+                  </button>
+                </div>
+
+                {complianceSubtab === 'tracker' && (
+                  <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-800">Compliance Tracking Pipeline</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">Real-time drilldown view of submission completion vs office verification rates.</p>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-left">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold">
+                            <th className="px-4 py-2.5">Office</th>
+                            <th className="px-4 py-2.5">% Employees Submitted</th>
+                            <th className="px-4 py-2.5">% Office Verified</th>
+                            <th className="px-4 py-2.5 text-right">Office Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                          {[
+                            { office: 'HR Department', submitted: '100%', verified: '100%', status: 'Complete', color: 'bg-emerald-50 text-emerald-800' },
+                            { office: 'Treasury Department', submitted: '100%', verified: '90%', status: 'In Review', color: 'bg-blue-50 text-blue-800' },
+                            { office: 'IT Division', submitted: '75%', verified: '50%', status: 'In Progress', color: 'bg-amber-50 text-amber-800' },
+                            { office: 'Health Office', submitted: '42%', verified: '10%', status: 'Critical', color: 'bg-red-50 text-red-800' }
+                          ].map((row, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50/50">
+                              <td className="px-4 py-3 text-slate-850">{row.office}</td>
+                              <td className="px-4 py-3">{row.submitted}</td>
+                              <td className="px-4 py-3">{row.verified}</td>
+                              <td className="px-4 py-3 text-right">
+                                <span className={`inline-block px-2.5 py-0.5 rounded-full uppercase tracking-wider text-[9px] font-bold ${row.color}`}>{row.status}</span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {complianceSubtab === 'closeout' && (
+                  <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-6">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-800">Final Review & Closeout Dock</h3>
+                      <p className="text-xs text-slate-500 mt-0.5">Audits mandatory cycle requirements (IPCRs + DPCR + OPCR) before archiving the performance bundle.</p>
+                    </div>
+
+                    <div className="space-y-6">
+                      {/* Health Office Closeout block */}
+                      <div className="border border-slate-150 rounded-xl p-5 bg-slate-50/30 space-y-4">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                          <h4 className="text-xs font-bold text-slate-850">Health Office Performance Bundle</h4>
+                          <span>
+                            {healthOfficeClosed ? (
+                              <span className="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">Archived & Closed</span>
+                            ) : (
+                              <span className="bg-amber-50 text-amber-800 border border-amber-200 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">Awaiting PM Review</span>
+                            )}
+                          </span>
+                        </div>
+
+                        {/* Checklist */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-semibold">
+                          <div className="bg-white border rounded-xl p-3 flex justify-between items-center" style={{ borderColor: '#C8D1FF' }}>
+                            <span>(1) 24/24 employee IPCRs verified</span>
+                            <span className="text-emerald-600">✓ Pass</span>
+                          </div>
+                          <div className="bg-white border rounded-xl p-3 flex justify-between items-center" style={{ borderColor: '#C8D1FF' }}>
+                            <span>(2) Supervisor DPCR sheet</span>
+                            <span className="text-emerald-600">✓ Pass</span>
+                          </div>
+                          <div className="bg-white border rounded-xl p-3 flex justify-between items-center" style={{ borderColor: '#C8D1FF' }}>
+                            <span>(3) Department Head OPCR package</span>
+                            <span className="text-emerald-600">✓ Pass</span>
+                          </div>
+                        </div>
+
+                        {!healthOfficeClosed && (
+                          <div className="flex justify-end pt-2">
+                            <button
+                              onClick={() => {
+                                setHealthOfficeClosed(true);
+                                alert('Health Office cycle successfully closed out and archived to Module 5.');
+                              }}
+                              className="bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition"
+                            >
+                              Closeout Health Office Cycle
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* IT Division Closeout block (with missing requirements) */}
+                      <div className="border border-slate-150 rounded-xl p-5 bg-slate-50/30 space-y-4">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                          <h4 className="text-xs font-bold text-slate-850">IT Division Performance Bundle</h4>
+                          <span>
+                            {itDivisionClosed ? (
+                              <span className="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">Archived & Closed</span>
+                            ) : (
+                              <span className="bg-red-50 text-red-800 border border-red-200 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">Incomplete Checklist</span>
+                            )}
+                          </span>
+                        </div>
+
+                        {/* Checklist */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-semibold">
+                          <div className="bg-white border rounded-xl p-3 flex justify-between items-center" style={{ borderColor: '#C8D1FF' }}>
+                            <span>(1) 6/8 employee IPCRs verified</span>
+                            <span className="text-red-650">⚠️ Out (2 Pending)</span>
+                          </div>
+                          <div className="bg-white border rounded-xl p-3 flex justify-between items-center" style={{ borderColor: '#C8D1FF' }}>
+                            <span>(2) Supervisor DPCR sheet</span>
+                            <span className="text-emerald-600">✓ Pass</span>
+                          </div>
+                          <div className="bg-white border rounded-xl p-3 flex justify-between items-center" style={{ borderColor: '#C8D1FF' }}>
+                            <span>(3) Dept Head OPCR package</span>
+                            <span className="text-red-650">⚠️ Out (Waiting)</span>
+                          </div>
+                        </div>
+
+                        {/* Warning Notice Block */}
+                        <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-lg leading-relaxed flex gap-2">
+                          <AlertTriangle className="h-4.5 w-4.5 shrink-0 text-red-600" />
+                          <div>
+                            <p className="font-bold">Closeout Disabled:</p>
+                            <p className="mt-0.5">PM closeout is blocked until IT Division submits outstanding pieces. Outstanding items owned by: <strong>Bob Miller (IT Supervisor) & Michael Chang (IT Dept Head)</strong>.</p>
+                          </div>
+                        </div>
+
+                        {!itDivisionClosed && (
+                          <div className="flex justify-end pt-2">
+                            <button
+                              disabled
+                              className="bg-slate-400 text-white rounded-lg px-4 py-2 text-xs font-semibold cursor-not-allowed"
+                            >
+                              Closeout IT Division Cycle (Blocked)
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             {activeSection === 'dashboard' && (
               <>
                 {/* ── Header Area ── */}
