@@ -726,7 +726,7 @@ export function ApplicantDetailsPage() {
   const [docReviews, setDocReviews] = useState<Record<string, DocReview>>(loadDocReviews);
   const [openedDocFilePaths, setOpenedDocFilePaths] = useState<Set<string>>(new Set());
   const [docsValidated, setDocsValidated] = useState(false);
-  const [confirmApproveDoc, setConfirmApproveDoc] = useState<{ fileUrl: string; docType: string } | null>(null);
+  const [confirmApproveDoc, setConfirmApproveDoc] = useState<{ fileUrl: string; docType: string; rawDocType: string } | null>(null);
   const [showResubmitModal, setShowResubmitModal] = useState(false);
   const [resubmitSelectedSlot, setResubmitSelectedSlot] = useState('');
   const [resubmitReason, setResubmitReason] = useState('');
@@ -1408,16 +1408,16 @@ export function ApplicantDetailsPage() {
     });
   };
 
-  const handleApproveDoc = async (fileUrl: string, docType: string) => {
+  const handleApproveDoc = async (fileUrl: string, docType: string, rawDocType: string) => {
     const key = getDocReviewKey(fileUrl);
     const updatedAll = persistDocReview(key, { status: 'approved', remarks: '', reviewedAt: new Date().toISOString() });
 
-    // Persist to Supabase so the applicant portal shows "Verified" for this doc.
-    const rawDocType = attachments.find((a) => a.file_path === fileUrl)?.document_type ?? docType;
-    void (supabase as any)
+    // Persist doc_validated to Supabase so the applicant portal shows "Verified".
+    // rawDocType is the snake_case DOCUMENT_SLOTS key (e.g. 'drug_test'), not the human label.
+    const { error: insertErr } = await (supabase as any)
       .from('applicant_attachments')
-      .insert({ applicant_id: id, file_name: rawDocType, file_path: fileUrl, document_type: 'doc_validated' })
-      .then(({ error }: { error: any }) => { if (error) console.error('[handleApproveDoc] supabase insert:', error); });
+      .insert({ applicant_id: id, file_name: rawDocType, file_path: fileUrl, document_type: 'doc_validated' });
+    if (insertErr) console.error('[handleApproveDoc] Supabase insert failed:', insertErr);
 
     // Check if every REAL (non-meta) attachment is now approved.
     const realAttachments = attachments.filter(
@@ -2016,7 +2016,7 @@ export function ApplicantDetailsPage() {
                                           {localStatus !== 'approved' && (
                                             <button
                                               type="button"
-                                              onClick={() => setConfirmApproveDoc({ fileUrl: doc.file_path, docType: slot.label })}
+                                              onClick={() => setConfirmApproveDoc({ fileUrl: doc.file_path, docType: slot.label, rawDocType: slot.type })}
                                               className="rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 border border-emerald-300 hover:bg-emerald-100 transition"
                                             >
                                               Approve
@@ -2363,7 +2363,7 @@ export function ApplicantDetailsPage() {
                 type="button"
                 className="flex-1 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
                 onClick={() => {
-                  void handleApproveDoc(confirmApproveDoc.fileUrl, confirmApproveDoc.docType);
+                  void handleApproveDoc(confirmApproveDoc.fileUrl, confirmApproveDoc.docType, confirmApproveDoc.rawDocType);
                   setConfirmApproveDoc(null);
                 }}
               >
