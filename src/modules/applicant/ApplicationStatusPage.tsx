@@ -17,6 +17,14 @@ interface ApplicationRecord {
   updated_at: string | null;
   application_type: string | null;
   disqualification_reason: string | null;
+  exam_date: string | null;
+  exam_time: string | null;
+  oral_exam_date: string | null;
+  oral_exam_time: string | null;
+  interview_date: string | null;
+  interview_time: string | null;
+  venue: string | null;
+  schedule_instructions: string | null;
 }
 
 interface AttachmentRow {
@@ -101,43 +109,39 @@ const TIMELINE_STAGES = [
   { key: 'submitted', title: 'Application Submitted', subtitle: 'Your application has been received' },
   { key: 'verification', title: 'Uploaded Documents', subtitle: 'View your uploaded documents, status, and RSP remarks' },
   { key: 'qualifications', title: 'Qualifications Assessment', subtitle: 'Reviewing educational background and experience' },
+  { key: 'exam_interview', title: 'Exam & Interview', subtitle: 'Written examination and panel interview' },
   { key: 'committee', title: 'Committee Review', subtitle: 'Application reviewed by admissions committee' },
   { key: 'final', title: 'Final Decision', subtitle: 'Final decision on application' },
 ] as const;
 
 type StageState = 'done' | 'current' | 'pending' | 'rejected';
 
-const stageStatesForStatus = (rawStatus: string, docsValidated: boolean): StageState[] => {
+const stageStatesForStatus = (rawStatus: string, docsValidated: boolean, hasSchedule: boolean): StageState[] => {
   const status = rawStatus.toLowerCase();
-  // v = verification stage state: 'done' only when RSP has validated docs
   const v: StageState = docsValidated ? 'done' : 'current';
-  // Disqualified/Not Qualified: red X at Qualifications Assessment (stage 2), not Final Decision
+
   if (status.includes('reject') || status.includes('not qualified') || status.includes('disqual')) {
-    return ['done', v, 'rejected', 'pending', 'pending'];
+    return ['done', v, 'rejected', 'pending', 'pending', 'pending'];
   }
-  if (status.includes('hired') || status.includes('accept')) {
-    return ['done', 'done', 'done', 'done', 'done'];
+  // Hired / Accepted / Recommended for Hiring → all stages done, final decision made
+  if (status.includes('hired') || status.includes('accept') || status.includes('recommend')) {
+    return ['done', 'done', 'done', 'done', 'done', 'done'];
   }
-  // Qualifications Assessment (stage 2) is 'done' ONLY after RSP clicks 'Qualify'
-  if (status.includes('recommend')) {
-    return ['done', 'done', 'done', 'done', 'current'];
-  }
-  // Interview stages: qualifications still in progress, committee review active
+  // Scores submitted → exam & interview done, committee now reviewing
   if (status.includes('interview completed')) {
-    return ['done', v, 'current', 'done', 'pending'];
+    return ['done', 'done', 'done', 'done', 'current', 'pending'];
   }
-  if (status.includes('interview')) {
-    return ['done', v, 'current', 'current', 'pending'];
+  // Scheduled → exam & interview stage is active
+  if (status.includes('interview') || hasSchedule) {
+    return ['done', 'done', 'done', 'current', 'pending', 'pending'];
   }
-  // Shortlisted: qualifications in progress — shortlist notice shown below
   if (status.includes('shortlist')) {
-    return ['done', v, 'current', 'pending', 'pending'];
+    return ['done', v, 'current', 'pending', 'pending', 'pending'];
   }
   if (status.includes('under review') || status.includes('reviewing')) {
-    return ['done', v, 'pending', 'pending', 'pending'];
+    return ['done', v, 'pending', 'pending', 'pending', 'pending'];
   }
-  // New application — verification only checked once RSP validates
-  return ['done', docsValidated ? 'done' : 'pending', 'pending', 'pending', 'pending'];
+  return ['done', docsValidated ? 'done' : 'pending', 'pending', 'pending', 'pending', 'pending'];
 };
 
 const formatDate = (iso: string | null) => {
@@ -271,6 +275,14 @@ export const ApplicationStatusPage = () => {
         updated_at: row.updated_at ? String(row.updated_at) : null,
         application_type: row.application_type ? String(row.application_type) : null,
         disqualification_reason: row.disqualification_reason ? String(row.disqualification_reason) : null,
+        exam_date: row.exam_date ? String(row.exam_date) : null,
+        exam_time: row.exam_time ? String(row.exam_time) : null,
+        oral_exam_date: row.oral_exam_date ? String(row.oral_exam_date) : null,
+        oral_exam_time: row.oral_exam_time ? String(row.oral_exam_time) : null,
+        interview_date: row.interview_date ? String(row.interview_date) : null,
+        interview_time: row.interview_time ? String(row.interview_time) : null,
+        venue: row.venue ? String(row.venue) : null,
+        schedule_instructions: row.schedule_instructions ? String(row.schedule_instructions) : null,
       };
 
       setRecord(mapped);
@@ -383,8 +395,10 @@ export const ApplicationStatusPage = () => {
   const docsValidated = docValidatedRows.length > 0;
 
   const badge = record ? getBadge(record.status) : null;
-  const stageStates = record ? stageStatesForStatus(record.status, docsValidated) : [];
+  const hasSchedule = !!(record?.exam_date || record?.interview_date);
+  const stageStates = record ? stageStatesForStatus(record.status, docsValidated, hasSchedule) : [];
   const fullName = record ? `${record.first_name} ${record.last_name}`.trim() : '';
+  const isHired = record ? (() => { const s = record.status.toLowerCase(); return s.includes('hired') || s.includes('accept') || s.includes('recommend'); })() : false;
   const programType =
     record?.application_type === 'promotion' ? 'Promotional Application' : 'Job Application';
 
@@ -689,6 +703,8 @@ export const ApplicationStatusPage = () => {
                   const state = stageStates[index] ?? 'pending';
                   const isLast = index === TIMELINE_STAGES.length - 1;
                   const isVerification = stage.key === 'verification';
+                  const isExamInterview = stage.key === 'exam_interview';
+                  const isFinal = stage.key === 'final';
 
                   const iconWrap =
                     state === 'done' ? 'bg-emerald-100 text-emerald-600' :
@@ -726,7 +742,7 @@ export const ApplicationStatusPage = () => {
                         </div>
                         <p className="mt-0.5 text-sm" style={{ color: '#363EE8' }}>{stage.subtitle}</p>
 
-                        {/* Verification stage: show doc resubmission status inline */}
+                        {/* Verification stage: doc status */}
                         {isVerification && hasActionRequired && (
                           <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700">
                             <AlertCircle size={12} /> Document resubmission required
@@ -737,18 +753,84 @@ export const ApplicationStatusPage = () => {
                             {docsValidated ? 'All documents verified by RSP Admin' : 'All required documents received'}
                           </div>
                         )}
-                        {state === 'done' && stage.key === 'committee' && badge.tone === 'approved' && (
-                          <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                            Recommended for admission
+
+                        {/* Exam & Interview — show schedule when active or done */}
+                        {isExamInterview && (state === 'current' || state === 'done') && hasSchedule && (
+                          <div className="mt-3 rounded-xl border overflow-hidden" style={{ borderColor: '#C8D1FF' }}>
+                            <div className="px-3 py-2" style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)' }}>
+                              <p className="text-xs font-bold text-white tracking-wide uppercase">Your Schedule</p>
+                            </div>
+                            <div className="divide-y bg-white" style={{ borderColor: '#EEF0FD' }}>
+                              {(record.exam_date || record.exam_time) && (
+                                <div className="px-3 py-2 flex items-start gap-2">
+                                  <span className="mt-0.5 text-xs font-bold uppercase tracking-wide w-28 shrink-0" style={{ color: '#363EE8' }}>Written Exam</span>
+                                  <span className="text-sm font-medium" style={{ color: '#040E6B' }}>
+                                    {[record.exam_date && formatDate(record.exam_date), record.exam_time].filter(Boolean).join(' · ')}
+                                  </span>
+                                </div>
+                              )}
+                              {(record.oral_exam_date || record.oral_exam_time) && (
+                                <div className="px-3 py-2 flex items-start gap-2">
+                                  <span className="mt-0.5 text-xs font-bold uppercase tracking-wide w-28 shrink-0" style={{ color: '#363EE8' }}>Oral Exam</span>
+                                  <span className="text-sm font-medium" style={{ color: '#040E6B' }}>
+                                    {[record.oral_exam_date && formatDate(record.oral_exam_date), record.oral_exam_time].filter(Boolean).join(' · ')}
+                                  </span>
+                                </div>
+                              )}
+                              {(record.interview_date || record.interview_time) && (
+                                <div className="px-3 py-2 flex items-start gap-2">
+                                  <span className="mt-0.5 text-xs font-bold uppercase tracking-wide w-28 shrink-0" style={{ color: '#363EE8' }}>Interview</span>
+                                  <span className="text-sm font-medium" style={{ color: '#040E6B' }}>
+                                    {[record.interview_date && formatDate(record.interview_date), record.interview_time].filter(Boolean).join(' · ')}
+                                  </span>
+                                </div>
+                              )}
+                              {record.venue && (
+                                <div className="px-3 py-2 flex items-start gap-2">
+                                  <span className="mt-0.5 text-xs font-bold uppercase tracking-wide w-28 shrink-0" style={{ color: '#363EE8' }}>Venue</span>
+                                  <span className="text-sm font-medium" style={{ color: '#040E6B' }}>{record.venue}</span>
+                                </div>
+                              )}
+                              {record.schedule_instructions && (
+                                <div className="px-3 py-2">
+                                  <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: '#363EE8' }}>Instructions</p>
+                                  <p className="text-sm" style={{ color: '#040E6B' }}>{record.schedule_instructions}</p>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         )}
-                        {/* Shortlist notice — shown when shortlisted and at qualifications stage */}
+                        {isExamInterview && state === 'done' && (
+                          <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
+                            <CheckCircle2 size={12} /> Examination and interview completed
+                          </div>
+                        )}
+
+                        {/* Committee Review */}
+                        {state === 'done' && stage.key === 'committee' && (
+                          <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                            Interview and exam scores evaluated by the committee
+                          </div>
+                        )}
+
+                        {/* Final Decision — hired message */}
+                        {isFinal && state === 'done' && isHired && (
+                          <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                            <p className="text-sm font-bold text-emerald-800">Congratulations!</p>
+                            <p className="mt-0.5 text-sm text-emerald-700">
+                              You have been selected for the position of <span className="font-semibold">{record.position}</span>.
+                              The RSP Office will contact you with further instructions regarding your appointment.
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Shortlist notice */}
                         {stage.key === 'qualifications' && state === 'current' && record && record.status.toLowerCase().includes('shortlist') && (
                           <div className="mt-3 rounded-lg border px-3 py-2 text-sm font-medium" style={{ backgroundColor: '#EEF0FD', borderColor: '#C8D1FF', color: '#040E6B' }}>
                             Your application has been shortlisted and is undergoing further committee evaluation.
                           </div>
                         )}
-                        {/* Disqualification: red X with reason at Qualifications Assessment */}
+                        {/* Disqualification */}
                         {state === 'rejected' && (
                           <div className="mt-3 rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-sm text-rose-700">
                             {stage.key === 'qualifications' && record?.disqualification_reason

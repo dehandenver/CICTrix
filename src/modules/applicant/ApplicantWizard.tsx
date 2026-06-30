@@ -121,9 +121,13 @@ const INITIAL_FORM_DATA: ApplicantFormData = {
   gov_id_expiration: '',
 };
 
-const buildApplicantItemNumber = (sequence: number): string => {
+const buildApplicantItemNumber = (): string => {
   const year = new Date().getFullYear();
-  return `ITEM-${year}-${String(sequence).padStart(4, '0')}`;
+  // Random 7-char alphanumeric suffix — avoids collision with plantilla item numbers
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let suffix = '';
+  for (let i = 0; i < 7; i++) suffix += chars[Math.floor(Math.random() * chars.length)];
+  return `APP-${year}-${suffix}`;
 };
 
 const normalizeAuthValue = (value: string) => String(value ?? '').trim().toLowerCase();
@@ -226,7 +230,6 @@ export const ApplicantWizard: React.FC = () => {
           application_type: 'job',
           position: landingJob.title,
           office: landingJob.department,
-          item_number: landingJob.itemNumber,
         }));
         return;
       }
@@ -239,7 +242,6 @@ export const ApplicantWizard: React.FC = () => {
         application_type: 'job',
         position: landingJob.title,
         office: landingJob.department,
-        item_number: landingJob.itemNumber,
       });
       setFiles([]);
       return;
