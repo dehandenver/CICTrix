@@ -365,11 +365,13 @@ export const ApplicationStatusPage = () => {
     }
   };
 
-  // File paths that RSP has explicitly validated (doc_validated rows written by handleApproveDoc).
-  const validatedFilePaths = new Set(
-    attachments.filter(a => a.document_type === 'doc_validated').map(a => a.file_path),
-  );
-  const docsValidated = validatedFilePaths.size > 0;
+  // Two sets for robust "Verified" matching:
+  //  1. validatedFilePaths — matches by storage path (primary)
+  //  2. validatedDocTypes  — matches by raw document_type key stored in file_name (fallback)
+  const docValidatedRows = attachments.filter(a => a.document_type === 'doc_validated');
+  const validatedFilePaths = new Set(docValidatedRows.map(a => a.file_path));
+  const validatedDocTypes  = new Set(docValidatedRows.map(a => a.file_name));
+  const docsValidated = docValidatedRows.length > 0;
 
   const badge = record ? getBadge(record.status) : null;
   const stageStates = record ? stageStatesForStatus(record.status, docsValidated) : [];
@@ -809,7 +811,7 @@ export const ApplicationStatusPage = () => {
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 border border-amber-200">
                               <AlertCircle size={12} /> Action Required
                             </span>
-                          ) : validatedFilePaths.has(doc.file_path) ? (
+                          ) : (validatedFilePaths.has(doc.file_path) || validatedDocTypes.has(doc.document_type ?? '')) ? (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
                               <CheckCircle2 size={12} /> Verified
                             </span>
