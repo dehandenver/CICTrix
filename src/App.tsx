@@ -21,6 +21,7 @@ import { PMDashboard } from './modules/admin/PMDashboard';
 import { RSPDashboard } from './modules/admin/RSPDashboard.tsx';
 import { SettingsPage } from './modules/admin/SettingsPage';
 import { SuperAdminDashboard } from './modules/admin/SuperAdminDashboard';
+import { OfficeAccountConsole } from './modules/admin/pm/OfficeAccountConsole';
 import { ApplicantWizard } from './modules/applicant/ApplicantWizard';
 import { ApplicationStatusPage } from './modules/applicant/ApplicationStatusPage';
 import { LandingPage } from './components/LandingPage';
@@ -834,6 +835,10 @@ function AppContent() {
                 <SettingsPage />
               </AdminRoute>
             }
+          />
+          <Route
+            path="/office/dashboard"
+            element={<OfficeAccountConsole />}
           />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
