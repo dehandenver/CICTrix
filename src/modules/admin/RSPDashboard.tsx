@@ -506,12 +506,12 @@ const convertEducationScore = (level: string): number => {
 };
 
 const convertExperienceScore = (years: number): number => {
-  if (years >= 21) return 18;
+  if (years >= 21) return 20;
   if (years >= 16) return 18;
   if (years >= 11) return 16;
   if (years >= 6) return 14;
   if (years >= 1) return 12;
-  return 10;
+  return 0;
 };
 
 const convertPerformanceScore = (rating: string): number => {
@@ -5535,7 +5535,8 @@ export const RSPDashboard = () => {
                     let performanceScore = null;
                     if (appointmentType === 'promotional') {
                       const perfRaw = resolveScoreValue(stored?.performance);
-                      performanceScore = typeof perfRaw === 'number' && perfRaw > 0 ? clamp20((perfRaw / 5.0) * 20) : null;
+                      // finalScore is already the converted score (12 for VS, 14 for O)
+                      performanceScore = typeof perfRaw === 'number' && perfRaw > 0 ? clamp20(perfRaw) : null;
                     }
 
                     // --- PCPT (both) ---
