@@ -726,6 +726,7 @@ export function ApplicantDetailsPage() {
   const [docReviews, setDocReviews] = useState<Record<string, DocReview>>(loadDocReviews);
   const [openedDocFilePaths, setOpenedDocFilePaths] = useState<Set<string>>(new Set());
   const [docsValidated, setDocsValidated] = useState(false);
+  const [confirmApproveDoc, setConfirmApproveDoc] = useState<{ fileUrl: string; docType: string } | null>(null);
   const [showResubmitModal, setShowResubmitModal] = useState(false);
   const [resubmitSelectedSlot, setResubmitSelectedSlot] = useState('');
   const [resubmitReason, setResubmitReason] = useState('');
@@ -1410,15 +1411,27 @@ export function ApplicantDetailsPage() {
   const handleApproveDoc = async (fileUrl: string, docType: string) => {
     const key = getDocReviewKey(fileUrl);
     const updatedAll = persistDocReview(key, { status: 'approved', remarks: '', reviewedAt: new Date().toISOString() });
-    const allKeys = attachments.map((a) => getDocReviewKey(a.file_path)).filter(Boolean);
+
+    // Persist to Supabase so the applicant portal shows "Verified" for this doc.
+    const rawDocType = attachments.find((a) => a.file_path === fileUrl)?.document_type ?? docType;
+    void (supabase as any)
+      .from('applicant_attachments')
+      .insert({ applicant_id: id, file_name: rawDocType, file_path: fileUrl, document_type: 'doc_validated' })
+      .then(({ error }: { error: any }) => { if (error) console.error('[handleApproveDoc] supabase insert:', error); });
+
+    // Check if every REAL (non-meta) attachment is now approved.
+    const realAttachments = attachments.filter(
+      (a) => a.document_type !== 'resubmission_request' && a.document_type !== 'resubmission_resolved' && a.document_type !== 'doc_validated',
+    );
+    const allKeys = realAttachments.map((a) => getDocReviewKey(a.file_path)).filter(Boolean);
     const allApproved = allKeys.length > 0 && allKeys.every((k) => (updatedAll[k]?.status ?? 'pending') === 'approved');
-    
+
     if (allApproved) {
       await persistStatus('document_verified');
       addDocTimeline('Document Verified: All documents reviewed and approved.');
       setToast('All documents approved. Status updated to Document Verified.');
     } else {
-      addDocTimeline(`Document Verified: ${docType} approved.`);
+      addDocTimeline(`Document Approved: ${docType}.`);
       setToast(`${docType} approved.`);
     }
   };
@@ -1867,11 +1880,15 @@ export function ApplicantDetailsPage() {
                     const submittedFilePaths = DOCUMENT_SLOTS
                       .map((s) => attachments.find((a) => (a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other') === s.type))
                       .filter(Boolean).map((a) => a!.file_path);
-                    const allDocsOpened = submittedFilePaths.length > 0 && submittedFilePaths.every((fp) => openedDocFilePaths.has(fp));
+                    const realAttachments = attachments.filter(
+                      (a) => a.document_type !== 'resubmission_request' && a.document_type !== 'resubmission_resolved' && a.document_type !== 'doc_validated',
+                    );
+                    const allSubmittedApproved = submittedFilePaths.length > 0 &&
+                      submittedFilePaths.every((fp) => docReviews[getDocReviewKey(fp)]?.status === 'approved');
                     return (
                       <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
                         <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Submitted Documents</h3>
-                        {!isDocLocked() && attachments.length > 0 && (
+                        {!isDocLocked() && realAttachments.length > 0 && (
                           docsValidated ? (
                             <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
                               <CheckCircle2 size={12} /> Validated
@@ -1880,7 +1897,10 @@ export function ApplicantDetailsPage() {
                             <button
                               type="button"
                               onClick={handleValidateDocs}
-                              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-400 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                              disabled={!allSubmittedApproved}
+                              title={!allSubmittedApproved ? 'All documents must be individually approved first' : 'Validate all documents'}
+                              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
+                              style={allSubmittedApproved ? { borderColor: '#059669', color: '#059669', backgroundColor: '#f0fdf4' } : { borderColor: '#d1d5db', color: '#9ca3af', backgroundColor: '#f9fafb' }}
                             >
                               <CheckCircle2 size={12} /> Validate Documents
                             </button>
@@ -1919,9 +1939,11 @@ export function ApplicantDetailsPage() {
                       const isSubmitted = matched.length > 0;
                       const hasSupabaseResubmissionRequest = Boolean(slotNotice);
                       const locked = isDocLocked();
+                      const latestDoc = matched[matched.length - 1];
+                      const latestApproved = latestDoc ? docReviews[getDocReviewKey(latestDoc.file_path)]?.status === 'approved' : false;
 
                       return (
-                        <article key={slot.type} className={`rounded-xl border ${hasSupabaseResubmissionRequest ? 'border-amber-300 bg-amber-50/30' : isSubmitted ? 'border-slate-200' : 'border-dashed border-slate-200 bg-slate-50/50'}`}>
+                        <article key={slot.type} className={`rounded-xl border ${hasSupabaseResubmissionRequest ? 'border-amber-300 bg-amber-50/30' : latestApproved ? 'border-emerald-300 bg-emerald-50/40' : isSubmitted ? 'border-blue-200 bg-blue-50/20' : 'border-dashed border-slate-200 bg-slate-50/50'}`}>
                           <div className="flex items-start gap-2.5 px-3 py-3">
                             <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-bold ${hasSupabaseResubmissionRequest ? 'bg-amber-100 text-amber-700' : isSubmitted ? 'bg-[#363EE8]/10 text-[#363EE8]' : 'bg-slate-100 text-slate-400'}`}>
                               {idx + 1}
@@ -1993,7 +2015,7 @@ export function ApplicantDetailsPage() {
                                         <div className="flex items-center gap-1.5 self-center">
                                           <button
                                             type="button"
-                                            onClick={() => void handleApproveDoc(doc.file_path, slot.label)}
+                                            onClick={() => localStatus !== 'approved' && setConfirmApproveDoc({ fileUrl: doc.file_path, docType: slot.label })}
                                             className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
                                               localStatus === 'approved'
                                                 ? 'bg-emerald-600 text-white cursor-default'
@@ -2312,6 +2334,42 @@ export function ApplicantDetailsPage() {
                   <Send size={15} /> {emailSending ? 'Sending…' : 'Send Email'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Approve document confirmation modal */}
+      {confirmApproveDoc && (
+        <div className="fixed inset-0 z-[280] flex items-center justify-center bg-black/40 p-4" onClick={() => setConfirmApproveDoc(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 pt-6 pb-4">
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
+                <CheckCircle2 size={24} className="text-emerald-600" />
+              </div>
+              <h3 className="text-base font-bold text-slate-900">Approve Document?</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                You are about to approve <span className="font-semibold text-slate-800">{confirmApproveDoc.docType}</span>. This action marks the document as validated.
+              </p>
+            </div>
+            <div className="flex gap-3 border-t border-slate-100 px-6 py-4">
+              <button
+                type="button"
+                className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                onClick={() => setConfirmApproveDoc(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="flex-1 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                onClick={() => {
+                  void handleApproveDoc(confirmApproveDoc.fileUrl, confirmApproveDoc.docType);
+                  setConfirmApproveDoc(null);
+                }}
+              >
+                Yes, Approve
+              </button>
             </div>
           </div>
         </div>
