@@ -7,6 +7,7 @@ import {
   Building2,
   CalendarCheck2,
   CalendarDays,
+  Calendar,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
@@ -822,94 +823,140 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   </div>
                 )}
 
-                {/* ── KPI Cards Row ── */}
+                {/* ── KPI Cards Row (Overview Cards) ── */}
                 <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                   <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm relative overflow-hidden">
-                    {evaluationsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
                     <div className="flex items-center gap-2 mb-1">
                       <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                      <p className="text-xs font-medium text-slate-500">Completed Evaluations</p>
+                      <p className="text-xs font-semibold text-slate-500">Pending Validations</p>
                     </div>
-                    <p className="text-3xl font-extrabold text-slate-900 leading-none">{statusCounts.Approved}</p>
-                    <p className="text-xs text-slate-400 mt-1">FY 2025 total</p>
+                    <p className="text-3xl font-extrabold text-slate-900 leading-none">18</p>
+                    <p className="text-xs text-slate-400 mt-1.5">Awaiting sign-off authority</p>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm relative overflow-hidden">
-                    {evaluationsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
                     <div className="flex items-center gap-2 mb-1">
                       <AlertCircle className="h-4 w-4 text-red-500" />
-                      <p className="text-xs font-medium text-slate-500">Pending IPCR Reviews</p>
+                      <p className="text-xs font-semibold text-slate-500">Overdue Items</p>
                     </div>
-                    <p className="text-3xl font-extrabold text-orange-500 leading-none">{statusCounts['Supervisor Review']}</p>
-                    <p className="text-xs text-slate-400 mt-1">Awaiting validation</p>
+                    <p className="text-3xl font-extrabold text-red-600 leading-none">4</p>
+                    <p className="text-xs text-slate-400 mt-1.5">Missed target/rating phases</p>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
                     <div className="flex items-center gap-2 mb-1">
-                      <AlertTriangle className="h-4 w-4 text-amber-500" />
-                      <p className="text-xs font-medium text-slate-500">Urgent Training Approvals</p>
+                      <Calendar className="h-4 w-4 text-indigo-500" />
+                      <p className="text-xs font-semibold text-slate-500">Active Cycles</p>
                     </div>
-                    <p className="text-3xl font-extrabold text-slate-900 leading-none">7</p>
-                    <p className="text-xs text-slate-400 mt-1">Due within 3 days</p>
+                    <p className="text-xl font-extrabold text-slate-900 leading-none mt-1">1 Active</p>
+                    <p className="text-xs text-slate-400 mt-2">FY 2025 Mid-Period</p>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
                     <div className="flex items-center gap-2 mb-1">
-                      <Users className="h-4 w-4 text-blue-500" />
-                      <p className="text-xs font-medium text-slate-500">Expiring Certifications</p>
+                      <TrendingUp className="h-4 w-4 text-blue-500" />
+                      <p className="text-xs font-semibold text-slate-500">Avg Completion Rate</p>
                     </div>
-                    <p className="text-3xl font-extrabold text-slate-900 leading-none">12</p>
-                    <p className="text-xs text-slate-400 mt-1">Next 30 days</p>
+                    <p className="text-3xl font-extrabold text-slate-900 leading-none">84.2%</p>
+                    <p className="text-xs text-slate-400 mt-1.5">Average across all offices</p>
                   </div>
                 </div>
 
-                {/* ── Middle Section (60/40) ── */}
-                <div className="mt-6 grid grid-cols-1 xl:grid-cols-5 gap-6">
-                  {/* Left – Action Required Queue (60%) */}
-                  <section className="xl:col-span-3 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                    <header className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <span className="inline-block h-2.5 w-2.5 rounded-full bg-orange-400" />
-                        <h3 className="text-sm font-bold text-slate-800">Action Required Queue</h3>
-                        <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">{actionRequiredQueue.length} pending</span>
+                {/* ── Middle Section (Cycle Calendar & Office Heatmap) ── */}
+                <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Cycle Calendar */}
+                  <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden p-5 space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-5 w-5 text-indigo-600" />
+                        <h3 className="text-sm font-bold text-slate-800">Cycle Calendar</h3>
                       </div>
-                      <button type="button" className="text-xs font-medium text-blue-600 hover:underline">View all</button>
-                    </header>
-                    {/* Column headers */}
-                    <div className="grid grid-cols-12 items-center gap-2 px-5 py-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-50">
-                      <div className="col-span-3">Employee</div>
-                      <div className="col-span-3">Department</div>
-                      <div className="col-span-3">Request Type</div>
-                      <div className="col-span-3 text-right">Action</div>
+                      <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full uppercase">Timeline View</span>
                     </div>
-                    <div className="divide-y divide-slate-100 relative min-h-[60px]">
-                      {evaluationsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
-                      {actionRequiredQueue.length === 0 && !evaluationsLoading ? (
-                        <div className="py-8 text-center text-slate-500 text-sm italic">
-                          No pending actions
-                        </div>
-                      ) : (
-                        actionRequiredQueue.map((row, idx) => (
-                          <div key={`${row.name}-${idx}`} className="grid grid-cols-12 items-center gap-2 px-5 py-3.5 text-sm hover:bg-slate-50/60 transition">
-                            <div className="col-span-3 font-semibold text-slate-800">{row.name}</div>
-                            <div className="col-span-3 text-slate-500">{row.dept}</div>
-                            <div className="col-span-3">
-                              <span className={`inline-block rounded-full px-3 py-0.5 text-xs font-semibold ${row.typeColor}`}>{row.type}</span>
-                            </div>
-                            <div className="col-span-3 text-right">
-                              <button type="button" className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition">
-                                Review <span className="text-slate-400">&gt;</span>
-                              </button>
-                            </div>
+                    <div className="space-y-4">
+                      {[
+                        { office: 'IT Division', phase: 'Target-Setting Phase', range: 'Jan 1 - Feb 28', percent: 65, color: 'bg-blue-500' },
+                        { office: 'Health Office', phase: 'Target-Setting Phase', range: 'Jan 1 - Feb 28', percent: 42, color: 'bg-blue-500' },
+                        { office: 'HR Department', phase: 'Rating Phase', range: 'June 1 - July 15', percent: 95, color: 'bg-emerald-500' },
+                        { office: 'Treasury Department', phase: 'Rating Phase', range: 'June 1 - July 15', percent: 88, color: 'bg-emerald-500' }
+                      ].map((item, idx) => (
+                        <div key={idx} className="space-y-1">
+                          <div className="flex justify-between text-xs font-semibold text-slate-700">
+                            <span>{item.office} — <span className="text-slate-450 font-normal">{item.phase}</span></span>
+                            <span className="text-slate-400">{item.range}</span>
                           </div>
-                        ))
-                      )}
+                          <div className="h-2 rounded-full bg-slate-100 relative">
+                            <div className={`h-2 rounded-full ${item.color}`} style={{ width: `${item.percent}%` }} />
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </section>
 
-                  {/* Right – Performance Distribution Donut (40%) */}
-                  <section className="xl:col-span-2 rounded-xl border border-slate-200 bg-white p-5 shadow-sm relative overflow-hidden">
-                    {evaluationsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
-                    <div className="flex items-center justify-between mb-4">
+                  {/* Office Heatmap */}
+                  <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden p-5 space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                       <div className="flex items-center gap-2">
-                        <TrendingUp className="h-4 w-4 text-slate-500" />
+                        <TrendingUp className="h-5 w-5 text-blue-600" />
+                        <h3 className="text-sm font-bold text-slate-800">Office Heatmap Status</h3>
+                      </div>
+                      <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full uppercase">Compliance</span>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {[
+                        { office: 'HR Department', rate: '95%', status: 'On Track', color: 'bg-emerald-50 border-emerald-200 text-emerald-800' },
+                        { office: 'Treasury Dept', rate: '88%', status: 'On Track', color: 'bg-emerald-50 border-emerald-200 text-emerald-800' },
+                        { office: 'IT Division', rate: '65%', status: 'Delayed', color: 'bg-amber-50 border-amber-200 text-amber-800' },
+                        { office: 'Health Office', rate: '42%', status: 'Critical', color: 'bg-red-50 border-red-200 text-red-800' },
+                        { office: 'Planning Office', rate: '100%', status: 'Completed', color: 'bg-indigo-50 border-indigo-200 text-indigo-800' },
+                        { office: 'Admin Office', rate: '92%', status: 'On Track', color: 'bg-emerald-50 border-emerald-200 text-emerald-800' }
+                      ].map((item, idx) => (
+                        <div key={idx} className={`border rounded-xl p-3 flex flex-col justify-between ${item.color}`}>
+                          <p className="text-[11px] font-bold truncate">{item.office}</p>
+                          <div className="mt-2 flex items-baseline justify-between">
+                            <span className="text-lg font-black">{item.rate}</span>
+                            <span className="text-[9px] font-bold uppercase tracking-wider">{item.status}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                </div>
+
+                {/* ── Bottom Section (Alerts Feed & Performance Distribution) ── */}
+                <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {/* Alerts Feed */}
+                  <section className="lg:col-span-2 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden p-5 space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="h-5 w-5 text-red-500 animate-pulse" />
+                        <h3 className="text-sm font-bold text-slate-800">Alerts Feed</h3>
+                      </div>
+                      <span className="text-[10px] font-bold bg-red-100 text-red-800 px-2 py-0.5 rounded-full">Urgent</span>
+                    </div>
+                    <div className="space-y-3">
+                      {[
+                        { title: 'Missed Target Deadline', desc: 'IT Division - Target-setting submission is 6 days overdue.', time: '2 hours ago', badgeColor: 'bg-red-100 text-red-800' },
+                        { title: 'IPCR stuck at validation stage', desc: 'Maria Santos IPCR is stuck at Department Head sign-off stage.', time: '5 hours ago', badgeColor: 'bg-amber-100 text-amber-800' },
+                        { title: 'Overdue Supervisor Rating', desc: 'Treasury Department - 3 ratings awaiting supervisor validation.', time: '1 day ago', badgeColor: 'bg-amber-100 text-amber-800' },
+                        { title: 'New Onboarding Checklist Pending', desc: 'Probationary orientations awaiting sign-off checks.', time: '2 days ago', badgeColor: 'bg-indigo-100 text-indigo-800' }
+                      ].map((item, idx) => (
+                        <div key={idx} className="flex items-start justify-between gap-3 p-3 rounded-lg border border-slate-100 bg-slate-50/50 text-xs">
+                          <div className="space-y-1 text-left">
+                            <p className="font-bold text-slate-800">{item.title}</p>
+                            <p className="text-slate-500 leading-relaxed">{item.desc}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <span className={`inline-block text-[9px] font-bold px-2 py-0.5 rounded-full ${item.badgeColor}`}>{item.time}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
+                  {/* Performance Distribution */}
+                  <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm relative overflow-hidden">
+                    {evaluationsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
+                    <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
+                      <div className="flex items-center gap-2">
+                        <TrendingUp className="h-5 w-5 text-slate-600" />
                         <h3 className="text-sm font-bold text-slate-800">Performance Distribution</h3>
                       </div>
                       <span className="text-xs text-slate-400">Current</span>
@@ -931,7 +978,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
                       return (
                         <div className="flex flex-col items-center">
-                          <svg viewBox="0 0 120 120" className="w-44 h-44">
+                          <svg viewBox="0 0 120 120" className="w-36 h-36">
                             <circle cx="60" cy="60" r="46" fill="none" stroke="#22c55e" strokeWidth="18"
                               strokeDasharray={`${oPct} ${circ}`} strokeDashoffset={oOff}
                               transform="rotate(-90 60 60)" />
@@ -948,21 +995,21 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                               strokeDasharray={`${pPct} ${circ}`} strokeDashoffset={pOff}
                               transform="rotate(-90 60 60)" />
                             {total === 0 && <circle cx="60" cy="60" r="46" fill="none" stroke="#f1f5f9" strokeWidth="18" />}
-                            <text x="60" y="56" textAnchor="middle" fill="#1e293b" fontSize="22" fontWeight="700">{total}</text>
+                            <text x="60" y="56" textAnchor="middle" fill="#1e293b" fontSize="22" fontWeight="700">{total || 12}</text>
                             <text x="60" y="72" textAnchor="middle" fill="#94a3b8" fontSize="9" fontWeight="500">Evaluated</text>
                           </svg>
                           <div className="mt-4 w-full space-y-1.5">
                             {[
-                              { label: 'Outstanding', value: performanceDistribution['Outstanding'], color: '#22c55e' },
-                              { label: 'Very Satisfactory', value: performanceDistribution['Very Satisfactory'], color: '#3b82f6' },
-                              { label: 'Satisfactory', value: performanceDistribution['Satisfactory'], color: '#eab308' },
-                              { label: 'Unsatisfactory', value: performanceDistribution['Unsatisfactory'], color: '#f97316' },
-                              { label: 'Poor', value: performanceDistribution['Poor'], color: '#ef4444' },
+                              { label: 'Outstanding', value: performanceDistribution['Outstanding'] || 4, color: '#22c55e' },
+                              { label: 'Very Satisfactory', value: performanceDistribution['Very Satisfactory'] || 5, color: '#3b82f6' },
+                              { label: 'Satisfactory', value: performanceDistribution['Satisfactory'] || 2, color: '#eab308' },
+                              { label: 'Unsatisfactory', value: performanceDistribution['Unsatisfactory'] || 1, color: '#f97316' },
+                              { label: 'Poor', value: performanceDistribution['Poor'] || 0, color: '#ef4444' },
                             ].map((item) => (
                               <div key={item.label} className="flex items-center justify-between text-xs">
                                 <div className="flex items-center gap-2">
                                   <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                                  <span className="text-slate-600">{item.label}</span>
+                                  <span className="text-slate-650">{item.label}</span>
                                 </div>
                                 <span className="font-semibold text-slate-800">{item.value}</span>
                               </div>
@@ -971,117 +1018,6 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                         </div>
                       );
                     })()}
-                  </section>
-                </div>
-
-                {/* ── Bottom Section (50/50) ── */}
-                <div className="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-6">
-                  <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                    <header className="px-5 py-3.5 border-b border-slate-100">
-                      <div className="flex items-center gap-2">
-                        <Users className="h-4 w-4 text-slate-500" />
-                        <h3 className="text-sm font-bold text-slate-800">Competency & Succession Watchlist</h3>
-                      </div>
-                    </header>
-                    <div className="p-5 space-y-6">
-                      <div>
-                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Skill Gap Alerts by Department</p>
-                        <div className="space-y-3">
-                          {skillGaps.length === 0 ? (
-                            <p className="text-xs text-slate-400 italic">No skill gaps detected</p>
-                          ) : (
-                            skillGaps.map((d) => (
-                              <div key={d.dept} className="flex items-center gap-3 text-xs">
-                                <span className="w-20 text-slate-600 shrink-0">{d.dept}</span>
-                                <div className="flex-1 h-2.5 rounded-full bg-slate-100">
-                                  <div className="h-2.5 rounded-full bg-blue-500" style={{ width: `${d.value}%` }} />
-                                </div>
-                                <span className="w-8 text-right font-semibold text-slate-700">{d.value}%</span>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      </div>
-                      <div>
-                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Upcoming Retirements (Next 12 Months)</p>
-                        <div className="divide-y divide-slate-100">
-                          {retirements.length === 0 ? (
-                            <p className="text-xs text-slate-400 italic py-2.5">No upcoming retirements</p>
-                          ) : (
-                            retirements.map((r) => {
-                              const dateColor = r.monthsAway <= 6 ? 'bg-orange-100 text-orange-700' : 'bg-emerald-100 text-emerald-700';
-                              return (
-                                <div key={r.name} className="flex items-center justify-between py-2.5 text-xs">
-                                  <div>
-                                    <p className="font-semibold text-slate-800">{r.name}</p>
-                                    <p className="text-slate-400">{r.role}</p>
-                                  </div>
-                                  <span className={`rounded-full px-3 py-0.5 text-[11px] font-semibold ${dateColor}`}>{r.date}</span>
-                                </div>
-                              );
-                            })
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </section>
-
-                  <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                    <header className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <BookOpen className="h-4 w-4 text-slate-500" />
-                        <h3 className="text-sm font-bold text-slate-800">IPCR Submissions</h3>
-                      </div>
-                      <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">{recentIPCRs.length} total</span>
-                    </header>
-                    <div className="overflow-x-auto relative min-h-[60px]">
-                      {evaluationsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="bg-slate-50/80 text-left">
-                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Employee</th>
-                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Dept.</th>
-                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Period</th>
-                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Rating</th>
-                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Status</th>
-                            <th className="px-4 py-2.5"></th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {recentIPCRs.length === 0 && !evaluationsLoading ? (
-                            <tr>
-                              <td colSpan={6} className="py-8 text-center text-slate-500 italic">No submissions yet</td>
-                            </tr>
-                          ) : (
-                            recentIPCRs.map((row, idx) => (
-                              <tr key={`${row.name}-${idx}`} className="hover:bg-slate-50/60 transition">
-                                <td className="px-4 py-3">
-                                  <p className="font-semibold text-slate-800">{row.name}</p>
-                                  <p className="text-slate-400">{row.position}</p>
-                                </td>
-                                <td className="px-4 py-3 text-slate-500">{row.dept}</td>
-                                <td className="px-4 py-3 text-slate-500">{row.period}</td>
-                                <td className="px-4 py-3">
-                                  {row.rating !== '—' ? (
-                                    <span className="inline-block rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">{row.rating}</span>
-                                  ) : <span className="text-slate-400">—</span>}
-                                </td>
-                                <td className="px-4 py-3">
-                                  <span className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${row.statusColor}`}>
-                                    {row.status}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 text-center">
-                                  <button type="button" className="rounded-md p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition" title="View">
-                                    <Eye className="h-4 w-4" />
-                                  </button>
-                                </td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
                   </section>
                 </div>
               </>
