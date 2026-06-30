@@ -20,14 +20,10 @@ import {
   AlertCircle,
   FileSpreadsheet,
   Check,
-  Users,
-  FolderSync,
-  AlertTriangle,
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import abyanLogo from '../../assets/abyan-logo.png';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { supabase } from '../../lib/supabase';
 import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
 import {
   fetchPortalEmployeeById,
@@ -41,8 +37,6 @@ import {
   getEmployeeRawDetails,
   getLatestEmployeeIPCR,
   getEmployeeEvaluations,
-  getSubordinatesEvaluations,
-  consolidateSubordinatesIPCR,
   type IPCRRowDraft,
 } from '../../lib/api/performanceEvaluations';
 import {
@@ -79,26 +73,12 @@ import {
 } from '../../lib/employeePortalData';
 import { Employee } from '../../types/employee.types';
 
-const parseWeightFromRemarks = (remarks: string): { weight: number | null; cleanRemarks: string } => {
-  if (!remarks) return { weight: null, cleanRemarks: '' };
-  const match = remarks.match(/^\[Weight:\s*(\d+)%\]\s*(.*)/s);
-  if (match) {
-    return { weight: Number(match[1]), cleanRemarks: match[2] };
-  }
-  return { weight: null, cleanRemarks: remarks };
-};
-
-const formatRemarksWithWeight = (weight: number | null, remarks: string): string => {
-  const w = typeof weight === 'number' ? weight : 0;
-  return `[Weight: ${w}%] ${remarks || ''}`.trim();
-};
-
 interface EmployeePageProps {
   currentUser: Employee;
   onLogout: () => void;
 }
 
-type PortalTab = 'personal' | 'documents' | 'submission' | 'account' | 'ipcr';
+type PortalTab = 'personal' | 'documents' | 'submission' | 'account';
 
 interface TabConfig {
   id: PortalTab;
@@ -244,20 +224,12 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
   const [ipcrRows, setIpcrRows] = useState<IPCRRowDraft[]>([]);
   const [ipcrEvaluation, setIpcrEvaluation] = useState<any | null>(null);
   const [isEditingIPCR, setIsEditingIPCR] = useState(false);
-  const isPhase3 = !!(ipcrEvaluation && ipcrEvaluation.status === 'Self Evaluation' && ipcrEvaluation.approved_at);
   const [ipcrLoading, setIpcrLoading] = useState(false);
   const [ipcrSaving, setIpcrSaving] = useState(false);
   const [ipcrError, setIpcrError] = useState<string | null>(null);
   const [ipcrSuccess, setIpcrSuccess] = useState<string | null>(null);
   const [ipcrRatingPeriod, setIpcrRatingPeriod] = useState<string>('');
   const [employeeEvaluations, setEmployeeEvaluations] = useState<any[]>([]);
-  const [subordinatesData, setSubordinatesData] = useState<{
-    subordinates: any[];
-    evaluations: any[];
-    isFullyValidated: boolean;
-    missingCount: number;
-  } | null>(null);
-  const [loadingSubs, setLoadingSubs] = useState(false);
 
   const calculateRowAverage = (q: number | null, e: number | null, t: number | null): number => {
     const ratings = [q, e, t].filter((r): r is number => typeof r === 'number' && r !== null);
@@ -300,15 +272,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
         cycle ? cycle.id : null
       );
       if (ipcrRes.success && ipcrRes.data) {
-        const mappedRows = ipcrRes.data.rows.map((row) => {
-          const { weight, cleanRemarks } = parseWeightFromRemarks(row.remarks);
-          return {
-            ...row,
-            weight: weight || 0,
-            remarks: cleanRemarks,
-          };
-        });
-        setIpcrRows(mappedRows);
+        setIpcrRows(ipcrRes.data.rows);
         setIpcrEvaluation(ipcrRes.data.evaluation);
         setIpcrRatingPeriod(ipcrRes.data.ratingPeriod);
       } else {
@@ -319,14 +283,6 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
         setIpcrRatingPeriod(fallbackPeriod);
       }
 
-      if (rawData && rawData.id) {
-        const subsRes = await getSubordinatesEvaluations(rawData.id, cycle ? cycle.id : null);
-        if (subsRes.success && subsRes.data.subordinates.length > 0) {
-          setSubordinatesData(subsRes.data);
-        } else {
-          setSubordinatesData(null);
-        }
-      }
       const evalsRes = await getEmployeeEvaluations(currentUser.supabaseId);
       if (evalsRes.success) {
         setEmployeeEvaluations(evalsRes.data);
@@ -356,15 +312,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
         cycleId
       );
       if (ipcrRes.success && ipcrRes.data) {
-        const mappedRows = ipcrRes.data.rows.map((row) => {
-          const { weight, cleanRemarks } = parseWeightFromRemarks(row.remarks);
-          return {
-            ...row,
-            weight: weight || 0,
-            remarks: cleanRemarks,
-          };
-        });
-        setIpcrRows(mappedRows);
+        setIpcrRows(ipcrRes.data.rows);
         setIpcrEvaluation(ipcrRes.data.evaluation);
         setIpcrRatingPeriod(period);
       }
@@ -434,13 +382,6 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
         setIpcrError('You must add at least one Major Final Output (MFO) before submitting.');
         return;
       }
-      
-      const totalWeight = ipcrRows.reduce((acc, r) => acc + (r.weight || 0), 0);
-      if (totalWeight !== 100) {
-        setIpcrError(`Total weight must equal 100% (currently ${totalWeight}%).`);
-        return;
-      }
-
       for (let i = 0; i < ipcrRows.length; i++) {
         const row = ipcrRows[i];
         if (!row.target_text.trim()) {
@@ -462,12 +403,6 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
       ? activeCycle.id
       : null;
 
-    // Serialize weight in remarks
-    const serializedRows = ipcrRows.map((row) => ({
-      ...row,
-      remarks: formatRemarksWithWeight(row.weight || 0, row.remarks),
-    }));
-
     const result = await saveOrSubmitEmployeeIPCR({
       employeeUuid: currentUser.supabaseId,
       employeeNum: employeeRawDetails?.employee_number || currentUser.employeeId,
@@ -477,36 +412,17 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
       ratingPeriod: ipcrRatingPeriod || 'Annual 2026',
       cycleId: finalCycleId,
       status,
-      rows: serializedRows,
+      rows: ipcrRows
     });
 
-    if (result.success) {
-      if (status === 'Supervisor Review') {
-        // Find the pending IPCR request row and update its status to 'Submitted'
-        const ipcrRequest = employeeDocuments.find(
-          (d) => d.category === 'hr_request' && d.document_name.toLowerCase().includes('ipcr') && d.status !== 'Approved'
-        );
-        if (ipcrRequest) {
-          try {
-            await (supabase as any)
-              .from('employee_documents')
-              .update({ status: 'Submitted', uploaded_at: new Date().toISOString() })
-              .eq('id', ipcrRequest.id);
-            await refreshEmployeeDocuments();
-            dispatchEmployeeDocumentsUpdated();
-          } catch (err) {
-            console.error('Failed to update employee IPCR document request status:', err);
-          }
-        }
-      }
-
+    setIpcrSaving(false);
+    if (!result.success) {
+      setIpcrError(result.error || 'Failed to save IPCR. Please try again.');
+    } else {
       setIpcrSuccess(status === 'Supervisor Review' ? 'IPCR submitted for review!' : 'IPCR draft saved successfully.');
       setIsEditingIPCR(false);
       await loadIPCRData();
-    } else {
-      setIpcrError(result.error || 'Failed to save IPCR. Please try again.');
     }
-    setIpcrSaving(false);
   };
 
   // Account & Security tab — username + password change forms
@@ -735,42 +651,20 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
 
   const completionPercent = Math.round(((SETUP_FIELDS - incompleteSetupCount) / SETUP_FIELDS) * 100);
 
-  const hasIPCRRequest = useMemo(() =>
-    employeeDocuments.some(
-      (d) => d.category === 'hr_request' && d.document_name.toLowerCase().includes('ipcr')
-    ),
-    [employeeDocuments]
-  );
-
-  const showIPCRTab = hasIPCRRequest || activeCycle !== null;
-
   const tabs: TabConfig[] = useMemo(
-    () => {
-      const list: TabConfig[] = [
-        { id: 'personal', label: 'Personal Information', icon: User, route: '/employee/profile' },
-        { id: 'documents', label: 'Document Requirements', icon: FileText, route: '/employee/documents/requirements' },
-        {
-          id: 'submission',
-          label: 'Submission Bin',
-          icon: Bell,
-          route: '/employee/documents/submission',
-          count: (pendingRequests.length + incompleteSetupCount) || undefined,
-        },
-      ];
-
-      if (showIPCRTab) {
-        list.push({
-          id: 'ipcr',
-          label: 'IPCR',
-          icon: FileSpreadsheet,
-          route: '/employee/ipcr',
-        });
-      }
-
-      list.push({ id: 'account', label: 'Account & Security', icon: Lock, route: '/employee/account' });
-      return list;
-    },
-    [pendingRequests.length, incompleteSetupCount, showIPCRTab]
+    () => [
+      { id: 'personal', label: 'Personal Information', icon: User, route: '/employee/profile' },
+      { id: 'documents', label: 'Document Requirements', icon: FileText, route: '/employee/documents/requirements' },
+      {
+        id: 'submission',
+        label: 'Submission Bin',
+        icon: Bell,
+        route: '/employee/documents/submission',
+        count: (pendingRequests.length + incompleteSetupCount) || undefined,
+      },
+      { id: 'account', label: 'Account & Security', icon: Lock, route: '/employee/account' },
+    ],
+    [pendingRequests.length, incompleteSetupCount]
   );
 
   const activeTab = useMemo<PortalTab>(() => {
@@ -778,16 +672,14 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
     if (location.pathname.includes('/documents/submission')) return 'submission';
     if (location.pathname.includes('/account')) return 'account';
     if (location.pathname.includes('/profile')) return 'personal';
-    if (location.pathname.includes('/ipcr')) return 'ipcr';
     return 'personal';
   }, [location.pathname]);
 
   useEffect(() => {
-    if (activeTab === 'submission' || activeTab === 'ipcr') {
+    if (activeTab === 'submission') {
       void loadIPCRData();
     }
   }, [activeTab, currentUser?.supabaseId]);
-
 
   // Re-lock the Account & Security tab whenever the user navigates away.
   // Coming back forces another password confirmation.
@@ -1061,20 +953,6 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
               <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 700, color: '#ffffff' }}>Welcome, {currentUser.fullName}</p>
               <p style={{ margin: 0, fontSize: '0.72rem', color: '#C8D1FF' }}>Employee ID: {currentUser.employeeId}</p>
             </div>
-            {currentUser.employeeId === 'EMP-2024-001' && (
-              <button
-                type="button"
-                onClick={() => {
-                  localStorage.setItem('cictrix_admin_session', JSON.stringify({ email: 'pm@cictrix.gov.ph', role: 'pm' }));
-                  window.location.href = '/admin/pm?module=pm';
-                }}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', borderRadius: 8, border: '1.5px solid #10B981', background: '#10B981', padding: '0.4rem 0.85rem', fontSize: '0.85rem', fontWeight: 600, color: '#ffffff', cursor: 'pointer', transition: 'background 0.15s' }}
-                className="hover:bg-emerald-600 transition"
-              >
-                <FolderSync className="h-4 w-4" />
-                Switch to Office Account
-              </button>
-            )}
             <button
               onClick={onLogout}
               style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', borderRadius: 8, border: '1.5px solid rgba(255,255,255,0.35)', background: 'rgba(255,255,255,0.12)', padding: '0.4rem 0.85rem', fontSize: '0.85rem', fontWeight: 600, color: '#ffffff', cursor: 'pointer', transition: 'background 0.15s' }}
@@ -1495,362 +1373,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
               )}
             </section>
 
-
-            {pendingRequests.length > 0 && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800">
-                HR has requested additional documents. Please review and submit the required documents by the due date.
-              </div>
-            )}
-
-            {uploadError && (
-              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {uploadError}
-              </p>
-            )}
-
-            {uploadSuccess && (
-              <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                {uploadSuccess}
-              </p>
-            )}
-
-            <section className="rounded-xl border border-slate-200 bg-white p-6">
-              <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900">Submission Bin</h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    HR, PM, or L&amp;D may request additional documents from time to time. Upload the requested documents by the due date.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleRefresh}
-                  disabled={isRefreshing}
-                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 active:bg-slate-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm self-start sm:self-auto"
-                >
-                  <RefreshCw className={`h-4 w-4 text-slate-500 ${isRefreshing ? 'animate-spin' : ''}`} />
-                  {isRefreshing ? 'Refreshing...' : 'Refresh'}
-                </button>
-              </div>
-
-              {/* Pending Submissions */}
-              <div className="mt-6 flex items-center gap-2">
-                <Clock className="h-5 w-5 text-amber-500" />
-                <h3 className="font-semibold text-slate-900">
-                  Pending Submissions ({pendingRequests.length})
-                </h3>
-              </div>
-
-              <div className="mt-3 space-y-3">
-                {pendingRequests.length === 0 && (
-                  <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                    No pending document requests.
-                  </p>
-                )}
-                {pendingRequests.map((request) => {
-                  const isUploading = uploadingId === request.id;
-                  const days = daysUntil(request.due_date);
-                  const overdue = days !== null && days < 0;
-                  const source = resolveSource(request.request_source);
-
-                  return (
-                    <article
-                      key={request.id}
-                      className="rounded-xl border border-amber-200 border-l-4 border-l-amber-400 bg-amber-50/60 px-5 py-4"
-                    >
-                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h4 className="font-semibold text-slate-900">{request.document_name}</h4>
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${SOURCE_BADGE_STYLES[source]}`}>
-                              {SOURCE_BADGE_LABEL[source]}
-                            </span>
-                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
-                              <Clock className="h-3 w-3" />
-                              {request.status === 'Rejected' ? 'Needs Resubmission' : 'Pending'}
-                            </span>
-                          </div>
-                          {request.description && (
-                            <p className="mt-1 text-sm text-slate-600">{request.description}</p>
-                          )}
-                          <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-500">
-                            <span>
-                              Requested by:{' '}
-                              <span className="font-medium text-slate-700">
-                                {request.requested_by || 'HR Department'}
-                              </span>
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Calendar className="h-3.5 w-3.5" />
-                              Due: {formatPortalDate(request.due_date)}
-                              {request.due_date && (
-                                <span className={overdue ? 'font-semibold text-red-600' : 'font-semibold text-amber-700'}>
-                                  {' '}({dueLabel(request.due_date)})
-                                </span>
-                              )}
-                            </span>
-                          </div>
-                        </div>
-
-                        <label className="inline-flex shrink-0 cursor-pointer items-center gap-2 self-start rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
-                          <input
-                            type="file"
-                            className="hidden"
-                            disabled={isUploading}
-                            onChange={(e) => void handleRequestUpload(request, e.target.files?.[0] ?? null)}
-                          />
-                          <Upload className="h-4 w-4" />
-                          {isUploading ? 'Uploading…' : 'Upload'}
-                        </label>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-
-              {/* Submitted Documents */}
-              <div className="mt-7 flex items-center gap-2">
-                <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-                <h3 className="font-semibold text-slate-900">
-                  Submitted Documents ({submittedRequests.length})
-                </h3>
-              </div>
-
-              <div className="mt-3 space-y-3">
-                {submittedRequests.length === 0 && (
-                  <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                    No submitted documents yet.
-                  </p>
-                )}
-                {submittedRequests.map((request) => {
-                  const isUploading = uploadingId === request.id;
-                  const source = resolveSource(request.request_source);
-
-                  return (
-                    <article
-                      key={request.id}
-                      className="rounded-xl border border-emerald-200 border-l-4 border-l-emerald-400 bg-emerald-50/60 px-5 py-4"
-                    >
-                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h4 className="font-semibold text-slate-900">{request.document_name}</h4>
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${SOURCE_BADGE_STYLES[source]}`}>
-                              {SOURCE_BADGE_LABEL[source]}
-                            </span>
-                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-                              <CheckCircle2 className="h-3 w-3" />
-                              {request.status === 'Approved' ? 'Approved' : 'Submitted'}
-                            </span>
-                          </div>
-                          {request.description && (
-                            <p className="mt-1 text-sm text-slate-600">{request.description}</p>
-                          )}
-                          {request.file_name && (
-                            <p className="mt-1 flex items-center gap-2 text-sm text-slate-500">
-                              <FileText className="h-4 w-4 text-slate-400" />
-                              {request.file_name}
-                            </p>
-                          )}
-                          <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-500">
-                            <span>Submitted: {formatPortalDate(request.uploaded_at)}</span>
-                            {request.due_date && <span>Due date: {formatPortalDate(request.due_date)}</span>}
-                          </div>
-                        </div>
-
-                        <div className="flex shrink-0 items-center gap-2 self-start">
-                          {request.file_url && (
-                            <button
-                              type="button"
-                              onClick={() => setPreviewDocument(request)}
-                              className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
-                            >
-                              <Eye className="h-4 w-4" />
-                              Preview
-                            </button>
-                          )}
-                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-50">
-                            <input
-                              type="file"
-                              className="hidden"
-                              disabled={isUploading}
-                              onChange={(e) => void handleRequestUpload(request, e.target.files?.[0] ?? null)}
-                            />
-                            <Upload className="h-4 w-4" />
-                            {isUploading ? 'Uploading…' : 'Resubmit'}
-                          </label>
-                        </div>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-
-              <div className="mt-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                <span className="font-semibold">Important:</span> Please submit all requested documents before
-                the due date. Late submissions may affect your employment records. Contact HR if you need an
-                extension or have questions about the requirements.
-              </div>
-            </section>
-          </div>
-        )}
-
-        {activeTab === 'ipcr' && (
-          <div className="space-y-4">
-
-            {subordinatesData && (
-              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm space-y-4 mb-6">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                  <div>
-                    <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-                      <Users className="h-5 w-5 text-blue-600" />
-                      Division & Department Consolidation Console (DPCR / OPCR)
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Monitor your subordinates' submissions and consolidate their verified IPCRs into a Division (DPCR) or Office (OPCR) report.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={!subordinatesData.isFullyValidated || ipcrSaving}
-                    onClick={async () => {
-                      if (!employeeRawDetails) return;
-                      setIpcrSaving(true);
-                      setIpcrError(null);
-                      setIpcrSuccess(null);
-                      try {
-                        const res = await consolidateSubordinatesIPCR(
-                          employeeRawDetails.id,
-                          employeeRawDetails.employee_id,
-                          employeeRawDetails.current_position || 'Supervisor',
-                          activeCycle?.title || ipcrRatingPeriod || 'Annual 2026',
-                          activeCycle?.id || null
-                        );
-                        if (res.success) {
-                          setIpcrSuccess('Consolidated DPCR/OPCR successfully generated as draft!');
-                          if (activeCycle?.id) {
-                            const updatedIPCR = await getEmployeeIPCR(
-                              employeeRawDetails.employee_id,
-                              activeCycle.title || ipcrRatingPeriod || 'Annual 2026',
-                              employeeRawDetails.id,
-                              activeCycle.id
-                            );
-                            if (updatedIPCR.success) {
-                              setIpcrEvaluation(updatedIPCR.data.evaluation);
-                              const mappedRows = (updatedIPCR.data.rows || []).map((row) => {
-                                const { weight, cleanRemarks: rem } = parseWeightFromRemarks(row.remarks || '');
-                                return { ...row, weight, remarks: rem };
-                              });
-                              setIpcrRows(mappedRows);
-                            }
-                          }
-                        } else {
-                          setIpcrError(res.error || 'Failed to consolidate.');
-                        }
-                      } catch (err) {
-                        setIpcrError('Error during consolidation: ' + err.message);
-                      } finally {
-                        setIpcrSaving(false);
-                      }
-                    }}
-                    className={`inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors ${
-                      subordinatesData.isFullyValidated
-                        ? 'bg-emerald-600 hover:bg-emerald-700'
-                        : 'bg-slate-300 cursor-not-allowed opacity-60'
-                    }`}
-                  >
-                    <FolderSync className="h-4 w-4" />
-                    Consolidate Subordinate Reports
-                  </button>
-                </div>
-
-                {!subordinatesData.isFullyValidated && (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-800 flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
-                    <span>
-                      <strong>Consolidation Locked:</strong> {subordinatesData.missingCount} subordinate forms are still pending office review and approval. All subordinate forms must be "Approved" before you can consolidate.
-                    </span>
-                  </div>
-                )}
-
-                <div className="overflow-x-auto rounded-lg border border-slate-100">
-                  <table className="min-w-full divide-y divide-slate-100 text-left">
-                    <thead className="bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                      <tr>
-                        <th className="px-4 py-2.5">Subordinate Name</th>
-                        <th className="px-4 py-2.5">Position</th>
-                        <th className="px-4 py-2.5">Department</th>
-                        <th className="px-4 py-2.5 text-center">IPCR/DPCR Status</th>
-                        <th className="px-4 py-2.5 text-center">Score</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 text-xs text-slate-750">
-                      {subordinatesData.evaluations.map((ev) => (
-                        <tr key={ev.id} className="hover:bg-slate-50/40">
-                          <td className="px-4 py-3 font-semibold">{ev.employee_name}</td>
-                          <td className="px-4 py-3 text-slate-500">{ev.employee_position}</td>
-                          <td className="px-4 py-3 text-slate-500">{ev.department}</td>
-                          <td className="px-4 py-3 text-center">
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                              ev.status === 'Approved' ? 'bg-emerald-100 text-emerald-800' :
-                              ev.status === 'Supervisor Review' ? 'bg-amber-100 text-amber-800 animate-pulse' :
-                              ev.status === 'Rejected' ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-800'
-                            }`}>
-                              {ev.status}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-center font-bold text-slate-800">{ev.final_score !== null ? ev.final_score.toFixed(2) : '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* Visual Workflow Step Tracker */}
-            <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm animate-fade-in">
-              <h3 className="text-sm font-bold text-slate-800 mb-3">IPCR Submission Progress</h3>
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5">
-                  <span className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                    !ipcrEvaluation || ipcrEvaluation.status === 'Self Evaluation'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-emerald-100 text-emerald-800'
-                  }`}>
-                    {(!ipcrEvaluation || ipcrEvaluation.status === 'Self Evaluation') ? '1' : '✓'}
-                  </span>
-                  <span className="text-xs font-bold text-slate-700">Draft</span>
-                </div>
-                <div className="h-px bg-slate-200 flex-1 mx-2" />
-                <div className="flex items-center gap-1.5">
-                  <span className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                    ipcrEvaluation?.status === 'Supervisor Review'
-                      ? 'bg-blue-600 text-white animate-pulse'
-                      : ipcrEvaluation?.status === 'Approved'
-                      ? 'bg-emerald-100 text-emerald-800 font-bold'
-                      : 'bg-slate-100 text-slate-400'
-                  }`}>
-                    {ipcrEvaluation?.status === 'Approved' ? '✓' : '2'}
-                  </span>
-                  <span className="text-xs font-bold text-slate-700">Awaiting Review</span>
-                </div>
-                <div className="h-px bg-slate-200 flex-1 mx-2" />
-                <div className="flex items-center gap-1.5">
-                  <span className={`h-6 w-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                    ipcrEvaluation?.status === 'Approved'
-                      ? 'bg-emerald-600 text-white font-bold'
-                      : 'bg-slate-100 text-slate-400'
-                  }`}>
-                    3
-                  </span>
-                  <span className="text-xs font-bold text-slate-700">Approved</span>
-                </div>
-              </div>
-            </div>
-
-            {/* IPCR Content Section */}
-                        {/* ── IPCR SUBMISSION BIN SECTION ─────────────────────────── */}
+            {/* ── IPCR SUBMISSION BIN SECTION ─────────────────────────── */}
             {/* IPCR SUBMISSION BIN SECTION */}
             <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex flex-col justify-between gap-4 border-b border-slate-100 pb-4 mb-5 sm:flex-row sm:items-start">
@@ -1982,7 +1505,6 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
                         <tr>
                           <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider w-[130px]">Type</th>
                           <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider w-[240px]">MFO & Competency Map</th>
-                          <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-slate-700 uppercase tracking-wider w-[90px]">Weight (%)</th>
                           <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">Success Indicators (Target)</th>
                           <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">Accomplishments</th>
                           <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-slate-700 uppercase tracking-wider w-[180px]">Ratings (Q / E / T)</th>
@@ -2284,9 +1806,205 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, onLogou
                 </div>
               )}
             </section>
+
+            {pendingRequests.length > 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800">
+                HR has requested additional documents. Please review and submit the required documents by the due date.
+              </div>
+            )}
+
+            {uploadError && (
+              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {uploadError}
+              </p>
+            )}
+
+            {uploadSuccess && (
+              <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                {uploadSuccess}
+              </p>
+            )}
+
+            <section className="rounded-xl border border-slate-200 bg-white p-6">
+              <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Submission Bin</h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    HR, PM, or L&amp;D may request additional documents from time to time. Upload the requested documents by the due date.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRefresh}
+                  disabled={isRefreshing}
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 active:bg-slate-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm self-start sm:self-auto"
+                >
+                  <RefreshCw className={`h-4 w-4 text-slate-500 ${isRefreshing ? 'animate-spin' : ''}`} />
+                  {isRefreshing ? 'Refreshing...' : 'Refresh'}
+                </button>
+              </div>
+
+              {/* Pending Submissions */}
+              <div className="mt-6 flex items-center gap-2">
+                <Clock className="h-5 w-5 text-amber-500" />
+                <h3 className="font-semibold text-slate-900">
+                  Pending Submissions ({pendingRequests.length})
+                </h3>
+              </div>
+
+              <div className="mt-3 space-y-3">
+                {pendingRequests.length === 0 && (
+                  <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                    No pending document requests.
+                  </p>
+                )}
+                {pendingRequests.map((request) => {
+                  const isUploading = uploadingId === request.id;
+                  const days = daysUntil(request.due_date);
+                  const overdue = days !== null && days < 0;
+                  const source = resolveSource(request.request_source);
+
+                  return (
+                    <article
+                      key={request.id}
+                      className="rounded-xl border border-amber-200 border-l-4 border-l-amber-400 bg-amber-50/60 px-5 py-4"
+                    >
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="font-semibold text-slate-900">{request.document_name}</h4>
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${SOURCE_BADGE_STYLES[source]}`}>
+                              {SOURCE_BADGE_LABEL[source]}
+                            </span>
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                              <Clock className="h-3 w-3" />
+                              {request.status === 'Rejected' ? 'Needs Resubmission' : 'Pending'}
+                            </span>
+                          </div>
+                          {request.description && (
+                            <p className="mt-1 text-sm text-slate-600">{request.description}</p>
+                          )}
+                          <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-500">
+                            <span>
+                              Requested by:{' '}
+                              <span className="font-medium text-slate-700">
+                                {request.requested_by || 'HR Department'}
+                              </span>
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Calendar className="h-3.5 w-3.5" />
+                              Due: {formatPortalDate(request.due_date)}
+                              {request.due_date && (
+                                <span className={overdue ? 'font-semibold text-red-600' : 'font-semibold text-amber-700'}>
+                                  {' '}({dueLabel(request.due_date)})
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                        </div>
+
+                        <label className="inline-flex shrink-0 cursor-pointer items-center gap-2 self-start rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
+                          <input
+                            type="file"
+                            className="hidden"
+                            disabled={isUploading}
+                            onChange={(e) => void handleRequestUpload(request, e.target.files?.[0] ?? null)}
+                          />
+                          <Upload className="h-4 w-4" />
+                          {isUploading ? 'Uploading…' : 'Upload'}
+                        </label>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+
+              {/* Submitted Documents */}
+              <div className="mt-7 flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                <h3 className="font-semibold text-slate-900">
+                  Submitted Documents ({submittedRequests.length})
+                </h3>
+              </div>
+
+              <div className="mt-3 space-y-3">
+                {submittedRequests.length === 0 && (
+                  <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                    No submitted documents yet.
+                  </p>
+                )}
+                {submittedRequests.map((request) => {
+                  const isUploading = uploadingId === request.id;
+                  const source = resolveSource(request.request_source);
+
+                  return (
+                    <article
+                      key={request.id}
+                      className="rounded-xl border border-emerald-200 border-l-4 border-l-emerald-400 bg-emerald-50/60 px-5 py-4"
+                    >
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="font-semibold text-slate-900">{request.document_name}</h4>
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${SOURCE_BADGE_STYLES[source]}`}>
+                              {SOURCE_BADGE_LABEL[source]}
+                            </span>
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                              <CheckCircle2 className="h-3 w-3" />
+                              {request.status === 'Approved' ? 'Approved' : 'Submitted'}
+                            </span>
+                          </div>
+                          {request.description && (
+                            <p className="mt-1 text-sm text-slate-600">{request.description}</p>
+                          )}
+                          {request.file_name && (
+                            <p className="mt-1 flex items-center gap-2 text-sm text-slate-500">
+                              <FileText className="h-4 w-4 text-slate-400" />
+                              {request.file_name}
+                            </p>
+                          )}
+                          <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-500">
+                            <span>Submitted: {formatPortalDate(request.uploaded_at)}</span>
+                            {request.due_date && <span>Due date: {formatPortalDate(request.due_date)}</span>}
+                          </div>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-2 self-start">
+                          {request.file_url && (
+                            <button
+                              type="button"
+                              onClick={() => setPreviewDocument(request)}
+                              className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+                            >
+                              <Eye className="h-4 w-4" />
+                              Preview
+                            </button>
+                          )}
+                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-50">
+                            <input
+                              type="file"
+                              className="hidden"
+                              disabled={isUploading}
+                              onChange={(e) => void handleRequestUpload(request, e.target.files?.[0] ?? null)}
+                            />
+                            <Upload className="h-4 w-4" />
+                            {isUploading ? 'Uploading…' : 'Resubmit'}
+                          </label>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+
+              <div className="mt-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                <span className="font-semibold">Important:</span> Please submit all requested documents before
+                the due date. Late submissions may affect your employment records. Contact HR if you need an
+                extension or have questions about the requirements.
+              </div>
+            </section>
           </div>
         )}
-
 
         {activeTab === 'account' && !accountTabUnlocked && (
           <div className="space-y-5">
