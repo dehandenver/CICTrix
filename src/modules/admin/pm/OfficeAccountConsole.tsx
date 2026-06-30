@@ -213,13 +213,6 @@ export const OfficeAccountConsole: React.FC = () => {
             <div className="h-8 w-px bg-slate-200" />
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <div className="h-10 w-10 rounded-full bg-indigo-600 text-white grid place-content-center">
-                  <UserCircle2 className="h-6 w-6" />
-                </div>
-                <div className="leading-tight text-left">
-                  <p className="text-sm font-semibold text-slate-805">Maria Santos</p>
-                  <p className="text-xs text-slate-500">Office Account Console</p>
-                </div>
                 <div className="relative">
                   <button
                     onClick={() => setShowSwitchModal(!showSwitchModal)}
@@ -227,8 +220,8 @@ export const OfficeAccountConsole: React.FC = () => {
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      height: '34px',
-                      width: '34px',
+                      height: '40px',
+                      width: '40px',
                       borderRadius: '50%',
                       border: '1.5px solid #C8D1FF',
                       background: '#F0F2FD',
@@ -238,14 +231,14 @@ export const OfficeAccountConsole: React.FC = () => {
                     }}
                     title="Switch Account"
                   >
-                    <User className="h-4.5 w-4.5" />
+                    <UserCircle2 className="h-6 w-6 text-indigo-650" />
                   </button>
                   {showSwitchModal && (
                     <div
                       style={{
                         position: 'absolute',
                         right: 0,
-                        top: '40px',
+                        top: '44px',
                         zIndex: 100,
                         width: '240px',
                         background: '#ffffff',
@@ -297,6 +290,10 @@ export const OfficeAccountConsole: React.FC = () => {
                       </div>
                     </div>
                   )}
+                </div>
+                <div className="leading-tight text-left">
+                  <p className="text-sm font-semibold text-slate-800">Maria Santos</p>
+                  <p className="text-xs text-slate-500">Office Account Console</p>
                 </div>
               </div>
             </div>
