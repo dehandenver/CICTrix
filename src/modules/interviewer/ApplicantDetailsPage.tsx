@@ -723,6 +723,7 @@ export function ApplicantDetailsPage() {
   const [attachments, setAttachments] = useState<AttachmentRecord[]>([]);
   const [evaluation, setEvaluation] = useState<EvaluationRecord | null>(null);
   const [, setToast] = useState<string | null>(null);
+  const [approveToast, setApproveToast] = useState<{ ok: boolean; msg: string } | null>(null);
   const [docReviews, setDocReviews] = useState<Record<string, DocReview>>(loadDocReviews);
   const [openedDocFilePaths, setOpenedDocFilePaths] = useState<Set<string>>(new Set());
   const [docsValidated, setDocsValidated] = useState(false);
@@ -1414,10 +1415,25 @@ export function ApplicantDetailsPage() {
 
     // Persist doc_validated to Supabase so the applicant portal shows "Verified".
     // rawDocType is the snake_case DOCUMENT_SLOTS key (e.g. 'drug_test'), not the human label.
+    // Use applicant?.id (fetched from DB) as the authoritative applicant_id.
+    const safeApplicantId = applicant?.id ?? id ?? '';
     const { error: insertErr } = await (supabase as any)
       .from('applicant_attachments')
-      .insert({ applicant_id: id, file_name: rawDocType, file_path: fileUrl, document_type: 'doc_validated' });
-    if (insertErr) console.error('[handleApproveDoc] Supabase insert failed:', insertErr);
+      .insert({
+        applicant_id: safeApplicantId,
+        file_name: rawDocType,
+        file_path: fileUrl,
+        document_type: 'doc_validated',
+        file_type: 'validation',
+        file_size: 0,
+      });
+    if (insertErr) {
+      console.error('[handleApproveDoc] Supabase insert failed:', insertErr);
+      setApproveToast({ ok: false, msg: `Supabase error: ${insertErr.message ?? 'insert failed'}` });
+    } else {
+      setApproveToast({ ok: true, msg: `${docType} approved and synced to Supabase.` });
+    }
+    setTimeout(() => setApproveToast(null), 5000);
 
     // Check if every REAL (non-meta) attachment is now approved.
     const realAttachments = attachments.filter(
@@ -2945,6 +2961,13 @@ export function ApplicantDetailsPage() {
           </div>
         );
       })()}
+      {/* Approve doc toast — shows success or error after Supabase insert */}
+      {approveToast && (
+        <div className={`fixed bottom-6 right-6 z-[350] flex items-center gap-3 rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-xl ${approveToast.ok ? 'bg-emerald-600' : 'bg-rose-600'}`}>
+          {approveToast.ok ? <CheckCircle2 size={18} /> : null}
+          {approveToast.msg}
+        </div>
+      )}
       </div>{/* /admin-layout wrapper */}
     </div>
   );
