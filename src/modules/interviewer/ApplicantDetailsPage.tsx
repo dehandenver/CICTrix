@@ -1777,6 +1777,7 @@ export function ApplicantDetailsPage() {
                   </button>
                   <button
                     type="button"
+                    disabled={isApplicantDisqualified}
                     onClick={() => {
                       if (isApplicantShortlisted) {
                         void persistStatus('unshortlist');
@@ -1784,7 +1785,7 @@ export function ApplicantDetailsPage() {
                         openResubmitModal();
                       }
                     }}
-                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm ${
+                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
                       isApplicantShortlisted
                         ? 'border-[#363EE8] bg-[#363EE8] text-white'
                         : 'border-[#363EE8] bg-white text-[#363EE8] hover:bg-blue-50'

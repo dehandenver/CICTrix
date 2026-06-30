@@ -972,17 +972,13 @@ export const ApplicationStatusPage = () => {
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 border border-amber-200">
                               <AlertCircle size={12} /> Action Required
                             </span>
-                          ) : (validatedDocTypes.has(doc.document_type ?? '') || statusImpliesVerified) ? (
+                          ) : validatedDocTypes.has(doc.document_type ?? '') ? (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
                               <CheckCircle2 size={12} /> Verified
                             </span>
-                          ) : resubmittedDocTypes.has(doc.document_type ?? '') ? (
+                          ) : resubmittedDocTypes.has(doc.document_type ?? '') || alreadyResolved ? (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 border border-blue-200">
                               <RefreshCw size={12} /> Resubmitted
-                            </span>
-                          ) : justUploaded || alreadyResolved ? (
-                            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 border border-blue-200">
-                              <RefreshCw size={12} /> Submitted · Under Review
                             </span>
                           ) : (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border" style={{ backgroundColor: '#EEF0FD', color: '#363EE8', borderColor: '#C8D1FF' }}>
