@@ -227,28 +227,29 @@ export const ApplicationStatusPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [record?.id]);
 
-  // Real-time subscription — refreshes applicant status when RSP updates it
-  // (e.g., "Document Verified", "Shortlisted", schedule changes).
+  // Real-time subscription — refreshes both status AND attachments when RSP
+  // updates the applicant record (status, schedule, etc.).
   useEffect(() => {
     if (!record?.id) return;
     const channel = (supabase as any)
       .channel(`applicants_${record.id}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'applicants', filter: `id=eq.${record.id}` }, () => {
         void fetchRecord(record.id);
+        void fetchAttachments(record.id);
       })
       .subscribe();
     return () => { void (supabase as any).removeChannel(channel); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [record?.id]);
 
-  // Polling fallback — fires every 12 s for both tables in case Supabase
-  // Realtime is not yet enabled for one of them.
+  // Polling fallback — 5 s interval so updates feel near-instant even if
+  // Realtime filters aren't firing (e.g. REPLICA IDENTITY not yet set).
   useEffect(() => {
     if (!record?.id) return;
     const interval = setInterval(() => {
       void fetchAttachments(record.id);
       void fetchRecord(record.id);
-    }, 12000);
+    }, 5000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [record?.id]);

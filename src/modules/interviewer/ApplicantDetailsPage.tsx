@@ -1465,6 +1465,13 @@ export function ApplicantDetailsPage() {
       setApproveToast({ ok: false, msg: `Supabase error: ${insertErr.message ?? 'insert failed'}` });
     } else {
       setApproveToast({ ok: true, msg: `${docType} approved and synced to Supabase.` });
+      // Touch applicants.updated_at so the tracker's applicants subscription fires
+      // as a second realtime signal in case the applicant_attachments subscription
+      // doesn't fire (e.g. REPLICA IDENTITY not yet set on that table).
+      void (supabase as any)
+        .from('applicants')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', safeApplicantId);
     }
     setTimeout(() => setApproveToast(null), 5000);
 
