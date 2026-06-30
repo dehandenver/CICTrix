@@ -10,6 +10,7 @@ import {
     Lock,
     Mail,
     MessageSquare,
+    RefreshCw,
     Send,
     Star,
     User,
@@ -1582,6 +1583,40 @@ export function ApplicantDetailsPage() {
     }
   };
 
+  const handleSyncApprovals = async () => {
+    if (!applicant?.id) return;
+    const existingValidatedTypes = new Set(
+      attachments.filter((a) => a.document_type === 'doc_validated').map((a) => a.file_name),
+    );
+    const realDocs = attachments.filter(
+      (a) => a.document_type !== 'resubmission_request' &&
+             a.document_type !== 'resubmission_resolved' &&
+             a.document_type !== 'doc_validated',
+    );
+    let count = 0;
+    for (const att of realDocs) {
+      const rawDocType = (att.document_type as string | null) || FILE_NAME_TO_TYPE[att.file_name] || 'other';
+      if (docReviews[getDocReviewKey(att.file_path)]?.status === 'approved' && !existingValidatedTypes.has(rawDocType)) {
+        await (supabase as any).from('applicant_attachments').insert({
+          applicant_id: applicant.id,
+          file_name: rawDocType,
+          file_path: `validated::${rawDocType}`,
+          document_type: 'doc_validated',
+          file_type: 'validation',
+          file_size: 0,
+        });
+        existingValidatedTypes.add(rawDocType);
+        count++;
+      }
+    }
+    if (count > 0) {
+      void (supabase as any).from('applicants').update({ updated_at: new Date().toISOString() }).eq('id', applicant.id);
+      setToast(`${count} approved doc${count !== 1 ? 's' : ''} synced — tracker will update within seconds.`);
+    } else {
+      setToast('All approved docs are already synced to the portal.');
+    }
+  };
+
   const handleValidateDocs = async () => {
     if (!id || !applicant?.id) return;
     localStorage.setItem(`cictrix_docs_validated_${id}`, 'true');
@@ -1974,26 +2009,45 @@ export function ApplicantDetailsPage() {
                     );
                     const allSubmittedApproved = submittedFilePaths.length > 0 &&
                       submittedFilePaths.every((fp) => docReviews[getDocReviewKey(fp)]?.status === 'approved');
+                    const existingValidatedTypes = new Set(
+                      attachments.filter((a) => a.document_type === 'doc_validated').map((a) => a.file_name),
+                    );
+                    const unsyncedCount = realAttachments.filter((att) => {
+                      const rawDocType = (att.document_type as string | null) || FILE_NAME_TO_TYPE[att.file_name] || 'other';
+                      return docReviews[getDocReviewKey(att.file_path)]?.status === 'approved' && !existingValidatedTypes.has(rawDocType);
+                    }).length;
                     return (
                       <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
                         <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Submitted Documents</h3>
                         {!isDocLocked() && realAttachments.length > 0 && (
-                          docsValidated ? (
-                            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-                              <CheckCircle2 size={12} /> Validated
-                            </span>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={handleValidateDocs}
-                              disabled={!allSubmittedApproved}
-                              title={!allSubmittedApproved ? 'All documents must be individually approved first' : 'Validate all documents'}
-                              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
-                              style={allSubmittedApproved ? { borderColor: '#059669', color: '#059669', backgroundColor: '#f0fdf4' } : { borderColor: '#d1d5db', color: '#9ca3af', backgroundColor: '#f9fafb' }}
-                            >
-                              <CheckCircle2 size={12} /> Validate Documents
-                            </button>
-                          )
+                          <div className="flex items-center gap-2">
+                            {unsyncedCount > 0 && !docsValidated && (
+                              <button
+                                type="button"
+                                onClick={handleSyncApprovals}
+                                title={`Push ${unsyncedCount} approved doc${unsyncedCount !== 1 ? 's' : ''} to the applicant portal`}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-[#363EE8] bg-[#363EE8]/5 px-3 py-1 text-xs font-semibold text-[#363EE8] transition hover:bg-[#363EE8]/10"
+                              >
+                                <RefreshCw size={12} /> Sync to Portal ({unsyncedCount})
+                              </button>
+                            )}
+                            {docsValidated ? (
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                                <CheckCircle2 size={12} /> Validated
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={handleValidateDocs}
+                                disabled={!allSubmittedApproved}
+                                title={!allSubmittedApproved ? 'All documents must be individually approved first' : 'Validate all documents'}
+                                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
+                                style={allSubmittedApproved ? { borderColor: '#059669', color: '#059669', backgroundColor: '#f0fdf4' } : { borderColor: '#d1d5db', color: '#9ca3af', backgroundColor: '#f9fafb' }}
+                              >
+                                <CheckCircle2 size={12} /> Validate Documents
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
                     );
