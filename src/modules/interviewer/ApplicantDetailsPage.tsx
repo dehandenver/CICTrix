@@ -739,6 +739,7 @@ export function ApplicantDetailsPage() {
 
   // Self-healing sync: if localStorage says a doc is approved but Supabase has no
   // doc_validated row for it (e.g., insert failed in a previous session), create it now.
+  // Also pings applicants.updated_at so the tracker's realtime subscription fires.
   useEffect(() => {
     if (!applicant?.id || !attachments.length) return;
     const existingValidatedTypes = new Set(
@@ -747,6 +748,7 @@ export function ApplicantDetailsPage() {
     const realDocs = attachments.filter(
       (a) => a.document_type !== 'resubmission_request' && a.document_type !== 'resubmission_resolved' && a.document_type !== 'doc_validated',
     );
+    let synced = false;
     for (const att of realDocs) {
       const key = `${id}::${att.file_path}`;
       const rawDocType = (att.document_type as string | null) || FILE_NAME_TO_TYPE[att.file_name] || 'other';
@@ -756,6 +758,7 @@ export function ApplicantDetailsPage() {
         !syncedValidatedRef.current.has(rawDocType)
       ) {
         syncedValidatedRef.current.add(rawDocType);
+        synced = true;
         void (supabase as any).from('applicant_attachments').insert({
           applicant_id: applicant.id,
           file_name: rawDocType,
@@ -765,6 +768,10 @@ export function ApplicantDetailsPage() {
           file_size: 0,
         });
       }
+    }
+    // Ping the tracker via the applicants subscription after creating missing rows.
+    if (synced) {
+      void (supabase as any).from('applicants').update({ updated_at: new Date().toISOString() }).eq('id', applicant.id);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applicant?.id, attachments, docReviews]);
@@ -1575,12 +1582,38 @@ export function ApplicantDetailsPage() {
     }
   };
 
-  const handleValidateDocs = () => {
-    if (!id) return;
+  const handleValidateDocs = async () => {
+    if (!id || !applicant?.id) return;
     localStorage.setItem(`cictrix_docs_validated_${id}`, 'true');
     setDocsValidated(true);
     addDocTimeline('Documents Validated: All submitted documents have been reviewed and accepted.');
     setToast('Documents validated. Qualify button is now available.');
+
+    // Sync all approved docs to Supabase so the applicant tracker shows "Verified".
+    const realDocs = attachments.filter(
+      (a) => a.document_type !== 'resubmission_request' &&
+             a.document_type !== 'resubmission_resolved' &&
+             a.document_type !== 'doc_validated',
+    );
+    const existingValidated = new Set(
+      attachments.filter((a) => a.document_type === 'doc_validated').map((a) => a.file_name),
+    );
+    for (const att of realDocs) {
+      const rawDocType = (att.document_type as string | null) || FILE_NAME_TO_TYPE[att.file_name] || 'other';
+      if (docReviews[getDocReviewKey(att.file_path)]?.status === 'approved' && !existingValidated.has(rawDocType)) {
+        void (supabase as any).from('applicant_attachments').insert({
+          applicant_id: applicant.id,
+          file_name: rawDocType,
+          file_path: `validated::${rawDocType}`,
+          document_type: 'doc_validated',
+          file_type: 'validation',
+          file_size: 0,
+        });
+        existingValidated.add(rawDocType);
+      }
+    }
+    // Ping the tracker's applicants subscription so it refreshes immediately.
+    void (supabase as any).from('applicants').update({ updated_at: new Date().toISOString() }).eq('id', applicant.id);
   };
 
   const isDocLocked = () => {
