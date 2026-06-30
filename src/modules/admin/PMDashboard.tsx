@@ -79,6 +79,7 @@ type EmployeeOption = { id: string; name: string; position: string; department: 
 
 import EmployeeDirectory from './EmployeeDirectory';
 import { SummaryOfRatings } from './pm/SummaryOfRatings';
+import { PMMasterControlPanel } from './pm/PMMasterControlPanel';
 
 type EvaluationEmployeeRow = { name: string; position: string; status: string };
 type EvaluationGroup = {
@@ -121,7 +122,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<
-    'dashboard' | 'employees' | 'evaluation-status' | 'performance-reviews' | 'goals' | 'ipcr' | 'analytics' | 'reports' | 'settings'
+    'dashboard' | 'employees' | 'evaluation-status' | 'performance-reviews' | 'goals' | 'ipcr' | 'analytics' | 'reports' | 'settings' | 'master-control'
   >('dashboard');
   const [newCycle, setNewCycle] = useState<{
     title: string;
@@ -730,6 +731,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   if (isDashboardView) {
     const sideNavItems = [
       { key: 'dashboard', label: 'Dashboard', subtitle: '', icon: LayoutDashboard },
+      { key: 'master-control', label: 'PM Master Control', subtitle: 'Global administration', icon: SlidersHorizontal },
       { key: 'employees', label: 'Employees', subtitle: 'Employee Directory', icon: Users },
       { key: 'evaluation-status', label: 'Employee Evaluation Status', subtitle: 'Track progress', icon: ClipboardList },
       { key: 'performance-reviews', label: 'Performance Reviews', subtitle: 'Upcoming reviews', icon: CalendarCheck2 },
@@ -1083,6 +1085,10 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   </section>
                 </div>
               </>
+            )}
+
+            {activeSection === 'master-control' && (
+              <PMMasterControlPanel />
             )}
 
             {activeSection === 'employees' && (
