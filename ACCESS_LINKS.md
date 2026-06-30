@@ -45,6 +45,11 @@ Reference for local development access to frontend pages and backend API endpoin
 - Description: Employee profile and assigned tasks
 - Access: Requires employee login
 
+### Office Account Console (Module 2)
+- URL: [http://localhost:5173/office/dashboard](http://localhost:5173/office/dashboard)
+- Description: Shared dashboard for Office Management (Supervisors & Dept. Heads)
+- Access: Office Supervisors / Department Heads
+
 ## Interviewer / Rater Access
 
 ### Login
