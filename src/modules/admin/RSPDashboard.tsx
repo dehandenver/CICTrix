@@ -4094,9 +4094,9 @@ export const RSPDashboard = () => {
           {section === 'reports' && (
             <>
               {reportsView === 'overview' ? (
-                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                <div className="flex flex-col gap-3">
 
-                  {/* ── Card 1: Application Ranking ── */}
+                  {/* ── Row 1: Application Ranking ── */}
                   {(() => {
                     const allRows: { dept: string; position: string }[] = [];
                     rankingHistoricalData.forEach((posMap, dept) => {
@@ -4106,91 +4106,75 @@ export const RSPDashboard = () => {
                       <button
                         type="button"
                         onClick={() => setReportsView('ranking')}
-                        className="group flex flex-col gap-5 rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:border-blue-300 hover:shadow-md"
+                        className="group flex w-full items-center gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left shadow-sm transition hover:border-blue-300 hover:shadow-md"
                       >
-                        <div className="flex items-start justify-between">
-                          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100">
-                            <BarChart2 size={22} className="text-blue-600" />
-                          </span>
-                          <span className="rounded-full bg-blue-50 px-3 py-1 text-xl font-bold text-blue-700">{allRows.length}</span>
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-100">
+                          <BarChart2 size={20} className="text-blue-600" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-bold text-slate-900">Application Ranking</p>
+                          <p className="text-xs text-slate-500">Applicant rankings by position and department</p>
                         </div>
-                        <div>
-                          <p className="text-base font-bold text-slate-900">Application Ranking</p>
-                          <p className="mt-1 text-sm text-slate-500">Applicant rankings by position and department</p>
-                        </div>
-                        <div className="flex items-center gap-1 text-xs font-semibold text-blue-600 group-hover:underline">
-                          View Report <ChevronRight size={13} />
-                        </div>
+                        <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-bold text-blue-700">{allRows.length}</span>
+                        <ChevronRight size={16} className="shrink-0 text-slate-400 group-hover:text-blue-600 transition-colors" />
                       </button>
                     );
                   })()}
 
-                  {/* ── Card 2: Assessment Forms ── */}
+                  {/* ── Row 2: Assessment Forms ── */}
                   <button
                     type="button"
                     onClick={() => setReportsView('assessment')}
-                    className="group flex flex-col gap-5 rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:border-emerald-300 hover:shadow-md"
+                    className="group flex w-full items-center gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left shadow-sm transition hover:border-emerald-300 hover:shadow-md"
                   >
-                    <div className="flex items-start justify-between">
-                      <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-100">
-                        <FileText size={22} className="text-emerald-600" />
-                      </span>
-                      <span className="rounded-full bg-emerald-50 px-3 py-1 text-xl font-bold text-emerald-700">{assessmentPositionCards.length}</span>
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100">
+                      <FileText size={20} className="text-emerald-600" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-bold text-slate-900">Assessment Forms</p>
+                      <p className="text-xs text-slate-500">Assessment reports and scores per position</p>
                     </div>
-                    <div>
-                      <p className="text-base font-bold text-slate-900">Assessment Forms</p>
-                      <p className="mt-1 text-sm text-slate-500">Assessment reports and scores per position</p>
-                    </div>
-                    <div className="flex items-center gap-1 text-xs font-semibold text-emerald-600 group-hover:underline">
-                      View All <ChevronRight size={13} />
-                    </div>
+                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-bold text-emerald-700">{assessmentPositionCards.length}</span>
+                    <ChevronRight size={16} className="shrink-0 text-slate-400 group-hover:text-emerald-600 transition-colors" />
                   </button>
 
-                  {/* ── Card 3: Closed Jobs ── */}
+                  {/* ── Row 3: Closed Jobs ── */}
                   {(() => {
                     const closedCount = jobs.filter(j => j.status === 'Closed').length;
                     return (
                       <button
                         type="button"
                         onClick={() => setReportsView('closed')}
-                        className="group flex flex-col gap-5 rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:border-slate-400 hover:shadow-md"
+                        className="group flex w-full items-center gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left shadow-sm transition hover:border-slate-400 hover:shadow-md"
                       >
-                        <div className="flex items-start justify-between">
-                          <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100">
-                            <Briefcase size={22} className="text-slate-600" />
-                          </span>
-                          <span className="rounded-full bg-slate-50 px-3 py-1 text-xl font-bold text-slate-700">{closedCount}</span>
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100">
+                          <Briefcase size={20} className="text-slate-600" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-bold text-slate-900">Closed Jobs</p>
+                          <p className="text-xs text-slate-500">Archived job postings no longer accepting applications</p>
                         </div>
-                        <div>
-                          <p className="text-base font-bold text-slate-900">Closed Jobs</p>
-                          <p className="mt-1 text-sm text-slate-500">Archived job postings no longer accepting applications</p>
-                        </div>
-                        <div className="flex items-center gap-1 text-xs font-semibold text-slate-600 group-hover:underline">
-                          View Listings <ChevronRight size={13} />
-                        </div>
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-bold text-slate-700">{closedCount}</span>
+                        <ChevronRight size={16} className="shrink-0 text-slate-400 group-hover:text-slate-700 transition-colors" />
                       </button>
                     );
                   })()}
 
-                  {/* ── Card 4: Temporary Employee Account Generation ── */}
+                  {/* ── Row 4: Temporary Employee Account Generation ── */}
                   <button
                     type="button"
                     onClick={() => setReportsView('temp')}
-                    className="group flex flex-col gap-5 rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:border-purple-300 hover:shadow-md"
+                    className="group flex w-full items-center gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left shadow-sm transition hover:border-purple-300 hover:shadow-md"
                   >
-                    <div className="flex items-start justify-between">
-                      <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-purple-100">
-                        <UserPlus size={22} className="text-purple-600" />
-                      </span>
-                      <span className="rounded-full bg-purple-50 px-3 py-1 text-xl font-bold text-purple-700">{newlyHiredApplicants.length}</span>
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-purple-100">
+                      <UserPlus size={20} className="text-purple-600" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-bold text-slate-900">Temporary Employee Account Generation</p>
+                      <p className="text-xs text-slate-500">Hired applicants and temporary employee accounts</p>
                     </div>
-                    <div>
-                      <p className="text-base font-bold text-slate-900">Temporary Employee Account Generation</p>
-                      <p className="mt-1 text-sm text-slate-500">Hired applicants and temporary employee accounts</p>
-                    </div>
-                    <div className="flex items-center gap-1 text-xs font-semibold text-purple-600 group-hover:underline">
-                      View Employees <ChevronRight size={13} />
-                    </div>
+                    <span className="rounded-full bg-purple-50 px-3 py-1 text-sm font-bold text-purple-700">{newlyHiredApplicants.length}</span>
+                    <ChevronRight size={16} className="shrink-0 text-slate-400 group-hover:text-purple-600 transition-colors" />
                   </button>
 
                 </div>
