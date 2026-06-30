@@ -122,6 +122,7 @@ const DEMO_ACCOUNT: EmployeePortalAccount = {
   employee: {
     employeeId: 'EMP-2024-001',
     fullName: 'Maria Santos',
+    employmentStatus: 'Probationary',
     email: 'maria.santos@ilongcity.gov.ph',
     dateOfBirth: '1990-05-15',
     age: 34,

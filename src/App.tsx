@@ -625,6 +625,42 @@ function AppContent() {
               </EmployeeRoute>
             }
           />
+           <Route
+            path="/employee/ipcr-workspace"
+            element={
+              <EmployeeRoute session={employeeSession}>
+                {currentEmployee ? (
+                  <EmployeePage
+                    currentUser={currentEmployee}
+                    loginUsername={employeeSession?.loginUsername}
+                    onLogout={handleEmployeeLogout}
+                  />
+                ) : (
+                  <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-600">
+                    Loading employee profile...
+                  </div>
+                )}
+              </EmployeeRoute>
+            }
+          />
+          <Route
+            path="/employee/new-entrants"
+            element={
+              <EmployeeRoute session={employeeSession}>
+                {currentEmployee ? (
+                  <EmployeePage
+                    currentUser={currentEmployee}
+                    loginUsername={employeeSession?.loginUsername}
+                    onLogout={handleEmployeeLogout}
+                  />
+                ) : (
+                  <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-600">
+                    Loading employee profile...
+                  </div>
+                )}
+              </EmployeeRoute>
+            }
+          />
           <Route
             path="/employee/*"
             element={<Navigate to={employeeSession ? '/employee/dashboard' : '/employee/login'} replace />}

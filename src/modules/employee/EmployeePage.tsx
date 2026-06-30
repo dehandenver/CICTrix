@@ -20,6 +20,7 @@ import {
   AlertCircle,
   FileSpreadsheet,
   Check,
+  Info
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import abyanLogo from '../../assets/abyan-logo.png';
@@ -79,7 +80,7 @@ interface EmployeePageProps {
   onLogout: () => void;
 }
 
-type PortalTab = 'personal' | 'documents' | 'submission' | 'account';
+type PortalTab = 'personal' | 'documents' | 'submission' | 'account' | 'ipcr-workspace' | 'new-entrants';
 
 interface TabConfig {
   id: PortalTab;
@@ -232,6 +233,25 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   const [ipcrSuccess, setIpcrSuccess] = useState<string | null>(null);
   const [ipcrRatingPeriod, setIpcrRatingPeriod] = useState<string>('');
   const [employeeEvaluations, setEmployeeEvaluations] = useState<any[]>([]);
+
+  // Module 3 IPCR Workspace & New Entrants State
+  const [ipcrSubtab, setIpcrSubtab] = useState<'phase1' | 'phase2'>('phase1');
+  const [newEntrantsSubtab, setNewEntrantsSubtab] = useState<'checklist' | 'scheduler'>('checklist');
+  const [employeeTargets, setEmployeeTargets] = useState({
+    core: 'Process 90% of recruitment requests within 10 days',
+    strategic: 'Formulate training programs based on competency gaps',
+    support: 'Provide IT helpdesk assistance within 15 minutes'
+  });
+  const [ipcrApproved, setIpcrApproved] = useState(false);
+  const [accomplishments, setAccomplishments] = useState('');
+  const [selfRatingScore, setSelfRatingScore] = useState(4.0);
+  const [orientationChecked, setOrientationChecked] = useState({
+    duties: true,
+    policies: true,
+    workflow: false,
+    setup: false
+  });
+  const [orientationVerified, setOrientationVerified] = useState(false);
 
   const calculateRowAverage = (q: number | null, e: number | null, t: number | null): number => {
     const ratings = [q, e, t].filter((r): r is number => typeof r === 'number' && r !== null);
@@ -654,24 +674,34 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   const completionPercent = Math.round(((SETUP_FIELDS - incompleteSetupCount) / SETUP_FIELDS) * 100);
 
   const tabs: TabConfig[] = useMemo(
-    () => [
-      { id: 'personal', label: 'Personal Information', icon: User, route: '/employee/profile' },
-      { id: 'documents', label: 'Document Requirements', icon: FileText, route: '/employee/documents/requirements' },
-      {
-        id: 'submission',
-        label: 'Submission Bin',
-        icon: Bell,
-        route: '/employee/documents/submission',
-        count: (pendingRequests.length + incompleteSetupCount) || undefined,
-      },
-      { id: 'account', label: 'Account & Security', icon: Lock, route: '/employee/account' },
-    ],
-    [pendingRequests.length, incompleteSetupCount]
+    () => {
+      const baseTabs: TabConfig[] = [
+        { id: 'personal', label: 'Personal Information', icon: User, route: '/employee/profile' },
+        { id: 'documents', label: 'Document Requirements', icon: FileText, route: '/employee/documents/requirements' },
+        {
+          id: 'submission',
+          label: 'Submission Bin',
+          icon: Bell,
+          route: '/employee/documents/submission',
+          count: (pendingRequests.length + incompleteSetupCount) || undefined,
+        },
+        { id: 'ipcr-workspace', label: 'My IPCR Workspace', icon: FileSpreadsheet, route: '/employee/ipcr-workspace' },
+        { id: 'account', label: 'Account & Security', icon: Lock, route: '/employee/account' },
+      ];
+      // Show new entrants track only for probationary/new hires
+      if (profile.employmentStatus === 'Probationary') {
+        baseTabs.splice(4, 0, { id: 'new-entrants', label: 'New Entrants Track', icon: Calendar, route: '/employee/new-entrants' });
+      }
+      return baseTabs;
+    },
+    [pendingRequests.length, incompleteSetupCount, profile.employmentStatus]
   );
 
   const activeTab = useMemo<PortalTab>(() => {
     if (location.pathname.includes('/documents/requirements')) return 'documents';
     if (location.pathname.includes('/documents/submission')) return 'submission';
+    if (location.pathname.includes('/ipcr-workspace')) return 'ipcr-workspace';
+    if (location.pathname.includes('/new-entrants')) return 'new-entrants';
     if (location.pathname.includes('/account')) return 'account';
     if (location.pathname.includes('/profile')) return 'personal';
     return 'personal';
@@ -2380,6 +2410,298 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                 </button>
               </div>
             </section>
+          </div>
+        )}
+        {activeTab === 'ipcr-workspace' && (
+          <div className="space-y-6 animate-fade-in" style={{ fontFamily: "'Poppins', sans-serif" }}>
+            {/* Subtabs selector */}
+            <div className="flex border-b border-slate-200 bg-white rounded-xl p-2 shadow-sm gap-2">
+              <button
+                onClick={() => setIpcrSubtab('phase1')}
+                className={`px-4 py-2 text-xs font-bold rounded-md transition ${
+                  ipcrSubtab === 'phase1' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-600 hover:text-slate-800 hover:bg-slate-50'
+                }`}
+              >
+                Phase 1: Target Setting
+              </button>
+              <button
+                onClick={() => setIpcrSubtab('phase2')}
+                className={`px-4 py-2 text-xs font-bold rounded-md transition ${
+                  ipcrSubtab === 'phase2' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-650 hover:text-slate-800 hover:bg-slate-50'
+                }`}
+              >
+                Phase 2: Accomplishments & Ratings
+              </button>
+            </div>
+
+            {/* Subtab content */}
+            {ipcrSubtab === 'phase1' && (
+              <div className="rounded-xl border bg-white p-6 shadow-sm space-y-4" style={{ borderColor: '#C8D1FF' }}>
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-800">Phase 1: Target Setting Phase</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Encode your targets for Core, Strategic, and Support Functions.</p>
+                  </div>
+                  <div>
+                    {ipcrApproved ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-100">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600" /> Approved & Locked
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-100">
+                        <AlertCircle className="h-4 w-4 text-amber-600" /> Open for Editing
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-5">
+                  {[
+                    { key: 'core', label: 'Core Functions', placeholder: 'e.g. Process payroll within 3 days of timesheet approval.' },
+                    { key: 'strategic', label: 'Strategic Functions', placeholder: 'e.g. Formulate training programs based on competency gaps.' },
+                    { key: 'support', label: 'Support Functions', placeholder: 'e.g. Provide IT helpdesk assistance within 15 minutes.' }
+                  ].map(fn => {
+                    const val = employeeTargets[fn.key as 'core' | 'strategic' | 'support'];
+                    return (
+                      <div key={fn.key} className="space-y-1.5">
+                        <label className="block text-xs font-bold text-slate-700">{fn.label}</label>
+                        <textarea
+                          value={val}
+                          onChange={(e) => {
+                            if (ipcrApproved) return;
+                            setEmployeeTargets(prev => ({ ...prev, [fn.key]: e.target.value }));
+                          }}
+                          disabled={ipcrApproved}
+                          placeholder={fn.placeholder}
+                          rows={3}
+                          style={{ borderColor: '#C8D1FF' }}
+                          className="w-full rounded-lg border px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#363EE8] disabled:bg-slate-50 disabled:cursor-not-allowed"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {!ipcrApproved && (
+                  <div className="flex justify-end pt-3">
+                    <button
+                      onClick={() => {
+                        setIpcrApproved(true);
+                        setSaveSuccess('Targets successfully submitted to Office Account for approval.');
+                        setTimeout(() => setSaveSuccess(null), 4000);
+                      }}
+                      className="bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition"
+                    >
+                      Submit Targets for Approval
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {ipcrSubtab === 'phase2' && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Left Panel */}
+                <div className="rounded-xl border bg-white p-5 shadow-sm space-y-4" style={{ borderColor: '#C8D1FF' }}>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                      <Lock className="h-4 w-4 text-slate-400" />
+                      Frozen Targets (Set 6 Months Ago)
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Reference targets locked during Phase 1 database commit.</p>
+                  </div>
+
+                  <div className="space-y-4 divide-y divide-slate-100">
+                    <div className="pt-3">
+                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Core Functions</p>
+                      <p className="text-xs text-slate-700 mt-1 font-semibold">{employeeTargets.core || 'No target configured.'}</p>
+                    </div>
+                    <div className="pt-3">
+                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Strategic Functions</p>
+                      <p className="text-xs text-slate-700 mt-1 font-semibold">{employeeTargets.strategic || 'No target configured.'}</p>
+                    </div>
+                    <div className="pt-3">
+                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Support Functions</p>
+                      <p className="text-xs text-slate-700 mt-1 font-semibold">{employeeTargets.support || 'No target configured.'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Panel */}
+                <div className="rounded-xl border bg-white p-5 shadow-sm space-y-4" style={{ borderColor: '#C8D1FF' }}>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-800">Accomplishments & Self-Ratings</h3>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Encode achievements and select self-rating values.</p>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Actual Accomplishments</label>
+                      <textarea
+                        value={accomplishments}
+                        onChange={(e) => setAccomplishments(e.target.value)}
+                        placeholder="Detail your achievements matching the frozen targets..."
+                        rows={6}
+                        style={{ borderColor: '#C8D1FF' }}
+                        className="w-full rounded-lg border px-3 py-2 text-xs text-slate-750 focus:outline-none focus:ring-1 focus:ring-[#363EE8]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Self-Rating Score</label>
+                      <select
+                        value={selfRatingScore}
+                        onChange={(e) => setSelfRatingScore(parseFloat(e.target.value))}
+                        style={{ borderColor: '#C8D1FF' }}
+                        className="w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#363EE8]"
+                      >
+                        <option value={5.0}>5.0 - Outstanding</option>
+                        <option value={4.0}>4.0 - Very Satisfactory</option>
+                        <option value={3.0}>3.0 - Satisfactory</option>
+                        <option value={2.0}>2.0 - Unsatisfactory</option>
+                        <option value={1.0}>1.0 - Poor</option>
+                      </select>
+                    </div>
+
+                    <div className="flex justify-end pt-2">
+                      <button
+                        onClick={() => {
+                          setSaveSuccess('Self-evaluation accomplishments and rating submitted.');
+                          setTimeout(() => setSaveSuccess(null), 4000);
+                        }}
+                        className="bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition"
+                      >
+                        Submit Evaluation
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'new-entrants' && (
+          <div className="space-y-6" style={{ fontFamily: "'Poppins', sans-serif" }}>
+            {/* Subtab Navigation */}
+            <div className="flex border-b border-slate-200 bg-white rounded-xl p-2 shadow-sm gap-2">
+              <button
+                onClick={() => setNewEntrantsSubtab('checklist')}
+                className={`px-4 py-2 text-xs font-bold rounded-md transition ${
+                  newEntrantsSubtab === 'checklist' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-55'
+                }`}
+              >
+                Orientation Checklist
+              </button>
+              <button
+                onClick={() => setNewEntrantsSubtab('scheduler')}
+                className={`px-4 py-2 text-xs font-bold rounded-md transition ${
+                  newEntrantsSubtab === 'scheduler' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-55'
+                }`}
+              >
+                Probationary IPCR Scheduler
+              </button>
+            </div>
+
+            {newEntrantsSubtab === 'checklist' && (
+              <div className="rounded-xl border bg-white p-6 shadow-sm space-y-6" style={{ borderColor: '#C8D1FF' }}>
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-800">Job Function Orientation Checklist</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Mandatory orientation checklist of duties. The probationary clock is paused until verified.</p>
+                  </div>
+                  <div>
+                    {orientationVerified ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-100">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600" /> Clock Active (Checklist Verified)
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-100">
+                        <Clock className="h-4 w-4 text-amber-600 animate-spin" /> Clock Paused (Awaiting Orientation Verification)
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {[
+                    { id: 'duties', label: 'Orientation of Duties and Departmental Functions' },
+                    { id: 'policies', label: 'Briefing on Civil Service and Agency HR Policies' },
+                    { id: 'workflow', label: 'Office workflow briefing & Supervisor alignment' },
+                    { id: 'setup', label: 'IT Account setups & Core system orientation' }
+                  ].map(item => {
+                    const isChecked = orientationChecked[item.id as 'duties' | 'policies' | 'workflow' | 'setup'];
+                    return (
+                      <label key={item.id} className="flex items-center gap-3 p-3 rounded-lg border bg-slate-50/50 cursor-pointer text-xs" style={{ borderColor: '#C8D1FF' }}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (orientationVerified) return;
+                            setOrientationChecked(prev => ({ ...prev, [item.id]: e.target.checked }));
+                          }}
+                          disabled={orientationVerified}
+                          className="rounded border-slate-350 h-4 w-4 text-[#363EE8]"
+                        />
+                        <span className={`font-semibold ${isChecked ? 'text-slate-800 line-through' : 'text-slate-600'}`}>
+                          {item.label}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                {!orientationVerified && (
+                  <div className="flex justify-end pt-3">
+                    <button
+                      onClick={() => {
+                        setOrientationVerified(true);
+                        setSaveSuccess('Checklist verified. Probationary clock is now ACTIVE.');
+                        setTimeout(() => setSaveSuccess(null), 4000);
+                      }}
+                      className="bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition"
+                    >
+                      Verify Checklist & Start Clock
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {newEntrantsSubtab === 'scheduler' && (
+              <div className="rounded-xl border bg-white p-6 shadow-sm space-y-6" style={{ borderColor: '#C8D1FF' }}>
+                <div>
+                  <h3 className="text-base font-bold text-slate-800">Probationary IPCR Scheduler</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Calculated target setting and rating deadlines based on your exact onboarding date.</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative">
+                  <div className="border bg-slate-50/50 rounded-xl p-4 space-y-2" style={{ borderColor: '#C8D1FF' }}>
+                    <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Phase 1: Target Setting Deadline</p>
+                    <p className="text-lg font-bold text-slate-800">July 01, 2026</p>
+                    <p className="text-xs text-slate-400">Within 30 days of onboarding</p>
+                  </div>
+                  <div className="border bg-slate-50/50 rounded-xl p-4 space-y-2" style={{ borderColor: '#C8D1FF' }}>
+                    <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Phase 2: Mid-Period Review</p>
+                    <p className="text-lg font-bold text-slate-800">September 01, 2026</p>
+                    <p className="text-xs text-slate-400">3 months from onboarding</p>
+                  </div>
+                  <div className="border bg-slate-50/50 rounded-xl p-4 space-y-2" style={{ borderColor: '#C8D1FF' }}>
+                    <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Phase 3: 6-Month Rating Due</p>
+                    <p className="text-lg font-bold text-slate-800">December 01, 2026</p>
+                    <p className="text-xs text-slate-400">Exact 6-month evaluation mark</p>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-blue-50/50 border border-blue-100 text-xs text-blue-800 flex gap-3">
+                  <Info className="h-5 w-5 shrink-0 text-blue-600" />
+                  <div>
+                    <p className="font-bold">Onboarding Reference Details</p>
+                    <p className="mt-0.5">Onboarding Date: June 1, 2026. Deadlines are automatically dynamic and locked in the probationary scheduler track.</p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </main>
