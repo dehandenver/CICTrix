@@ -1,0 +1,453 @@
+import { useEffect, useMemo, useState } from 'react';
+import { AlertCircle, Check, ClipboardCheck, GraduationCap, Pencil, Search, Send, Trash2, UserPlus } from 'lucide-react';
+import { AdminHeader } from '../../components/AdminHeader';
+import { Dialog } from '../../components/Dialog';
+import { Sidebar } from '../../components/Sidebar';
+import { listDepartments, type Department } from '../../lib/api/departments';
+import { listEmployeeOptions, type EmployeeOption } from '../../lib/api/officeRoles';
+import { IPCR_STAGES, type IpcrStage, stagePillStyle } from '../../lib/api/ipcrStages';
+import {
+  type NewEntrant,
+  type NewEntrantInput,
+  createNewEntrant,
+  deleteNewEntrant,
+  listNewEntrants,
+  updateNewEntrant,
+} from '../../lib/api/newEntrants';
+import { Field, getCurrentAdminEmail, ui } from './moduleUi';
+import '../../styles/admin.css';
+
+interface SubtabDef {
+  key: string;
+  label: string;
+  blurb: string;
+}
+
+const SUBTABS: SubtabDef[] = [
+  {
+    key: 'onboarding',
+    label: '2.1 New Entrant Onboarding',
+    blurb: 'Track new entrants: orientation schedule/log and their first-ever target-setting status.',
+  },
+  {
+    key: 'target-setting',
+    label: '2.2 Target Setting',
+    blurb:
+      'Notification log for “Targets Needed” + per-employee submission tracker (Not Started → Forwarded to PM). (Planned — next.)',
+  },
+  {
+    key: 'accomplishment',
+    label: '2.3 Accomplishment Rating',
+    blurb:
+      'Second-half mirror of 2.2, pre-populated with each employee’s locked targets from the Vault. (Planned.)',
+  },
+  {
+    key: 'history',
+    label: '2.4 Performance History',
+    blurb: 'Read-only per-employee timeline of completed cycles: targets vs accomplishments, with trend indicators. (Planned.)',
+  },
+];
+
+export const IPCRManagementPage = () => {
+  const [active, setActive] = useState('onboarding');
+  const current = SUBTABS.find((s) => s.key === active) ?? SUBTABS[0];
+
+  return (
+    <div className="min-h-screen bg-[#f8f9fa]">
+      <AdminHeader userName="Super Admin" divisionLabel="System Administrator" />
+      <div className="admin-layout">
+        <Sidebar activeModule="Super" userRole="super-admin" />
+        <main className="admin-content">
+          <div className="admin-header">
+            <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <ClipboardCheck size={26} />
+              IPCR Management
+            </h1>
+            <p className="admin-subtitle">
+              Module 2 — onboarding, target-setting, accomplishment rating, and performance history.
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', margin: '16px 0' }}>
+            {SUBTABS.map((s) => (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => setActive(s.key)}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '999px',
+                  border: '1px solid',
+                  borderColor: active === s.key ? '#363EE8' : '#d1d5db',
+                  background: active === s.key ? '#363EE8' : '#fff',
+                  color: active === s.key ? '#fff' : '#374151',
+                  fontWeight: 600,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                }}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+
+          {active === 'onboarding' ? (
+            <NewEntrantOnboarding />
+          ) : (
+            <div style={{ background: '#fff', border: '1px dashed #d1d5db', borderRadius: '12px', padding: '40px', textAlign: 'center' }}>
+              <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1f2937', marginBottom: '8px' }}>{current.label}</h3>
+              <p style={{ color: '#6b7280', maxWidth: '640px', margin: '0 auto', lineHeight: 1.5 }}>{current.blurb}</p>
+            </div>
+          )}
+        </main>
+      </div>
+    </div>
+  );
+};
+
+// ── Subtab 2.1: New Entrant Onboarding ───────────────────────────────────────
+const emptyInput = (): NewEntrantInput => ({
+  employeeId: '',
+  employeeName: '',
+  officeId: null,
+  officeName: null,
+  startDate: null,
+  orientationDate: null,
+  targetSettingDeadline: null,
+  orientationConductedBy: null,
+  orientationCompletedDate: null,
+  initialTargetStage: 'Not Started',
+  notes: null,
+});
+
+const NewEntrantOnboarding = () => {
+  const [entrants, setEntrants] = useState<NewEntrant[]>([]);
+  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [banner, setBanner] = useState('');
+  const [search, setSearch] = useState('');
+  const [editing, setEditing] = useState<NewEntrant | 'new' | null>(null);
+
+  const reload = async () => {
+    setLoading(true);
+    setError('');
+    const [res, emps, deps] = await Promise.all([listNewEntrants(), listEmployeeOptions(), listDepartments(true)]);
+    if (res.ok) setEntrants(res.data);
+    else if ('error' in res) setError(res.error);
+    setEmployees(emps);
+    setDepartments(deps.success ? deps.data : []);
+    setLoading(false);
+  };
+  useEffect(() => {
+    void reload();
+  }, []);
+
+  const flash = (m: string) => {
+    setBanner(m);
+    setTimeout(() => setBanner(''), 6000);
+  };
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return entrants;
+    return entrants.filter(
+      (e) => (e.employee_name ?? '').toLowerCase().includes(q) || (e.office_name ?? '').toLowerCase().includes(q),
+    );
+  }, [entrants, search]);
+
+  const metrics = useMemo(() => {
+    const total = entrants.length;
+    const orientationDone = entrants.filter((e) => e.orientation_completed_date).length;
+    const targetsForwarded = entrants.filter((e) => e.initial_target_stage === 'Forwarded to PM').length;
+    return { total, orientationDone, targetsForwarded };
+  }, [entrants]);
+
+  const remove = async (id: string) => {
+    const res = await deleteNewEntrant(id);
+    if (res.ok) {
+      flash('✓ New entrant record removed.');
+      void reload();
+    } else if ('error' in res) {
+      setError(res.error);
+    }
+  };
+
+  return (
+    <div>
+      {banner && (
+        <div style={ui.bannerOk}>
+          <Check size={18} />
+          {banner}
+        </div>
+      )}
+      {error && (
+        <div style={ui.bannerErr}>
+          <AlertCircle size={18} />
+          {error}
+        </div>
+      )}
+
+      {/* Metrics */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
+        <Metric icon={<UserPlus size={18} />} label="New entrants" value={metrics.total} />
+        <Metric icon={<GraduationCap size={18} />} label="Orientation completed" value={`${metrics.orientationDone}/${metrics.total}`} />
+        <Metric icon={<Send size={18} />} label="Initial targets forwarded" value={`${metrics.targetsForwarded}/${metrics.total}`} />
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+        <div style={{ position: 'relative', flex: 1, maxWidth: '420px' }}>
+          <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by employee or office…"
+            style={{ ...ui.input, paddingLeft: '36px' }}
+          />
+        </div>
+        <button type="button" onClick={() => setEditing('new')} style={ui.primaryBtn}>
+          <UserPlus size={15} />
+          Add New Entrant
+        </button>
+      </div>
+
+      <div style={ui.card}>
+        <div style={ui.cardHeader}>
+          <UserPlus size={18} />
+          New Entrants
+          <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: '#6b7280' }}>
+            {loading ? '' : `${filtered.length}`}
+          </span>
+        </div>
+        {loading ? (
+          <div style={ui.emptyBox}>Loading new entrants…</div>
+        ) : filtered.length === 0 ? (
+          <div style={ui.emptyBox}>
+            {entrants.length === 0
+              ? 'No new entrants tracked yet. Use “Add New Entrant”. (Ensure migration 014 has been run.)'
+              : 'No records match your search.'}
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+              <thead>
+                <tr style={{ background: '#f9fafb', textAlign: 'left', color: '#6b7280' }}>
+                  <th style={ui.th}>Employee</th>
+                  <th style={ui.th}>Office</th>
+                  <th style={ui.th}>Start</th>
+                  <th style={ui.th}>Orientation</th>
+                  <th style={ui.th}>Target deadline</th>
+                  <th style={ui.th}>Initial Target Status</th>
+                  <th style={{ ...ui.th, textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((e) => (
+                  <tr key={e.id} style={{ borderTop: '1px solid #f0f0f0' }}>
+                    <td style={ui.td}>
+                      <span style={{ fontWeight: 600, color: '#1f2937' }}>{e.employee_name || '—'}</span>
+                    </td>
+                    <td style={ui.td}>{e.office_name || '—'}</td>
+                    <td style={ui.td}>{fmtDate(e.start_date)}</td>
+                    <td style={ui.td}>
+                      <div>{e.orientation_completed_date ? `Done ${fmtDate(e.orientation_completed_date)}` : e.orientation_date ? `Sched. ${fmtDate(e.orientation_date)}` : '—'}</div>
+                      {e.orientation_conducted_by && (
+                        <div style={{ fontSize: '12px', color: '#9ca3af' }}>by {e.orientation_conducted_by}</div>
+                      )}
+                    </td>
+                    <td style={ui.td}>{fmtDate(e.target_setting_deadline)}</td>
+                    <td style={ui.td}>
+                      <span style={stagePillStyle(e.initial_target_stage)}>{e.initial_target_stage}</span>
+                    </td>
+                    <td style={{ ...ui.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button
+                        type="button"
+                        onClick={() => setEditing(e)}
+                        style={{ ...ui.secondaryBtn, padding: '6px 10px', marginRight: '6px' }}
+                        title="Edit"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => remove(e.id)}
+                        style={{ ...ui.secondaryBtn, padding: '6px 10px', color: '#b91c1c', borderColor: '#fca5a5' }}
+                        title="Remove"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {editing && (
+        <EntrantModal
+          existing={editing === 'new' ? null : editing}
+          employees={employees}
+          departments={departments}
+          onClose={() => setEditing(null)}
+          onDone={(msg) => {
+            flash(msg);
+            setEditing(null);
+            void reload();
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+const Metric = ({ icon, label, value }: { icon: React.ReactNode; label: string; value: React.ReactNode }) => (
+  <div style={{ ...ui.card, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+    <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(54,62,232,0.1)', color: '#363EE8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      {icon}
+    </div>
+    <div>
+      <div style={{ fontSize: '20px', fontWeight: 700, color: '#1f2937' }}>{value}</div>
+      <div style={{ fontSize: '12px', color: '#6b7280' }}>{label}</div>
+    </div>
+  </div>
+);
+
+const EntrantModal = ({
+  existing,
+  employees,
+  departments,
+  onClose,
+  onDone,
+}: {
+  existing: NewEntrant | null;
+  employees: EmployeeOption[];
+  departments: Department[];
+  onClose: () => void;
+  onDone: (msg: string) => void;
+}) => {
+  const [form, setForm] = useState<NewEntrantInput>(() =>
+    existing
+      ? {
+          employeeId: existing.employee_id ?? '',
+          employeeName: existing.employee_name ?? '',
+          officeId: existing.office_id,
+          officeName: existing.office_name,
+          startDate: existing.start_date,
+          orientationDate: existing.orientation_date,
+          targetSettingDeadline: existing.target_setting_deadline,
+          orientationConductedBy: existing.orientation_conducted_by,
+          orientationCompletedDate: existing.orientation_completed_date,
+          initialTargetStage: existing.initial_target_stage,
+          notes: existing.notes,
+        }
+      : emptyInput(),
+  );
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  const set = <K extends keyof NewEntrantInput>(k: K, v: NewEntrantInput[K]) => setForm((p) => ({ ...p, [k]: v }));
+
+  const onPickEmployee = (id: string) => {
+    const emp = employees.find((e) => e.id === id);
+    const office = departments.find((d) => d.name === emp?.department) ?? null;
+    setForm((p) => ({
+      ...p,
+      employeeId: id,
+      employeeName: emp?.full_name ?? '',
+      officeId: office?.id ?? p.officeId,
+      officeName: office?.name ?? emp?.department ?? p.officeName,
+    }));
+  };
+
+  const submit = async () => {
+    setErr('');
+    if (!form.employeeId) return setErr('Select an employee.');
+    setSaving(true);
+    const res = existing ? await updateNewEntrant(existing.id, form) : await createNewEntrant(form, getCurrentAdminEmail());
+    setSaving(false);
+    if (!res.ok) return setErr('error' in res ? res.error : 'Failed to save.');
+    onDone(`✓ ${form.employeeName || 'New entrant'} ${existing ? 'updated' : 'added'}.`);
+  };
+
+  return (
+    <Dialog open onClose={onClose} title={existing ? 'Edit New Entrant' : 'Add New Entrant'}>
+      <div style={{ color: 'var(--text-primary)' }}>
+        <Field label="Employee">
+          <select value={form.employeeId} onChange={(e) => onPickEmployee(e.target.value)} disabled={Boolean(existing)} style={ui.input}>
+            <option value="">Select an employee…</option>
+            {employees.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.full_name}
+                {e.department ? ` — ${e.department}` : ''}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="Office">
+          <select value={form.officeId ?? ''} onChange={(e) => { const d = departments.find((x) => x.id === e.target.value); set('officeId', e.target.value || null); set('officeName', d?.name ?? null); }} style={ui.input}>
+            <option value="">(optional) Select an office…</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <Field label="Start date">
+            <input type="date" value={form.startDate ?? ''} onChange={(e) => set('startDate', e.target.value || null)} style={ui.input} />
+          </Field>
+          <Field label="Target-setting deadline">
+            <input type="date" value={form.targetSettingDeadline ?? ''} onChange={(e) => set('targetSettingDeadline', e.target.value || null)} style={ui.input} />
+          </Field>
+        </div>
+
+        <div style={{ fontSize: '13px', fontWeight: 700, color: '#374151', margin: '6px 0 8px' }}>Job Orientation Log</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <Field label="Scheduled orientation date">
+            <input type="date" value={form.orientationDate ?? ''} onChange={(e) => set('orientationDate', e.target.value || null)} style={ui.input} />
+          </Field>
+          <Field label="Completed on">
+            <input type="date" value={form.orientationCompletedDate ?? ''} onChange={(e) => set('orientationCompletedDate', e.target.value || null)} style={ui.input} />
+          </Field>
+        </div>
+        <Field label="Conducted by">
+          <input type="text" value={form.orientationConductedBy ?? ''} onChange={(e) => set('orientationConductedBy', e.target.value || null)} placeholder="Name of briefer" style={ui.input} />
+        </Field>
+
+        <Field label="Initial target-setting status">
+          <select value={form.initialTargetStage} onChange={(e) => set('initialTargetStage', e.target.value as IpcrStage)} style={ui.input}>
+            {IPCR_STAGES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </Field>
+
+        <Field label="Notes">
+          <textarea value={form.notes ?? ''} onChange={(e) => set('notes', e.target.value || null)} rows={2} style={{ ...ui.input, resize: 'vertical' }} />
+        </Field>
+
+        {err && <div style={{ ...ui.bannerErr, margin: '0 0 12px' }}>{err}</div>}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+          <button type="button" onClick={onClose} disabled={saving} style={ui.secondaryBtn}>
+            Cancel
+          </button>
+          <button type="button" onClick={submit} disabled={saving} style={ui.primaryBtn}>
+            {saving ? 'Saving…' : existing ? 'Save changes' : 'Add entrant'}
+          </button>
+        </div>
+      </div>
+    </Dialog>
+  );
+};
+
+const fmtDate = (d: string | null) => (d ? new Date(d).toLocaleDateString() : '—');

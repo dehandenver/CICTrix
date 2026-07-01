@@ -24,6 +24,7 @@ import { SuperAdminDashboard } from './modules/admin/SuperAdminDashboard';
 import { OfficeAccountConsole } from './modules/admin/pm/OfficeAccountConsole';
 import { SupervisorAccessPage } from './modules/admin/SupervisorAccessPage';
 import { SystemAdministrationPage } from './modules/admin/SystemAdministrationPage';
+import { IPCRManagementPage } from './modules/admin/IPCRManagementPage';
 import { ApplicantWizard } from './modules/applicant/ApplicantWizard';
 import { ApplicationStatusPage } from './modules/applicant/ApplicationStatusPage';
 import { LandingPage } from './components/LandingPage';
@@ -683,6 +684,14 @@ function AppContent() {
             element={
               <AdminRoute session={adminSession} allowedRoles={['super-admin']}>
                 <SystemAdministrationPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/ipcr"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'pm']}>
+                <IPCRManagementPage />
               </AdminRoute>
             }
           />

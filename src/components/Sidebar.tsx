@@ -1,4 +1,4 @@
-import { BookOpen, Briefcase, ClipboardList, FileText, LayoutDashboard, Network, Settings, ShieldCheck, TrendingUp, UserCheck, UserCog, Users } from 'lucide-react';
+import { BookOpen, Briefcase, ClipboardCheck, ClipboardList, FileText, LayoutDashboard, Network, Settings, ShieldCheck, TrendingUp, UserCheck, UserCog, Users } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { getApplicantsFromSupabase, getApplicants } from '../lib/recruitmentData';
@@ -125,6 +125,14 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       label: 'System Administration',
       sublabel: 'Offices, roles & cycle control',
       isActive: location.pathname === '/admin/system-admin',
+      roles: ['super-admin'],
+    },
+    {
+      path: '/admin/ipcr',
+      icon: ClipboardCheck,
+      label: 'IPCR Management',
+      sublabel: 'Onboarding, targets & ratings',
+      isActive: location.pathname === '/admin/ipcr',
       roles: ['super-admin'],
     },
     {
