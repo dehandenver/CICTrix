@@ -1,9 +1,26 @@
-import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Building2, Check, ClipboardList, Copy, History, Search, ShieldCheck, UserMinus, UserPlus, Users } from 'lucide-react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
+import { AlertCircle, Building2, CalendarClock, Check, ChevronDown, ClipboardList, Copy, History, Lock, Search, ShieldCheck, UserMinus, UserPlus, Users } from 'lucide-react';
 import { AdminHeader } from '../../components/AdminHeader';
 import { Dialog } from '../../components/Dialog';
 import { Sidebar } from '../../components/Sidebar';
 import { listDepartments, type Department } from '../../lib/api/departments';
+import {
+  type PhaseKey,
+  type PhaseMode,
+  type PhaseSchedule,
+  PHASE_LABELS,
+  deleteSchedule,
+  effectiveState,
+  listSchedules,
+  resolveSchedule,
+  upsertSchedule,
+} from '../../lib/api/phaseSchedules';
+import {
+  type LockedTargetSet,
+  fetchTargetRowsForEmployee,
+  listLockedTargets,
+  lockTargetSet,
+} from '../../lib/api/lockedTargets';
 import {
   type OfficeDirectoryRow,
   type OfficePerson,
@@ -78,13 +95,15 @@ const TABS: TabDef[] = [
         key: 'phase-scheduler',
         label: 'Phase Scheduler',
         blurb:
-          'Open/close the Target-Setting and Rating phases (system-wide or per office) with start and deadline dates. (Planned — Phase 3.)',
+          'Open/close the Target-Setting and Rating phases (system-wide or per office) with start and deadline dates.',
+        ready: true,
       },
       {
         key: 'locked-targets',
         label: 'Locked Targets Vault',
         blurb:
-          'Frozen, read-only store of office-verified targets for the 6-month period; feeds the Accomplishment Rating step. (Planned — Phase 3.)',
+          'Frozen, read-only store of office-verified targets for the 6-month period; feeds the Accomplishment Rating step.',
+        ready: true,
       },
     ],
   },
@@ -198,6 +217,10 @@ export const SystemAdministrationPage = () => {
             <OfficeDirectory />
           ) : currentSubtab.key === 'access-role' ? (
             <AccessRoleManagement />
+          ) : currentSubtab.key === 'phase-scheduler' ? (
+            <PhaseScheduler />
+          ) : currentSubtab.key === 'locked-targets' ? (
+            <LockedTargetsVault />
           ) : (
             <PlaceholderSubtab title={currentSubtab.label} blurb={currentSubtab.blurb} />
           )}
@@ -897,6 +920,649 @@ const Field = ({ label, children }: { label: string; children: React.ReactNode }
   </div>
 );
 
+// ── Subtab: Phase Scheduler ──────────────────────────────────────────────────
+const EffBadge = ({ state }: { state: 'Open' | 'Closed' }) => (
+  <span
+    style={{
+      display: 'inline-block',
+      padding: '2px 12px',
+      borderRadius: '999px',
+      fontSize: '12px',
+      fontWeight: 700,
+      background: state === 'Open' ? 'rgba(16, 185, 129, 0.14)' : 'rgba(107, 114, 128, 0.15)',
+      color: state === 'Open' ? '#047857' : '#4b5563',
+    }}
+  >
+    {state}
+  </span>
+);
+
+const ScheduleCard = ({
+  title,
+  row,
+  scope,
+  phase,
+  officeId,
+  officeName,
+  onSaved,
+}: {
+  title: string;
+  row: PhaseSchedule | null;
+  scope: 'system' | 'office';
+  phase: PhaseKey;
+  officeId?: string | null;
+  officeName?: string | null;
+  onSaved: (msg: string) => void;
+}) => {
+  const [mode, setMode] = useState<PhaseMode>(row?.mode ?? 'Auto');
+  const [start, setStart] = useState(row?.start_date ?? '');
+  const [deadline, setDeadline] = useState(row?.deadline_date ?? '');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    setMode(row?.mode ?? 'Auto');
+    setStart(row?.start_date ?? '');
+    setDeadline(row?.deadline_date ?? '');
+  }, [row?.id, row?.mode, row?.start_date, row?.deadline_date]);
+
+  const eff = effectiveState({ mode, start_date: start || null, deadline_date: deadline || null });
+
+  const save = async () => {
+    setErr('');
+    if (mode === 'Auto' && start && deadline && start > deadline) {
+      return setErr('Start date must be on or before the deadline.');
+    }
+    setSaving(true);
+    const res = await upsertSchedule({
+      scope,
+      officeId,
+      officeName,
+      phase,
+      mode,
+      startDate: start || null,
+      deadlineDate: deadline || null,
+      updatedBy: getCurrentAdminEmail(),
+    });
+    setSaving(false);
+    if (!res.ok) return setErr('error' in res ? res.error : 'Failed to save.');
+    onSaved(`✓ ${PHASE_LABELS[phase]} saved${scope === 'office' && officeName ? ` for ${officeName}` : ''}.`);
+  };
+
+  return (
+    <div style={{ ...card, padding: '18px 20px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
+        <CalendarClock size={18} style={{ color: '#363EE8' }} />
+        <span style={{ fontWeight: 600, color: '#1f2937' }}>{title}</span>
+        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '12px', color: '#9ca3af' }}>Currently</span>
+          <EffBadge state={eff} />
+        </span>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+        <div>
+          <label style={miniLabel}>Mode</label>
+          <select value={mode} onChange={(e) => setMode(e.target.value as PhaseMode)} style={input}>
+            <option value="Auto">Auto (follow dates)</option>
+            <option value="Open">Force Open</option>
+            <option value="Closed">Force Closed</option>
+          </select>
+        </div>
+        <div>
+          <label style={miniLabel}>Start date</label>
+          <input
+            type="date"
+            value={start}
+            onChange={(e) => setStart(e.target.value)}
+            disabled={mode !== 'Auto'}
+            style={{ ...input, opacity: mode !== 'Auto' ? 0.5 : 1 }}
+          />
+        </div>
+        <div>
+          <label style={miniLabel}>Deadline date</label>
+          <input
+            type="date"
+            value={deadline}
+            onChange={(e) => setDeadline(e.target.value)}
+            disabled={mode !== 'Auto'}
+            style={{ ...input, opacity: mode !== 'Auto' ? 0.5 : 1 }}
+          />
+        </div>
+      </div>
+
+      <p style={{ fontSize: '12px', color: '#6b7280', margin: '10px 0 0' }}>
+        {mode === 'Auto'
+          ? 'Auto-opens on the start date and auto-closes after the deadline.'
+          : `Manually forced ${mode}. Dates are ignored until switched back to Auto.`}
+      </p>
+
+      {err && <div style={{ ...bannerErr, margin: '12px 0 0' }}>{err}</div>}
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px' }}>
+        <button type="button" onClick={save} disabled={saving} style={primaryBtn}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const PhaseScheduler = () => {
+  const [schedules, setSchedules] = useState<PhaseSchedule[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [banner, setBanner] = useState('');
+
+  // Add-override form state.
+  const [ovOfficeId, setOvOfficeId] = useState('');
+  const [ovPhase, setOvPhase] = useState<PhaseKey>('target_setting');
+
+  const reload = async () => {
+    setLoading(true);
+    setError('');
+    const [sRes, deps] = await Promise.all([listSchedules(), listDepartments(true)]);
+    if (sRes.ok) setSchedules(sRes.data);
+    else if ('error' in sRes) setError(sRes.error);
+    setDepartments(deps.success ? deps.data : []);
+    setLoading(false);
+  };
+  useEffect(() => {
+    void reload();
+  }, []);
+
+  const flash = (m: string) => {
+    setBanner(m);
+    setTimeout(() => setBanner(''), 5000);
+  };
+
+  const systemRow = (phase: PhaseKey) => schedules.find((s) => s.scope === 'system' && s.phase === phase) ?? null;
+  const officeOverrides = schedules.filter((s) => s.scope === 'office');
+  const selectedOffice = departments.find((d) => d.id === ovOfficeId) ?? null;
+  const existingOverrideRow =
+    ovOfficeId ? schedules.find((s) => s.scope === 'office' && s.office_id === ovOfficeId && s.phase === ovPhase) ?? null : null;
+
+  const removeOverride = async (id: string) => {
+    const res = await deleteSchedule(id);
+    if (res.ok) {
+      flash('✓ Office override removed.');
+      void reload();
+    } else if ('error' in res) {
+      setError(res.error);
+    }
+  };
+
+  return (
+    <div>
+      {banner && (
+        <div style={bannerOk}>
+          <Check size={18} />
+          {banner}
+        </div>
+      )}
+      {error && (
+        <div style={bannerErr}>
+          <AlertCircle size={18} />
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div style={emptyBox}>Loading phase schedules…</div>
+      ) : (
+        <>
+          <h3 style={sectionTitle}>System-wide</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <ScheduleCard
+              title={PHASE_LABELS.target_setting}
+              row={systemRow('target_setting')}
+              scope="system"
+              phase="target_setting"
+              onSaved={(m) => {
+                flash(m);
+                void reload();
+              }}
+            />
+            <ScheduleCard
+              title={PHASE_LABELS.rating}
+              row={systemRow('rating')}
+              scope="system"
+              phase="rating"
+              onSaved={(m) => {
+                flash(m);
+                void reload();
+              }}
+            />
+          </div>
+
+          <h3 style={{ ...sectionTitle, marginTop: '28px' }}>Per-office overrides</h3>
+          <p style={{ fontSize: '13px', color: '#6b7280', marginTop: '-6px' }}>
+            Offices without an override follow the system-wide schedule above.
+          </p>
+
+          {/* Existing overrides */}
+          <div style={{ ...card, marginBottom: '16px' }}>
+            {officeOverrides.length === 0 ? (
+              <div style={emptyBox}>No office overrides. Add one below to stagger a specific office.</div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                <thead>
+                  <tr style={{ background: '#f9fafb', textAlign: 'left', color: '#6b7280' }}>
+                    <th style={th}>Office</th>
+                    <th style={th}>Phase</th>
+                    <th style={th}>Mode</th>
+                    <th style={th}>Window</th>
+                    <th style={th}>Effective</th>
+                    <th style={{ ...th, textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {officeOverrides.map((o) => (
+                    <tr key={o.id} style={{ borderTop: '1px solid #f0f0f0' }}>
+                      <td style={td}>{o.office_name || '—'}</td>
+                      <td style={td}>{PHASE_LABELS[o.phase]}</td>
+                      <td style={td}>{o.mode}</td>
+                      <td style={td}>
+                        {o.start_date && o.deadline_date ? `${o.start_date} → ${o.deadline_date}` : '—'}
+                      </td>
+                      <td style={td}>
+                        <EffBadge state={effectiveState(o)} />
+                      </td>
+                      <td style={{ ...td, textAlign: 'right' }}>
+                        <button type="button" onClick={() => removeOverride(o.id)} style={dangerOutlineBtn}>
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Add / edit an override */}
+          <div style={{ ...card, padding: '18px 20px' }}>
+            <div style={{ fontWeight: 600, color: '#1f2937', marginBottom: '12px' }}>Add / edit an override</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+              <div>
+                <label style={miniLabel}>Office</label>
+                <select value={ovOfficeId} onChange={(e) => setOvOfficeId(e.target.value)} style={input}>
+                  <option value="">Select an office…</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={miniLabel}>Phase</label>
+                <select value={ovPhase} onChange={(e) => setOvPhase(e.target.value as PhaseKey)} style={input}>
+                  <option value="target_setting">{PHASE_LABELS.target_setting}</option>
+                  <option value="rating">{PHASE_LABELS.rating}</option>
+                </select>
+              </div>
+            </div>
+            {selectedOffice ? (
+              <ScheduleCard
+                key={`${ovOfficeId}-${ovPhase}`}
+                title={`${selectedOffice.name} — ${PHASE_LABELS[ovPhase]}`}
+                row={existingOverrideRow}
+                scope="office"
+                phase={ovPhase}
+                officeId={selectedOffice.id}
+                officeName={selectedOffice.name}
+                onSaved={(m) => {
+                  flash(m);
+                  void reload();
+                }}
+              />
+            ) : (
+              <p style={{ fontSize: '13px', color: '#9ca3af', margin: 0 }}>Select an office to configure its override.</p>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+// ── Subtab: Locked Targets Vault ─────────────────────────────────────────────
+const LockedTargetsVault = () => {
+  const [sets, setSets] = useState<LockedTargetSet[]>([]);
+  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [banner, setBanner] = useState('');
+  const [search, setSearch] = useState('');
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [showLock, setShowLock] = useState(false);
+
+  const reload = async () => {
+    setLoading(true);
+    setError('');
+    const [res, emps, deps] = await Promise.all([listLockedTargets(), listEmployeeOptions(), listDepartments(true)]);
+    if (res.ok) setSets(res.data);
+    else if ('error' in res) setError(res.error);
+    setEmployees(emps);
+    setDepartments(deps.success ? deps.data : []);
+    setLoading(false);
+  };
+  useEffect(() => {
+    void reload();
+  }, []);
+
+  const flash = (m: string) => {
+    setBanner(m);
+    setTimeout(() => setBanner(''), 6000);
+  };
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return sets;
+    return sets.filter(
+      (s) =>
+        (s.employee_name ?? '').toLowerCase().includes(q) ||
+        (s.office_name ?? '').toLowerCase().includes(q) ||
+        (s.period ?? '').toLowerCase().includes(q),
+    );
+  }, [sets, search]);
+
+  const toggleExpand = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  return (
+    <div>
+      {banner && (
+        <div style={bannerOk}>
+          <Check size={18} />
+          {banner}
+        </div>
+      )}
+      {error && (
+        <div style={bannerErr}>
+          <AlertCircle size={18} />
+          {error}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+        <div style={{ position: 'relative', flex: 1, maxWidth: '440px' }}>
+          <Search
+            size={16}
+            style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }}
+          />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by employee, office, or period…"
+            style={{ ...input, paddingLeft: '36px' }}
+          />
+        </div>
+        <button type="button" onClick={() => setShowLock(true)} style={primaryBtn}>
+          <Lock size={15} />
+          Lock Target Set
+        </button>
+      </div>
+
+      <div style={card}>
+        <div style={cardHeader}>
+          <Lock size={18} />
+          Locked Targets Vault
+          <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: '#6b7280' }}>
+            {loading ? '' : `${filtered.length} frozen set${filtered.length === 1 ? '' : 's'}`}
+          </span>
+        </div>
+
+        {loading ? (
+          <div style={emptyBox}>Loading the vault…</div>
+        ) : filtered.length === 0 ? (
+          <div style={emptyBox}>
+            {sets.length === 0
+              ? 'The vault is empty. Targets appear here once verified and locked. (Ensure migration 012 has been run.)'
+              : 'No locked sets match your search.'}
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+              <thead>
+                <tr style={{ background: '#f9fafb', textAlign: 'left', color: '#6b7280' }}>
+                  <th style={th}>Employee</th>
+                  <th style={th}>Office</th>
+                  <th style={th}>Period</th>
+                  <th style={th}>Targets</th>
+                  <th style={th}>Verified by</th>
+                  <th style={th}>Locked</th>
+                  <th style={th}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((s) => (
+                  <Fragment key={s.id}>
+                    <tr style={{ borderTop: '1px solid #f0f0f0' }}>
+                      <td style={td}>
+                        <span style={{ fontWeight: 600, color: '#1f2937' }}>{s.employee_name || '—'}</span>
+                      </td>
+                      <td style={td}>{s.office_name || '—'}</td>
+                      <td style={td}>{s.period || '—'}</td>
+                      <td style={td}>{s.targets.length}</td>
+                      <td style={td}>{s.verified_by || '—'}</td>
+                      <td style={td}>{new Date(s.locked_at).toLocaleDateString()}</td>
+                      <td style={{ ...td, textAlign: 'right' }}>
+                        <button
+                          type="button"
+                          onClick={() => toggleExpand(s.id)}
+                          style={{ ...secondaryBtn, padding: '5px 10px' }}
+                        >
+                          <ChevronDown
+                            size={15}
+                            style={{ transform: expanded.has(s.id) ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}
+                          />
+                        </button>
+                      </td>
+                    </tr>
+                    {expanded.has(s.id) && (
+                      <tr>
+                        <td colSpan={7} style={{ padding: '0 16px 14px', background: '#fafafa' }}>
+                          <div style={{ padding: '12px 14px', border: '1px solid #eee', borderRadius: '8px', background: '#fff' }}>
+                            <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '8px' }}>
+                              Frozen targets (read-only) · locked by {s.locked_by || 'unknown'} on{' '}
+                              {new Date(s.locked_at).toLocaleString()}
+                            </div>
+                            {s.targets.length === 0 ? (
+                              <div style={{ fontSize: '13px', color: '#6b7280' }}>No target rows captured in this set.</div>
+                            ) : (
+                              <ol style={{ margin: 0, paddingLeft: '18px' }}>
+                                {s.targets.map((t, i) => (
+                                  <li key={i} style={{ fontSize: '13px', color: '#374151', marginBottom: '4px' }}>
+                                    {t.function_type ? <strong>[{t.function_type}] </strong> : null}
+                                    {t.target_text || JSON.stringify(t)}
+                                  </li>
+                                ))}
+                              </ol>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <p style={{ marginTop: '12px', fontSize: '12px', color: '#9ca3af' }}>
+        Frozen for the cycle — sets cannot be edited or deleted here. They feed Accomplishment Rating when the Rating
+        Phase opens.
+      </p>
+
+      {showLock && (
+        <LockTargetModal
+          employees={employees}
+          departments={departments}
+          onClose={() => setShowLock(false)}
+          onDone={(msg) => {
+            flash(msg);
+            setShowLock(false);
+            void reload();
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+const LockTargetModal = ({
+  employees,
+  departments,
+  onClose,
+  onDone,
+}: {
+  employees: EmployeeOption[];
+  departments: Department[];
+  onClose: () => void;
+  onDone: (msg: string) => void;
+}) => {
+  const [employeeId, setEmployeeId] = useState('');
+  const [officeId, setOfficeId] = useState('');
+  const [period, setPeriod] = useState('');
+  const [verifiedBy, setVerifiedBy] = useState('');
+  const [fetched, setFetched] = useState<{ count: number; rows: any[] } | null>(null);
+  const [fetching, setFetching] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  const fetchTargets = async () => {
+    setErr('');
+    if (!employeeId) return setErr('Select an employee first.');
+    if (!period.trim()) return setErr('Enter the rating period first.');
+    setFetching(true);
+    const rows = await fetchTargetRowsForEmployee(employeeId, period.trim());
+    setFetching(false);
+    setFetched({ count: rows.length, rows });
+  };
+
+  const confirmLock = async () => {
+    setErr('');
+    if (!employeeId) return setErr('Select an employee.');
+    if (!period.trim()) return setErr('Enter the rating period.');
+    const emp = employees.find((e) => e.id === employeeId);
+    const off = departments.find((d) => d.id === officeId) ?? null;
+    setSaving(true);
+    const res = await lockTargetSet({
+      employeeId,
+      employeeName: emp?.full_name ?? '',
+      officeId: off?.id ?? null,
+      officeName: off?.name ?? emp?.department ?? null,
+      period: period.trim(),
+      targets: fetched?.rows ?? [],
+      verifiedBy: verifiedBy.trim() || getCurrentAdminEmail(),
+      lockedBy: getCurrentAdminEmail(),
+    });
+    setSaving(false);
+    if (!res.ok) return setErr('error' in res ? res.error : 'Failed to lock the target set.');
+    onDone(`✓ Targets locked for ${emp?.full_name ?? 'employee'} (${period.trim()}).`);
+  };
+
+  return (
+    <Dialog open onClose={onClose} title="Lock Target Set">
+      <div style={{ color: 'var(--text-primary)' }}>
+        <p style={{ fontSize: '13px', color: '#6b7280', marginTop: 0 }}>
+          Normally triggered by the Office Account confirming targets. Freezing is permanent for the cycle — the set
+          cannot be edited afterwards.
+        </p>
+        <Field label="Employee">
+          <select
+            value={employeeId}
+            onChange={(e) => {
+              setEmployeeId(e.target.value);
+              setFetched(null);
+              // Prefill office from the employee's department when possible.
+              const emp = employees.find((x) => x.id === e.target.value);
+              const match = departments.find((d) => d.name === emp?.department);
+              if (match) setOfficeId(match.id);
+            }}
+            style={input}
+          >
+            <option value="">Select an employee…</option>
+            {employees.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.full_name}
+                {e.department ? ` — ${e.department}` : ''}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Office">
+          <select value={officeId} onChange={(e) => setOfficeId(e.target.value)} style={input}>
+            <option value="">(optional) Select an office…</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Rating period">
+          <input
+            type="text"
+            value={period}
+            onChange={(e) => {
+              setPeriod(e.target.value);
+              setFetched(null);
+            }}
+            placeholder="e.g. January–June 2026"
+            style={input}
+          />
+        </Field>
+        <Field label="Verified by">
+          <input
+            type="text"
+            value={verifiedBy}
+            onChange={(e) => setVerifiedBy(e.target.value)}
+            placeholder={`Defaults to ${getCurrentAdminEmail()}`}
+            style={input}
+          />
+        </Field>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '4px 0 14px' }}>
+          <button type="button" onClick={fetchTargets} disabled={fetching} style={secondaryBtn}>
+            {fetching ? 'Checking…' : 'Fetch targets'}
+          </button>
+          {fetched && (
+            <span style={{ fontSize: '13px', color: fetched.count > 0 ? '#047857' : '#b45309' }}>
+              {fetched.count > 0
+                ? `${fetched.count} target row(s) found and ready to freeze.`
+                : 'No target rows found — you can still lock an empty set.'}
+            </span>
+          )}
+        </div>
+
+        {err && <div style={{ ...bannerErr, margin: '0 0 12px' }}>{err}</div>}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+          <button type="button" onClick={onClose} disabled={saving} style={secondaryBtn}>
+            Cancel
+          </button>
+          <button type="button" onClick={confirmLock} disabled={saving} style={primaryBtn}>
+            {saving ? 'Locking…' : 'Lock & Freeze'}
+          </button>
+        </div>
+      </div>
+    </Dialog>
+  );
+};
+
 // ── Placeholder for not-yet-built subtabs ────────────────────────────────────
 const PlaceholderSubtab = ({ title, blurb }: { title: string; blurb: string }) => (
   <div
@@ -951,6 +1617,21 @@ const emptyBox: React.CSSProperties = {
   color: '#6b7280',
   fontSize: '14px',
   lineHeight: 1.5,
+};
+
+const sectionTitle: React.CSSProperties = {
+  fontSize: '16px',
+  fontWeight: 700,
+  color: '#1f2937',
+  margin: '0 0 14px',
+};
+
+const miniLabel: React.CSSProperties = {
+  display: 'block',
+  fontSize: '12px',
+  fontWeight: 600,
+  color: '#6b7280',
+  marginBottom: '5px',
 };
 
 const input: React.CSSProperties = {
