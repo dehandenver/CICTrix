@@ -53,12 +53,15 @@ export async function getOfficeDirectory(): Promise<
   { ok: true; data: OfficeDirectoryRow[] } | { ok: false; error: string }
 > {
   try {
-    const [deptRes, empRes, supRes] = await Promise.all([
+    const [deptRes, empRes, supRes, assignRes] = await Promise.all([
       supabase.from('departments').select('*').order('name'),
       supabase
         .from('employees_with_department')
         .select('id, full_name, email, mobile_number, current_position, department, department_id, status'),
       supabase.from('supervisors').select('*'),
+      // Active office-role assignments (Phase 2). Missing table (not migrated
+      // yet) is tolerated — the directory still renders from the other sources.
+      supabase.from('office_role_assignments').select('*').eq('status', 'Active'),
     ]);
 
     if (deptRes.error) {
@@ -68,6 +71,28 @@ export async function getOfficeDirectory(): Promise<
     const departments: any[] = deptRes.data ?? [];
     const employees: any[] = empRes.error ? [] : empRes.data ?? [];
     const supervisors: any[] = supRes.error ? [] : supRes.data ?? [];
+    const assignments: any[] = assignRes?.error ? [] : assignRes?.data ?? [];
+
+    // Group active assignments by office id and by office name (fallback join key).
+    const assignmentPerson = (a: any): OfficePerson => ({
+      name: String(a?.employee_name ?? '').trim() || 'Unnamed',
+      contact: a?.account_username ? `@${a.account_username}` : '—',
+      position: a?.role === 'DeptHead' ? 'Department Head' : 'Supervisor',
+      accountStatus: 'Active',
+    });
+    const deptHeadAssignByOfficeId = new Map<string, any>();
+    const supervisorAssignsByOfficeId = new Map<string, OfficePerson[]>();
+    for (const a of assignments) {
+      const officeKey = String(a?.office_id ?? '');
+      if (!officeKey) continue;
+      if (a?.role === 'DeptHead') {
+        if (!deptHeadAssignByOfficeId.has(officeKey)) deptHeadAssignByOfficeId.set(officeKey, a);
+      } else if (a?.role === 'Supervisor') {
+        const list = supervisorAssignsByOfficeId.get(officeKey) ?? [];
+        list.push(assignmentPerson(a));
+        supervisorAssignsByOfficeId.set(officeKey, list);
+      }
+    }
 
     // Index employees by id (for dept-head lookup) and count per department.
     const employeeById = new Map<string, any>();
@@ -101,31 +126,44 @@ export async function getOfficeDirectory(): Promise<
 
     const rows: OfficeDirectoryRow[] = departments.map((dept) => {
       const officeName = String(dept?.name ?? '').trim();
-      const headEmp = dept?.head_employee_id
-        ? employeeById.get(String(dept.head_employee_id))
-        : null;
+      const officeIdKey = String(dept?.id ?? '');
 
-      const deptHead: OfficePerson | null = headEmp
-        ? {
-            name: String(headEmp.full_name ?? '').trim() || 'Unnamed',
-            contact: buildContact(headEmp.email, headEmp.mobile_number),
-            position: headEmp.current_position ?? 'Department Head',
-            accountStatus: String(headEmp.status ?? 'Unknown'),
-          }
-        : null;
+      // Dept Head: an active DeptHead assignment (Phase 2) wins; otherwise fall
+      // back to the department's head_employee_id link.
+      const headAssign = deptHeadAssignByOfficeId.get(officeIdKey);
+      const headEmp = dept?.head_employee_id ? employeeById.get(String(dept.head_employee_id)) : null;
+
+      let deptHead: OfficePerson | null = null;
+      if (headAssign) {
+        deptHead = assignmentPerson(headAssign);
+      } else if (headEmp) {
+        deptHead = {
+          name: String(headEmp.full_name ?? '').trim() || 'Unnamed',
+          contact: buildContact(headEmp.email, headEmp.mobile_number),
+          position: headEmp.current_position ?? 'Department Head',
+          accountStatus: String(headEmp.status ?? 'Unknown'),
+        };
+      }
+
+      // Supervisors: standalone supervisor accounts (by office name) plus any
+      // active Supervisor assignments (by office id).
+      const supervisors: OfficePerson[] = [
+        ...(supervisorsByOffice.get(norm(officeName)) ?? []),
+        ...(supervisorAssignsByOfficeId.get(officeIdKey) ?? []),
+      ];
 
       const employeeCount =
-        headcountByDeptId.get(String(dept?.id)) ??
+        headcountByDeptId.get(officeIdKey) ??
         headcountByDeptName.get(norm(officeName)) ??
         0;
 
       return {
-        officeId: String(dept?.id ?? officeName),
+        officeId: officeIdKey || officeName,
         officeName,
         code: String(dept?.code ?? ''),
         isActive: Boolean(dept?.is_active),
         deptHead,
-        supervisors: supervisorsByOffice.get(norm(officeName)) ?? [],
+        supervisors,
         employeeCount,
       };
     });
