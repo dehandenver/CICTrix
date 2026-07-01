@@ -216,63 +216,56 @@ export const ApplicationStatusPage = () => {
         .from('applicants')
         .select('*')
         .eq('id', applicantId)
-        .limit(1);
-      if (!err && Array.isArray(data) && data.length > 0) {
-        const row = data[0];
-        setRecord((prev) => prev ? {
-          ...prev,
-          status: String(row.status ?? prev.status),
-          updated_at: row.updated_at ? String(row.updated_at) : prev.updated_at,
-          disqualification_reason: row.disqualification_reason ? String(row.disqualification_reason) : null,
-          exam_date: row.exam_date ? String(row.exam_date) : null,
-          exam_time: row.exam_time ? String(row.exam_time) : null,
-          oral_exam_date: row.oral_exam_date ? String(row.oral_exam_date) : null,
-          oral_exam_time: row.oral_exam_time ? String(row.oral_exam_time) : null,
-          interview_date: row.interview_date ? String(row.interview_date) : null,
-          interview_time: row.interview_time ? String(row.interview_time) : null,
-          venue: row.venue ? String(row.venue) : null,
-          schedule_instructions: row.schedule_instructions ? String(row.schedule_instructions) : null,
-        } : prev);
-      }
+        .single();
+      // Full replacement — never merge with stale prev so status always reflects DB truth
+      if (!err && data) setRecord(data as ApplicationRecord);
     } catch { /* silently ignore */ }
   };
 
-  // Real-time subscription — refreshes attachments when RSP approves/resubmits.
+  // Real-time: applicant_attachments — uses filtered subscription (works with REPLICA IDENTITY FULL).
+  // Polling fallback below covers the case where the filter doesn't fire.
   useEffect(() => {
     if (!record?.id) return;
+    const rid = record.id;
     const channel = (supabase as any)
-      .channel(`applicant_attachments_${record.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'applicant_attachments', filter: `applicant_id=eq.${record.id}` }, () => {
-        void fetchAttachments(record.id);
+      .channel(`tracker_attachments_${rid}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'applicant_attachments', filter: `applicant_id=eq.${rid}` }, () => {
+        void fetchAttachments(rid);
       })
       .subscribe();
     return () => { void (supabase as any).removeChannel(channel); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [record?.id]);
 
-  // Real-time subscription — refreshes both status AND attachments when RSP
-  // updates the applicant record (status, schedule, etc.).
+  // Real-time: applicants status — UNFILTERED so it works without REPLICA IDENTITY FULL.
+  // Server-side filtered subscriptions are silently dropped when REPLICA IDENTITY is not FULL;
+  // listening to the whole table and filtering client-side on payload.new.id is reliable.
   useEffect(() => {
     if (!record?.id) return;
+    const rid = record.id;
     const channel = (supabase as any)
-      .channel(`applicants_${record.id}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'applicants', filter: `id=eq.${record.id}` }, () => {
-        void fetchRecord(record.id);
-        void fetchAttachments(record.id);
+      .channel(`tracker_applicants_${rid}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'applicants' }, (payload: any) => {
+        if ((payload.new as { id?: string })?.id === rid) {
+          void fetchRecord(rid);
+          void fetchAttachments(rid);
+        }
       })
       .subscribe();
     return () => { void (supabase as any).removeChannel(channel); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [record?.id]);
 
-  // Polling fallback — 5 s interval so updates feel near-instant even if
-  // Realtime filters aren't firing (e.g. REPLICA IDENTITY not yet set).
+  // Polling fallback — 2 s so status changes (disqualify, validate docs, etc.) feel instant.
   useEffect(() => {
     if (!record?.id) return;
+    const rid = record.id;
+    // Immediate first poll so we never show stale data after search
+    void fetchRecord(rid);
     const interval = setInterval(() => {
-      void fetchAttachments(record.id);
-      void fetchRecord(record.id);
-    }, 5000);
+      void fetchAttachments(rid);
+      void fetchRecord(rid);
+    }, 2000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [record?.id]);
