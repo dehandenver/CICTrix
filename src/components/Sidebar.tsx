@@ -1,4 +1,4 @@
-import { BookOpen, Briefcase, ClipboardList, FileText, LayoutDashboard, Network, Settings, TrendingUp, UserCheck, UserCog, Users } from 'lucide-react';
+import { BookOpen, Briefcase, ClipboardList, FileText, LayoutDashboard, Network, Settings, ShieldCheck, TrendingUp, UserCheck, UserCog, Users } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { getApplicantsFromSupabase, getApplicants } from '../lib/recruitmentData';
@@ -120,11 +120,19 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       roles: ['super-admin', 'pm'],
     },
     {
-      path: '/admin/users',
+      path: '/admin/system-admin',
+      icon: ShieldCheck,
+      label: 'System Administration',
+      sublabel: 'Offices, roles & cycle control',
+      isActive: location.pathname === '/admin/system-admin',
+      roles: ['super-admin'],
+    },
+    {
+      path: '/admin/supervisors',
       icon: UserCog,
-      label: 'User Management',
-      sublabel: '',
-      isActive: location.pathname === '/admin/users',
+      label: 'Supervisor Access',
+      sublabel: 'Accounts & password resets',
+      isActive: location.pathname === '/admin/supervisors' || location.pathname === '/admin/users',
       roles: ['super-admin'],
     },
     {

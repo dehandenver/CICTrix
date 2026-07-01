@@ -22,6 +22,8 @@ import { RSPDashboard } from './modules/admin/RSPDashboard.tsx';
 import { SettingsPage } from './modules/admin/SettingsPage';
 import { SuperAdminDashboard } from './modules/admin/SuperAdminDashboard';
 import { OfficeAccountConsole } from './modules/admin/pm/OfficeAccountConsole';
+import { SupervisorAccessPage } from './modules/admin/SupervisorAccessPage';
+import { SystemAdministrationPage } from './modules/admin/SystemAdministrationPage';
 import { ApplicantWizard } from './modules/applicant/ApplicantWizard';
 import { ApplicationStatusPage } from './modules/applicant/ApplicationStatusPage';
 import { LandingPage } from './components/LandingPage';
@@ -668,6 +670,23 @@ function AppContent() {
           
           {/* Admin Routes */}
           <Route path="/admin/login" element={<LoginPage onLogin={handleLogin} />} />
+          <Route
+            path="/admin/supervisors"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin']}>
+                <SupervisorAccessPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/system-admin"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin']}>
+                <SystemAdministrationPage />
+              </AdminRoute>
+            }
+          />
+          <Route path="/admin/users" element={<Navigate to="/admin/supervisors" replace />} />
           <Route
             path="/admin"
             element={
