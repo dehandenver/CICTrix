@@ -10,7 +10,6 @@ import {
     Lock,
     Mail,
     MessageSquare,
-    RefreshCw,
     Send,
     Star,
     User,
@@ -724,13 +723,11 @@ export function ApplicantDetailsPage() {
   const [attachments, setAttachments] = useState<AttachmentRecord[]>([]);
   const [evaluation, setEvaluation] = useState<EvaluationRecord | null>(null);
   const [, setToast] = useState<string | null>(null);
-  const [approveToast, setApproveToast] = useState<{ ok: boolean; msg: string } | null>(null);
   const [docReviews, setDocReviews] = useState<Record<string, DocReview>>(loadDocReviews);
   const [openedDocFilePaths, setOpenedDocFilePaths] = useState<Set<string>>(new Set());
   const [docsValidated, setDocsValidated] = useState(false);
-  const [confirmApproveDoc, setConfirmApproveDoc] = useState<{ fileUrl: string; docType: string; rawDocType: string } | null>(null);
   const [showResubmitModal, setShowResubmitModal] = useState(false);
-  const [resubmitSelectedSlot, setResubmitSelectedSlot] = useState('');
+  const [resubmitSelectedSlots, setResubmitSelectedSlots] = useState<string[]>([]);
   const [resubmitReason, setResubmitReason] = useState('');
   const [resubmitNotes, setResubmitNotes] = useState('');
   const [resubmitSending, setResubmitSending] = useState(false);
@@ -1450,56 +1447,6 @@ export function ApplicantDetailsPage() {
     });
   };
 
-  const handleApproveDoc = async (fileUrl: string, docType: string, rawDocType: string) => {
-    const key = getDocReviewKey(fileUrl);
-    const updatedAll = persistDocReview(key, { status: 'approved', remarks: '', reviewedAt: new Date().toISOString() });
-
-    // Persist doc_validated to Supabase so the applicant portal shows "Verified".
-    // file_path uses a sentinel (not the real storage path) to avoid UNIQUE constraint
-    // conflicts — the original document row already has the same applicant_id+file_path.
-    const safeApplicantId = applicant?.id ?? id ?? '';
-    const { error: insertErr } = await (supabase as any)
-      .from('applicant_attachments')
-      .insert({
-        applicant_id: safeApplicantId,
-        file_name: rawDocType,
-        file_path: `validated::${rawDocType}`,
-        document_type: 'doc_validated',
-        file_type: 'validation',
-        file_size: 0,
-      });
-    if (insertErr) {
-      console.error('[handleApproveDoc] Supabase insert failed:', insertErr);
-      setApproveToast({ ok: false, msg: `Supabase error: ${insertErr.message ?? 'insert failed'}` });
-    } else {
-      setApproveToast({ ok: true, msg: `${docType} approved and synced to Supabase.` });
-      // Touch applicants.updated_at so the tracker's applicants subscription fires
-      // as a second realtime signal in case the applicant_attachments subscription
-      // doesn't fire (e.g. REPLICA IDENTITY not yet set on that table).
-      void (supabase as any)
-        .from('applicants')
-        .update({ updated_at: new Date().toISOString() })
-        .eq('id', safeApplicantId);
-    }
-    setTimeout(() => setApproveToast(null), 5000);
-
-    // Check if every REAL (non-meta) attachment is now approved.
-    const realAttachments = attachments.filter(
-      (a) => a.document_type !== 'resubmission_request' && a.document_type !== 'resubmission_resolved' && a.document_type !== 'doc_validated',
-    );
-    const allKeys = realAttachments.map((a) => getDocReviewKey(a.file_path)).filter(Boolean);
-    const allApproved = allKeys.length > 0 && allKeys.every((k) => (updatedAll[k]?.status ?? 'pending') === 'approved');
-
-    if (allApproved) {
-      await persistStatus('document_verified');
-      addDocTimeline('Document Verified: All documents reviewed and approved.');
-      setToast('All documents approved. Status updated to Document Verified.');
-    } else {
-      addDocTimeline(`Document Approved: ${docType}.`);
-      setToast(`${docType} approved.`);
-    }
-  };
-
   const handleRequestResubmission = async (fileUrl: string, docType: string, remarks: string) => {
     if (!remarks.trim()) return;
     const key = getDocReviewKey(fileUrl);
@@ -1514,89 +1461,90 @@ export function ApplicantDetailsPage() {
     setOpenedDocFilePaths((prev) => new Set([...prev, filePath]));
   };
 
-  const openResubmitModal = (slotLabel = '') => {
-    setResubmitSelectedSlot(slotLabel);
+  const openResubmitModal = () => {
+    setResubmitSelectedSlots([]);
     setResubmitReason('');
+    setResubmitNotes('');
     setResubmitSuccess(null);
     setResubmitError(null);
     setShowResubmitModal(true);
   };
 
   const handleSubmitResubmission = async () => {
-    if (!resubmitSelectedSlot || !resubmitReason.trim()) return;
+    if (resubmitSelectedSlots.length === 0 || !resubmitReason.trim()) return;
     if (!applicant) return;
     setResubmitSending(true);
     setResubmitError(null);
 
-    // Always update the tracker and doc review status first, regardless of email.
-    const slot = DOCUMENT_SLOTS.find((s) => s.label === resubmitSelectedSlot);
-    if (!slot) {
-      setResubmitError('Invalid document selection.');
-      setResubmitSending(false);
-      return;
-    }
-    const matchedAtt = attachments.find((a) => {
-      const resolvedType = a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other';
-      return resolvedType === slot.type;
-    });
-    if (matchedAtt) {
-      await handleRequestResubmission(matchedAtt.file_path, resubmitSelectedSlot, resubmitReason.trim());
-    } else {
-      // No attachment matched — still record in timeline so tracker reflects it.
-      addDocTimeline(`Action Required: Resubmission requested for ${resubmitSelectedSlot} — "${resubmitReason.trim()}".`);
-      await persistStatus('action_required');
+    // Shortlist the applicant first if not already shortlisted.
+    if (!isApplicantShortlisted) {
+      await persistStatus('shortlist');
     }
 
-    // Save to Supabase so the applicant tracker can show it in real-time.
-    try {
-      await (supabase as any).from('applicant_attachments').insert({
-        applicant_id: applicant.id,
-        file_name: `RESUBMIT::${resubmitSelectedSlot}::${resubmitReason.trim()}`,
-        file_path: resubmitNotes.trim() || '—',
-        document_type: 'resubmission_request',
-        file_type: 'notice',
-        file_size: 0,
+    // Insert a resubmission_request row in Supabase for each selected document.
+    for (const slotLabel of resubmitSelectedSlots) {
+      const slot = DOCUMENT_SLOTS.find((s) => s.label === slotLabel);
+      if (!slot) continue;
+      const matchedAtt = attachments.find((a) => {
+        const resolvedType = a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other';
+        return resolvedType === slot.type && a.document_type !== 'resubmission_request' && a.document_type !== 'resubmission_resolved' && a.document_type !== 'doc_validated';
       });
-    } catch (supaErr) {
-      console.warn('[handleSubmitResubmission] Supabase insert failed:', supaErr);
+      if (matchedAtt) {
+        await handleRequestResubmission(matchedAtt.file_path, slotLabel, resubmitReason.trim());
+      }
+      try {
+        await (supabase as any).from('applicant_attachments').insert({
+          applicant_id: applicant.id,
+          file_name: `RESUBMIT::${slotLabel}::${resubmitReason.trim()}`,
+          file_path: resubmitNotes.trim() || '—',
+          document_type: 'resubmission_request',
+          file_type: 'notice',
+          file_size: 0,
+        });
+      } catch (supaErr) {
+        console.warn('[handleSubmitResubmission] Supabase insert failed for', slotLabel, supaErr);
+      }
     }
 
-    // Attempt to send email; failure is non-blocking.
+    addDocTimeline(`Action Required: Resubmission requested for ${resubmitSelectedSlots.join(', ')} — "${resubmitReason.trim()}".`);
+    await persistStatus('action_required');
+
+    // Attempt email; failure is non-blocking.
     try {
-      const notesSection = resubmitNotes.trim()
-        ? `\n\nAdditional Notes from RSP:\n${resubmitNotes.trim()}`
-        : '';
+      const docList = resubmitSelectedSlots.map((s) => `• ${s}`).join('\n');
+      const notesSection = resubmitNotes.trim() ? `\n\nAdditional Notes from RSP:\n${resubmitNotes.trim()}` : '';
       await sendEmail({
         to: applicant.email,
-        subject: `Notice of Resubmission — ${resubmitSelectedSlot}`,
-        body: `Dear ${applicant.first_name},\n\nYour submitted document "${resubmitSelectedSlot}" requires resubmission.\n\nReason: ${resubmitReason.trim()}${notesSection}\n\nPlease log in to the Applicant Portal and re-upload the corrected document at your earliest convenience.\n\nThank you,\nRecruitment Office`,
+        subject: `Notice of Resubmission — ${resubmitSelectedSlots.join(', ')}`,
+        body: `Dear ${applicant.first_name},\n\nThe following submitted document(s) require resubmission:\n${docList}\n\nReason: ${resubmitReason.trim()}${notesSection}\n\nPlease log in to the Applicant Portal and re-upload the corrected document(s) at your earliest convenience.\n\nThank you,\nRecruitment Office`,
         applicantId: applicant.id,
       });
-      setResubmitSuccess(`Resubmission notice sent to ${applicant.email}. Tracker has been updated.`);
     } catch (err) {
-      // Tracker is already updated; just warn about the email.
-      const msg = err instanceof Error ? err.message : 'Email delivery failed.';
-      setResubmitSuccess(`Tracker updated — resubmission recorded. Note: ${msg}`);
-    } finally {
-      setResubmitNotes('');
-      setResubmitSending(false);
+      console.warn('[handleSubmitResubmission] Email failed:', err);
     }
+
+    setToast(`Resubmission notice sent for ${resubmitSelectedSlots.length} document(s). Tracker updated.`);
+    // Auto-close modal and reset state.
+    setShowResubmitModal(false);
+    setResubmitSelectedSlots([]);
+    setResubmitReason('');
+    setResubmitNotes('');
+    setResubmitSending(false);
   };
 
-  const handleSyncApprovals = async () => {
-    if (!applicant?.id) return;
-    const existingValidatedTypes = new Set(
-      attachments.filter((a) => a.document_type === 'doc_validated').map((a) => a.file_name),
-    );
+  const handleValidateAllDocs = async () => {
+    if (!id || !applicant?.id) return;
     const realDocs = attachments.filter(
       (a) => a.document_type !== 'resubmission_request' &&
              a.document_type !== 'resubmission_resolved' &&
              a.document_type !== 'doc_validated',
     );
-    let count = 0;
+    const existingValidatedTypes = new Set(
+      attachments.filter((a) => a.document_type === 'doc_validated').map((a) => a.file_name),
+    );
     for (const att of realDocs) {
       const rawDocType = (att.document_type as string | null) || FILE_NAME_TO_TYPE[att.file_name] || 'other';
-      if (docReviews[getDocReviewKey(att.file_path)]?.status === 'approved' && !existingValidatedTypes.has(rawDocType)) {
+      if (!existingValidatedTypes.has(rawDocType)) {
         await (supabase as any).from('applicant_attachments').insert({
           applicant_id: applicant.id,
           file_name: rawDocType,
@@ -1606,49 +1554,13 @@ export function ApplicantDetailsPage() {
           file_size: 0,
         });
         existingValidatedTypes.add(rawDocType);
-        count++;
       }
     }
-    if (count > 0) {
-      void (supabase as any).from('applicants').update({ updated_at: new Date().toISOString() }).eq('id', applicant.id);
-      setToast(`${count} approved doc${count !== 1 ? 's' : ''} synced — tracker will update within seconds.`);
-    } else {
-      setToast('All approved docs are already synced to the portal.');
-    }
-  };
-
-  const handleValidateDocs = async () => {
-    if (!id || !applicant?.id) return;
     localStorage.setItem(`cictrix_docs_validated_${id}`, 'true');
     setDocsValidated(true);
-    addDocTimeline('Documents Validated: All submitted documents have been reviewed and accepted.');
-    setToast('Documents validated. Qualify button is now available.');
-
-    // Sync all approved docs to Supabase so the applicant tracker shows "Verified".
-    const realDocs = attachments.filter(
-      (a) => a.document_type !== 'resubmission_request' &&
-             a.document_type !== 'resubmission_resolved' &&
-             a.document_type !== 'doc_validated',
-    );
-    const existingValidated = new Set(
-      attachments.filter((a) => a.document_type === 'doc_validated').map((a) => a.file_name),
-    );
-    for (const att of realDocs) {
-      const rawDocType = (att.document_type as string | null) || FILE_NAME_TO_TYPE[att.file_name] || 'other';
-      if (docReviews[getDocReviewKey(att.file_path)]?.status === 'approved' && !existingValidated.has(rawDocType)) {
-        void (supabase as any).from('applicant_attachments').insert({
-          applicant_id: applicant.id,
-          file_name: rawDocType,
-          file_path: `validated::${rawDocType}`,
-          document_type: 'doc_validated',
-          file_type: 'validation',
-          file_size: 0,
-        });
-        existingValidated.add(rawDocType);
-      }
-    }
-    // Ping the tracker's applicants subscription so it refreshes immediately.
+    addDocTimeline('Documents Validated: All submitted documents have been reviewed and validated.');
     void (supabase as any).from('applicants').update({ updated_at: new Date().toISOString() }).eq('id', applicant.id);
+    setToast('Documents validated — applicant tracker updated to show Verified.');
   };
 
   const isDocLocked = () => {
@@ -1865,8 +1777,15 @@ export function ApplicantDetailsPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => void persistStatus(isApplicantShortlisted ? 'unshortlist' : 'shortlist')}
-                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm ${
+                    disabled={isApplicantDisqualified}
+                    onClick={() => {
+                      if (isApplicantShortlisted) {
+                        void persistStatus('unshortlist');
+                      } else {
+                        openResubmitModal();
+                      }
+                    }}
+                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
                       isApplicantShortlisted
                         ? 'border-[#363EE8] bg-[#363EE8] text-white'
                         : 'border-[#363EE8] bg-white text-[#363EE8] hover:bg-blue-50'
@@ -2001,36 +1920,14 @@ export function ApplicantDetailsPage() {
               {activeTab === 'documents' && (
                 <article className="rounded-xl border border-slate-200">
                   {(() => {
-                    const submittedFilePaths = DOCUMENT_SLOTS
-                      .map((s) => attachments.find((a) => (a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other') === s.type))
-                      .filter(Boolean).map((a) => a!.file_path);
                     const realAttachments = attachments.filter(
                       (a) => a.document_type !== 'resubmission_request' && a.document_type !== 'resubmission_resolved' && a.document_type !== 'doc_validated',
                     );
-                    const allSubmittedApproved = submittedFilePaths.length > 0 &&
-                      submittedFilePaths.every((fp) => docReviews[getDocReviewKey(fp)]?.status === 'approved');
-                    const existingValidatedTypes = new Set(
-                      attachments.filter((a) => a.document_type === 'doc_validated').map((a) => a.file_name),
-                    );
-                    const unsyncedCount = realAttachments.filter((att) => {
-                      const rawDocType = (att.document_type as string | null) || FILE_NAME_TO_TYPE[att.file_name] || 'other';
-                      return docReviews[getDocReviewKey(att.file_path)]?.status === 'approved' && !existingValidatedTypes.has(rawDocType);
-                    }).length;
                     return (
                       <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
                         <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Submitted Documents</h3>
                         {!isDocLocked() && realAttachments.length > 0 && (
                           <div className="flex items-center gap-2">
-                            {unsyncedCount > 0 && !docsValidated && (
-                              <button
-                                type="button"
-                                onClick={handleSyncApprovals}
-                                title={`Push ${unsyncedCount} approved doc${unsyncedCount !== 1 ? 's' : ''} to the applicant portal`}
-                                className="inline-flex items-center gap-1.5 rounded-lg border border-[#363EE8] bg-[#363EE8]/5 px-3 py-1 text-xs font-semibold text-[#363EE8] transition hover:bg-[#363EE8]/10"
-                              >
-                                <RefreshCw size={12} /> Sync to Portal ({unsyncedCount})
-                              </button>
-                            )}
                             {docsValidated ? (
                               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
                                 <CheckCircle2 size={12} /> Validated
@@ -2038,11 +1935,10 @@ export function ApplicantDetailsPage() {
                             ) : (
                               <button
                                 type="button"
-                                onClick={handleValidateDocs}
-                                disabled={!allSubmittedApproved}
-                                title={!allSubmittedApproved ? 'All documents must be individually approved first' : 'Validate all documents'}
-                                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
-                                style={allSubmittedApproved ? { borderColor: '#059669', color: '#059669', backgroundColor: '#f0fdf4' } : { borderColor: '#d1d5db', color: '#9ca3af', backgroundColor: '#f9fafb' }}
+                                onClick={() => void handleValidateAllDocs()}
+                                title="Validate all submitted documents"
+                                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-semibold transition"
+                                style={{ borderColor: '#059669', color: '#059669', backgroundColor: '#f0fdf4' }}
                               >
                                 <CheckCircle2 size={12} /> Validate Documents
                               </button>
@@ -2081,7 +1977,6 @@ export function ApplicantDetailsPage() {
 
                       const isSubmitted = matched.length > 0;
                       const hasSupabaseResubmissionRequest = Boolean(slotNotice);
-                      const locked = isDocLocked();
                       const latestDoc = matched[matched.length - 1];
                       const latestApproved = latestDoc ? docReviews[getDocReviewKey(latestDoc.file_path)]?.status === 'approved' : false;
 
@@ -2154,33 +2049,6 @@ export function ApplicantDetailsPage() {
                                         )}
                                       </button>
                                       
-                                      {!locked && (
-                                        <div className="flex items-center gap-1.5 self-center">
-                                          {localStatus !== 'approved' && (
-                                            <button
-                                              type="button"
-                                              onClick={() => setConfirmApproveDoc({ fileUrl: doc.file_path, docType: slot.label, rawDocType: slot.type })}
-                                              className="rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 border border-emerald-300 hover:bg-emerald-100 transition"
-                                            >
-                                              Approve
-                                            </button>
-                                          )}
-                                          {localStatus !== 'approved' && (
-                                            <button
-                                              type="button"
-                                              onClick={() => openResubmitModal(slot.label)}
-                                              className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
-                                                localStatus === 'resubmission_requested'
-                                                  ? 'bg-amber-600 text-white cursor-default'
-                                                  : 'bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100'
-                                              }`}
-                                              disabled={localStatus === 'resubmission_requested'}
-                                            >
-                                              Request Resubmission
-                                            </button>
-                                          )}
-                                        </div>
-                                      )}
                                     </div>
                                   </div>
                                 );
@@ -2481,42 +2349,6 @@ export function ApplicantDetailsPage() {
         </div>
       )}
 
-      {/* Approve document confirmation modal */}
-      {confirmApproveDoc && (
-        <div className="fixed inset-0 z-[280] flex items-center justify-center bg-black/40 p-4" onClick={() => setConfirmApproveDoc(null)}>
-          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="px-6 pt-6 pb-4">
-              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
-                <CheckCircle2 size={24} className="text-emerald-600" />
-              </div>
-              <h3 className="text-base font-bold text-slate-900">Approve Document?</h3>
-              <p className="mt-1 text-sm text-slate-500">
-                You are about to approve <span className="font-semibold text-slate-800">{confirmApproveDoc.docType}</span>. This action marks the document as validated.
-              </p>
-            </div>
-            <div className="flex gap-3 border-t border-slate-100 px-6 py-4">
-              <button
-                type="button"
-                className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                onClick={() => setConfirmApproveDoc(null)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="flex-1 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
-                onClick={() => {
-                  void handleApproveDoc(confirmApproveDoc.fileUrl, confirmApproveDoc.docType, confirmApproveDoc.rawDocType);
-                  setConfirmApproveDoc(null);
-                }}
-              >
-                Yes, Approve
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Notice of Resubmission modal */}
       {showResubmitModal && (
         <div className="fixed inset-0 z-[270] flex items-center justify-center bg-black/60 p-4" onClick={() => setShowResubmitModal(false)}>
@@ -2548,22 +2380,35 @@ export function ApplicantDetailsPage() {
                 </div>
               </div>
 
-              {/* Document selector */}
+              {/* Document selector — multi-select pill buttons */}
               <div>
                 <label className="mb-1.5 block text-sm font-semibold" style={{ color: '#040E6B' }}>
                   Document for Resubmission <span className="text-rose-500">*</span>
                 </label>
-                <select
-                  value={resubmitSelectedSlot}
-                  onChange={(e) => setResubmitSelectedSlot(e.target.value)}
-                  className="w-full rounded-xl border px-4 py-2.5 text-sm outline-none focus:ring-2"
-                  style={{ borderColor: '#C8D1FF', color: '#040E6B' }}
-                >
-                  <option value="">Select document...</option>
-                  {DOCUMENT_SLOTS.filter((s) => attachments.some((a) => (a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other') === s.type)).map((s) => (
-                    <option key={s.type} value={s.label}>{s.label}</option>
-                  ))}
-                </select>
+                <div className="flex flex-wrap gap-2">
+                  {DOCUMENT_SLOTS.filter((s) => attachments.some((a) => (a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other') === s.type)).map((s) => {
+                    const isSelected = resubmitSelectedSlots.includes(s.label);
+                    return (
+                      <button
+                        key={s.type}
+                        type="button"
+                        onClick={() => setResubmitSelectedSlots((prev) =>
+                          isSelected ? prev.filter((x) => x !== s.label) : [...prev, s.label]
+                        )}
+                        className="rounded-full border px-3 py-1 text-xs font-semibold transition-all"
+                        style={isSelected
+                          ? { backgroundColor: '#363EE8', borderColor: '#363EE8', color: '#ffffff' }
+                          : { backgroundColor: '#ffffff', borderColor: '#C8D1FF', color: '#040E6B' }
+                        }
+                      >{s.label}</button>
+                    );
+                  })}
+                </div>
+                {resubmitSelectedSlots.length > 0 && (
+                  <p className="mt-2 rounded-lg px-3 py-1.5 text-xs font-medium" style={{ backgroundColor: '#EEF0FD', color: '#363EE8' }}>
+                    Selected: {resubmitSelectedSlots.join(', ')}
+                  </p>
+                )}
               </div>
 
               {/* Reason chips */}
@@ -2620,27 +2465,38 @@ export function ApplicantDetailsPage() {
               {resubmitSuccess && (
                 <p className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{resubmitSuccess}</p>
               )}
-              <div className="flex justify-end gap-3">
+              <div className="flex justify-between gap-3">
                 <button
                   type="button"
-                  onClick={() => { setShowResubmitModal(false); setResubmitNotes(''); setResubmitReason(''); setResubmitSelectedSlot(''); setResubmitError(null); setResubmitSuccess(null); }}
-                  disabled={resubmitSending}
+                  onClick={() => void persistStatus('shortlist').then(() => setShowResubmitModal(false))}
+                  disabled={resubmitSending || isApplicantShortlisted}
                   className="rounded-xl border px-5 py-2 text-sm font-semibold disabled:opacity-50"
-                  style={{ borderColor: '#C8D1FF', color: '#040E6B' }}
+                  style={{ borderColor: '#363EE8', color: '#363EE8' }}
                 >
-                  Cancel
+                  Shortlist Only
                 </button>
-                {!resubmitSuccess && (
+                <div className="flex gap-3">
                   <button
                     type="button"
-                    onClick={() => void handleSubmitResubmission()}
-                    disabled={!resubmitSelectedSlot || !resubmitReason.trim() || resubmitSending}
-                    className="inline-flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    style={{ backgroundColor: '#363EE8' }}
+                    onClick={() => { setShowResubmitModal(false); setResubmitNotes(''); setResubmitReason(''); setResubmitSelectedSlots([]); setResubmitError(null); setResubmitSuccess(null); }}
+                    disabled={resubmitSending}
+                    className="rounded-xl border px-5 py-2 text-sm font-semibold disabled:opacity-50"
+                    style={{ borderColor: '#C8D1FF', color: '#040E6B' }}
                   >
-                    <Send size={14} /> {resubmitSending ? 'Sending…' : 'Send Notice'}
+                    Cancel
                   </button>
-                )}
+                  {!resubmitSuccess && (
+                    <button
+                      type="button"
+                      onClick={() => void handleSubmitResubmission()}
+                      disabled={resubmitSelectedSlots.length === 0 || !resubmitReason.trim() || resubmitSending}
+                      className="inline-flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                      style={{ backgroundColor: '#363EE8' }}
+                    >
+                      <Send size={14} /> {resubmitSending ? 'Sending…' : 'Send Notice'}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -3088,13 +2944,6 @@ export function ApplicantDetailsPage() {
           </div>
         );
       })()}
-      {/* Approve doc toast — shows success or error after Supabase insert */}
-      {approveToast && (
-        <div className={`fixed bottom-6 right-6 z-[350] flex items-center gap-3 rounded-xl px-5 py-3 text-sm font-semibold text-white shadow-xl ${approveToast.ok ? 'bg-emerald-600' : 'bg-rose-600'}`}>
-          {approveToast.ok ? <CheckCircle2 size={18} /> : null}
-          {approveToast.msg}
-        </div>
-      )}
       </div>{/* /admin-layout wrapper */}
     </div>
   );

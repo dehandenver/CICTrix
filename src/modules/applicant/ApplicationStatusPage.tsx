@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle2, FileText, Mail, RefreshCw, Search, Upload } from 'lucide-react';
+import { AlertCircle, CheckCircle2, CircleX, FileText, Mail, RefreshCw, Search, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { ATTACHMENTS_BUCKET, supabase } from '../../lib/supabase';
 import { getApplicants, saveApplicants } from '../../lib/recruitmentData';
@@ -64,9 +64,9 @@ const STATUS_BADGE: Record<string, { label: string; tone: BadgeTone }> = {
   'Recommended for Hiring': { label: 'Approved', tone: 'approved' },
   'Hired': { label: 'Approved', tone: 'approved' },
   'Accepted': { label: 'Approved', tone: 'approved' },
-  'Not Qualified': { label: 'Rejected', tone: 'rejected' },
+  'Not Qualified': { label: 'Not Qualified', tone: 'rejected' },
   'Rejected': { label: 'Rejected', tone: 'rejected' },
-  'Disqualified': { label: 'Rejected', tone: 'rejected' },
+  'Disqualified': { label: 'Disqualified', tone: 'rejected' },
   'Document Verified': { label: 'Document Verified', tone: 'approved' },
   'Action Required': { label: 'Action Required', tone: 'new' },
 };
@@ -102,6 +102,9 @@ const getNoticeMessage = (status: string, tone: BadgeTone): string => {
   if (status === 'Under Review') {
     return 'Your application and uploaded documents are currently under review by our recruitment team.';
   }
+  if (tone === 'rejected') {
+    return 'Your application has been disqualified and will no longer proceed in the selection process. Please refer to the notice above for details. For further inquiries, contact the Recruitment Office.';
+  }
   return NOTICE_MESSAGE[tone];
 };
 
@@ -114,14 +117,18 @@ const TIMELINE_STAGES = [
   { key: 'final', title: 'Final Decision', subtitle: 'Final decision on application' },
 ] as const;
 
-type StageState = 'done' | 'current' | 'pending' | 'rejected';
+type StageState = 'done' | 'current' | 'pending' | 'rejected' | 'cancelled';
 
 const stageStatesForStatus = (rawStatus: string, docsValidated: boolean, hasSchedule: boolean): StageState[] => {
   const status = rawStatus.toLowerCase();
   const v: StageState = docsValidated ? 'done' : 'current';
 
-  if (status.includes('reject') || status.includes('not qualified') || status.includes('disqual')) {
-    return ['done', v, 'rejected', 'pending', 'pending', 'pending'];
+  if (status.includes('reject') || status.includes('not qualified') || status.includes('disqual') || status.includes('failed')) {
+    if (hasSchedule) {
+      // Applicant reached the exam/interview stage before disqualification
+      return ['done', 'done', 'done', 'rejected', 'cancelled', 'cancelled'];
+    }
+    return ['done', v, 'rejected', 'cancelled', 'cancelled', 'cancelled'];
   }
   // Hired / Accepted / Recommended for Hiring → all stages done, final decision made
   if (status.includes('hired') || status.includes('accept') || status.includes('recommend')) {
@@ -149,6 +156,21 @@ const formatDate = (iso: string | null) => {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
+};
+
+const formatTime12h = (time: string | null | undefined): string => {
+  if (!time) return '';
+  try {
+    const [hStr, mStr] = time.split(':');
+    const h = parseInt(hStr, 10);
+    const m = parseInt(mStr, 10);
+    if (Number.isNaN(h) || Number.isNaN(m)) return time;
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 || 12;
+    return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+  } catch {
+    return time;
+  }
 };
 
 const formatShortDate = (iso: string | null) => {
@@ -201,6 +223,7 @@ export const ApplicationStatusPage = () => {
           ...prev,
           status: String(row.status ?? prev.status),
           updated_at: row.updated_at ? String(row.updated_at) : prev.updated_at,
+          disqualification_reason: row.disqualification_reason ? String(row.disqualification_reason) : null,
           exam_date: row.exam_date ? String(row.exam_date) : null,
           exam_time: row.exam_time ? String(row.exam_time) : null,
           oral_exam_date: row.oral_exam_date ? String(row.oral_exam_date) : null,
@@ -615,16 +638,29 @@ export const ApplicationStatusPage = () => {
         {/* Results */}
         {record && badge && (
           <>
-            {/* Application Closed banner (spec: Qualification Assessment Restriction) */}
+            {/* Disqualified / Closed banner */}
             {isApplicationClosed && (
-              <div className="mt-8 flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4">
-                <AlertCircle size={20} className="mt-0.5 flex-shrink-0 text-rose-600" />
-                <div>
-                  <p className="font-bold text-rose-800">Application Closed</p>
-                  <p className="mt-0.5 text-sm text-rose-700">
-                    This application is no longer active. Document resubmission and re-upload have been disabled.
-                    For questions, please contact the Recruitment Office.
+              <div className="mt-8 flex items-start gap-4 rounded-2xl border border-rose-300 bg-rose-50 px-5 py-5 shadow-sm">
+                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-rose-100">
+                  <CircleX size={22} className="text-rose-600" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-base font-bold text-rose-800">
+                    {record.status === 'Disqualified' || record.status === 'Not Qualified'
+                      ? 'Application Disqualified'
+                      : 'Application Closed'}
                   </p>
+                  <p className="mt-1 text-sm text-rose-700">
+                    {record.status === 'Disqualified' || record.status === 'Not Qualified'
+                      ? 'We regret to inform you that your application did not advance further in the selection process. This application will no longer be considered for this position. For inquiries, please contact the Recruitment Office.'
+                      : 'This application is no longer active. Document resubmission and re-upload have been disabled. For questions, please contact the Recruitment Office.'}
+                  </p>
+                  {record.disqualification_reason && (
+                    <div className="mt-3 rounded-xl border border-rose-200 bg-white/70 px-4 py-3">
+                      <p className="text-xs font-bold uppercase tracking-wide text-rose-600">Reason</p>
+                      <p className="mt-1 text-sm text-rose-800">{record.disqualification_reason}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -651,6 +687,7 @@ export const ApplicationStatusPage = () => {
                 </div>
                 <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold ${BADGE_CLASS[badge.tone]}`}>
                   {badge.tone === 'approved' && <CheckCircle2 size={14} />}
+                  {badge.tone === 'rejected' && <CircleX size={14} />}
                   {badge.label}
                 </span>
               </div>
@@ -701,8 +738,8 @@ export const ApplicationStatusPage = () => {
               </div>
             </section>
 
-            {/* RSP Resubmission Notices — real-time from Supabase */}
-            {resubmissionNotices.length > 0 && (
+            {/* RSP Resubmission Notices — real-time from Supabase (hidden once application is closed/disqualified) */}
+            {resubmissionNotices.length > 0 && !isApplicationClosed && (
               <section className="mt-6 rounded-2xl border shadow-sm overflow-hidden" style={{ borderColor: '#C8D1FF' }}>
                 <div className="flex items-center gap-3 px-6 py-4" style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', fontFamily: 'Poppins, sans-serif' }}>
                   <AlertCircle size={20} className="text-white" />
@@ -762,27 +799,43 @@ export const ApplicationStatusPage = () => {
                     state === 'done' ? 'bg-emerald-100 text-emerald-600' :
                       state === 'current' ? 'text-white' :
                         state === 'rejected' ? 'bg-rose-100 text-rose-600' :
-                          'text-slate-400';
+                          state === 'cancelled' ? 'bg-slate-100 text-slate-300' :
+                            'text-slate-400';
                   const currentBg = state === 'current' ? { backgroundColor: '#363EE8' } : {};
-                  const titleStyle = state === 'pending' ? { color: '#C8D1FF' } : { color: '#040E6B' };
+                  const titleStyle =
+                    state === 'pending' ? { color: '#C8D1FF' } :
+                      state === 'cancelled' ? { color: '#CBD5E1', textDecoration: 'line-through' as const } :
+                        state === 'rejected' ? { color: '#9F1239' } :
+                          { color: '#040E6B' };
+                  const subtitleStyle =
+                    state === 'cancelled' ? { color: '#CBD5E1' } :
+                      state === 'rejected' ? { color: '#BE123C' } :
+                        { color: '#363EE8' };
                   const dateForStage =
                     state === 'done' || state === 'current' || state === 'rejected'
                       ? (index === 0 ? formatShortDate(record.created_at) : formatShortDate(record.updated_at))
                       : '';
+                  const connectorClass =
+                    state === 'done' ? 'bg-emerald-200' :
+                      state === 'rejected' ? 'bg-rose-200' :
+                        state === 'cancelled' ? 'border-l border-dashed border-slate-200 w-0' :
+                          'bg-slate-200';
 
                   return (
-                    <li key={stage.key} className="relative flex gap-4 pb-6 last:pb-0">
+                    <li key={stage.key} className={`relative flex gap-4 pb-6 last:pb-0 ${state === 'cancelled' ? 'opacity-50' : ''}`}>
                       {!isLast && (
                         <span
-                          className={`absolute left-[18px] top-9 h-[calc(100%-2rem)] w-px ${state === 'done' ? 'bg-emerald-200' : 'bg-slate-200'}`}
+                          className={`absolute left-[18px] top-9 h-[calc(100%-2rem)] ${state === 'cancelled' ? 'border-l border-dashed border-slate-200' : `w-px ${connectorClass}`}`}
                           aria-hidden="true"
                         />
                       )}
 
                       <span className={`relative z-[1] flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full ${iconWrap}`} style={currentBg}>
                         {state === 'rejected'
-                          ? <span className="text-base font-bold">×</span>
-                          : <CheckCircle2 size={18} />}
+                          ? <CircleX size={18} />
+                          : state === 'cancelled'
+                            ? <span className="text-sm font-bold text-slate-300">—</span>
+                            : <CheckCircle2 size={18} />}
                       </span>
 
                       <div className="flex-1 pt-1">
@@ -792,7 +845,7 @@ export const ApplicationStatusPage = () => {
                             <span className="text-xs font-medium" style={{ color: '#363EE8' }}>{dateForStage}</span>
                           )}
                         </div>
-                        <p className="mt-0.5 text-sm" style={{ color: '#363EE8' }}>{stage.subtitle}</p>
+                        <p className="mt-0.5 text-sm" style={subtitleStyle}>{stage.subtitle}</p>
 
                         {/* Verification stage: doc status */}
                         {isVerification && hasActionRequired && (
@@ -817,7 +870,7 @@ export const ApplicationStatusPage = () => {
                                 <div className="px-3 py-2 flex items-start gap-2">
                                   <span className="mt-0.5 text-xs font-bold uppercase tracking-wide w-28 shrink-0" style={{ color: '#363EE8' }}>Written Exam</span>
                                   <span className="text-sm font-medium" style={{ color: '#040E6B' }}>
-                                    {[record.exam_date && formatDate(record.exam_date), record.exam_time].filter(Boolean).join(' · ')}
+                                    {[record.exam_date && formatDate(record.exam_date), record.exam_time && formatTime12h(record.exam_time)].filter(Boolean).join(' · ')}
                                   </span>
                                 </div>
                               )}
@@ -825,7 +878,7 @@ export const ApplicationStatusPage = () => {
                                 <div className="px-3 py-2 flex items-start gap-2">
                                   <span className="mt-0.5 text-xs font-bold uppercase tracking-wide w-28 shrink-0" style={{ color: '#363EE8' }}>Oral Exam</span>
                                   <span className="text-sm font-medium" style={{ color: '#040E6B' }}>
-                                    {[record.oral_exam_date && formatDate(record.oral_exam_date), record.oral_exam_time].filter(Boolean).join(' · ')}
+                                    {[record.oral_exam_date && formatDate(record.oral_exam_date), record.oral_exam_time && formatTime12h(record.oral_exam_time)].filter(Boolean).join(' · ')}
                                   </span>
                                 </div>
                               )}
@@ -833,7 +886,7 @@ export const ApplicationStatusPage = () => {
                                 <div className="px-3 py-2 flex items-start gap-2">
                                   <span className="mt-0.5 text-xs font-bold uppercase tracking-wide w-28 shrink-0" style={{ color: '#363EE8' }}>Interview</span>
                                   <span className="text-sm font-medium" style={{ color: '#040E6B' }}>
-                                    {[record.interview_date && formatDate(record.interview_date), record.interview_time].filter(Boolean).join(' · ')}
+                                    {[record.interview_date && formatDate(record.interview_date), record.interview_time && formatTime12h(record.interview_time)].filter(Boolean).join(' · ')}
                                   </span>
                                 </div>
                               )}
@@ -882,14 +935,18 @@ export const ApplicationStatusPage = () => {
                             Your application has been shortlisted and is undergoing further committee evaluation.
                           </div>
                         )}
-                        {/* Disqualification */}
+                        {/* Disqualification — shown on the stage where rejection occurred */}
                         {state === 'rejected' && (
-                          <div className="mt-3 rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-sm text-rose-700">
-                            {stage.key === 'qualifications' && record?.disqualification_reason
-                              ? <><p className="font-semibold mb-0.5">Reason for disqualification:</p><p>{record.disqualification_reason}</p></>
-                              : 'Application not selected'
-                            }
+                          <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+                            <p className="text-sm font-semibold text-rose-800">Application did not advance past this stage</p>
+                            {record?.disqualification_reason && (
+                              <p className="mt-1 text-sm text-rose-700">{record.disqualification_reason}</p>
+                            )}
                           </div>
+                        )}
+                        {/* Cancelled — stages that will never be reached */}
+                        {state === 'cancelled' && (
+                          <p className="mt-1 text-xs italic text-slate-300">This stage was not reached</p>
                         )}
                       </div>
                     </li>
@@ -957,17 +1014,13 @@ export const ApplicationStatusPage = () => {
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 border border-amber-200">
                               <AlertCircle size={12} /> Action Required
                             </span>
-                          ) : (validatedDocTypes.has(doc.document_type ?? '') || statusImpliesVerified) ? (
+                          ) : validatedDocTypes.has(doc.document_type ?? '') ? (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
                               <CheckCircle2 size={12} /> Verified
                             </span>
-                          ) : resubmittedDocTypes.has(doc.document_type ?? '') ? (
+                          ) : resubmittedDocTypes.has(doc.document_type ?? '') || alreadyResolved ? (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 border border-blue-200">
                               <RefreshCw size={12} /> Resubmitted
-                            </span>
-                          ) : justUploaded || alreadyResolved ? (
-                            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 border border-blue-200">
-                              <RefreshCw size={12} /> Submitted · Under Review
                             </span>
                           ) : (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border" style={{ backgroundColor: '#EEF0FD', color: '#363EE8', borderColor: '#C8D1FF' }}>
@@ -1096,12 +1149,18 @@ export const ApplicationStatusPage = () => {
             </section>
 
             {/* Important Notice */}
-            <section className={`mt-6 rounded-2xl border px-6 py-5 ${NOTICE_CLASS[badge.tone]}`}>
+            <section className={`mt-6 rounded-2xl border px-6 py-5 ${badge.tone === 'rejected' ? 'bg-rose-100 border-rose-400' : NOTICE_CLASS[badge.tone]}`}>
               <div className="flex items-start gap-3">
-                <Mail size={20} className="mt-0.5 flex-shrink-0" />
+                {badge.tone === 'rejected'
+                  ? <CircleX size={22} className="mt-0.5 flex-shrink-0 text-rose-600" />
+                  : <Mail size={20} className="mt-0.5 flex-shrink-0" />}
                 <div>
-                  <p className="font-bold" style={{ color: '#040E6B' }}>Important Notice</p>
-                  <p className="mt-1 text-sm" style={{ color: '#040E6B' }}>{getNoticeMessage(record.status, badge.tone)}</p>
+                  <p className="font-bold text-base" style={{ color: badge.tone === 'rejected' ? '#9F1239' : '#040E6B' }}>
+                    {badge.tone === 'rejected' ? 'Application Disqualified' : 'Important Notice'}
+                  </p>
+                  <p className="mt-1 text-sm" style={{ color: badge.tone === 'rejected' ? '#BE123C' : '#040E6B' }}>
+                    {getNoticeMessage(record.status, badge.tone)}
+                  </p>
                 </div>
               </div>
             </section>
