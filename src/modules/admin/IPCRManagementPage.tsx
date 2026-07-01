@@ -1,11 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Check, ClipboardCheck, GraduationCap, Pencil, Search, Send, Trash2, UserPlus } from 'lucide-react';
+import { AlertCircle, Bell, Check, ClipboardCheck, GraduationCap, Pencil, Search, Send, Trash2, UserPlus } from 'lucide-react';
 import { AdminHeader } from '../../components/AdminHeader';
 import { Dialog } from '../../components/Dialog';
 import { Sidebar } from '../../components/Sidebar';
 import { listDepartments, type Department } from '../../lib/api/departments';
 import { listEmployeeOptions, type EmployeeOption } from '../../lib/api/officeRoles';
+import { getActiveCyclePeriod } from '../../lib/api/compliance';
 import { IPCR_STAGES, type IpcrStage, stagePillStyle } from '../../lib/api/ipcrStages';
+import {
+  type IpcrNotification,
+  type IpcrPhase,
+  type SubmissionRow,
+  getSubmissionTracker,
+  listNotifications,
+  sendNotification,
+  setSubmissionStage,
+} from '../../lib/api/ipcrSubmissions';
 import {
   type NewEntrant,
   type NewEntrantInput,
@@ -33,7 +43,7 @@ const SUBTABS: SubtabDef[] = [
     key: 'target-setting',
     label: '2.2 Target Setting',
     blurb:
-      'Notification log for “Targets Needed” + per-employee submission tracker (Not Started → Forwarded to PM). (Planned — next.)',
+      'Notification log for “Targets Needed” + per-employee submission tracker (Not Started → Forwarded to PM).',
   },
   {
     key: 'accomplishment',
@@ -93,6 +103,8 @@ export const IPCRManagementPage = () => {
 
           {active === 'onboarding' ? (
             <NewEntrantOnboarding />
+          ) : active === 'target-setting' ? (
+            <SubmissionPhasePanel phase="target" />
           ) : (
             <div style={{ background: '#fff', border: '1px dashed #d1d5db', borderRadius: '12px', padding: '40px', textAlign: 'center' }}>
               <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1f2937', marginBottom: '8px' }}>{current.label}</h3>
@@ -451,3 +463,327 @@ const EntrantModal = ({
 };
 
 const fmtDate = (d: string | null) => (d ? new Date(d).toLocaleDateString() : '—');
+
+// ── Subtabs 2.2 / 2.3: submission pipeline + notification log ─────────────────
+const PHASE_META: Record<IpcrPhase, { notif: string; noun: string; forwardNote: string }> = {
+  target: {
+    notif: 'Targets Needed',
+    noun: 'target',
+    forwardNote: 'Setting a stage to “Forwarded to PM” locks that employee’s targets into the Locked Targets Vault (Module 1.2).',
+  },
+  rating: {
+    notif: 'Accomplishment Ratings Needed',
+    noun: 'accomplishment',
+    forwardNote: 'Setting a stage to “Forwarded to PM” finalizes that employee’s rating for the office closeout bundle (Module 1.3).',
+  },
+};
+
+const SubmissionPhasePanel = ({ phase, extra }: { phase: IpcrPhase; extra?: React.ReactNode }) => {
+  const meta = PHASE_META[phase];
+  const [period, setPeriod] = useState('');
+  const [rows, setRows] = useState<SubmissionRow[]>([]);
+  const [notifications, setNotifications] = useState<IpcrNotification[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [banner, setBanner] = useState('');
+  const [officeFilter, setOfficeFilter] = useState('');
+  const [stageFilter, setStageFilter] = useState<'' | IpcrStage>('');
+  const [savingId, setSavingId] = useState('');
+  const [showNotify, setShowNotify] = useState(false);
+
+  const reload = async () => {
+    setLoading(true);
+    setError('');
+    const { period: p } = await getActiveCyclePeriod();
+    setPeriod(p);
+    const [trackRes, notifs, deps] = await Promise.all([
+      getSubmissionTracker({ period: p, phase, excludeNewEntrants: phase === 'target' }),
+      listNotifications(phase),
+      listDepartments(true),
+    ]);
+    if (trackRes.ok) setRows(trackRes.rows);
+    else if ('error' in trackRes) setError(trackRes.error);
+    setNotifications(notifs);
+    setDepartments(deps.success ? deps.data : []);
+    setLoading(false);
+  };
+  useEffect(() => {
+    void reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
+  const flash = (m: string) => {
+    setBanner(m);
+    setTimeout(() => setBanner(''), 6000);
+  };
+
+  const visible = useMemo(() => {
+    return rows.filter(
+      (r) => (!officeFilter || r.officeId === officeFilter) && (!stageFilter || r.stage === stageFilter),
+    );
+  }, [rows, officeFilter, stageFilter]);
+
+  const stageCounts = useMemo(() => {
+    const scope = officeFilter ? rows.filter((r) => r.officeId === officeFilter) : rows;
+    const counts = Object.fromEntries(IPCR_STAGES.map((s) => [s, 0])) as Record<IpcrStage, number>;
+    for (const r of scope) counts[r.stage]++;
+    return counts;
+  }, [rows, officeFilter]);
+
+  const changeStage = async (row: SubmissionRow, stage: IpcrStage) => {
+    setSavingId(row.employeeId);
+    const res = await setSubmissionStage({
+      employeeId: row.employeeId,
+      employeeName: row.employeeName,
+      officeId: row.officeId,
+      officeName: row.officeName,
+      period,
+      phase,
+      stage,
+      updatedBy: getCurrentAdminEmail(),
+    });
+    setSavingId('');
+    if (!res.ok) {
+      setError('error' in res ? res.error : 'Failed to update stage.');
+      return;
+    }
+    setRows((prev) => prev.map((r) => (r.employeeId === row.employeeId ? { ...r, stage } : r)));
+    if (res.lockedToVault) flash(`✓ ${row.employeeName}: targets locked into the Vault.`);
+  };
+
+  return (
+    <div>
+      {banner && (
+        <div style={ui.bannerOk}>
+          <Check size={18} />
+          {banner}
+        </div>
+      )}
+      {error && (
+        <div style={ui.bannerErr}>
+          <AlertCircle size={18} />
+          {error}
+        </div>
+      )}
+
+      <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 16px' }}>
+        Period: <strong style={{ color: '#374151' }}>{period || '—'}</strong>
+      </p>
+
+      {extra}
+
+      {/* Notification log */}
+      <div style={{ ...ui.card, marginBottom: '20px' }}>
+        <div style={ui.cardHeader}>
+          <Bell size={18} />
+          Notification Log
+          <button type="button" onClick={() => setShowNotify(true)} style={{ ...ui.primaryBtn, marginLeft: 'auto', padding: '7px 12px' }}>
+            <Send size={14} />
+            Send “{meta.notif}”
+          </button>
+        </div>
+        {notifications.length === 0 ? (
+          <div style={ui.emptyBox}>No notifications sent yet for this phase.</div>
+        ) : (
+          <ul style={{ listStyle: 'none', margin: 0, padding: '6px 0' }}>
+            {notifications.map((n) => (
+              <li key={n.id} style={{ display: 'flex', gap: '12px', padding: '10px 20px', borderTop: '1px solid #f5f5f5' }}>
+                <Bell size={15} style={{ color: '#363EE8', marginTop: '2px' }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '13px', color: '#374151' }}>
+                    <strong>{meta.notif}</strong> → {n.office_name || 'All offices'} · {n.employee_count} employee(s)
+                    {n.message ? ` — “${n.message}”` : ''}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px' }}>
+                    {n.triggered_by || 'PM'} · {new Date(n.created_at).toLocaleString()}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Pipeline summary */}
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' }}>
+        {IPCR_STAGES.map((s) => (
+          <span key={s} style={{ ...stagePillStyle(s), padding: '5px 12px', display: 'inline-flex', gap: '6px' }}>
+            {s} <strong>{stageCounts[s]}</strong>
+          </span>
+        ))}
+      </div>
+
+      {/* Submission tracker */}
+      <div style={ui.card}>
+        <div style={ui.cardHeader}>
+          <ClipboardCheck size={18} />
+          {phase === 'target' ? 'Submission Tracker' : 'Rating Submission Tracker'}
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+            <select value={officeFilter} onChange={(e) => setOfficeFilter(e.target.value)} style={{ ...ui.input, width: 'auto', padding: '6px 10px' }}>
+              <option value="">All offices</option>
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+            <select value={stageFilter} onChange={(e) => setStageFilter(e.target.value as any)} style={{ ...ui.input, width: 'auto', padding: '6px 10px' }}>
+              <option value="">All stages</option>
+              {IPCR_STAGES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {loading ? (
+          <div style={ui.emptyBox}>Loading tracker…</div>
+        ) : visible.length === 0 ? (
+          <div style={ui.emptyBox}>
+            {rows.length === 0
+              ? 'No employees found for this cycle. (Ensure migration 015 has been run and employees exist.)'
+              : 'No employees match the current filters.'}
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+              <thead>
+                <tr style={{ background: '#f9fafb', textAlign: 'left', color: '#6b7280' }}>
+                  <th style={ui.th}>Employee</th>
+                  <th style={ui.th}>Office</th>
+                  <th style={ui.th}>Stage</th>
+                  <th style={ui.th}>Set stage</th>
+                  <th style={ui.th}>Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((r) => (
+                  <tr key={r.employeeId} style={{ borderTop: '1px solid #f0f0f0' }}>
+                    <td style={ui.td}>
+                      <span style={{ fontWeight: 600, color: '#1f2937' }}>{r.employeeName}</span>
+                    </td>
+                    <td style={ui.td}>{r.officeName || '—'}</td>
+                    <td style={ui.td}>
+                      <span style={stagePillStyle(r.stage)}>{r.stage}</span>
+                    </td>
+                    <td style={ui.td}>
+                      <select
+                        value={r.stage}
+                        disabled={savingId === r.employeeId}
+                        onChange={(e) => changeStage(r, e.target.value as IpcrStage)}
+                        style={{ ...ui.input, width: 'auto', padding: '6px 10px' }}
+                      >
+                        {IPCR_STAGES.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td style={ui.td}>{r.updatedAt ? new Date(r.updatedAt).toLocaleDateString() : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <p style={{ marginTop: '12px', fontSize: '12px', color: '#9ca3af' }}>{meta.forwardNote}</p>
+
+      {showNotify && (
+        <NotifyModal
+          phase={phase}
+          period={period}
+          departments={departments}
+          rows={rows}
+          onClose={() => setShowNotify(false)}
+          onDone={(msg) => {
+            flash(msg);
+            setShowNotify(false);
+            void reload();
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+const NotifyModal = ({
+  phase,
+  period,
+  departments,
+  rows,
+  onClose,
+  onDone,
+}: {
+  phase: IpcrPhase;
+  period: string;
+  departments: Department[];
+  rows: SubmissionRow[];
+  onClose: () => void;
+  onDone: (msg: string) => void;
+}) => {
+  const meta = PHASE_META[phase];
+  const [officeId, setOfficeId] = useState('');
+  const [message, setMessage] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  const count = officeId ? rows.filter((r) => r.officeId === officeId).length : rows.length;
+  const office = departments.find((d) => d.id === officeId) ?? null;
+
+  const submit = async () => {
+    setErr('');
+    setSaving(true);
+    const res = await sendNotification({
+      phase,
+      officeId: office?.id ?? null,
+      officeName: office?.name ?? null,
+      period,
+      employeeCount: count,
+      message: message.trim() || null,
+      triggeredBy: getCurrentAdminEmail(),
+    });
+    setSaving(false);
+    if (!res.ok) return setErr('error' in res ? res.error : 'Failed to send.');
+    onDone(`✓ “${meta.notif}” logged for ${office?.name ?? 'all offices'} (${count} employees).`);
+  };
+
+  return (
+    <Dialog open onClose={onClose} title={`Send “${meta.notif}”`}>
+      <div style={{ color: 'var(--text-primary)' }}>
+        <p style={{ fontSize: '13px', color: '#6b7280', marginTop: 0 }}>
+          Logs that PM triggered the {meta.noun}-phase notification to the selected Office Account(s) for {period || 'this cycle'}.
+        </p>
+        <Field label="Office">
+          <select value={officeId} onChange={(e) => setOfficeId(e.target.value)} style={ui.input}>
+            <option value="">All offices</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Message (optional)">
+          <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={2} style={{ ...ui.input, resize: 'vertical' }} placeholder="e.g. Please submit targets by month-end." />
+        </Field>
+        <p style={{ fontSize: '12px', color: '#9ca3af', marginTop: '-4px' }}>
+          {count} employee(s) will be recorded as included.
+        </p>
+        {err && <div style={{ ...ui.bannerErr, margin: '8px 0 12px' }}>{err}</div>}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+          <button type="button" onClick={onClose} disabled={saving} style={ui.secondaryBtn}>
+            Cancel
+          </button>
+          <button type="button" onClick={submit} disabled={saving} style={ui.primaryBtn}>
+            {saving ? 'Sending…' : 'Send notification'}
+          </button>
+        </div>
+      </div>
+    </Dialog>
+  );
+};
