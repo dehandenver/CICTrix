@@ -122,13 +122,11 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<
-    'dashboard' | 'employees' | 'evaluation-status' | 'performance-reviews' | 'goals' | 'ipcr' | 'analytics' | 'reports' | 'settings' | 'registry' | 'timeline' | 'compliance'
+    'dashboard' | 'employees' | 'evaluation-status' | 'performance-reviews' | 'goals' | 'ipcr' | 'analytics' | 'reports' | 'settings' | 'registry'
   >('dashboard');
 
   // Module 1 System Administration State
-  const [registrySubtab, setRegistrySubtab] = useState<'directory' | 'access'>('directory');
-  const [timelineSubtab, setTimelineSubtab] = useState<'scheduler' | 'vault'>('scheduler');
-  const [complianceSubtab, setComplianceSubtab] = useState<'tracker' | 'closeout'>('tracker');
+  const [registrySubtab, setRegistrySubtab] = useState<'directory' | 'access' | 'scheduler' | 'vault' | 'tracker' | 'closeout'>('directory');
   const [registrySearch, setRegistrySearch] = useState('');
   const [showAddPersonnelModal, setShowAddPersonnelModal] = useState(false);
   const [newRaterEmail, setNewRaterEmail] = useState('');
@@ -770,9 +768,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   if (isDashboardView) {
     const sideNavItems = [
       { key: 'dashboard', label: 'Dashboard', subtitle: '', icon: LayoutDashboard },
-      { key: 'registry', label: 'Personnel & Office Registry', subtitle: 'Tab 1.1: Org Architecture', icon: Building2 },
-      { key: 'timeline', label: 'Cycle & Timeline Settings', subtitle: 'Tab 1.2: Switches & Vault', icon: Clock },
-      { key: 'compliance', label: 'Submission Compliance & Closeout', subtitle: 'Tab 1.3: Compliance tracker', icon: FileCheck2 },
+      { key: 'registry', label: 'SYSTEM ADMINISTRATION', subtitle: 'Global controls & registry', icon: SlidersHorizontal },
       { key: 'employees', label: 'Employees', subtitle: 'Employee Directory', icon: Users },
       { key: 'evaluation-status', label: 'Employee Evaluation Status', subtitle: 'Track progress', icon: ClipboardList },
       { key: 'performance-reviews', label: 'Performance Reviews', subtitle: 'Upcoming reviews', icon: CalendarCheck2 },
@@ -848,12 +844,11 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
             {activeSection === 'registry' && (
               <div className="space-y-6" style={{ fontFamily: "'Poppins', sans-serif" }}>
-                {/* Subtabs Header */}
-                <div className="flex border-b border-slate-200 bg-white rounded-xl p-2 shadow-sm gap-2">
+                <div className="flex flex-wrap border-b border-slate-200 bg-white rounded-xl p-2 shadow-sm gap-2">
                   <button
                     onClick={() => setRegistrySubtab('directory')}
                     className={`px-4 py-2 text-xs font-bold rounded-md transition ${
-                      registrySubtab === 'directory' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
+                      registrySubtab === 'directory' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-650 hover:bg-slate-50'
                     }`}
                   >
                     Office Directory
@@ -861,10 +856,42 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   <button
                     onClick={() => setRegistrySubtab('access')}
                     className={`px-4 py-2 text-xs font-bold rounded-md transition ${
-                      registrySubtab === 'access' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
+                      registrySubtab === 'access' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-650 hover:bg-slate-50'
                     }`}
                   >
                     Access & Role Management
+                  </button>
+                  <button
+                    onClick={() => setRegistrySubtab('scheduler')}
+                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
+                      registrySubtab === 'scheduler' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-650 hover:bg-slate-50'
+                    }`}
+                  >
+                    Phase Scheduler
+                  </button>
+                  <button
+                    onClick={() => setRegistrySubtab('vault')}
+                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
+                      registrySubtab === 'vault' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-655 hover:bg-slate-50'
+                    }`}
+                  >
+                    Locked Targets Vault
+                  </button>
+                  <button
+                    onClick={() => setRegistrySubtab('tracker')}
+                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
+                      registrySubtab === 'tracker' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-655 hover:bg-slate-50'
+                    }`}
+                  >
+                    Compliance Tracker
+                  </button>
+                  <button
+                    onClick={() => setRegistrySubtab('closeout')}
+                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
+                      registrySubtab === 'closeout' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-655 hover:bg-slate-50'
+                    }`}
+                  >
+                    Final Review & Closeout
                   </button>
                 </div>
 
@@ -1147,32 +1174,9 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                     </div>
                   </div>
                 )}
-              </div>
-            )}
 
-            {activeSection === 'timeline' && (
-              <div className="space-y-6" style={{ fontFamily: "'Poppins', sans-serif" }}>
-                {/* Subtabs Header */}
-                <div className="flex border-b border-slate-200 bg-white rounded-xl p-2 shadow-sm gap-2">
-                  <button
-                    onClick={() => setTimelineSubtab('scheduler')}
-                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
-                      timelineSubtab === 'scheduler' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-650 hover:bg-slate-50'
-                    }`}
-                  >
-                    Phase Scheduler
-                  </button>
-                  <button
-                    onClick={() => setTimelineSubtab('vault')}
-                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
-                      timelineSubtab === 'vault' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-650 hover:bg-slate-50'
-                    }`}
-                  >
-                    Locked Targets Vault
-                  </button>
-                </div>
-
-                {timelineSubtab === 'scheduler' && (
+                {/* Phase Scheduler Subtab */}
+                {registrySubtab === 'scheduler' && (
                   <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-6">
                     <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                       <div>
@@ -1269,7 +1273,8 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   </div>
                 )}
 
-                {timelineSubtab === 'vault' && (
+                {/* Locked Targets Vault Subtab */}
+                {registrySubtab === 'vault' && (
                   <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-6">
                     <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                       <div>
@@ -1278,7 +1283,6 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                       </div>
                     </div>
 
-                    {/* Locked targets list */}
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs text-left">
                         <thead>
@@ -1292,7 +1296,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                         </thead>
                         <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
                           <tr className="hover:bg-slate-50/50">
-                            <td className="px-4 py-3 text-slate-800">Alice Vance</td>
+                            <td className="px-4 py-3 text-slate-850">Alice Vance</td>
                             <td className="px-4 py-3">HR Department</td>
                             <td className="px-4 py-3">
                               <span className="inline-flex items-center gap-1.5 text-indigo-700 font-bold"><Lock className="h-3.5 w-3.5" /> Frozen</span>
@@ -1301,7 +1305,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                             <td className="px-4 py-3 text-slate-500">2026-02-20 16:30</td>
                           </tr>
                           <tr className="hover:bg-slate-50/50">
-                            <td className="px-4 py-3 text-slate-800">Bob Miller</td>
+                            <td className="px-4 py-3 text-slate-850">Bob Miller</td>
                             <td className="px-4 py-3">IT Division</td>
                             <td className="px-4 py-3">
                               <span className="inline-flex items-center gap-1.5 text-indigo-700 font-bold"><Lock className="h-3.5 w-3.5" /> Frozen</span>
@@ -1313,7 +1317,6 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                       </table>
                     </div>
 
-                    {/* Audit Log list */}
                     <div className="border border-slate-100 bg-slate-50/50 rounded-xl p-4 space-y-3">
                       <p className="font-bold text-slate-700 text-xs">Vault Verification Audit Logs:</p>
                       <div className="divide-y divide-slate-100 text-[11px] text-slate-600 max-h-32 overflow-y-auto">
@@ -1327,32 +1330,9 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                     </div>
                   </div>
                 )}
-              </div>
-            )}
 
-            {activeSection === 'compliance' && (
-              <div className="space-y-6" style={{ fontFamily: "'Poppins', sans-serif" }}>
-                {/* Subtabs Header */}
-                <div className="flex border-b border-slate-200 bg-white rounded-xl p-2 shadow-sm gap-2">
-                  <button
-                    onClick={() => setComplianceSubtab('tracker')}
-                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
-                      complianceSubtab === 'tracker' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-650 hover:bg-slate-50'
-                    }`}
-                  >
-                    Compliance Tracker
-                  </button>
-                  <button
-                    onClick={() => setComplianceSubtab('closeout')}
-                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
-                      complianceSubtab === 'closeout' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-650 hover:bg-slate-50'
-                    }`}
-                  >
-                    Final Review & Closeout
-                  </button>
-                </div>
-
-                {complianceSubtab === 'tracker' && (
+                {/* Compliance Tracker Subtab */}
+                {registrySubtab === 'tracker' && (
                   <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
                     <div>
                       <h3 className="text-sm font-bold text-slate-800">Compliance Tracking Pipeline</h3>
@@ -1377,7 +1357,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                             { office: 'Health Office', submitted: '42%', verified: '10%', status: 'Critical', color: 'bg-red-50 text-red-800' }
                           ].map((row, idx) => (
                             <tr key={idx} className="hover:bg-slate-50/50">
-                              <td className="px-4 py-3 text-slate-850">{row.office}</td>
+                              <td className="px-4 py-3 text-slate-855">{row.office}</td>
                               <td className="px-4 py-3">{row.submitted}</td>
                               <td className="px-4 py-3">{row.verified}</td>
                               <td className="px-4 py-3 text-right">
@@ -1391,28 +1371,27 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   </div>
                 )}
 
-                {complianceSubtab === 'closeout' && (
+                {/* Final Review & Closeout Subtab */}
+                {registrySubtab === 'closeout' && (
                   <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-6">
                     <div>
-                      <h3 className="text-sm font-bold text-slate-800">Final Review & Closeout Dock</h3>
+                      <h3 className="text-sm font-bold text-slate-850">Final Review & Closeout Dock</h3>
                       <p className="text-xs text-slate-500 mt-0.5">Audits mandatory cycle requirements (IPCRs + DPCR + OPCR) before archiving the performance bundle.</p>
                     </div>
 
                     <div className="space-y-6">
-                      {/* Health Office Closeout block */}
                       <div className="border border-slate-150 rounded-xl p-5 bg-slate-50/30 space-y-4">
                         <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                          <h4 className="text-xs font-bold text-slate-850">Health Office Performance Bundle</h4>
+                          <h4 className="text-xs font-bold text-slate-855">Health Office Performance Bundle</h4>
                           <span>
                             {healthOfficeClosed ? (
                               <span className="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">Archived & Closed</span>
                             ) : (
-                              <span className="bg-amber-50 text-amber-800 border border-amber-200 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">Awaiting PM Review</span>
+                              <span className="bg-amber-50 text-amber-855 border border-amber-200 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">Awaiting PM Review</span>
                             )}
                           </span>
                         </div>
 
-                        {/* Checklist */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-semibold">
                           <div className="bg-white border rounded-xl p-3 flex justify-between items-center" style={{ borderColor: '#C8D1FF' }}>
                             <span>(1) 24/24 employee IPCRs verified</span>
@@ -1443,10 +1422,9 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                         )}
                       </div>
 
-                      {/* IT Division Closeout block (with missing requirements) */}
                       <div className="border border-slate-150 rounded-xl p-5 bg-slate-50/30 space-y-4">
                         <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                          <h4 className="text-xs font-bold text-slate-850">IT Division Performance Bundle</h4>
+                          <h4 className="text-xs font-bold text-slate-855">IT Division Performance Bundle</h4>
                           <span>
                             {itDivisionClosed ? (
                               <span className="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">Archived & Closed</span>
@@ -1456,11 +1434,10 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                           </span>
                         </div>
 
-                        {/* Checklist */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-semibold">
                           <div className="bg-white border rounded-xl p-3 flex justify-between items-center" style={{ borderColor: '#C8D1FF' }}>
                             <span>(1) 6/8 employee IPCRs verified</span>
-                            <span className="text-red-650">⚠️ Out (2 Pending)</span>
+                            <span className="text-red-655">⚠️ Out (2 Pending)</span>
                           </div>
                           <div className="bg-white border rounded-xl p-3 flex justify-between items-center" style={{ borderColor: '#C8D1FF' }}>
                             <span>(2) Supervisor DPCR sheet</span>
@@ -1468,11 +1445,10 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                           </div>
                           <div className="bg-white border rounded-xl p-3 flex justify-between items-center" style={{ borderColor: '#C8D1FF' }}>
                             <span>(3) Dept Head OPCR package</span>
-                            <span className="text-red-650">⚠️ Out (Waiting)</span>
+                            <span className="text-red-655">⚠️ Out (Waiting)</span>
                           </div>
                         </div>
 
-                        {/* Warning Notice Block */}
                         <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-lg leading-relaxed flex gap-2">
                           <AlertTriangle className="h-4.5 w-4.5 shrink-0 text-red-600" />
                           <div>
@@ -1497,6 +1473,8 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                 )}
               </div>
             )}
+
+
             {activeSection === 'dashboard' && (
               <>
                 {/* ── Header Area ── */}
