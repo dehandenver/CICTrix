@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Building2, CalendarClock, Check, ChevronDown, ClipboardList, Copy, History, Lock, Search, ShieldCheck, UserMinus, UserPlus, Users } from 'lucide-react';
+import { AlertCircle, Archive, Building2, CalendarClock, Check, CheckCircle2, ChevronDown, ClipboardList, Copy, History, Lock, Search, ShieldCheck, UserMinus, UserPlus, Users, X } from 'lucide-react';
 import { AdminHeader } from '../../components/AdminHeader';
 import { Dialog } from '../../components/Dialog';
 import { Sidebar } from '../../components/Sidebar';
@@ -21,6 +21,20 @@ import {
   listLockedTargets,
   lockTargetSet,
 } from '../../lib/api/lockedTargets';
+import {
+  type OfficeCompliance,
+  getActiveCyclePeriod,
+  getComplianceByOffice,
+} from '../../lib/api/compliance';
+import {
+  type CloseoutReadiness,
+  type CompilationKind,
+  buildReadiness,
+  closeoutOffice,
+  listCloseouts,
+  listCompilations,
+  recordCompilation,
+} from '../../lib/api/closeout';
 import {
   type OfficeDirectoryRow,
   type OfficePerson,
@@ -115,13 +129,15 @@ const TABS: TabDef[] = [
         key: 'compliance-tracker',
         label: 'Compliance Tracker',
         blurb:
-          'Per-office progress: % of employees submitted vs. % of office verified, drillable and sortable. (Planned — Phase 4.)',
+          'Per-office progress: % of employees submitted vs. % of office verified, drillable and sortable.',
+        ready: true,
       },
       {
         key: 'final-closeout',
         label: 'Final Review & Closeout',
         blurb:
-          'Validate that all IPCRs, the DPCR, and the OPCR are present before PM locks, timestamps, and archives the office cycle. (Planned — Phase 4.)',
+          'Validate that all IPCRs, the DPCR, and the OPCR are present before PM locks, timestamps, and archives the office cycle.',
+        ready: true,
       },
     ],
   },
@@ -221,6 +237,10 @@ export const SystemAdministrationPage = () => {
             <PhaseScheduler />
           ) : currentSubtab.key === 'locked-targets' ? (
             <LockedTargetsVault />
+          ) : currentSubtab.key === 'compliance-tracker' ? (
+            <ComplianceTracker />
+          ) : currentSubtab.key === 'final-closeout' ? (
+            <FinalReviewCloseout />
           ) : (
             <PlaceholderSubtab title={currentSubtab.label} blurb={currentSubtab.blurb} />
           )}
@@ -1563,6 +1583,472 @@ const LockTargetModal = ({
   );
 };
 
+// ── Subtab: Compliance Tracker ───────────────────────────────────────────────
+const ProgressBar = ({ pct, tone }: { pct: number; tone: 'blue' | 'green' }) => (
+  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+    <div style={{ flex: 1, height: '8px', background: '#eef0f4', borderRadius: '999px', overflow: 'hidden', minWidth: '80px' }}>
+      <div
+        style={{
+          width: `${Math.min(100, Math.max(0, pct))}%`,
+          height: '100%',
+          background: tone === 'green' ? '#10b981' : '#363EE8',
+          borderRadius: '999px',
+          transition: 'width .2s',
+        }}
+      />
+    </div>
+    <span style={{ fontSize: '12px', fontWeight: 700, color: '#374151', width: '38px', textAlign: 'right' }}>{pct}%</span>
+  </div>
+);
+
+const ComplianceTracker = () => {
+  const [period, setPeriod] = useState('');
+  const [data, setData] = useState<OfficeCompliance[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [officeFilter, setOfficeFilter] = useState('');
+  const [sortBy, setSortBy] = useState<'behind' | 'name' | 'verified'>('behind');
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError('');
+      const { cycleId, period: p } = await getActiveCyclePeriod();
+      const res = await getComplianceByOffice(cycleId);
+      if (cancelled) return;
+      setPeriod(p);
+      if (res.ok) setData(res.data);
+      else if ('error' in res) setError(res.error);
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const view = useMemo(() => {
+    let rows = officeFilter ? data.filter((d) => d.officeId === officeFilter) : data.slice();
+    rows.sort((a, b) => {
+      if (sortBy === 'name') return a.officeName.localeCompare(b.officeName);
+      if (sortBy === 'verified') return a.pctVerified - b.pctVerified;
+      // 'behind': least submitted first, then least verified.
+      return a.pctSubmitted - b.pctSubmitted || a.pctVerified - b.pctVerified;
+    });
+    return rows;
+  }, [data, officeFilter, sortBy]);
+
+  const toggle = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  return (
+    <div>
+      {error && (
+        <div style={bannerErr}>
+          <AlertCircle size={18} />
+          {error}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
+        <span style={{ fontSize: '13px', color: '#6b7280' }}>
+          Period: <strong style={{ color: '#374151' }}>{period || '—'}</strong>
+        </span>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px' }}>
+          <select value={officeFilter} onChange={(e) => setOfficeFilter(e.target.value)} style={{ ...input, width: 'auto' }}>
+            <option value="">All offices</option>
+            {data.map((d) => (
+              <option key={d.officeId} value={d.officeId}>
+                {d.officeName}
+              </option>
+            ))}
+          </select>
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)} style={{ ...input, width: 'auto' }}>
+            <option value="behind">Sort: furthest behind</option>
+            <option value="verified">Sort: least verified</option>
+            <option value="name">Sort: office name</option>
+          </select>
+        </div>
+      </div>
+
+      <div style={card}>
+        <div style={cardHeader}>
+          <ClipboardList size={18} />
+          Compliance by Office
+          <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: '#6b7280' }}>
+            {loading ? '' : `${view.length} office${view.length === 1 ? '' : 's'}`}
+          </span>
+        </div>
+        {loading ? (
+          <div style={emptyBox}>Loading compliance…</div>
+        ) : view.length === 0 ? (
+          <div style={emptyBox}>No office data. Ensure employees and evaluations exist for the current cycle.</div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+              <thead>
+                <tr style={{ background: '#f9fafb', textAlign: 'left', color: '#6b7280' }}>
+                  <th style={th}>Office</th>
+                  <th style={{ ...th, width: '26%' }}>% Employees Submitted</th>
+                  <th style={{ ...th, width: '26%' }}>% Office Verified</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Drill</th>
+                </tr>
+              </thead>
+              <tbody>
+                {view.map((o) => (
+                  <Fragment key={o.officeId}>
+                    <tr style={{ borderTop: '1px solid #f0f0f0' }}>
+                      <td style={td}>
+                        <div style={{ fontWeight: 600, color: '#1f2937' }}>{o.officeName}</div>
+                        <div style={{ fontSize: '12px', color: '#9ca3af' }}>{o.totalEmployees} employees</div>
+                      </td>
+                      <td style={td}>
+                        <ProgressBar pct={o.pctSubmitted} tone="blue" />
+                        <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '3px' }}>
+                          {o.submitted}/{o.totalEmployees} submitted
+                        </div>
+                      </td>
+                      <td style={td}>
+                        <ProgressBar pct={o.pctVerified} tone="green" />
+                        <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '3px' }}>
+                          {o.verified}/{o.submitted} verified
+                        </div>
+                      </td>
+                      <td style={{ ...td, textAlign: 'right' }}>
+                        <button
+                          type="button"
+                          onClick={() => toggle(o.officeId)}
+                          style={{ ...secondaryBtn, padding: '5px 10px' }}
+                          disabled={o.totalEmployees === 0}
+                        >
+                          <ChevronDown
+                            size={15}
+                            style={{ transform: expanded.has(o.officeId) ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}
+                          />
+                        </button>
+                      </td>
+                    </tr>
+                    {expanded.has(o.officeId) && (
+                      <tr>
+                        <td colSpan={4} style={{ padding: '0 16px 14px', background: '#fafafa' }}>
+                          <div style={{ padding: '10px 14px', border: '1px solid #eee', borderRadius: '8px', background: '#fff' }}>
+                            {o.employees.length === 0 ? (
+                              <div style={{ fontSize: '13px', color: '#6b7280' }}>No employees in this office.</div>
+                            ) : (
+                              o.employees.map((e, i) => (
+                                <div
+                                  key={i}
+                                  style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '5px 0', fontSize: '13px' }}
+                                >
+                                  <span style={{ flex: 1, color: '#374151' }}>{e.name}</span>
+                                  <span style={{ color: '#9ca3af' }}>{e.status}</span>
+                                  <span style={statusDot(e.verified ? 'green' : e.submitted ? 'blue' : 'gray')} />
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      <p style={{ marginTop: '12px', fontSize: '12px', color: '#9ca3af' }}>
+        “Verified” counts submissions the Office Account has confirmed — an office can be fully submitted yet still have a
+        verification backlog.
+      </p>
+    </div>
+  );
+};
+
+// ── Subtab: Final Review & Closeout ──────────────────────────────────────────
+const CheckX = ({ ok, label }: { ok: boolean; label: string }) => (
+  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: ok ? '#047857' : '#b91c1c' }}>
+    {ok ? <CheckCircle2 size={15} /> : <X size={15} />}
+    {label}
+  </span>
+);
+
+const FinalReviewCloseout = () => {
+  const [period, setPeriod] = useState('');
+  const [rows, setRows] = useState<CloseoutReadiness[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [banner, setBanner] = useState('');
+  const [recordTarget, setRecordTarget] = useState<{ row: CloseoutReadiness; kind: CompilationKind } | null>(null);
+  const [closeoutTarget, setCloseoutTarget] = useState<CloseoutReadiness | null>(null);
+  const [processing, setProcessing] = useState(false);
+
+  const reload = async () => {
+    setLoading(true);
+    setError('');
+    const { cycleId, period: p } = await getActiveCyclePeriod();
+    setPeriod(p);
+    const [compRes, compilations, closeouts] = await Promise.all([
+      getComplianceByOffice(cycleId),
+      listCompilations(p),
+      listCloseouts(p),
+    ]);
+    if (compRes.ok) setRows(buildReadiness(compRes.data, compilations, closeouts, p));
+    else if ('error' in compRes) setError(compRes.error);
+    setLoading(false);
+  };
+  useEffect(() => {
+    void reload();
+  }, []);
+
+  const flash = (m: string) => {
+    setBanner(m);
+    setTimeout(() => setBanner(''), 6000);
+  };
+
+  const doCloseout = async () => {
+    if (!closeoutTarget) return;
+    setProcessing(true);
+    const res = await closeoutOffice({ readiness: closeoutTarget, closedBy: getCurrentAdminEmail() });
+    setProcessing(false);
+    if (!res.ok) {
+      setError('error' in res ? res.error : 'Failed to close out.');
+      setCloseoutTarget(null);
+      return;
+    }
+    flash(`✓ ${closeoutTarget.officeName} closed out and archived.`);
+    setCloseoutTarget(null);
+    void reload();
+  };
+
+  return (
+    <div>
+      {banner && (
+        <div style={bannerOk}>
+          <Check size={18} />
+          {banner}
+        </div>
+      )}
+      {error && (
+        <div style={bannerErr}>
+          <AlertCircle size={18} />
+          {error}
+        </div>
+      )}
+
+      <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 16px' }}>
+        Period: <strong style={{ color: '#374151' }}>{period || '—'}</strong>. An office can be closed out only when all
+        three components are present: verified IPCRs, a Supervisor DPCR, and a Dept Head OPCR.
+      </p>
+
+      <div style={card}>
+        <div style={cardHeader}>
+          <Archive size={18} />
+          Final Review &amp; Closeout
+          <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: '#6b7280' }}>
+            {loading ? '' : `${rows.length} office${rows.length === 1 ? '' : 's'}`}
+          </span>
+        </div>
+        {loading ? (
+          <div style={emptyBox}>Loading closeout status…</div>
+        ) : rows.length === 0 ? (
+          <div style={emptyBox}>No offices with employees to review for this cycle.</div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+              <thead>
+                <tr style={{ background: '#f9fafb', textAlign: 'left', color: '#6b7280' }}>
+                  <th style={th}>Office</th>
+                  <th style={th}>IPCRs</th>
+                  <th style={th}>DPCR</th>
+                  <th style={th}>OPCR</th>
+                  <th style={th}>Status</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.officeId} style={{ borderTop: '1px solid #f0f0f0' }}>
+                    <td style={td}>
+                      <span style={{ fontWeight: 600, color: '#1f2937' }}>{r.officeName}</span>
+                    </td>
+                    <td style={td}>
+                      <CheckX ok={r.ipcrOk} label={`${r.ipcrVerified}/${r.ipcrTotal}`} />
+                    </td>
+                    <td style={td}>
+                      <CheckX ok={r.dpcrOk} label={r.dpcrCount ? `${r.dpcrCount}` : 'Missing'} />
+                    </td>
+                    <td style={td}>
+                      <CheckX ok={r.opcrOk} label={r.opcrCount ? `${r.opcrCount}` : 'Missing'} />
+                    </td>
+                    <td style={td}>
+                      {r.closed ? (
+                        <span style={{ fontSize: '13px', color: '#047857', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                          <Archive size={14} />
+                          Closed {new Date(r.closed.closed_at).toLocaleDateString()}
+                        </span>
+                      ) : r.missing.length ? (
+                        <span style={{ fontSize: '12px', color: '#b45309' }}>
+                          Outstanding: {r.missing.map((m) => m.piece).join(', ')}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '13px', color: '#047857', fontWeight: 600 }}>Ready</span>
+                      )}
+                    </td>
+                    <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      {r.closed ? (
+                        <span style={{ fontSize: '12px', color: '#9ca3af' }}>Archived</span>
+                      ) : (
+                        <span style={{ display: 'inline-flex', gap: '6px', justifyContent: 'flex-end' }}>
+                          <button
+                            type="button"
+                            onClick={() => setRecordTarget({ row: r, kind: 'DPCR' })}
+                            style={{ ...secondaryBtn, padding: '6px 10px' }}
+                          >
+                            + DPCR
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRecordTarget({ row: r, kind: 'OPCR' })}
+                            style={{ ...secondaryBtn, padding: '6px 10px' }}
+                          >
+                            + OPCR
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCloseoutTarget(r)}
+                            disabled={!r.canCloseout}
+                            style={{ ...primaryBtn, padding: '6px 12px', opacity: r.canCloseout ? 1 : 0.45, cursor: r.canCloseout ? 'pointer' : 'not-allowed' }}
+                            title={r.canCloseout ? 'Close out and archive' : 'Complete all components first'}
+                          >
+                            Closeout
+                          </button>
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {recordTarget && (
+        <RecordCompilationModal
+          row={recordTarget.row}
+          kind={recordTarget.kind}
+          onClose={() => setRecordTarget(null)}
+          onDone={(msg) => {
+            flash(msg);
+            setRecordTarget(null);
+            void reload();
+          }}
+        />
+      )}
+
+      <Dialog open={Boolean(closeoutTarget)} onClose={() => setCloseoutTarget(null)} title="Confirm Closeout">
+        {closeoutTarget && (
+          <div style={{ color: 'var(--text-primary)' }}>
+            <p style={{ lineHeight: 1.5, marginTop: 0 }}>
+              Close out <strong>{closeoutTarget.officeName}</strong> for {closeoutTarget.period}? All three components
+              are present. This locks the bundle, timestamps it, and archives it for Records Search — it cannot be
+              reopened here.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '18px' }}>
+              <button type="button" onClick={() => setCloseoutTarget(null)} disabled={processing} style={secondaryBtn}>
+                Cancel
+              </button>
+              <button type="button" onClick={doCloseout} disabled={processing} style={primaryBtn}>
+                {processing ? 'Closing…' : 'Closeout & Archive'}
+              </button>
+            </div>
+          </div>
+        )}
+      </Dialog>
+    </div>
+  );
+};
+
+const RecordCompilationModal = ({
+  row,
+  kind,
+  onClose,
+  onDone,
+}: {
+  row: CloseoutReadiness;
+  kind: CompilationKind;
+  onClose: () => void;
+  onDone: (msg: string) => void;
+}) => {
+  const [groupName, setGroupName] = useState('');
+  const [compiledBy, setCompiledBy] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  const submit = async () => {
+    setErr('');
+    setSaving(true);
+    const res = await recordCompilation({
+      officeId: row.officeId,
+      officeName: row.officeName,
+      period: row.period,
+      kind,
+      groupName: kind === 'DPCR' ? groupName.trim() || null : null,
+      compiledBy: compiledBy.trim() || getCurrentAdminEmail(),
+    });
+    setSaving(false);
+    if (!res.ok) return setErr('error' in res ? res.error : 'Failed to record.');
+    onDone(`✓ ${kind} recorded for ${row.officeName}.`);
+  };
+
+  return (
+    <Dialog open onClose={onClose} title={`Record ${kind === 'DPCR' ? 'Supervisor DPCR' : 'Dept Head OPCR'}`}>
+      <div style={{ color: 'var(--text-primary)' }}>
+        <p style={{ fontSize: '13px', color: '#6b7280', marginTop: 0 }}>
+          Stands in for the {kind === 'DPCR' ? 'Supervisor' : 'Department Head'} compilation flow. Recording this marks
+          the {kind} component present for <strong>{row.officeName}</strong>.
+        </p>
+        {kind === 'DPCR' && (
+          <Field label="Supervisory group (optional)">
+            <input
+              type="text"
+              value={groupName}
+              onChange={(e) => setGroupName(e.target.value)}
+              placeholder="e.g. Records Section"
+              style={input}
+            />
+          </Field>
+        )}
+        <Field label="Compiled by">
+          <input
+            type="text"
+            value={compiledBy}
+            onChange={(e) => setCompiledBy(e.target.value)}
+            placeholder={`Defaults to ${getCurrentAdminEmail()}`}
+            style={input}
+          />
+        </Field>
+        {err && <div style={{ ...bannerErr, margin: '0 0 12px' }}>{err}</div>}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+          <button type="button" onClick={onClose} disabled={saving} style={secondaryBtn}>
+            Cancel
+          </button>
+          <button type="button" onClick={submit} disabled={saving} style={primaryBtn}>
+            {saving ? 'Recording…' : `Record ${kind}`}
+          </button>
+        </div>
+      </div>
+    </Dialog>
+  );
+};
+
 // ── Placeholder for not-yet-built subtabs ────────────────────────────────────
 const PlaceholderSubtab = ({ title, blurb }: { title: string; blurb: string }) => (
   <div
@@ -1730,6 +2216,15 @@ const bannerErr: React.CSSProperties = {
   gap: '8px',
   fontSize: '14px',
 };
+
+const statusDot = (tone: 'green' | 'blue' | 'gray'): React.CSSProperties => ({
+  display: 'inline-block',
+  width: '10px',
+  height: '10px',
+  borderRadius: '50%',
+  background: tone === 'green' ? '#10b981' : tone === 'blue' ? '#363EE8' : '#d1d5db',
+  flexShrink: 0,
+});
 
 const rolePill = (role: OfficeRole): React.CSSProperties => ({
   display: 'inline-block',
