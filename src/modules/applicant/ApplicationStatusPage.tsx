@@ -102,6 +102,9 @@ const getNoticeMessage = (status: string, tone: BadgeTone): string => {
   if (status === 'Under Review') {
     return 'Your application and uploaded documents are currently under review by our recruitment team.';
   }
+  if (tone === 'rejected') {
+    return 'Your application has been disqualified and will no longer proceed in the selection process. Please refer to the notice above for details. For further inquiries, contact the Recruitment Office.';
+  }
   return NOTICE_MESSAGE[tone];
 };
 
@@ -735,8 +738,8 @@ export const ApplicationStatusPage = () => {
               </div>
             </section>
 
-            {/* RSP Resubmission Notices — real-time from Supabase */}
-            {resubmissionNotices.length > 0 && (
+            {/* RSP Resubmission Notices — real-time from Supabase (hidden once application is closed/disqualified) */}
+            {resubmissionNotices.length > 0 && !isApplicationClosed && (
               <section className="mt-6 rounded-2xl border shadow-sm overflow-hidden" style={{ borderColor: '#C8D1FF' }}>
                 <div className="flex items-center gap-3 px-6 py-4" style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', fontFamily: 'Poppins, sans-serif' }}>
                   <AlertCircle size={20} className="text-white" />
@@ -1146,12 +1149,18 @@ export const ApplicationStatusPage = () => {
             </section>
 
             {/* Important Notice */}
-            <section className={`mt-6 rounded-2xl border px-6 py-5 ${NOTICE_CLASS[badge.tone]}`}>
+            <section className={`mt-6 rounded-2xl border px-6 py-5 ${badge.tone === 'rejected' ? 'bg-rose-100 border-rose-400' : NOTICE_CLASS[badge.tone]}`}>
               <div className="flex items-start gap-3">
-                <Mail size={20} className="mt-0.5 flex-shrink-0" />
+                {badge.tone === 'rejected'
+                  ? <CircleX size={22} className="mt-0.5 flex-shrink-0 text-rose-600" />
+                  : <Mail size={20} className="mt-0.5 flex-shrink-0" />}
                 <div>
-                  <p className="font-bold" style={{ color: '#040E6B' }}>Important Notice</p>
-                  <p className="mt-1 text-sm" style={{ color: '#040E6B' }}>{getNoticeMessage(record.status, badge.tone)}</p>
+                  <p className="font-bold text-base" style={{ color: badge.tone === 'rejected' ? '#9F1239' : '#040E6B' }}>
+                    {badge.tone === 'rejected' ? 'Application Disqualified' : 'Important Notice'}
+                  </p>
+                  <p className="mt-1 text-sm" style={{ color: badge.tone === 'rejected' ? '#BE123C' : '#040E6B' }}>
+                    {getNoticeMessage(record.status, badge.tone)}
+                  </p>
                 </div>
               </div>
             </section>
