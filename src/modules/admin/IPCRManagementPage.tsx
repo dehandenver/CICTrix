@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Bell, Check, ClipboardCheck, GraduationCap, Pencil, Search, Send, Trash2, UserPlus } from 'lucide-react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
+import { AlertCircle, Bell, Check, ChevronDown, ClipboardCheck, GraduationCap, Lock, Pencil, Search, Send, Trash2, UserPlus } from 'lucide-react';
 import { AdminHeader } from '../../components/AdminHeader';
 import { Dialog } from '../../components/Dialog';
 import { Sidebar } from '../../components/Sidebar';
 import { listDepartments, type Department } from '../../lib/api/departments';
 import { listEmployeeOptions, type EmployeeOption } from '../../lib/api/officeRoles';
 import { getActiveCyclePeriod } from '../../lib/api/compliance';
+import { listLockedTargets, type LockedTargetRow } from '../../lib/api/lockedTargets';
 import { IPCR_STAGES, type IpcrStage, stagePillStyle } from '../../lib/api/ipcrStages';
 import {
   type IpcrNotification,
@@ -48,8 +49,7 @@ const SUBTABS: SubtabDef[] = [
   {
     key: 'accomplishment',
     label: '2.3 Accomplishment Rating',
-    blurb:
-      'Second-half mirror of 2.2, pre-populated with each employee’s locked targets from the Vault. (Planned.)',
+    blurb: 'Second-half mirror of 2.2, pre-populated with each employee’s locked targets from the Vault.',
   },
   {
     key: 'history',
@@ -105,6 +105,8 @@ export const IPCRManagementPage = () => {
             <NewEntrantOnboarding />
           ) : active === 'target-setting' ? (
             <SubmissionPhasePanel phase="target" />
+          ) : active === 'accomplishment' ? (
+            <SubmissionPhasePanel phase="rating" showLockedTargets />
           ) : (
             <div style={{ background: '#fff', border: '1px dashed #d1d5db', borderRadius: '12px', padding: '40px', textAlign: 'center' }}>
               <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1f2937', marginBottom: '8px' }}>{current.label}</h3>
@@ -478,12 +480,22 @@ const PHASE_META: Record<IpcrPhase, { notif: string; noun: string; forwardNote: 
   },
 };
 
-const SubmissionPhasePanel = ({ phase, extra }: { phase: IpcrPhase; extra?: React.ReactNode }) => {
+const SubmissionPhasePanel = ({
+  phase,
+  extra,
+  showLockedTargets,
+}: {
+  phase: IpcrPhase;
+  extra?: React.ReactNode;
+  showLockedTargets?: boolean;
+}) => {
   const meta = PHASE_META[phase];
   const [period, setPeriod] = useState('');
   const [rows, setRows] = useState<SubmissionRow[]>([]);
   const [notifications, setNotifications] = useState<IpcrNotification[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [lockedMap, setLockedMap] = useState<Map<string, LockedTargetRow[]>>(new Map());
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [banner, setBanner] = useState('');
@@ -491,6 +503,8 @@ const SubmissionPhasePanel = ({ phase, extra }: { phase: IpcrPhase; extra?: Reac
   const [stageFilter, setStageFilter] = useState<'' | IpcrStage>('');
   const [savingId, setSavingId] = useState('');
   const [showNotify, setShowNotify] = useState(false);
+
+  const colCount = showLockedTargets ? 6 : 5;
 
   const reload = async () => {
     setLoading(true);
@@ -506,8 +520,31 @@ const SubmissionPhasePanel = ({ phase, extra }: { phase: IpcrPhase; extra?: Reac
     else if ('error' in trackRes) setError(trackRes.error);
     setNotifications(notifs);
     setDepartments(deps.success ? deps.data : []);
+
+    // Pre-populate each employee's locked targets (read-only) for the rating phase.
+    if (showLockedTargets) {
+      const lockedRes = await listLockedTargets();
+      const map = new Map<string, LockedTargetRow[]>();
+      if (lockedRes.ok) {
+        for (const set of lockedRes.data) {
+          if (set.period !== p) continue;
+          const key = String(set.employee_id ?? '');
+          if (!key || map.has(key)) continue; // most recent set wins (ordered desc)
+          map.set(key, set.targets ?? []);
+        }
+      }
+      setLockedMap(map);
+    }
     setLoading(false);
   };
+
+  const toggle = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   useEffect(() => {
     void reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -656,35 +693,84 @@ const SubmissionPhasePanel = ({ phase, extra }: { phase: IpcrPhase; extra?: Reac
                   <th style={ui.th}>Stage</th>
                   <th style={ui.th}>Set stage</th>
                   <th style={ui.th}>Updated</th>
+                  {showLockedTargets && <th style={{ ...ui.th, textAlign: 'right' }}>Locked Targets</th>}
                 </tr>
               </thead>
               <tbody>
-                {visible.map((r) => (
-                  <tr key={r.employeeId} style={{ borderTop: '1px solid #f0f0f0' }}>
-                    <td style={ui.td}>
-                      <span style={{ fontWeight: 600, color: '#1f2937' }}>{r.employeeName}</span>
-                    </td>
-                    <td style={ui.td}>{r.officeName || '—'}</td>
-                    <td style={ui.td}>
-                      <span style={stagePillStyle(r.stage)}>{r.stage}</span>
-                    </td>
-                    <td style={ui.td}>
-                      <select
-                        value={r.stage}
-                        disabled={savingId === r.employeeId}
-                        onChange={(e) => changeStage(r, e.target.value as IpcrStage)}
-                        style={{ ...ui.input, width: 'auto', padding: '6px 10px' }}
-                      >
-                        {IPCR_STAGES.map((s) => (
-                          <option key={s} value={s}>
-                            {s}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td style={ui.td}>{r.updatedAt ? new Date(r.updatedAt).toLocaleDateString() : '—'}</td>
-                  </tr>
-                ))}
+                {visible.map((r) => {
+                  const locked = showLockedTargets ? lockedMap.get(r.employeeId) : undefined;
+                  return (
+                    <Fragment key={r.employeeId}>
+                      <tr style={{ borderTop: '1px solid #f0f0f0' }}>
+                        <td style={ui.td}>
+                          <span style={{ fontWeight: 600, color: '#1f2937' }}>{r.employeeName}</span>
+                        </td>
+                        <td style={ui.td}>{r.officeName || '—'}</td>
+                        <td style={ui.td}>
+                          <span style={stagePillStyle(r.stage)}>{r.stage}</span>
+                        </td>
+                        <td style={ui.td}>
+                          <select
+                            value={r.stage}
+                            disabled={savingId === r.employeeId}
+                            onChange={(e) => changeStage(r, e.target.value as IpcrStage)}
+                            style={{ ...ui.input, width: 'auto', padding: '6px 10px' }}
+                          >
+                            {IPCR_STAGES.map((s) => (
+                              <option key={s} value={s}>
+                                {s}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td style={ui.td}>{r.updatedAt ? new Date(r.updatedAt).toLocaleDateString() : '—'}</td>
+                        {showLockedTargets && (
+                          <td style={{ ...ui.td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            {locked && locked.length > 0 ? (
+                              <button
+                                type="button"
+                                onClick={() => toggle(r.employeeId)}
+                                style={{ ...ui.secondaryBtn, padding: '5px 10px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                              >
+                                <Lock size={13} />
+                                {locked.length}
+                                <ChevronDown
+                                  size={14}
+                                  style={{ transform: expanded.has(r.employeeId) ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}
+                                />
+                              </button>
+                            ) : (
+                              <span style={{ fontSize: '12px', color: '#b45309' }}>Not in Vault</span>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                      {showLockedTargets && expanded.has(r.employeeId) && locked && (
+                        <tr>
+                          <td colSpan={colCount} style={{ padding: '0 16px 14px', background: '#fafafa' }}>
+                            <div style={{ padding: '12px 14px', border: '1px solid #eee', borderRadius: '8px', background: '#fff' }}>
+                              <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '8px' }}>
+                                Locked targets (read-only, from Vault) — the employee rates accomplishments against each of these.
+                              </div>
+                              {locked.length === 0 ? (
+                                <div style={{ fontSize: '13px', color: '#6b7280' }}>No target rows in this set.</div>
+                              ) : (
+                                <ol style={{ margin: 0, paddingLeft: '18px' }}>
+                                  {locked.map((t, i) => (
+                                    <li key={i} style={{ fontSize: '13px', color: '#374151', marginBottom: '4px' }}>
+                                      {t.function_type ? <strong>[{t.function_type}] </strong> : null}
+                                      {t.target_text || JSON.stringify(t)}
+                                    </li>
+                                  ))}
+                                </ol>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
