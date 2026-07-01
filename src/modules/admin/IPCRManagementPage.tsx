@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Bell, Check, ChevronDown, ClipboardCheck, GraduationCap, Lock, Pencil, Search, Send, Trash2, UserPlus } from 'lucide-react';
+import { AlertCircle, Bell, Check, ChevronDown, ClipboardCheck, GraduationCap, Lock, Pencil, Search, Send, Trash2, TrendingUp, UserPlus } from 'lucide-react';
 import { AdminHeader } from '../../components/AdminHeader';
 import { Dialog } from '../../components/Dialog';
 import { Sidebar } from '../../components/Sidebar';
@@ -7,6 +7,7 @@ import { listDepartments, type Department } from '../../lib/api/departments';
 import { listEmployeeOptions, type EmployeeOption } from '../../lib/api/officeRoles';
 import { getActiveCyclePeriod } from '../../lib/api/compliance';
 import { listLockedTargets, type LockedTargetRow } from '../../lib/api/lockedTargets';
+import { getEmployeeHistory, type EmployeeHistory } from '../../lib/api/performanceHistory';
 import { IPCR_STAGES, type IpcrStage, stagePillStyle } from '../../lib/api/ipcrStages';
 import {
   type IpcrNotification,
@@ -54,7 +55,7 @@ const SUBTABS: SubtabDef[] = [
   {
     key: 'history',
     label: '2.4 Performance History',
-    blurb: 'Read-only per-employee timeline of completed cycles: targets vs accomplishments, with trend indicators. (Planned.)',
+    blurb: 'Read-only per-employee timeline of completed cycles: targets vs accomplishments, with trend indicators.',
   },
 ];
 
@@ -107,6 +108,8 @@ export const IPCRManagementPage = () => {
             <SubmissionPhasePanel phase="target" />
           ) : active === 'accomplishment' ? (
             <SubmissionPhasePanel phase="rating" showLockedTargets />
+          ) : active === 'history' ? (
+            <PerformanceHistory />
           ) : (
             <div style={{ background: '#fff', border: '1px dashed #d1d5db', borderRadius: '12px', padding: '40px', textAlign: 'center' }}>
               <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#1f2937', marginBottom: '8px' }}>{current.label}</h3>
@@ -792,6 +795,193 @@ const SubmissionPhasePanel = ({
             void reload();
           }}
         />
+      )}
+    </div>
+  );
+};
+
+// ── Subtab 2.4: Performance History ──────────────────────────────────────────
+const scoreTone = (adj: string | null): { bg: string; fg: string } => {
+  switch (adj) {
+    case 'Outstanding':
+      return { bg: 'rgba(16,185,129,0.14)', fg: '#047857' };
+    case 'Very Satisfactory':
+      return { bg: 'rgba(54,62,232,0.1)', fg: '#363EE8' };
+    case 'Satisfactory':
+      return { bg: 'rgba(245,158,11,0.15)', fg: '#b45309' };
+    default:
+      return { bg: 'rgba(220,38,38,0.12)', fg: '#b91c1c' };
+  }
+};
+
+const PerformanceHistory = () => {
+  const [employees, setEmployees] = useState<EmployeeOption[]>([]);
+  const [employeeId, setEmployeeId] = useState('');
+  const [history, setHistory] = useState<EmployeeHistory | null>(null);
+  const [loadingEmployees, setLoadingEmployees] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      setLoadingEmployees(true);
+      setEmployees(await listEmployeeOptions());
+      setLoadingEmployees(false);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!employeeId) {
+      setHistory(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError('');
+      const res = await getEmployeeHistory(employeeId);
+      if (cancelled) return;
+      if (res.ok) setHistory(res.data);
+      else {
+        setHistory(null);
+        setError('error' in res ? res.error : 'Failed to load history.');
+      }
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [employeeId]);
+
+  const selectedName = employees.find((e) => e.id === employeeId)?.full_name ?? '';
+
+  return (
+    <div>
+      {error && (
+        <div style={ui.bannerErr}>
+          <AlertCircle size={18} />
+          {error}
+        </div>
+      )}
+
+      <div style={{ maxWidth: '460px', marginBottom: '16px' }}>
+        <label style={ui.miniLabel}>Employee</label>
+        <select
+          value={employeeId}
+          onChange={(e) => setEmployeeId(e.target.value)}
+          disabled={loadingEmployees}
+          style={ui.input}
+        >
+          <option value="">{loadingEmployees ? 'Loading employees…' : 'Select an employee…'}</option>
+          {employees.map((e) => (
+            <option key={e.id} value={e.id}>
+              {e.full_name}
+              {e.department ? ` — ${e.department}` : ''}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {!employeeId ? (
+        <div style={{ ...ui.card, ...ui.emptyBox }}>Select an employee to view their IPCR track record.</div>
+      ) : loading ? (
+        <div style={{ ...ui.card, ...ui.emptyBox }}>Loading history…</div>
+      ) : !history || history.cycles.length === 0 ? (
+        <div style={{ ...ui.card, ...ui.emptyBox }}>No completed IPCR cycles found for {selectedName || 'this employee'}.</div>
+      ) : (
+        <>
+          {/* Summary + trends */}
+          <div style={{ ...ui.card, padding: '16px 20px', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '20px' }}>
+              <div>
+                <div style={{ fontSize: '20px', fontWeight: 700, color: '#1f2937' }}>{history.cyclesCompleted}</div>
+                <div style={{ fontSize: '12px', color: '#6b7280' }}>cycles completed</div>
+              </div>
+              <div>
+                <div style={{ fontSize: '20px', fontWeight: 700, color: '#1f2937' }}>
+                  {history.avgScore != null ? history.avgScore.toFixed(2) : '—'}
+                </div>
+                <div style={{ fontSize: '12px', color: '#6b7280' }}>avg rating</div>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginLeft: 'auto' }}>
+                {history.trends.length === 0 ? (
+                  <span style={{ fontSize: '13px', color: '#9ca3af' }}>Not enough cycles for trend analysis</span>
+                ) : (
+                  history.trends.map((t) => (
+                    <span
+                      key={t}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '4px 12px',
+                        borderRadius: '999px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        background: 'rgba(54,62,232,0.08)',
+                        color: '#363EE8',
+                      }}
+                    >
+                      <TrendingUp size={13} />
+                      {t}
+                    </span>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Timeline */}
+          {history.cycles.map((c, i) => {
+            const tone = scoreTone(c.adjectival);
+            return (
+              <div key={`${c.period}-${i}`} style={{ ...ui.card, marginBottom: '14px' }}>
+                <div style={ui.cardHeader}>
+                  <span style={{ fontWeight: 700 }}>{c.period}</span>
+                  {c.adjectival && (
+                    <span style={{ padding: '2px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: 700, background: tone.bg, color: tone.fg }}>
+                      {c.finalScore?.toFixed(2)} · {c.adjectival}
+                    </span>
+                  )}
+                  <span style={{ marginLeft: 'auto', fontSize: '12px', color: '#9ca3af' }}>
+                    {c.status ?? '—'}
+                    {c.approvedAt ? ` · ${new Date(c.approvedAt).toLocaleDateString()}` : ''}
+                  </span>
+                </div>
+                {c.rows.length === 0 ? (
+                  <div style={ui.emptyBox}>No target/accomplishment detail recorded for this cycle.</div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                      <thead>
+                        <tr style={{ background: '#f9fafb', textAlign: 'left', color: '#6b7280' }}>
+                          <th style={ui.th}>Target</th>
+                          <th style={ui.th}>Accomplishment</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {c.rows.map((r, j) => (
+                          <tr key={j} style={{ borderTop: '1px solid #f0f0f0' }}>
+                            <td style={{ ...ui.td, width: '50%' }}>
+                              {r.functionType ? <strong style={{ color: '#6b7280' }}>[{r.functionType}] </strong> : null}
+                              {r.target || '—'}
+                            </td>
+                            <td style={{ ...ui.td, width: '50%', color: r.accomplishment ? '#374151' : '#b45309' }}>
+                              {r.accomplishment || 'No accomplishment recorded'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          <p style={{ marginTop: '4px', fontSize: '12px', color: '#9ca3af' }}>
+            Read-only. Feeds promotional application review (Module 4) and performance pattern analysis.
+          </p>
+        </>
       )}
     </div>
   );
