@@ -82,6 +82,7 @@ import EmployeeDirectory from './EmployeeDirectory';
 import { SummaryOfRatings } from './pm/SummaryOfRatings';
 import { PMIPCRManagement } from './pm/PMIPCRManagement';
 import { PMCompetencyFramework } from './pm/PMCompetencyFramework';
+import { PMPromotionalApplications } from './pm/PMPromotionalApplications';
 
 type EvaluationEmployeeRow = { name: string; position: string; status: string };
 type EvaluationGroup = {
@@ -124,7 +125,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<
-    'dashboard' | 'employees' | 'evaluation-status' | 'performance-reviews' | 'goals' | 'ipcr' | 'ipcr-management' | 'competency' | 'analytics' | 'reports' | 'settings' | 'registry'
+    'dashboard' | 'employees' | 'evaluation-status' | 'performance-reviews' | 'goals' | 'ipcr' | 'ipcr-management' | 'competency' | 'promotions' | 'analytics' | 'reports' | 'settings' | 'registry'
   >('dashboard');
 
   // Module 1 System Administration State
@@ -778,6 +779,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
       { key: 'ipcr', label: 'Summary of Ratings', subtitle: 'IPCR ratings per dept', icon: BarChart3 },
       { key: 'ipcr-management', label: 'IPCR Management', subtitle: 'Module 2 — onboarding & tracking', icon: ClipboardList },
       { key: 'competency', label: 'Competency Framework', subtitle: 'Module 3 — position requirements', icon: BookOpen },
+      { key: 'promotions', label: 'Promotional Applications', subtitle: 'Module 4 — end-to-end promotions', icon: TrendingUp },
       { key: 'reports', label: 'Documents', subtitle: 'Document submissions', icon: FileText },
       { key: 'analytics', label: 'Analytics', subtitle: 'Performance insights', icon: TrendingUp },
       { key: 'settings', label: 'Settings', subtitle: '', icon: Settings },
@@ -2262,6 +2264,8 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
             {activeSection === 'ipcr-management' && <PMIPCRManagement />}
 
             {activeSection === 'competency' && <PMCompetencyFramework />}
+
+            {activeSection === 'promotions' && <PMPromotionalApplications />}
 
             {activeSection === 'analytics' && (
               <>
