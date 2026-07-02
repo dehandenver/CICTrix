@@ -1,4 +1,6 @@
-import { supabase } from '../supabase';
+import { supabase as supabaseClient } from '../supabase';
+
+const supabase = supabaseClient as any;
 
 export type TrainingRequest = {
   id: string;
@@ -12,6 +14,15 @@ export type TrainingRequest = {
   decided_by: string | null;
   employees?: { first_name: string | null; last_name: string | null; position: string | null; department: string | null };
   training_programs?: { name: string };
+  
+  // New Columns
+  category?: 'Cultural Transformation' | 'Employee Development' | 'Leadership' | 'Technical' | null;
+  competency?: string | null;
+  rationales?: string[] | null;
+  current_proficiency?: number | null;
+  desired_proficiency?: number | null;
+  after_training_metric?: string | null;
+  post_training_proficiency?: number | null;
 };
 
 export async function getTrainingRequests() {
@@ -47,4 +58,60 @@ export function summarizeByStatus(rows: any[]) {
     if (r.status === 'rejected') counts.rejected++;
   });
   return counts;
+}
+
+// New database-driven functions for Module 2 Office Account Console
+export async function listTrainingRequestsDetailed(): Promise<TrainingRequest[]> {
+  const { data, error } = await supabase
+    .from('training_requests')
+    .select('*, employees(first_name, last_name, position, department), training_programs(name)')
+    .order('requested_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching detailed training requests:', error);
+    return [];
+  }
+
+  return (data ?? []) as TrainingRequest[];
+}
+
+export async function createTrainingRequest(input: {
+  employee_id: string;
+  program_id?: string | null;
+  title: string;
+  category: 'Cultural Transformation' | 'Employee Development' | 'Leadership' | 'Technical';
+  competency: string;
+  rationales: string[];
+  current_proficiency: number;
+  desired_proficiency: number;
+  after_training_metric: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await supabase.from('training_requests').insert([{
+    employee_id: input.employee_id,
+    program_id: input.program_id ?? null,
+    title: input.title,
+    justification: `Requested for ${input.competency} (Current: ${input.current_proficiency}, Target: ${input.desired_proficiency})`,
+    category: input.category,
+    competency: input.competency,
+    rationales: input.rationales,
+    current_proficiency: input.current_proficiency,
+    desired_proficiency: input.desired_proficiency,
+    after_training_metric: input.after_training_metric,
+    status: 'pending',
+    requested_at: new Date().toISOString(),
+  }]);
+
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+export async function logPostTrainingProficiency(
+  id: string,
+  score: number
+): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await supabase
+    .from('training_requests')
+    .update({ post_training_proficiency: score })
+    .eq('id', id);
+
+  return error ? { ok: false, error: error.message } : { ok: true };
 }
