@@ -67,6 +67,7 @@ const STATUS_BADGE: Record<string, { label: string; tone: BadgeTone }> = {
   'Not Qualified': { label: 'Not Qualified', tone: 'rejected' },
   'Rejected': { label: 'Rejected', tone: 'rejected' },
   'Disqualified': { label: 'Disqualified', tone: 'rejected' },
+  'Failed Qualification Assessment': { label: 'Failed Qualification Assessment', tone: 'rejected' },
   'Document Verified': { label: 'Document Verified', tone: 'approved' },
   'Action Required': { label: 'Action Required', tone: 'new' },
 };
@@ -1074,7 +1075,7 @@ export const ApplicationStatusPage = () => {
                             </span>
                           ) : validatedDocTypes.has(doc.document_type ?? '') ? (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
-                              <CheckCircle2 size={12} /> Verified
+                              <CheckCircle2 size={12} /> Validated
                             </span>
                           ) : resubmittedDocTypes.has(doc.document_type ?? '') || alreadyResolved ? (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 border border-blue-200">
