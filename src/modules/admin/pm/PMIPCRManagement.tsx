@@ -38,7 +38,7 @@ import {
   listNewEntrants,
   updateNewEntrant,
 } from '../../../lib/api/newEntrants';
-import { getCurrentAdminEmail } from '../../moduleUi';
+import { getCurrentAdminEmail } from '../moduleUi';
 
 const SUBTABS = [
   { key: 'onboarding', label: '2.1 New Entrant Onboarding' },
