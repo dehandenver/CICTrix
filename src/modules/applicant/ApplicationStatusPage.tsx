@@ -1,4 +1,4 @@
-import { AlertCircle, CheckCircle2, CircleX, FileText, Mail, RefreshCw, Search, Upload } from 'lucide-react';
+import { AlertCircle, CheckCircle2, CircleX, FileText, Lock, Mail, RefreshCw, Search, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { ATTACHMENTS_BUCKET, supabase } from '../../lib/supabase';
 import { getApplicants, saveApplicants } from '../../lib/recruitmentData';
@@ -67,6 +67,7 @@ const STATUS_BADGE: Record<string, { label: string; tone: BadgeTone }> = {
   'Not Qualified': { label: 'Not Qualified', tone: 'rejected' },
   'Rejected': { label: 'Rejected', tone: 'rejected' },
   'Disqualified': { label: 'Disqualified', tone: 'rejected' },
+  'Failed Qualification Assessment': { label: 'Failed Qualification Assessment', tone: 'rejected' },
   'Document Verified': { label: 'Document Verified', tone: 'approved' },
   'Action Required': { label: 'Action Required', tone: 'new' },
 };
@@ -92,7 +93,7 @@ const NOTICE_MESSAGE: Record<BadgeTone, string> = {
   new: 'Your application has been received. We will begin reviewing it shortly.',
 };
 
-const getNoticeMessage = (status: string, tone: BadgeTone): string => {
+const getNoticeMessage = (status: string, tone: BadgeTone, reason?: string | null): string => {
   if (status === 'Document Verified') {
     return 'Your submitted documents have been successfully reviewed and verified by RSP personnel. Your application is proceeding to the next evaluation stage.';
   }
@@ -103,7 +104,9 @@ const getNoticeMessage = (status: string, tone: BadgeTone): string => {
     return 'Your application and uploaded documents are currently under review by our recruitment team.';
   }
   if (tone === 'rejected') {
-    return 'Your application has been disqualified and will no longer proceed in the selection process. Please refer to the notice above for details. For further inquiries, contact the Recruitment Office.';
+    const base = 'Your application has been disqualified and will no longer proceed in the selection process.';
+    const suffix = 'For further inquiries, please contact the Recruitment Office.';
+    return reason ? `${base} ${suffix}` : `${base} ${suffix}`;
   }
   return NOTICE_MESSAGE[tone];
 };
@@ -199,6 +202,36 @@ export const ApplicationStatusPage = () => {
   const [error, setError] = useState('');
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
 
+  // Stores the lookup params from the last successful search so polling reuses
+  // the SAME query path that handleSearch already uses (which we know works).
+  // Querying by UUID (.eq('id',...)) can silently fail on some Supabase RLS configs;
+  // querying by item_number / email always works because handleSearch proved it.
+  const searchParamsRef = useRef<{ col: 'item_number' | 'email'; val: string } | null>(null);
+
+  const mapRow = (row: Record<string, unknown>): ApplicationRecord => ({
+    id: String(row.id ?? ''),
+    item_number: String(row.item_number ?? ''),
+    first_name: String(row.first_name ?? ''),
+    last_name: String(row.last_name ?? ''),
+    email: String(row.email ?? ''),
+    contact_number: String(row.contact_number ?? ''),
+    position: String(row.position ?? ''),
+    office: String(row.office ?? ''),
+    status: String(row.status ?? 'New Application'),
+    created_at: String(row.created_at ?? new Date().toISOString()),
+    updated_at: row.updated_at ? String(row.updated_at) : null,
+    application_type: row.application_type ? String(row.application_type) : null,
+    disqualification_reason: row.disqualification_reason ? String(row.disqualification_reason) : null,
+    exam_date: row.exam_date ? String(row.exam_date) : null,
+    exam_time: row.exam_time ? String(row.exam_time) : null,
+    oral_exam_date: row.oral_exam_date ? String(row.oral_exam_date) : null,
+    oral_exam_time: row.oral_exam_time ? String(row.oral_exam_time) : null,
+    interview_date: row.interview_date ? String(row.interview_date) : null,
+    interview_time: row.interview_time ? String(row.interview_time) : null,
+    venue: row.venue ? String(row.venue) : null,
+    schedule_instructions: row.schedule_instructions ? String(row.schedule_instructions) : null,
+  });
+
   const fetchAttachments = async (applicantId: string) => {
     try {
       const { data, error: err } = await (supabase as any)
@@ -210,15 +243,21 @@ export const ApplicationStatusPage = () => {
     } catch { /* silently ignore */ }
   };
 
-  const fetchRecord = async (applicantId: string) => {
+  // Reuses the same query column/value as the original handleSearch so we are
+  // guaranteed to get fresh data even if UUID-based lookups are restricted by RLS.
+  const fetchRecord = async () => {
+    if (!searchParamsRef.current) return;
+    const { col, val } = searchParamsRef.current;
     try {
       const { data, error: err } = await (supabase as any)
         .from('applicants')
         .select('*')
-        .eq('id', applicantId)
-        .single();
-      // Full replacement — never merge with stale prev so status always reflects DB truth
-      if (!err && data) setRecord(data as ApplicationRecord);
+        .eq(col, val)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (!err && Array.isArray(data) && data.length > 0) {
+        setRecord(mapRow(data[0] as Record<string, unknown>));
+      }
     } catch { /* silently ignore */ }
   };
 
@@ -247,7 +286,7 @@ export const ApplicationStatusPage = () => {
       .channel(`tracker_applicants_${rid}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'applicants' }, (payload: any) => {
         if ((payload.new as { id?: string })?.id === rid) {
-          void fetchRecord(rid);
+          void fetchRecord();
           void fetchAttachments(rid);
         }
       })
@@ -261,10 +300,10 @@ export const ApplicationStatusPage = () => {
     if (!record?.id) return;
     const rid = record.id;
     // Immediate first poll so we never show stale data after search
-    void fetchRecord(rid);
+    void fetchRecord();
     const interval = setInterval(() => {
       void fetchAttachments(rid);
-      void fetchRecord(rid);
+      void fetchRecord();
     }, 2000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -345,6 +384,8 @@ export const ApplicationStatusPage = () => {
         schedule_instructions: row.schedule_instructions ? String(row.schedule_instructions) : null,
       };
 
+      // Store search params so polling can reuse the same query (not UUID lookup)
+      searchParamsRef.current = { col: lookupColumn as 'item_number' | 'email', val: lookupValue };
       setRecord(mapped);
       await fetchAttachments(mapped.id);
 
@@ -950,8 +991,30 @@ export const ApplicationStatusPage = () => {
 
             {/* Submitted Documents */}
             <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-              <h3 className="text-xl font-bold" style={{ color: '#040E6B' }}>Submitted Documents</h3>
-              <p className="mt-1 text-sm" style={{ color: '#363EE8' }}>Status of your submitted documents</p>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-xl font-bold" style={{ color: '#040E6B' }}>Submitted Documents</h3>
+                  <p className="mt-1 text-sm" style={{ color: '#363EE8' }}>Status of your submitted documents</p>
+                </div>
+                {isApplicationClosed && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-600 shrink-0">
+                    <Lock size={11} /> Locked
+                  </span>
+                )}
+              </div>
+
+              {/* Closed-application notice — upload & resubmission disabled */}
+              {isApplicationClosed && (
+                <div className="mt-4 flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+                  <Lock size={16} className="mt-0.5 shrink-0 text-rose-500" />
+                  <div>
+                    <p className="text-sm font-semibold text-rose-700">Document Upload Disabled</p>
+                    <p className="mt-0.5 text-xs text-rose-600">
+                      Your application has been closed. Document re-upload and resubmission are no longer available for this application.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="mt-5 space-y-3">
                 {deduplicatedAttachments.length === 0 ? (
@@ -981,7 +1044,10 @@ export const ApplicationStatusPage = () => {
                       setPendingFiles((prev) => { const n = { ...prev }; delete n[reviewKey]; return n; });
 
                     return (
-                      <div key={doc.id} className={`rounded-xl border bg-white overflow-hidden ${hasResubmissionRequest && !justUploaded ? 'border-amber-300' : 'border-slate-200'}`}>
+                      <div key={doc.id} className={`rounded-xl border bg-white overflow-hidden ${
+                        isApplicationClosed ? 'border-rose-100 bg-rose-50/30 opacity-75' :
+                        hasResubmissionRequest && !justUploaded ? 'border-amber-300' : 'border-slate-200'
+                      }`}>
                         {/* Document header row */}
                         <div className="flex items-center justify-between px-4 py-3">
                           <div className="flex items-center gap-3 min-w-0">
@@ -1009,7 +1075,7 @@ export const ApplicationStatusPage = () => {
                             </span>
                           ) : validatedDocTypes.has(doc.document_type ?? '') ? (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
-                              <CheckCircle2 size={12} /> Verified
+                              <CheckCircle2 size={12} /> Validated
                             </span>
                           ) : resubmittedDocTypes.has(doc.document_type ?? '') || alreadyResolved ? (
                             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 border border-blue-200">
@@ -1152,8 +1218,14 @@ export const ApplicationStatusPage = () => {
                     {badge.tone === 'rejected' ? 'Application Disqualified' : 'Important Notice'}
                   </p>
                   <p className="mt-1 text-sm" style={{ color: badge.tone === 'rejected' ? '#BE123C' : '#040E6B' }}>
-                    {getNoticeMessage(record.status, badge.tone)}
+                    {getNoticeMessage(record.status, badge.tone, record.disqualification_reason)}
                   </p>
+                  {badge.tone === 'rejected' && record.disqualification_reason && (
+                    <div className="mt-3 rounded-xl border border-rose-300 bg-white/60 px-4 py-3">
+                      <p className="text-xs font-bold uppercase tracking-wide text-rose-600">Reason from RSP Admin</p>
+                      <p className="mt-1 text-sm text-rose-800">{record.disqualification_reason}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </section>

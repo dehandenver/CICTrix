@@ -1308,36 +1308,65 @@ export function ApplicantDetailsPage() {
     const nextStatus = statusMap[action];
     const reason = action === 'disqualify' ? (reasonInput ?? '').trim() : null;
 
-    const payload = {
-      applicant_id: applicant.id,
-      status: nextStatus,
-      disqualification_reason: reason || null,
+    // Map frontend action to the backend API's status enum.
+    // The backend only accepts these four literals; other actions go straight to
+    // the Supabase fallback path.
+    const backendStatusEnum: Partial<Record<typeof action, string>> = {
+      shortlist: 'shortlisted',
+      qualified: 'qualified',
+      disqualify: 'disqualified',
     };
+    const backendStatus = backendStatusEnum[action];
 
-    // Persist to backend (best-effort) with Supabase fallback. Uses relative /api/
-    // so Vite's proxy handles routing. Verifies Supabase update actually affected
-    // a row (RLS can cause a zero-row silent update with error:null).
     let persisted = false;
-    try {
-      const res = await fetch(`/api/applicants/${applicant.id}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        persisted = true;
-        console.info('[ApplicantDetailsPage] backend PATCH ok');
-      } else {
-        console.warn('[ApplicantDetailsPage] backend PATCH failed', res.status);
+
+    if (backendStatus) {
+      // Get the Supabase session token so the backend can authorize the request.
+      // The backend route requires a valid JWT (role: RSP/ADMIN/etc).
+      let token: string | undefined;
+      try {
+        const { data: { session } } = await (supabase as any).auth.getSession();
+        token = session?.access_token as string | undefined;
+      } catch { /* no session — fallback will handle it */ }
+
+      try {
+        const res = await fetch(`/api/applicants/${applicant.id}/status`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            applicant_id: applicant.id,
+            status: backendStatus,
+            disqualification_reason: reason || null,
+          }),
+        });
+        if (res.ok) {
+          persisted = true;
+          console.info('[ApplicantDetailsPage] backend PATCH ok');
+        } else {
+          console.warn('[ApplicantDetailsPage] backend PATCH failed', res.status);
+        }
+      } catch (err) {
+        console.warn('[ApplicantDetailsPage] backend PATCH threw', err);
       }
-    } catch (err) {
-      console.warn('[ApplicantDetailsPage] backend PATCH threw', err);
     }
 
     if (!persisted) {
       try {
-        const dbUpdate: Record<string, unknown> = { status: nextStatus };
-        if (reason) dbUpdate.disqualification_reason = reason;
+        const dbUpdate: Record<string, unknown> = {
+          status: nextStatus,
+          // Explicitly bump updated_at so the Supabase real-time subscription
+          // always fires on the tracker side, even if status didn't change text.
+          updated_at: new Date().toISOString(),
+        };
+        if (action === 'disqualify') {
+          dbUpdate.disqualification_reason = reason || null;
+        } else {
+          // Clear any stale disqualification reason when moving out of that state.
+          dbUpdate.disqualification_reason = null;
+        }
         const { data: updatedRows, error } = await (supabase as any)
           .from('applicants')
           .update(dbUpdate)
