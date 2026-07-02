@@ -80,6 +80,7 @@ type EmployeeOption = { id: string; name: string; position: string; department: 
 
 import EmployeeDirectory from './EmployeeDirectory';
 import { SummaryOfRatings } from './pm/SummaryOfRatings';
+import { PMIPCRManagement } from './pm/PMIPCRManagement';
 
 type EvaluationEmployeeRow = { name: string; position: string; status: string };
 type EvaluationGroup = {
@@ -122,7 +123,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<
-    'dashboard' | 'employees' | 'evaluation-status' | 'performance-reviews' | 'goals' | 'ipcr' | 'analytics' | 'reports' | 'settings' | 'registry'
+    'dashboard' | 'employees' | 'evaluation-status' | 'performance-reviews' | 'goals' | 'ipcr' | 'ipcr-management' | 'analytics' | 'reports' | 'settings' | 'registry'
   >('dashboard');
 
   // Module 1 System Administration State
@@ -774,6 +775,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
       { key: 'performance-reviews', label: 'Performance Reviews', subtitle: 'Upcoming reviews', icon: CalendarCheck2 },
       { key: 'goals', label: 'DPCR', subtitle: 'Individual performance', icon: FileCheck2 },
       { key: 'ipcr', label: 'Summary of Ratings', subtitle: 'IPCR ratings per dept', icon: BarChart3 },
+      { key: 'ipcr-management', label: 'IPCR Management', subtitle: 'Module 2 — onboarding & tracking', icon: ClipboardList },
       { key: 'reports', label: 'Documents', subtitle: 'Document submissions', icon: FileText },
       { key: 'analytics', label: 'Analytics', subtitle: 'Performance insights', icon: TrendingUp },
       { key: 'settings', label: 'Settings', subtitle: '', icon: Settings },
@@ -2255,6 +2257,8 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
             {activeSection === 'ipcr' && <SummaryOfRatings />}
 
+            {activeSection === 'ipcr-management' && <PMIPCRManagement />}
+
             {activeSection === 'analytics' && (
               <>
                 <h2 className="text-3xl font-bold text-slate-900">Analytics</h2>
@@ -2631,7 +2635,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
               </>
             )}
 
-            {!['dashboard', 'employees', 'evaluation-status', 'performance-reviews', 'goals', 'ipcr', 'analytics', 'reports', 'settings'].includes(activeSection) && (
+            {!['dashboard', 'employees', 'evaluation-status', 'performance-reviews', 'goals', 'ipcr', 'ipcr-management', 'analytics', 'reports', 'settings', 'registry'].includes(activeSection) && (
               <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
                 <h2 className="text-2xl font-bold text-slate-900 capitalize">{activeSection.replace('-', ' ')}</h2>
                 <p className="mt-2 text-slate-600">Section scaffold is ready. Share the next screenshots and I'll match this page exactly.</p>
