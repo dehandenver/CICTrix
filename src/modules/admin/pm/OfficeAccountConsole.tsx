@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   FileText,
@@ -21,9 +21,44 @@ import {
   Send,
   AlertTriangle,
   Info,
-  User
+  User,
+  GraduationCap,
+  BookOpen
 } from 'lucide-react';
 import { LogoutConfirmPopover } from '../../../components/LogoutConfirmPopover';
+import { supabase } from '../../../lib/supabase';
+import {
+  listTrainingRequestsDetailed,
+  createTrainingRequest,
+  logPostTrainingProficiency,
+  type TrainingRequest
+} from '../../../lib/api/trainingRequests';
+
+type Pillar = 'Cultural Transformation' | 'Employee Development' | 'Leadership' | 'Technical';
+
+export const COMPETENCY_CATALOG: Record<Pillar, string[]> = {
+  'Cultural Transformation': [
+    'Ethical Conduct and Public Service Standards',
+    'Transparency and Accountability Practices',
+    'Change Leadership & Advocacy'
+  ],
+  'Employee Development': [
+    'Community Engagement Skills',
+    'Public Communication Skills',
+    'Professional Mentorship & Coaching'
+  ],
+  'Leadership': [
+    'Knowledge of Local Governance',
+    'Public Administration Principles',
+    'Strategic Project Management'
+  ],
+  'Technical': [
+    'Fiscal Management & LGU Budgeting',
+    'Disaster Risk Reduction and Management',
+    'Digital Literacy for Government Services',
+    'Technical Writing & Records Management'
+  ]
+};
 
 interface EmployeeTarget {
   id: string;
@@ -74,8 +109,8 @@ const INITIAL_TRANSMITTALS: TransmittalRecord[] = [
 export const OfficeAccountConsole: React.FC = () => {
   const navigate = useNavigate();
   const [showSwitchModal, setShowSwitchModal] = useState(false);
-  // Navigation tabs: 'targets' | 'ratings'
-  const [activeTab, setActiveTab] = useState<'targets' | 'ratings'>('targets');
+  // Navigation tabs: 'targets' | 'ratings' | 'training-requests'
+  const [activeTab, setActiveTab] = useState<'targets' | 'ratings' | 'training-requests'>('targets');
 
   // Subtabs
   const [targetsSubtab, setTargetsSubtab] = useState<'verify' | 'transmittal'>('verify');
@@ -85,6 +120,171 @@ export const OfficeAccountConsole: React.FC = () => {
   const [targets, setTargets] = useState<EmployeeTarget[]>(INITIAL_TARGETS);
   const [ratings, setRatings] = useState<EmployeeRating[]>(INITIAL_RATINGS);
   const [transmittals, setTransmittals] = useState<TransmittalRecord[]>(INITIAL_TRANSMITTALS);
+
+  // New Training Requests States
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [detailedRequests, setDetailedRequests] = useState<TrainingRequest[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+
+  // Form States
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
+  const [selectedPillar, setSelectedPillar] = useState<Pillar | ''>('');
+  const [selectedCompetency, setSelectedCompetency] = useState<string>('');
+  const [selectedRationales, setSelectedRationales] = useState<string[]>([]);
+  const [currentProficiency, setCurrentProficiency] = useState<number>(3);
+  const [desiredProficiency, setDesiredProficiency] = useState<number>(4);
+  const [afterTrainingMetric, setAfterTrainingMetric] = useState<string>('');
+  const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
+
+  // Evaluation States
+  const [loggingRequestId, setLoggingRequestId] = useState<string | null>(null);
+  const [postTrainingScore, setPostTrainingScore] = useState<number>(4);
+  const [isSubmittingEvaluation, setIsSubmittingEvaluation] = useState(false);
+
+  // Load active employees and training requests
+  useEffect(() => {
+    async function loadData() {
+      // 1. Fetch employees directly from table per [[feedback_prefer_employees_base_table]]
+      const { data: empData, error: empError } = await (supabase as any)
+        .from('employees')
+        .select('id, first_name, last_name, position, status')
+        .eq('status', 'Active')
+        .order('last_name');
+
+      if (empError) {
+        console.error('Error fetching employees:', empError);
+      } else {
+        setEmployees(empData ?? []);
+      }
+
+      // 2. Fetch detailed training requests
+      setLoadingRequests(true);
+      const reqs = await listTrainingRequestsDetailed();
+      setDetailedRequests(reqs);
+      setLoadingRequests(false);
+    }
+    
+    void loadData();
+  }, []);
+
+  const refreshRequests = async () => {
+    setLoadingRequests(true);
+    const reqs = await listTrainingRequestsDetailed();
+    setDetailedRequests(reqs);
+    setLoadingRequests(false);
+  };
+
+  const handleSubmitRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedEmployeeId) {
+      alert('Please select an employee.');
+      return;
+    }
+    if (!selectedPillar) {
+      alert('Please select a training category (pillar).');
+      return;
+    }
+    if (!selectedCompetency) {
+      alert('Please select a competency.');
+      return;
+    }
+    if (selectedRationales.length === 0) {
+      alert('Please select at least one rationale tag.');
+      return;
+    }
+    if (currentProficiency < 1 || currentProficiency > 5 || desiredProficiency < 1 || desiredProficiency > 5) {
+      alert('Proficiency ratings must be between 1 and 5.');
+      return;
+    }
+    if (!afterTrainingMetric.trim()) {
+      alert('Please specify the after-training success evaluation metric.');
+      return;
+    }
+
+    const employeeObj = employees.find(e => e.id === selectedEmployeeId);
+    const employeeName = employeeObj ? `${employeeObj.first_name} ${employeeObj.last_name}` : 'Employee';
+    const titleText = `${selectedPillar} · ${selectedCompetency}`;
+
+    setIsSubmittingRequest(true);
+    const result = await createTrainingRequest({
+      employee_id: selectedEmployeeId,
+      title: titleText,
+      category: selectedPillar,
+      competency: selectedCompetency,
+      rationales: selectedRationales,
+      current_proficiency: currentProficiency,
+      desired_proficiency: desiredProficiency,
+      after_training_metric: afterTrainingMetric
+    });
+    setIsSubmittingRequest(false);
+
+    if (result.ok) {
+      setConsoleMessage(`Successfully submitted training request for ${employeeName}.`);
+      setTimeout(() => setConsoleMessage(null), 4000);
+      
+      // Reset form
+      setSelectedEmployeeId('');
+      setSelectedPillar('');
+      setSelectedCompetency('');
+      setSelectedRationales([]);
+      setCurrentProficiency(3);
+      setDesiredProficiency(4);
+      setAfterTrainingMetric('');
+      
+      // Re-fetch
+      await refreshRequests();
+    } else {
+      alert(`Error submitting training request: ${result.error}`);
+    }
+  };
+
+  const handleLogEvaluation = async (id: string) => {
+    if (postTrainingScore < 1 || postTrainingScore > 5) {
+      alert('Post-training score must be between 1 and 5.');
+      return;
+    }
+    setIsSubmittingEvaluation(true);
+    const result = await logPostTrainingProficiency(id, postTrainingScore);
+    setIsSubmittingEvaluation(false);
+    
+    if (result.ok) {
+      setConsoleMessage('Post-training evaluation logged successfully.');
+      setTimeout(() => setConsoleMessage(null), 4000);
+      setLoggingRequestId(null);
+      await refreshRequests();
+    } else {
+      alert(`Error logging evaluation: ${result.error}`);
+    }
+  };
+
+  const calculateWSM = (req: TrainingRequest) => {
+    if (!req.current_proficiency || !req.desired_proficiency || !req.rationales) return 0;
+    
+    const gap = req.desired_proficiency - req.current_proficiency;
+    const gapScore = gap * 1.5;
+    
+    let rationaleScore = 0;
+    req.rationales.forEach(tag => {
+      if (tag === 'Performance Improvement') rationaleScore += 2.0;
+      else if (tag === 'Skill Gap / Refresher') rationaleScore += 1.5;
+      else if (tag === 'Preparation for Promotion') rationaleScore += 1.0;
+      else if (tag === 'New Technology / System Rollout') rationaleScore += 1.0;
+    });
+    
+    return gapScore + rationaleScore;
+  };
+
+  const sortedRequests = [...detailedRequests]
+    .filter(r => r.category && r.competency && r.current_proficiency !== undefined && r.desired_proficiency !== undefined)
+    .sort((a, b) => {
+      const scoreA = calculateWSM(a);
+      const scoreB = calculateWSM(b);
+      if (scoreB !== scoreA) {
+        return scoreB - scoreA;
+      }
+      // Tie-breaker: requested_at ascending (older requests first)
+      return new Date(a.requested_at).getTime() - new Date(b.requested_at).getTime();
+    });
 
   // Edit Mode state
   const [editingTargetId, setEditingTargetId] = useState<string | null>(null);
@@ -307,31 +507,55 @@ export const OfficeAccountConsole: React.FC = () => {
         {/* Sidebar */}
         <aside className="w-64 shrink-0 border-r border-slate-200 bg-white px-3 py-4 min-h-[calc(100vh-70px)] print:hidden">
           <div className="px-3 mb-4">
-            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Office Console</span>
+            <span className="text-[10px] uppercase font-semibold text-black tracking-wider">Office Console</span>
           </div>
           <nav className="space-y-1.5">
             <button
               onClick={() => setActiveTab('targets')}
               className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${
-                activeTab === 'targets' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-700 hover:bg-slate-200'
+                activeTab === 'targets' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
               }`}
             >
-              <FileText className={`h-5 w-5 ${activeTab === 'targets' ? 'text-white' : 'text-slate-550'}`} />
+              <FileText className={`h-5 w-5 ${activeTab === 'targets' ? 'text-white' : 'text-black'}`} />
               <div>
-                <p className="text-sm font-semibold leading-tight">Phase 1: Targets</p>
-                <p className="text-[11px] text-slate-400 mt-0.5">Adjust employee targets</p>
+                <p className={`text-sm font-semibold leading-tight ${activeTab === 'targets' ? 'text-white' : 'text-black'}`}>
+                  Targets
+                </p>
+                <p className={`text-[11px] mt-0.5 ${activeTab === 'targets' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
+                  Adjust employee targets
+                </p>
               </div>
             </button>
             <button
               onClick={() => setActiveTab('ratings')}
               className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${
-                activeTab === 'ratings' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-700 hover:bg-slate-200'
+                activeTab === 'ratings' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
               }`}
             >
-              <Sliders className={`h-5 w-5 ${activeTab === 'ratings' ? 'text-white' : 'text-slate-550'}`} />
+              <Sliders className={`h-5 w-5 ${activeTab === 'ratings' ? 'text-white' : 'text-black'}`} />
               <div>
-                <p className="text-sm font-semibold leading-tight">Phase 2: Ratings</p>
-                <p className="text-[11px] text-slate-400 mt-0.5">Validate self-ratings</p>
+                <p className={`text-sm font-semibold leading-tight ${activeTab === 'ratings' ? 'text-white' : 'text-black'}`}>
+                  Ratings
+                </p>
+                <p className={`text-[11px] mt-0.5 ${activeTab === 'ratings' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
+                  Validate self-ratings
+                </p>
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('training-requests')}
+              className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${
+                activeTab === 'training-requests' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
+              }`}
+            >
+              <GraduationCap className={`h-5 w-5 ${activeTab === 'training-requests' ? 'text-white' : 'text-black'}`} />
+              <div>
+                <p className={`text-sm font-semibold leading-tight ${activeTab === 'training-requests' ? 'text-white' : 'text-black'}`}>
+                  Training Request
+                </p>
+                <p className={`text-[11px] mt-0.5 ${activeTab === 'training-requests' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
+                  Guidance & WSM Prioritization
+                </p>
               </div>
             </button>
           </nav>
@@ -349,17 +573,24 @@ export const OfficeAccountConsole: React.FC = () => {
                     <FileText className="h-7 w-7 text-indigo-600" />
                     Phase 1: Target Interception & Adjustment
                   </>
-                ) : (
+                ) : activeTab === 'ratings' ? (
                   <>
                     <Sliders className="h-7 w-7 text-indigo-600" />
                     Phase 2: Ratings Validation & Cascading Summaries
                   </>
+                ) : (
+                  <>
+                    <GraduationCap className="h-7 w-7 text-indigo-600" />
+                    Training Request Guidance Desk
+                  </>
                 )}
               </h2>
               <p className="text-sm text-slate-500 mt-1">
-                {activeTab === 'targets' 
-                  ? 'Audit and direct-edit employee target submissions before transmitting them to the central PM registrar.' 
-                  : 'Verify accomplishments at the 6-month mark, apply rating overrides, and generate automated DPCR/OPCR summaries.'}
+                {activeTab === 'targets'
+                  ? 'Audit and direct-edit employee target submissions before transmitting them to the central PM registrar.'
+                  : activeTab === 'ratings'
+                  ? 'Verify accomplishments at the 6-month mark, apply rating overrides, and generate automated DPCR/OPCR summaries.'
+                  : 'Submit structured training requests for employees, evaluated using a Weighted Sum Model (WSM) for prioritization.'}
               </p>
             </div>
             
@@ -773,6 +1004,385 @@ export const OfficeAccountConsole: React.FC = () => {
                           <p className="mt-1">Click "Compile & Transmit OPCR Package to PM" to finalize this cycle.</p>
                         </div>
                       )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* 🎓 TAB 2.3: TRAINING REQUESTS */}
+            {activeTab === 'training-requests' && (
+              <div className="p-6 space-y-8">
+                {/* Section Title */}
+                <div>
+                  <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                    <BookOpen className="h-5 w-5 text-indigo-600" />
+                    New Training Request
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Structure and request target training programs based on core competencies and proficiency gaps.
+                  </p>
+                </div>
+
+                <form onSubmit={handleSubmitRequest} className="space-y-6 max-w-4xl bg-slate-50/50 p-6 rounded-xl border border-slate-200">
+                  {/* Step 0: Select Employee */}
+                  <div className="space-y-2">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
+                      Step 1: Select Employee
+                    </label>
+                    <select
+                      value={selectedEmployeeId}
+                      onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                    >
+                      <option value="">-- Choose an Employee --</option>
+                      {employees.map((emp) => (
+                        <option key={emp.id} value={emp.id}>
+                          {emp.last_name}, {emp.first_name} — {emp.position}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Step 1: Category Selection (Pillars) */}
+                  <div className="space-y-2">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
+                      Step 2: Category Selection (Broad Pillar Filter)
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                      {(['Cultural Transformation', 'Employee Development', 'Leadership', 'Technical'] as Pillar[]).map((pillar) => {
+                        const isSelected = selectedPillar === pillar;
+                        // Colors and themes for each pillar
+                        const themes = {
+                          'Cultural Transformation': 'border-purple-200 hover:border-purple-400 bg-purple-50/20 text-purple-900',
+                          'Employee Development': 'border-blue-200 hover:border-blue-400 bg-blue-50/20 text-blue-900',
+                          'Leadership': 'border-indigo-200 hover:border-indigo-400 bg-indigo-50/20 text-indigo-900',
+                          'Technical': 'border-emerald-200 hover:border-emerald-400 bg-emerald-50/20 text-emerald-900'
+                        };
+                        const selectedBorder = {
+                          'Cultural Transformation': 'border-purple-600 ring-2 ring-purple-600 bg-purple-50/50',
+                          'Employee Development': 'border-blue-600 ring-2 ring-blue-600 bg-blue-50/50',
+                          'Leadership': 'border-indigo-600 ring-2 ring-indigo-600 bg-indigo-50/50',
+                          'Technical': 'border-emerald-600 ring-2 ring-emerald-600 bg-emerald-50/50'
+                        };
+                        return (
+                          <button
+                            key={pillar}
+                            type="button"
+                            onClick={() => {
+                              setSelectedPillar(pillar);
+                              setSelectedCompetency('');
+                            }}
+                            className={`flex flex-col items-center justify-center p-4 rounded-xl border text-center transition cursor-pointer ${
+                              isSelected ? selectedBorder[pillar] : themes[pillar]
+                            } h-28 bg-white`}
+                          >
+                            <span className="text-xs font-bold leading-tight">{pillar}</span>
+                            <span className="text-[10px] text-slate-400 mt-2">
+                              {pillar === 'Cultural Transformation' && 'Ethics & Advocacy'}
+                              {pillar === 'Employee Development' && 'Mentorship & Comms'}
+                              {pillar === 'Leadership' && 'Governance & Strategy'}
+                              {pillar === 'Technical' && 'LGU Systems & Tech'}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Step 2: Competency Selection */}
+                  {selectedPillar && (
+                    <div className="space-y-2">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
+                        Step 3: Select Competency ({selectedPillar})
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {COMPETENCY_CATALOG[selectedPillar].map((comp) => {
+                          const isCompSelected = selectedCompetency === comp;
+                          return (
+                            <button
+                              key={comp}
+                              type="button"
+                              onClick={() => setSelectedCompetency(comp)}
+                              className={`px-3 py-2 rounded-lg text-xs font-semibold border transition cursor-pointer ${
+                                isCompSelected
+                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                              }`}
+                            >
+                              {comp}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Step 3: Standardized Rationale */}
+                  <div className="space-y-2">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
+                      Step 4: Standardized Rationale (Select all that apply)
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        'Skill Gap / Refresher',
+                        'Preparation for Promotion',
+                        'New Technology / System Rollout',
+                        'Performance Improvement'
+                      ].map((tag) => {
+                        const isTagSelected = selectedRationales.includes(tag);
+                        return (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => {
+                              setSelectedRationales(prev =>
+                                isTagSelected ? prev.filter(t => t !== tag) : [...prev, tag]
+                              );
+                            }}
+                            className={`px-3 py-2 rounded-lg text-xs font-semibold border transition cursor-pointer ${
+                              isTagSelected
+                                ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
+                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            {tag}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Step 4: Before & After Seminar Proficiency (1-5) */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 flex justify-between">
+                        <span>Step 5: Current Proficiency Level</span>
+                        <span className="text-indigo-600 font-bold">{currentProficiency} / 5</span>
+                      </label>
+                      <input
+                        type="range"
+                        min="1"
+                        max="5"
+                        step="1"
+                        value={currentProficiency}
+                        onChange={(e) => setCurrentProficiency(parseInt(e.target.value))}
+                        className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                      />
+                      <div className="flex justify-between text-[10px] text-slate-400 px-1">
+                        <span>1 = Basic</span>
+                        <span>3 = Competent</span>
+                        <span>5 = Expert</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 flex justify-between">
+                        <span>Desired Target Proficiency Level</span>
+                        <span className="text-indigo-600 font-bold">{desiredProficiency} / 5</span>
+                      </label>
+                      <input
+                        type="range"
+                        min="1"
+                        max="5"
+                        step="1"
+                        value={desiredProficiency}
+                        onChange={(e) => setDesiredProficiency(parseInt(e.target.value))}
+                        className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                      />
+                      <div className="flex justify-between text-[10px] text-slate-400 px-1">
+                        <span>1 = Basic</span>
+                        <span>3 = Competent</span>
+                        <span>5 = Expert</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Step 5: After-Training Success Evaluation Metric */}
+                  <div className="space-y-2">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
+                      Step 6: Expected After-Training Success Metric
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={afterTrainingMetric}
+                      onChange={(e) => setAfterTrainingMetric(e.target.value)}
+                      placeholder="e.g., Increase department report turnaround time by 15%, or demonstrate autonomous project planning."
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+
+                  <div className="flex justify-end pt-2">
+                    <button
+                      type="submit"
+                      disabled={isSubmittingRequest}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-6 py-2.5 text-xs font-bold flex items-center gap-1.5 shadow-sm transition disabled:opacity-50 cursor-pointer"
+                    >
+                      <Send className="h-4 w-4" />
+                      {isSubmittingRequest ? 'Submitting...' : 'Submit Training Request'}
+                    </button>
+                  </div>
+                </form>
+
+                {/* Prioritized Requests Table */}
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5 text-indigo-650" />
+                      Prioritized Training Needs (WSM Rankings)
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Evaluated and sorted desc by WSM Priority Score: <code className="font-mono text-[11px] bg-slate-100 px-1 py-0.5 rounded text-indigo-800">Gap × 1.5 + Rationale Weights</code>.
+                    </p>
+                  </div>
+
+                  {loadingRequests ? (
+                    <div className="border border-slate-150 rounded-xl p-12 text-center text-slate-500 text-xs">
+                      Loading prioritized training requests...
+                    </div>
+                  ) : sortedRequests.length === 0 ? (
+                    <div className="border border-dashed border-slate-300 rounded-xl p-12 text-center text-slate-500 text-xs">
+                      <ClipboardCheck className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+                      <p className="font-bold">No structured training requests found.</p>
+                      <p className="mt-1">Fill out and submit the form above to generate records.</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto rounded-lg border border-slate-150">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-650 font-semibold border-b border-slate-150">
+                            <th className="px-4 py-3">Employee Details</th>
+                            <th className="px-4 py-3">Training Competency</th>
+                            <th className="px-4 py-3 text-center">Pillar</th>
+                            <th className="px-4 py-3 text-center">Proficiency Gap</th>
+                            <th className="px-4 py-3 text-center">WSM Priority</th>
+                            <th className="px-4 py-3">Rationale & Metrics</th>
+                            <th className="px-4 py-3 text-center">Post-Evaluation</th>
+                            <th className="px-4 py-3 text-center">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {sortedRequests.map((req) => {
+                            const wsmScore = calculateWSM(req);
+                            const hasEvaluation = req.post_training_proficiency !== undefined && req.post_training_proficiency !== null;
+                            const empName = req.employees ? `${req.employees.last_name}, ${req.employees.first_name}` : 'Unknown';
+                            const empDept = req.employees?.department ?? '—';
+                            const empPos = req.employees?.position ?? '—';
+                            
+                            // Calculate improvement only if logged
+                            const current = req.current_proficiency ?? 0;
+                            const target = req.desired_proficiency ?? 0;
+                            const postScore = req.post_training_proficiency ?? 0;
+                            const improvement = postScore - current;
+
+                            return (
+                              <tr key={req.id} className="hover:bg-slate-50/30 transition">
+                                <td className="px-4 py-3">
+                                  <p className="font-bold text-slate-800">{empName}</p>
+                                  <p className="text-[10px] text-slate-550">{empPos}</p>
+                                  <p className="text-[10px] text-slate-400 font-semibold">{empDept}</p>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <p className="font-bold text-indigo-900">{req.competency}</p>
+                                  <p className="text-[9px] text-slate-400 uppercase font-mono mt-0.5">Status: {req.status}</p>
+                                </td>
+                                <td className="px-4 py-3 text-center">
+                                  <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
+                                    req.category === 'Cultural Transformation' ? 'bg-purple-50 text-purple-700 border border-purple-100' :
+                                    req.category === 'Employee Development' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
+                                    req.category === 'Leadership' ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' :
+                                    'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                  }`}>
+                                    {req.category}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-center">
+                                  <div className="font-semibold text-slate-700">
+                                    {current} &rarr; {target}
+                                  </div>
+                                  <span className="text-[9px] text-slate-400 font-mono">Gap: +{target - current}</span>
+                                </td>
+                                <td className="px-4 py-3 text-center font-bold text-lg text-indigo-750 bg-indigo-50/20">
+                                  {wsmScore.toFixed(1)}
+                                </td>
+                                <td className="px-4 py-3 max-w-xs space-y-1">
+                                  <div className="flex flex-wrap gap-1">
+                                    {(req.rationales ?? []).map((tag, i) => (
+                                      <span key={i} className="bg-slate-100 text-slate-600 rounded px-1.5 py-0.5 text-[9px] font-medium border border-slate-150">
+                                        {tag}
+                                      </span>
+                                    ))}
+                                  </div>
+                                  <p className="text-[10px] text-slate-550 italic leading-tight">
+                                    <strong className="text-slate-650 not-italic">Metric:</strong> {req.after_training_metric ?? '—'}
+                                  </p>
+                                </td>
+                                <td className="px-4 py-3 text-center">
+                                  {hasEvaluation ? (
+                                    <div className="space-y-1">
+                                      <p className="font-bold text-slate-700 text-xs">Score: {postScore}/5</p>
+                                      {improvement > 0 ? (
+                                        <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[9px] font-bold text-emerald-700">
+                                          +{improvement.toFixed(1)} Improved
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center gap-0.5 rounded-full bg-slate-50 border border-slate-200 px-2 py-0.5 text-[9px] font-bold text-slate-500">
+                                          {improvement.toFixed(1)} No Change
+                                        </span>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400 italic">Not evaluated</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 text-center">
+                                  {loggingRequestId === req.id ? (
+                                    <div className="flex flex-col gap-1.5 p-2 bg-slate-55 rounded border border-slate-200 min-w-[120px]">
+                                      <label className="text-[10px] font-bold text-slate-500 uppercase">Post score</label>
+                                      <select
+                                        value={postTrainingScore}
+                                        onChange={(e) => setPostTrainingScore(parseInt(e.target.value))}
+                                        className="rounded border border-slate-200 px-1 py-0.5 text-[11px] focus:outline-none bg-white"
+                                      >
+                                        <option value="1">1 (Basic)</option>
+                                        <option value="2">2</option>
+                                        <option value="3">3</option>
+                                        <option value="4">4</option>
+                                        <option value="5">5 (Expert)</option>
+                                      </select>
+                                      <div className="flex gap-1 justify-end">
+                                        <button
+                                          onClick={() => handleLogEvaluation(req.id)}
+                                          disabled={isSubmittingEvaluation}
+                                          className="bg-emerald-600 hover:bg-emerald-700 text-white rounded px-2 py-0.5 text-[10px] font-bold cursor-pointer"
+                                        >
+                                          Save
+                                        </button>
+                                        <button
+                                          onClick={() => setLoggingRequestId(null)}
+                                          className="bg-slate-200 text-slate-700 rounded px-2 py-0.5 text-[10px] cursor-pointer"
+                                        >
+                                          Exit
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={() => {
+                                        setLoggingRequestId(req.id);
+                                        setPostTrainingScore(req.post_training_proficiency ?? (req.desired_proficiency ?? 4));
+                                      }}
+                                      className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white hover:bg-slate-50 px-2 py-1 font-semibold text-slate-700 cursor-pointer"
+                                    >
+                                      <TrendingUp className="h-3 w-3" /> Log Evaluation
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
                   )}
                 </div>
