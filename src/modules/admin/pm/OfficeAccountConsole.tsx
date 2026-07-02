@@ -507,43 +507,55 @@ export const OfficeAccountConsole: React.FC = () => {
         {/* Sidebar */}
         <aside className="w-64 shrink-0 border-r border-slate-200 bg-white px-3 py-4 min-h-[calc(100vh-70px)] print:hidden">
           <div className="px-3 mb-4">
-            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Office Console</span>
+            <span className="text-[10px] uppercase font-semibold text-black tracking-wider">Office Console</span>
           </div>
           <nav className="space-y-1.5">
             <button
               onClick={() => setActiveTab('targets')}
               className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${
-                activeTab === 'targets' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-700 hover:bg-slate-200'
+                activeTab === 'targets' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
               }`}
             >
-              <FileText className={`h-5 w-5 ${activeTab === 'targets' ? 'text-white' : 'text-slate-550'}`} />
+              <FileText className={`h-5 w-5 ${activeTab === 'targets' ? 'text-white' : 'text-black'}`} />
               <div>
-                <p className="text-sm font-semibold leading-tight">Phase 1: Targets</p>
-                <p className="text-[11px] text-slate-400 mt-0.5">Adjust employee targets</p>
+                <p className={`text-sm font-semibold leading-tight ${activeTab === 'targets' ? 'text-white' : 'text-black'}`}>
+                  Targets
+                </p>
+                <p className={`text-[11px] mt-0.5 ${activeTab === 'targets' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
+                  Adjust employee targets
+                </p>
               </div>
             </button>
             <button
               onClick={() => setActiveTab('ratings')}
               className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${
-                activeTab === 'ratings' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-700 hover:bg-slate-200'
+                activeTab === 'ratings' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
               }`}
             >
-              <Sliders className={`h-5 w-5 ${activeTab === 'ratings' ? 'text-white' : 'text-slate-550'}`} />
+              <Sliders className={`h-5 w-5 ${activeTab === 'ratings' ? 'text-white' : 'text-black'}`} />
               <div>
-                <p className="text-sm font-semibold leading-tight">Phase 2: Ratings</p>
-                <p className="text-[11px] text-slate-400 mt-0.5">Validate self-ratings</p>
+                <p className={`text-sm font-semibold leading-tight ${activeTab === 'ratings' ? 'text-white' : 'text-black'}`}>
+                  Ratings
+                </p>
+                <p className={`text-[11px] mt-0.5 ${activeTab === 'ratings' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
+                  Validate self-ratings
+                </p>
               </div>
             </button>
             <button
               onClick={() => setActiveTab('training-requests')}
               className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${
-                activeTab === 'training-requests' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-700 hover:bg-slate-200'
+                activeTab === 'training-requests' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
               }`}
             >
-              <GraduationCap className={`h-5 w-5 ${activeTab === 'training-requests' ? 'text-white' : 'text-slate-550'}`} />
+              <GraduationCap className={`h-5 w-5 ${activeTab === 'training-requests' ? 'text-white' : 'text-black'}`} />
               <div>
-                <p className="text-sm font-semibold leading-tight">Training Request</p>
-                <p className="text-[11px] text-slate-400 mt-0.5">Guidance & WSM Prioritization</p>
+                <p className={`text-sm font-semibold leading-tight ${activeTab === 'training-requests' ? 'text-white' : 'text-black'}`}>
+                  Training Request
+                </p>
+                <p className={`text-[11px] mt-0.5 ${activeTab === 'training-requests' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
+                  Guidance & WSM Prioritization
+                </p>
               </div>
             </button>
           </nav>
