@@ -23,7 +23,10 @@ import {
   Info,
   User,
   GraduationCap,
-  BookOpen
+  BookOpen,
+  ChevronDown,
+  Search,
+  Check
 } from 'lucide-react';
 import { LogoutConfirmPopover } from '../../../components/LogoutConfirmPopover';
 import { supabase } from '../../../lib/supabase';
@@ -128,6 +131,8 @@ export const OfficeAccountConsole: React.FC = () => {
 
   // Form States
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
+  const [employeeDropdownOpen, setEmployeeDropdownOpen] = useState(false);
+  const [employeeSearchQuery, setEmployeeSearchQuery] = useState('');
   const [selectedPillar, setSelectedPillar] = useState<Pillar | ''>('');
   const [selectedCompetency, setSelectedCompetency] = useState<string>('');
   const [selectedRationales, setSelectedRationales] = useState<string[]>([]);
@@ -285,6 +290,13 @@ export const OfficeAccountConsole: React.FC = () => {
       // Tie-breaker: requested_at ascending (older requests first)
       return new Date(a.requested_at).getTime() - new Date(b.requested_at).getTime();
     });
+
+  const filteredEmployees = employees.filter((emp) => {
+    const fullName = `${emp.first_name} ${emp.last_name}`.toLowerCase();
+    const position = (emp.position ?? '').toLowerCase();
+    const query = employeeSearchQuery.toLowerCase();
+    return fullName.includes(query) || position.includes(query);
+  });
 
   // Edit Mode state
   const [editingTargetId, setEditingTargetId] = useState<string | null>(null);
@@ -1026,22 +1038,89 @@ export const OfficeAccountConsole: React.FC = () => {
 
                 <form onSubmit={handleSubmitRequest} className="space-y-6 max-w-4xl bg-slate-50/50 p-6 rounded-xl border border-slate-200">
                   {/* Step 0: Select Employee */}
-                  <div className="space-y-2">
+                  <div className="space-y-2 relative">
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
                       Step 1: Select Employee
                     </label>
-                    <select
-                      value={selectedEmployeeId}
-                      onChange={(e) => setSelectedEmployeeId(e.target.value)}
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                    
+                    {/* Click-away overlay */}
+                    {employeeDropdownOpen && (
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => {
+                          setEmployeeDropdownOpen(false);
+                          setEmployeeSearchQuery('');
+                        }}
+                      />
+                    )}
+
+                    {/* Trigger Button */}
+                    <button
+                      type="button"
+                      onClick={() => setEmployeeDropdownOpen(!employeeDropdownOpen)}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-left focus:outline-none focus:ring-2 focus:ring-indigo-500 flex justify-between items-center cursor-pointer relative z-10"
                     >
-                      <option value="">-- Choose an Employee --</option>
-                      {employees.map((emp) => (
-                        <option key={emp.id} value={emp.id}>
-                          {emp.last_name}, {emp.first_name} — {emp.position}
-                        </option>
-                      ))}
-                    </select>
+                      <span className="text-slate-800">
+                        {selectedEmployeeId
+                          ? (() => {
+                              const emp = employees.find(e => e.id === selectedEmployeeId);
+                              return emp ? `${emp.last_name}, ${emp.first_name} — ${emp.position}` : '-- Choose an Employee --';
+                            })()
+                          : '-- Choose an Employee --'}
+                      </span>
+                      <ChevronDown className="h-4 w-4 text-slate-400" />
+                    </button>
+
+                    {/* Dropdown Menu Card */}
+                    {employeeDropdownOpen && (
+                      <div className="absolute z-50 mt-1 w-full bg-white rounded-lg border border-slate-200 shadow-lg p-2 space-y-2">
+                        {/* Search Bar at the top of the selection box */}
+                        <div className="relative">
+                          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                          <input
+                            type="text"
+                            value={employeeSearchQuery}
+                            onChange={(e) => setEmployeeSearchQuery(e.target.value)}
+                            placeholder="Search by name or position..."
+                            className="w-full pl-9 pr-3 py-2 text-xs rounded-md border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                            autoFocus
+                          />
+                        </div>
+                        
+                        {/* List of employees */}
+                        <div className="max-h-48 overflow-y-auto space-y-0.5">
+                          {filteredEmployees.length === 0 ? (
+                            <div className="text-center text-xs text-slate-500 py-3">No matching employees found</div>
+                          ) : (
+                            filteredEmployees.map((emp) => {
+                              const isSelected = selectedEmployeeId === emp.id;
+                              return (
+                                <button
+                                  key={emp.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedEmployeeId(emp.id);
+                                    setEmployeeDropdownOpen(false);
+                                    setEmployeeSearchQuery('');
+                                  }}
+                                  className={`w-full text-left px-2.5 py-2 rounded text-xs transition flex justify-between items-center cursor-pointer ${
+                                    isSelected
+                                      ? 'bg-indigo-50 text-indigo-900 font-semibold'
+                                      : 'hover:bg-slate-50 text-slate-700'
+                                  }`}
+                                >
+                                  <div>
+                                    <p className="font-semibold text-slate-800">{emp.last_name}, {emp.first_name}</p>
+                                    <p className="text-[10px] text-slate-500">{emp.position}</p>
+                                  </div>
+                                  {isSelected && <Check className="h-4 w-4 text-indigo-650" />}
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Step 1: Category Selection (Pillars) */}
