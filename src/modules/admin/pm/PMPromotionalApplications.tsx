@@ -3,6 +3,7 @@ import {
   AlertCircle,
   Archive,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   ClipboardList,
   FileText,
@@ -270,6 +271,9 @@ export function PMPromotionalApplications() {
   const [advanceNotes, setAdvanceNotes] = useState('');
   const [advanceAction, setAdvanceAction] = useState<'advance' | 'deny'>('advance');
 
+  // Expanded document checklist in New Applications tab
+  const [expandedAppId, setExpandedAppId] = useState<string | null>(null);
+
   // Eligibility check state
   const [eligibilityAppId, setEligibilityAppId] = useState('');
   const [positionReqs, setPositionReqs] = useState<Requirement[]>([]);
@@ -520,6 +524,7 @@ export function PMPromotionalApplications() {
                   <table className="w-full text-xs text-left">
                     <thead>
                       <tr className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-100">
+                        <th className="px-4 py-3 w-6" />
                         <th className="px-4 py-3">Applicant</th>
                         <th className="px-4 py-3">Current Position</th>
                         <th className="px-4 py-3">Target Position</th>
@@ -533,44 +538,123 @@ export function PMPromotionalApplications() {
                     <tbody className="divide-y divide-slate-100">
                       {filteredApps.length === 0 ? (
                         <tr>
-                          <td colSpan={8} className="px-4 py-10 text-center text-slate-400">No applications found.</td>
+                          <td colSpan={9} className="px-4 py-10 text-center text-slate-400">No applications found.</td>
                         </tr>
                       ) : filteredApps.map((app) => {
                         const appDocs = docs.filter((d) => d.application_id === app.id);
                         const submitted = appDocs.filter((d) => d.status !== 'Pending').length;
                         const total = appDocs.length || REQUIRED_DOCS.length;
                         const isClosed = app.stage === 'Approved' || app.stage === 'Denied';
+                        const isExpanded = expandedAppId === app.id;
+
+                        // Build the checklist: use DB rows if present, fallback to REQUIRED_DOCS stubs
+                        const checklist: Array<{ label: string; status: PromoDoc['status']; fileName: string | null; id: string; docRow: PromoDoc | null }> =
+                          appDocs.length > 0
+                            ? appDocs.map((d) => ({ label: d.document_type, status: d.status, fileName: d.file_name, id: d.id, docRow: d }))
+                            : REQUIRED_DOCS.map((dt, i) => ({ label: dt, status: 'Pending' as PromoDoc['status'], fileName: null, id: `stub-${app.id}-${i}`, docRow: null }));
+
                         return (
-                          <tr key={app.id} className="hover:bg-slate-50/50 text-slate-700">
-                            <td className="px-4 py-3 font-semibold text-slate-800">{app.employee_name}</td>
-                            <td className="px-4 py-3 text-slate-500">{app.current_position ?? '—'}</td>
-                            <td className="px-4 py-3">{app.target_position}</td>
-                            <td className="px-4 py-3 text-slate-500">{app.department ?? '—'}</td>
-                            <td className="px-4 py-3"><StageBadge stage={app.stage} /></td>
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-1.5">
-                                <div className="w-16 h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                                  <div
-                                    className="h-full rounded-full bg-[#363EE8]"
-                                    style={{ width: `${total === 0 ? 0 : Math.round((submitted / total) * 100)}%` }}
-                                  />
-                                </div>
-                                <span className="text-[10px] text-slate-500">{submitted}/{total}</span>
-                              </div>
-                            </td>
-                            <td className="px-4 py-3 text-slate-500">{fmtDate(app.submitted_at)}</td>
-                            <td className="px-4 py-3 text-right">
-                              {!isClosed && (
+                          <>
+                            <tr key={app.id} className="hover:bg-slate-50/50 text-slate-700">
+                              <td className="px-3 py-3">
                                 <button
                                   type="button"
-                                  onClick={() => { setAdvancingApp(app); setAdvanceAction('advance'); }}
-                                  className="text-[#363EE8] hover:underline font-semibold"
+                                  onClick={() => setExpandedAppId(isExpanded ? null : app.id)}
+                                  className="text-slate-400 hover:text-[#363EE8] transition"
+                                  title={isExpanded ? 'Collapse document checklist' : 'Expand document checklist'}
                                 >
-                                  Advance
+                                  {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                                 </button>
-                              )}
-                            </td>
-                          </tr>
+                              </td>
+                              <td className="px-4 py-3 font-semibold text-slate-800">{app.employee_name}</td>
+                              <td className="px-4 py-3 text-slate-500">{app.current_position ?? '—'}</td>
+                              <td className="px-4 py-3">{app.target_position}</td>
+                              <td className="px-4 py-3 text-slate-500">{app.department ?? '—'}</td>
+                              <td className="px-4 py-3"><StageBadge stage={app.stage} /></td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-1.5">
+                                  <div className="w-16 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                                    <div
+                                      className="h-full rounded-full bg-[#363EE8]"
+                                      style={{ width: `${total === 0 ? 0 : Math.round((submitted / total) * 100)}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-[10px] text-slate-500">{submitted}/{total}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-500">{fmtDate(app.submitted_at)}</td>
+                              <td className="px-4 py-3 text-right">
+                                {!isClosed && (
+                                  <button
+                                    type="button"
+                                    onClick={() => { setAdvancingApp(app); setAdvanceAction('advance'); }}
+                                    className="text-[#363EE8] hover:underline font-semibold"
+                                  >
+                                    Advance
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+
+                            {/* Expandable document checklist */}
+                            {isExpanded && (
+                              <tr key={`${app.id}-docs`}>
+                                <td colSpan={9} className="px-0 py-0 bg-slate-50 border-b border-slate-200">
+                                  <div className="px-6 py-4">
+                                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-3">
+                                      Required Documents Checklist — {app.employee_name}
+                                    </p>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                                      {checklist.map((item) => {
+                                        const statusIcon =
+                                          item.status === 'Verified' ? (
+                                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                                          ) : item.status === 'Submitted' ? (
+                                            <FileText className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                                          ) : item.status === 'Rejected' ? (
+                                            <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                                          ) : (
+                                            <FileText className="h-3.5 w-3.5 text-slate-300 shrink-0" />
+                                          );
+                                        return (
+                                          <div
+                                            key={item.id}
+                                            className={`flex items-start gap-2 rounded-lg border px-3 py-2 ${
+                                              item.status === 'Verified'
+                                                ? 'border-emerald-200 bg-emerald-50'
+                                                : item.status === 'Submitted'
+                                                ? 'border-blue-200 bg-blue-50'
+                                                : item.status === 'Rejected'
+                                                ? 'border-red-200 bg-red-50'
+                                                : 'border-slate-200 bg-white'
+                                            }`}
+                                          >
+                                            {statusIcon}
+                                            <div className="min-w-0 flex-1">
+                                              <p className="text-[11px] font-semibold text-slate-700 leading-tight">{item.label}</p>
+                                              {item.fileName ? (
+                                                <p className="text-[10px] text-slate-400 truncate mt-0.5">{item.fileName}</p>
+                                              ) : (
+                                                <p className="text-[10px] text-slate-400 italic mt-0.5">Not yet submitted</p>
+                                              )}
+                                            </div>
+                                            <button
+                                              type="button"
+                                              title="Click to cycle status"
+                                              onClick={() => item.docRow && void handleDocStatusToggle(item.docRow)}
+                                              disabled={!item.docRow}
+                                            >
+                                              <DocStatusBadge status={item.status} />
+                                            </button>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </>
                         );
                       })}
                     </tbody>
