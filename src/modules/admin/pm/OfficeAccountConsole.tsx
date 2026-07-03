@@ -126,6 +126,7 @@ export const OfficeAccountConsole: React.FC = () => {
 
   // New Training Requests States
   const [employees, setEmployees] = useState<any[]>([]);
+  const [randomEmployees, setRandomEmployees] = useState<any[]>([]);
   const [detailedRequests, setDetailedRequests] = useState<TrainingRequest[]>([]);
   const [loadingRequests, setLoadingRequests] = useState(false);
 
@@ -160,6 +161,9 @@ export const OfficeAccountConsole: React.FC = () => {
         console.error('Error fetching employees:', empError);
       } else {
         setEmployees(empData ?? []);
+        // Select 10 random employees for the initial display when the search bar is empty
+        const shuffled = [...(empData ?? [])].sort(() => 0.5 - Math.random());
+        setRandomEmployees(shuffled.slice(0, 10));
       }
 
       // 2. Fetch detailed training requests
@@ -291,12 +295,14 @@ export const OfficeAccountConsole: React.FC = () => {
       return new Date(a.requested_at).getTime() - new Date(b.requested_at).getTime();
     });
 
-  const filteredEmployees = employees.filter((emp) => {
-    const fullName = `${emp.first_name} ${emp.last_name}`.toLowerCase();
-    const position = (emp.position ?? '').toLowerCase();
-    const query = employeeSearchQuery.toLowerCase();
-    return fullName.includes(query) || position.includes(query);
-  });
+  const filteredEmployees = employeeSearchQuery.trim() === ''
+    ? randomEmployees
+    : employees.filter((emp) => {
+        const fullName = `${emp.first_name} ${emp.last_name}`.toLowerCase();
+        const position = (emp.position ?? '').toLowerCase();
+        const query = employeeSearchQuery.toLowerCase();
+        return fullName.includes(query) || position.includes(query);
+      });
 
   // Edit Mode state
   const [editingTargetId, setEditingTargetId] = useState<string | null>(null);
