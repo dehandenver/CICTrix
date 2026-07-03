@@ -82,6 +82,8 @@ import EmployeeDirectory from './EmployeeDirectory';
 import { SummaryOfRatings } from './pm/SummaryOfRatings';
 import { PMIPCRManagement } from './pm/PMIPCRManagement';
 import { PMCompetencyFramework } from './pm/PMCompetencyFramework';
+import { PMPromotionalApplications } from './pm/PMPromotionalApplications';
+import { PMReportsAnalytics } from './pm/PMReportsAnalytics';
 
 type EvaluationEmployeeRow = { name: string; position: string; status: string };
 type EvaluationGroup = {
@@ -124,7 +126,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<
-    'dashboard' | 'employees' | 'evaluation-status' | 'performance-reviews' | 'goals' | 'ipcr' | 'ipcr-management' | 'competency' | 'analytics' | 'reports' | 'settings' | 'registry'
+    'dashboard' | 'employees' | 'evaluation-status' | 'performance-reviews' | 'goals' | 'ipcr' | 'ipcr-management' | 'competency' | 'promotions' | 'analytics' | 'reports' | 'settings' | 'registry'
   >('dashboard');
 
   // Module 1 System Administration State
@@ -778,8 +780,9 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
       { key: 'ipcr', label: 'Summary of Ratings', subtitle: 'IPCR ratings per dept', icon: BarChart3 },
       { key: 'ipcr-management', label: 'IPCR Management', subtitle: 'Module 2 — onboarding & tracking', icon: ClipboardList },
       { key: 'competency', label: 'Competency Framework', subtitle: 'Module 3 — position requirements', icon: BookOpen },
+      { key: 'promotions', label: 'Promotional Applications', subtitle: 'Module 4 — end-to-end promotions', icon: TrendingUp },
       { key: 'reports', label: 'Documents', subtitle: 'Document submissions', icon: FileText },
-      { key: 'analytics', label: 'Analytics', subtitle: 'Performance insights', icon: TrendingUp },
+      { key: 'analytics', label: 'Reports & Analytics', subtitle: 'Module 5 — insights & exports', icon: TrendingUp },
       { key: 'settings', label: 'Settings', subtitle: '', icon: Settings },
     ] as const;
 
@@ -2263,89 +2266,9 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
             {activeSection === 'competency' && <PMCompetencyFramework />}
 
-            {activeSection === 'analytics' && (
-              <>
-                <h2 className="text-3xl font-bold text-slate-900">Analytics</h2>
-                <p className="mt-1 text-slate-600">Comprehensive performance insights and trends</p>
+            {activeSection === 'promotions' && <PMPromotionalApplications />}
 
-                <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-slate-600">Overall Avg Rating</p>
-                        <p className="text-3xl font-bold mt-2 text-slate-400">--</p>
-                      </div>
-                      <div className="h-12 w-12 rounded-lg bg-blue-100 grid place-content-center">
-                        <TrendingUp className="h-6 w-6 text-blue-600" />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-slate-600">Top Performers</p>
-                        <p className="text-3xl font-bold mt-2 text-slate-400">--</p>
-                      </div>
-                      <div className="h-12 w-12 rounded-lg bg-emerald-100 grid place-content-center">
-                        <TrendingUp className="h-6 w-6 text-emerald-600" />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-slate-600">Departments</p>
-                        <p className="text-3xl font-bold mt-2 text-slate-400">--</p>
-                      </div>
-                      <div className="h-12 w-12 rounded-lg bg-slate-100 grid place-content-center">
-                        <FileText className="h-6 w-6 text-slate-600" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-6">
-                  <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-semibold">Performance by Department</h3>
-                      <FileText className="h-5 w-5 text-slate-400" />
-                    </div>
-                    <div className="py-12 text-center text-sm text-slate-500">
-                      No department performance data available
-                    </div>
-                  </section>
-
-                  <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-semibold">Performance Distribution</h3>
-                      <BarChart3 className="h-5 w-5 text-slate-400" />
-                    </div>
-                    <div className="py-12 text-center text-sm text-slate-500">
-                      No performance distribution data available
-                    </div>
-                  </section>
-                </div>
-
-                <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                  <h3 className="text-lg font-semibold mb-4">Quarterly Performance Trends</h3>
-                  <div className="py-12 text-center text-sm text-slate-500">
-                    No quarterly trend data available
-                  </div>
-                </section>
-
-                <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold">Top Performers</h3>
-                    <select className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
-                      <option>All Departments</option>
-                    </select>
-                  </div>
-                  <div className="py-12 text-center text-sm text-slate-500">
-                    No top performer data available
-                  </div>
-                </section>
-              </>
-            )}
+            {activeSection === 'analytics' && <PMReportsAnalytics />}
 
             {activeSection === 'reports' && (
               <>

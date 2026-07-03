@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Abyan HRIS — LND Dashboard Mock</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --brand:#363EE8; --accent:#C8D1FF; --bg:#ffffff; --text:#040E6B; --row-border:#E9EEFF;
+    }
+    body{font-family: 'Poppins', sans-serif;background:var(--bg);color:var(--text);padding:24px}
+    .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+    .title{font-size:20px;font-weight:700;color:var(--brand)}
+    .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+    .card{background:#fff;border:1px solid var(--row-border);padding:12px;border-radius:10px;box-shadow:0 1px 0 rgba(10,20,60,0.03)}
+    .chart{display:flex;gap:18px;margin-bottom:22px}
+    .chart-left{flex:1;background:#fff;border:1px solid var(--row-border);padding:16px;border-radius:10px}
+    .chart-right{width:240px;background:#fff;border:1px solid var(--row-border);padding:12px;border-radius:10px}
+
+    /* Competency Table rows styled like the reference */
+    .table{background:#fff;border-radius:10px;border:1px solid var(--row-border);overflow:hidden}
+    .row{display:flex;align-items:center;padding:14px;border-bottom:1px solid var(--row-border)}
+    .row:last-child{border-bottom:none}
+    .col-entity{width:28%;display:flex;gap:12px;align-items:center}
+    .entity-icon{width:44px;height:44px;border-radius:50%;background:linear-gradient(180deg,var(--accent),var(--brand));display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700}
+    .entity-name{display:flex;flex-direction:column}
+    .col-competency{width:28%}
+    .col-status{width:14%}
+    .col-demand{width:20%}
+    .col-actions{width:10%;text-align:right}
+    .status-pill{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;border:1px solid rgba(4,14,107,0.06);font-weight:600}
+
+    /* Responsive progress bar */
+    .demand-bar{background:#F1F4FF;border-radius:999px;height:12px;position:relative;margin-right:8px}
+    .demand-bar .fill{height:100%;border-radius:999px;background:var(--brand);width:70%;transition:width .35s ease}
+    .demand-wrapper{display:flex;align-items:center;justify-content:flex-start}
+    .demand-percent{min-width:40px;text-align:right;font-weight:600;color:var(--text)}
+
+    .btn-outline{background:transparent;border:1px solid var(--brand);color:var(--brand);padding:8px 12px;border-radius:8px;font-weight:600}
+
+    @media(max-width:900px){.cards{grid-template-columns:repeat(2,1fr)}.col-entity{width:40%}.col-competency{width:30%}.col-status{width:15%}.col-demand{width:10%}.col-actions{display:none}}
+  </style>
+</head>
+<body>
+  <div class="header"><div class="title">Abyan HRIS — LND Dashboard</div><div>Org: <strong>City Govt</strong></div></div>
+
+  <div class="cards">
+    <div class="card"><div>Total Training Requests</div><div style="font-size:22px;font-weight:700">1,482</div><div style="color:#6B72A8">from office accounts</div></div>
+    <div class="card"><div>Active Training Plans</div><div style="font-size:22px;font-weight:700">24</div><div style="color:#6B72A8">current quarter</div></div>
+    <div class="card"><div>Dept Requests (YTD)</div><div style="font-size:22px;font-weight:700">1,124</div><div style="color:#6B72A8">sorted by volume</div></div>
+    <div class="card"><div>Next-Year Budget Est.</div><div style="font-size:22px;font-weight:700">₱3.2M</div><div style="color:#6B72A8">projected</div></div>
+  </div>
+
+  <div class="chart">
+    <div class="chart-left">
+      <h4>Training Recommendation — Top categories</h4>
+      <pre style="font-family:inherit">CULTURAL TRANSFORMATION | ██████████████░░░░  58%
+EMPLOYEE DEVELOPMENT   | ████████████░░░░░░  52%
+LEADERSHIP             | ██████████░░░░░░░░  44%
+TECHNICAL              | ████████░░░░░░░░░░  32%</pre>
+    </div>
+    <div class="chart-right">
+      <div><strong>Filters</strong></div>
+      <div style="margin-top:8px">Department: <select><option>All</option></select></div>
+      <div style="margin-top:8px">Timeframe: <select><option>Year</option></select></div>
+      <div style="margin-top:12px"><button class="btn-outline">Export CSV</button></div>
+    </div>
+  </div>
+
+  <h4>Department Request Totals — Yearly</h4>
+  <div style="display:flex;gap:12px;margin-bottom:18px">
+    <div style="flex:1;background:#fff;border:1px solid var(--row-border);padding:12px;border-radius:10px">1. Finance — 234</div>
+    <div style="flex:1;background:#fff;border:1px solid var(--row-border);padding:12px;border-radius:10px">2. Health — 198</div>
+    <div style="flex:1;background:#fff;border:1px solid var(--row-border);padding:12px;border-radius:10px">3. Social Services — 176</div>
+  </div>
+
+  <h4>Competency Tracking</h4>
+  <div class="table">
+    <div class="row">
+      <div class="col-entity"><div class="entity-icon">CP</div><div class="entity-name"><strong>City Planning</strong><small style="color:#6B72A8">Office of Planning</small></div></div>
+      <div class="col-competency">Project Management in a Public Setting</div>
+      <div class="col-status"><span class="status-pill" style="border-color:#FFC8C0;color:#C04A3A">● High Priority</span></div>
+      <div class="col-demand"><div class="demand-wrapper"><div style="flex:1;display:flex;align-items:center"><div class="demand-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="83"><div class="fill" style="width:83%"></div></div><div class="demand-percent">83%</div></div></div></div>
+      <div class="col-actions"><button class="btn-outline">View Details</button></div>
+    </div>
+
+    <div class="row">
+      <div class="col-entity"><div class="entity-icon">H</div><div class="entity-name"><strong>Health</strong><small style="color:#6B72A8">Health Dept.</small></div></div>
+      <div class="col-competency">Disaster Risk Reduction and Management</div>
+      <div class="col-status"><span class="status-pill" style="border-color:#FFC8C0;color:#C04A3A">● High Priority</span></div>
+      <div class="col-demand"><div class="demand-wrapper"><div style="flex:1;display:flex;align-items:center"><div class="demand-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="67"><div class="fill" style="width:67%"></div></div><div class="demand-percent">67%</div></div></div></div>
+      <div class="col-actions"><button class="btn-outline">View Details</button></div>
+    </div>
+
+    <div class="row">
+      <div class="col-entity"><div class="entity-icon">F</div><div class="entity-name"><strong>Finance</strong><small style="color:#6B72A8">Finance Dept.</small></div></div>
+      <div class="col-competency">Fiscal Management / Budgeting for LGU</div>
+      <div class="col-status"><span class="status-pill" style="border-color:#FFF1C8;color:#B27800">● Medium Priority</span></div>
+      <div class="col-demand"><div class="demand-wrapper"><div style="flex:1;display:flex;align-items:center"><div class="demand-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="55"><div class="fill" style="width:55%"></div></div><div class="demand-percent">55%</div></div></div></div>
+      <div class="col-actions"><button class="btn-outline">View Details</button></div>
+    </div>
+
+    <div class="row">
+      <div class="col-entity"><div class="entity-icon">SS</div><div class="entity-name"><strong>Social Services</strong><small style="color:#6B72A8">Social Services</small></div></div>
+      <div class="col-competency">Community Engagement Skills</div>
+      <div class="col-status"><span class="status-pill" style="border-color:#FFF1C8;color:#B27800">● Medium Priority</span></div>
+      <div class="col-demand"><div class="demand-wrapper"><div style="flex:1;display:flex;align-items:center"><div class="demand-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="42"><div class="fill" style="width:42%"></div></div><div class="demand-percent">42%</div></div></div></div>
+      <div class="col-actions"><button class="btn-outline">View Details</button></div>
+    </div>
+
+    <div class="row">
+      <div class="col-entity"><div class="entity-icon">ICT</div><div class="entity-name"><strong>ICT</strong><small style="color:#6B72A8">Information & Tech</small></div></div>
+      <div class="col-competency">Digital Literacy for Government Services</div>
+      <div class="col-status"><span class="status-pill" style="border-color:#E6F8E0;color:#2E7D32">● Low Priority</span></div>
+      <div class="col-demand"><div class="demand-wrapper"><div style="flex:1;display:flex;align-items:center"><div class="demand-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="28"><div class="fill" style="width:28%"></div></div><div class="demand-percent">28%</div></div></div></div>
+      <div class="col-actions"><button class="btn-outline">View Details</button></div>
+    </div>
+  </div>
+
+  <p style="margin-top:18px;color:#6B72A8">Note: This is a static mock to demonstrate layout and responsive demand-level bars. To deploy, add to your site root and follow Vercel instructions.</p>
+</body>
+</html>
