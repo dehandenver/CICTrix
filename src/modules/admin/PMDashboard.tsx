@@ -801,10 +801,10 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     const sideNavItems = [
       { key: 'dashboard', label: 'Dashboard', subtitle: '', icon: LayoutDashboard },
       { key: 'office-directory', label: 'Office Directory', subtitle: 'Offices, heads & employees', icon: Building2 },
-      { key: 'ipcr-management', label: 'IPCR Management', subtitle: 'Module 2 â€” onboarding & tracking', icon: ClipboardList },
-      { key: 'competency', label: 'Competency Framework', subtitle: 'Module 3 â€” position requirements', icon: BookOpen },
-      { key: 'promotions', label: 'Promotional Applications', subtitle: 'Module 4 â€” end-to-end promotions', icon: TrendingUp },
-      { key: 'analytics', label: 'Reports & Analytics', subtitle: 'Module 5 â€” insights & exports', icon: TrendingUp },
+      { key: 'ipcr-management', label: 'IPCR Management', subtitle: 'Onboarding & Tracking', icon: ClipboardList },
+      { key: 'competency', label: 'Competency Framework', subtitle: 'Position Requirements', icon: BookOpen },
+      { key: 'promotions', label: 'Promotional Applications', subtitle: 'End-to-end Promotions', icon: TrendingUp },
+      { key: 'analytics', label: 'Reports & Analytics', subtitle: 'Insights & Exports', icon: TrendingUp },
       { key: 'settings', label: 'Settings', subtitle: '', icon: Settings },
     ] as const;
 
