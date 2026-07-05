@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Archive, Building2, CalendarClock, Check, CheckCircle2, ChevronDown, ClipboardList, Copy, History, Lock, Search, ShieldCheck, UserMinus, UserPlus, Users, X } from 'lucide-react';
+import { AlertCircle, Archive, Building2, CalendarClock, Check, CheckCircle2, ChevronDown, ChevronLeft, ClipboardList, Copy, History, Lock, Search, ShieldCheck, UserMinus, UserPlus, Users, X } from 'lucide-react';
+import { getAllEmployees, type Employee } from '../../lib/api/employees';
 import { AdminHeader } from '../../components/AdminHeader';
 import { Dialog } from '../../components/Dialog';
 import { Sidebar } from '../../components/Sidebar';
@@ -144,19 +145,6 @@ const TABS: TabDef[] = [
 ];
 
 export const SystemAdministrationPage = () => {
-  const [activeTab, setActiveTab] = useState<string>('1.1');
-  const [activeSubtab, setActiveSubtab] = useState<string>('office-directory');
-
-  const currentTab = TABS.find((t) => t.key === activeTab) ?? TABS[0];
-  const currentSubtab =
-    currentTab.subtabs.find((s) => s.key === activeSubtab) ?? currentTab.subtabs[0];
-
-  const handleTabChange = (tabKey: string) => {
-    setActiveTab(tabKey);
-    const tab = TABS.find((t) => t.key === tabKey);
-    if (tab) setActiveSubtab(tab.subtabs[0].key);
-  };
-
   return (
     <div className="min-h-screen bg-[#f8f9fa]">
       <AdminHeader userName="Super Admin" divisionLabel="System Administrator" />
@@ -169,81 +157,10 @@ export const SystemAdministrationPage = () => {
               System Administration
             </h1>
             <p className="admin-subtitle">
-              Module 1 — configure offices, roles, cycle timelines, and cycle closeout.
+              Office Directory — offices, department heads, supervisors, and employees from RSP.
             </p>
           </div>
-
-          {/* Primary tabs */}
-          <div
-            style={{
-              display: 'flex',
-              gap: '8px',
-              flexWrap: 'wrap',
-              marginTop: '16px',
-              borderBottom: '1px solid #e5e7eb',
-              paddingBottom: '2px',
-            }}
-          >
-            {TABS.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => handleTabChange(tab.key)}
-                style={{
-                  padding: '10px 16px',
-                  border: 'none',
-                  background: 'transparent',
-                  borderBottom: activeTab === tab.key ? '2px solid #363EE8' : '2px solid transparent',
-                  color: activeTab === tab.key ? '#363EE8' : '#6b7280',
-                  fontWeight: 600,
-                  fontSize: '14px',
-                  cursor: 'pointer',
-                }}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Subtabs */}
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', margin: '16px 0' }}>
-            {currentTab.subtabs.map((sub) => (
-              <button
-                key={sub.key}
-                type="button"
-                onClick={() => setActiveSubtab(sub.key)}
-                style={{
-                  padding: '7px 14px',
-                  borderRadius: '999px',
-                  border: '1px solid',
-                  borderColor: activeSubtab === sub.key ? '#363EE8' : '#d1d5db',
-                  background: activeSubtab === sub.key ? '#363EE8' : '#fff',
-                  color: activeSubtab === sub.key ? '#fff' : '#374151',
-                  fontWeight: 600,
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                }}
-              >
-                {sub.label}
-              </button>
-            ))}
-          </div>
-
-          {currentSubtab.key === 'office-directory' ? (
-            <OfficeDirectory />
-          ) : currentSubtab.key === 'access-role' ? (
-            <AccessRoleManagement />
-          ) : currentSubtab.key === 'phase-scheduler' ? (
-            <PhaseScheduler />
-          ) : currentSubtab.key === 'locked-targets' ? (
-            <LockedTargetsVault />
-          ) : currentSubtab.key === 'compliance-tracker' ? (
-            <ComplianceTracker />
-          ) : currentSubtab.key === 'final-closeout' ? (
-            <FinalReviewCloseout />
-          ) : (
-            <PlaceholderSubtab title={currentSubtab.label} blurb={currentSubtab.blurb} />
-          )}
+          <OfficeDirectory />
         </main>
       </div>
     </div>
@@ -256,6 +173,9 @@ const OfficeDirectory = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const [drillOfficeName, setDrillOfficeName] = useState<string | null>(null);
+  const [officeEmployees, setOfficeEmployees] = useState<Employee[]>([]);
+  const [officeEmpLoading, setOfficeEmpLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -271,12 +191,98 @@ const OfficeDirectory = () => {
       }
       setLoading(false);
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
+  const handleOfficeClick = async (officeName: string) => {
+    setDrillOfficeName(officeName);
+    setOfficeEmpLoading(true);
+    const result = await getAllEmployees({ status: 'Active', department: officeName });
+    setOfficeEmployees(result.success ? (result.data as Employee[]) : []);
+    setOfficeEmpLoading(false);
+  };
+
   const filtered = useMemo(() => filterOfficeDirectory(rows, search), [rows, search]);
+
+  if (drillOfficeName !== null) {
+    return (
+      <div>
+        <button
+          type="button"
+          onClick={() => setDrillOfficeName(null)}
+          style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '16px', color: '#363EE8', fontWeight: 600, fontSize: '14px', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+        >
+          <ChevronLeft size={16} /> Back to Office Directory
+        </button>
+
+        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden' }}>
+          <div style={{ padding: '16px 20px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 600, color: '#1f2937' }}>
+            <Building2 size={18} className="text-[#363EE8]" />
+            {drillOfficeName}
+            <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: '#6b7280' }}>
+              {officeEmpLoading ? '' : `${officeEmployees.length} employee${officeEmployees.length !== 1 ? 's' : ''}`}
+            </span>
+          </div>
+
+          {officeEmpLoading ? (
+            <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>Loading employees…</div>
+          ) : officeEmployees.length === 0 ? (
+            <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>No active employees found for this office.</div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                <thead>
+                  <tr style={{ background: '#f9fafb', textAlign: 'left', color: '#6b7280' }}>
+                    <th style={th}>Employee</th>
+                    <th style={th}>Position</th>
+                    <th style={th}>Employee ID</th>
+                    <th style={th}>Email</th>
+                    <th style={th}>Status</th>
+                    <th style={th}>Date Hired</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {officeEmployees.map((emp) => (
+                    <tr key={emp.id} style={{ borderTop: '1px solid #f0f0f0' }}>
+                      <td style={td}>
+                        <div style={{ fontWeight: 600, color: '#1f2937' }}>{emp.full_name}</div>
+                        <div style={{ fontSize: '12px', color: '#9ca3af' }}>{emp.current_department ?? emp.department ?? '—'}</div>
+                      </td>
+                      <td style={td}>{emp.current_position ?? '—'}</td>
+                      <td style={td}>
+                        <span style={{ fontFamily: 'monospace', fontSize: '12px', background: '#f3f4f6', padding: '2px 6px', borderRadius: '4px' }}>
+                          {emp.employee_id}
+                        </span>
+                      </td>
+                      <td style={td}>{emp.email ?? '—'}</td>
+                      <td style={td}>
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '2px 10px',
+                          borderRadius: '999px',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          background: emp.status === 'Active' ? 'rgba(16,185,129,0.12)' : 'rgba(107,114,128,0.12)',
+                          color: emp.status === 'Active' ? '#047857' : '#4b5563',
+                        }}>
+                          {emp.status}
+                        </span>
+                      </td>
+                      <td style={td}>
+                        {emp.hire_date
+                          ? new Date(emp.hire_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+                          : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -361,9 +367,14 @@ const OfficeDirectory = () => {
               </thead>
               <tbody>
                 {filtered.map((row) => (
-                  <tr key={row.officeId} style={{ borderTop: '1px solid #f0f0f0' }}>
+                  <tr
+                    key={row.officeId}
+                    onClick={() => handleOfficeClick(row.officeName ?? '')}
+                    style={{ borderTop: '1px solid #f0f0f0', cursor: 'pointer' }}
+                    className="hover:bg-blue-50/40"
+                  >
                     <td style={td}>
-                      <div style={{ fontWeight: 600, color: '#1f2937' }}>{row.officeName || '—'}</div>
+                      <div style={{ fontWeight: 600, color: '#363EE8' }}>{row.officeName || '—'}</div>
                       <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px' }}>
                         {row.code}
                         {!row.isActive && ' · Inactive'}
@@ -410,7 +421,7 @@ const OfficeDirectory = () => {
       </div>
 
       <p style={{ marginTop: '12px', fontSize: '12px', color: '#9ca3af' }}>
-        Read-only. Roles and account status are configured under Access &amp; Role Management.
+        Click an office row to view all employees in that office.
       </p>
     </div>
   );

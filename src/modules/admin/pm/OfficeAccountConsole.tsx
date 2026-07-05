@@ -109,9 +109,22 @@ const INITIAL_TRANSMITTALS: TransmittalRecord[] = [
   { id: 'TX-002', batchId: 'BATCH-2025-02', verifiedCount: 3, transmittedAt: '2026-06-29 09:15', status: 'In PM Vault' }
 ];
 
+const IPCR_POSITIONS_ELIGIBLE_FOR_SWITCH = ['department head', 'supervisor'];
+
+function canSwitchAccount(position: string | null | undefined): boolean {
+  if (!position) return false;
+  const p = position.toLowerCase();
+  return IPCR_POSITIONS_ELIGIBLE_FOR_SWITCH.some((kw) => p.includes(kw));
+}
+
 export const OfficeAccountConsole: React.FC = () => {
   const navigate = useNavigate();
   const [showSwitchModal, setShowSwitchModal] = useState(false);
+
+  // Logged-in office account user info
+  const [currentUserName, setCurrentUserName] = useState<string>('Office User');
+  const [currentUserPosition, setCurrentUserPosition] = useState<string | null>(null);
+  const [switchEnabled, setSwitchEnabled] = useState(false);
   // Navigation tabs: 'targets' | 'ratings' | 'training-requests'
   const [activeTab, setActiveTab] = useState<'targets' | 'ratings' | 'training-requests'>('targets');
 
@@ -146,6 +159,33 @@ export const OfficeAccountConsole: React.FC = () => {
   const [loggingRequestId, setLoggingRequestId] = useState<string | null>(null);
   const [postTrainingScore, setPostTrainingScore] = useState<number>(4);
   const [isSubmittingEvaluation, setIsSubmittingEvaluation] = useState(false);
+
+  // Load current office account user info from session and check switch eligibility
+  useEffect(() => {
+    async function loadUserSession() {
+      try {
+        const raw = localStorage.getItem('cictrix_employee_session');
+        if (!raw) return;
+        const session = JSON.parse(raw) as { employeeId?: string; fullName?: string; supabaseId?: string };
+        if (session.fullName) setCurrentUserName(session.fullName);
+
+        // Look up position from employees_with_department using supabaseId or employee_id
+        const lookupId = session.supabaseId ?? session.employeeId;
+        if (!lookupId) return;
+        const { data } = await (supabase as any)
+          .from('employees_with_department')
+          .select('current_position')
+          .or(`id.eq.${lookupId},employee_id.eq.${lookupId}`)
+          .maybeSingle();
+        const pos: string | null = data?.current_position ?? null;
+        setCurrentUserPosition(pos);
+        setSwitchEnabled(canSwitchAccount(pos));
+      } catch {
+        // session missing or malformed — keep defaults
+      }
+    }
+    void loadUserSession();
+  }, []);
 
   // Load active employees and training requests
   useEffect(() => {
@@ -431,87 +471,89 @@ export const OfficeAccountConsole: React.FC = () => {
             <div className="h-8 w-px bg-slate-200" />
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <div className="relative">
-                  <button
-                    onClick={() => setShowSwitchModal(!showSwitchModal)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      height: '40px',
-                      width: '40px',
-                      borderRadius: '50%',
-                      border: '1.5px solid #C8D1FF',
-                      background: '#F0F2FD',
-                      color: '#363EE8',
-                      cursor: 'pointer',
-                      padding: 0
-                    }}
-                    title="Switch Account"
-                  >
-                    <UserCircle2 className="h-6 w-6 text-indigo-650" />
-                  </button>
-                  {showSwitchModal && (
-                    <div
+                {switchEnabled && (
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowSwitchModal(!showSwitchModal)}
                       style={{
-                        position: 'absolute',
-                        right: 0,
-                        top: '44px',
-                        zIndex: 100,
-                        width: '240px',
-                        background: '#ffffff',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        height: '40px',
+                        width: '40px',
+                        borderRadius: '50%',
                         border: '1.5px solid #C8D1FF',
-                        borderRadius: '12px',
-                        boxShadow: '0 4px 20px rgba(54,62,232,0.15)',
-                        padding: '16px',
-                        textAlign: 'left'
+                        background: '#F0F2FD',
+                        color: '#363EE8',
+                        cursor: 'pointer',
+                        padding: 0
                       }}
+                      title="Switch Account"
                     >
-                      <p style={{ margin: '0 0 12px 0', fontSize: '0.8rem', fontWeight: 655, color: '#040E6B', lineHeight: 1.4 }}>
-                        Would you like to switch to your regular Employee Account?
-                      </p>
-                      <div className="flex gap-2 justify-end">
-                        <button
-                          onClick={() => {
-                            setShowSwitchModal(false);
-                            navigate('/employee/dashboard');
-                          }}
-                          style={{
-                            background: '#363EE8',
-                            color: '#ffffff',
-                            border: 'none',
-                            borderRadius: '6px',
-                            padding: '4px 10px',
-                            fontSize: '0.75rem',
-                            fontWeight: 650,
-                            cursor: 'pointer',
-                            boxShadow: '0 2px 6px rgba(54,62,232,0.3)'
-                          }}
-                        >
-                          Yes, Switch
-                        </button>
-                        <button
-                          onClick={() => setShowSwitchModal(false)}
-                          style={{
-                            background: '#F0F2FD',
-                            color: '#040E6B',
-                            border: '1px solid #C8D1FF',
-                            borderRadius: '6px',
-                            padding: '4px 10px',
-                            fontSize: '0.75rem',
-                            fontWeight: 650,
-                            cursor: 'pointer'
-                          }}
-                        >
-                          Cancel
-                        </button>
+                      <UserCircle2 className="h-6 w-6 text-indigo-650" />
+                    </button>
+                    {showSwitchModal && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          right: 0,
+                          top: '44px',
+                          zIndex: 100,
+                          width: '240px',
+                          background: '#ffffff',
+                          border: '1.5px solid #C8D1FF',
+                          borderRadius: '12px',
+                          boxShadow: '0 4px 20px rgba(54,62,232,0.15)',
+                          padding: '16px',
+                          textAlign: 'left'
+                        }}
+                      >
+                        <p style={{ margin: '0 0 12px 0', fontSize: '0.8rem', fontWeight: 655, color: '#040E6B', lineHeight: 1.4 }}>
+                          Would you like to switch to your regular Employee Account?
+                        </p>
+                        <div className="flex gap-2 justify-end">
+                          <button
+                            onClick={() => {
+                              setShowSwitchModal(false);
+                              navigate('/employee/dashboard');
+                            }}
+                            style={{
+                              background: '#363EE8',
+                              color: '#ffffff',
+                              border: 'none',
+                              borderRadius: '6px',
+                              padding: '4px 10px',
+                              fontSize: '0.75rem',
+                              fontWeight: 650,
+                              cursor: 'pointer',
+                              boxShadow: '0 2px 6px rgba(54,62,232,0.3)'
+                            }}
+                          >
+                            Yes, Switch
+                          </button>
+                          <button
+                            onClick={() => setShowSwitchModal(false)}
+                            style={{
+                              background: '#F0F2FD',
+                              color: '#040E6B',
+                              border: '1px solid #C8D1FF',
+                              borderRadius: '6px',
+                              padding: '4px 10px',
+                              fontSize: '0.75rem',
+                              fontWeight: 650,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
                 <div className="leading-tight text-left">
-                  <p className="text-sm font-semibold text-slate-800">Maria Santos</p>
-                  <p className="text-xs text-slate-500">Office Account Console</p>
+                  <p className="text-sm font-semibold text-slate-800">{currentUserName}</p>
+                  <p className="text-xs text-slate-500">{currentUserPosition ?? 'Office Account Console'}</p>
                 </div>
               </div>
             </div>
