@@ -1589,6 +1589,8 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
         <main className="flex-1">
           {activeModule === 'dashboard' ? (
             <LndDashboardContent />
+          ) : activeModule === 'summary-of-ratings' ? (
+            <LndSummaryOfRatings />
           ) : activeModule === 'training-courses' ? (
             <TrainingCourses courses={courses} onAddCourse={(newCourse) => setCourses((prev) => [...prev, newCourse])} />
           ) : activeModule === 'seminar-enrollment' ? (
