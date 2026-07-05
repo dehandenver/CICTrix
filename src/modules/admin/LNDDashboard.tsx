@@ -220,18 +220,18 @@ const COMPETENCY_LIST = [
 ] as const;
 
 const COMPETENCY_SHORT: Record<string, string> = {
-  'Knowledge of Local Governance': 'Local Gov.',
-  'Public Administration Principles': 'Pub. Admin.',
-  'Community Engagement Skills': 'Community Eng.',
-  'Project Management in a Public Setting': 'Project Mgmt.',
-  'Fiscal Management/Budgeting for LGU': 'Fiscal Mgmt.',
-  'Transparency and Accountability Practices': 'Transparency',
+  'Knowledge of Local Governance': 'Local governance',
+  'Public Administration Principles': 'Public admin principles',
+  'Community Engagement Skills': 'Community engagement',
+  'Project Management in a Public Setting': 'Project mgmt (public)',
+  'Fiscal Management/Budgeting for LGU': 'Fiscal mgmt/budgeting',
+  'Transparency and Accountability Practices': 'Transparency/accountability',
   'Disaster Risk Reduction and Management': 'DRRM',
-  'Digital Literacy for Government Services': 'Digital Lit.',
-  'Ethical Conduct and Public Service Standards': 'Ethics',
-  'Technical Writing for Government Documents': 'Tech. Writing',
-  'Data and Records Management and Organization': 'Data & Records',
-  'Public Communication Skills': 'Public Comm.',
+  'Digital Literacy for Government Services': 'Digital literacy',
+  'Ethical Conduct and Public Service Standards': 'Ethical conduct',
+  'Technical Writing for Government Documents': 'Technical writing',
+  'Data and Records Management and Organization': 'Data/records mgmt',
+  'Public Communication Skills': 'Public communication',
 };
 
 /** Fixed department color palette — separate from category colors to avoid confusion. */
@@ -283,8 +283,23 @@ const LndDashboardContent = () => {
     [requests, currentYear]
   );
 
-  const pendingCount = useMemo(() => requests.filter(r => r.status === 'pending').length, [requests]);
-  const approvedCount = useMemo(() => requests.filter(r => r.status === 'approved').length, [requests]);
+  const topCategoryEntry = useMemo(() => {
+    const counts = TRAINING_CATEGORIES.map(cat => ({
+      cat,
+      count: requests.filter(r => r.category === cat).length,
+    }));
+    return counts.reduce((best, cur) => (cur.count > best.count ? cur : best), { cat: '' as string, count: 0 });
+  }, [requests]);
+
+  // Per-department request counts — shown in the stacked bar legend
+  const deptCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of requests) {
+      const dept = r.employees?.department;
+      if (dept) map.set(dept, (map.get(dept) ?? 0) + 1);
+    }
+    return map;
+  }, [requests]);
 
   // Stacked bar: one entry per category, departments as segment keys
   const categoryChartData = useMemo(() =>
@@ -340,20 +355,33 @@ const LndDashboardContent = () => {
       </section>
 
       {/* Metric Cards */}
-      <section className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4 relative">
+      <section className="grid grid-cols-1 gap-6 md:grid-cols-3 relative">
         {loading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
-        <StatCard label="Training Requests (YTD)" value={ytdCount.toString()} icon={ClipboardList} color="blue" sublabel="From department offices" />
-        <StatCard label="Departments Tracked" value={departments.length.toString()} icon={Building2} color="green" sublabel="With active requests" />
-        <StatCard label="Pending Review" value={pendingCount.toString()} icon={ClipboardCheck} color="orange" sublabel="Awaiting decision" />
-        <StatCard label="Approved Requests" value={approvedCount.toString()} icon={Award} color="purple" sublabel="Year to date" />
+        <StatCard label="Total training requests (office accounts)" value={ytdCount.toString()} icon={ClipboardList} color="blue" sublabel="Year to date" />
+        <article className="rounded-2xl border border-gray-200 bg-white p-5 transition hover:shadow-md">
+          <div className="flex items-start justify-between">
+            <div className="min-w-0 flex-1 pr-3">
+              <p className="text-sm font-medium text-gray-500">Most requested category, YTD</p>
+              <p className="mt-1 text-3xl font-bold text-gray-900 leading-tight truncate">
+                {topCategoryEntry.count > 0 ? topCategoryEntry.cat : '—'}
+              </p>
+              {topCategoryEntry.count > 0 && (
+                <p className="mt-1 text-xs text-gray-500">{topCategoryEntry.count} requests</p>
+              )}
+            </div>
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-orange-100 text-orange-600">
+              <Award className="h-6 w-6" />
+            </div>
+          </div>
+        </article>
+        <StatCard label="Departments reporting" value={departments.length.toString()} icon={Building2} color="green" sublabel="With active requests" />
       </section>
 
       {/* Category chart — stacked bar, 4 categories × departments */}
       <section className="rounded-2xl border border-gray-200 bg-white p-5 relative min-h-[380px]">
         {loading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
-        <div className="mb-1 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Training Requests by Category</h2>
-          <p className="text-xs text-gray-500">Year-to-date rollup · bar segments colored by department</p>
+        <div className="mb-1">
+          <h2 className="text-sm font-semibold text-gray-700">Training requests by category and department, current year</h2>
         </div>
         {departments.length === 0 && !loading ? (
           <div className="mt-6"><EmptyState title="No request data" description="No training requests have been submitted yet." /></div>
@@ -388,7 +416,7 @@ const LndDashboardContent = () => {
                       {departments.map(dept => (
                         <div key={dept} className="flex items-center gap-1.5 text-xs text-gray-600">
                           <span className="inline-block h-3 w-3 shrink-0 rounded-sm" style={{ backgroundColor: deptColorMap.get(dept) }} />
-                          {dept}
+                          {dept} ({deptCounts.get(dept) ?? 0})
                         </div>
                       ))}
                     </div>
@@ -408,7 +436,7 @@ const LndDashboardContent = () => {
         {loading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Competency Demand by Department</h2>
+            <h2 className="text-lg font-semibold text-gray-900">Competency profile by department</h2>
             <p className="text-xs text-gray-400 mt-0.5">Each axis shows that competency's share of the department's total requests</p>
           </div>
           {departments.length > 0 && (
@@ -461,25 +489,24 @@ const LndDashboardContent = () => {
       {/* Competency demand table */}
       <section className="rounded-2xl border border-gray-200 bg-white p-5 relative">
         {loading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Department Competency Demand</h2>
-          <p className="text-xs text-gray-500">Top-requested competency per department</p>
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Competency demand by department</h2>
         </div>
         {demandTableData.length === 0 && !loading ? (
           <EmptyState title="No demand data" description="No department competency demand data available yet." />
         ) : (
           <>
-            <div className="grid grid-cols-12 items-center px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400 border-b border-gray-100">
+            <div className="grid grid-cols-12 items-center px-4 py-2.5 text-xs font-medium text-gray-500 border-b border-gray-100">
               <div className="col-span-3">Department</div>
-              <div className="col-span-4">Top Competency</div>
-              <div className="col-span-2 text-center">Priority</div>
-              <div className="col-span-2">Demand Level</div>
+              <div className="col-span-4">Top requested competency</div>
+              <div className="col-span-2">Status</div>
+              <div className="col-span-2">Demand level</div>
               <div className="col-span-1" />
             </div>
             <div className="divide-y divide-gray-100">
               {demandTableData.map(row => (
                 <div key={row.department} className="grid grid-cols-12 items-center px-4 py-3.5 hover:bg-gray-50/50 transition">
-                  <div className="col-span-3 text-sm font-medium text-gray-900">{row.department}</div>
+                  <div className="col-span-3 text-sm font-bold text-gray-900">{row.department}</div>
                   <div className="col-span-4 text-xs text-gray-600 leading-snug pr-3">{row.topCompetency}</div>
                   <div className="col-span-2 flex justify-center">
                     {row.priority === 'high' && (
