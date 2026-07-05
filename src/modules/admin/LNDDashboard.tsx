@@ -1,5 +1,6 @@
 import {
   Award,
+  BarChart2,
   BookOpen,
   Building2,
   ChevronLeft,
@@ -77,9 +78,11 @@ import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
 import { createDocumentRequest } from '../../lib/employeeDocuments';
 import { listTrainingRequestsDetailed, type TrainingRequest } from '../../lib/api/trainingRequests';
 import EmployeeDirectory from './EmployeeDirectory';
+import { LndSummaryOfRatings } from './LndSummaryOfRatings';
 
 type MenuId =
   | 'dashboard'
+  | 'summary-of-ratings'
   | 'training-courses'
   | 'seminar-enrollment'
   | 'employee-progress'
@@ -108,6 +111,7 @@ type StatCardProps = {
 
 const LND_MENU: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', sublabel: 'Overview and KPIs', icon: LayoutDashboard },
+  { id: 'summary-of-ratings', label: 'Summary of Ratings', sublabel: 'IPCR performance data', icon: BarChart2 },
   { id: 'training-courses', label: 'Training Courses', sublabel: 'Courses and sessions', icon: BookOpen },
   { id: 'seminar-enrollment', label: 'Seminar Enrollment', sublabel: 'Registrations and slots', icon: ClipboardCheck },
   { id: 'employee-progress', label: 'Employee Development', sublabel: 'Employees and ratings', icon: Users },
