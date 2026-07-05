@@ -1,6 +1,6 @@
 import { Eye, EyeOff, Lock, Mail } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { scheduleTransientUiReset } from '../../utils/uiReset';
 import iloiloCitySeal from '../../assets/iloilo-city-seal.png';
@@ -66,6 +66,16 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
   const [selectedRole, setSelectedRole] = useState<Role>('rsp');
   const [rememberMe, setRememberMe] = useState(false);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  const navigateAfterLogin = (role: Role) => {
+    const returnTo = searchParams.get('returnTo');
+    if (returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//')) {
+      navigate(returnTo);
+    } else {
+      navigate(getRoleDefaultRoute(role));
+    }
+  };
 
   useEffect(() => {
     const cleanupUiReset = scheduleTransientUiReset({ dispatchOverlayClose: true });
@@ -91,7 +101,7 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
           setSelectedRole(mockUser.role);
         }
         onLogin(normalizedEmail, mockUser.role);
-        navigate(getRoleDefaultRoute(mockUser.role));
+        navigateAfterLogin(mockUser.role);
         return;
       }
 
@@ -129,7 +139,7 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
 
       const resolvedEmail = authData.user.email ?? email;
       onLogin(resolvedEmail, role);
-      navigate(getRoleDefaultRoute(role));
+      navigateAfterLogin(role);
     } catch {
       alert('Login failed. Please try again.');
     } finally {

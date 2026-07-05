@@ -1,6 +1,6 @@
 import { Eye, EyeOff, Lock, Mail } from 'lucide-react';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { mockDatabase } from '../../lib/mockDatabase';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
 import abyanLogo from '../../assets/abyan-logo.png';
@@ -53,6 +53,16 @@ export function InterviewerLogin({ onLogin }: InterviewerLoginProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  const navigateAfterLogin = () => {
+    const returnTo = searchParams.get('returnTo');
+    navigate(
+      returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//')
+        ? returnTo
+        : '/interviewer/dashboard'
+    );
+  };
 
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -106,7 +116,7 @@ export function InterviewerLogin({ onLogin }: InterviewerLoginProps) {
           // Do not block login when last_login write fails.
         }
         onLogin(raterRecord.email || normalizedEmail, raterRecord.name || 'Interviewer');
-        navigate('/interviewer/dashboard');
+        navigateAfterLogin();
         return;
       }
 
@@ -130,7 +140,7 @@ export function InterviewerLogin({ onLogin }: InterviewerLoginProps) {
       const resolvedEmail = authData.user.email ?? normalizedEmail;
       const userName = raterRecord.name || 'Interviewer';
       onLogin(resolvedEmail, userName);
-      navigate('/interviewer/dashboard');
+      navigateAfterLogin();
     } catch (err) {
       console.error('Login error:', err);
       setError('Login failed. Please try again.');
