@@ -50,6 +50,7 @@ import {
   type EmployeeDocumentRow,
   type RequestSource,
 } from '../../lib/employeeDocuments';
+import { supabase as supabaseClient } from '../../lib/supabase';
 
 const SOURCE_BADGE_STYLES: Record<RequestSource, string> = {
   HR: 'bg-slate-100 text-slate-700 ring-1 ring-slate-200',
@@ -211,6 +212,7 @@ const EditableInput: React.FC<EditableInputProps> = ({ label, value, onChange, t
 export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUsername, onLogout }) => {
   const navigate = useNavigate();
   const [showSwitchModal, setShowSwitchModal] = useState(false);
+  const [hasOfficeRole, setHasOfficeRole] = useState(false);
   const location = useLocation();
   const [selectedFile, setSelectedFile] = useState<Record<string, File | null>>({});
   const [uploadingId, setUploadingId] = useState<string | null>(null);
@@ -252,6 +254,20 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
     setup: false
   });
   const [orientationVerified, setOrientationVerified] = useState(false);
+
+  useEffect(() => {
+    if (!currentUser.supabaseId) return;
+    const supabase = supabaseClient as any;
+    supabase
+      .from('office_role_assignments')
+      .select('id')
+      .eq('employee_id', currentUser.supabaseId)
+      .eq('status', 'Active')
+      .limit(1)
+      .then(({ data }: { data: any[] | null }) => {
+        setHasOfficeRole(Array.isArray(data) && data.length > 0);
+      });
+  }, [currentUser.supabaseId]);
 
   const calculateRowAverage = (q: number | null, e: number | null, t: number | null): number => {
     const ratings = [q, e, t].filter((r): r is number => typeof r === 'number' && r !== null);
@@ -986,7 +1002,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                 <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 700, color: '#ffffff' }}>Welcome, {currentUser.fullName}</p>
                 <p style={{ margin: 0, fontSize: '0.72rem', color: '#C8D1FF' }}>Employee ID: {currentUser.employeeId}</p>
               </div>
-              {loginUsername === 'employee01' && (
+              {hasOfficeRole && (
                 <div className="relative">
                   <button
                     onClick={() => setShowSwitchModal(!showSwitchModal)}

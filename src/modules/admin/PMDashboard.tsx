@@ -78,12 +78,15 @@ import '../../styles/admin.css';
 
 type EmployeeOption = { id: string; name: string; position: string; department: string };
 
-import EmployeeDirectory from './EmployeeDirectory';
-import { SummaryOfRatings } from './pm/SummaryOfRatings';
 import { PMIPCRManagement } from './pm/PMIPCRManagement';
 import { PMCompetencyFramework } from './pm/PMCompetencyFramework';
 import { PMPromotionalApplications } from './pm/PMPromotionalApplications';
 import { PMReportsAnalytics } from './pm/PMReportsAnalytics';
+import {
+  getOfficeDirectory,
+  filterOfficeDirectory,
+  type OfficeDirectoryRow,
+} from '../../lib/api/officeDirectory';
 
 type EvaluationEmployeeRow = { name: string; position: string; status: string };
 type EvaluationGroup = {
@@ -126,45 +129,17 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<
-    'dashboard' | 'employees' | 'evaluation-status' | 'performance-reviews' | 'goals' | 'ipcr' | 'ipcr-management' | 'competency' | 'promotions' | 'analytics' | 'reports' | 'settings' | 'registry'
+    'dashboard' | 'office-directory' | 'ipcr-management' | 'competency' | 'promotions' | 'analytics' | 'settings'
   >('dashboard');
 
-  // Module 1 System Administration State
-  const [registrySubtab, setRegistrySubtab] = useState<'directory' | 'access' | 'scheduler' | 'vault' | 'tracker' | 'closeout'>('directory');
-  const [registrySearch, setRegistrySearch] = useState('');
-  const [showAddPersonnelModal, setShowAddPersonnelModal] = useState(false);
-  const [newRaterEmail, setNewRaterEmail] = useState('');
-  const [newRaterRole, setNewRaterRole] = useState<'supervisor' | 'dept_head'>('supervisor');
-  const [newRaterDept, setNewRaterDept] = useState('Health Office');
-
-  // Succession Transfer Tool State
-  const [showSuccessionModal, setShowSuccessionModal] = useState(false);
-  const [leavingRater, setLeavingRater] = useState<'supervisor' | 'dept_head' | null>(null);
-  const [successionRerouted, setSuccessionRerouted] = useState(false);
-
-  // Phase Scheduler Dates State
-  const [targetSettingOpen, setTargetSettingOpen] = useState(true);
-  const [ratingPhaseOpen, setRatingPhaseOpen] = useState(false);
-  const [schedulerDates, setSchedulerDates] = useState<Record<string, { targetStart: string; targetEnd: string; ratingStart: string; ratingEnd: string }>>({
-    'IT Division': { targetStart: '2026-01-01', targetEnd: '2026-02-28', ratingStart: '2026-06-01', ratingEnd: '2026-07-15' },
-    'Health Office': { targetStart: '2026-01-01', targetEnd: '2026-02-28', ratingStart: '2026-06-01', ratingEnd: '2026-07-15' },
-    'HR Department': { targetStart: '2026-01-05', targetEnd: '2026-03-05', ratingStart: '2026-06-05', ratingEnd: '2026-07-20' },
-    'Treasury Department': { targetStart: '2026-01-05', targetEnd: '2026-03-05', ratingStart: '2026-06-05', ratingEnd: '2026-07-20' }
-  });
-
-  // Audit Logs (Access changes & Locked Targets) State
-  const [accessAuditLogs, setAccessAuditLogs] = useState<Array<{ id: string; user: string; role: string; action: string; time: string }>>([
-    { id: 'LOG-001', user: 'admin@abyan.gov.ph', role: 'supervisor', action: 'Assigned supervisor role to maria.santos@ilongcity.gov.ph', time: '2026-06-28 10:15' },
-    { id: 'LOG-002', user: 'admin@abyan.gov.ph', role: 'dept_head', action: 'Transferred Department Head role in Treasury Office to successor', time: '2026-06-29 14:22' }
-  ]);
-  const [vaultAuditLogs, setVaultAuditLogs] = useState<Array<{ id: string; employee: string; dept: string; lockedAt: string; verifiedBy: string }>>([
-    { id: 'VLT-101', employee: 'Alice Vance', dept: 'HR Department', lockedAt: '2026-02-20 16:30', verifiedBy: 'Supervisor Rater' },
-    { id: 'VLT-102', employee: 'Bob Miller', dept: 'IT Division', lockedAt: '2026-02-22 09:15', verifiedBy: 'Supervisor Rater' }
-  ]);
-
-  // Final Closeout Checks State
-  const [healthOfficeClosed, setHealthOfficeClosed] = useState(false);
-  const [itDivisionClosed, setItDivisionClosed] = useState(false);
+  // Office Directory state
+  const [officeDirectoryRows, setOfficeDirectoryRows] = useState<OfficeDirectoryRow[]>([]);
+  const [officeDirectoryLoading, setOfficeDirectoryLoading] = useState(false);
+  const [officeDirectoryError, setOfficeDirectoryError] = useState('');
+  const [officeDirectorySearch, setOfficeDirectorySearch] = useState('');
+  const [selectedOfficeRow, setSelectedOfficeRow] = useState<OfficeDirectoryRow | null>(null);
+  const [officeEmployees, setOfficeEmployees] = useState<any[]>([]);
+  const [officeEmployeesLoading, setOfficeEmployeesLoading] = useState(false);
   const [newCycle, setNewCycle] = useState<{
     title: string;
     start_date: string;
@@ -267,8 +242,8 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
         return {
           id: row.id,
           name,
-          position: row.current_position ?? '—',
-          department: row.department ?? '—',
+          position: row.current_position ?? 'â€”',
+          department: row.department ?? 'â€”',
         };
       });
       setActiveEmployees(mapped);
@@ -406,10 +381,10 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const [reviewPage, setReviewPage] = useState(1);
   const [reviewRowsPerPage, setReviewRowsPerPage] = useState(20);
 
-  // ── Live PM data ─────────────────────────────────────────────────────────
+  // â”€â”€ Live PM data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Per Phase 2 of the data-migration plan: every dashboard widget reads from
   // these state slots; per-section useEffects below populate them. No mock
-  // fallbacks — empty arrays render the "No data" empty state in each widget.
+  // fallbacks â€” empty arrays render the "No data" empty state in each widget.
   const [evaluations, setEvaluations] = useState<PerformanceEvaluation[]>([]);
   const [evaluationsLoading, setEvaluationsLoading] = useState(false);
   const [statusCounts, setStatusCounts] = useState<Record<EvaluationStatus, number>>({
@@ -490,10 +465,10 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     .slice(0, 6)
     .map(e => ({
       name: e.employee_name ?? 'Unknown',
-      position: e.employee_position ?? '—',
+      position: e.employee_position ?? 'â€”',
       dept: e.department ?? 'Unassigned',
-      period: e.period ?? '—',
-      rating: e.final_score !== null ? e.final_score.toFixed(2) : '—',
+      period: e.period ?? 'â€”',
+      rating: e.final_score !== null ? e.final_score.toFixed(2) : 'â€”',
       status: e.status === 'Approved'
         ? 'Approved'
         : e.status === 'Supervisor Review'
@@ -580,7 +555,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     };
   }, [evaluations]);
 
-  // ── Per-section data fetches ───────────────────────────────────────────────
+  // â”€â”€ Per-section data fetches â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Fetched once on mount because most widgets (Action Queue, Distribution,
   // IPCR Submissions, Reviews, Status Counts) all read from the evaluations
   // slice. activeCycleId scopes to the current cycle when one exists.
@@ -588,8 +563,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
   // Evaluations + derived status counts + distribution.
   useEffect(() => {
-    if (activeSection !== 'dashboard' && activeSection !== 'evaluation-status'
-      && activeSection !== 'performance-reviews' && activeSection !== 'goals') {
+    if (activeSection !== 'dashboard') {
       return;
     }
     let cancelled = false;
@@ -613,7 +587,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
   // Document requests (Action Queue on dashboard + Documents/Reports section).
   useEffect(() => {
-    if (activeSection !== 'dashboard' && activeSection !== 'reports') return;
+    if (activeSection !== 'dashboard') return;
     let cancelled = false;
     (async () => {
       setDocumentRequestsLoading(true);
@@ -664,7 +638,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
           const monthsAway = Math.max(0, Math.round((retirementDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24 * 30.4)));
           rows.push({
             name: emp.full_name ?? 'Unnamed',
-            role: emp.current_position ?? '—',
+            role: emp.current_position ?? 'â€”',
             date: retirementDate.toLocaleString('default', { month: 'short', year: 'numeric' }),
             monthsAway,
           });
@@ -769,20 +743,68 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     setShowCycleDialog(true);
   };
 
+  // Office Directory helpers
+  const filteredOfficeDirectoryRows = useMemo(
+    () => filterOfficeDirectory(officeDirectoryRows, officeDirectorySearch),
+    [officeDirectoryRows, officeDirectorySearch]
+  );
+
+  useEffect(() => {
+    if (activeSection !== 'office-directory' || officeDirectoryRows.length > 0) return;
+    setOfficeDirectoryLoading(true);
+    setOfficeDirectoryError('');
+    getOfficeDirectory().then((result) => {
+      if (result.ok) {
+        setOfficeDirectoryRows(result.data);
+      } else {
+        setOfficeDirectoryError((result as { ok: false; error: string }).error);
+      }
+      setOfficeDirectoryLoading(false);
+    });
+  }, [activeSection]);
+
+  const getOfficeDirInitials = (name: string): string => {
+    const parts = (name ?? '').trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '??';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+
+  const handleOfficeClick = async (row: OfficeDirectoryRow) => {
+    setSelectedOfficeRow(row);
+    setOfficeEmployeesLoading(true);
+    const result = await getAllEmployees({ department: row.officeName });
+    if (result.success) {
+      const empList: any[] = result.data || [];
+      try {
+        const { data: accounts } = await (supabase as any)
+          .from('employee_portal_accounts')
+          .select('employee_id, username');
+        const accountMap = new Map<string, string>();
+        for (const acc of accounts || []) {
+          if (acc.employee_id) accountMap.set(String(acc.employee_id), acc.username);
+        }
+        setOfficeEmployees(empList.map((e: any) => ({
+          ...e,
+          account_username: accountMap.get(String(e.employee_id)) ?? null,
+        })));
+      } catch {
+        setOfficeEmployees(empList);
+      }
+    } else {
+      setOfficeEmployees([]);
+    }
+    setOfficeEmployeesLoading(false);
+  };
+
   if (isDashboardView) {
     const sideNavItems = [
       { key: 'dashboard', label: 'Dashboard', subtitle: '', icon: LayoutDashboard },
-      { key: 'registry', label: 'SYSTEM ADMINISTRATION', subtitle: 'Global controls & registry', icon: SlidersHorizontal },
-      { key: 'employees', label: 'Employees', subtitle: 'Employee Directory', icon: Users },
-      { key: 'evaluation-status', label: 'Employee Evaluation Status', subtitle: 'Track progress', icon: ClipboardList },
-      { key: 'performance-reviews', label: 'Performance Reviews', subtitle: 'Upcoming reviews', icon: CalendarCheck2 },
-      { key: 'goals', label: 'DPCR', subtitle: 'Individual performance', icon: FileCheck2 },
-      { key: 'ipcr', label: 'Summary of Ratings', subtitle: 'IPCR ratings per dept', icon: BarChart3 },
-      { key: 'ipcr-management', label: 'IPCR Management', subtitle: 'Module 2 — onboarding & tracking', icon: ClipboardList },
-      { key: 'competency', label: 'Competency Framework', subtitle: 'Module 3 — position requirements', icon: BookOpen },
-      { key: 'promotions', label: 'Promotional Applications', subtitle: 'Module 4 — end-to-end promotions', icon: TrendingUp },
-      { key: 'reports', label: 'Documents', subtitle: 'Document submissions', icon: FileText },
-      { key: 'analytics', label: 'Reports & Analytics', subtitle: 'Module 5 — insights & exports', icon: TrendingUp },
+      { key: 'office-directory', label: 'Office Directory', subtitle: 'Offices, heads & employees', icon: Building2 },
+      { key: 'ipcr-management', label: 'IPCR Management', subtitle: 'Module 2 â€” onboarding & tracking', icon: ClipboardList },
+      { key: 'competency', label: 'Competency Framework', subtitle: 'Module 3 â€” position requirements', icon: BookOpen },
+      { key: 'promotions', label: 'Promotional Applications', subtitle: 'Module 4 â€” end-to-end promotions', icon: TrendingUp },
+      { key: 'analytics', label: 'Reports & Analytics', subtitle: 'Module 5 â€” insights & exports', icon: TrendingUp },
       { key: 'settings', label: 'Settings', subtitle: '', icon: Settings },
     ] as const;
 
@@ -849,642 +871,175 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
           <main className="flex-1 p-6">
 
-            {activeSection === 'registry' && (
-              <div className="space-y-6" style={{ fontFamily: "'Poppins', sans-serif" }}>
-                <div className="flex flex-wrap border-b border-slate-200 bg-white rounded-xl p-2 shadow-sm gap-2">
-                  <button
-                    onClick={() => setRegistrySubtab('directory')}
-                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
-                      registrySubtab === 'directory' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-650 hover:bg-slate-50'
-                    }`}
-                  >
-                    Office Directory
-                  </button>
-                  <button
-                    onClick={() => setRegistrySubtab('access')}
-                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
-                      registrySubtab === 'access' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-650 hover:bg-slate-50'
-                    }`}
-                  >
-                    Access & Role Management
-                  </button>
-                  <button
-                    onClick={() => setRegistrySubtab('scheduler')}
-                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
-                      registrySubtab === 'scheduler' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-650 hover:bg-slate-50'
-                    }`}
-                  >
-                    Phase Scheduler
-                  </button>
-                  <button
-                    onClick={() => setRegistrySubtab('vault')}
-                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
-                      registrySubtab === 'vault' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-655 hover:bg-slate-50'
-                    }`}
-                  >
-                    Locked Targets Vault
-                  </button>
-                  <button
-                    onClick={() => setRegistrySubtab('tracker')}
-                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
-                      registrySubtab === 'tracker' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-655 hover:bg-slate-50'
-                    }`}
-                  >
-                    Compliance Tracker
-                  </button>
-                  <button
-                    onClick={() => setRegistrySubtab('closeout')}
-                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
-                      registrySubtab === 'closeout' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-655 hover:bg-slate-50'
-                    }`}
-                  >
-                    Final Review & Closeout
-                  </button>
-                </div>
-
-                {registrySubtab === 'directory' && (
-                  <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                      <div>
-                        <h3 className="text-sm font-bold text-slate-800">Office Directory Matrix</h3>
-                        <p className="text-xs text-slate-500 mt-0.5">Read-mostly single source of truth for assigned signing authorities.</p>
-                      </div>
-                      <input
-                        type="text"
-                        placeholder="Search office or name..."
-                        value={registrySearch}
-                        onChange={(e) => setRegistrySearch(e.target.value)}
-                        className="rounded-lg border border-slate-350 px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#363EE8]"
-                      />
-                    </div>
-
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs text-left">
-                        <thead>
-                          <tr className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold">
-                            <th className="px-4 py-2.5">Office Name</th>
-                            <th className="px-4 py-2.5">Department Head</th>
-                            <th className="px-4 py-2.5">Assigned Supervisor(s)</th>
-                            <th className="px-4 py-2.5 text-right">Employees</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                          {[
-                            { office: 'HR Department', head: 'John Doe (john.doe@ilongcity.gov.ph)', status: 'Active', supervisors: 'Alice Vance', count: 12 },
-                            { office: 'Health Office', head: 'Dr. Jane Smith (jane.smith@ilongcity.gov.ph)', status: 'Active', supervisors: 'Maria Santos', count: 24 },
-                            { office: 'Treasury Department', head: 'Robert Johnson (robert.j@ilongcity.gov.ph)', status: 'Active', supervisors: 'Charlie Green, Diane Prince', count: 18 },
-                            { office: 'IT Division', head: 'Michael Chang (michael.c@ilongcity.gov.ph)', status: 'Active', supervisors: 'Bob Miller', count: 8 }
-                          ]
-                            .filter(row => 
-                              row.office.toLowerCase().includes(registrySearch.toLowerCase()) ||
-                              row.head.toLowerCase().includes(registrySearch.toLowerCase()) ||
-                              row.supervisors.toLowerCase().includes(registrySearch.toLowerCase())
-                            )
-                            .map((row, idx) => (
-                              <tr key={idx} className="hover:bg-slate-50/50">
-                                <td className="px-4 py-3 text-slate-800">{row.office}</td>
-                                <td className="px-4 py-3">
-                                  <p>{row.head}</p>
-                                  <span className="inline-block mt-1 text-[9px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full uppercase font-bold">{row.status}</span>
-                                </td>
-                                <td className="px-4 py-3 text-slate-600">{row.supervisors}</td>
-                                <td className="px-4 py-3 text-right text-slate-800">{row.count}</td>
-                              </tr>
-                            ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                {registrySubtab === 'access' && (
-                  <div className="space-y-6">
-                    {/* Access Controls */}
-                    <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
-                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                        <div>
-                          <h3 className="text-sm font-bold text-slate-800">Access & Role Registry</h3>
-                          <p className="text-xs text-slate-500 mt-0.5">Assign, remove, or transfer Supervisor and Department Head roles.</p>
-                        </div>
-                        <button
-                          onClick={() => setShowAddPersonnelModal(true)}
-                          className="bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition"
-                        >
-                          Add Personnel Role
-                        </button>
-                      </div>
-
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-xs text-left">
-                          <thead>
-                            <tr className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold">
-                              <th className="px-4 py-2.5">Email</th>
-                              <th className="px-4 py-2.5">Role</th>
-                              <th className="px-4 py-2.5">Office</th>
-                              <th className="px-4 py-2.5 text-right">Actions</th>
+            {activeSection === 'office-directory' && (
+              <div className="space-y-4">
+                {selectedOfficeRow ? (
+                  /* â”€â”€ Employee list for selected office â”€â”€ */
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedOfficeRow(null); setOfficeEmployees([]); }}
+                      className="flex items-center gap-1 text-blue-600 hover:text-blue-700 font-medium text-sm mb-4"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Office Directory
+                    </button>
+                    <h2 className="text-2xl font-bold text-slate-900 tracking-tight">{selectedOfficeRow.officeName}</h2>
+                    <p className="text-sm text-slate-500 mt-0.5 mb-6">
+                      {selectedOfficeRow.employeeCount} employee{selectedOfficeRow.employeeCount !== 1 ? 's' : ''}
+                    </p>
+                    {officeEmployeesLoading ? (
+                      <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-500">Loading employeesâ€¦</div>
+                    ) : (
+                      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                        <table className="w-full">
+                          <thead className="bg-gray-50 border-b border-gray-200">
+                            <tr>
+                              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Employee Name</th>
+                              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Employee ID</th>
+                              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Position</th>
+                              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Status</th>
+                              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Account</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                            <tr className="hover:bg-slate-50/50">
-                              <td className="px-4 py-3">maria.santos@ilongcity.gov.ph</td>
-                              <td className="px-4 py-3"><span className="bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full">Supervisor</span></td>
-                              <td className="px-4 py-3">Health Office</td>
-                              <td className="px-4 py-3 text-right">
-                                <button
-                                  onClick={() => {
-                                    setLeavingRater('supervisor');
-                                    setShowSuccessionModal(true);
-                                  }}
-                                  className="text-red-600 hover:text-red-800 hover:underline"
-                                >
-                                  Remove/Transfer
-                                </button>
-                              </td>
-                            </tr>
-                            <tr className="hover:bg-slate-50/50">
-                              <td className="px-4 py-3">michael.c@ilongcity.gov.ph</td>
-                              <td className="px-4 py-3"><span className="bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-full">Department Head</span></td>
-                              <td className="px-4 py-3">IT Division</td>
-                              <td className="px-4 py-3 text-right">
-                                <button
-                                  onClick={() => {
-                                    setLeavingRater('dept_head');
-                                    setShowSuccessionModal(true);
-                                  }}
-                                  className="text-red-600 hover:text-red-800 hover:underline"
-                                >
-                                  Remove/Transfer
-                                </button>
-                              </td>
-                            </tr>
+                          <tbody className="divide-y divide-gray-200">
+                            {officeEmployees.length === 0 ? (
+                              <tr>
+                                <td colSpan={5} className="py-12 text-center text-slate-500">No employees found in this office.</td>
+                              </tr>
+                            ) : (
+                              officeEmployees.map((emp: any) => {
+                                const initials = getOfficeDirInitials(emp.full_name);
+                                const statusColor = emp.status === 'Active'
+                                  ? 'bg-green-100 text-green-800'
+                                  : emp.status === 'On Leave'
+                                  ? 'bg-yellow-100 text-yellow-800'
+                                  : 'bg-gray-100 text-gray-800';
+                                return (
+                                  <tr key={emp.id} className="hover:bg-gray-50 transition-colors">
+                                    <td className="px-6 py-4 text-sm">
+                                      <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                                          <span className="text-white font-semibold text-sm">{initials}</span>
+                                        </div>
+                                        <div>
+                                          <p className="font-medium text-gray-900">{emp.full_name}</p>
+                                          <p className="text-sm text-gray-500">{emp.email}</p>
+                                        </div>
+                                      </div>
+                                    </td>
+                                    <td className="px-6 py-4 text-sm text-gray-900 font-mono">{emp.employee_id || 'â€”'}</td>
+                                    <td className="px-6 py-4 text-sm text-gray-900">{emp.current_position || 'â€”'}</td>
+                                    <td className="px-6 py-4 text-sm">
+                                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusColor}`}>{emp.status}</span>
+                                    </td>
+                                    <td className="px-6 py-4 text-sm text-gray-500 font-mono">
+                                      {emp.account_username ? `@${emp.account_username}` : <span className="text-gray-300 italic">No account</span>}
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            )}
                           </tbody>
                         </table>
                       </div>
-                    </div>
-
-                    {/* Audit Trail Log */}
-                    <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
-                      <div>
-                        <h3 className="text-sm font-bold text-slate-800">Access Management Audit Trail</h3>
-                        <p className="text-xs text-slate-500 mt-0.5">Logs of all supervisor and department head role modifications.</p>
-                      </div>
-
-                      <div className="overflow-y-auto max-h-48 divide-y divide-slate-100 text-xs">
-                        {accessAuditLogs.map((log) => (
-                          <div key={log.id} className="py-2.5 flex justify-between gap-3">
-                            <div>
-                              <p className="font-semibold text-slate-850">{log.action}</p>
-                              <p className="text-[10px] text-slate-400 mt-0.5">Authorized by: {log.user}</p>
-                            </div>
-                            <span className="shrink-0 text-slate-400 text-[10px] font-bold">{log.time}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                    )}
                   </div>
-                )}
-
-                {/* Add Personnel Modal */}
-                {showAddPersonnelModal && (
-                  <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 space-y-4">
+                ) : (
+                  /* â”€â”€ Office Directory table â”€â”€ */
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
                       <div>
-                        <h3 className="text-base font-bold text-slate-800">Add Personnel Signing Authority</h3>
-                        <p className="text-xs text-slate-500 mt-0.5">Assign a role and map it to an office registry.</p>
+                        <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Office Directory</h2>
+                        <p className="text-sm text-slate-500 mt-0.5">Click an office row to view all assigned employees and their accounts</p>
                       </div>
-                      <div className="space-y-3 text-xs">
-                        <div className="space-y-1">
-                          <label className="block font-bold text-slate-700">Employee Email</label>
-                          <input
-                            type="email"
-                            placeholder="e.g. employee@ilongcity.gov.ph"
-                            value={newRaterEmail}
-                            onChange={(e) => setNewRaterEmail(e.target.value)}
-                            className="w-full rounded-lg border border-slate-300 px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[#363EE8]"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <label className="block font-bold text-slate-700">Role Designation</label>
-                          <select
-                            value={newRaterRole}
-                            onChange={(e) => setNewRaterRole(e.target.value as any)}
-                            className="w-full rounded-lg border border-slate-200 px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[#363EE8]"
-                          >
-                            <option value="supervisor">Supervisor</option>
-                            <option value="dept_head">Department Head</option>
-                          </select>
-                        </div>
-                        <div className="space-y-1">
-                          <label className="block font-bold text-slate-700">Assigned Office</label>
-                          <select
-                            value={newRaterDept}
-                            onChange={(e) => setNewRaterDept(e.target.value)}
-                            className="w-full rounded-lg border border-slate-200 px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[#363EE8]"
-                          >
-                            <option value="Health Office">Health Office</option>
-                            <option value="IT Division">IT Division</option>
-                            <option value="HR Department">HR Department</option>
-                            <option value="Treasury Department">Treasury Department</option>
-                          </select>
-                        </div>
-                      </div>
-                      <div className="flex justify-end gap-2 text-xs font-semibold">
-                        <button
-                          onClick={() => {
-                            if (!newRaterEmail.trim()) { alert('Please enter email.'); return; }
-                            const newLog = {
-                              id: `LOG-00${accessAuditLogs.length + 1}`,
-                              user: 'admin@abyan.gov.ph',
-                              role: newRaterRole,
-                              action: `Assigned ${newRaterRole} role in ${newRaterDept} to ${newRaterEmail}`,
-                              time: new Date().toISOString().replace('T', ' ').slice(0, 16)
-                            };
-                            setAccessAuditLogs([newLog, ...accessAuditLogs]);
-                            setShowAddPersonnelModal(false);
-                            setNewRaterEmail('');
-                          }}
-                          className="bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2"
-                        >
-                          Save Assignment
-                        </button>
-                        <button
-                          onClick={() => setShowAddPersonnelModal(false)}
-                          className="border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 rounded-lg px-4 py-2"
-                        >
-                          Cancel
-                        </button>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                        <input
+                          type="text"
+                          value={officeDirectorySearch}
+                          onChange={(e) => setOfficeDirectorySearch(e.target.value)}
+                          placeholder="Search office or nameâ€¦"
+                          className="rounded-lg border border-slate-300 pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 w-64"
+                        />
                       </div>
                     </div>
-                  </div>
-                )}
-
-                {/* Succession Transfer Tool Modal */}
-                {showSuccessionModal && (
-                  <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 space-y-4 text-xs">
-                      <div>
-                        <h3 className="text-base font-bold text-slate-800 flex items-center gap-1.5">
-                          <AlertTriangle className="h-5 w-5 text-amber-500" />
-                          Succession Transfer Tool
-                        </h3>
-                        <p className="text-xs text-slate-500 mt-0.5">Safely reroute active pending performance bundles to prevent sign-off blocks.</p>
-                      </div>
-
-                      <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-lg leading-relaxed">
-                        <p className="font-bold">Important Notice:</p>
-                        <p className="mt-0.5">Removing the active signing authority in this office requires transitioning all active employee IPCR files awaiting verification.</p>
-                      </div>
-
-                      <div className="space-y-2">
-                        <p className="font-bold text-slate-700">Active Awaiting Sign-offs (Succession Queue):</p>
-                        <div className="divide-y divide-slate-100 border border-slate-100 rounded-lg p-3 bg-slate-50 max-h-32 overflow-y-auto">
-                          <p className="py-1">📄 IPCR target validation: <strong>Alice Vance</strong> (Pending Rater Verification)</p>
-                          <p className="py-1">📄 IPCR target validation: <strong>Bob Miller</strong> (Pending Rater Verification)</p>
-                          <p className="py-1">📄 DPCR compilation cycle: <strong>IT Division Group</strong> (Awaiting supervisor summary)</p>
-                        </div>
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="block font-bold text-slate-700">Incoming Successor Replacement</label>
-                        <select className="w-full rounded-lg border border-slate-200 px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[#363EE8]">
-                          <option value="new_officer@ilongcity.gov.ph">New Designated Officer (new_officer@ilongcity.gov.ph)</option>
-                          <option value="alternate_head@ilongcity.gov.ph">Alternate Administrator (alternate_head@ilongcity.gov.ph)</option>
-                        </select>
-                      </div>
-
-                      <div className="flex justify-end gap-2 font-semibold">
-                        <button
-                          onClick={() => {
-                            setSuccessionRerouted(true);
-                            const newLog = {
-                              id: `LOG-00${accessAuditLogs.length + 1}`,
-                              user: 'admin@abyan.gov.ph',
-                              role: leavingRater || 'supervisor',
-                              action: `Revoked access for outgoing ${leavingRater}. Succession tool reassigned 3 pending submissions to successor.`,
-                              time: new Date().toISOString().replace('T', ' ').slice(0, 16)
-                            };
-                            setAccessAuditLogs([newLog, ...accessAuditLogs]);
-                            setShowSuccessionModal(false);
-                            alert('Succession transition complete. 3 files rerouted successfully.');
-                          }}
-                          className="bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2"
-                        >
-                          Confirm & Transition Succession
-                        </button>
-                        <button
-                          onClick={() => setShowSuccessionModal(false)}
-                          className="border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 rounded-lg px-4 py-2"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Phase Scheduler Subtab */}
-                {registrySubtab === 'scheduler' && (
-                  <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-6">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                      <div>
-                        <h3 className="text-sm font-bold text-slate-800">Global Timeline Switchboard</h3>
-                        <p className="text-xs text-slate-500 mt-0.5">Toggle editing access parameters for employees and supervisor consoles.</p>
-                      </div>
-                    </div>
-
-                    {/* Hard Lock Switches */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="border border-slate-150 rounded-xl p-4 flex items-center justify-between bg-slate-50/50">
-                        <div>
-                          <p className="text-xs font-bold text-slate-800">Target-Setting Phase</p>
-                          <p className="text-[11px] text-slate-500 mt-0.5">Enables encoding IPCR target rows</p>
-                        </div>
-                        <button
-                          onClick={() => setTargetSettingOpen(!targetSettingOpen)}
-                          className={`w-12 h-6 rounded-full transition-colors relative ${targetSettingOpen ? 'bg-emerald-500' : 'bg-slate-350'}`}
-                        >
-                          <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${targetSettingOpen ? 'right-0.5' : 'left-0.5'}`} />
-                        </button>
-                      </div>
-
-                      <div className="border border-slate-150 rounded-xl p-4 flex items-center justify-between bg-slate-50/50">
-                        <div>
-                          <p className="text-xs font-bold text-slate-800">Rating Phase (Accomplishments)</p>
-                          <p className="text-[11px] text-slate-500 mt-0.5">Enables accomplishment inputs & ratings override</p>
-                        </div>
-                        <button
-                          onClick={() => setRatingPhaseOpen(!ratingPhaseOpen)}
-                          className={`w-12 h-6 rounded-full transition-colors relative ${ratingPhaseOpen ? 'bg-emerald-500' : 'bg-slate-350'}`}
-                        >
-                          <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${ratingPhaseOpen ? 'right-0.5' : 'left-0.5'}`} />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Calendar Timelines per Office */}
-                    <div className="space-y-3">
-                      <h4 className="text-xs font-bold text-slate-700">Office-Staggered Deadlines Configurations</h4>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-xs text-left">
+                    {officeDirectoryError && (
+                      <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{officeDirectoryError}</div>
+                    )}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                      {officeDirectoryLoading ? (
+                        <div className="p-12 text-center text-slate-500">Loading officesâ€¦</div>
+                      ) : (
+                        <table className="w-full text-sm">
                           <thead>
-                            <tr className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold">
-                              <th className="px-4 py-2">Office</th>
-                              <th className="px-4 py-2">Target-Setting Period</th>
-                              <th className="px-4 py-2">Rating period</th>
+                            <tr className="bg-slate-50 text-left text-slate-500 text-xs font-semibold uppercase tracking-wider border-b border-slate-200">
+                              <th className="px-5 py-3">Office</th>
+                              <th className="px-5 py-3">Department Head</th>
+                              <th className="px-5 py-3">Supervisors</th>
+                              <th className="px-5 py-3 text-right">Employees</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                            {Object.entries(schedulerDates).map(([office, dates]) => (
-                              <tr key={office} className="hover:bg-slate-50/50">
-                                <td className="px-4 py-3 text-slate-850">{office}</td>
-                                <td className="px-4 py-3">
-                                  <div className="flex gap-2">
-                                    <input
-                                      type="date"
-                                      value={dates.targetStart}
-                                      onChange={(e) => setSchedulerDates(prev => ({ ...prev, [office]: { ...dates, targetStart: e.target.value } }))}
-                                      className="border rounded px-1.5 py-0.5 focus:outline-none"
-                                    />
-                                    <span>to</span>
-                                    <input
-                                      type="date"
-                                      value={dates.targetEnd}
-                                      onChange={(e) => setSchedulerDates(prev => ({ ...prev, [office]: { ...dates, targetEnd: e.target.value } }))}
-                                      className="border rounded px-1.5 py-0.5 focus:outline-none"
-                                    />
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3">
-                                  <div className="flex gap-2">
-                                    <input
-                                      type="date"
-                                      value={dates.ratingStart}
-                                      onChange={(e) => setSchedulerDates(prev => ({ ...prev, [office]: { ...dates, ratingStart: e.target.value } }))}
-                                      className="border rounded px-1.5 py-0.5 focus:outline-none"
-                                    />
-                                    <span>to</span>
-                                    <input
-                                      type="date"
-                                      value={dates.ratingEnd}
-                                      onChange={(e) => setSchedulerDates(prev => ({ ...prev, [office]: { ...dates, ratingEnd: e.target.value } }))}
-                                      className="border rounded px-1.5 py-0.5 focus:outline-none"
-                                    />
-                                  </div>
+                          <tbody className="divide-y divide-slate-100">
+                            {filteredOfficeDirectoryRows.length === 0 ? (
+                              <tr>
+                                <td colSpan={4} className="py-10 text-center text-slate-400 italic">
+                                  {officeDirectoryRows.length === 0 ? 'No offices found.' : 'No offices match your search.'}
                                 </td>
                               </tr>
-                            ))}
+                            ) : (
+                              filteredOfficeDirectoryRows.map((row) => (
+                                <tr
+                                  key={row.officeId}
+                                  className="hover:bg-blue-50 cursor-pointer transition-colors"
+                                  onClick={() => handleOfficeClick(row)}
+                                >
+                                  <td className="px-5 py-4">
+                                    <p className="font-semibold text-slate-800">{row.officeName}</p>
+                                    {row.code && <p className="text-xs text-slate-400 mt-0.5">{row.code}</p>}
+                                  </td>
+                                  <td className="px-5 py-4">
+                                    {row.deptHead ? (
+                                      <div>
+                                        <p className="font-medium text-slate-700">{row.deptHead.name}</p>
+                                        <p className="text-xs text-slate-400">{row.deptHead.contact}</p>
+                                      </div>
+                                    ) : (
+                                      <span className="text-amber-600 text-xs">Unassigned</span>
+                                    )}
+                                  </td>
+                                  <td className="px-5 py-4">
+                                    {row.supervisors.length === 0 ? (
+                                      <span className="text-amber-600 text-xs">None assigned</span>
+                                    ) : (
+                                      <div className="flex flex-col gap-1">
+                                        {row.supervisors.map((sup, i) => (
+                                          <p key={i} className="text-slate-700">{sup.name}</p>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="px-5 py-4 text-right">
+                                    <div className="flex items-center justify-end gap-2">
+                                      <Users className="h-4 w-4 text-slate-400" />
+                                      <span className="font-semibold text-slate-800">{row.employeeCount}</span>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
                           </tbody>
                         </table>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Locked Targets Vault Subtab */}
-                {registrySubtab === 'vault' && (
-                  <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-6">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                      <div>
-                        <h3 className="text-sm font-bold text-slate-800">Locked Targets Vault</h3>
-                        <p className="text-xs text-slate-500 mt-0.5">Secure, read-only data store for office-verified targets. Modifications disabled during evaluation cycle.</p>
-                      </div>
-                    </div>
-
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs text-left">
-                        <thead>
-                          <tr className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold">
-                            <th className="px-4 py-2.5">Employee Name</th>
-                            <th className="px-4 py-2.5">Department</th>
-                            <th className="px-4 py-2.5">Lock Status</th>
-                            <th className="px-4 py-2.5">Last Verified By</th>
-                            <th className="px-4 py-2.5">Timestamp locked</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                          <tr className="hover:bg-slate-50/50">
-                            <td className="px-4 py-3 text-slate-850">Alice Vance</td>
-                            <td className="px-4 py-3">HR Department</td>
-                            <td className="px-4 py-3">
-                              <span className="inline-flex items-center gap-1.5 text-indigo-700 font-bold"><Lock className="h-3.5 w-3.5" /> Frozen</span>
-                            </td>
-                            <td className="px-4 py-3">Supervisor Rater</td>
-                            <td className="px-4 py-3 text-slate-500">2026-02-20 16:30</td>
-                          </tr>
-                          <tr className="hover:bg-slate-50/50">
-                            <td className="px-4 py-3 text-slate-850">Bob Miller</td>
-                            <td className="px-4 py-3">IT Division</td>
-                            <td className="px-4 py-3">
-                              <span className="inline-flex items-center gap-1.5 text-indigo-700 font-bold"><Lock className="h-3.5 w-3.5" /> Frozen</span>
-                            </td>
-                            <td className="px-4 py-3">Supervisor Rater</td>
-                            <td className="px-4 py-3 text-slate-500">2026-02-22 09:15</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-
-                    <div className="border border-slate-100 bg-slate-50/50 rounded-xl p-4 space-y-3">
-                      <p className="font-bold text-slate-700 text-xs">Vault Verification Audit Logs:</p>
-                      <div className="divide-y divide-slate-100 text-[11px] text-slate-600 max-h-32 overflow-y-auto">
-                        {vaultAuditLogs.map(log => (
-                          <div key={log.id} className="py-2 flex justify-between">
-                            <span>📄 Target Vault Lock: Verified targets for <strong>{log.employee}</strong> ({log.dept}) - locked in container.</span>
-                            <span className="font-bold text-slate-400">{log.lockedAt}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Compliance Tracker Subtab */}
-                {registrySubtab === 'tracker' && (
-                  <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-800">Compliance Tracking Pipeline</h3>
-                      <p className="text-xs text-slate-500 mt-0.5">Real-time drilldown view of submission completion vs office verification rates.</p>
-                    </div>
-
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs text-left">
-                        <thead>
-                          <tr className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold">
-                            <th className="px-4 py-2.5">Office</th>
-                            <th className="px-4 py-2.5">% Employees Submitted</th>
-                            <th className="px-4 py-2.5">% Office Verified</th>
-                            <th className="px-4 py-2.5 text-right">Office Status</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                          {[
-                            { office: 'HR Department', submitted: '100%', verified: '100%', status: 'Complete', color: 'bg-emerald-50 text-emerald-800' },
-                            { office: 'Treasury Department', submitted: '100%', verified: '90%', status: 'In Review', color: 'bg-blue-50 text-blue-800' },
-                            { office: 'IT Division', submitted: '75%', verified: '50%', status: 'In Progress', color: 'bg-amber-50 text-amber-800' },
-                            { office: 'Health Office', submitted: '42%', verified: '10%', status: 'Critical', color: 'bg-red-50 text-red-800' }
-                          ].map((row, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50/50">
-                              <td className="px-4 py-3 text-slate-855">{row.office}</td>
-                              <td className="px-4 py-3">{row.submitted}</td>
-                              <td className="px-4 py-3">{row.verified}</td>
-                              <td className="px-4 py-3 text-right">
-                                <span className={`inline-block px-2.5 py-0.5 rounded-full uppercase tracking-wider text-[9px] font-bold ${row.color}`}>{row.status}</span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                {/* Final Review & Closeout Subtab */}
-                {registrySubtab === 'closeout' && (
-                  <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-6">
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-850">Final Review & Closeout Dock</h3>
-                      <p className="text-xs text-slate-500 mt-0.5">Audits mandatory cycle requirements (IPCRs + DPCR + OPCR) before archiving the performance bundle.</p>
-                    </div>
-
-                    <div className="space-y-6">
-                      <div className="border border-slate-150 rounded-xl p-5 bg-slate-50/30 space-y-4">
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                          <h4 className="text-xs font-bold text-slate-855">Health Office Performance Bundle</h4>
-                          <span>
-                            {healthOfficeClosed ? (
-                              <span className="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">Archived & Closed</span>
-                            ) : (
-                              <span className="bg-amber-50 text-amber-855 border border-amber-200 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">Awaiting PM Review</span>
-                            )}
-                          </span>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-semibold">
-                          <div className="bg-white border rounded-xl p-3 flex justify-between items-center" style={{ borderColor: '#C8D1FF' }}>
-                            <span>(1) 24/24 employee IPCRs verified</span>
-                            <span className="text-emerald-600">✓ Pass</span>
-                          </div>
-                          <div className="bg-white border rounded-xl p-3 flex justify-between items-center" style={{ borderColor: '#C8D1FF' }}>
-                            <span>(2) Supervisor DPCR sheet</span>
-                            <span className="text-emerald-600">✓ Pass</span>
-                          </div>
-                          <div className="bg-white border rounded-xl p-3 flex justify-between items-center" style={{ borderColor: '#C8D1FF' }}>
-                            <span>(3) Department Head OPCR package</span>
-                            <span className="text-emerald-600">✓ Pass</span>
-                          </div>
-                        </div>
-
-                        {!healthOfficeClosed && (
-                          <div className="flex justify-end pt-2">
-                            <button
-                              onClick={() => {
-                                setHealthOfficeClosed(true);
-                                alert('Health Office cycle successfully closed out and archived to Module 5.');
-                              }}
-                              className="bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition"
-                            >
-                              Closeout Health Office Cycle
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="border border-slate-150 rounded-xl p-5 bg-slate-50/30 space-y-4">
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                          <h4 className="text-xs font-bold text-slate-855">IT Division Performance Bundle</h4>
-                          <span>
-                            {itDivisionClosed ? (
-                              <span className="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">Archived & Closed</span>
-                            ) : (
-                              <span className="bg-red-50 text-red-800 border border-red-200 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider">Incomplete Checklist</span>
-                            )}
-                          </span>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-semibold">
-                          <div className="bg-white border rounded-xl p-3 flex justify-between items-center" style={{ borderColor: '#C8D1FF' }}>
-                            <span>(1) 6/8 employee IPCRs verified</span>
-                            <span className="text-red-655">⚠️ Out (2 Pending)</span>
-                          </div>
-                          <div className="bg-white border rounded-xl p-3 flex justify-between items-center" style={{ borderColor: '#C8D1FF' }}>
-                            <span>(2) Supervisor DPCR sheet</span>
-                            <span className="text-emerald-600">✓ Pass</span>
-                          </div>
-                          <div className="bg-white border rounded-xl p-3 flex justify-between items-center" style={{ borderColor: '#C8D1FF' }}>
-                            <span>(3) Dept Head OPCR package</span>
-                            <span className="text-red-655">⚠️ Out (Waiting)</span>
-                          </div>
-                        </div>
-
-                        <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-lg leading-relaxed flex gap-2">
-                          <AlertTriangle className="h-4.5 w-4.5 shrink-0 text-red-600" />
-                          <div>
-                            <p className="font-bold">Closeout Disabled:</p>
-                            <p className="mt-0.5">PM closeout is blocked until IT Division submits outstanding pieces. Outstanding items owned by: <strong>Bob Miller (IT Supervisor) & Michael Chang (IT Dept Head)</strong>.</p>
-                          </div>
-                        </div>
-
-                        {!itDivisionClosed && (
-                          <div className="flex justify-end pt-2">
-                            <button
-                              disabled
-                              className="bg-slate-400 text-white rounded-lg px-4 py-2 text-xs font-semibold cursor-not-allowed"
-                            >
-                              Closeout IT Division Cycle (Blocked)
-                            </button>
-                          </div>
-                        )}
-                      </div>
+                      )}
                     </div>
                   </div>
                 )}
               </div>
             )}
 
-
             {activeSection === 'dashboard' && (
               <>
-                {/* ── Header Area ── */}
+                {/* â”€â”€ Header Area â”€â”€ */}
                 <div className="flex items-center justify-between mb-1">
                   <p className="text-sm text-blue-600 font-medium">Performance Management <span className="mx-1 text-slate-400">&gt;</span> <span className="text-slate-500">Dashboard</span></p>
                   <button type="button" className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition">
@@ -1492,7 +1047,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   </button>
                 </div>
                 <h2 className="text-2xl font-bold text-slate-900 tracking-tight">PM Dashboard</h2>
-                <p className="text-sm text-slate-500 mt-0.5">Performance evaluation overview — FY 2025</p>
+                <p className="text-sm text-slate-500 mt-0.5">Performance evaluation overview â€” FY 2025</p>
 
                 {errorMessage && (
                   <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
@@ -1500,7 +1055,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   </div>
                 )}
 
-                {/* ── KPI Cards Row ── */}
+                {/* â”€â”€ KPI Cards Row â”€â”€ */}
                 <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                   <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm relative overflow-hidden">
                     {evaluationsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
@@ -1538,9 +1093,9 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   </div>
                 </div>
 
-                {/* ── Middle Section (60/40) ── */}
+                {/* â”€â”€ Middle Section (60/40) â”€â”€ */}
                 <div className="mt-6 grid grid-cols-1 xl:grid-cols-5 gap-6">
-                  {/* Left – Action Required Queue (60%) */}
+                  {/* Left â€“ Action Required Queue (60%) */}
                   <section className="xl:col-span-3 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                     <header className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
@@ -1582,7 +1137,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                     </div>
                   </section>
 
-                  {/* Right – Performance Distribution Donut (40%) */}
+                  {/* Right â€“ Performance Distribution Donut (40%) */}
                   <section className="xl:col-span-2 rounded-xl border border-slate-200 bg-white p-5 shadow-sm relative overflow-hidden">
                     {evaluationsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
                     <div className="flex items-center justify-between mb-4">
@@ -1652,7 +1207,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   </section>
                 </div>
 
-                {/* ── Bottom Section (50/50) ── */}
+                {/* â”€â”€ Bottom Section (50/50) â”€â”€ */}
                 <div className="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-6">
                   <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                     <header className="px-5 py-3.5 border-b border-slate-100">
@@ -1740,9 +1295,9 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                                 <td className="px-4 py-3 text-slate-500">{row.dept}</td>
                                 <td className="px-4 py-3 text-slate-500">{row.period}</td>
                                 <td className="px-4 py-3">
-                                  {row.rating !== '—' ? (
+                                  {row.rating !== 'â€”' ? (
                                     <span className="inline-block rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">{row.rating}</span>
-                                  ) : <span className="text-slate-400">—</span>}
+                                  ) : <span className="text-slate-400">â€”</span>}
                                 </td>
                                 <td className="px-4 py-3">
                                   <span className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${row.statusColor}`}>
@@ -1766,502 +1321,6 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
             )}
 
 
-            {activeSection === 'employees' && (
-              <div className="relative">
-                <EmployeeDirectory />
-              </div>
-            )}
-
-            {activeSection === 'evaluation-status' && (
-              <>
-                {/* Header */}
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-sm text-blue-600 font-medium">Performance Management <span className="mx-1 text-slate-400">&gt;</span> <span className="text-slate-500">Employee Evaluation Status</span></p>
-                  <button type="button" className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition">
-                    <CalendarDays className="h-4 w-4" /> Jan – Jun 2025 (1st Semester) <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
-                  </button>
-                </div>
-                <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Employee Evaluation Status</h2>
-                <p className="text-sm text-slate-500 mt-0.5">Track the complete progress of performance evaluations across your organization</p>
-
-                {/* 5 KPI Cards */}
-                <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 relative">
-                  {evaluationsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
-                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-                    <p className="text-xs text-slate-500 mb-1">Overall Completion</p>
-                    <div className="flex items-center gap-2.5">
-                      <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-blue-100"><BarChart3 className="h-5 w-5 text-blue-600" /></span>
-                      <div>
-                        <p className="text-2xl font-extrabold text-slate-900 leading-none">
-                          {evaluationTotal > 0 ? Math.round((statusCounts.Approved / evaluationTotal) * 100) : 0}%
-                        </p>
-                        <p className="text-xs text-slate-400 mt-0.5">of {evaluationTotal} employees</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-                    <p className="text-xs text-slate-500 mb-1">Approved</p>
-                    <div className="flex items-center gap-2.5">
-                      <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-emerald-100"><CheckCircle2 className="h-5 w-5 text-emerald-600" /></span>
-                      <div><p className="text-2xl font-extrabold text-emerald-600 leading-none">{statusCounts.Approved}</p><p className="text-xs text-slate-400 mt-0.5">Fully completed</p></div>
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-                    <p className="text-xs text-slate-500 mb-1">In Progress</p>
-                    <div className="flex items-center gap-2.5">
-                      <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-orange-100"><Clock className="h-5 w-5 text-orange-500" /></span>
-                      <div><p className="text-2xl font-extrabold text-orange-500 leading-none">{statusCounts['Supervisor Review']}</p><p className="text-xs text-slate-400 mt-0.5">Under supervisor review</p></div>
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-                    <p className="text-xs text-slate-500 mb-1">Planning</p>
-                    <div className="flex items-center gap-2.5">
-                      <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-blue-100"><SlidersHorizontal className="h-5 w-5 text-blue-600" /></span>
-                      <div><p className="text-2xl font-extrabold text-slate-900 leading-none">{statusCounts.Planning}</p><p className="text-xs text-slate-400 mt-0.5">Self-evaluation stage</p></div>
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-                    <p className="text-xs text-slate-500 mb-1">Rejected</p>
-                    <div className="flex items-center gap-2.5">
-                      <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-red-100"><XCircle className="h-5 w-5 text-red-500" /></span>
-                      <div><p className="text-2xl font-extrabold text-red-500 leading-none">{statusCounts.Rejected}</p><p className="text-xs text-slate-400 mt-0.5">Requires resubmission</p></div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Stacked Bar Chart */}
-                <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="flex items-center justify-between mb-5">
-                    <h3 className="text-sm font-bold text-slate-800">Evaluation Completion by Department</h3>
-                    <span className="text-xs text-slate-400">Jan – Jun 2025 (1st Semester)</span>
-                  </div>
-                  <svg viewBox="0 0 500 220" className="w-full" style={{ maxHeight: 260 }}>
-                    {/* Y-axis labels & gridlines */}
-                    {[0, 2, 4, 6, 8, 10].map((v) => {
-                      const y = 180 - (v / 10) * 170;
-                      return (
-                        <g key={v}>
-                          <text x="20" y={y + 3} textAnchor="end" fontSize="10" fill="#94a3b8">{v}</text>
-                          <line x1="28" y1={y} x2="490" y2={y} stroke="#e2e8f0" strokeWidth="0.5" />
-                        </g>
-                      );
-                    })}
-                    {/* Bars */}
-                    {dbEvaluationGroups.map((d, i) => {
-                      const x = 55 + i * 92;
-                      const bw = 42;
-                      const unitH = 17;
-                      const baseY = 180;
-                      let cy = baseY;
-                      const segments = [
-                        { val: d.approved, color: '#22c55e' },
-                        { val: d.review, color: '#fb923c' },
-                        { val: d.self, color: '#22d3ee' },
-                        { val: d.planning, color: '#2563eb' },
-                        { val: d.rejected || 0, color: '#ef4444' },
-                      ];
-
-                      const deptParts = d.dept.split(' ');
-                      const dept1 = deptParts[0];
-                      const dept2 = deptParts.slice(1).join(' ');
-
-                      return (
-                        <g key={d.dept}>
-                          {segments.map((seg, si) => {
-                            if (seg.val === 0) return null;
-                            const h = seg.val * unitH;
-                            cy -= h;
-                            return <rect key={si} x={x} y={cy} width={bw} height={h} fill={seg.color} rx={si === segments.length - 1 || (segments.slice(si + 1).every(s => s.val === 0)) ? 2 : 0} />;
-                          })}
-                          <text x={x + bw / 2} y={195} textAnchor="middle" fontSize="10" fill="#64748b">{dept1}</text>
-                          {dept2 && <text x={x + bw / 2} y={206} textAnchor="middle" fontSize="10" fill="#64748b">{dept2}</text>}
-                        </g>
-                      );
-                    })}
-                  </svg>
-                  {/* Legend */}
-                  <div className="flex items-center justify-center gap-5 mt-2 text-xs text-slate-600">
-                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500 inline-block" /> Approved</span>
-                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-orange-400 inline-block" /> Supervisor Review</span>
-                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-cyan-400 inline-block" /> Self Evaluation</span>
-                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-blue-600 inline-block" /> Planning</span>
-                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-red-500 inline-block" /> Rejected</span>
-                  </div>
-                </section>
-
-                {/* Employee Table */}
-                <section className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                  {/* Toolbar */}
-                  <div className="flex items-center gap-4 px-5 py-2.5 border-b border-slate-100">
-                    <div className="relative flex-1 max-w-sm">
-                      <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                      <input className="w-full rounded-lg border border-slate-300 pl-10 pr-4 py-1.5 text-sm" placeholder="Search by name or position..." />
-                    </div>
-                    <select className="rounded-lg border border-slate-300 px-4 py-1.5 text-sm text-slate-600"><option>All Departments</option></select>
-                    <select className="rounded-lg border border-slate-300 px-4 py-1.5 text-sm text-slate-600"><option>All Statuses</option></select>
-                    <div className="flex-1" />
-                    <button type="button" className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-slate-50 px-4 py-1.5 text-sm font-medium text-slate-400 cursor-default">Bulk Actions <ChevronDown className="h-3.5 w-3.5" /></button>
-                  </div>
-
-                  {/* Column headers */}
-                  <div className="grid grid-cols-12 items-center px-5 py-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                    <div className="col-span-1 flex items-center gap-2"><input type="checkbox" className="rounded border-slate-300 h-4 w-4" /><span className="text-blue-600 normal-case text-xs font-medium">Showing 1–10 of 35 employees</span></div>
-                    <div className="col-span-6 pl-10">Employee</div>
-                    <div className="col-span-3">Status</div>
-                    <div className="col-span-2 text-right">Actions</div>
-                  </div>
-
-                  {/* Department groups — uses live employees from the central
-                      employees table when present. */}
-                  {dbEvaluationGroups.length > 0 ? dbEvaluationGroups.map((group) => (
-                    <div key={group.dept} className="border-b border-slate-100">
-                      {/* Group header */}
-                      <div className="flex items-center gap-3 px-5 py-2.5 bg-slate-50/50 border-b border-slate-100">
-                        <input type="checkbox" className="rounded border-slate-300 h-4 w-4" />
-                        <span className="font-bold text-sm text-slate-800">{group.dept}</span>
-                        <span className="text-xs text-slate-400">{group.count} employees</span>
-                        <div className="flex-1 flex items-center gap-3 ml-4">
-                          <div className="w-24 h-2 rounded-full bg-slate-200 overflow-hidden"><div className="h-full rounded-full bg-amber-400" style={{ width: `${group.pct}%` }} /></div>
-                          <span className="text-xs font-semibold text-emerald-600">{group.pct}% Complete</span>
-                          <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">{group.approved} Approved</span>
-                          {group.review > 0 && <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-[11px] font-semibold text-orange-700">{group.review} Supervisor Review</span>}
-                          {group.self > 0 && <span className="rounded-full bg-cyan-100 px-2.5 py-0.5 text-[11px] font-semibold text-cyan-700">{group.self} Self Evaluation</span>}
-                          {group.planning > 0 && <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">{group.planning} Planning</span>}
-                        </div>
-                        <ChevronUp className="h-4 w-4 text-slate-400" />
-                      </div>
-                      {/* Employee rows */}
-                      {group.employees.map((emp) => {
-                        const statusColors: Record<string, string> = { 'Approved': 'bg-emerald-100 text-emerald-700', 'Supervisor Review': 'bg-orange-100 text-orange-700', 'Self Evaluation': 'bg-cyan-100 text-cyan-700', 'Planning': 'bg-blue-100 text-blue-700', 'Rejected': 'bg-red-100 text-red-700' };
-                        const dotColors: Record<string, string> = { 'Approved': 'bg-emerald-500', 'Supervisor Review': 'bg-orange-500', 'Self Evaluation': 'bg-cyan-500', 'Planning': 'bg-blue-600', 'Rejected': 'bg-red-500' };
-                        const initials = emp.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-
-                        return (
-                          <div key={emp.name} className="grid grid-cols-12 items-start px-5 py-2.5 text-sm hover:bg-slate-50/60 transition border-b border-slate-50 last:border-b-0">
-                            <div className="col-span-1 pt-2"><input type="checkbox" className="rounded border-slate-300 h-4 w-4" /></div>
-                            <div className="col-span-6 flex items-start gap-3 pl-2">
-                              <span className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-[11px] font-bold text-blue-600 shrink-0">
-                                {initials}
-                              </span>
-                              <div className="flex flex-col pt-1.5">
-                                <p className="font-semibold text-slate-800 leading-none">{emp.name}</p>
-                                <p className="text-[11px] text-slate-500 mt-1">{emp.position}</p>
-                              </div>
-                            </div>
-                            <div className="col-span-3 pt-1.5"><span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-0.5 text-xs font-semibold ${statusColors[emp.status] || 'bg-slate-100 text-slate-700'}`}><span className={`h-1.5 w-1.5 rounded-full ${dotColors[emp.status] || 'bg-slate-400'}`} />{emp.status}</span></div>
-                            <div className="col-span-2 flex items-center justify-end gap-2 pt-1.5">
-                              <button type="button" className="p-1 text-slate-400 hover:text-blue-600 transition" title="View"><Eye className="h-4 w-4" /></button>
-                              <button type="button" className="p-1 text-slate-400 hover:text-slate-600 transition"><MoreHorizontal className="h-4 w-4" /></button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )) : (
-                    <div className="px-5 py-12 text-center text-slate-500">
-                      <p>No evaluation records found for this period.</p>
-                    </div>
-                  )}
-
-                  {/* Footer */}
-                  <div className="px-5 py-2.5 border-t border-slate-100 flex items-center justify-between">
-                    <div className="flex items-center gap-4 text-xs text-slate-600">
-                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Approved: 18</span>
-                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-orange-400" /> Supervisor Review: 8</span>
-                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-cyan-400" /> Self Evaluation: 5</span>
-                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-blue-600" /> Planning: 3</span>
-                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-red-500" /> Rejected: 1</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-slate-500">
-                      <span>Rows per page:</span>
-                      <span className="flex items-center gap-1">{[10, 20, 30].map(n => <button key={n} type="button" className={`h-6 w-7 rounded ${n === 10 ? 'bg-blue-600 text-white font-semibold' : 'bg-slate-100 text-slate-600'} text-xs`}>{n}</button>)}</span>
-                      <span>1–10 of 35</span>
-                      <span className="flex items-center gap-1">
-                        {[1, 2, 3, 4].map(n => <button key={n} type="button" className={`h-6 w-6 rounded ${n === 1 ? 'bg-blue-600 text-white font-semibold' : 'bg-slate-100 text-slate-600'} text-xs`}>{n}</button>)}
-                        <button type="button" className="h-6 w-6 rounded bg-slate-100 text-slate-600 text-xs">&gt;</button>
-                      </span>
-                    </div>
-                  </div>
-                </section>
-              </>
-            )}
-
-            {activeSection === 'performance-reviews' && (
-              <>
-                {/* Header */}
-                <div className="mb-1">
-                  <p className="text-sm text-blue-600 font-medium">Performance Management <span className="mx-1 text-slate-400">&gt;</span> <span className="text-slate-500">Performance Reviews</span></p>
-                </div>
-                <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Completed Performance Reviews</h2>
-                <p className="text-sm text-slate-500 mt-0.5">Archive of all finalized evaluation records across the organization</p>
-
-                {/* Toolbar */}
-                <div className="mt-5 flex items-center gap-4">
-                  <div className="relative flex-1 max-w-lg">
-                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                    <input className="w-full rounded-lg border border-slate-300 pl-10 pr-4 py-2 text-sm" placeholder="Search employee by name, ID, or department..." />
-                  </div>
-                  <select className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600"><option>All Departments</option></select>
-                  <button type="button" className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition shadow-sm">
-                    <Download className="h-4 w-4" /> Export CSV / Excel
-                  </button>
-                </div>
-
-                {/* Table */}
-                <section className="mt-5 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                  {/* Record count */}
-                  <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
-                    <span className="text-sm text-slate-700"><span className="font-bold">{reviewsData.length}</span> Records Found</span>
-                    <span className="text-xs text-slate-400 italic">Jan 2024 – Feb 2025</span>
-                  </div>
-                  {/* Column headers */}
-                  <div className="grid grid-cols-12 items-center px-5 py-2.5 bg-slate-800 text-[11px] font-semibold text-white uppercase tracking-wider">
-                    <div className="col-span-2">Employee ↕</div>
-                    <div className="col-span-2">Position</div>
-                    <div className="col-span-2">Department ↕</div>
-                    <div className="col-span-2">Final Score (out of 5.0) ↕</div>
-                    <div className="col-span-2">Review Date ↓</div>
-                    <div className="col-span-2">Actions</div>
-                  </div>
-                  {/* Rows */}
-                  <div className="divide-y divide-slate-100 relative min-h-[120px]">
-                    {evaluationsLoading && (
-                      <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 flex items-center justify-center">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                      </div>
-                    )}
-                    {reviewPageData.length === 0 && !evaluationsLoading ? (
-                      <div className="py-12 flex flex-col items-center justify-center text-center">
-                        <CalendarCheck2 className="h-12 w-12 text-slate-300 mb-4" />
-                        <h3 className="text-lg font-bold text-slate-700">No performance reviews</h3>
-                        <p className="text-sm text-slate-500 mt-1">There are currently no approved performance reviews to display.</p>
-                      </div>
-                    ) : (
-                      reviewPageData.map((row) => {
-                        const score = row.final_score ?? 0;
-                        const rating = bucketForScore(score);
-                        const ratingColor = rating === 'Outstanding' ? 'text-emerald-600' : rating === 'Very Satisfactory' ? 'text-blue-600' : 'text-orange-500';
-                        return (
-                          <div key={row.id} className="grid grid-cols-12 items-center px-5 py-3.5 text-sm hover:bg-slate-50/60 transition">
-                            <div className="col-span-2">
-                              <p className="font-semibold text-slate-800">{row.employee_name ?? 'Unknown'}</p>
-                              <p className="text-xs text-slate-400">ID-{row.employee_id?.substring(0, 8).toUpperCase() ?? 'N/A'}</p>
-                            </div>
-                            <div className="col-span-2 text-slate-500">{row.employee_position ?? '—'}</div>
-                            <div className="col-span-2 text-slate-500">{row.department ?? 'Unassigned'}</div>
-                            <div className="col-span-2 flex items-center gap-2">
-                              <span className="font-bold text-slate-800">{score.toFixed(2)}</span>
-                              <span className={`text-xs font-medium ${ratingColor}`}>{rating}</span>
-                            </div>
-                            <div className="col-span-2 text-slate-500">{new Date(row.created_at).toLocaleDateString()}</div>
-                            <div className="col-span-2 flex items-center gap-3">
-                              <button type="button" className="text-xs font-semibold text-blue-600 hover:underline">View Review</button>
-                              <span className="text-slate-300">|</span>
-                              <button type="button" className="text-xs font-medium text-slate-400 hover:text-slate-600">Download IPCR</button>
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                  {/* Footer with functional pagination */}
-                  <div className="px-5 py-3.5 border-t border-slate-100 flex items-center justify-between">
-                    <span className="text-xs font-medium text-blue-600">
-                      Showing {reviewStartIdx + 1} – {Math.min(reviewStartIdx + reviewRowsPerPage, reviewsData.length)} of {reviewsData.length} records
-                    </span>
-                    <div className="flex items-center gap-3 text-xs text-slate-500">
-                      <span>Rows:</span>
-                      {[10, 20, 50].map(n => (
-                        <button key={n} type="button"
-                          onClick={() => { setReviewRowsPerPage(n); setReviewPage(1); }}
-                          className={`h-6 w-7 rounded ${n === reviewRowsPerPage ? 'bg-blue-600 text-white font-semibold' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'} text-xs transition`}
-                        >{n}</button>
-                      ))}
-                      <span className="ml-2 flex items-center gap-1">
-                        <button type="button" disabled={reviewPage === 1}
-                          onClick={() => setReviewPage(p => Math.max(1, p - 1))}
-                          className={`px-2 py-1 rounded border border-slate-200 text-xs transition ${reviewPage === 1 ? 'text-slate-300 cursor-default' : 'text-slate-600 hover:bg-slate-100'}`}
-                        >&lt; Previous</button>
-                        {Array.from({ length: reviewTotalPages }, (_, i) => i + 1).map(n => {
-                          if (reviewTotalPages <= 5 || n === 1 || n === reviewTotalPages || Math.abs(n - reviewPage) <= 1) {
-                            return (
-                              <button key={n} type="button" onClick={() => setReviewPage(n)}
-                                className={`h-6 w-6 rounded text-xs transition ${n === reviewPage ? 'bg-blue-600 text-white font-semibold' : 'border border-slate-200 text-slate-600 hover:bg-slate-100'}`}
-                              >{n}</button>
-                            );
-                          }
-                          if (n === 2 && reviewPage > 3) return <span key={n} className="text-slate-400">…</span>;
-                          if (n === reviewTotalPages - 1 && reviewPage < reviewTotalPages - 2) return <span key={n} className="text-slate-400">…</span>;
-                          return null;
-                        })}
-                        <button type="button" disabled={reviewPage === reviewTotalPages}
-                          onClick={() => setReviewPage(p => Math.min(reviewTotalPages, p + 1))}
-                          className={`px-2 py-1 rounded border border-slate-200 text-xs transition ${reviewPage === reviewTotalPages ? 'text-slate-300 cursor-default' : 'text-slate-600 hover:bg-slate-100'}`}
-                        >Next &gt;</button>
-                      </span>
-                    </div>
-                  </div>
-                </section>
-              </>
-            )}
-
-            {activeSection === 'goals' && (
-              <>
-                {/* Header */}
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <button type="button" className="p-1 text-slate-400 hover:text-slate-600 transition"><ChevronLeft className="h-5 w-5" /></button>
-                    <div>
-                      <h2 className="text-2xl font-bold text-slate-900 tracking-tight">DPCR System</h2>
-                      <p className="text-sm text-slate-500">Departmental Performance Commitment and Review</p>
-                    </div>
-                  </div>
-                  <button type="button" className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition shadow-sm">
-                    <Plus className="h-4 w-4" /> New IPCR
-                  </button>
-                </div>
-                <div className="h-1 w-full bg-gradient-to-r from-blue-500 to-blue-300 rounded-full mb-6" />
-
-                {/* Department IPCR Reports */}
-                <h3 className="text-base font-bold text-slate-800 mb-1">Department IPCR Reports</h3>
-                <p className="text-sm text-slate-500 mb-4">Click a department card to view its summary and individual employee IPCR forms</p>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
-                  {dbEvaluationGroups.map((g) => {
-                    const deptEvals = evaluations.filter(e => e.department === g.dept && e.status === 'Approved');
-                    const hasData = deptEvals.length > 0;
-                    const avgScore = hasData ? deptEvals.reduce((sum, e) => sum + (e.final_score ?? 0), 0) / deptEvals.length : 0;
-                    const rating = hasData ? bucketForScore(avgScore) : '';
-
-                    return (
-                      <div key={g.dept} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:border-blue-300 hover:shadow-md transition cursor-pointer">
-                        <div className="flex items-center gap-3 mb-3">
-                          <span className="flex items-center justify-center h-10 w-10 rounded-lg bg-blue-50"><FileText className="h-5 w-5 text-blue-500" /></span>
-                          <div>
-                            <p className="font-bold text-sm text-slate-800">{g.dept}</p>
-                            <p className="text-xs text-blue-500">{deptEvals.length} evaluated</p>
-                          </div>
-                        </div>
-                        {hasData ? (
-                          <>
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-xs text-slate-400">Avg. Score</span>
-                              <span className="text-2xl font-extrabold text-blue-600">{avgScore.toFixed(2)}</span>
-                            </div>
-                            <span className="inline-block rounded-full border border-blue-300 bg-blue-50 px-3 py-0.5 text-xs font-semibold text-blue-700 mb-3">{rating}</span>
-                          </>
-                        ) : (
-                          <p className="text-xs text-slate-400 italic mb-3">No completed IPCRs yet</p>
-                        )}
-                        <button type="button" className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:underline">
-                          <Eye className="h-3.5 w-3.5" /> View Department Report & IPCRs
-                        </button>
-                      </div>
-                    );
-                  })}
-                  {dbEvaluationGroups.length === 0 && (
-                    <div className="col-span-full py-12 text-center text-slate-500">
-                      No department reports available.
-                    </div>
-                  )}
-                </div>
-
-                {/* IPCR Submissions */}
-                <h3 className="text-base font-bold text-slate-800 mb-1">IPCR Submissions</h3>
-                <p className="text-sm text-slate-500 mb-4">All employee IPCR submissions — click "View IPCR" to open the full performance form</p>
-
-                <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                  {/* Toolbar */}
-                  <div className="flex items-center gap-4 px-5 py-3.5 border-b border-slate-100">
-                    <div className="relative flex-1 max-w-lg">
-                      <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                      <input className="w-full rounded-lg border border-slate-300 pl-10 pr-4 py-2 text-sm" placeholder="Search employee name, department..." />
-                    </div>
-                    <select className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600"><option>All Departments</option></select>
-                    <select className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600"><option>All Statuses</option></select>
-                    <span className="text-xs text-slate-400">6 of 6 records</span>
-                  </div>
-                  {/* Column headers */}
-                  <div className="grid grid-cols-12 items-center px-5 py-2.5 bg-slate-800 text-[11px] font-semibold text-white uppercase tracking-wider">
-                    <div className="col-span-2">Department</div>
-                    <div className="col-span-2">Employee Name</div>
-                    <div className="col-span-2">Date of Submission</div>
-                    <div className="col-span-2 text-center">Total Score</div>
-                    <div className="col-span-2 text-center">Status</div>
-                    <div className="col-span-2 text-right">Action</div>
-                  </div>
-                  {/* Rows */}
-                  <div className="divide-y divide-slate-100 relative min-h-[120px]">
-                    {evaluationsLoading && (
-                      <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 flex items-center justify-center">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                      </div>
-                    )}
-                    {(() => {
-                      const goalEvals = evaluations.filter(e => e.status === 'Self Evaluation' || e.status === 'Supervisor Review' || e.status === 'Approved');
-                      if (goalEvals.length === 0 && !evaluationsLoading) {
-                        return (
-                          <div className="py-12 flex flex-col items-center justify-center text-center">
-                            <FileCheck2 className="h-12 w-12 text-slate-300 mb-4" />
-                            <h3 className="text-lg font-bold text-slate-700">No IPCR Submissions</h3>
-                            <p className="text-sm text-slate-500 mt-1">There are no recent IPCR submissions to display.</p>
-                          </div>
-                        );
-                      }
-                      return goalEvals.map((e) => {
-                        const hasScore = e.final_score !== null;
-                        const score = e.final_score ?? 0;
-                        const rating = hasScore ? bucketForScore(score) : '';
-                        const initials = (e.employee_name ?? 'U').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-
-                        return (
-                          <div key={e.id} className="grid grid-cols-12 items-center px-5 py-4 text-sm hover:bg-slate-50/60 transition">
-                            <div className="col-span-2">
-                              <span className="inline-block rounded-full border px-3 py-0.5 text-[11px] font-semibold bg-slate-100 text-slate-700 border-slate-200">{e.department ?? 'Unassigned'}</span>
-                            </div>
-                            <div className="col-span-2 flex items-center gap-2.5">
-                              <span className="flex items-center justify-center h-8 w-8 rounded-full bg-slate-200 text-xs font-bold text-slate-600">{initials}</span>
-                              <div>
-                                <p className="font-semibold text-slate-800">{e.employee_name}</p>
-                                <p className="text-xs text-slate-400">{e.employee_position}</p>
-                              </div>
-                            </div>
-                            <div className="col-span-2 text-slate-500">{new Date(e.created_at).toLocaleDateString()}</div>
-                            <div className="col-span-2 text-center">
-                              {hasScore ? (
-                                <div>
-                                  <p className="text-lg font-extrabold text-blue-600">{score.toFixed(2)}</p>
-                                  <p className={`text-[11px] font-medium ${rating === 'Outstanding' ? 'text-emerald-600' : 'text-blue-500'}`}>{rating}</p>
-                                </div>
-                              ) : <span className="text-slate-400">—</span>}
-                            </div>
-                            <div className="col-span-2 text-center">
-                              {e.status === 'Approved' ? (
-                                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-0.5 text-[11px] font-semibold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Approved</span>
-                              ) : e.status === 'Self Evaluation' || e.status === 'Supervisor Review' ? (
-                                <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-0.5 text-[11px] font-semibold text-blue-700"><CheckCircle2 className="h-3 w-3" /> Submitted</span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-3 py-0.5 text-[11px] font-semibold text-orange-700"><Clock className="h-3 w-3" /> Monitoring Phase</span>
-                              )}
-                            </div>
-                            <div className="col-span-2 text-right">
-                              {hasScore ? (
-                                <button type="button" className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 transition">
-                                  <Eye className="h-3.5 w-3.5" /> View IPCR
-                                </button>
-                              ) : <span className="text-xs text-slate-400 italic">Not available</span>}
-                            </div>
-                          </div>
-                        );
-                      });
-                    })()}
-                  </div>
-                </section>
-              </>
-            )}
-
-            {activeSection === 'ipcr' && <SummaryOfRatings />}
-
             {activeSection === 'ipcr-management' && <PMIPCRManagement />}
 
             {activeSection === 'competency' && <PMCompetencyFramework />}
@@ -2269,204 +1328,6 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
             {activeSection === 'promotions' && <PMPromotionalApplications />}
 
             {activeSection === 'analytics' && <PMReportsAnalytics />}
-
-            {activeSection === 'reports' && (
-              <>
-                {/* Header Area */}
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-sm text-blue-600 font-medium">Performance Management <span className="mx-1 text-slate-400">/</span> <span className="text-slate-500">Documents</span></p>
-                </div>
-
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Documents</h2>
-                    <p className="text-sm text-slate-500 mt-1">Request and track document submissions from employees, organized by department</p>
-                  </div>
-                  <button type="button" onClick={openBulkRequestModal} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition shadow-sm">
-                    <Plus className="h-4 w-4" /> New Request
-                  </button>
-                </div>
-
-                {/* KPI Cards */}
-                {(() => {
-                  const reqSummary = summarizeRequests(documentRequests);
-                  return (
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm relative overflow-hidden">
-                        {documentRequestsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
-                        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Total Requests</p>
-                        <p className="text-3xl font-bold text-slate-900 leading-none">{reqSummary.total}</p>
-                      </div>
-                      <div className="rounded-xl border border-orange-300 bg-white p-4 shadow-sm relative overflow-hidden">
-                        {documentRequestsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
-                        <p className="text-[11px] font-semibold text-orange-500 uppercase tracking-wider mb-1.5">Pending</p>
-                        <p className="text-3xl font-bold text-orange-500 leading-none">{reqSummary.pending}</p>
-                      </div>
-                      <div className="rounded-xl border border-red-200 bg-white p-4 shadow-sm relative overflow-hidden">
-                        {documentRequestsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
-                        <p className="text-[11px] font-semibold text-red-500 uppercase tracking-wider mb-1.5">Overdue</p>
-                        <p className="text-3xl font-bold text-red-500 leading-none">{reqSummary.overdue}</p>
-                      </div>
-                      <div className="rounded-xl border border-emerald-200 bg-white p-4 shadow-sm relative overflow-hidden">
-                        {documentRequestsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
-                        <p className="text-[11px] font-semibold text-emerald-500 uppercase tracking-wider mb-1.5">Approved</p>
-                        <p className="text-3xl font-bold text-emerald-500 leading-none">{reqSummary.approved}</p>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* Filters */}
-                <div className="rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm flex items-center gap-3 mb-4">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                    <input className="w-full rounded-lg border border-slate-200 pl-9 pr-4 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Search employee or document..." />
-                  </div>
-                  <select className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-500 outline-none w-48">
-                    <option>All Status</option>
-                    <option>Pending</option>
-                    <option>Submitted</option>
-                    <option>Under Review</option>
-                    <option>Approved</option>
-                    <option>Overdue</option>
-                  </select>
-                  <select className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-500 outline-none w-56">
-                    <option>All Document Types</option>
-                    <option>IPCR</option>
-                    <option>Accomplishment Report</option>
-                    <option>Service Record</option>
-                    <option>Position Description Form</option>
-                  </select>
-                </div>
-
-                {/* Table Section */}
-                {(() => {
-                  if (documentRequestsLoading) {
-                    return (
-                      <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-8 text-center animate-pulse">
-                        <div className="h-4 bg-slate-200 rounded w-1/4 mx-auto mb-4" />
-                        <div className="h-10 bg-slate-100 rounded mb-2" />
-                        <div className="h-10 bg-slate-100 rounded mb-2" />
-                        <div className="h-10 bg-slate-100 rounded" />
-                      </div>
-                    );
-                  }
-
-                  const grouped = groupRequestsByDepartment(documentRequests);
-
-                  if (grouped.length === 0) {
-                    return (
-                      <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-12 text-center flex flex-col items-center">
-                        <FileText className="h-12 w-12 text-slate-300 mb-4" />
-                        <h3 className="text-lg font-bold text-slate-700">No document requests</h3>
-                        <p className="text-sm text-slate-500 mt-1">There are currently no document requests to display.</p>
-                      </div>
-                    );
-                  }
-
-                  return grouped.map(({ department: dept, requests: reqs }) => {
-                    const pendingCount = reqs.filter(r => r.status === 'Pending').length;
-                    const submittedCount = reqs.filter(r => r.status === 'Submitted').length;
-                    const reviewCount = reqs.filter(r => (r.status as string) === 'Under Review').length;
-                    const approvedCount = reqs.filter(r => r.status === 'Approved').length;
-                    const overdueCount = reqs.filter(r => (r.status as string) === 'Overdue').length;
-
-                    return (
-                      <div key={dept} className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden mb-4">
-                        {/* Dark Header */}
-                        <div className="bg-[#1e293b] px-5 py-3 flex items-center justify-between text-white">
-                          <div className="flex items-center gap-4">
-                            <div>
-                              <h3 className="text-base font-bold leading-tight">{dept}</h3>
-                              <p className="text-xs text-slate-400">{reqs.length} requests</p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {pendingCount > 0 && <span className="inline-flex items-center rounded-full bg-orange-500 px-2.5 py-0.5 text-[11px] font-bold text-white">{pendingCount} Pending</span>}
-                              {submittedCount > 0 && <span className="inline-flex items-center rounded-full bg-blue-500 px-2.5 py-0.5 text-[11px] font-bold text-white">{submittedCount} Submitted</span>}
-                              {reviewCount > 0 && <span className="inline-flex items-center rounded-full bg-[#a855f7] px-2.5 py-0.5 text-[11px] font-bold text-white">{reviewCount} Under Review</span>}
-                              {approvedCount > 0 && <span className="inline-flex items-center rounded-full bg-emerald-500 px-2.5 py-0.5 text-[11px] font-bold text-white">{approvedCount} Approved</span>}
-                              {overdueCount > 0 && <span className="inline-flex items-center rounded-full bg-red-500 px-2.5 py-0.5 text-[11px] font-bold text-white">{overdueCount} Overdue</span>}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 cursor-pointer hover:text-slate-300">
-                            <ChevronUp className="h-4 w-4" />
-                          </div>
-                        </div>
-
-                        {/* Table Header */}
-                        <div className="grid grid-cols-12 items-center px-5 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">
-                          <div className="col-span-1">NO.</div>
-                          <div className="col-span-3">EMPLOYEE</div>
-                          <div className="col-span-2">DOCUMENT TYPE</div>
-                          <div className="col-span-2">DATE REQUESTED</div>
-                          <div className="col-span-2">DATE SUBMITTED</div>
-                          <div className="col-span-1 text-center">STATUS</div>
-                          <div className="col-span-1 text-right">ACTION</div>
-                        </div>
-
-                        {/* Rows */}
-                        <div className="divide-y divide-slate-100">
-                          {reqs.map((row, i) => {
-                            const statusConfig: Record<string, { class: string; action: string; actionClass: string; icon: any }> = {
-                              'Submitted': { class: 'border-blue-200 bg-blue-50 text-blue-600', action: 'View', actionClass: 'border-purple-200 text-purple-600 hover:bg-purple-50', icon: Eye },
-                              'Approved': { class: 'border-emerald-200 bg-emerald-50 text-emerald-600', action: 'Request', actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList },
-                              'Pending': { class: 'border-orange-200 bg-orange-50 text-orange-600', action: 'Request', actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList },
-                              'Under Review': { class: 'border-purple-200 bg-purple-50 text-purple-600', action: 'View', actionClass: 'border-purple-200 text-purple-600 hover:bg-purple-50', icon: Eye },
-                              'Overdue': { class: 'border-red-200 bg-red-50 text-red-600', action: 'Request', actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList },
-                            };
-                            const config = statusConfig[row.status] || statusConfig['Pending'];
-                            const initials = (row.employee_name ?? 'U').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-                            const ActionIcon = config.icon;
-
-                            return (
-                              <div key={row.id} className="grid grid-cols-12 items-start px-5 py-3 text-sm hover:bg-slate-50/50 transition">
-                                <div className="col-span-1 text-slate-500 pt-1.5">{i + 1}</div>
-                                <div className="col-span-3 flex items-start gap-3">
-                                  <span className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-[11px] font-bold text-blue-600 shrink-0">
-                                    {initials}
-                                  </span>
-                                  <div className="flex flex-col pt-1.5">
-                                    <p className="font-semibold text-slate-800 leading-none">{row.employee_name}</p>
-                                    <p className="text-[11px] text-slate-400 mt-1">{row.department}</p>
-                                  </div>
-                                </div>
-                                <div className="col-span-2 flex items-center gap-2 text-slate-600 pt-1.5">
-                                  <FileText className="h-4 w-4 text-slate-400" />
-                                  {row.document_type}
-                                </div>
-                                <div className="col-span-2 text-slate-600 pt-1.5">{new Date(row.uploaded_at).toLocaleDateString()}</div>
-                                <div className="col-span-2 text-slate-600 pt-1.5">{row.status !== 'Pending' ? new Date(row.uploaded_at).toLocaleDateString() : '—'}</div>
-                                <div className="col-span-1 flex justify-center pt-1.5">
-                                  <span className={`inline-block rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${config.class}`}>
-                                    {row.status}
-                                  </span>
-                                </div>
-                                <div className="col-span-1 flex justify-end pt-1">
-                                  <button
-                                    type="button"
-                                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition border ${config.actionClass}`}
-                                    onClick={() => {
-                                      if (config.action === 'Request') {
-                                        openRequestModal({ id: row.employee_id, name: row.employee_name ?? '', role: '', dept: row.department ?? '', initials });
-                                      } else if (config.action === 'View') {
-                                        setReviewingRequest(row);
-                                      }
-                                    }}
-                                  >
-                                    <ActionIcon className="h-3.5 w-3.5" />
-                                    {config.action}
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  });
-                })()}
-              </>
-            )}
 
             {activeSection === 'settings' && (
               <>
@@ -2966,7 +1827,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
           title={reviewingRequest?.document_name ?? 'Review Document'}
           subtitle={
             reviewingRequest
-              ? `${reviewingRequest.employee_name ?? 'Employee'} • ${reviewingRequest.department ?? 'Unassigned'} • Status: ${reviewingRequest.status}`
+              ? `${reviewingRequest.employee_name ?? 'Employee'} â€¢ ${reviewingRequest.department ?? 'Unassigned'} â€¢ Status: ${reviewingRequest.status}`
               : undefined
           }
           onClose={() => { if (!reviewDecisionPending) setReviewingRequest(null); }}
@@ -2979,7 +1840,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   onClick={() => void handleReviewDecision('Rejected')}
                   className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
                 >
-                  {reviewDecisionPending === 'Rejected' ? 'Rejecting…' : 'Reject'}
+                  {reviewDecisionPending === 'Rejected' ? 'Rejectingâ€¦' : 'Reject'}
                 </button>
                 <button
                   type="button"
@@ -2987,7 +1848,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   onClick={() => void handleReviewDecision('Approved')}
                   className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
                 >
-                  {reviewDecisionPending === 'Approved' ? 'Approving…' : 'Approve'}
+                  {reviewDecisionPending === 'Approved' ? 'Approvingâ€¦' : 'Approve'}
                 </button>
               </>
             ) : null
