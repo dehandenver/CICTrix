@@ -910,20 +910,8 @@ const ProbationaryPanel = ({
           </button>
         </div>
       </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-3">
-        <StatCard icon={Users} label="Probationary Employees" value={employees.length} accent />
-        <StatCard icon={Bell} label="Employees Due" value={dueCount} />
-        <StatCard
-          icon={CalendarDays}
-          label="Next Due Date"
-          value={nextDue ? fmtDate(nextDue) : '—'}
-        />
-      </div>
-
       {currentPeriod && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-sm text-blue-700">
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-sm text-blue-700 mb-4">
           Current Evaluation Period: <strong>{currentPeriod}</strong>
         </div>
       )}
@@ -1107,25 +1095,9 @@ const RegularPanel = ({
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-3">
-        <StatCard icon={Users} label="Regular Employees" value={employees.length} accent />
-        <StatCard icon={Building2} label="Offices" value={officeGroups.length} />
-        <StatCard icon={Bell} label="Pending Submission" value={dueCount} />
-      </div>
-
       {currentPeriod && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-sm text-blue-700">
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-sm text-blue-700 mb-4">
           Current Evaluation Period: <strong>{currentPeriod}</strong>
-        </div>
-      )}
-
-      {nextDue && (
-        <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 border border-slate-200">
-          <Calendar size={12} />
-          <span>
-            Next Due Date: <strong className="text-slate-700">{fmtDate(nextDue)}</strong>
-          </span>
         </div>
       )}
 

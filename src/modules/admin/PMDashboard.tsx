@@ -410,6 +410,18 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const [reviewingRequest, setReviewingRequest] = useState<DocumentRequest | null>(null);
   const [reviewDecisionPending, setReviewDecisionPending] = useState<'Approved' | 'Rejected' | null>(null);
 
+  // States for Pending IPCR Submissions and Probationary Metrics
+  const [probationarySubmissionsCount, setProbationarySubmissionsCount] = useState(0);
+  const [regularSubmissionsCount, setRegularSubmissionsCount] = useState(0);
+  const [pendingSubmissions, setPendingSubmissions] = useState<any[]>([]);
+  const [probationaryMetrics, setProbationaryMetrics] = useState({
+    total: 0,
+    due: 0,
+    nextDue: '—'
+  });
+  const [ipcrLoading, setIpcrLoading] = useState(false);
+  const [ipcrSubmissionTab, setIpcrSubmissionTab] = useState<'pending' | 'recent'>('pending');
+
   const refreshDocumentRequests = async () => {
     const result = await getDocumentRequests({ source: 'PM' });
     if (result.success) setDocumentRequests(result.data);
@@ -595,6 +607,155 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
       if (cancelled) return;
       setDocumentRequests(result.data);
       setDocumentRequestsLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [activeSection]);
+
+  // Load IPCR submissions + probationary schedules to compute dashboard stats & list
+  useEffect(() => {
+    if (activeSection !== 'dashboard') return;
+    let cancelled = false;
+    (async () => {
+      setIpcrLoading(true);
+      try {
+        const [empResult, subRes, schedRes] = await Promise.all([
+          getAllEmployees({ status: 'Active' }),
+          (supabase as any).from('ipcr_submissions').select('*'),
+          (supabase as any).from('probationary_ipcr_schedules').select('*'),
+        ]);
+
+        if (cancelled) return;
+        if (!empResult.success) return;
+
+        const employees: Employee[] = empResult.data || [];
+        const submissions = subRes.error ? [] : (subRes.data ?? []);
+        const schedules = schedRes.error ? [] : (schedRes.data ?? []);
+
+        const getMonthsOfService = (hireDate: string) => {
+          const hired = new Date(hireDate);
+          const now = new Date();
+          return Math.max(
+            0,
+            (now.getFullYear() - hired.getFullYear()) * 12 + (now.getMonth() - hired.getMonth()),
+          );
+        };
+
+        const computeStageInfoLocal = (hireDate: string, schedules: any[]) => {
+          const hired = new Date(hireDate);
+          const months = getMonthsOfService(hireDate);
+
+          if (months < 6) {
+            const monthNames = [
+              'January', 'February', 'March', 'April', 'May', 'June',
+              'July', 'August', 'September', 'October', 'November', 'December'
+            ];
+            const hireMonthName = monthNames[hired.getMonth()];
+            const sched = schedules.find((s) => s.hired_month === hireMonthName);
+            
+            if (sched) {
+              const now = new Date();
+              const targetEnd = new Date(sched.target_end);
+              const accomplishmentEnd = new Date(sched.accomplishment_end);
+              if (now <= targetEnd) {
+                return { stage: 'Target Setting', phase: 'target', dueDate: targetEnd, periodLabel: sched.period_label };
+              } else {
+                return { stage: 'Accomplishment Rating', phase: 'rating', dueDate: accomplishmentEnd, periodLabel: sched.period_label };
+              }
+            }
+            if (months < 3) {
+              const due = new Date(hired);
+              due.setMonth(due.getMonth() + 3);
+              return { stage: 'Target Setting', phase: 'target', dueDate: due, periodLabel: 'Probationary — 1st 3 Months' };
+            }
+            const due = new Date(hired);
+            due.setMonth(due.getMonth() + 6);
+            return { stage: 'Accomplishment Rating', phase: 'rating', dueDate: due, periodLabel: 'Probationary — 2nd 3 Months' };
+          }
+
+          const regularStart = new Date(hired);
+          regularStart.setMonth(regularStart.getMonth() + 6);
+          const now = new Date();
+          const msSinceRegular = Math.max(
+            0,
+            (now.getFullYear() - regularStart.getFullYear()) * 12 + (now.getMonth() - regularStart.getMonth()),
+          );
+          const completedCycles = Math.floor(msSinceRegular / 12);
+          const posInCycle = msSinceRegular % 12;
+          const cycleStart = new Date(regularStart);
+          cycleStart.setMonth(cycleStart.getMonth() + completedCycles * 12);
+          const yr = cycleStart.getFullYear();
+          const halfLabel = cycleStart.getMonth() < 6 ? '1st Half' : '2nd Half';
+
+          if (posInCycle < 6) {
+            const due = new Date(cycleStart);
+            due.setMonth(due.getMonth() + 6);
+            return { stage: 'Target Setting', phase: 'target', dueDate: due, periodLabel: `${halfLabel} ${yr}` };
+          }
+          const due = new Date(cycleStart);
+          due.setMonth(due.getMonth() + 12);
+          return { stage: 'Accomplishment Rating', phase: 'rating', dueDate: due, periodLabel: `${halfLabel} ${yr}` };
+        };
+
+        const subMap = new Map<string, string>();
+        for (const s of submissions) {
+          subMap.set(`${s.employee_id}::${s.period}::${s.phase}`, s.stage);
+        }
+
+        let probTotal = 0;
+        let probDue = 0;
+        let nextDueDate: Date | null = null;
+        const pendingList: any[] = [];
+
+        for (const emp of employees) {
+          if (!emp.hire_date) continue;
+          const months = getMonthsOfService(emp.hire_date);
+          const isProb = months < 6;
+          const { stage, phase, dueDate, periodLabel } = computeStageInfoLocal(emp.hire_date, schedules);
+
+          const actualStage = subMap.get(`${emp.id}::${periodLabel}::${phase}`) || 'Not Started';
+          const isPending = actualStage !== 'Forwarded to PM';
+
+          if (isProb) {
+            probTotal++;
+            if (isPending) {
+              probDue++;
+              if (!nextDueDate || dueDate < nextDueDate) {
+                nextDueDate = dueDate;
+              }
+            }
+          }
+
+          if (isPending) {
+            pendingList.push({
+              name: emp.full_name,
+              position: emp.current_position || '—',
+              dept: emp.department || 'Unassigned',
+              type: isProb ? 'Probationary' : 'Regular',
+              period: periodLabel,
+              stage: actualStage,
+              dueDate: dueDate,
+            });
+          }
+        }
+
+        setProbationaryMetrics({
+          total: probTotal,
+          due: probDue,
+          nextDue: nextDueDate ? nextDueDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
+        });
+
+        const probPending = pendingList.filter(p => p.type === 'Probationary').length;
+        const regPending = pendingList.filter(p => p.type === 'Regular').length;
+        setProbationarySubmissionsCount(probPending);
+        setRegularSubmissionsCount(regPending);
+
+        pendingList.sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
+        setPendingSubmissions(pendingList);
+      } catch (err) {
+        console.error('Error calculating IPCR stats:', err);
+      } finally {
+        setIpcrLoading(false);
+      }
     })();
     return () => { cancelled = true; };
   }, [activeSection]);
@@ -1060,21 +1221,23 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                     <p className="text-3xl font-extrabold text-orange-500 leading-none">{statusCounts['Supervisor Review']}</p>
                     <p className="text-xs text-slate-400 mt-1">Awaiting validation</p>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm relative overflow-hidden">
+                    {ipcrLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
                     <div className="flex items-center gap-2 mb-1">
                       <AlertTriangle className="h-4 w-4 text-amber-500" />
-                      <p className="text-xs font-medium text-slate-500">Urgent Training Approvals</p>
+                      <p className="text-xs font-medium text-slate-500">Pending IPCR (Probationary)</p>
                     </div>
-                    <p className="text-3xl font-extrabold text-slate-900 leading-none">7</p>
-                    <p className="text-xs text-slate-400 mt-1">Due within 3 days</p>
+                    <p className="text-3xl font-extrabold text-amber-600 leading-none">{probationarySubmissionsCount}</p>
+                    <p className="text-xs text-slate-400 mt-1">Hired within 6 months</p>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm relative overflow-hidden">
+                    {ipcrLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
                     <div className="flex items-center gap-2 mb-1">
                       <Users className="h-4 w-4 text-blue-500" />
-                      <p className="text-xs font-medium text-slate-500">Expiring Certifications</p>
+                      <p className="text-xs font-medium text-slate-500">Pending IPCR (Regular)</p>
                     </div>
-                    <p className="text-3xl font-extrabold text-slate-900 leading-none">12</p>
-                    <p className="text-xs text-slate-400 mt-1">Next 30 days</p>
+                    <p className="text-3xl font-extrabold text-blue-600 leading-none">{regularSubmissionsCount}</p>
+                    <p className="text-xs text-slate-400 mt-1">Tenured &gt; 6 months</p>
                   </div>
                 </div>
 
@@ -1245,60 +1408,147 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   </section>
 
                   <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                    <header className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <BookOpen className="h-4 w-4 text-slate-500" />
-                        <h3 className="text-sm font-bold text-slate-800">IPCR Submissions</h3>
+                    <header className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          <BookOpen className="h-4 w-4 text-slate-500" />
+                          <h3 className="text-sm font-bold text-slate-800">IPCR Submissions</h3>
+                        </div>
+                        <div className="flex bg-slate-100 rounded-lg p-0.5 text-[11px] font-semibold">
+                          <button
+                            type="button"
+                            onClick={() => setIpcrSubmissionTab('pending')}
+                            className={`px-2.5 py-1 rounded-md transition ${
+                              ipcrSubmissionTab === 'pending'
+                                ? 'bg-white text-slate-800 shadow-sm'
+                                : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                          >
+                            Pending ({pendingSubmissions.length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIpcrSubmissionTab('recent')}
+                            className={`px-2.5 py-1 rounded-md transition ${
+                              ipcrSubmissionTab === 'recent'
+                                ? 'bg-white text-slate-800 shadow-sm'
+                                : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                          >
+                            Recent ({recentIPCRs.length})
+                          </button>
+                        </div>
                       </div>
-                      <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">{recentIPCRs.length} total</span>
+                      <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                        ipcrSubmissionTab === 'pending' ? 'bg-orange-100 text-orange-700' : 'bg-emerald-100 text-emerald-700'
+                      }`}>
+                        {ipcrSubmissionTab === 'pending' ? 'Action Required' : 'Completed'}
+                      </span>
                     </header>
                     <div className="overflow-x-auto relative min-h-[60px]">
-                      {evaluationsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="bg-slate-50/80 text-left">
-                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Employee</th>
-                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Dept.</th>
-                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Period</th>
-                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Rating</th>
-                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Status</th>
-                            <th className="px-4 py-2.5"></th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {recentIPCRs.length === 0 && !evaluationsLoading ? (
-                            <tr>
-                              <td colSpan={6} className="py-8 text-center text-slate-500 italic">No submissions yet</td>
+                      {(evaluationsLoading || ipcrLoading) && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
+                      
+                      {ipcrSubmissionTab === 'pending' ? (
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="bg-slate-50/80 text-left">
+                              <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Employee</th>
+                              <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Dept.</th>
+                              <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Type</th>
+                              <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Period</th>
+                              <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Stage</th>
                             </tr>
-                          ) : (
-                            recentIPCRs.map((row, idx) => (
-                              <tr key={`${row.name}-${idx}`} className="hover:bg-slate-50/60 transition">
-                                <td className="px-4 py-3">
-                                  <p className="font-semibold text-slate-800">{row.name}</p>
-                                  <p className="text-slate-400">{row.position}</p>
-                                </td>
-                                <td className="px-4 py-3 text-slate-500">{row.dept}</td>
-                                <td className="px-4 py-3 text-slate-500">{row.period}</td>
-                                <td className="px-4 py-3">
-                                  {row.rating !== 'â€”' ? (
-                                    <span className="inline-block rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">{row.rating}</span>
-                                  ) : <span className="text-slate-400">â€”</span>}
-                                </td>
-                                <td className="px-4 py-3">
-                                  <span className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${row.statusColor}`}>
-                                    {row.status}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 text-center">
-                                  <button type="button" className="rounded-md p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition" title="View">
-                                    <Eye className="h-4 w-4" />
-                                  </button>
-                                </td>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {pendingSubmissions.length === 0 && !ipcrLoading ? (
+                              <tr>
+                                <td colSpan={5} className="py-8 text-center text-slate-500 italic">No pending submissions</td>
                               </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
+                            ) : (
+                              pendingSubmissions.map((row, idx) => {
+                                const stageColors: Record<string, string> = {
+                                  'Not Started': 'bg-slate-100 text-slate-600',
+                                  'In Draft': 'bg-amber-100 text-amber-800',
+                                  'Submitted to Office': 'bg-blue-100 text-blue-800',
+                                  'Returned for Revision': 'bg-rose-100 text-rose-800',
+                                  'Verified': 'bg-indigo-100 text-indigo-800',
+                                  'Forwarded to PM': 'bg-emerald-100 text-emerald-800'
+                                };
+                                const typeColors: Record<string, string> = {
+                                  'Probationary': 'bg-purple-100 text-purple-800',
+                                  'Regular': 'bg-sky-100 text-sky-800'
+                                };
+                                return (
+                                  <tr key={`${row.name}-${idx}`} className="hover:bg-slate-50/60 transition">
+                                    <td className="px-4 py-3">
+                                      <p className="font-semibold text-slate-800">{row.name}</p>
+                                      <p className="text-slate-400">{row.position}</p>
+                                    </td>
+                                    <td className="px-4 py-3 text-slate-500">{row.dept}</td>
+                                    <td className="px-4 py-3">
+                                      <span className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${typeColors[row.type] || 'bg-slate-100 text-slate-850'}`}>
+                                        {row.type}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 py-3 text-slate-500">{row.period}</td>
+                                    <td className="px-4 py-3">
+                                      <span className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${stageColors[row.stage] || 'bg-slate-100 text-slate-850'}`}>
+                                        {row.stage}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="bg-slate-50/80 text-left">
+                              <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Employee</th>
+                              <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Dept.</th>
+                              <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Period</th>
+                              <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Rating</th>
+                              <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Status</th>
+                              <th className="px-4 py-2.5"></th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {recentIPCRs.length === 0 && !evaluationsLoading ? (
+                              <tr>
+                                <td colSpan={6} className="py-8 text-center text-slate-500 italic">No submissions yet</td>
+                              </tr>
+                            ) : (
+                              recentIPCRs.map((row, idx) => (
+                                <tr key={`${row.name}-${idx}`} className="hover:bg-slate-50/60 transition">
+                                  <td className="px-4 py-3">
+                                    <p className="font-semibold text-slate-800">{row.name}</p>
+                                    <p className="text-slate-400">{row.position}</p>
+                                  </td>
+                                  <td className="px-4 py-3 text-slate-500">{row.dept}</td>
+                                  <td className="px-4 py-3 text-slate-500">{row.period}</td>
+                                  <td className="px-4 py-3">
+                                    {row.rating !== '—' && row.rating !== 'â€”' ? (
+                                      <span className="inline-block rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">{row.rating}</span>
+                                    ) : <span className="text-slate-400">—</span>}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <span className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${row.statusColor}`}>
+                                      {row.status}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    <button type="button" className="rounded-md p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition" title="View">
+                                      <Eye className="h-4 w-4" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      )}
                     </div>
                   </section>
                 </div>
