@@ -742,6 +742,8 @@ const mapEmployeeRow = (row: any): EmployeeRecord => ({
   id: String(row?.id ?? ''),
   employeeId: String(row?.employee_id ?? ''),
   name: String(row?.full_name ?? ''),
+  firstName: String(row?.first_name ?? ''),
+  lastName: String(row?.last_name ?? ''),
   position: String(row?.current_position ?? ''),
   department: String(row?.department ?? row?.current_department ?? ''),
   division: row?.current_division ? String(row.current_division) : undefined,

@@ -42,6 +42,9 @@ import {
     createUniqueUsername,
     findEmployeePortalAccount,
     getEmployeePortalAccounts,
+    getLastEmployeePasswordReset,
+    logEmployeePasswordReset,
+    type EmployeePasswordResetLog,
     upsertEmployeePortalAccount,
 } from '../../lib/employeePortalData';
 import { mockDatabase } from '../../lib/mockDatabase';
@@ -82,6 +85,19 @@ type EmployeeDirectoryCardStatus = 'Active' | 'Inactive' | 'Mixed';
 
 const EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE = 6;
 
+const ADMIN_SESSION_KEY = 'cictrix_admin_session';
+
+const getCurrentAdminEmail = (): string => {
+  try {
+    const raw = localStorage.getItem(ADMIN_SESSION_KEY);
+    if (!raw) return 'super-admin';
+    const parsed = JSON.parse(raw) as { email?: string };
+    return parsed?.email || 'super-admin';
+  } catch {
+    return 'super-admin';
+  }
+};
+
 interface JobRecord {
   id: number | string;
   title: string;
@@ -96,6 +112,8 @@ interface ApplicantRecord {
   id: string;
   employeeId?: string;
   full_name: string;
+  first_name?: string;
+  last_name?: string;
   email: string;
   contact_number: string;
   position: string;
@@ -770,6 +788,36 @@ export const RSPDashboard = () => {
   const [resetPwUsername, setResetPwUsername] = useState<string | null>(null);
   const [resetPwValue, setResetPwValue] = useState<string | null>(null);
   const [resetPwError, setResetPwError] = useState<string | null>(null);
+  const [lastResetInfo, setLastResetInfo] = useState<EmployeePasswordResetLog | null>(null);
+
+  // Prefer matching by email (most authoritative since it's per-person), then by employee_number.
+  const findExistingPortalAccountForEmployee = (details: ApplicantRecord) => {
+    const empNumber = String(
+      details.employeeId ?? employeeNumberById.get(details.id) ?? '',
+    ).trim();
+    const empEmail = String((details as any).email ?? '').trim().toLowerCase();
+    const accounts = getEmployeePortalAccounts();
+    return (
+      (empEmail
+        ? accounts.find((a) => String(a.employee.email ?? '').trim().toLowerCase() === empEmail)
+        : null)
+      ?? (empNumber
+        ? accounts.find((a) => String(a.employee.employeeId ?? '').trim() === empNumber)
+        : null)
+      ?? null
+    );
+  };
+
+  const openResetPwModal = async () => {
+    setResetPwState('confirm');
+    setResetPwError(null);
+    setLastResetInfo(null);
+    if (!selectedEmployeeDetails) return;
+    const existingAccount = findExistingPortalAccountForEmployee(selectedEmployeeDetails);
+    if (!existingAccount) return;
+    const lastReset = await getLastEmployeePasswordReset(existingAccount.id);
+    setLastResetInfo(lastReset);
+  };
 
   const handleResetEmployeePasswordConfirm = async () => {
     if (!selectedEmployeeDetails) {
@@ -788,25 +836,18 @@ export const RSPDashboard = () => {
           ?? '',
       ).trim();
       const empEmail = String((selectedEmployeeDetails as any).email ?? '').trim().toLowerCase();
-      const fullName = ('name' in selectedEmployeeDetails)
-        ? String((selectedEmployeeDetails as any).name ?? '').trim()
-        : `${(selectedEmployeeDetails as any).first_name ?? ''} ${(selectedEmployeeDetails as any).last_name ?? ''}`.trim();
-      const nameParts = fullName.split(' ');
-      const firstName = nameParts[0] || '';
-      const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+      const detailFirstName = String(selectedEmployeeDetails.first_name ?? '').trim();
+      const detailLastName = String(selectedEmployeeDetails.last_name ?? '').trim();
+      const fullName = (detailFirstName || detailLastName)
+        ? `${detailFirstName} ${detailLastName}`.trim()
+        : String(selectedEmployeeDetails.full_name ?? '').trim();
+      const firstName = detailFirstName || fullName.split(' ')[0] || '';
+      const lastName = detailLastName
+        || (fullName.split(' ').length > 1 ? fullName.split(' ').slice(1).join(' ') : '');
       const fullNameNormalized = fullName.toLowerCase();
 
       const accounts = getEmployeePortalAccounts();
-
-      // Prefer matching by email (most authoritative since it's per-person), then by employee_number.
-      const existingAccount =
-        (empEmail
-          ? accounts.find((a) => String(a.employee.email ?? '').trim().toLowerCase() === empEmail)
-          : null)
-        ?? (empNumber
-          ? accounts.find((a) => String(a.employee.employeeId ?? '').trim() === empNumber)
-          : null)
-        ?? null;
+      const existingAccount = findExistingPortalAccountForEmployee(selectedEmployeeDetails);
 
       // Build the username that should be assigned to the *current* employee.
       // Sanitize the same way createUniqueUsername does so we can compare apples-to-apples.
@@ -879,8 +920,10 @@ export const RSPDashboard = () => {
         email: empEmail || baseEmployee.email,
       };
 
+      const accountId = existingAccount?.id ?? `employee-account-${empNumber || username}`;
+
       upsertEmployeePortalAccount({
-        id: existingAccount?.id ?? `employee-account-${empNumber || username}`,
+        id: accountId,
         username,
         password: newPassword,
         employee: realignedEmployee,
@@ -897,6 +940,13 @@ export const RSPDashboard = () => {
       // Note: fullNameNormalized is only used here to keep ESLint quiet about the local.
       void fullNameNormalized;
 
+      await logEmployeePasswordReset({
+        accountId,
+        username,
+        employeeNumber: empNumber || undefined,
+        resetBy: getCurrentAdminEmail(),
+      });
+
       setResetPwUsername(username);
       setResetPwValue(newPassword);
       setResetPwState('done');
@@ -912,6 +962,7 @@ export const RSPDashboard = () => {
     setResetPwUsername(null);
     setResetPwValue(null);
     setResetPwError(null);
+    setLastResetInfo(null);
   };
 
   const copyResetPwValue = async (value: string) => {
@@ -1997,6 +2048,8 @@ export const RSPDashboard = () => {
           id: employeeId,
           employeeId,
           full_name: String(account?.employee.fullName ?? record.name ?? 'Employee'),
+          first_name: record.firstName || undefined,
+          last_name: record.lastName || undefined,
           email: String(account?.employee.email ?? ''),
           contact_number: String(account?.employee.mobileNumber ?? ''),
           position: String(record.position ?? '').trim() || 'Unassigned Position',
@@ -3829,7 +3882,7 @@ export const RSPDashboard = () => {
                       </button>
                       <button
                         type="button"
-                        onClick={() => { setResetPwState('confirm'); setResetPwError(null); }}
+                        onClick={() => { void openResetPwModal(); }}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-sm font-semibold text-rose-600 hover:bg-rose-50"
                       >
                         <Lock size={13} /> Reset Password
@@ -6368,15 +6421,21 @@ export const RSPDashboard = () => {
                   <p className="!mb-0 text-sm text-slate-700">
                     Generate a new password for{' '}
                     <span className="font-semibold">
-                      {'name' in selectedEmployeeDetails
-                        ? (String((selectedEmployeeDetails as any).name ?? '') || 'Unnamed Employee')
-                        : `${(selectedEmployeeDetails as any).first_name ?? ''} ${(selectedEmployeeDetails as any).last_name ?? ''}`.trim()}
+                      {(selectedEmployeeDetails.first_name || selectedEmployeeDetails.last_name)
+                        ? `${selectedEmployeeDetails.first_name ?? ''} ${selectedEmployeeDetails.last_name ?? ''}`.trim()
+                        : (selectedEmployeeDetails.full_name || 'Unnamed Employee')}
                     </span>
                     {employeeNumberById.get(selectedEmployeeDetails.id)
                       ? ` (${employeeNumberById.get(selectedEmployeeDetails.id)})`
                       : ''}
-                    ? The old password will stop working immediately.
+                    ? This generates a new password and invalidates the previous one immediately.
                   </p>
+                  {lastResetInfo && (
+                    <p className="!mb-0 text-xs text-slate-500">
+                      Last reset by {lastResetInfo.reset_by || 'unknown'} on{' '}
+                      {new Date(lastResetInfo.reset_at).toLocaleString()}.
+                    </p>
+                  )}
                   <div className="flex justify-end gap-2">
                     <button
                       type="button"

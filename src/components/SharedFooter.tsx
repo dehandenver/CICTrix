@@ -10,7 +10,7 @@ export const SharedFooter = React.forwardRef<HTMLElement, object>(
         ref={ref}
         style={{ backgroundColor: '#363EE8', fontFamily: "'Poppins', system-ui, -apple-system, sans-serif" }}
       >
-        <div className="mx-auto max-w-6xl px-6 py-10">
+        <div className="mx-auto max-w-7xl px-6 py-10">
           <div className="grid grid-cols-2 gap-8 lg:grid-cols-5">
 
             {/* Logo block */}

@@ -184,6 +184,8 @@ export interface EmployeeRecord {
   id: string;
   employeeId: string;
   name: string;
+  firstName: string;
+  lastName: string;
   position: string;
   department: string;
   division?: string;

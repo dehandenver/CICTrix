@@ -220,6 +220,66 @@ export const upsertEmployeePortalAccount = (
   void upsertPortalAccountToSupabase(upserted);
 };
 
+export interface EmployeePasswordResetLog {
+  account_id: string | null;
+  employee_username: string | null;
+  employee_number: string | null;
+  reset_by: string | null;
+  reset_at: string;
+}
+
+/**
+ * Record a password-reset action for auditing (RSP spec: log who triggered a
+ * reset and when). A failed insert only warns — it must not hide the fact
+ * that the password itself was already changed. Mirrors
+ * resetSupervisorPassword's audit-insert pattern in src/lib/api/supervisors.ts.
+ */
+export const logEmployeePasswordReset = async (entry: {
+  accountId: string;
+  username: string;
+  employeeNumber?: string;
+  resetBy: string;
+}): Promise<void> => {
+  try {
+    const { error } = await (supabase as any).from('employee_password_resets').insert([
+      {
+        account_id: entry.accountId,
+        employee_username: entry.username,
+        employee_number: entry.employeeNumber ?? null,
+        reset_by: entry.resetBy,
+        note: 'Password reset to a temporary value.',
+      },
+    ]);
+    if (error) {
+      console.warn('[employeePortalData] Failed to write password-reset audit log:', error);
+    }
+  } catch (err) {
+    console.warn('[employeePortalData] Failed to write password-reset audit log:', err);
+  }
+};
+
+/** Fetch the most recent password-reset log entry for a portal account, if any. */
+export const getLastEmployeePasswordReset = async (
+  accountId: string
+): Promise<EmployeePasswordResetLog | null> => {
+  try {
+    const { data, error } = await (supabase as any)
+      .from('employee_password_resets')
+      .select('*')
+      .eq('account_id', accountId)
+      .order('reset_at', { ascending: false })
+      .limit(1);
+    if (error) {
+      console.warn('[employeePortalData] Failed to fetch password-reset audit log:', error);
+      return null;
+    }
+    return Array.isArray(data) && data.length > 0 ? (data[0] as EmployeePasswordResetLog) : null;
+  } catch (err) {
+    console.warn('[employeePortalData] Failed to fetch password-reset audit log:', err);
+    return null;
+  }
+};
+
 export const findEmployeePortalAccount = (username: string, password?: string) => {
   const usernameKey = normalizeUsername(username);
   if (!usernameKey) return null;
