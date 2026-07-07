@@ -118,7 +118,7 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
       const { data: roleData, error: roleError } = await (supabase as any)
         .from('user_roles')
         .select('role')
-        .eq('id', authData.user.id)
+        .eq('user_id', authData.user.id)
         .single();
 
       if (roleError || !(roleData as any)?.role) {
