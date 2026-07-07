@@ -770,31 +770,8 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
 
-  const handleOfficeClick = async (row: OfficeDirectoryRow) => {
+  const handleOfficeClick = (row: OfficeDirectoryRow) => {
     setSelectedOfficeRow(row);
-    setOfficeEmployeesLoading(true);
-    const result = await getAllEmployees({ department: row.officeName });
-    if (result.success) {
-      const empList: any[] = result.data || [];
-      try {
-        const { data: accounts } = await (supabase as any)
-          .from('employee_portal_accounts')
-          .select('employee_id, username');
-        const accountMap = new Map<string, string>();
-        for (const acc of accounts || []) {
-          if (acc.employee_id) accountMap.set(String(acc.employee_id), acc.username);
-        }
-        setOfficeEmployees(empList.map((e: any) => ({
-          ...e,
-          account_username: accountMap.get(String(e.employee_id)) ?? null,
-        })));
-      } catch {
-        setOfficeEmployees(empList);
-      }
-    } else {
-      setOfficeEmployees([]);
-    }
-    setOfficeEmployeesLoading(false);
   };
 
   if (isDashboardView) {
@@ -874,11 +851,11 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
             {activeSection === 'office-directory' && (
               <div className="space-y-4">
                 {selectedOfficeRow ? (
-                  /* â”€â”€ Employee list for selected office â”€â”€ */
+                  /* ── Divisions and Supervisors list for selected office ── */
                   <div>
                     <button
                       type="button"
-                      onClick={() => { setSelectedOfficeRow(null); setOfficeEmployees([]); }}
+                      onClick={() => setSelectedOfficeRow(null)}
                       className="flex items-center gap-1 text-blue-600 hover:text-blue-700 font-medium text-sm mb-4"
                     >
                       <ChevronLeft className="h-4 w-4" />
@@ -888,65 +865,85 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                     <p className="text-sm text-slate-500 mt-0.5 mb-6">
                       {selectedOfficeRow.employeeCount} employee{selectedOfficeRow.employeeCount !== 1 ? 's' : ''}
                     </p>
-                    {officeEmployeesLoading ? (
-                      <div className="bg-white rounded-xl border border-slate-200 p-12 text-center text-slate-500">Loading employeesâ€¦</div>
-                    ) : (
-                      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-                        <table className="w-full">
-                          <thead className="bg-gray-50 border-b border-gray-200">
-                            <tr>
-                              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Employee Name</th>
-                              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Employee ID</th>
-                              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Position</th>
-                              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Status</th>
-                              <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Account</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-200">
-                            {officeEmployees.length === 0 ? (
-                              <tr>
-                                <td colSpan={5} className="py-12 text-center text-slate-500">No employees found in this office.</td>
-                              </tr>
-                            ) : (
-                              officeEmployees.map((emp: any) => {
-                                const initials = getOfficeDirInitials(emp.full_name);
-                                const statusColor = emp.status === 'Active'
-                                  ? 'bg-green-100 text-green-800'
-                                  : emp.status === 'On Leave'
-                                  ? 'bg-yellow-100 text-yellow-800'
-                                  : 'bg-gray-100 text-gray-800';
-                                return (
-                                  <tr key={emp.id} className="hover:bg-gray-50 transition-colors">
-                                    <td className="px-6 py-4 text-sm">
-                                      <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                                          <span className="text-white font-semibold text-sm">{initials}</span>
-                                        </div>
-                                        <div>
-                                          <p className="font-medium text-gray-900">{emp.full_name}</p>
-                                          <p className="text-sm text-gray-500">{emp.email}</p>
-                                        </div>
-                                      </div>
-                                    </td>
-                                    <td className="px-6 py-4 text-sm text-gray-900 font-mono">{emp.employee_id || 'â€”'}</td>
-                                    <td className="px-6 py-4 text-sm text-gray-900">{emp.current_position || 'â€”'}</td>
-                                    <td className="px-6 py-4 text-sm">
-                                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${statusColor}`}>{emp.status}</span>
-                                    </td>
-                                    <td className="px-6 py-4 text-sm text-gray-500 font-mono">
-                                      {emp.account_username ? `@${emp.account_username}` : <span className="text-gray-300 italic">No account</span>}
-                                    </td>
-                                  </tr>
-                                );
-                              })
-                            )}
-                          </tbody>
-                        </table>
+
+                    {/* Department Head details */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 mb-6 flex items-center gap-4">
+                      <div className="h-12 w-12 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-lg">
+                        {selectedOfficeRow.deptHead ? getOfficeDirInitials(selectedOfficeRow.deptHead.name) : 'DH'}
                       </div>
-                    )}
+                      <div>
+                        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Department Head</p>
+                        {selectedOfficeRow.deptHead ? (
+                          <>
+                            <p className="text-base font-bold text-slate-800">{selectedOfficeRow.deptHead.name}</p>
+                            <p className="text-xs text-slate-500 mt-0.5">
+                              {selectedOfficeRow.deptHead.position} · {selectedOfficeRow.deptHead.contact}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-amber-600 font-semibold text-sm mt-0.5">Unassigned</p>
+                        )}
+                      </div>
+                      {selectedOfficeRow.deptHead && (
+                        <div className="ml-auto">
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                            selectedOfficeRow.deptHead.accountStatus.toLowerCase() === 'active'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                              : 'bg-slate-100 text-slate-600 border border-slate-200'
+                          }`}>
+                            {selectedOfficeRow.deptHead.accountStatus}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <h3 className="text-lg font-bold text-slate-800 mb-4">Divisions & Assigned Supervisors</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {selectedOfficeRow.divisions.map((div: any, idx: number) => (
+                        <div key={idx} className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
+                          <div>
+                            <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                              <h4 className="font-bold text-slate-800 text-sm tracking-tight leading-snug">{div.name}</h4>
+                            </div>
+
+                            <div className="space-y-4">
+                              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Supervisors</p>
+                              {div.supervisors.length === 0 ? (
+                                <div className="rounded-lg bg-amber-50 border border-amber-100 p-3 text-amber-700 text-xs flex items-center gap-2">
+                                  <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                                  <span>No supervisors assigned to this division.</span>
+                                </div>
+                              ) : (
+                                div.supervisors.map((sup: any, sIdx: number) => {
+                                  const initials = getOfficeDirInitials(sup.name);
+                                  const isActive = sup.accountStatus.toLowerCase() === 'active';
+                                  return (
+                                    <div key={sIdx} className="flex items-start gap-3 p-2.5 rounded-lg border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                                      <div className="h-8 w-8 rounded bg-blue-500 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                                        {initials}
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <p className="font-semibold text-slate-800 text-xs truncate">{sup.name}</p>
+                                        <p className="text-[10px] text-slate-400 truncate mt-0.5">{sup.position || 'Supervisor'}</p>
+                                        <p className="text-[10px] text-slate-500 font-mono mt-0.5 truncate">{sup.contact}</p>
+                                        <span className={`inline-block mt-2 px-2 py-0.5 rounded-full text-[9px] font-semibold ${
+                                          isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                                        }`}>
+                                          {sup.accountStatus}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ) : (
-                  /* â”€â”€ Office Directory table â”€â”€ */
+                  /* ── Office Directory table ── */
                   <div>
                     <div className="flex items-center justify-between mb-4">
                       <div>
@@ -959,7 +956,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                           type="text"
                           value={officeDirectorySearch}
                           onChange={(e) => setOfficeDirectorySearch(e.target.value)}
-                          placeholder="Search office or nameâ€¦"
+                          placeholder="Search office or name…"
                           className="rounded-lg border border-slate-300 pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 w-64"
                         />
                       </div>
@@ -969,21 +966,20 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                     )}
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                       {officeDirectoryLoading ? (
-                        <div className="p-12 text-center text-slate-500">Loading officesâ€¦</div>
+                        <div className="p-12 text-center text-slate-500">Loading offices…</div>
                       ) : (
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="bg-slate-50 text-left text-slate-500 text-xs font-semibold uppercase tracking-wider border-b border-slate-200">
                               <th className="px-5 py-3">Office</th>
                               <th className="px-5 py-3">Department Head</th>
-                              <th className="px-5 py-3">Supervisors</th>
                               <th className="px-5 py-3 text-right">Employees</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                             {filteredOfficeDirectoryRows.length === 0 ? (
                               <tr>
-                                <td colSpan={4} className="py-10 text-center text-slate-400 italic">
+                                <td colSpan={3} className="py-10 text-center text-slate-400 italic">
                                   {officeDirectoryRows.length === 0 ? 'No offices found.' : 'No offices match your search.'}
                                 </td>
                               </tr>
@@ -1006,17 +1002,6 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                                       </div>
                                     ) : (
                                       <span className="text-amber-600 text-xs">Unassigned</span>
-                                    )}
-                                  </td>
-                                  <td className="px-5 py-4">
-                                    {row.supervisors.length === 0 ? (
-                                      <span className="text-amber-600 text-xs">None assigned</span>
-                                    ) : (
-                                      <div className="flex flex-col gap-1">
-                                        {row.supervisors.map((sup, i) => (
-                                          <p key={i} className="text-slate-700">{sup.name}</p>
-                                        ))}
-                                      </div>
                                     )}
                                   </td>
                                   <td className="px-5 py-4 text-right">

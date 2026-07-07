@@ -173,9 +173,7 @@ const OfficeDirectory = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
-  const [drillOfficeName, setDrillOfficeName] = useState<string | null>(null);
-  const [officeEmployees, setOfficeEmployees] = useState<Employee[]>([]);
-  const [officeEmpLoading, setOfficeEmpLoading] = useState(false);
+  const [drillOfficeRow, setDrillOfficeRow] = useState<OfficeDirectoryRow | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -194,91 +192,105 @@ const OfficeDirectory = () => {
     return () => { cancelled = true; };
   }, []);
 
-  const handleOfficeClick = async (officeName: string) => {
-    setDrillOfficeName(officeName);
-    setOfficeEmpLoading(true);
-    const result = await getAllEmployees({ status: 'Active', department: officeName });
-    setOfficeEmployees(result.success ? (result.data as Employee[]) : []);
-    setOfficeEmpLoading(false);
+  const handleOfficeClick = (row: OfficeDirectoryRow) => {
+    setDrillOfficeRow(row);
+  };
+
+  const getOfficeDirInitials = (name: string): string => {
+    const parts = (name ?? '').trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '??';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
 
   const filtered = useMemo(() => filterOfficeDirectory(rows, search), [rows, search]);
 
-  if (drillOfficeName !== null) {
+  if (drillOfficeRow !== null) {
     return (
       <div>
         <button
           type="button"
-          onClick={() => setDrillOfficeName(null)}
+          onClick={() => setDrillOfficeRow(null)}
           style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '16px', color: '#363EE8', fontWeight: 600, fontSize: '14px', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
         >
           <ChevronLeft size={16} /> Back to Office Directory
         </button>
 
-        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden' }}>
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid #e5e7eb', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 600, color: '#1f2937' }}>
-            <Building2 size={18} className="text-[#363EE8]" />
-            {drillOfficeName}
-            <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: '#6b7280' }}>
-              {officeEmpLoading ? '' : `${officeEmployees.length} employee${officeEmployees.length !== 1 ? 's' : ''}`}
-            </span>
+        <div style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', overflow: 'hidden', padding: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 700, fontSize: '20px', color: '#1f2937', marginBottom: '4px' }}>
+            <Building2 size={24} className="text-[#363EE8]" />
+            {drillOfficeRow.officeName}
+          </div>
+          <p style={{ fontSize: '14px', color: '#6b7280', marginTop: 0, marginBottom: '24px' }}>
+            {drillOfficeRow.employeeCount} employee{drillOfficeRow.employeeCount !== 1 ? 's' : ''}
+          </p>
+
+          {/* Department Head Card */}
+          <div style={{ background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '20px', display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
+            <div style={{ width: '48px', height: '48px', borderRadius: '8px', background: '#dbeafe', color: '#1e40af', display: 'flex', alignItems: 'center', fontWeight: 700, fontSize: '18px', justifyContent: 'center' }}>
+              {drillOfficeRow.deptHead ? getOfficeDirInitials(drillOfficeRow.deptHead.name) : 'DH'}
+            </div>
+            <div>
+              <p style={{ margin: 0, fontSize: '11px', fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Department Head</p>
+              {drillOfficeRow.deptHead ? (
+                <>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '16px', fontWeight: 700, color: '#1f2937' }}>{drillOfficeRow.deptHead.name}</p>
+                  <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: '#6b7280' }}>
+                    {drillOfficeRow.deptHead.position} · {drillOfficeRow.deptHead.contact}
+                  </p>
+                </>
+              ) : (
+                <p style={{ margin: '4px 0 0 0', fontSize: '14px', fontWeight: 600, color: '#b45309' }}>Unassigned</p>
+              )}
+            </div>
+            {drillOfficeRow.deptHead && (
+              <div style={{ marginLeft: 'auto' }}>
+                <AccountStatusBadge status={drillOfficeRow.deptHead.accountStatus} />
+              </div>
+            )}
           </div>
 
-          {officeEmpLoading ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>Loading employees…</div>
-          ) : officeEmployees.length === 0 ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>No active employees found for this office.</div>
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-                <thead>
-                  <tr style={{ background: '#f9fafb', textAlign: 'left', color: '#6b7280' }}>
-                    <th style={th}>Employee</th>
-                    <th style={th}>Position</th>
-                    <th style={th}>Employee ID</th>
-                    <th style={th}>Email</th>
-                    <th style={th}>Status</th>
-                    <th style={th}>Date Hired</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {officeEmployees.map((emp) => (
-                    <tr key={emp.id} style={{ borderTop: '1px solid #f0f0f0' }}>
-                      <td style={td}>
-                        <div style={{ fontWeight: 600, color: '#1f2937' }}>{emp.full_name}</div>
-                        <div style={{ fontSize: '12px', color: '#9ca3af' }}>{emp.current_department ?? emp.department ?? '—'}</div>
-                      </td>
-                      <td style={td}>{emp.current_position ?? '—'}</td>
-                      <td style={td}>
-                        <span style={{ fontFamily: 'monospace', fontSize: '12px', background: '#f3f4f6', padding: '2px 6px', borderRadius: '4px' }}>
-                          {emp.employee_id}
-                        </span>
-                      </td>
-                      <td style={td}>{emp.email ?? '—'}</td>
-                      <td style={td}>
-                        <span style={{
-                          display: 'inline-block',
-                          padding: '2px 10px',
-                          borderRadius: '999px',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          background: emp.status === 'Active' ? 'rgba(16,185,129,0.12)' : 'rgba(107,114,128,0.12)',
-                          color: emp.status === 'Active' ? '#047857' : '#4b5563',
-                        }}>
-                          {emp.status}
-                        </span>
-                      </td>
-                      <td style={td}>
-                        {emp.hire_date
-                          ? new Date(emp.hire_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
-                          : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#1f2937', marginBottom: '16px', marginTop: 0 }}>Divisions & Assigned Supervisors</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
+            {drillOfficeRow.divisions.map((div, idx) => (
+              <div key={idx} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)' }}>
+                <div>
+                  <div style={{ borderBottom: '1px solid #f3f4f6', paddingBottom: '12px', marginBottom: '16px' }}>
+                    <h4 style={{ margin: 0, fontWeight: 700, color: '#1f2937', fontSize: '14px' }}>{div.name}</h4>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <p style={{ margin: 0, fontSize: '10px', fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Supervisors</p>
+                    {div.supervisors.length === 0 ? (
+                      <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '8px', padding: '12px', color: '#b45309', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <AlertCircle size={16} style={{ color: '#d97706', flexShrink: 0 }} />
+                        <span>No supervisors assigned to this division.</span>
+                      </div>
+                    ) : (
+                      div.supervisors.map((sup, sIdx) => {
+                        const initials = getOfficeDirInitials(sup.name);
+                        return (
+                          <div key={sIdx} style={{ display: 'flex', alignItems: 'start', gap: '12px', padding: '10px', borderRadius: '8px', border: '1px solid #f3f4f6', background: '#fafafa' }}>
+                            <div style={{ width: '32px', height: '32px', borderRadius: '4px', background: '#3b82f6', color: '#fff', fontWeight: 700, fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                              {initials}
+                            </div>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <p style={{ margin: 0, fontWeight: 600, color: '#1f2937', fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sup.name}</p>
+                              <p style={{ margin: '2px 0 0 0', color: '#6b7280', fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sup.position || 'Supervisor'}</p>
+                              <p style={{ margin: '2px 0 0 0', color: '#9ca3af', fontFamily: 'monospace', fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sup.contact}</p>
+                              <div style={{ marginTop: '8px' }}>
+                                <AccountStatusBadge status={sup.accountStatus} />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -361,7 +373,6 @@ const OfficeDirectory = () => {
                 <tr style={{ background: '#f9fafb', textAlign: 'left', color: '#6b7280' }}>
                   <th style={th}>Office</th>
                   <th style={th}>Department Head</th>
-                  <th style={th}>Supervisor(s)</th>
                   <th style={{ ...th, textAlign: 'right' }}>Employees</th>
                 </tr>
               </thead>
@@ -369,7 +380,7 @@ const OfficeDirectory = () => {
                 {filtered.map((row) => (
                   <tr
                     key={row.officeId}
-                    onClick={() => handleOfficeClick(row.officeName ?? '')}
+                    onClick={() => handleOfficeClick(row)}
                     style={{ borderTop: '1px solid #f0f0f0', cursor: 'pointer' }}
                     className="hover:bg-blue-50/40"
                   >
@@ -385,17 +396,6 @@ const OfficeDirectory = () => {
                         <PersonCell person={row.deptHead} />
                       ) : (
                         <span style={{ color: '#b45309', fontSize: '13px' }}>Unassigned</span>
-                      )}
-                    </td>
-                    <td style={td}>
-                      {row.supervisors.length === 0 ? (
-                        <span style={{ color: '#b45309', fontSize: '13px' }}>None assigned</span>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                          {row.supervisors.map((sup, i) => (
-                            <PersonCell key={`${row.officeId}-sup-${i}`} person={sup} />
-                          ))}
-                        </div>
                       )}
                     </td>
                     <td style={{ ...td, textAlign: 'right' }}>
@@ -421,7 +421,7 @@ const OfficeDirectory = () => {
       </div>
 
       <p style={{ marginTop: '12px', fontSize: '12px', color: '#9ca3af' }}>
-        Click an office row to view all employees in that office.
+        Click an office row to view all divisions and assigned supervisors.
       </p>
     </div>
   );

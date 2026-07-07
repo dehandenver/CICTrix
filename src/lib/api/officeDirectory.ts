@@ -27,6 +27,11 @@ export interface OfficePerson {
   accountStatus: string;
 }
 
+export interface OfficeDivision {
+  name: string;
+  supervisors: OfficePerson[];
+}
+
 export interface OfficeDirectoryRow {
   officeId: string;
   officeName: string;
@@ -35,6 +40,7 @@ export interface OfficeDirectoryRow {
   deptHead: OfficePerson | null;
   supervisors: OfficePerson[];
   employeeCount: number;
+  divisions: OfficeDivision[];
 }
 
 const norm = (value: unknown) => String(value ?? '').trim().toLowerCase();
@@ -42,6 +48,106 @@ const norm = (value: unknown) => String(value ?? '').trim().toLowerCase();
 const buildContact = (email?: unknown, mobile?: unknown): string => {
   const parts = [String(email ?? '').trim(), String(mobile ?? '').trim()].filter(Boolean);
   return parts.join(' · ') || '—';
+};
+
+const OFFICE_DIVISIONS_MAP: Record<string, string[]> = {
+  'Human Resources': [
+    'Recruitment, Selection & Placement (RSP)',
+    'Learning & Development (L&D)',
+    'Performance Management (PM)'
+  ],
+  'Finance': [
+    'Accounting',
+    'Budgeting',
+    'Treasury'
+  ],
+  'Information Technology': [
+    'Systems Development',
+    'Network & Infrastructure',
+    'Technical Support'
+  ],
+  'Operations': [
+    'Field Operations',
+    'Logistics & Planning'
+  ],
+  'Sales & Marketing': [
+    'Sales & Account Management',
+    'Marketing & Branding'
+  ],
+  'Customer Support': [
+    'Helpdesk & Customer Relations',
+    'Technical Support'
+  ],
+  'Legal': [
+    'Litigation & Advisory',
+    'Contracts & Legal Review'
+  ],
+  'Product Management': [
+    'Product Design',
+    'Product Engineering'
+  ]
+};
+
+const matchSupervisorToDivision = (sup: OfficePerson, divisions: string[]): string => {
+  const supText = `${sup.name} ${sup.position ?? ''} ${sup.contact}`.toLowerCase();
+  
+  if (supText.includes('rsp') || supText.includes('recruitment')) {
+    const match = divisions.find(d => d.includes('RSP') || d.toLowerCase().includes('recruitment'));
+    if (match) return match;
+  }
+  if (supText.includes('l&d') || supText.includes('learning') || supText.includes('development')) {
+    const match = divisions.find(d => d.includes('L&D') || d.toLowerCase().includes('learning'));
+    if (match) return match;
+  }
+  if (supText.includes('pm') || supText.includes('performance')) {
+    const match = divisions.find(d => d.includes('PM') || d.toLowerCase().includes('performance'));
+    if (match) return match;
+  }
+  
+  let bestDivision = divisions[0] || 'General Administration';
+  let maxMatches = 0;
+  
+  for (const div of divisions) {
+    const divKeywords = div.toLowerCase().split(/[^a-z0-9]+/g).filter(w => w.length > 2);
+    let matches = 0;
+    for (const kw of divKeywords) {
+      if (supText.includes(kw)) {
+        matches++;
+      }
+    }
+    if (matches > maxMatches) {
+      maxMatches = matches;
+      bestDivision = div;
+    }
+  }
+  
+  return bestDivision;
+};
+
+const isSupervisorForOffice = (supDept: string, officeName: string, officeCode: string): boolean => {
+  const d = (supDept ?? '').toLowerCase().trim();
+  const o = (officeName ?? '').toLowerCase().trim();
+  const c = (officeCode ?? '').toLowerCase().trim();
+  
+  if (!d) return false;
+  if (d === o || d === c) return true;
+  
+  // Special HR mappings
+  if (o.includes('human resources') || c === 'hr') {
+    if (d.includes('human resource') || d.includes('learning & development') || d.includes('performance management') || d.includes('l&d') || d.includes('pm')) {
+      return true;
+    }
+  }
+  
+  // Check static division names
+  const divisions = OFFICE_DIVISIONS_MAP[officeName] ?? [];
+  for (const div of divisions) {
+    if (d === div.toLowerCase().trim() || d.includes(div.toLowerCase().trim()) || div.toLowerCase().trim().includes(d)) {
+      return true;
+    }
+  }
+  
+  return false;
 };
 
 /**
@@ -70,7 +176,7 @@ export async function getOfficeDirectory(): Promise<
 
     const departments: any[] = deptRes.data ?? [];
     const employees: any[] = empRes.error ? [] : empRes.data ?? [];
-    const supervisors: any[] = supRes.error ? [] : supRes.data ?? [];
+    const dbSupervisors: any[] = supRes.error ? [] : supRes.data ?? [];
     const assignments: any[] = assignRes?.error ? [] : assignRes?.data ?? [];
 
     // Group active assignments by office id and by office name (fallback join key).
@@ -108,22 +214,6 @@ export async function getOfficeDirectory(): Promise<
       if (nameKey) headcountByDeptName.set(nameKey, (headcountByDeptName.get(nameKey) ?? 0) + 1);
     }
 
-    // Group supervisors by their (normalized) office/department name.
-    const supervisorsByOffice = new Map<string, OfficePerson[]>();
-    for (const sup of supervisors) {
-      const key = norm(sup?.department);
-      if (!key) continue;
-      const person: OfficePerson = {
-        name: String(sup?.full_name ?? '').trim() || 'Unnamed supervisor',
-        contact: String(sup?.username ? `@${sup.username}` : '—'),
-        position: sup?.position ?? 'Supervisor',
-        accountStatus: String(sup?.account_status ?? 'Unknown'),
-      };
-      const list = supervisorsByOffice.get(key) ?? [];
-      list.push(person);
-      supervisorsByOffice.set(key, list);
-    }
-
     const rows: OfficeDirectoryRow[] = departments.map((dept) => {
       const officeName = String(dept?.name ?? '').trim();
       const officeIdKey = String(dept?.id ?? '');
@@ -145,10 +235,19 @@ export async function getOfficeDirectory(): Promise<
         };
       }
 
-      // Supervisors: standalone supervisor accounts (by office name) plus any
-      // active Supervisor assignments (by office id).
+      // Standalone supervisor accounts associated with this office or its divisions
+      const standaloneSups: OfficePerson[] = dbSupervisors
+        .filter((sup) => isSupervisorForOffice(sup.department ?? '', officeName, String(dept.code ?? '')))
+        .map((sup) => ({
+          name: String(sup?.full_name ?? '').trim() || 'Unnamed supervisor',
+          contact: String(sup?.username ? `@${sup.username}` : '—'),
+          position: sup?.position ?? 'Supervisor',
+          accountStatus: String(sup?.account_status ?? 'Unknown'),
+        }));
+
+      // Combined list of supervisors
       const supervisors: OfficePerson[] = [
-        ...(supervisorsByOffice.get(norm(officeName)) ?? []),
+        ...standaloneSups,
         ...(supervisorAssignsByOfficeId.get(officeIdKey) ?? []),
       ];
 
@@ -156,6 +255,35 @@ export async function getOfficeDirectory(): Promise<
         headcountByDeptId.get(officeIdKey) ??
         headcountByDeptName.get(norm(officeName)) ??
         0;
+
+      // Divisions resolution (dynamic from DB if available, else static fallback)
+      const dbDivisions = departments
+        .filter((d) => d.parent_department_id === officeIdKey)
+        .map((d) => String(d.name));
+
+      const staticDivNames = OFFICE_DIVISIONS_MAP[officeName] ?? [];
+      const divisionNames = dbDivisions.length > 0 ? dbDivisions : [...staticDivNames];
+
+      if (divisionNames.length === 0) {
+        divisionNames.push('General Administration');
+      }
+
+      const divisionsMap = new Map<string, OfficePerson[]>();
+      for (const divName of divisionNames) {
+        divisionsMap.set(divName, []);
+      }
+
+      for (const sup of supervisors) {
+        const matchedDiv = matchSupervisorToDivision(sup, divisionNames);
+        const list = divisionsMap.get(matchedDiv) ?? [];
+        list.push(sup);
+        divisionsMap.set(matchedDiv, list);
+      }
+
+      const divisions = Array.from(divisionsMap.entries()).map(([name, sups]) => ({
+        name,
+        supervisors: sups,
+      }));
 
       return {
         officeId: officeIdKey || officeName,
@@ -165,6 +293,7 @@ export async function getOfficeDirectory(): Promise<
         deptHead,
         supervisors,
         employeeCount,
+        divisions,
       };
     });
 
