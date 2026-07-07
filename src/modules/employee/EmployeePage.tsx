@@ -235,6 +235,19 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   const [ipcrSuccess, setIpcrSuccess] = useState<string | null>(null);
   const [ipcrRatingPeriod, setIpcrRatingPeriod] = useState<string>('');
   const [employeeEvaluations, setEmployeeEvaluations] = useState<any[]>([]);
+  const [probationarySchedule, setProbationarySchedule] = useState<any | null>(null);
+
+  const isTargetSettingActive = useMemo(() => {
+    if (!probationarySchedule) return true;
+    const nowStr = new Date().toISOString().slice(0, 10);
+    return nowStr >= probationarySchedule.target_start && nowStr <= probationarySchedule.target_end;
+  }, [probationarySchedule]);
+
+  const isAccomplishmentRatingActive = useMemo(() => {
+    if (!probationarySchedule) return true;
+    const nowStr = new Date().toISOString().slice(0, 10);
+    return nowStr >= probationarySchedule.accomplishment_start && nowStr <= probationarySchedule.accomplishment_end;
+  }, [probationarySchedule]);
 
   // Module 3 IPCR Workspace & New Entrants State
   const [ipcrSubtab, setIpcrSubtab] = useState<'phase1' | 'phase2'>('phase1');
@@ -292,6 +305,28 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
         }
       }
 
+      // Check if employee is probationary and has a configured cycle schedule
+      let activeProbationarySchedule: any = null;
+      if (profile.employmentStatus === 'Probationary' && profile.dateHired) {
+        const monthNames = [
+          'January', 'February', 'March', 'April', 'May', 'June',
+          'July', 'August', 'September', 'October', 'November', 'December'
+        ];
+        const hireMonth = monthNames[new Date(profile.dateHired).getMonth()];
+        const supabase = supabaseClient as any;
+        const { data: schedData } = await supabase
+          .from('probationary_ipcr_schedules')
+          .select('*')
+          .eq('hired_month', hireMonth)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (schedData) {
+          activeProbationarySchedule = schedData;
+        }
+      }
+      setProbationarySchedule(activeProbationarySchedule);
+
       const cycleRes = await getActivePerformanceCycle();
       let cycle = null;
       if (cycleRes.success && cycleRes.data) {
@@ -312,13 +347,13 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       if (ipcrRes.success && ipcrRes.data) {
         setIpcrRows(ipcrRes.data.rows);
         setIpcrEvaluation(ipcrRes.data.evaluation);
-        setIpcrRatingPeriod(ipcrRes.data.ratingPeriod);
+        setIpcrRatingPeriod(activeProbationarySchedule ? activeProbationarySchedule.period_label : ipcrRes.data.ratingPeriod);
       } else {
         const now = new Date();
         const year = now.getFullYear();
         const month = now.getMonth();
         const fallbackPeriod = month < 6 ? `January–June ${year}` : `July–December ${year}`;
-        setIpcrRatingPeriod(fallbackPeriod);
+        setIpcrRatingPeriod(activeProbationarySchedule ? activeProbationarySchedule.period_label : fallbackPeriod);
       }
 
       const evalsRes = await getEmployeeEvaluations(currentUser.supabaseId);
@@ -2453,6 +2488,12 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
             {/* Subtab content */}
             {ipcrSubtab === 'phase1' && (
               <div className="rounded-xl border bg-white p-6 shadow-sm space-y-4" style={{ borderColor: '#C8D1FF' }}>
+                {!isTargetSettingActive && probationarySchedule && (
+                  <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-xs font-semibold mb-4">
+                    ⚠️ Target setting is currently closed. The scheduled period was from {new Date(probationarySchedule.target_start).toLocaleDateString()} to {new Date(probationarySchedule.target_end).toLocaleDateString()}.
+                  </div>
+                )}
+                
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                   <div>
                     <h3 className="text-base font-bold text-slate-800">Phase 1: Target Setting Phase</h3>
@@ -2465,7 +2506,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-100">
-                        <AlertCircle className="h-4 w-4 text-amber-600" /> Open for Editing
+                        <AlertCircle className="h-4 w-4 text-amber-600" /> {!isTargetSettingActive ? 'Closed' : 'Open for Editing'}
                       </span>
                     )}
                   </div>
@@ -2484,10 +2525,10 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                         <textarea
                           value={val}
                           onChange={(e) => {
-                            if (ipcrApproved) return;
+                            if (ipcrApproved || !isTargetSettingActive) return;
                             setEmployeeTargets(prev => ({ ...prev, [fn.key]: e.target.value }));
                           }}
-                          disabled={ipcrApproved}
+                          disabled={ipcrApproved || !isTargetSettingActive}
                           placeholder={fn.placeholder}
                           rows={3}
                           style={{ borderColor: '#C8D1FF' }}
@@ -2498,7 +2539,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                   })}
                 </div>
 
-                {!ipcrApproved && (
+                {!ipcrApproved && isTargetSettingActive && (
                   <div className="flex justify-end pt-3">
                     <button
                       onClick={() => {
@@ -2545,6 +2586,12 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
 
                 {/* Right Panel */}
                 <div className="rounded-xl border bg-white p-5 shadow-sm space-y-4" style={{ borderColor: '#C8D1FF' }}>
+                  {!isAccomplishmentRatingActive && probationarySchedule && (
+                    <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-xs font-semibold mb-4">
+                      ⚠️ Accomplishment rating is currently closed. The scheduled period was from {new Date(probationarySchedule.accomplishment_start).toLocaleDateString()} to {new Date(probationarySchedule.accomplishment_end).toLocaleDateString()}.
+                    </div>
+                  )}
+
                   <div>
                     <h3 className="text-sm font-bold text-slate-800">Accomplishments & Self-Ratings</h3>
                     <p className="text-[11px] text-slate-500 mt-0.5">Encode achievements and select self-rating values.</p>
@@ -2558,8 +2605,9 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                         onChange={(e) => setAccomplishments(e.target.value)}
                         placeholder="Detail your achievements matching the frozen targets..."
                         rows={6}
+                        disabled={!isAccomplishmentRatingActive}
                         style={{ borderColor: '#C8D1FF' }}
-                        className="w-full rounded-lg border px-3 py-2 text-xs text-slate-750 focus:outline-none focus:ring-1 focus:ring-[#363EE8]"
+                        className="w-full rounded-lg border px-3 py-2 text-xs text-slate-750 focus:outline-none focus:ring-1 focus:ring-[#363EE8] disabled:bg-slate-50 disabled:cursor-not-allowed"
                       />
                     </div>
 
@@ -2568,8 +2616,9 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                       <select
                         value={selfRatingScore}
                         onChange={(e) => setSelfRatingScore(parseFloat(e.target.value))}
+                        disabled={!isAccomplishmentRatingActive}
                         style={{ borderColor: '#C8D1FF' }}
-                        className="w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#363EE8]"
+                        className="w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#363EE8] disabled:bg-slate-50 disabled:cursor-not-allowed"
                       >
                         <option value={5.0}>5.0 - Outstanding</option>
                         <option value={4.0}>4.0 - Very Satisfactory</option>
@@ -2585,7 +2634,8 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                           setSaveSuccess('Self-evaluation accomplishments and rating submitted.');
                           setTimeout(() => setSaveSuccess(null), 4000);
                         }}
-                        className="bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition"
+                        disabled={!isAccomplishmentRatingActive}
+                        className="bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition disabled:bg-slate-400 disabled:cursor-not-allowed"
                       >
                         Submit Evaluation
                       </button>
