@@ -33,7 +33,6 @@ import { AboutPage } from './components/AboutPage';
 import { JobPortalPage } from './components/JobPortalPage';
 import { UnauthorizedPage } from './components/UnauthorizedPage';
 import { SessionExpiredPage } from './components/SessionExpiredPage';
-import { useIdleTimeout, stampSessionActive, clearSessionActive } from './hooks/useIdleTimeout';
 import { EmployeeLoginPage, EmployeePage, SetInitialPasswordPage } from './modules/employee';
 import { ApplicantDetailsPage } from './modules/interviewer/ApplicantDetailsPage.tsx';
 import { EvaluationForm } from './modules/interviewer/EvaluationForm';
@@ -366,14 +365,12 @@ function AppContent() {
     const session = { email, role };
     setAdminSession(session);
     localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(session));
-    stampSessionActive();
   };
 
   const handleInterviewerLogin = (email: string, name: string) => {
     const session = { email, name };
     setInterviewerSession(session);
     localStorage.setItem(INTERVIEWER_SESSION_KEY, JSON.stringify(session));
-    stampSessionActive();
   };
 
   const handleEmployeeLogin = async (username: string, password: string) => {
@@ -436,7 +433,6 @@ function AppContent() {
     setCurrentEmployee(resolvedEmployee);
     setEmployeeSession(session);
     localStorage.setItem(EMPLOYEE_SESSION_KEY, JSON.stringify(session));
-    stampSessionActive();
     const empParams = new URLSearchParams(location.search);
     const empReturnTo = empParams.get('returnTo');
     const empDefault = session.mustChangePassword ? '/employee/set-password' : '/employee/dashboard';
@@ -455,14 +451,12 @@ function AppContent() {
   };
 
   const handleInterviewerLogout = () => {
-    clearSessionActive();
     setInterviewerSession(null);
     localStorage.removeItem(INTERVIEWER_SESSION_KEY);
     navigate('/interviewer/login');
   };
 
   const handleEmployeeLogout = () => {
-    clearSessionActive();
     setEmployeeSession(null);
     setCurrentEmployee(null);
     localStorage.removeItem(EMPLOYEE_SESSION_KEY);
@@ -472,7 +466,6 @@ function AppContent() {
   const handleRevokedInterviewerAcknowledge = async () => {
     setRevokedInterviewerDialogOpen(false);
     setInterviewerSession(null);
-    clearSessionActive();
     localStorage.removeItem(INTERVIEWER_SESSION_KEY);
 
     try {
@@ -485,52 +478,6 @@ function AppContent() {
       navigate('/interviewer/login', { replace: true });
     }
   };
-
-  // --- Idle session management ---
-  const handleIdleExpire = () => {
-    const currentPath = location.pathname + location.search;
-    const portal = adminSession ? 'admin' : interviewerSession ? 'interviewer' : 'employee';
-    clearSessionActive();
-    if (adminSession) {
-      setAdminSession(null);
-      localStorage.removeItem(ADMIN_SESSION_KEY);
-    } else if (interviewerSession) {
-      setInterviewerSession(null);
-      localStorage.removeItem(INTERVIEWER_SESSION_KEY);
-    } else if (employeeSession) {
-      setEmployeeSession(null);
-      setCurrentEmployee(null);
-      localStorage.removeItem(EMPLOYEE_SESSION_KEY);
-    }
-    navigate(
-      `/session-expired?portal=${portal}&returnTo=${encodeURIComponent(currentPath)}`,
-      { replace: true }
-    );
-  };
-
-  const handleIdleLogout = () => {
-    clearSessionActive();
-    if (adminSession) {
-      setAdminSession(null);
-      localStorage.removeItem(ADMIN_SESSION_KEY);
-      navigate('/admin/login', { replace: true });
-    } else if (interviewerSession) {
-      setInterviewerSession(null);
-      localStorage.removeItem(INTERVIEWER_SESSION_KEY);
-      navigate('/interviewer/login', { replace: true });
-    } else {
-      setEmployeeSession(null);
-      setCurrentEmployee(null);
-      localStorage.removeItem(EMPLOYEE_SESSION_KEY);
-      navigate('/employee/login', { replace: true });
-    }
-  };
-
-  const hasSession = !!(adminSession || interviewerSession || employeeSession);
-  const { showWarning: showIdleWarning, extendSession } = useIdleTimeout({
-    enabled: hasSession,
-    onExpire: handleIdleExpire,
-  });
 
   return (
     <div className="app">
@@ -981,46 +928,6 @@ function AppContent() {
           />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-
-        <Dialog open={showIdleWarning} onClose={extendSession} title="Still there?">
-          <div style={{ textAlign: 'center' }}>
-            <p style={{ marginBottom: '16px', color: 'var(--text-secondary)', fontSize: '14px' }}>
-              You've been idle for a while. Your session will expire in a few minutes.
-            </p>
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-              <button
-                type="button"
-                onClick={extendSession}
-                style={{
-                  border: 'none',
-                  borderRadius: '8px',
-                  padding: '10px 20px',
-                  backgroundColor: 'var(--accent-primary)',
-                  color: 'var(--text-primary)',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                Stay Signed In
-              </button>
-              <button
-                type="button"
-                onClick={handleIdleLogout}
-                style={{
-                  border: '1px solid var(--border-default)',
-                  borderRadius: '8px',
-                  padding: '10px 20px',
-                  backgroundColor: 'transparent',
-                  color: 'var(--text-secondary)',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                Sign Out
-              </button>
-            </div>
-          </div>
-        </Dialog>
 
         <Dialog open={isInterviewerRoute && revokedInterviewerDialogOpen} onClose={handleRevokedInterviewerAcknowledge}>
           <div style={{ textAlign: 'center' }}>
