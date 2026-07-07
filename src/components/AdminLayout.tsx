@@ -55,7 +55,7 @@ export const AdminLayout = ({ children, customSidebar, userName = 'Admin', divis
 
   return (
     <div className="h-screen flex flex-col bg-app text-text-primary overflow-hidden font-sans selection:bg-brand-soft selection:text-brand">
-      <AdminHeader userName={sessionName} divisionLabel={sessionDivision} division={division} onNotificationClick={onNotificationClick} />
+      <AdminHeader userName={sessionName} divisionLabel={sessionDivision} />
       <div className="flex flex-1 overflow-hidden">
         {customSidebar !== undefined ? customSidebar : <Sidebar />}
         <main className="flex-1 overflow-y-auto">
