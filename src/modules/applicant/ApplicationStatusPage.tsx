@@ -2,6 +2,7 @@ import { AlertCircle, CheckCircle2, CircleX, FileText, Lock, Mail, RefreshCw, Se
 import { useEffect, useRef, useState } from 'react';
 import { ATTACHMENTS_BUCKET, supabase } from '../../lib/supabase';
 import { getApplicants, saveApplicants } from '../../lib/recruitmentData';
+import { parseDisqualificationReason } from '../../lib/applicationActivity';
 
 interface ApplicationRecord {
   id: string;
@@ -615,6 +616,11 @@ export const ApplicationStatusPage = () => {
     })
   );
 
+  const disqualificationInfo = record ? parseDisqualificationReason(record.disqualification_reason) : null;
+  const disqualificationSummary = disqualificationInfo?.note
+    ? `${disqualificationInfo.label}: ${disqualificationInfo.note}`
+    : record?.disqualification_reason ?? '';
+
   return (
     <div className="min-h-screen bg-white py-12 px-4" style={{ fontFamily: 'Poppins, sans-serif' }}>
       <div className="mx-auto w-full max-w-5xl">
@@ -689,10 +695,10 @@ export const ApplicationStatusPage = () => {
                       ? 'We regret to inform you that your application did not advance further in the selection process. This application will no longer be considered for this position. For inquiries, please contact the Recruitment Office.'
                       : 'This application is no longer active. Document resubmission and re-upload have been disabled. For questions, please contact the Recruitment Office.'}
                   </p>
-                  {record.disqualification_reason && (
+                  {disqualificationSummary && (
                     <div className="mt-3 rounded-xl border border-rose-200 bg-white/70 px-4 py-3">
-                      <p className="text-xs font-bold uppercase tracking-wide text-rose-600">Reason</p>
-                      <p className="mt-1 text-sm text-rose-800">{record.disqualification_reason}</p>
+                      <p className="text-xs font-bold uppercase tracking-wide text-rose-600">Reason from RSP Admin</p>
+                      <p className="mt-1 text-sm text-rose-800">{disqualificationSummary}</p>
                     </div>
                   )}
                 </div>
@@ -973,8 +979,8 @@ export const ApplicationStatusPage = () => {
                         {state === 'rejected' && (
                           <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
                             <p className="text-sm font-semibold text-rose-800">Application did not advance past this stage</p>
-                            {record?.disqualification_reason && (
-                              <p className="mt-1 text-sm text-rose-700">{record.disqualification_reason}</p>
+                            {disqualificationSummary && (
+                              <p className="mt-1 text-sm text-rose-700">{disqualificationSummary}</p>
                             )}
                           </div>
                         )}
@@ -1220,10 +1226,10 @@ export const ApplicationStatusPage = () => {
                   <p className="mt-1 text-sm" style={{ color: badge.tone === 'rejected' ? '#BE123C' : '#040E6B' }}>
                     {getNoticeMessage(record.status, badge.tone, record.disqualification_reason)}
                   </p>
-                  {badge.tone === 'rejected' && record.disqualification_reason && (
+                  {badge.tone === 'rejected' && disqualificationSummary && (
                     <div className="mt-3 rounded-xl border border-rose-300 bg-white/60 px-4 py-3">
                       <p className="text-xs font-bold uppercase tracking-wide text-rose-600">Reason from RSP Admin</p>
-                      <p className="mt-1 text-sm text-rose-800">{record.disqualification_reason}</p>
+                      <p className="mt-1 text-sm text-rose-800">{disqualificationSummary}</p>
                     </div>
                   )}
                 </div>

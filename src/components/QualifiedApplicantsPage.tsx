@@ -33,6 +33,7 @@ import { sendEmail } from '../lib/email';
 import { createPassword, upsertEmployeePortalAccount } from '../lib/employeePortalData';
 import { runSingleFlight } from '../lib/singleFlight';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../lib/supabase';
+import { buildDisqualificationActivityDescription, DISQUALIFICATION_REASON_OPTIONS } from '../lib/applicationActivity';
 import { Applicant, ApplicantStatus, JobPosting, NewlyHired } from '../types/recruitment.types';
 import { RecruitmentNavigationGuide } from './RecruitmentNavigationGuide';
 import { Sidebar } from './Sidebar';
@@ -476,6 +477,7 @@ export const QualifiedApplicantsPage = () => {
   const [documentActionBusy, setDocumentActionBusy] = useState<string | null>(null);
   const [statusDecisionLocked, setStatusDecisionLocked] = useState(false);
   const [disqualifyReasonDraft, setDisqualifyReasonDraft] = useState('');
+  const [disqualificationCategory, setDisqualificationCategory] = useState('incomplete_documents');
   const [pendingStatusAction, setPendingStatusAction] = useState<null | {
     applicantId: string;
     action: 'qualify' | 'disqualify';
@@ -1166,23 +1168,26 @@ export const QualifiedApplicantsPage = () => {
     };
   }, [qualifiedBaseRows]);
 
-  const updateApplicantStatus = (ids: string[], nextStatus: ApplicantStatus, reason?: string) => {
-    console.log(`[QUALIFY] updateApplicantStatus called with:`, { ids, nextStatus, reason });
+  const updateApplicantStatus = (ids: string[], nextStatus: ApplicantStatus, reason?: string, reasonCategory?: string) => {
+    console.log(`[QUALIFY] updateApplicantStatus called with:`, { ids, nextStatus, reason, reasonCategory });
     const timestamp = new Date().toISOString();
     const trimmedReason = (reason ?? '').trim();
+    const formattedReason = trimmedReason
+      ? buildDisqualificationActivityDescription(reasonCategory, trimmedReason, true)
+      : '';
     const nextStatusLabel = toStatusDisplayLabel(nextStatus);
     const nextApplicants = applicants.map((applicant) => {
       if (!ids.includes(applicant.id)) return applicant;
       const currentNotes = Array.isArray(applicant.notes) ? applicant.notes : [];
       const currentTimeline = Array.isArray(applicant.timeline) ? applicant.timeline : [];
-      const eventLabel = trimmedReason
-        ? `Status Updated: ${nextStatusLabel} (Reason: ${trimmedReason})`
+      const eventLabel = formattedReason
+        ? `Status Updated: ${nextStatusLabel} (Reason: ${formattedReason})`
         : `Status Updated: ${nextStatusLabel}`;
       return {
         ...applicant,
         status: nextStatus,
-        notes: trimmedReason
-          ? [{ author: 'HR Admin', content: `Disqualification reason: ${trimmedReason}`, date: timestamp, pinned: false }, ...currentNotes]
+        notes: formattedReason
+          ? [{ author: 'HR Admin', content: `Disqualification reason: ${formattedReason}`, date: timestamp, pinned: false }, ...currentNotes]
           : currentNotes,
         timeline: [...currentTimeline, { event: eventLabel, date: timestamp, actor: 'HR Admin' }],
       };
@@ -1201,7 +1206,7 @@ export const QualifiedApplicantsPage = () => {
         action: 'QUALIFICATION_STATUS_UPDATED',
         applicantId,
         applicantName: target ? `${target.personalInfo.firstName} ${target.personalInfo.lastName}`.trim() : undefined,
-        details: trimmedReason ? `${nextStatusLabel} (${trimmedReason})` : nextStatusLabel,
+        details: formattedReason ? `${nextStatusLabel} (${formattedReason})` : nextStatusLabel,
         actor: 'HR Admin',
       });
 
@@ -1223,8 +1228,8 @@ export const QualifiedApplicantsPage = () => {
       };
       
       // Add disqualification reason if needed
-      if (trimmedReason && dbStatusValue === 'disqualified') {
-        dbUpdate.disqualification_reason = trimmedReason;
+      if (formattedReason && dbStatusValue === 'disqualified') {
+        dbUpdate.disqualification_reason = formattedReason;
       }
       
       console.log(`[QUALIFY] Updating ${applicantId} with DB status "${dbStatusValue}":`, dbUpdate);
@@ -1336,6 +1341,7 @@ export const QualifiedApplicantsPage = () => {
     }
     
     setDisqualifyReasonDraft('');
+    setDisqualificationCategory('incomplete_documents');
     setPendingStatusAction({
       applicantId,
       action: 'disqualify',
@@ -1357,6 +1363,7 @@ export const QualifiedApplicantsPage = () => {
     }
     
     setDisqualifyReasonDraft('');
+    setDisqualificationCategory('incomplete_documents');
     setPendingStatusAction({
       applicantId,
       action: 'qualify',
@@ -1475,13 +1482,20 @@ export const QualifiedApplicantsPage = () => {
     if (isDisqualifyAction && trimmedReason.length === 0) return;
 
     setStatusDecisionLocked(true);
-    updateApplicantStatus([pendingStatusAction.applicantId], pendingStatusAction.nextStatus, isDisqualifyAction ? trimmedReason : undefined);
+    updateApplicantStatus(
+      [pendingStatusAction.applicantId],
+      pendingStatusAction.nextStatus,
+      isDisqualifyAction ? trimmedReason : undefined,
+      isDisqualifyAction ? disqualificationCategory : undefined,
+    );
     setDisqualifyReasonDraft('');
+    setDisqualificationCategory('incomplete_documents');
     setPendingStatusAction(null);
   };
 
   const cancelPendingStatusAction = () => {
     setDisqualifyReasonDraft('');
+    setDisqualificationCategory('incomplete_documents');
     setPendingStatusAction(null);
   };
 
@@ -2543,20 +2557,36 @@ export const QualifiedApplicantsPage = () => {
                 This action will update the applicant status and lock the decision buttons.
               </p>
               {pendingStatusAction.action === 'disqualify' && (
-                <div>
-                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                    Reason for Disqualification <span className="text-rose-600">*</span>
-                  </label>
-                  <textarea
-                    rows={4}
-                    value={disqualifyReasonDraft}
-                    onChange={(event) => setDisqualifyReasonDraft(event.target.value)}
-                    placeholder="Enter the reason for disqualifying this applicant..."
-                    className="w-full resize-none rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-100"
-                  />
-                  {disqualifyReasonDraft.trim().length === 0 && (
-                    <p className="mt-1 text-xs text-rose-600">Disqualification reason is required.</p>
-                  )}
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">Reason Category</label>
+                    <select
+                      value={disqualificationCategory}
+                      onChange={(event) => setDisqualificationCategory(event.target.value)}
+                      className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-100"
+                    >
+                      {DISQUALIFICATION_REASON_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                      Additional Details <span className="text-rose-600">*</span>
+                    </label>
+                    <textarea
+                      rows={4}
+                      value={disqualifyReasonDraft}
+                      onChange={(event) => setDisqualifyReasonDraft(event.target.value)}
+                      placeholder="Add the note the applicant should see..."
+                      className="w-full resize-none rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-100"
+                    />
+                    {disqualifyReasonDraft.trim().length === 0 && (
+                      <p className="mt-1 text-xs text-rose-600">A brief note is required before disqualification can be confirmed.</p>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

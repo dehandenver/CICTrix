@@ -113,6 +113,41 @@ export const findEmployeePortalAccountFromSupabase = async (
   }
 };
 
+export const findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail = async (
+  employeeId?: string,
+  email?: string,
+): Promise<EmployeePortalAccount | null> => {
+  const normalizedEmail = String(email ?? '').trim().toLowerCase();
+  const normalizedId = String(employeeId ?? '').trim();
+  if (!normalizedEmail && !normalizedId) return null;
+
+  try {
+    const filters = [];
+    if (normalizedEmail) filters.push(`email.ilike.${normalizedEmail}`);
+    if (normalizedId) filters.push(`employee_id.eq.${normalizedId}`);
+
+    const { data, error } = await (supabase as any)
+      .from('employee_portal_accounts')
+      .select('*')
+      .or(filters.join(','));
+
+    if (error) {
+      console.error('[employeePortalData] Supabase find by employeeId/email failed:', error);
+      return null;
+    }
+
+    const rows = Array.isArray(data) ? (data as PortalAccountRow[]) : [];
+    const matched = rows.find((row) =>
+      (normalizedEmail && String(row.email ?? '').trim().toLowerCase() === normalizedEmail) ||
+      (normalizedId && String(row.employee_id ?? '').trim() === normalizedId)
+    );
+    return matched ? portalAccountFromRow(matched) : null;
+  } catch (err) {
+    console.error('[employeePortalData] Supabase find by employeeId/email threw:', err);
+    return null;
+  }
+};
+
 const DEMO_ACCOUNT: EmployeePortalAccount = {
   id: 'employee-account-demo-employee01',
   username: 'employee01',
