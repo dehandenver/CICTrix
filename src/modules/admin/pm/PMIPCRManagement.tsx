@@ -18,6 +18,7 @@ import { Dialog } from '../../../components/Dialog';
 import { IPCR_STAGES, type IpcrStage, stagePillStyle } from '../../../lib/api/ipcrStages';
 import { type IpcrPhase, sendNotification } from '../../../lib/api/ipcrSubmissions';
 import { getAllEmployees, type Employee } from '../../../lib/api/employees';
+import { getEmployeeIPCR, type IPCRRowDraft } from '../../../lib/api/performanceEvaluations';
 import { getCurrentAdminEmail } from '../moduleUi';
 import { supabase as supabaseClient } from '../../../lib/supabase';
 
@@ -188,9 +189,9 @@ const StatCard = ({
   </div>
 );
 
-// ── IPCR Form Modal ───────────────────────────────────────────────────────────
+// ── IPCR Detail Page ─────────────────────────────────────────────────────────
 
-const IPCRFormModal = ({
+const IPCRDetailPage = ({
   employee,
   onClose,
   onStageUpdate,
@@ -204,9 +205,42 @@ const IPCRFormModal = ({
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
 
+  const [ipcrRows, setIpcrRows] = useState<IPCRRowDraft[]>([]);
+  const [ipcrLoading, setIpcrLoading] = useState(true);
+  const [ipcrError, setIpcrError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      setIpcrLoading(true);
+      setIpcrError('');
+      try {
+        const res = await getEmployeeIPCR(
+          employee.employee_id || '',
+          employee.periodLabel,
+          employee.id,
+          null
+        );
+        if (!active) return;
+        if (res.success && res.data) {
+          setIpcrRows(res.data.rows || []);
+        } else {
+          setIpcrError(res.error || 'Failed to load IPCR rows.');
+        }
+      } catch (err) {
+        if (!active) return;
+        setIpcrError('Error fetching IPCR details.');
+      } finally {
+        if (active) setIpcrLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [employee]);
+
   const handleSave = async () => {
     if (newStage === employee.actualStage) {
-      onClose();
       return;
     }
     setSaving(true);
@@ -229,7 +263,9 @@ const IPCRFormModal = ({
     }
     onStageUpdate(employee.id, newStage);
     setSaved(true);
-    setTimeout(onClose, 700);
+    setTimeout(() => {
+      setSaved(false);
+    }, 2000);
   };
 
   const monthsText =
@@ -241,160 +277,246 @@ const IPCRFormModal = ({
   const isProbationary = employee.monthsOfService < 6;
 
   return (
-    <Dialog open title={`IPCR — ${employee.full_name}`} onClose={onClose}>
-      <div style={{ width: '580px', maxWidth: '100%' }}>
-        {/* Employee Info */}
-        <div className="bg-slate-50 rounded-xl p-4 mb-5 border border-slate-200">
-          <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-            <div>
-              <p className="text-xs text-slate-400 mb-0.5">Name</p>
-              <p className="font-semibold text-slate-800">{employee.full_name}</p>
-            </div>
-            <div>
-              <p className="text-xs text-slate-400 mb-0.5">Position</p>
-              <p className="font-medium text-slate-700">{employee.current_position ?? '—'}</p>
-            </div>
-            <div>
-              <p className="text-xs text-slate-400 mb-0.5">Office / Department</p>
-              <p className="font-medium text-slate-700">{employee.department ?? '—'}</p>
-            </div>
-            <div>
-              <p className="text-xs text-slate-400 mb-0.5">Date Hired</p>
-              <p className="font-medium text-slate-700">{fmtDate(employee.hire_date)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-slate-400 mb-0.5">Length of Service</p>
-              <p className="font-medium text-slate-700">{monthsText}</p>
-            </div>
-            <div>
-              <p className="text-xs text-slate-400 mb-0.5">Employee Type</p>
-              <p className="font-medium text-slate-700">{isProbationary ? 'Probationary' : 'Regular'}</p>
-            </div>
-          </div>
-        </div>
+    <div className="space-y-6">
+      {/* Back button */}
+      <button
+        type="button"
+        onClick={onClose}
+        className="flex items-center gap-1.5 text-sm font-semibold text-[#363EE8] hover:underline"
+      >
+        <ChevronLeft size={16} /> Back to IPCR Management
+      </button>
 
-        {/* Cycle Timeline */}
-        <div className="mb-5">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">IPCR Cycle</p>
-          <div className="flex items-stretch gap-2">
-            <div
-              className={`flex-1 rounded-lg p-3 border text-center ${
-                employee.computedPhase === 'target'
-                  ? 'bg-blue-50 border-blue-200'
-                  : 'bg-emerald-50 border-emerald-200'
-              }`}
-            >
-              <p className="text-[10px] text-slate-500 mb-0.5">
-                {isProbationary ? 'Month 1–3' : 'First 6 Months'}
-              </p>
-              <p
-                className={`text-xs font-bold ${
-                  employee.computedPhase === 'target' ? 'text-[#363EE8]' : 'text-emerald-700'
-                }`}
-              >
-                Target Setting
-              </p>
-              {employee.computedPhase !== 'target' && (
-                <Check size={11} className="mx-auto mt-1 text-emerald-600" />
-              )}
-            </div>
-            <ChevronRight size={14} className="text-slate-300 self-center flex-shrink-0" />
-            <div
-              className={`flex-1 rounded-lg p-3 border text-center ${
-                employee.computedPhase === 'rating'
-                  ? 'bg-blue-50 border-blue-200'
-                  : 'bg-slate-50 border-slate-200'
-              }`}
-            >
-              <p className="text-[10px] text-slate-500 mb-0.5">
-                {isProbationary ? 'Month 4–6' : 'Second 6 Months'}
-              </p>
-              <p
-                className={`text-xs font-bold ${
-                  employee.computedPhase === 'rating' ? 'text-[#363EE8]' : 'text-slate-400'
-                }`}
-              >
-                Accomplishment Rating
-              </p>
-            </div>
-          </div>
-          <div className="mt-2.5 text-xs text-slate-500 flex gap-4">
-            <span>
-              Period: <strong className="text-slate-700">{employee.periodLabel}</strong>
-            </span>
-            <span>
-              Due: <strong className="text-slate-700">{fmtDate(employee.computedDueDate)}</strong>
-            </span>
-          </div>
-        </div>
-
-        {/* Stage Control */}
-        <div className="mb-5">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
-            Submission Stage
-          </p>
-          <div className="flex items-center gap-3 mb-3">
-            <span className="text-sm text-slate-500">Current:</span>
-            <span style={stagePillStyle(employee.actualStage)}>{employee.actualStage}</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-slate-500 flex-shrink-0">Update to:</span>
-            <select
-              value={newStage}
-              onChange={(e) => setNewStage(e.target.value as IpcrStage)}
-              className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30"
-            >
-              {IPCR_STAGES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </div>
-          {error && (
-            <p className="mt-2 text-xs text-red-600 flex items-center gap-1">
-              <AlertCircle size={12} /> {error}
-            </p>
-          )}
-        </div>
-
-        {/* Phase content note */}
-        <div className="mb-5 border border-dashed border-slate-200 rounded-xl p-4 text-center">
-          <ClipboardCheck size={24} className="mx-auto text-slate-300 mb-2" />
-          <p className="text-sm text-slate-400">
-            {employee.computedPhase === 'target'
-              ? 'Performance targets are entered and submitted by the employee through the Office Account portal.'
-              : 'Accomplishments and ratings are submitted by the employee through the Office Account portal.'}
-          </p>
-        </div>
-
-        <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-slate-600 font-medium hover:text-slate-800"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || saved}
-            className="px-5 py-2 text-sm font-bold bg-[#363EE8] text-white rounded-lg hover:bg-[#2931c5] disabled:opacity-50 flex items-center gap-2"
-          >
-            {saved ? (
-              <>
-                <Check size={14} /> Saved!
-              </>
-            ) : saving ? (
-              'Saving…'
-            ) : (
-              'Save Stage'
-            )}
-          </button>
+      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900 tracking-tight">IPCR — {employee.full_name}</h2>
+          <p className="text-xs text-slate-500 mt-1">Review targets, accomplishments, and update submission stage.</p>
         </div>
       </div>
-    </Dialog>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 align-start items-start">
+        {/* Left Column: Info & Control */}
+        <div className="space-y-5 lg:col-span-1">
+          {/* Employee Info */}
+          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+            <h3 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">Employee Information</h3>
+            <div className="space-y-3 text-sm">
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Name</p>
+                <p className="font-semibold text-slate-800">{employee.full_name}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Position</p>
+                <p className="font-medium text-slate-700">{employee.current_position ?? '—'}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Office / Department</p>
+                <p className="font-medium text-slate-700">{employee.department ?? '—'}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Date Hired</p>
+                <p className="font-medium text-slate-700">{fmtDate(employee.hire_date)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Length of Service</p>
+                <p className="font-medium text-slate-700">{monthsText}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Employee Type</p>
+                <p className="font-medium text-slate-700">{isProbationary ? 'Probationary' : 'Regular'}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Cycle Timeline */}
+          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+            <h3 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">IPCR Cycle</h3>
+            <div className="flex items-stretch gap-1.5 mb-4">
+              <div
+                className={`flex-1 rounded-lg p-3 border text-center ${
+                  employee.computedPhase === 'target'
+                    ? 'bg-blue-50 border-blue-200'
+                    : 'bg-emerald-50 border-emerald-100'
+                }`}
+              >
+                <p className="text-[9px] text-slate-500 mb-0.5">
+                  {isProbationary ? 'Month 1–3' : 'First 6 Mos'}
+                </p>
+                <p
+                  className={`text-[11px] font-bold ${
+                    employee.computedPhase === 'target' ? 'text-[#363EE8]' : 'text-emerald-700'
+                  }`}
+                >
+                  Target Setting
+                </p>
+                {employee.computedPhase !== 'target' && (
+                  <Check size={10} className="mx-auto mt-1 text-emerald-600" />
+                )}
+              </div>
+              <ChevronRight size={12} className="text-slate-300 self-center flex-shrink-0" />
+              <div
+                className={`flex-1 rounded-lg p-3 border text-center ${
+                  employee.computedPhase === 'rating'
+                    ? 'bg-blue-50 border-blue-200'
+                    : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                <p className="text-[9px] text-slate-500 mb-0.5">
+                  {isProbationary ? 'Month 4–6' : 'Second 6 Mos'}
+                </p>
+                <p
+                  className={`text-[11px] font-bold ${
+                    employee.computedPhase === 'rating' ? 'text-[#363EE8]' : 'text-slate-400'
+                  }`}
+                >
+                  Accomplishment
+                </p>
+              </div>
+            </div>
+            <div className="text-xs text-slate-500 space-y-1">
+              <div>
+                Period: <strong className="text-slate-700">{employee.periodLabel}</strong>
+              </div>
+              <div>
+                Due: <strong className="text-slate-700">{fmtDate(employee.computedDueDate)}</strong>
+              </div>
+            </div>
+          </div>
+
+          {/* Stage Control */}
+          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+            <h3 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">Submission Stage</h3>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs text-slate-500">Current Stage:</span>
+              <span style={stagePillStyle(employee.actualStage)}>{employee.actualStage}</span>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Update Stage To</label>
+                <select
+                  value={newStage}
+                  onChange={(e) => setNewStage(e.target.value as IpcrStage)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30 bg-white"
+                >
+                  {IPCR_STAGES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {error && (
+                <p className="text-[11px] text-red-650 flex items-center gap-1">
+                  <AlertCircle size={11} /> {error}
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving || saved || newStage === employee.actualStage}
+                className="w-full py-2 text-xs font-bold bg-[#363EE8] text-white rounded-lg hover:bg-[#2931c5] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm transition-colors"
+              >
+                {saved ? (
+                  <>
+                    <Check size={12} /> Saved!
+                  </>
+                ) : saving ? (
+                  'Saving…'
+                ) : (
+                  'Save Stage'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column: IPCR Sheet Details */}
+        <div className="lg:col-span-2 space-y-4">
+          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+            <h3 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">
+              Employee IPCR Sheet
+            </h3>
+
+            {ipcrLoading ? (
+              <div className="p-12 text-center text-sm text-slate-400">
+                Loading IPCR details…
+              </div>
+            ) : ipcrError ? (
+              <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-center text-sm text-red-700">
+                {ipcrError}
+              </div>
+            ) : ipcrRows.length === 0 ? (
+              <div className="p-8 text-center text-sm text-amber-800 flex flex-col items-center gap-2">
+                <ClipboardCheck size={28} className="text-amber-500 mb-1" />
+                <span className="font-semibold">No IPCR records found</span>
+                <span className="text-xs text-slate-500">The employee has not encoded targets for the rating period {employee.periodLabel}.</span>
+              </div>
+            ) : (
+              <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
+                      <th className="px-3 py-3 w-16">Type</th>
+                      <th className="px-3 py-3">M.F.O. / Target Description</th>
+                      {employee.computedPhase === 'rating' && (
+                        <>
+                          <th className="px-3 py-3">Accomplishment</th>
+                          <th className="px-3 py-3 w-28">Ratings (Q/E/T/Ave)</th>
+                        </>
+                      )}
+                      <th className="px-3 py-3 w-28">Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-700">
+                    {ipcrRows.map((row, idx) => {
+                      const isCore = row.function_type === 'CORE';
+                      return (
+                        <tr key={row.id || idx} className="hover:bg-slate-50/40 transition-colors">
+                          <td className="px-3 py-3.5 align-top">
+                            <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                              isCore ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' : 'bg-slate-100 text-slate-700'
+                            }`}>
+                              {row.function_type}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3.5 align-top whitespace-pre-wrap leading-relaxed text-slate-800">
+                            {row.target_text || '—'}
+                          </td>
+                          {employee.computedPhase === 'rating' && (
+                            <>
+                              <td className="px-3 py-3.5 align-top whitespace-pre-wrap leading-relaxed text-slate-800">
+                                {row.accomplishment_text || '—'}
+                              </td>
+                              <td className="px-3 py-3.5 align-top">
+                                {row.ave_rating ? (
+                                  <div className="space-y-0.5">
+                                    <div className="font-bold text-slate-800 text-sm">
+                                      {row.ave_rating.toFixed(2)}
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 font-mono">
+                                      Q:{row.q_rating ?? '—'} E:{row.e_rating ?? '—'} T:{row.t_rating ?? '—'}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-400 italic">Not rated</span>
+                                )}
+                              </td>
+                            </>
+                          )}
+                          <td className="px-3 py-3.5 align-top whitespace-pre-wrap text-slate-500 italic">
+                            {row.remarks || '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };
 
@@ -557,15 +679,14 @@ const ProbationaryPanel = ({
   employees,
   loading,
   onRefresh,
-  onStageUpdate,
+  onSelectEmployee,
 }: {
   employees: EnrichedEmployee[];
   loading: boolean;
   onRefresh: () => void;
-  onStageUpdate: (id: string, stage: IpcrStage) => void;
+  onSelectEmployee: (emp: EnrichedEmployee) => void;
 }) => {
   const [search, setSearch] = useState('');
-  const [selected, setSelected] = useState<EnrichedEmployee | null>(null);
   const [showSchedule, setShowSchedule] = useState(false);
   const [currentPeriod, setCurrentPeriod] = useState('');
 
@@ -678,7 +799,6 @@ const ProbationaryPanel = ({
                     'Date Hired',
                     'Current Stage',
                     'Due Date',
-                    'Status',
                   ].map((h) => (
                     <th
                       key={h}
@@ -693,7 +813,7 @@ const ProbationaryPanel = ({
                 {filtered.map((emp) => (
                   <tr
                     key={emp.id}
-                    onClick={() => setSelected(emp)}
+                    onClick={() => onSelectEmployee(emp)}
                     className="hover:bg-blue-50/30 cursor-pointer transition"
                   >
                     <td className="px-4 py-3">
@@ -711,11 +831,6 @@ const ProbationaryPanel = ({
                     <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
                       {fmtDate(emp.computedDueDate)}
                     </td>
-                    <td className="px-4 py-3">
-                      <span style={statusPillStyle(emp.employeeStatus)}>
-                        {emp.employeeStatus}
-                      </span>
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -723,17 +838,6 @@ const ProbationaryPanel = ({
           </div>
         )}
       </div>
-
-      {selected && (
-        <IPCRFormModal
-          employee={selected}
-          onClose={() => setSelected(null)}
-          onStageUpdate={(id, stage) => {
-            onStageUpdate(id, stage);
-            setSelected(null);
-          }}
-        />
-      )}
 
       {showSchedule && (
         <ScheduleCycleModal
@@ -753,15 +857,14 @@ const RegularPanel = ({
   employees,
   loading,
   onRefresh,
-  onStageUpdate,
+  onSelectEmployee,
 }: {
   employees: EnrichedEmployee[];
   loading: boolean;
   onRefresh: () => void;
-  onStageUpdate: (id: string, stage: IpcrStage) => void;
+  onSelectEmployee: (emp: EnrichedEmployee) => void;
 }) => {
   const [drillOffice, setDrillOffice] = useState<string | null>(null);
-  const [selected, setSelected] = useState<EnrichedEmployee | null>(null);
   const [showSchedule, setShowSchedule] = useState(false);
   const [currentPeriod, setCurrentPeriod] = useState('');
 
@@ -879,7 +982,7 @@ const RegularPanel = ({
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50/60 border-b border-slate-200">
-                  {['Employee', 'Position', 'Current Stage', 'Due Date', 'Status'].map((h) => (
+                  {['Employee', 'Position', 'Current Stage', 'Due Date'].map((h) => (
                     <th
                       key={h}
                       className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap"
@@ -893,7 +996,7 @@ const RegularPanel = ({
                 {activeDrill.employees.map((emp) => (
                   <tr
                     key={emp.id}
-                    onClick={() => setSelected(emp)}
+                    onClick={() => onSelectEmployee(emp)}
                     className="hover:bg-blue-50/30 cursor-pointer transition"
                   >
                     <td className="px-4 py-3">
@@ -906,11 +1009,6 @@ const RegularPanel = ({
                     </td>
                     <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
                       {fmtDate(emp.computedDueDate)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span style={statusPillStyle(emp.employeeStatus)}>
-                        {emp.employeeStatus}
-                      </span>
                     </td>
                   </tr>
                 ))}
@@ -985,17 +1083,6 @@ const RegularPanel = ({
         </div>
       )}
 
-      {selected && (
-        <IPCRFormModal
-          employee={selected}
-          onClose={() => setSelected(null)}
-          onStageUpdate={(id, stage) => {
-            onStageUpdate(id, stage);
-            setSelected(null);
-          }}
-        />
-      )}
-
       {showSchedule && (
         <ScheduleCycleModal
           type="regular"
@@ -1023,6 +1110,7 @@ export const PMIPCRManagement = () => {
   const [allRegular, setAllRegular] = useState<EnrichedEmployee[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [selectedEmployee, setSelectedEmployee] = useState<EnrichedEmployee | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1088,7 +1176,18 @@ export const PMIPCRManagement = () => {
       );
     setAllProbationary((prev) => update(prev));
     setAllRegular((prev) => update(prev));
+    setSelectedEmployee((prev) => prev && prev.id === id ? { ...prev, actualStage: stage } : prev);
   }, []);
+
+  if (selectedEmployee) {
+    return (
+      <IPCRDetailPage
+        employee={selectedEmployee}
+        onClose={() => setSelectedEmployee(null)}
+        onStageUpdate={handleStageUpdate}
+      />
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -1097,7 +1196,7 @@ export const PMIPCRManagement = () => {
           <ClipboardCheck className="h-6 w-6 text-[#363EE8]" />
           IPCR Management
         </h2>
-        <p className="text-sm text-slate-500 mt-0.5">
+        <p className="text-sm text-slate-550 mt-0.5">
           Module 2 — employees auto-classified by length of service: 3-month cycle (probationary)
           and 6-month cycle (regular).
         </p>
@@ -1132,14 +1231,14 @@ export const PMIPCRManagement = () => {
           employees={allProbationary}
           loading={loading}
           onRefresh={load}
-          onStageUpdate={handleStageUpdate}
+          onSelectEmployee={setSelectedEmployee}
         />
       ) : (
         <RegularPanel
           employees={allRegular}
           loading={loading}
           onRefresh={load}
-          onStageUpdate={handleStageUpdate}
+          onSelectEmployee={setSelectedEmployee}
         />
       )}
     </div>
