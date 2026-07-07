@@ -18,6 +18,7 @@ import { Dialog } from '../../../components/Dialog';
 import { IPCR_STAGES, type IpcrStage, stagePillStyle } from '../../../lib/api/ipcrStages';
 import { type IpcrPhase, sendNotification } from '../../../lib/api/ipcrSubmissions';
 import { getAllEmployees, type Employee } from '../../../lib/api/employees';
+import { upsertSchedule } from '../../../lib/api/phaseSchedules';
 import { getEmployeeIPCR, type IPCRRowDraft } from '../../../lib/api/performanceEvaluations';
 import { getCurrentAdminEmail } from '../moduleUi';
 import { supabase as supabaseClient } from '../../../lib/supabase';
@@ -42,7 +43,10 @@ function getMonthsOfService(hireDate: string): number {
   );
 }
 
-function computeStageInfo(hireDate: string): {
+function computeStageInfo(
+  hireDate: string,
+  schedules: any[] = []
+): {
   stage: 'Target Setting' | 'Accomplishment Rating';
   phase: IpcrPhase;
   dueDate: Date;
@@ -52,6 +56,38 @@ function computeStageInfo(hireDate: string): {
   const months = getMonthsOfService(hireDate);
 
   if (months < 6) {
+    // 1. Check if there is a PM-configured probationary cycle for the employee's hire month
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    const hireMonthName = monthNames[hired.getMonth()];
+    
+    // Find the latest configured cycle for this hired month
+    const sched = schedules.find((s) => s.hired_month === hireMonthName);
+    
+    if (sched) {
+      const now = new Date();
+      const targetEnd = new Date(sched.target_end);
+      const accomplishmentEnd = new Date(sched.accomplishment_end);
+      
+      if (now <= targetEnd) {
+        return {
+          stage: 'Target Setting',
+          phase: 'target',
+          dueDate: targetEnd,
+          periodLabel: sched.period_label,
+        };
+      } else {
+        return {
+          stage: 'Accomplishment Rating',
+          phase: 'rating',
+          dueDate: accomplishmentEnd,
+          periodLabel: sched.period_label,
+        };
+      }
+    }
+
     // Probationary: 3-month cycles
     if (months < 3) {
       const due = new Date(hired);
@@ -534,51 +570,158 @@ const ScheduleCycleModal = ({
   onScheduled: (period: string) => void;
 }) => {
   const [period, setPeriod] = useState('');
-  const [phase, setPhase] = useState<IpcrPhase>('target');
-  const [customMessage, setCustomMessage] = useState('');
-  const [notifyOffices, setNotifyOffices] = useState(true);
+  const [targetStart, setTargetStart] = useState('');
+  const [targetEnd, setTargetEnd] = useState('');
+  const [accomplishmentStart, setAccomplishmentStart] = useState('');
+  const [accomplishmentEnd, setAccomplishmentEnd] = useState('');
+
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  const [newlyHiredMonth, setNewlyHiredMonth] = useState(monthNames[new Date().getMonth()]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-
-  const offices = useMemo(() => {
-    const m = new Map<string, { id: string | null; name: string; count: number }>();
-    for (const e of employees) {
-      const k = e.department ?? 'Unassigned';
-      if (!m.has(k)) m.set(k, { id: e.department_id ?? null, name: k, count: 0 });
-      m.get(k)!.count++;
-    }
-    return Array.from(m.values());
-  }, [employees]);
 
   const handleSave = async () => {
     if (!period.trim()) {
       setError('Evaluation period label is required.');
       return;
     }
+    if (!targetStart || !targetEnd || !accomplishmentStart || !accomplishmentEnd) {
+      setError('All target setting and accomplishment setting dates are required.');
+      return;
+    }
+
     setSaving(true);
     setError('');
-    if (notifyOffices) {
-      const by = getCurrentAdminEmail();
-      for (const o of offices) {
-        await sendNotification({
-          phase,
-          officeId: o.id,
-          officeName: o.name,
-          period: period.trim(),
-          employeeCount: o.count,
-          message: customMessage.trim() || null,
-          triggeredBy: by,
+
+    try {
+      if (type === 'probationary') {
+        // 1. Insert schedule configuration
+        const { error: dbErr } = await supabase
+          .from('probationary_ipcr_schedules')
+          .insert([
+            {
+              period_label: period.trim(),
+              hired_month: newlyHiredMonth,
+              target_start: targetStart,
+              target_end: targetEnd,
+              accomplishment_start: accomplishmentStart,
+              accomplishment_end: accomplishmentEnd,
+            }
+          ]);
+
+        if (dbErr) throw dbErr;
+
+        // 2. Fetch newly hired from newly_hired table
+        const { data: newlyHired, error: nhErr } = await supabase
+          .from('newly_hired')
+          .select('*');
+
+        if (nhErr) throw nhErr;
+
+        // Filter by the selected month name
+        const matchingHires = (newlyHired ?? []).filter((nh: any) => {
+          if (!nh.date_hired) return false;
+          const hiredDate = new Date(nh.date_hired);
+          return monthNames[hiredDate.getMonth()] === newlyHiredMonth;
         });
+
+        const empIds = matchingHires.map((nh: any) => nh.employee_id).filter(Boolean);
+
+        // Fetch active employees with department details matching the hired month as fallback
+        const { data: activeEmployees } = await supabase
+          .from('employees_with_department')
+          .select('id, full_name, department_id, department, hire_date');
+
+        const fallbackEmpIds = (activeEmployees ?? [])
+          .filter((e: any) => {
+            if (!e.hire_date) return false;
+            return monthNames[new Date(e.hire_date).getMonth()] === newlyHiredMonth;
+          })
+          .map((e: any) => e.id);
+
+        const allEmpIds = Array.from(new Set([...empIds, ...fallbackEmpIds]));
+        const targetEmployees = (activeEmployees ?? []).filter((e: any) => allEmpIds.includes(e.id));
+
+        // 3. Request targets by creating target setting stage IPCR submissions
+        for (const emp of targetEmployees) {
+          const { error: subErr } = await supabase
+            .from('ipcr_submissions')
+            .upsert([
+              {
+                employee_id: emp.id,
+                employee_name: emp.full_name,
+                office_id: emp.department_id || null,
+                office_name: emp.department || null,
+                period: period.trim(),
+                phase: 'target',
+                stage: 'Not Started',
+                updated_by: getCurrentAdminEmail(),
+              }
+            ], { onConflict: 'employee_id,period,phase' });
+
+          if (subErr) {
+            console.error('Failed to create target request for employee', emp.full_name, subErr);
+          }
+        }
+      } else {
+        // Regular cycle updates phase schedules using resolving logic
+        const { data: currentSchedules } = await supabase
+          .from('phase_schedules')
+          .select('*')
+          .eq('scope', 'system');
+
+        // Target Setting
+        const tsRow = currentSchedules?.find((s: any) => s.phase === 'target_setting');
+        if (tsRow) {
+          await supabase.from('phase_schedules').update({
+            start_date: targetStart,
+            deadline_date: targetEnd,
+            updated_by: getCurrentAdminEmail(),
+          }).eq('id', tsRow.id);
+        } else {
+          await supabase.from('phase_schedules').insert({
+            scope: 'system',
+            phase: 'target_setting',
+            start_date: targetStart,
+            deadline_date: targetEnd,
+            updated_by: getCurrentAdminEmail(),
+          });
+        }
+
+        // Accomplishment Rating
+        const ratingRow = currentSchedules?.find((s: any) => s.phase === 'rating');
+        if (ratingRow) {
+          await supabase.from('phase_schedules').update({
+            start_date: accomplishmentStart,
+            deadline_date: accomplishmentEnd,
+            updated_by: getCurrentAdminEmail(),
+          }).eq('id', ratingRow.id);
+        } else {
+          await supabase.from('phase_schedules').insert({
+            scope: 'system',
+            phase: 'rating',
+            start_date: accomplishmentStart,
+            deadline_date: accomplishmentEnd,
+            updated_by: getCurrentAdminEmail(),
+          });
+        }
       }
+
+      setSaving(false);
+      onScheduled(period.trim());
+      onClose();
+    } catch (err: any) {
+      setSaving(false);
+      setError(err.message || 'An error occurred while saving the cycle.');
     }
-    setSaving(false);
-    onScheduled(period.trim());
-    onClose();
   };
 
   return (
     <Dialog open title="Schedule IPCR Cycle" onClose={onClose}>
-      <div style={{ width: '460px', maxWidth: '100%' }}>
+      <div style={{ width: '500px', maxWidth: '100%' }}>
         <div className="space-y-4">
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-1.5">
@@ -597,51 +740,74 @@ const ScheduleCycleModal = ({
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">Phase</label>
-            <div className="flex gap-2">
-              {(['target', 'rating'] as IpcrPhase[]).map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setPhase(p)}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg border transition ${
-                    phase === p
-                      ? 'bg-[#363EE8] text-white border-[#363EE8]'
-                      : 'text-slate-600 border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  {p === 'target' ? 'Target Setting' : 'Accomplishment Rating'}
-                </button>
-              ))}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                Target Setting Start Date *
+              </label>
+              <input
+                type="date"
+                value={targetStart}
+                onChange={(e) => setTargetStart(e.target.value)}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                Target Setting End Date *
+              </label>
+              <input
+                type="date"
+                value={targetEnd}
+                onChange={(e) => setTargetEnd(e.target.value)}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30"
+              />
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">
-              Message to Office Accounts (optional)
-            </label>
-            <textarea
-              rows={3}
-              placeholder="Instructions or reminders…"
-              value={customMessage}
-              onChange={(e) => setCustomMessage(e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30 resize-none"
-            />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                Accomplishment Start Date *
+              </label>
+              <input
+                type="date"
+                value={accomplishmentStart}
+                onChange={(e) => setAccomplishmentStart(e.target.value)}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                Accomplishment End Date *
+              </label>
+              <input
+                type="date"
+                value={accomplishmentEnd}
+                onChange={(e) => setAccomplishmentEnd(e.target.value)}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30"
+              />
+            </div>
           </div>
 
-          <label className="flex items-center gap-2.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={notifyOffices}
-              onChange={(e) => setNotifyOffices(e.target.checked)}
-              className="rounded"
-            />
-            <span className="text-sm text-slate-600">
-              Notify {offices.length} office account{offices.length !== 1 ? 's' : ''} (
-              {employees.length} {type} employee{employees.length !== 1 ? 's' : ''})
-            </span>
-          </label>
+          {type === 'probationary' && (
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                Newly Hired Employees for the month of: *
+              </label>
+              <select
+                value={newlyHiredMonth}
+                onChange={(e) => setNewlyHiredMonth(e.target.value)}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30"
+              >
+                {monthNames.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {error && (
             <p className="text-xs text-red-600 flex items-center gap-1">
@@ -665,7 +831,7 @@ const ScheduleCycleModal = ({
             className="px-5 py-2 text-sm font-bold bg-[#363EE8] text-white rounded-lg hover:bg-[#2931c5] disabled:opacity-50 flex items-center gap-2"
           >
             <Send size={13} />
-            {saving ? 'Scheduling…' : 'Schedule & Notify'}
+            {saving ? 'Scheduling…' : 'Schedule Cycle'}
           </button>
         </div>
       </div>
@@ -1116,9 +1282,10 @@ export const PMIPCRManagement = () => {
     setLoading(true);
     setLoadError('');
     try {
-      const [empResult, subRes] = await Promise.all([
+      const [empResult, subRes, schedRes] = await Promise.all([
         getAllEmployees({ status: 'Active' }),
         supabase.from('ipcr_submissions').select('id, employee_id, period, phase, stage'),
+        supabase.from('probationary_ipcr_schedules').select('*'),
       ]);
 
       if (!empResult.success) {
@@ -1127,6 +1294,7 @@ export const PMIPCRManagement = () => {
       }
 
       const submissions: any[] = subRes.error ? [] : (subRes.data ?? []);
+      const schedules: any[] = schedRes.error ? [] : (schedRes.data ?? []);
       const subMap = new Map<string, { stage: IpcrStage; id: string }>();
       for (const s of submissions) {
         const k = `${s.employee_id}::${s.period}::${s.phase}`;
@@ -1137,7 +1305,7 @@ export const PMIPCRManagement = () => {
       for (const emp of empResult.data as Employee[]) {
         if (!emp.hire_date) continue;
         const months = getMonthsOfService(emp.hire_date);
-        const { stage, phase, dueDate, periodLabel } = computeStageInfo(emp.hire_date);
+        const { stage, phase, dueDate, periodLabel } = computeStageInfo(emp.hire_date, schedules);
         const k = `${emp.id}::${periodLabel}::${phase}`;
         const sub = subMap.get(k);
         const actualStage: IpcrStage = sub?.stage ?? 'Not Started';
