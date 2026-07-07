@@ -41,10 +41,12 @@ import {
     createPassword,
     createUniqueUsername,
     findEmployeePortalAccount,
+    findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail,
     getEmployeePortalAccounts,
     getLastEmployeePasswordReset,
     logEmployeePasswordReset,
     type EmployeePasswordResetLog,
+    type EmployeePortalAccount,
     upsertEmployeePortalAccount,
 } from '../../lib/employeePortalData';
 import { mockDatabase } from '../../lib/mockDatabase';
@@ -791,13 +793,14 @@ export const RSPDashboard = () => {
   const [lastResetInfo, setLastResetInfo] = useState<EmployeePasswordResetLog | null>(null);
 
   // Prefer matching by email (most authoritative since it's per-person), then by employee_number.
-  const findExistingPortalAccountForEmployee = (details: ApplicantRecord) => {
+  const findExistingPortalAccountForEmployee = async (details: ApplicantRecord): Promise<EmployeePortalAccount | null> => {
     const empNumber = String(
       details.employeeId ?? employeeNumberById.get(details.id) ?? '',
     ).trim();
     const empEmail = String((details as any).email ?? '').trim().toLowerCase();
     const accounts = getEmployeePortalAccounts();
-    return (
+
+    const localMatch = (
       (empEmail
         ? accounts.find((a) => String(a.employee.email ?? '').trim().toLowerCase() === empEmail)
         : null)
@@ -806,6 +809,11 @@ export const RSPDashboard = () => {
         : null)
       ?? null
     );
+    if (localMatch) return localMatch;
+
+    if (!empEmail && !empNumber) return null;
+
+    return await findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail(empNumber || undefined, empEmail || undefined);
   };
 
   const openResetPwModal = async () => {
@@ -813,7 +821,7 @@ export const RSPDashboard = () => {
     setResetPwError(null);
     setLastResetInfo(null);
     if (!selectedEmployeeDetails) return;
-    const existingAccount = findExistingPortalAccountForEmployee(selectedEmployeeDetails);
+    const existingAccount = await findExistingPortalAccountForEmployee(selectedEmployeeDetails);
     if (!existingAccount) return;
     const lastReset = await getLastEmployeePasswordReset(existingAccount.id);
     setLastResetInfo(lastReset);
@@ -847,7 +855,7 @@ export const RSPDashboard = () => {
       const fullNameNormalized = fullName.toLowerCase();
 
       const accounts = getEmployeePortalAccounts();
-      const existingAccount = findExistingPortalAccountForEmployee(selectedEmployeeDetails);
+      const existingAccount = await findExistingPortalAccountForEmployee(selectedEmployeeDetails);
 
       // Build the username that should be assigned to the *current* employee.
       // Sanitize the same way createUniqueUsername does so we can compare apples-to-apples.
@@ -927,6 +935,7 @@ export const RSPDashboard = () => {
         username,
         password: newPassword,
         employee: realignedEmployee,
+        mustChangePassword: true,
       });
 
       // Sanity-check the new credential pair authenticates.

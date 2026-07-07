@@ -201,11 +201,17 @@ const loadCatScores = (): Record<string, ApplicantCategoryScores> => {
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
+const normalizeApplicationType = (value: string | null | undefined): AppointmentType => {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return normalized === 'promotion' || normalized === 'promotional' ? 'promotional' : 'original';
+};
+
 const deriveInitial = (
   applicant: ApplicantRecord,
   saved: Record<string, ApplicantCategoryScores>,
 ): ApplicantCategoryScores => {
-  if (saved[applicant.id]) return saved[applicant.id];
+  const savedScores = saved[applicant.id];
+  if (savedScores) return savedScores;
   const pct = (applicant.total_score ?? 0) / 100;
   const autoEdu = educationLevelToPoints(applicant.education_level);
   const autoExp = experienceYearsToPoints(applicant.years_of_experience);
@@ -217,6 +223,8 @@ const deriveInitial = (
     potential:   { initialScore: +((pct * 25).toFixed(1)),             finalScore: null,     remarks: '' },
     writtenExam: { initialScore: 0,                                    finalScore: null,     remarks: '' },
     oralExam:    { initialScore: 0,                                    finalScore: null,     remarks: '' },
+    appointmentType: normalizeApplicationType(applicant.application_type),
+    positionType: 'rank-and-file',
   };
 };
 
