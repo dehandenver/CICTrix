@@ -1,860 +1,472 @@
-import { useEffect, useMemo, useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
-  AlertCircle,
-  Check,
-  FileClock,
-  Grid3x3,
-  History,
-  ListChecks,
-  Pencil,
-  Plus,
+  Users,
+  CheckCircle2,
+  AlertTriangle,
+  Clock,
   Search,
-  ShieldCheck,
+  Eye,
+  Plus,
+  Edit2,
   Trash2,
-  X,
+  Download,
+  ListChecks,
+  Settings,
+  FileText
 } from 'lucide-react';
 import { Dialog } from '../../../components/Dialog';
-import { POSITIONS, COMPETENCIES } from '../../../constants/positions';
-import {
-  PROFICIENCY_LEVELS,
-  type ChangeLogEntry,
-  type ProficiencyLevel,
-  type Proposal,
-  type ProposalAction,
-  type Requirement,
-  approveProposal,
-  createRequirement,
-  listChangeLog,
-  listProposals,
-  listRequirements,
-  rejectProposal,
-  removeRequirement,
-  submitProposal,
-  updateRequirement,
-} from '../../../lib/api/competencyFramework';
-import { getCurrentAdminEmail } from '../moduleUi';
 
-// ── Shared helpers ─────────────────────────────────────────────────────────────
-const LEVEL_CLS: Record<string, string> = {
-  Basic: 'bg-slate-100 text-slate-700',
-  Intermediate: 'bg-[#363EE8]/10 text-[#363EE8]',
-  Advanced: 'bg-emerald-100 text-emerald-800',
-};
+// --- MOCK DATA ---
+const MOCK_POSITIONS = [
+  { id: '1', name: 'Software Developer', department: 'IT', reqCount: 8, description: 'Develops software applications.' },
+  { id: '2', name: 'HR Officer', department: 'HR', reqCount: 6, description: 'Manages human resources operations.' },
+  { id: '3', name: 'Sales Manager', department: 'Sales', reqCount: 5, description: 'Leads the sales team.' }
+];
 
-const LevelPill = ({ level }: { level: string | null }) => (
-  <span
-    className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${LEVEL_CLS[level ?? ''] ?? LEVEL_CLS.Basic}`}
-  >
-    {level ?? 'Basic'}
-  </span>
-);
+const MOCK_COMPETENCIES = [
+  { id: 'c1', name: 'Programming', category: 'Technical', description: 'Software development skills' },
+  { id: 'c2', name: 'Database Management', category: 'Technical', description: 'Database design and maintenance' },
+  { id: 'c3', name: 'Communication', category: 'Core', description: 'Effective oral and written communication' },
+  { id: 'c4', name: 'Problem Solving', category: 'Core', description: 'Ability to solve complex issues' },
+  { id: 'c5', name: 'Leadership', category: 'Managerial', description: 'Ability to lead and motivate others' }
+];
 
-const ACTION_CLS: Record<string, string> = {
-  add: 'bg-emerald-100 text-emerald-800',
-  revise: 'bg-[#363EE8]/10 text-[#363EE8]',
-  remove: 'bg-red-100 text-red-800',
-};
+const MOCK_EMPLOYEES = [
+  {
+    id: 'e1',
+    name: 'John Doe',
+    employeeId: 'EMP-001',
+    department: 'IT',
+    position: 'Software Developer',
+    dateAssessed: '2025-10-15',
+    assessor: 'Jane Manager',
+    status: 'Below Requirement',
+    missingCount: 2,
+    competencies: [
+      { name: 'Programming', required: 5, current: 4, status: 'Gap' },
+      { name: 'Database Management', required: 4, current: 4, status: 'Met' },
+      { name: 'Communication', required: 3, current: 3, status: 'Met' },
+      { name: 'Problem Solving', required: 4, current: 2, status: 'Gap' }
+    ]
+  },
+  {
+    id: 'e2',
+    name: 'Jane Smith',
+    employeeId: 'EMP-002',
+    department: 'HR',
+    position: 'HR Officer',
+    dateAssessed: '2025-11-01',
+    assessor: 'Admin',
+    status: 'Meets Requirement',
+    missingCount: 0,
+    competencies: [
+      { name: 'Communication', required: 4, current: 5, status: 'Met' },
+      { name: 'Problem Solving', required: 3, current: 4, status: 'Met' },
+      { name: 'Leadership', required: 3, current: 3, status: 'Met' }
+    ]
+  }
+];
 
-const ActionPill = ({ action }: { action: string }) => (
-  <span
-    className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${ACTION_CLS[action] ?? ACTION_CLS.revise}`}
-  >
-    {action}
-  </span>
-);
-
-const Banner = ({ ok, msg }: { ok: boolean; msg: string }) => (
-  <div
-    className={`flex items-center gap-2 rounded-lg px-4 py-3 text-xs mb-4 ${ok ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' : 'bg-red-50 border border-red-200 text-red-800'}`}
-  >
-    {ok ? <Check className="h-4 w-4 shrink-0" /> : <AlertCircle className="h-4 w-4 shrink-0" />}
-    {msg}
-  </div>
-);
-
-const fieldCls =
-  'w-full rounded-lg border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#363EE8]';
-
-const FormField = ({ label, children }: { label: string; children: React.ReactNode }) => (
-  <div className="space-y-1 mb-3">
-    <label className="block text-xs font-semibold text-slate-700">{label}</label>
-    {children}
-  </div>
-);
-
-const CardHeader = ({ icon, title, aside }: { icon: React.ReactNode; title: string; aside?: React.ReactNode }) => (
-  <div className="flex items-center gap-2 px-5 py-3 border-b border-slate-100 font-semibold text-sm text-slate-800">
-    <span className="text-[#363EE8]">{icon}</span>
-    {title}
-    {aside && <div className="ml-auto">{aside}</div>}
-  </div>
-);
-
-// ── Root component ─────────────────────────────────────────────────────────────
-const SUBTABS = [
-  { key: 'requirements', label: '3.1 Position Requirements' },
-  { key: 'queue', label: '3.2 Review Queue' },
-  { key: 'map', label: '3.3 Competency Map' },
-  { key: 'log', label: '3.4 Change Log' },
-] as const;
-
-type SubtabKey = (typeof SUBTABS)[number]['key'];
-
+// --- COMPONENTS ---
 export const PMCompetencyFramework = () => {
-  const [active, setActive] = useState<SubtabKey>('requirements');
+  const [activeTab, setActiveTab] = useState<'gap-report' | 'management'>('gap-report');
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-          <ListChecks className="h-6 w-6 text-[#363EE8]" />
-          Competency Framework
-        </h2>
-        <p className="text-sm text-slate-500 mt-0.5">
-          Module 3 — position requirements, change review, competency lookup, and audit history.
-        </p>
-      </div>
-
-      <div className="flex flex-wrap gap-2 bg-white rounded-xl border border-slate-200 p-2 shadow-sm">
-        {SUBTABS.map((s) => (
-          <button
-            key={s.key}
-            type="button"
-            onClick={() => setActive(s.key)}
-            className={`px-4 py-2 text-xs font-bold rounded-md transition ${
-              active === s.key ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
-            }`}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
-
-      {active === 'requirements' && <PMPositionRequirements />}
-      {active === 'queue' && <PMReviewQueue />}
-      {active === 'map' && <PMCompetencyMap />}
-      {active === 'log' && <PMChangeLog />}
-    </div>
-  );
-};
-
-// ── 3.1 Position Requirements ─────────────────────────────────────────────────
-const PMPositionRequirements = () => {
-  const [reqs, setReqs] = useState<Requirement[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [banner, setBanner] = useState('');
-  const [search, setSearch] = useState('');
-  const [editing, setEditing] = useState<Requirement | 'new' | null>(null);
-
-  const reload = async () => {
-    setLoading(true);
-    setError('');
-    const res = await listRequirements();
-    if (res.ok) setReqs(res.data);
-    else if ('error' in res) setError(res.error);
-    setLoading(false);
-  };
-  useEffect(() => { void reload(); }, []);
-
-  const flash = (m: string) => { setBanner(m); setTimeout(() => setBanner(''), 5000); };
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return reqs;
-    return reqs.filter(
-      (r) => r.position.toLowerCase().includes(q) || r.competency_name.toLowerCase().includes(q),
-    );
-  }, [reqs, search]);
-
-  const byPosition = useMemo(() => {
-    const map = new Map<string, Requirement[]>();
-    for (const r of filtered) {
-      const list = map.get(r.position) ?? [];
-      list.push(r);
-      map.set(r.position, list);
-    }
-    return Array.from(map.entries());
-  }, [filtered]);
-
-  const remove = async (r: Requirement) => {
-    const res = await removeRequirement({ requirement: r, by: getCurrentAdminEmail() });
-    if (res.ok) { flash(`✓ Removed "${r.competency_name}" from ${r.position}.`); void reload(); }
-    else if ('error' in res) setError(res.error);
-  };
-
-  return (
-    <div className="space-y-4">
-      {banner && <Banner ok msg={banner} />}
-      {error && <Banner ok={false} msg={error} />}
-
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by position or competency…"
-            className="w-full pl-9 pr-3 py-2 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-[#363EE8]"
-          />
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+            <ListChecks className="h-6 w-6 text-[#363EE8]" />
+            Competency Framework
+          </h2>
+          <p className="text-sm text-slate-500 mt-1">
+            Define requirements, track employee assessments, and analyze competency gaps.
+          </p>
         </div>
+      </div>
+
+      {/* Main Tabs */}
+      <div className="flex gap-2 border-b border-slate-200">
         <button
-          type="button"
-          onClick={() => setEditing('new')}
-          className="flex items-center gap-1.5 bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition"
+          onClick={() => setActiveTab('gap-report')}
+          className={`px-4 py-2 font-semibold text-sm border-b-2 transition ${
+            activeTab === 'gap-report' ? 'border-[#363EE8] text-[#363EE8]' : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
         >
-          <Plus className="h-3.5 w-3.5" />
-          Add Requirement
+          Competency Gap Report
+        </button>
+        <button
+          onClick={() => setActiveTab('management')}
+          className={`px-4 py-2 font-semibold text-sm border-b-2 transition ${
+            activeTab === 'management' ? 'border-[#363EE8] text-[#363EE8]' : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          Competency Management
         </button>
       </div>
 
-      {loading ? (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm py-12 text-center text-sm text-slate-500">
-          Loading requirements…
-        </div>
-      ) : byPosition.length === 0 ? (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm py-12 text-center text-sm text-slate-500">
-          {reqs.length === 0
-            ? 'No competency requirements yet. Use "Add Requirement".'
-            : 'No requirements match your search.'}
-        </div>
-      ) : (
-        byPosition.map(([position, items]) => (
-          <div key={position} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <CardHeader
-              icon={<ListChecks className="h-4 w-4" />}
-              title={position}
-              aside={
-                <span className="text-xs font-medium text-slate-500">{items.length} competencies</span>
-              }
-            />
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <tbody className="divide-y divide-slate-100 text-slate-700">
-                  {items.map((r) => (
-                    <tr key={r.id} className="hover:bg-slate-50/50">
-                      <td className="px-4 py-3 font-semibold text-slate-800 w-1/4">{r.competency_name}</td>
-                      <td className="px-4 py-3 text-slate-500">{r.description || '—'}</td>
-                      <td className="px-4 py-3 w-28">
-                        <LevelPill level={r.proficiency_level} />
-                      </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap w-24">
-                        <button
-                          type="button"
-                          onClick={() => setEditing(r)}
-                          className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 mr-1.5 transition"
-                          title="Edit"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => remove(r)}
-                          className="inline-flex items-center justify-center h-7 w-7 rounded-md border border-red-200 bg-white hover:bg-red-50 text-red-600 transition"
-                          title="Remove"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ))
-      )}
-
-      {editing && (
-        <PMRequirementModal
-          existing={editing === 'new' ? null : editing}
-          onClose={() => setEditing(null)}
-          onDone={(m) => { flash(m); setEditing(null); void reload(); }}
-        />
-      )}
+      {activeTab === 'gap-report' && <GapReportTab />}
+      {activeTab === 'management' && <ManagementTab />}
     </div>
   );
 };
 
-const PMRequirementModal = ({
-  existing,
-  onClose,
-  onDone,
-}: {
-  existing: Requirement | null;
-  onClose: () => void;
-  onDone: (msg: string) => void;
-}) => {
-  const [position, setPosition] = useState(existing?.position ?? '');
-  const [competency, setCompetency] = useState(existing?.competency_name ?? '');
-  const [description, setDescription] = useState(existing?.description ?? '');
-  const [level, setLevel] = useState<ProficiencyLevel>(existing?.proficiency_level ?? 'Basic');
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState('');
-
-  const submit = async () => {
-    setErr('');
-    if (!existing && !position) return setErr('Select a position.');
-    if (!existing && !competency.trim()) return setErr('Enter a competency name.');
-    setSaving(true);
-    const by = getCurrentAdminEmail();
-    const res = existing
-      ? await updateRequirement({ id: existing.id, description: description || null, proficiencyLevel: level, by, prev: existing })
-      : await createRequirement({ position, competencyName: competency.trim(), description: description || null, proficiencyLevel: level, by });
-    setSaving(false);
-    if (!res.ok) return setErr('error' in res ? res.error : 'Failed to save.');
-    onDone(`✓ Requirement ${existing ? 'updated' : 'added'}.`);
-  };
-
-  return (
-    <Dialog open onClose={onClose} title={existing ? 'Edit Requirement' : 'Add Requirement'}>
-      <div className="space-y-1">
-        <FormField label="Position">
-          <select
-            value={position}
-            onChange={(e) => setPosition(e.target.value)}
-            disabled={Boolean(existing)}
-            className={fieldCls}
-          >
-            <option value="">Select a position…</option>
-            {POSITIONS.map((p) => (
-              <option key={p} value={p}>{p}</option>
-            ))}
-            {existing && !POSITIONS.includes(existing.position as any) && (
-              <option value={existing.position}>{existing.position}</option>
-            )}
-          </select>
-        </FormField>
-        <FormField label="Competency">
-          <input
-            list="pm-competency-suggestions"
-            value={competency}
-            onChange={(e) => setCompetency(e.target.value)}
-            disabled={Boolean(existing)}
-            placeholder="e.g. Data and Records Management"
-            className={fieldCls}
-          />
-          <datalist id="pm-competency-suggestions">
-            {COMPETENCIES.map((c) => <option key={c} value={c} />)}
-          </datalist>
-        </FormField>
-        <FormField label="Description">
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={2}
-            placeholder="What this competency entails"
-            className={`${fieldCls} resize-y`}
-          />
-        </FormField>
-        <FormField label="Proficiency level">
-          <select value={level} onChange={(e) => setLevel(e.target.value as ProficiencyLevel)} className={fieldCls}>
-            {PROFICIENCY_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
-          </select>
-        </FormField>
-        {err && <Banner ok={false} msg={err} />}
-        <div className="flex justify-end gap-2 pt-1">
-          <button type="button" onClick={onClose} disabled={saving} className="border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 rounded-lg px-4 py-2 text-xs font-semibold transition">
-            Cancel
-          </button>
-          <button type="button" onClick={submit} disabled={saving} className="bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition">
-            {saving ? 'Saving…' : existing ? 'Save changes' : 'Add'}
-          </button>
-        </div>
-      </div>
-    </Dialog>
-  );
-};
-
-// ── 3.2 Review Queue ──────────────────────────────────────────────────────────
-const PMReviewQueue = () => {
-  const [proposals, setProposals] = useState<Proposal[]>([]);
-  const [reqs, setReqs] = useState<Requirement[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [banner, setBanner] = useState('');
-  const [showPropose, setShowPropose] = useState(false);
-  const [rejectTarget, setRejectTarget] = useState<Proposal | null>(null);
-  const [rejectNote, setRejectNote] = useState('');
-  const [busyId, setBusyId] = useState('');
-
-  const reload = async () => {
-    setLoading(true);
-    setError('');
-    const [pRes, rRes] = await Promise.all([listProposals(), listRequirements()]);
-    if (pRes.ok) setProposals(pRes.data);
-    else if ('error' in pRes) setError(pRes.error);
-    if (rRes.ok) setReqs(rRes.data);
-    setLoading(false);
-  };
-  useEffect(() => { void reload(); }, []);
-
-  const flash = (m: string) => { setBanner(m); setTimeout(() => setBanner(''), 5000); };
-
-  const approve = async (p: Proposal) => {
-    setBusyId(p.id);
-    const res = await approveProposal(p, getCurrentAdminEmail());
-    setBusyId('');
-    if (res.ok) { flash('✓ Proposal approved and applied to Position Requirements.'); void reload(); }
-    else if ('error' in res) setError(res.error);
-  };
-
-  const doReject = async () => {
-    if (!rejectTarget) return;
-    setBusyId(rejectTarget.id);
-    const res = await rejectProposal(rejectTarget.id, getCurrentAdminEmail(), rejectNote.trim());
-    setBusyId('');
-    setRejectTarget(null);
-    setRejectNote('');
-    if (res.ok) { flash('✓ Proposal rejected.'); void reload(); }
-    else if ('error' in res) setError(res.error);
-  };
-
-  const pending = proposals.filter((p) => p.status === 'Pending');
-  const reviewed = proposals.filter((p) => p.status !== 'Pending');
-
-  return (
-    <div className="space-y-4">
-      {banner && <Banner ok msg={banner} />}
-      {error && <Banner ok={false} msg={error} />}
-
-      <div className="flex items-center gap-3">
-        <p className="text-xs text-slate-500 flex-1">
-          Proposed changes wait here for PM validation before the live Position Requirements list updates.
-        </p>
-        <button
-          type="button"
-          onClick={() => setShowPropose(true)}
-          className="flex items-center gap-1.5 bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Propose Change
-        </button>
-      </div>
-
-      {/* Pending proposals */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <CardHeader
-          icon={<FileClock className="h-4 w-4" />}
-          title="Pending"
-          aside={
-            !loading && (
-              <span className="text-xs font-medium text-slate-500">{pending.length}</span>
-            )
-          }
-        />
-        {loading ? (
-          <div className="py-10 text-center text-sm text-slate-500">Loading…</div>
-        ) : pending.length === 0 ? (
-          <div className="py-10 text-center text-sm text-slate-500">No pending proposals.</div>
-        ) : (
-          <ul className="divide-y divide-slate-100">
-            {pending.map((p) => (
-              <li key={p.id} className="flex items-start gap-3 px-5 py-4">
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2 mb-1">
-                    <ActionPill action={p.action} />
-                    <strong className="text-xs text-slate-800">{p.competency_name}</strong>
-                    <span className="text-xs text-slate-500">· {p.position}</span>
-                    {p.proficiency_level && <LevelPill level={p.proficiency_level} />}
-                    {p.rsp_input && (
-                      <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800">
-                        RSP input
-                      </span>
-                    )}
-                  </div>
-                  {p.description && (
-                    <p className="text-xs text-slate-500 mb-1">{p.description}</p>
-                  )}
-                  <p className="text-[11px] text-slate-400">
-                    Submitted by {p.submitted_by || 'unknown'} · {new Date(p.created_at).toLocaleString()}
-                  </p>
-                </div>
-                <div className="flex gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => approve(p)}
-                    disabled={busyId === p.id}
-                    className="flex items-center gap-1 bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50"
-                  >
-                    <ShieldCheck className="h-3 w-3" />
-                    Approve
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setRejectTarget(p)}
-                    disabled={busyId === p.id}
-                    className="flex items-center gap-1 border border-red-200 bg-white hover:bg-red-50 text-red-700 rounded-lg px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50"
-                  >
-                    <X className="h-3 w-3" />
-                    Reject
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {/* Reviewed proposals */}
-      {reviewed.length > 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <CardHeader icon={<History className="h-4 w-4" />} title="Reviewed" />
-          <ul className="divide-y divide-slate-100">
-            {reviewed.map((p) => (
-              <li key={p.id} className="flex items-center gap-3 px-5 py-3 text-xs">
-                <ActionPill action={p.action} />
-                <span className="text-slate-700">
-                  <strong>{p.competency_name}</strong> · {p.position}
-                </span>
-                <span
-                  className={`ml-auto font-semibold ${p.status === 'Approved' ? 'text-emerald-700' : 'text-red-700'}`}
-                >
-                  {p.status}
-                  {p.reviewed_by ? ` · ${p.reviewed_by}` : ''}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {showPropose && (
-        <PMProposeModal
-          requirements={reqs}
-          onClose={() => setShowPropose(false)}
-          onDone={(m) => { flash(m); setShowPropose(false); void reload(); }}
-        />
-      )}
-
-      <Dialog open={Boolean(rejectTarget)} onClose={() => setRejectTarget(null)} title="Reject Proposal">
-        {rejectTarget && (
-          <div className="space-y-3">
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Reject the proposal to {rejectTarget.action} &ldquo;{rejectTarget.competency_name}&rdquo; for{' '}
-              {rejectTarget.position}?
-            </p>
-            <FormField label="Reason (optional)">
-              <textarea
-                value={rejectNote}
-                onChange={(e) => setRejectNote(e.target.value)}
-                rows={2}
-                className={`${fieldCls} resize-y`}
-              />
-            </FormField>
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setRejectTarget(null)} className="border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 rounded-lg px-4 py-2 text-xs font-semibold transition">
-                Cancel
-              </button>
-              <button type="button" onClick={doReject} className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition">
-                Reject
-              </button>
-            </div>
-          </div>
-        )}
-      </Dialog>
-    </div>
-  );
-};
-
-const PMProposeModal = ({
-  requirements,
-  onClose,
-  onDone,
-}: {
-  requirements: Requirement[];
-  onClose: () => void;
-  onDone: (msg: string) => void;
-}) => {
-  const [action, setAction] = useState<ProposalAction>('add');
+const GapReportTab = () => {
+  const [department, setDepartment] = useState('');
   const [position, setPosition] = useState('');
-  const [competency, setCompetency] = useState('');
-  const [description, setDescription] = useState('');
-  const [level, setLevel] = useState<ProficiencyLevel>('Basic');
-  const [targetId, setTargetId] = useState('');
-  const [rspInput, setRspInput] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [viewEmployee, setViewEmployee] = useState<any>(null);
 
-  const onPickTarget = (id: string) => {
-    setTargetId(id);
-    const t = requirements.find((r) => r.id === id);
-    if (t) {
-      setPosition(t.position);
-      setCompetency(t.competency_name);
-      setDescription(t.description ?? '');
-      setLevel(t.proficiency_level);
-    }
-  };
-
-  const submit = async () => {
-    setErr('');
-    if (action === 'add') {
-      if (!position) return setErr('Select a position.');
-      if (!competency.trim()) return setErr('Enter a competency name.');
-    } else if (!targetId) {
-      return setErr('Select the requirement to ' + action + '.');
-    }
-    setSaving(true);
-    const res = await submitProposal({
-      action,
-      position,
-      competencyName: competency.trim(),
-      description: description || null,
-      proficiencyLevel: action === 'remove' ? null : level,
-      targetRequirementId: action === 'add' ? null : targetId,
-      rspInput,
-      by: getCurrentAdminEmail(),
-    });
-    setSaving(false);
-    if (!res.ok) return setErr('error' in res ? res.error : 'Failed to submit.');
-    onDone('✓ Proposal submitted to the Review Queue.');
+  const stats = {
+    total: 120,
+    assessed: 105,
+    gaps: 45,
+    met: 60,
+    pending: 15
   };
 
   return (
-    <Dialog open onClose={onClose} title="Propose Competency Change">
-      <div className="space-y-1">
-        <FormField label="Change type">
-          <select
-            value={action}
-            onChange={(e) => { setAction(e.target.value as ProposalAction); setTargetId(''); }}
-            className={fieldCls}
-          >
-            <option value="add">Add a new competency</option>
-            <option value="revise">Revise an existing one</option>
-            <option value="remove">Remove one</option>
-          </select>
-        </FormField>
-
-        {action === 'add' ? (
-          <>
-            <FormField label="Position">
-              <select value={position} onChange={(e) => setPosition(e.target.value)} className={fieldCls}>
-                <option value="">Select a position…</option>
-                {POSITIONS.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </FormField>
-            <FormField label="Competency">
-              <input
-                value={competency}
-                onChange={(e) => setCompetency(e.target.value)}
-                placeholder="e.g. Data and Records Management"
-                className={fieldCls}
-              />
-            </FormField>
-          </>
-        ) : (
-          <FormField label="Target requirement">
-            <select value={targetId} onChange={(e) => onPickTarget(e.target.value)} className={fieldCls}>
-              <option value="">Select a requirement…</option>
-              {requirements.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.position} — {r.competency_name} ({r.proficiency_level})
-                </option>
-              ))}
-            </select>
-          </FormField>
-        )}
-
-        {action !== 'remove' && (
-          <>
-            <FormField label="Description">
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={2}
-                className={`${fieldCls} resize-y`}
-              />
-            </FormField>
-            <FormField label="Proficiency level">
-              <select value={level} onChange={(e) => setLevel(e.target.value as ProficiencyLevel)} className={fieldCls}>
-                {PROFICIENCY_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
-              </select>
-            </FormField>
-          </>
-        )}
-
-        <label className="flex items-center gap-2 mb-3 cursor-pointer text-xs text-slate-700">
-          <input
-            type="checkbox"
-            checked={rspInput}
-            onChange={(e) => setRspInput(e.target.checked)}
-            className="rounded"
-          />
-          Flag as RSP input (for PM visibility)
-        </label>
-
-        {err && <Banner ok={false} msg={err} />}
-        <div className="flex justify-end gap-2 pt-1">
-          <button type="button" onClick={onClose} disabled={saving} className="border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 rounded-lg px-4 py-2 text-xs font-semibold transition">
-            Cancel
-          </button>
-          <button type="button" onClick={submit} disabled={saving} className="bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition">
-            {saving ? 'Submitting…' : 'Submit proposal'}
-          </button>
+    <div className="space-y-6">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center">
+          <Users className="h-6 w-6 text-[#363EE8] mb-2" />
+          <span className="text-2xl font-bold text-slate-800">{stats.total}</span>
+          <span className="text-xs font-semibold text-slate-500">Total Employees</span>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col items-center justify-center text-center">
+          <CheckCircle2 className="h-6 w-6 text-emerald-500 mb-2" />
+          <span className="text-2xl font-bold text-slate-800">{stats.assessed}</span>
+          <span className="text-xs font-semibold text-slate-500">Employees Assessed</span>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-red-200 shadow-sm flex flex-col items-center justify-center text-center bg-red-50">
+          <AlertTriangle className="h-6 w-6 text-red-500 mb-2" />
+          <span className="text-2xl font-bold text-red-700">{stats.gaps}</span>
+          <span className="text-xs font-semibold text-red-600">With Competency Gaps</span>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-emerald-200 shadow-sm flex flex-col items-center justify-center text-center bg-emerald-50">
+          <CheckCircle2 className="h-6 w-6 text-emerald-600 mb-2" />
+          <span className="text-2xl font-bold text-emerald-700">{stats.met}</span>
+          <span className="text-xs font-semibold text-emerald-600">Meeting Requirements</span>
+        </div>
+        <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-sm flex flex-col items-center justify-center text-center bg-amber-50">
+          <Clock className="h-6 w-6 text-amber-500 mb-2" />
+          <span className="text-2xl font-bold text-amber-700">{stats.pending}</span>
+          <span className="text-xs font-semibold text-amber-600">Pending Assessment</span>
         </div>
       </div>
-    </Dialog>
+
+      {/* Filters */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap gap-4 items-end">
+        <div className="flex-1 min-w-[150px]">
+          <label className="block text-xs font-semibold text-slate-600 mb-1">Department</label>
+          <select value={department} onChange={e => setDepartment(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#363EE8]">
+            <option value="">All Departments</option>
+            <option value="IT">IT</option>
+            <option value="HR">HR</option>
+          </select>
+        </div>
+        <div className="flex-1 min-w-[150px]">
+          <label className="block text-xs font-semibold text-slate-600 mb-1">Position</label>
+          <select value={position} onChange={e => setPosition(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#363EE8]">
+            <option value="">All Positions</option>
+            <option value="Software Developer">Software Developer</option>
+            <option value="HR Officer">HR Officer</option>
+          </select>
+        </div>
+        <div className="flex-1 min-w-[150px]">
+          <label className="block text-xs font-semibold text-slate-600 mb-1">Status</label>
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#363EE8]">
+            <option value="">All Statuses</option>
+            <option value="Meets Requirement">Meets Requirement</option>
+            <option value="Below Requirement">Below Requirement</option>
+            <option value="Not Yet Assessed">Not Yet Assessed</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <table className="w-full text-sm text-left">
+          <thead>
+            <tr className="bg-slate-50 text-slate-500 border-b border-slate-200">
+              <th className="px-6 py-3 font-semibold">Employee</th>
+              <th className="px-6 py-3 font-semibold">Department</th>
+              <th className="px-6 py-3 font-semibold">Position</th>
+              <th className="px-6 py-3 font-semibold">Overall Status</th>
+              <th className="px-6 py-3 font-semibold text-center">Missing Competencies</th>
+              <th className="px-6 py-3 font-semibold text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {MOCK_EMPLOYEES.map(emp => (
+              <tr key={emp.id} className="hover:bg-slate-50">
+                <td className="px-6 py-4 font-medium text-slate-800">{emp.name}</td>
+                <td className="px-6 py-4 text-slate-600">{emp.department}</td>
+                <td className="px-6 py-4 text-slate-600">{emp.position}</td>
+                <td className="px-6 py-4">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                    emp.status === 'Meets Requirement' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
+                  }`}>
+                    {emp.status}
+                  </span>
+                </td>
+                <td className="px-6 py-4 text-center font-medium text-slate-700">{emp.missingCount}</td>
+                <td className="px-6 py-4 text-right">
+                  <button onClick={() => setViewEmployee(emp)} className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#363EE8] hover:text-[#2e35d4] transition">
+                    <Eye className="h-4 w-4" /> View
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {viewEmployee && (
+        <EmployeeCompetencyModal employee={viewEmployee} onClose={() => setViewEmployee(null)} />
+      )}
+    </div>
   );
 };
 
-// ── 3.3 Competency Map ────────────────────────────────────────────────────────
-const PMCompetencyMap = () => {
-  const [reqs, setReqs] = useState<Requirement[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [positionFilter, setPositionFilter] = useState('');
-  const [levelFilter, setLevelFilter] = useState('');
-  const [search, setSearch] = useState('');
-
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      const res = await listRequirements();
-      if (res.ok) setReqs(res.data);
-      else if ('error' in res) setError(res.error);
-      setLoading(false);
-    })();
-  }, []);
-
-  const positions = useMemo(() => Array.from(new Set(reqs.map((r) => r.position))).sort(), [reqs]);
-
-  const view = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return reqs.filter(
-      (r) =>
-        (!positionFilter || r.position === positionFilter) &&
-        (!levelFilter || r.proficiency_level === levelFilter) &&
-        (!q ||
-          r.competency_name.toLowerCase().includes(q) ||
-          (r.description ?? '').toLowerCase().includes(q)),
-    );
-  }, [reqs, positionFilter, levelFilter, search]);
-
+const EmployeeCompetencyModal = ({ employee, onClose }: { employee: any, onClose: () => void }) => {
   return (
-    <div className="space-y-4">
-      {error && <Banner ok={false} msg={error} />}
-
-      <div className="flex flex-wrap gap-2">
-        <div className="relative flex-1 min-w-48 max-w-xs">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search competency…"
-            className="w-full pl-9 pr-3 py-2 text-xs rounded-lg border border-slate-200 focus:outline-none focus:ring-1 focus:ring-[#363EE8]"
-          />
-        </div>
-        <select
-          value={positionFilter}
-          onChange={(e) => setPositionFilter(e.target.value)}
-          className="rounded-lg border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#363EE8]"
-        >
-          <option value="">All positions</option>
-          {positions.map((p) => <option key={p} value={p}>{p}</option>)}
-        </select>
-        <select
-          value={levelFilter}
-          onChange={(e) => setLevelFilter(e.target.value)}
-          className="rounded-lg border border-slate-200 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#363EE8]"
-        >
-          <option value="">All levels</option>
-          {PROFICIENCY_LEVELS.map((l) => <option key={l} value={l}>{l}</option>)}
-        </select>
-      </div>
-
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <CardHeader
-          icon={<Grid3x3 className="h-4 w-4" />}
-          title="Competency Map"
-          aside={
-            !loading && (
-              <span className="text-xs font-medium text-slate-500">{view.length} rows</span>
-            )
-          }
-        />
-        {loading ? (
-          <div className="py-10 text-center text-sm text-slate-500">Loading…</div>
-        ) : view.length === 0 ? (
-          <div className="py-10 text-center text-sm text-slate-500">
-            No requirements match the current filters.
+    <Dialog open onClose={onClose} title="Employee Competency Details">
+      <div className="space-y-6">
+        {/* Employee Info */}
+        <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 grid grid-cols-2 gap-4 text-sm">
+          <div>
+            <span className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Employee ID</span>
+            <span className="font-semibold text-slate-800">{employee.employeeId}</span>
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
+          <div>
+            <span className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Name</span>
+            <span className="font-semibold text-slate-800">{employee.name}</span>
+          </div>
+          <div>
+            <span className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Department</span>
+            <span className="text-slate-700">{employee.department}</span>
+          </div>
+          <div>
+            <span className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Position</span>
+            <span className="text-slate-700">{employee.position}</span>
+          </div>
+          <div>
+            <span className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Date Assessed</span>
+            <span className="text-slate-700">{employee.dateAssessed}</span>
+          </div>
+          <div>
+            <span className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Assessor</span>
+            <span className="text-slate-700">{employee.assessor}</span>
+          </div>
+        </div>
+
+        {/* Competency Comparison Table */}
+        <div>
+          <h4 className="font-semibold text-slate-800 mb-3">Competency Comparison</h4>
+          <div className="border border-slate-200 rounded-lg overflow-hidden">
+            <table className="w-full text-sm text-left">
               <thead>
-                <tr className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold">
-                  <th className="px-4 py-2.5">Position</th>
-                  <th className="px-4 py-2.5">Competency</th>
-                  <th className="px-4 py-2.5">Level</th>
-                  <th className="px-4 py-2.5">Description</th>
+                <tr className="bg-slate-50 text-slate-500">
+                  <th className="px-4 py-2 font-semibold">Competency</th>
+                  <th className="px-4 py-2 font-semibold text-center">Required Level</th>
+                  <th className="px-4 py-2 font-semibold text-center">Employee Level</th>
+                  <th className="px-4 py-2 font-semibold text-center">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
-                {view.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50/50">
-                    <td className="px-4 py-3 font-semibold text-slate-800">{r.position}</td>
-                    <td className="px-4 py-3">{r.competency_name}</td>
-                    <td className="px-4 py-3"><LevelPill level={r.proficiency_level} /></td>
-                    <td className="px-4 py-3 text-slate-500">{r.description || '—'}</td>
+              <tbody className="divide-y divide-slate-100">
+                {employee.competencies.map((c: any, i: number) => (
+                  <tr key={i}>
+                    <td className="px-4 py-3 font-medium text-slate-800">{c.name}</td>
+                    <td className="px-4 py-3 text-center">{c.required}</td>
+                    <td className="px-4 py-3 text-center font-semibold">{c.current}</td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`inline-flex px-2 py-0.5 rounded text-xs font-bold ${
+                        c.status === 'Met' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
+                      }`}>
+                        {c.status}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        )}
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex flex-wrap justify-between gap-3 pt-4 border-t border-slate-200">
+          <div className="flex gap-2">
+            <button className="flex items-center gap-2 border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-sm font-semibold transition">
+              <Download className="h-4 w-4" /> Print Report
+            </button>
+            <button className="flex items-center gap-2 border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-sm font-semibold transition">
+              <FileText className="h-4 w-4" /> Export PDF
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <button className="flex items-center gap-2 bg-[#363EE8] hover:bg-[#2e35d4] text-white px-4 py-2 rounded-lg text-sm font-semibold shadow transition">
+              Reassess Employee
+            </button>
+            <button onClick={onClose} className="border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-sm font-semibold transition">
+              Close
+            </button>
+          </div>
+        </div>
       </div>
+    </Dialog>
+  );
+};
+
+const ManagementTab = () => {
+  const [showManageComp, setShowManageComp] = useState<any>(null);
+
+  return (
+    <div className="space-y-8">
+      {/* SECTION A: Position List */}
+      <div>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-bold text-slate-800">Section A – Position List</h3>
+          <button className="flex items-center gap-1.5 bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-sm font-semibold shadow transition">
+            <Plus className="h-4 w-4" /> Add Position
+          </button>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <table className="w-full text-sm text-left">
+            <thead>
+              <tr className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                <th className="px-6 py-3 font-semibold">Position</th>
+                <th className="px-6 py-3 font-semibold">Department</th>
+                <th className="px-6 py-3 font-semibold text-center">Required Competencies</th>
+                <th className="px-6 py-3 font-semibold text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {MOCK_POSITIONS.map(p => (
+                <tr key={p.id} className="hover:bg-slate-50">
+                  <td className="px-6 py-4 font-medium text-slate-800">{p.name}</td>
+                  <td className="px-6 py-4 text-slate-600">{p.department}</td>
+                  <td className="px-6 py-4 text-center text-slate-700">{p.reqCount}</td>
+                  <td className="px-6 py-4 text-right flex justify-end gap-3">
+                    <button onClick={() => setShowManageComp(p)} className="text-[#363EE8] hover:text-[#2e35d4] font-semibold transition">
+                      Manage
+                    </button>
+                    <button className="text-slate-400 hover:text-slate-600 transition"><Edit2 className="h-4 w-4" /></button>
+                    <button className="text-red-400 hover:text-red-600 transition"><Trash2 className="h-4 w-4" /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* SECTION B: Competency Library */}
+      <div>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-bold text-slate-800">Section B – Competency Library</h3>
+          <button className="flex items-center gap-1.5 bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-sm font-semibold shadow transition">
+            <Plus className="h-4 w-4" /> Add Competency
+          </button>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <table className="w-full text-sm text-left">
+            <thead>
+              <tr className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                <th className="px-6 py-3 font-semibold">Competency</th>
+                <th className="px-6 py-3 font-semibold">Description</th>
+                <th className="px-6 py-3 font-semibold">Category</th>
+                <th className="px-6 py-3 font-semibold text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {MOCK_COMPETENCIES.map(c => (
+                <tr key={c.id} className="hover:bg-slate-50">
+                  <td className="px-6 py-4 font-medium text-slate-800">{c.name}</td>
+                  <td className="px-6 py-4 text-slate-600">{c.description}</td>
+                  <td className="px-6 py-4 text-slate-600">
+                    <span className="bg-slate-100 text-slate-600 px-2.5 py-1 rounded-md text-xs font-semibold">
+                      {c.category}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-right flex justify-end gap-3">
+                    <button className="text-slate-400 hover:text-slate-600 transition"><Edit2 className="h-4 w-4" /></button>
+                    <button className="text-red-400 hover:text-red-600 transition"><Trash2 className="h-4 w-4" /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {showManageComp && (
+        <ManageCompetenciesModal position={showManageComp} onClose={() => setShowManageComp(null)} />
+      )}
     </div>
   );
 };
 
-// ── 3.4 Change Log ────────────────────────────────────────────────────────────
-const PMChangeLog = () => {
-  const [entries, setEntries] = useState<ChangeLogEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      setEntries(await listChangeLog());
-      setLoading(false);
-    })();
-  }, []);
-
+const ManageCompetenciesModal = ({ position, onClose }: { position: any, onClose: () => void }) => {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-      <CardHeader
-        icon={<ShieldCheck className="h-4 w-4" />}
-        title="Change Log"
-        aside={
-          !loading && (
-            <span className="text-xs font-medium text-slate-500">{entries.length} entries</span>
-          )
-        }
-      />
-      {loading ? (
-        <div className="py-10 text-center text-sm text-slate-500">Loading…</div>
-      ) : entries.length === 0 ? (
-        <div className="py-10 text-center text-sm text-slate-500">No changes recorded yet.</div>
-      ) : (
-        <ul className="divide-y divide-slate-100">
-          {entries.map((e) => (
-            <li key={e.id} className="flex items-start gap-3 px-5 py-3">
-              <ActionPill action={e.action} />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs text-slate-700">{e.summary || '—'}</p>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  {e.approved_by || 'unknown'} ·{' '}
-                  {e.source === 'review-queue' ? 'via Review Queue' : 'direct edit'} ·{' '}
-                  {new Date(e.created_at).toLocaleString()}
-                </p>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <Dialog open onClose={onClose} title={`Manage Competencies: ${position.name}`}>
+      <div className="space-y-6">
+        <div>
+          <h4 className="font-semibold text-slate-800 mb-3">Required Competencies</h4>
+          <div className="border border-slate-200 rounded-lg overflow-hidden">
+            <table className="w-full text-sm text-left">
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                  <th className="px-4 py-2 font-semibold">Competency</th>
+                  <th className="px-4 py-2 font-semibold text-center">Required Level</th>
+                  <th className="px-4 py-2 font-semibold text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                <tr>
+                  <td className="px-4 py-3 font-medium text-slate-800">Programming</td>
+                  <td className="px-4 py-3 text-center font-semibold">5</td>
+                  <td className="px-4 py-3 text-right flex justify-end gap-2 text-[#363EE8]">
+                    <button className="hover:underline text-xs font-semibold">Edit</button>
+                    <button className="hover:underline text-xs font-semibold text-red-600">Remove</button>
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-4 py-3 font-medium text-slate-800">Database Management</td>
+                  <td className="px-4 py-3 text-center font-semibold">4</td>
+                  <td className="px-4 py-3 text-right flex justify-end gap-2 text-[#363EE8]">
+                    <button className="hover:underline text-xs font-semibold">Edit</button>
+                    <button className="hover:underline text-xs font-semibold text-red-600">Remove</button>
+                  </td>
+                </tr>
+                <tr>
+                  <td className="px-4 py-3 font-medium text-slate-800">Communication</td>
+                  <td className="px-4 py-3 text-center font-semibold">3</td>
+                  <td className="px-4 py-3 text-right flex justify-end gap-2 text-[#363EE8]">
+                    <button className="hover:underline text-xs font-semibold">Edit</button>
+                    <button className="hover:underline text-xs font-semibold text-red-600">Remove</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap justify-between gap-3 pt-4 border-t border-slate-200">
+          <button className="flex items-center gap-2 bg-emerald-100 text-emerald-800 hover:bg-emerald-200 px-4 py-2 rounded-lg text-sm font-semibold transition">
+            <Plus className="h-4 w-4" /> Add Competency
+          </button>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-sm font-semibold transition">
+              Cancel
+            </button>
+            <button onClick={onClose} className="bg-[#363EE8] hover:bg-[#2e35d4] text-white px-4 py-2 rounded-lg text-sm font-semibold shadow transition">
+              Save Changes
+            </button>
+          </div>
+        </div>
+      </div>
+    </Dialog>
   );
 };
