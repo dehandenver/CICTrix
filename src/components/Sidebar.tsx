@@ -141,7 +141,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       label: 'Competency Framework',
       sublabel: 'Position requirements & review',
       isActive: location.pathname === '/admin/competency',
-      roles: ['super-admin'],
+      roles: ['super-admin', 'pm'],
     },
     {
       path: '/admin/supervisors',

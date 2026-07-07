@@ -25,7 +25,7 @@ import { OfficeAccountConsole } from './modules/admin/pm/OfficeAccountConsole';
 import { SupervisorAccessPage } from './modules/admin/SupervisorAccessPage';
 import { SystemAdministrationPage } from './modules/admin/SystemAdministrationPage';
 import { IPCRManagementPage } from './modules/admin/IPCRManagementPage';
-import { CompetencyFrameworkPage } from './modules/admin/CompetencyFrameworkPage';
+import { CompetencyFrameworkPage } from './modules/admin/CompetencyFrameworkPageView';
 import { ApplicantWizard } from './modules/applicant/ApplicantWizard';
 import { ApplicationStatusPage } from './modules/applicant/ApplicationStatusPage';
 import { LandingPage } from './components/LandingPage';
