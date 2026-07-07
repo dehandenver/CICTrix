@@ -177,7 +177,7 @@ export const LandingPage = () => {
     >
       {/* ─── Top bar ─────────────────────────────────────────────── */}
       <header className="sticky top-0 z-30 bg-[#363EE8]">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3 text-white">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3 text-white">
           <div className="flex items-center gap-3">
             <img
               src={abyanLogo}
@@ -257,7 +257,7 @@ export const LandingPage = () => {
         <div className="absolute inset-0 bg-gradient-to-br from-[#363EE8] to-[#050D65]" />
         <div className="absolute -right-24 -top-28 h-80 w-80 rounded-full border border-white/15" />
         <div className="absolute -bottom-32 -left-20 h-96 w-96 rounded-full border border-white/10" />
-        <div className="relative mx-auto max-w-6xl px-6 py-20 text-center text-white sm:py-28">
+        <div className="relative mx-auto max-w-7xl px-6 py-20 text-center text-white sm:py-28">
           <h1 className="mx-auto mt-6 max-w-3xl text-4xl font-bold leading-tight tracking-tight text-white sm:text-5xl">
             Your gateway to public service.
           </h1>
@@ -284,7 +284,7 @@ export const LandingPage = () => {
 
       {/* ─── Vacant Jobs Table ─────────────────────────────────────────────── */}
       <section ref={jobsTableRef} className="bg-white py-16">
-        <div className="mx-auto max-w-6xl px-6">
+        <div className="mx-auto max-w-7xl px-6">
           <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <h2 className="text-2xl font-bold text-[#050D65]">Currently Vacant Jobs</h2>
