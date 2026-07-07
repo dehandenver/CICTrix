@@ -250,6 +250,7 @@ const LndDashboardContent = () => {
   const [loading, setLoading] = useState(true);
   const [requests, setRequests] = useState<TrainingRequest[]>([]);
   const [selectedRadarDept, setSelectedRadarDept] = useState('');
+  const [viewDeptDetails, setViewDeptDetails] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -290,10 +291,10 @@ const LndDashboardContent = () => {
   const topCategoryEntry = useMemo(() => {
     const counts = TRAINING_CATEGORIES.map(cat => ({
       cat,
-      count: requests.filter(r => r.category === cat).length,
+      count: requests.filter(r => r.category === cat && r.requested_at?.startsWith(currentYear)).length,
     }));
     return counts.reduce((best, cur) => (cur.count > best.count ? cur : best), { cat: '' as string, count: 0 });
-  }, [requests]);
+  }, [requests, currentYear]);
 
   // Per-department request counts — shown in the stacked bar legend
   const deptCounts = useMemo(() => {
@@ -305,16 +306,20 @@ const LndDashboardContent = () => {
     return map;
   }, [requests]);
 
-  // Stacked bar: one entry per category, departments as segment keys
+  // Stacked bar: one entry per category, departments as segment keys — current year only
   const categoryChartData = useMemo(() =>
     TRAINING_CATEGORIES.map(cat => {
       const entry: Record<string, any> = { category: cat };
       for (const dept of departments) {
-        entry[dept] = requests.filter(r => r.category === cat && r.employees?.department === dept).length;
+        entry[dept] = requests.filter(r =>
+          r.category === cat &&
+          r.employees?.department === dept &&
+          r.requested_at?.startsWith(currentYear)
+        ).length;
       }
       return entry;
     }),
-    [requests, departments]
+    [requests, departments, currentYear]
   );
 
   // Radar: demand share per competency for the selected department
@@ -347,6 +352,14 @@ const LndDashboardContent = () => {
     }).sort((a, b) => b.demand - a.demand);
   }, [requests, departments]);
 
+  // Full request history for the department drill-down modal, most recent first
+  const deptDetailRequests = useMemo(() => {
+    if (!viewDeptDetails) return [];
+    return requests
+      .filter(r => r.employees?.department === viewDeptDetails)
+      .sort((a, b) => (b.requested_at ?? '').localeCompare(a.requested_at ?? ''));
+  }, [requests, viewDeptDetails]);
+
   return (
     <div className="space-y-6 p-8">
       {/* Header */}
@@ -373,7 +386,17 @@ const LndDashboardContent = () => {
                 <p className="mt-1 text-xs text-gray-500">{topCategoryEntry.count} requests</p>
               )}
             </div>
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-orange-100 text-orange-600">
+            <div
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl"
+              style={{
+                backgroundColor: topCategoryEntry.cat && CATEGORY_COLORS[topCategoryEntry.cat]
+                  ? `${CATEGORY_COLORS[topCategoryEntry.cat]}22`
+                  : 'rgb(254 215 170)',
+                color: topCategoryEntry.cat && CATEGORY_COLORS[topCategoryEntry.cat]
+                  ? CATEGORY_COLORS[topCategoryEntry.cat]
+                  : 'rgb(194 65 12)',
+              }}
+            >
               <Award className="h-6 w-6" />
             </div>
           </div>
@@ -495,6 +518,7 @@ const LndDashboardContent = () => {
         {loading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
         <div className="mb-4">
           <h2 className="text-lg font-semibold text-gray-900">Competency demand by department</h2>
+          <p className="text-xs text-gray-400 mt-0.5">Top requested competency per department · all requests · sorted by demand</p>
         </div>
         {demandTableData.length === 0 && !loading ? (
           <EmptyState title="No demand data" description="No department competency demand data available yet." />
@@ -512,7 +536,7 @@ const LndDashboardContent = () => {
                 <div key={row.department} className="grid grid-cols-12 items-center px-4 py-3.5 hover:bg-gray-50/50 transition">
                   <div className="col-span-3 text-sm font-bold text-gray-900">{row.department}</div>
                   <div className="col-span-4 text-xs text-gray-600 leading-snug pr-3">{row.topCompetency}</div>
-                  <div className="col-span-2 flex justify-center">
+                  <div className="col-span-2 flex">
                     {row.priority === 'high' && (
                       <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold bg-red-100 text-red-700">High priority</span>
                     )}
@@ -532,6 +556,7 @@ const LndDashboardContent = () => {
                   <div className="col-span-1 flex justify-end">
                     <button
                       type="button"
+                      onClick={() => setViewDeptDetails(row.department)}
                       className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-semibold text-gray-600 hover:border-blue-400 hover:text-blue-600 transition whitespace-nowrap"
                     >
                       View details
@@ -543,6 +568,55 @@ const LndDashboardContent = () => {
           </>
         )}
       </section>
+
+      {/* Department request history drill-down */}
+      {viewDeptDetails && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setViewDeptDetails(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl mx-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 pt-6 pb-2 sticky top-0 bg-white">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">{viewDeptDetails}</h2>
+                <p className="text-sm text-slate-500 mt-0.5">{deptDetailRequests.length} training request{deptDetailRequests.length === 1 ? '' : 's'}</p>
+              </div>
+              <button type="button" onClick={() => setViewDeptDetails(null)} className="text-slate-400 hover:text-slate-600 transition">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="px-6 pb-6 pt-4">
+              {deptDetailRequests.length === 0 ? (
+                <EmptyState title="No requests" description="This department has no training requests yet." />
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {deptDetailRequests.map(r => {
+                    const name = [r.employees?.first_name, r.employees?.last_name].filter(Boolean).join(' ').trim() || 'Unknown';
+                    return (
+                      <div key={r.id} className="py-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-slate-900 truncate">{name}</p>
+                          <p className="text-xs text-slate-500 truncate">{r.competency ?? r.title}</p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {r.category && (
+                            <span
+                              className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold"
+                              style={{ backgroundColor: `${CATEGORY_COLORS[r.category]}1a`, color: CATEGORY_COLORS[r.category] }}
+                            >
+                              {r.category}
+                            </span>
+                          )}
+                          <span className="text-xs text-slate-400 w-20 text-right">
+                            {r.requested_at ? new Date(r.requested_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
