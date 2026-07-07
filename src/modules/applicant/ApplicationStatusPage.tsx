@@ -2,7 +2,7 @@ import { AlertCircle, CheckCircle2, CircleX, FileText, Lock, Mail, RefreshCw, Se
 import { useEffect, useRef, useState } from 'react';
 import { ATTACHMENTS_BUCKET, supabase } from '../../lib/supabase';
 import { getApplicants, saveApplicants } from '../../lib/recruitmentData';
-import { parseDisqualificationReason } from '../../lib/applicationActivity';
+import { parseDisqualificationReason, getDisqualificationReasonLabel } from '../../lib/applicationActivity';
 
 interface ApplicationRecord {
   id: string;
@@ -26,6 +26,17 @@ interface ApplicationRecord {
   interview_time: string | null;
   venue: string | null;
   schedule_instructions: string | null;
+  disqualified_at: string | null;
+  disqualification_reason_category: string | null;
+  disqualification_message: string | null;
+  disqualification_message_visible: boolean;
+}
+
+interface ActivityLogEntry {
+  event_type: string;
+  event_label: string;
+  event_description: string | null;
+  occurred_at: string;
 }
 
 interface AttachmentRow {
@@ -198,6 +209,7 @@ export const ApplicationStatusPage = () => {
   const [loading, setLoading] = useState(false);
   const [record, setRecord] = useState<ApplicationRecord | null>(null);
   const [attachments, setAttachments] = useState<AttachmentRow[]>([]);
+  const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>([]);
   const [docReviews, setDocReviews] = useState<Record<string, DocReview>>({});
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState('');
@@ -231,6 +243,10 @@ export const ApplicationStatusPage = () => {
     interview_time: row.interview_time ? String(row.interview_time) : null,
     venue: row.venue ? String(row.venue) : null,
     schedule_instructions: row.schedule_instructions ? String(row.schedule_instructions) : null,
+    disqualified_at: row.disqualified_at ? String(row.disqualified_at) : null,
+    disqualification_reason_category: row.disqualification_reason_category ? String(row.disqualification_reason_category) : null,
+    disqualification_message: row.disqualification_message ? String(row.disqualification_message) : null,
+    disqualification_message_visible: Boolean(row.disqualification_message_visible),
   });
 
   const fetchAttachments = async (applicantId: string) => {
@@ -244,6 +260,19 @@ export const ApplicationStatusPage = () => {
     } catch { /* silently ignore */ }
   };
 
+  // Real audit trail (RLS only returns visible_to_applicant = true rows) —
+  // powers the extra "Application Disqualified" timeline entry below.
+  const fetchActivityLog = async (applicantId: string) => {
+    try {
+      const { data, error: err } = await (supabase as any)
+        .from('application_activity_log')
+        .select('event_type, event_label, event_description, occurred_at')
+        .eq('application_id', applicantId)
+        .order('occurred_at', { ascending: false });
+      if (!err && Array.isArray(data)) setActivityLog(data as ActivityLogEntry[]);
+    } catch { /* silently ignore */ }
+  };
+
   // Reuses the same query column/value as the original handleSearch so we are
   // guaranteed to get fresh data even if UUID-based lookups are restricted by RLS.
   const fetchRecord = async () => {
@@ -251,7 +280,7 @@ export const ApplicationStatusPage = () => {
     const { col, val } = searchParamsRef.current;
     try {
       const { data, error: err } = await (supabase as any)
-        .from('applicants')
+        .from('applicant_tracker_view')
         .select('*')
         .eq(col, val)
         .order('created_at', { ascending: false })
@@ -289,6 +318,7 @@ export const ApplicationStatusPage = () => {
         if ((payload.new as { id?: string })?.id === rid) {
           void fetchRecord();
           void fetchAttachments(rid);
+          void fetchActivityLog(rid);
         }
       })
       .subscribe();
@@ -302,9 +332,11 @@ export const ApplicationStatusPage = () => {
     const rid = record.id;
     // Immediate first poll so we never show stale data after search
     void fetchRecord();
+    void fetchActivityLog(rid);
     const interval = setInterval(() => {
       void fetchAttachments(rid);
       void fetchRecord();
+      void fetchActivityLog(rid);
     }, 2000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -336,6 +368,7 @@ export const ApplicationStatusPage = () => {
     setSearched(false);
     setRecord(null);
     setAttachments([]);
+    setActivityLog([]);
     setDocReviews({});
     setUploadSuccess(null);
     setResolvedDocTypes(new Set());
@@ -347,7 +380,7 @@ export const ApplicationStatusPage = () => {
       const lookupValue = looksLikeEmail ? trimmed.toLowerCase() : trimmed.toUpperCase();
 
       const { data, error: dbError } = await (supabase as any)
-        .from('applicants')
+        .from('applicant_tracker_view')
         .select('*')
         .eq(lookupColumn, lookupValue)
         .order('created_at', { ascending: false })
@@ -361,34 +394,13 @@ export const ApplicationStatusPage = () => {
         return;
       }
 
-      const mapped: ApplicationRecord = {
-        id: String(row.id ?? ''),
-        item_number: String(row.item_number ?? ''),
-        first_name: String(row.first_name ?? ''),
-        last_name: String(row.last_name ?? ''),
-        email: String(row.email ?? ''),
-        contact_number: String(row.contact_number ?? ''),
-        position: String(row.position ?? ''),
-        office: String(row.office ?? ''),
-        status: String(row.status ?? 'New Application'),
-        created_at: String(row.created_at ?? new Date().toISOString()),
-        updated_at: row.updated_at ? String(row.updated_at) : null,
-        application_type: row.application_type ? String(row.application_type) : null,
-        disqualification_reason: row.disqualification_reason ? String(row.disqualification_reason) : null,
-        exam_date: row.exam_date ? String(row.exam_date) : null,
-        exam_time: row.exam_time ? String(row.exam_time) : null,
-        oral_exam_date: row.oral_exam_date ? String(row.oral_exam_date) : null,
-        oral_exam_time: row.oral_exam_time ? String(row.oral_exam_time) : null,
-        interview_date: row.interview_date ? String(row.interview_date) : null,
-        interview_time: row.interview_time ? String(row.interview_time) : null,
-        venue: row.venue ? String(row.venue) : null,
-        schedule_instructions: row.schedule_instructions ? String(row.schedule_instructions) : null,
-      };
+      const mapped = mapRow(row as Record<string, unknown>);
 
       // Store search params so polling can reuse the same query (not UUID lookup)
       searchParamsRef.current = { col: lookupColumn as 'item_number' | 'email', val: lookupValue };
       setRecord(mapped);
       await fetchAttachments(mapped.id);
+      await fetchActivityLog(mapped.id);
 
       // Load doc reviews from localStorage
       const allReviews = loadDocReviews();
@@ -679,7 +691,30 @@ export const ApplicationStatusPage = () => {
         {record && badge && (
           <>
             {/* Disqualified / Closed banner */}
-            {isApplicationClosed && (
+            {isApplicationClosed && record.disqualified_at && (
+              <div className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div className="flex items-start gap-3 border-l-4 border-rose-500 bg-rose-50 px-5 py-5">
+                  <CircleX size={22} className="mt-0.5 flex-shrink-0 text-rose-600" />
+                  <div className="flex-1 space-y-1">
+                    <p className="text-base font-bold text-rose-800">Application Disqualified</p>
+                    <p className="text-sm text-rose-700">
+                      <span className="font-semibold">Date:</span> {formatDate(record.disqualified_at)}
+                    </p>
+                    <p className="text-sm text-rose-700">
+                      <span className="font-semibold">Reason:</span> {getDisqualificationReasonLabel(record.disqualification_reason_category)}
+                    </p>
+                    {record.disqualification_message_visible && record.disqualification_message && (
+                      <p className="text-sm text-rose-700">
+                        <span className="font-semibold">Note:</span> {record.disqualification_message}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Closed for a reason other than a structured disqualification (legacy statuses) */}
+            {isApplicationClosed && !record.disqualified_at && (
               <div className="mt-8 flex items-start gap-4 rounded-2xl border border-rose-300 bg-rose-50 px-5 py-5 shadow-sm">
                 <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-rose-100">
                   <CircleX size={22} className="text-rose-600" />
@@ -992,6 +1027,29 @@ export const ApplicationStatusPage = () => {
                     </li>
                   );
                 })}
+
+                {/* Extra entry sourced from application_activity_log — the real
+                    audit trail, not the computed stage list above. */}
+                {(() => {
+                  const disqualifiedEvent = activityLog.find((entry) => entry.event_type === 'disqualified');
+                  if (!disqualifiedEvent) return null;
+                  return (
+                    <li key="disqualified-event" className="relative flex gap-4 pt-2">
+                      <span className="relative z-[1] flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600">
+                        <CircleX size={18} />
+                      </span>
+                      <div className="flex-1 pt-1">
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                          <h4 className="text-base font-semibold" style={{ color: '#9F1239' }}>{disqualifiedEvent.event_label}</h4>
+                          <span className="text-xs font-medium" style={{ color: '#363EE8' }}>{formatShortDate(disqualifiedEvent.occurred_at)}</span>
+                        </div>
+                        {disqualifiedEvent.event_description && (
+                          <p className="mt-0.5 text-sm" style={{ color: '#BE123C' }}>{disqualifiedEvent.event_description}</p>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })()}
               </ol>
             </section>
 
@@ -1226,7 +1284,7 @@ export const ApplicationStatusPage = () => {
                   <p className="mt-1 text-sm" style={{ color: badge.tone === 'rejected' ? '#BE123C' : '#040E6B' }}>
                     {getNoticeMessage(record.status, badge.tone, record.disqualification_reason)}
                   </p>
-                  {badge.tone === 'rejected' && disqualificationSummary && (
+                  {badge.tone === 'rejected' && !record.disqualified_at && disqualificationSummary && (
                     <div className="mt-3 rounded-xl border border-rose-300 bg-white/60 px-4 py-3">
                       <p className="text-xs font-bold uppercase tracking-wide text-rose-600">Reason from RSP Admin</p>
                       <p className="mt-1 text-sm text-rose-800">{disqualificationSummary}</p>

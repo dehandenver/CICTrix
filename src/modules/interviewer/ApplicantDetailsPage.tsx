@@ -25,6 +25,7 @@ import { mockDatabase } from '../../lib/mockDatabase';
 import { sendEmail } from '../../lib/email';
 import { getApplicants, getAuthoritativeJobPostings, saveApplicants } from '../../lib/recruitmentData';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../../lib/supabase';
+import { DISQUALIFICATION_REASON_OPTIONS, buildDisqualificationActivityDescription } from '../../lib/applicationActivity';
 import type { Applicant, JobPosting } from '../../types/recruitment.types';
 
 type ApplicantRecord = {
@@ -714,9 +715,10 @@ export function ApplicantDetailsPage() {
 
   const [applicantStatus, setApplicantStatus] = useState<null | 'shortlist' | 'qualified' | 'disqualify'>(null);
   const [confirmAction, setConfirmAction] = useState<null | 'qualified' | 'disqualify'>(null);
+  const [confirmReasonCategory, setConfirmReasonCategory] = useState('');
   const [confirmReason, setConfirmReason] = useState('');
+  const [confirmMessageVisible, setConfirmMessageVisible] = useState(false);
   const [confirmSubmitting, setConfirmSubmitting] = useState(false);
-  const [disqualifyReason, setDisqualifyReason] = useState('');
 
   const [applicant, setApplicant] = useState<ApplicantRecord | null>(null);
   const [recruitmentApplicant, setRecruitmentApplicant] = useState<Applicant | null>(routeState?.applicant ?? null);
@@ -1279,7 +1281,7 @@ export function ApplicantDetailsPage() {
 
   const persistStatus = async (
     action: 'shortlist' | 'unshortlist' | 'qualified' | 'disqualify' | 'document_verified' | 'action_required' | 'under_review',
-    reasonInput?: string,
+    disqualifyDetails?: { reasonCategory: string; message: string; messageVisible: boolean },
   ) => {
     // Only `applicant` (the ApplicantRecord from DB) is required. The richer
     // `recruitmentApplicant` (Applicant with notes/timeline/etc) may be null for
@@ -1306,90 +1308,84 @@ export function ApplicantDetailsPage() {
       under_review: 'Under Review',
     };
     const nextStatus = statusMap[action];
-    const reason = action === 'disqualify' ? (reasonInput ?? '').trim() : null;
+    // The legacy free-text `disqualification_reason` field (and this same string
+    // reused for the activity-log description) is read unconditionally by older
+    // UI — it must never carry the admin's message unless messageVisible is on,
+    // or the visibility toggle would be meaningless.
+    const reason = action === 'disqualify' && disqualifyDetails
+      ? buildDisqualificationActivityDescription(
+          disqualifyDetails.reasonCategory,
+          disqualifyDetails.messageVisible ? disqualifyDetails.message : '',
+        )
+      : null;
 
-    // Map frontend action to the backend API's status enum.
-    // The backend only accepts these four literals; other actions go straight to
-    // the Supabase fallback path.
-    const backendStatusEnum: Partial<Record<typeof action, string>> = {
-      shortlist: 'shortlisted',
-      qualified: 'qualified',
-      disqualify: 'disqualified',
-    };
-    const backendStatus = backendStatusEnum[action];
-
+    // Go straight to Supabase — this is the single source of truth the public
+    // tracker also reads from. (A backend-API PATCH path used to run first,
+    // but it and this fallback always ended up writing the same values, so
+    // it was removed as a redundant hop.)
     let persisted = false;
+    let disqualifiedByUserId: string | null = null;
 
-    if (backendStatus) {
-      // Get the Supabase session token so the backend can authorize the request.
-      // The backend route requires a valid JWT (role: RSP/ADMIN/etc).
-      let token: string | undefined;
-      try {
-        const { data: { session } } = await (supabase as any).auth.getSession();
-        token = session?.access_token as string | undefined;
-      } catch { /* no session — fallback will handle it */ }
-
-      try {
-        const res = await fetch(`/api/applicants/${applicant.id}/status`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({
-            applicant_id: applicant.id,
-            status: backendStatus,
-            disqualification_reason: reason || null,
-          }),
-        });
-        if (res.ok) {
-          persisted = true;
-          console.info('[ApplicantDetailsPage] backend PATCH ok');
-        } else {
-          console.warn('[ApplicantDetailsPage] backend PATCH failed', res.status);
-        }
-      } catch (err) {
-        console.warn('[ApplicantDetailsPage] backend PATCH threw', err);
+    try {
+      const dbUpdate: Record<string, unknown> = {
+        status: nextStatus,
+        // Explicitly bump updated_at so the Supabase real-time subscription
+        // always fires on the tracker side, even if status didn't change text.
+        updated_at: new Date().toISOString(),
+      };
+      if (action === 'disqualify') {
+        dbUpdate.disqualification_reason = reason || null;
+        dbUpdate.disqualified_at = new Date().toISOString();
+        dbUpdate.disqualification_reason_category = disqualifyDetails?.reasonCategory ?? null;
+        dbUpdate.disqualification_message = disqualifyDetails?.message?.trim() || null;
+        dbUpdate.disqualification_message_visible = disqualifyDetails?.messageVisible ?? false;
+        dbUpdate.is_final = true;
+        try {
+          const { data: userData } = await (supabase as any).auth.getUser();
+          disqualifiedByUserId = userData?.user?.id ?? null;
+        } catch { /* leave disqualified_by unset */ }
+        dbUpdate.disqualified_by = disqualifiedByUserId;
+      } else {
+        // Clear any stale disqualification reason when moving out of that state.
+        dbUpdate.disqualification_reason = null;
       }
-    }
+      const { data: updatedRows, error } = await (supabase as any)
+        .from('applicants')
+        .update(dbUpdate)
+        .eq('id', applicant.id)
+        .select('id, status');
+      if (error) {
+        console.error('[ApplicantDetailsPage] supabase update error', error);
+      } else if (!Array.isArray(updatedRows) || updatedRows.length === 0) {
+        console.error(
+          '[ApplicantDetailsPage] supabase update returned 0 rows — likely RLS blocking UPDATE on applicants for this role',
+        );
+      } else {
+        persisted = true;
+        console.info('[ApplicantDetailsPage] supabase update ok', updatedRows[0]);
 
-    if (!persisted) {
-      try {
-        const dbUpdate: Record<string, unknown> = {
-          status: nextStatus,
-          // Explicitly bump updated_at so the Supabase real-time subscription
-          // always fires on the tracker side, even if status didn't change text.
-          updated_at: new Date().toISOString(),
-        };
         if (action === 'disqualify') {
-          dbUpdate.disqualification_reason = reason || null;
-        } else {
-          // Clear any stale disqualification reason when moving out of that state.
-          dbUpdate.disqualification_reason = null;
+          try {
+            await (supabase as any).from('application_activity_log').insert({
+              application_id: applicant.id,
+              event_type: 'disqualified',
+              event_label: 'Application Disqualified',
+              event_description: reason,
+              created_by: disqualifiedByUserId,
+              visible_to_applicant: true,
+            });
+          } catch (logErr) {
+            console.warn('[ApplicantDetailsPage] activity log insert failed', logErr);
+          }
         }
-        const { data: updatedRows, error } = await (supabase as any)
-          .from('applicants')
-          .update(dbUpdate)
-          .eq('id', applicant.id)
-          .select('id, status');
-        if (error) {
-          console.error('[ApplicantDetailsPage] supabase update error', error);
-        } else if (!Array.isArray(updatedRows) || updatedRows.length === 0) {
-          console.error(
-            '[ApplicantDetailsPage] supabase update returned 0 rows — likely RLS blocking UPDATE on applicants for this role',
-          );
-        } else {
-          persisted = true;
-          console.info('[ApplicantDetailsPage] supabase update ok', updatedRows[0]);
-        }
-      } catch (err) {
-        console.error('[ApplicantDetailsPage] supabase update threw', err);
       }
+    } catch (err) {
+      console.error('[ApplicantDetailsPage] supabase update threw', err);
     }
 
     if (!persisted) {
       console.error(
-        '[ApplicantDetailsPage] status NOT persisted to DB. Local UI updated only. Backend + Supabase both failed.',
+        '[ApplicantDetailsPage] status NOT persisted to DB. Local UI updated only.',
       );
     }
 
@@ -1455,7 +1451,7 @@ export function ApplicantDetailsPage() {
 
   const handleSubmitStatusEvaluation = async () => {
     if (!applicantStatus) return;
-    await persistStatus(applicantStatus, applicantStatus === 'disqualify' ? disqualifyReason : undefined);
+    await persistStatus(applicantStatus);
   };
 
   // ── Doc review helpers ────────────────────────────────────────────────────────
@@ -2894,7 +2890,7 @@ export function ApplicantDetailsPage() {
 
       {confirmAction && (() => {
         const isDisqualify = confirmAction === 'disqualify';
-        const canConfirm = !confirmSubmitting && (!isDisqualify || confirmReason.trim().length > 0);
+        const canConfirm = !confirmSubmitting && (!isDisqualify || confirmReasonCategory.trim().length > 0);
         return (
           <div
             className="fixed inset-0 z-[250] flex items-center justify-center bg-black/50 p-4"
@@ -2914,28 +2910,57 @@ export function ApplicantDetailsPage() {
                 </div>
                 <div className="flex-1">
                   <h3 className="!mb-1 text-lg font-bold text-slate-900">
-                    {isDisqualify ? 'Disqualify this applicant?' : 'Qualify this applicant?'}
+                    {isDisqualify ? 'Confirm Disqualification' : 'Qualify this applicant?'}
                   </h3>
                   <p className="!mb-0 text-sm text-slate-600">
                     {isDisqualify
-                      ? `This will mark ${fullName} as not qualified. This action cannot be undone from this screen.`
+                      ? `This action is final and cannot be undone. ${fullName} will be notified and cannot proceed further in this application.`
                       : `This will recommend ${fullName} for hiring. This action cannot be undone from this screen.`}
                   </p>
                 </div>
               </div>
 
               {isDisqualify && (
-                <div className="px-6 pt-4">
-                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                    Reason for disqualification <span className="text-rose-500">*</span>
+                <div className="space-y-3 px-6 pt-4">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                      Reason for disqualification <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={confirmReasonCategory}
+                      onChange={(event) => setConfirmReasonCategory(event.target.value)}
+                      className="w-full rounded-xl border border-rose-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-100"
+                    >
+                      <option value="">Select a reason…</option>
+                      {DISQUALIFICATION_REASON_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                      Message to applicant <span className="text-slate-400 font-normal">(optional)</span>
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={confirmReason}
+                      onChange={(event) => setConfirmReason(event.target.value)}
+                      placeholder="Add any additional detail…"
+                      className="w-full resize-none rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-100"
+                    />
+                  </div>
+                  <label className="flex items-start gap-2 text-xs text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={confirmMessageVisible}
+                      onChange={(event) => setConfirmMessageVisible(event.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      Show this message to the applicant on the public tracker. If left unchecked, only the reason
+                      category is shown — the message stays internal to RSP.
+                    </span>
                   </label>
-                  <textarea
-                    rows={3}
-                    value={confirmReason}
-                    onChange={(event) => setConfirmReason(event.target.value)}
-                    placeholder="Please provide a clear reason…"
-                    className="w-full resize-none rounded-xl border border-rose-300 bg-white px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-100"
-                  />
                 </div>
               )}
 
@@ -2954,9 +2979,16 @@ export function ApplicantDetailsPage() {
                     if (!canConfirm) return;
                     setConfirmSubmitting(true);
                     try {
-                      await persistStatus(confirmAction, isDisqualify ? confirmReason : undefined);
+                      await persistStatus(
+                        confirmAction,
+                        isDisqualify
+                          ? { reasonCategory: confirmReasonCategory, message: confirmReason, messageVisible: confirmMessageVisible }
+                          : undefined,
+                      );
                       setConfirmAction(null);
                       setConfirmReason('');
+                      setConfirmReasonCategory('');
+                      setConfirmMessageVisible(false);
                     } finally {
                       setConfirmSubmitting(false);
                     }
@@ -2966,7 +2998,7 @@ export function ApplicantDetailsPage() {
                     isDisqualify ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
                   }`}
                 >
-                  {confirmSubmitting ? 'Saving…' : 'OK'}
+                  {confirmSubmitting ? 'Saving…' : isDisqualify ? 'Confirm Disqualification' : 'OK'}
                 </button>
               </div>
             </div>
