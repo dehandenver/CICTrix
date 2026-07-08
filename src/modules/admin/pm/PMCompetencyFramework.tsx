@@ -472,32 +472,51 @@ const ManagementTab = () => {
             <thead>
               <tr className="bg-slate-50 text-slate-500 border-b border-slate-200">
                 <th className="px-6 py-3 font-semibold">Position</th>
-                <th className="px-6 py-3 font-semibold">Department</th>
                 <th className="px-6 py-3 font-semibold text-center">Required Competencies</th>
                 <th className="px-6 py-3 font-semibold text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading && (
-                <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-400">Loading…</td></tr>
+                <tr><td colSpan={3} className="px-6 py-8 text-center text-slate-400">Loading…</td></tr>
               )}
               {!loading && positions.length === 0 && (
-                <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-400">No positions defined yet.</td></tr>
+                <tr><td colSpan={3} className="px-6 py-8 text-center text-slate-400">No positions defined yet.</td></tr>
               )}
-              {!loading && positions.map(p => (
-                <tr key={p.id} className="hover:bg-slate-50">
-                  <td className="px-6 py-4 font-medium text-slate-800">{p.name}</td>
-                  <td className="px-6 py-4 text-slate-600">{p.department}</td>
-                  <td className="px-6 py-4 text-center text-slate-700">{p.reqCount}</td>
-                  <td className="px-6 py-4 text-right flex justify-end gap-3">
-                    <button onClick={() => setShowManageComp(p)} className="text-[#363EE8] hover:text-[#2e35d4] font-semibold transition">
-                      Manage
-                    </button>
-                    <button onClick={() => setEditPosition(p)} className="text-slate-400 hover:text-slate-600 transition"><Edit2 className="h-4 w-4" /></button>
-                    <button onClick={() => void handleDeletePosition(p.id)} className="text-red-400 hover:text-red-600 transition"><Trash2 className="h-4 w-4" /></button>
-                  </td>
-                </tr>
-              ))}
+              {!loading && (() => {
+                // Group positions by department, then list positions under each.
+                const byDept = new Map<string, typeof positions>();
+                for (const p of positions) {
+                  const d = p.department || 'Unassigned';
+                  if (!byDept.has(d)) byDept.set(d, []);
+                  byDept.get(d)!.push(p);
+                }
+                return Array.from(byDept.entries())
+                  .sort((a, b) => a[0].localeCompare(b[0]))
+                  .map(([dept, list]) => (
+                    <React.Fragment key={dept}>
+                      <tr className="bg-slate-50/70 border-t border-slate-200">
+                        <td colSpan={3} className="px-6 py-2.5 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                          {dept}
+                          <span className="text-slate-400 font-medium normal-case"> · {list.length} position{list.length !== 1 ? 's' : ''}</span>
+                        </td>
+                      </tr>
+                      {list.map(p => (
+                        <tr key={p.id} className="hover:bg-slate-50">
+                          <td className="px-6 py-4 pl-10 font-medium text-slate-800">{p.name}</td>
+                          <td className="px-6 py-4 text-center text-slate-700">{p.reqCount}</td>
+                          <td className="px-6 py-4 text-right flex justify-end gap-3">
+                            <button onClick={() => setShowManageComp(p)} className="text-[#363EE8] hover:text-[#2e35d4] font-semibold transition">
+                              Manage
+                            </button>
+                            <button onClick={() => setEditPosition(p)} className="text-slate-400 hover:text-slate-600 transition"><Edit2 className="h-4 w-4" /></button>
+                            <button onClick={() => void handleDeletePosition(p.id)} className="text-red-400 hover:text-red-600 transition"><Trash2 className="h-4 w-4" /></button>
+                          </td>
+                        </tr>
+                      ))}
+                    </React.Fragment>
+                  ));
+              })()}
             </tbody>
           </table>
         </div>
