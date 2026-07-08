@@ -20,7 +20,8 @@ import {
   AlertCircle,
   FileSpreadsheet,
   Check,
-  Info
+  Info,
+  Download
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import abyanLogo from '../../assets/abyan-logo.png';
@@ -50,7 +51,29 @@ import {
   type EmployeeDocumentRow,
   type RequestSource,
 } from '../../lib/employeeDocuments';
+import {
+  getWorkspace,
+  saveTargets,
+  saveAccomplishments,
+  attachPdfUrl,
+  type IpcrWorkspaceRow,
+} from '../../lib/api/ipcrWorkspace';
+import { generateIpcrPdf } from '../../lib/ipcrPdf';
 import { supabase as supabaseClient } from '../../lib/supabase';
+
+/**
+ * Whether a system-scope phase_schedules row is currently "open".
+ * `Open`/`Closed` force it; `Auto` follows start_date..deadline_date.
+ * A missing row means the PM hasn't configured it yet — don't block the employee.
+ */
+function isPhaseScheduleOpen(row: any | null): boolean {
+  if (!row) return true;
+  if (row.mode === 'Open') return true;
+  if (row.mode === 'Closed') return false;
+  const today = new Date().toISOString().slice(0, 10);
+  if (!row.start_date || !row.deadline_date) return false;
+  return today >= row.start_date && today <= row.deadline_date;
+}
 
 const SOURCE_BADGE_STYLES: Record<RequestSource, string> = {
   HR: 'bg-slate-100 text-slate-700 ring-1 ring-slate-200',
@@ -236,30 +259,46 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   const [ipcrRatingPeriod, setIpcrRatingPeriod] = useState<string>('');
   const [employeeEvaluations, setEmployeeEvaluations] = useState<any[]>([]);
   const [probationarySchedule, setProbationarySchedule] = useState<any | null>(null);
+  // System-scope PM phase windows (regular employees). Probationary uses probationarySchedule.
+  const [systemSchedules, setSystemSchedules] = useState<{ target: any | null; rating: any | null }>({
+    target: null,
+    rating: null,
+  });
 
   const isTargetSettingActive = useMemo(() => {
-    if (!probationarySchedule) return true;
-    const nowStr = new Date().toISOString().slice(0, 10);
-    return nowStr >= probationarySchedule.target_start && nowStr <= probationarySchedule.target_end;
-  }, [probationarySchedule]);
+    if (probationarySchedule) {
+      const nowStr = new Date().toISOString().slice(0, 10);
+      return nowStr >= probationarySchedule.target_start && nowStr <= probationarySchedule.target_end;
+    }
+    return isPhaseScheduleOpen(systemSchedules.target);
+  }, [probationarySchedule, systemSchedules]);
 
   const isAccomplishmentRatingActive = useMemo(() => {
-    if (!probationarySchedule) return true;
-    const nowStr = new Date().toISOString().slice(0, 10);
-    return nowStr >= probationarySchedule.accomplishment_start && nowStr <= probationarySchedule.accomplishment_end;
-  }, [probationarySchedule]);
+    if (probationarySchedule) {
+      const nowStr = new Date().toISOString().slice(0, 10);
+      return nowStr >= probationarySchedule.accomplishment_start && nowStr <= probationarySchedule.accomplishment_end;
+    }
+    return isPhaseScheduleOpen(systemSchedules.rating);
+  }, [probationarySchedule, systemSchedules]);
 
   // Module 3 IPCR Workspace & New Entrants State
   const [ipcrSubtab, setIpcrSubtab] = useState<'phase1' | 'phase2'>('phase1');
   const [newEntrantsSubtab, setNewEntrantsSubtab] = useState<'checklist' | 'scheduler'>('checklist');
   const [employeeTargets, setEmployeeTargets] = useState({
-    core: 'Process 90% of recruitment requests within 10 days',
-    strategic: 'Formulate training programs based on competency gaps',
-    support: 'Provide IT helpdesk assistance within 15 minutes'
+    core: '',
+    strategic: '',
+    support: '',
   });
   const [ipcrApproved, setIpcrApproved] = useState(false);
-  const [accomplishments, setAccomplishments] = useState('');
-  const [selfRatingScore, setSelfRatingScore] = useState(4.0);
+  // Per-category Phase 2 accomplishments + self-ratings.
+  const [accomplishments, setAccomplishments] = useState({ core: '', strategic: '', support: '' });
+  const [selfRatings, setSelfRatings] = useState<{ core: number | null; strategic: number | null; support: number | null }>({
+    core: null,
+    strategic: null,
+    support: null,
+  });
+  const [workspaceRow, setWorkspaceRow] = useState<IpcrWorkspaceRow | null>(null);
+  const [workspaceSaving, setWorkspaceSaving] = useState(false);
   const [orientationChecked, setOrientationChecked] = useState({
     duties: true,
     policies: true,
@@ -344,21 +383,66 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
         employeeNum,
         cycle ? cycle.id : null
       );
+      let resolvedPeriod: string;
       if (ipcrRes.success && ipcrRes.data) {
         setIpcrRows(ipcrRes.data.rows);
         setIpcrEvaluation(ipcrRes.data.evaluation);
-        setIpcrRatingPeriod(activeProbationarySchedule ? activeProbationarySchedule.period_label : ipcrRes.data.ratingPeriod);
+        resolvedPeriod = activeProbationarySchedule ? activeProbationarySchedule.period_label : ipcrRes.data.ratingPeriod;
       } else {
         const now = new Date();
         const year = now.getFullYear();
         const month = now.getMonth();
         const fallbackPeriod = month < 6 ? `January–June ${year}` : `July–December ${year}`;
-        setIpcrRatingPeriod(activeProbationarySchedule ? activeProbationarySchedule.period_label : fallbackPeriod);
+        resolvedPeriod = activeProbationarySchedule ? activeProbationarySchedule.period_label : fallbackPeriod;
       }
+      setIpcrRatingPeriod(resolvedPeriod);
 
       const evalsRes = await getEmployeeEvaluations(currentUser.supabaseId);
       if (evalsRes.success) {
         setEmployeeEvaluations(evalsRes.data);
+      }
+
+      // System-scope PM phase windows (gate regular, non-probationary employees).
+      if (!activeProbationarySchedule) {
+        const supabase = supabaseClient as any;
+        const { data: schedRows } = await supabase
+          .from('phase_schedules')
+          .select('*')
+          .eq('scope', 'system');
+        const rows: any[] = Array.isArray(schedRows) ? schedRows : [];
+        setSystemSchedules({
+          target: rows.find((r) => r.phase === 'target_setting') ?? null,
+          rating: rows.find((r) => r.phase === 'rating') ?? null,
+        });
+      } else {
+        setSystemSchedules({ target: null, rating: null });
+      }
+
+      // Load the "My IPCR Workspace" row for this period and hydrate the form.
+      const ws = await getWorkspace(currentUser.supabaseId, resolvedPeriod);
+      setWorkspaceRow(ws);
+      if (ws) {
+        setEmployeeTargets({
+          core: ws.core_target ?? '',
+          strategic: ws.strategic_target ?? '',
+          support: ws.support_target ?? '',
+        });
+        setAccomplishments({
+          core: ws.core_accomplishment ?? '',
+          strategic: ws.strategic_accomplishment ?? '',
+          support: ws.support_accomplishment ?? '',
+        });
+        setSelfRatings({
+          core: ws.core_rating ?? null,
+          strategic: ws.strategic_rating ?? null,
+          support: ws.support_rating ?? null,
+        });
+        setIpcrApproved(ws.status !== 'Draft Targets');
+      } else {
+        setEmployeeTargets({ core: '', strategic: '', support: '' });
+        setAccomplishments({ core: '', strategic: '', support: '' });
+        setSelfRatings({ core: null, strategic: null, support: null });
+        setIpcrApproved(false);
       }
     } catch (err) {
       console.error('Failed to load IPCR data:', err);
@@ -366,6 +450,123 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
     } finally {
       setIpcrLoading(false);
     }
+  };
+
+  // ── My IPCR Workspace (Phase 1 targets / Phase 2 accomplishments) ──────────
+  const workspaceIdentity = () => ({
+    employeeId: currentUser.supabaseId as string,
+    employeeNum: (employeeRawDetails?.employee_number ?? currentUser.employeeId) || null,
+    employeeName: profile.fullName || currentUser.employeeId || null,
+    officeId: null as string | null,
+    officeName: (employeeRawDetails?.department ?? profile.currentDepartment) || null,
+    period: ipcrRatingPeriod,
+    updatedBy: profile.email || currentUser.employeeId || 'employee',
+  });
+
+  const handleSaveWorkspaceTargets = async (submit: boolean) => {
+    if (!currentUser.supabaseId) return;
+    if (!ipcrRatingPeriod.trim()) {
+      setIpcrError('No active rating period.');
+      return;
+    }
+    if (
+      submit &&
+      !employeeTargets.core.trim() &&
+      !employeeTargets.strategic.trim() &&
+      !employeeTargets.support.trim()
+    ) {
+      setIpcrError('Enter at least one target before submitting.');
+      return;
+    }
+    setWorkspaceSaving(true);
+    setIpcrError(null);
+    const res = await saveTargets({
+      ...workspaceIdentity(),
+      core: employeeTargets.core,
+      strategic: employeeTargets.strategic,
+      support: employeeTargets.support,
+      submit,
+    });
+    setWorkspaceSaving(false);
+    if (res.ok === false) {
+      setIpcrError(res.error || 'Failed to save targets.');
+      return;
+    }
+    setWorkspaceRow(res.row);
+    setIpcrApproved(res.row.status !== 'Draft Targets');
+    setSaveSuccess(submit ? 'Targets submitted to your Office Account for approval.' : 'Targets saved as draft.');
+    setTimeout(() => setSaveSuccess(null), 4000);
+  };
+
+  const handleSubmitWorkspaceAccomplishments = async (submit: boolean) => {
+    if (!currentUser.supabaseId) return;
+    if (!ipcrRatingPeriod.trim()) {
+      setIpcrError('No active rating period.');
+      return;
+    }
+    setWorkspaceSaving(true);
+    setIpcrError(null);
+    const res = await saveAccomplishments({
+      ...workspaceIdentity(),
+      coreAccomplishment: accomplishments.core,
+      strategicAccomplishment: accomplishments.strategic,
+      supportAccomplishment: accomplishments.support,
+      coreRating: selfRatings.core,
+      strategicRating: selfRatings.strategic,
+      supportRating: selfRatings.support,
+      submit,
+    });
+    if (res.ok === false) {
+      setWorkspaceSaving(false);
+      setIpcrError(res.error || 'Failed to save accomplishments.');
+      return;
+    }
+    setWorkspaceRow(res.row);
+
+    if (submit) {
+      // Compute done server-side in saveAccomplishments; now generate + upload the PDF.
+      try {
+        const file = generateIpcrPdf({
+          employeeName: profile.fullName || '—',
+          employeeNum: (employeeRawDetails?.employee_number ?? currentUser.employeeId) || '—',
+          position: (employeeRawDetails?.position ?? profile.currentPosition) || '—',
+          department: (employeeRawDetails?.department ?? profile.currentDepartment) || '—',
+          period: ipcrRatingPeriod,
+          rows: [
+            { category: 'Core Functions', target: employeeTargets.core, accomplishment: accomplishments.core, rating: selfRatings.core },
+            { category: 'Strategic Functions', target: employeeTargets.strategic, accomplishment: accomplishments.strategic, rating: selfRatings.strategic },
+            { category: 'Support Functions', target: employeeTargets.support, accomplishment: accomplishments.support, rating: selfRatings.support },
+          ],
+          overallScore: res.overallScore,
+          adjectival: res.adjectival,
+        });
+        const up = await uploadEmployeeDocument({
+          employeeId: currentUser.supabaseId,
+          email: profile.email,
+          documentType: 'Performance Evaluation Form',
+          file,
+          category: 'compliance',
+        });
+        if (up.success === false) {
+          setSaveSuccess('Evaluation submitted, but the PDF could not be uploaded.');
+          setIpcrError(up.error);
+        } else {
+          await attachPdfUrl(res.row.id, up.row.file_url);
+          setWorkspaceRow({ ...res.row, status: 'Completed', pdf_url: up.row.file_url });
+          dispatchEmployeeDocumentsUpdated();
+          setSaveSuccess(
+            `Evaluation submitted. Overall rating ${res.overallScore?.toFixed(2) ?? '—'}${res.adjectival ? ` (${res.adjectival})` : ''}. IPCR PDF generated.`,
+          );
+        }
+      } catch (err) {
+        setSaveSuccess('Evaluation submitted, but PDF generation failed.');
+        setIpcrError(err instanceof Error ? err.message : String(err));
+      }
+    } else {
+      setSaveSuccess('Accomplishments saved as draft.');
+    }
+    setWorkspaceSaving(false);
+    setTimeout(() => setSaveSuccess(null), 5000);
   };
 
   const loadIPCRPeriod = async (period: string, cycleId: number | null) => {
@@ -2540,16 +2741,20 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                 </div>
 
                 {!ipcrApproved && isTargetSettingActive && (
-                  <div className="flex justify-end pt-3">
+                  <div className="flex justify-end gap-2 pt-3">
                     <button
-                      onClick={() => {
-                        setIpcrApproved(true);
-                        setSaveSuccess('Targets successfully submitted to Office Account for approval.');
-                        setTimeout(() => setSaveSuccess(null), 4000);
-                      }}
-                      className="bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition"
+                      onClick={() => void handleSaveWorkspaceTargets(false)}
+                      disabled={workspaceSaving}
+                      className="border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-xs font-semibold transition disabled:opacity-50"
                     >
-                      Submit Targets for Approval
+                      Save Draft
+                    </button>
+                    <button
+                      onClick={() => void handleSaveWorkspaceTargets(true)}
+                      disabled={workspaceSaving}
+                      className="bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition disabled:opacity-50"
+                    >
+                      {workspaceSaving ? 'Submitting…' : 'Submit Targets for Approval'}
                     </button>
                   </div>
                 )}
@@ -2586,61 +2791,102 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
 
                 {/* Right Panel */}
                 <div className="rounded-xl border bg-white p-5 shadow-sm space-y-4" style={{ borderColor: '#C8D1FF' }}>
-                  {!isAccomplishmentRatingActive && probationarySchedule && (
-                    <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-xs font-semibold mb-4">
-                      ⚠️ Accomplishment rating is currently closed. The scheduled period was from {new Date(probationarySchedule.accomplishment_start).toLocaleDateString()} to {new Date(probationarySchedule.accomplishment_end).toLocaleDateString()}.
+                  {!isAccomplishmentRatingActive && workspaceRow?.status !== 'Completed' && (
+                    <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-xs font-semibold mb-2">
+                      ⚠️ Accomplishment rating is currently closed{probationarySchedule
+                        ? ` (scheduled ${new Date(probationarySchedule.accomplishment_start).toLocaleDateString()} – ${new Date(probationarySchedule.accomplishment_end).toLocaleDateString()})`
+                        : ''}.
                     </div>
                   )}
 
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-800">Accomplishments & Self-Ratings</h3>
-                    <p className="text-[11px] text-slate-500 mt-0.5">Encode achievements and select self-rating values.</p>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">Actual Accomplishments</label>
-                      <textarea
-                        value={accomplishments}
-                        onChange={(e) => setAccomplishments(e.target.value)}
-                        placeholder="Detail your achievements matching the frozen targets..."
-                        rows={6}
-                        disabled={!isAccomplishmentRatingActive}
-                        style={{ borderColor: '#C8D1FF' }}
-                        className="w-full rounded-lg border px-3 py-2 text-xs text-slate-750 focus:outline-none focus:ring-1 focus:ring-[#363EE8] disabled:bg-slate-50 disabled:cursor-not-allowed"
-                      />
+                  {workspaceRow?.status === 'Completed' ? (
+                    <div className="space-y-3">
+                      <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-4">
+                        <p className="text-[11px] font-bold text-emerald-700 uppercase tracking-wide">Final Overall Rating</p>
+                        <p className="text-2xl font-extrabold text-emerald-800 mt-1">
+                          {workspaceRow.overall_score != null ? Number(workspaceRow.overall_score).toFixed(2) : '—'}
+                          {workspaceRow.adjectival ? <span className="text-sm font-semibold ml-2">{workspaceRow.adjectival}</span> : null}
+                        </p>
+                      </div>
+                      {workspaceRow.pdf_url && (
+                        <a
+                          href={workspaceRow.pdf_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition"
+                        >
+                          <Download className="h-4 w-4" /> Download IPCR PDF
+                        </a>
+                      )}
+                      <p className="text-[11px] text-slate-500">
+                        Your IPCR has been submitted and recorded. It also appears under RSP Reports → Performance Evaluation Form.
+                      </p>
                     </div>
+                  ) : (
+                    <>
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-800">Accomplishments & Self-Ratings</h3>
+                        <p className="text-[11px] text-slate-500 mt-0.5">Encode achievements and a self-rating per function.</p>
+                      </div>
 
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">Self-Rating Score</label>
-                      <select
-                        value={selfRatingScore}
-                        onChange={(e) => setSelfRatingScore(parseFloat(e.target.value))}
-                        disabled={!isAccomplishmentRatingActive}
-                        style={{ borderColor: '#C8D1FF' }}
-                        className="w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#363EE8] disabled:bg-slate-50 disabled:cursor-not-allowed"
-                      >
-                        <option value={5.0}>5.0 - Outstanding</option>
-                        <option value={4.0}>4.0 - Very Satisfactory</option>
-                        <option value={3.0}>3.0 - Satisfactory</option>
-                        <option value={2.0}>2.0 - Unsatisfactory</option>
-                        <option value={1.0}>1.0 - Poor</option>
-                      </select>
-                    </div>
+                      <div className="space-y-4">
+                        {[
+                          { key: 'core', label: 'Core Functions' },
+                          { key: 'strategic', label: 'Strategic Functions' },
+                          { key: 'support', label: 'Support Functions' },
+                        ].map((fn) => (
+                          <div key={fn.key} className="space-y-2 border-b border-slate-100 pb-3">
+                            <label className="block text-xs font-bold text-slate-700">{fn.label}</label>
+                            <textarea
+                              value={accomplishments[fn.key as 'core' | 'strategic' | 'support']}
+                              onChange={(e) => setAccomplishments((prev) => ({ ...prev, [fn.key]: e.target.value }))}
+                              placeholder="Detail your achievements matching this target..."
+                              rows={3}
+                              disabled={!isAccomplishmentRatingActive}
+                              style={{ borderColor: '#C8D1FF' }}
+                              className="w-full rounded-lg border px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#363EE8] disabled:bg-slate-50 disabled:cursor-not-allowed"
+                            />
+                            <select
+                              value={selfRatings[fn.key as 'core' | 'strategic' | 'support'] ?? ''}
+                              onChange={(e) =>
+                                setSelfRatings((prev) => ({
+                                  ...prev,
+                                  [fn.key]: e.target.value ? parseFloat(e.target.value) : null,
+                                }))
+                              }
+                              disabled={!isAccomplishmentRatingActive}
+                              style={{ borderColor: '#C8D1FF' }}
+                              className="w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#363EE8] disabled:bg-slate-50 disabled:cursor-not-allowed"
+                            >
+                              <option value="">Select self-rating…</option>
+                              <option value={5.0}>5.0 - Outstanding</option>
+                              <option value={4.0}>4.0 - Very Satisfactory</option>
+                              <option value={3.0}>3.0 - Satisfactory</option>
+                              <option value={2.0}>2.0 - Unsatisfactory</option>
+                              <option value={1.0}>1.0 - Poor</option>
+                            </select>
+                          </div>
+                        ))}
 
-                    <div className="flex justify-end pt-2">
-                      <button
-                        onClick={() => {
-                          setSaveSuccess('Self-evaluation accomplishments and rating submitted.');
-                          setTimeout(() => setSaveSuccess(null), 4000);
-                        }}
-                        disabled={!isAccomplishmentRatingActive}
-                        className="bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition disabled:bg-slate-400 disabled:cursor-not-allowed"
-                      >
-                        Submit Evaluation
-                      </button>
-                    </div>
-                  </div>
+                        <div className="flex justify-end gap-2 pt-1">
+                          <button
+                            onClick={() => void handleSubmitWorkspaceAccomplishments(false)}
+                            disabled={!isAccomplishmentRatingActive || workspaceSaving}
+                            className="border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg px-4 py-2 text-xs font-semibold transition disabled:opacity-50"
+                          >
+                            Save Draft
+                          </button>
+                          <button
+                            onClick={() => void handleSubmitWorkspaceAccomplishments(true)}
+                            disabled={!isAccomplishmentRatingActive || workspaceSaving}
+                            className="bg-[#363EE8] hover:bg-[#2e35d4] text-white rounded-lg px-4 py-2 text-xs font-semibold shadow transition disabled:bg-slate-400 disabled:cursor-not-allowed"
+                          >
+                            {workspaceSaving ? 'Submitting…' : 'Submit Evaluation'}
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )}
