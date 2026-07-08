@@ -36,4 +36,8 @@ FROM employees;
 
 GRANT SELECT ON employees_with_department TO anon, authenticated, service_role;
 
+-- Reload PostgREST's schema cache so the view is immediately visible to the
+-- REST API and never triggers a "not found in the schema cache" error.
+NOTIFY pgrst, 'reload schema';
+
 COMMIT;
