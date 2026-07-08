@@ -933,6 +933,20 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
   const handleOfficeClick = (row: OfficeDirectoryRow) => {
     setSelectedOfficeRow(row);
+    // Load the office's employees so the drill-down can group them by
+    // department → position (instead of a flat table).
+    setOfficeEmployees([]);
+    setOfficeEmployeesLoading(true);
+    (supabase as any)
+      .from('employees_with_department')
+      .select('id, full_name, current_position, department, status, email, mobile_number')
+      .eq('department', row.officeName)
+      .order('current_position', { ascending: true })
+      .order('full_name', { ascending: true })
+      .then(({ data }: { data: any[] | null }) => {
+        setOfficeEmployees(Array.isArray(data) ? data : []);
+        setOfficeEmployeesLoading(false);
+      });
   };
 
   if (isDashboardView) {
@@ -1055,6 +1069,69 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                             {selectedOfficeRow.deptHead.accountStatus}
                           </span>
                         </div>
+                      )}
+                    </div>
+
+                    {/* Employees grouped by department → then position */}
+                    <div className="mb-8">
+                      <h3 className="text-lg font-bold text-slate-800 mb-4">Employees by Department & Position</h3>
+                      {officeEmployeesLoading ? (
+                        <div className="text-sm text-slate-500 py-6">Loading employees…</div>
+                      ) : officeEmployees.length === 0 ? (
+                        <div className="text-sm text-slate-400 italic py-6">No employees assigned to this office.</div>
+                      ) : (
+                        (() => {
+                          const byDept = new Map<string, Map<string, any[]>>();
+                          for (const e of officeEmployees) {
+                            const dept = e.department || 'Unassigned';
+                            const pos = e.current_position || 'Unassigned Position';
+                            if (!byDept.has(dept)) byDept.set(dept, new Map());
+                            const posMap = byDept.get(dept)!;
+                            if (!posMap.has(pos)) posMap.set(pos, []);
+                            posMap.get(pos)!.push(e);
+                          }
+                          return Array.from(byDept.entries()).map(([dept, posMap]) => (
+                            <div key={dept} className="mb-6">
+                              <div className="flex items-center gap-2 mb-3">
+                                <Building2 className="h-4 w-4 text-blue-600" />
+                                <h4 className="font-bold text-slate-800 text-sm">{dept}</h4>
+                                <span className="text-xs text-slate-400">
+                                  {Array.from(posMap.values()).reduce((n, a) => n + a.length, 0)} employees
+                                </span>
+                              </div>
+                              <div className="space-y-4 pl-6 border-l-2 border-slate-100">
+                                {Array.from(posMap.entries()).map(([pos, emps]) => (
+                                  <div key={pos}>
+                                    <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                                      {pos} · {emps.length}
+                                    </p>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                      {emps.map((e: any) => {
+                                        const isActive = String(e.status ?? '').toLowerCase() === 'active';
+                                        return (
+                                          <div key={e.id} className="flex items-start gap-3 p-3 rounded-lg border border-slate-100 bg-slate-50/50">
+                                            <div className="h-8 w-8 rounded bg-blue-500 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                                              {getOfficeDirInitials(e.full_name || '')}
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                              <p className="font-semibold text-slate-800 text-xs truncate">{e.full_name}</p>
+                                              <p className="text-[10px] text-slate-500 truncate mt-0.5">{e.email || '—'}</p>
+                                              <span className={`inline-block mt-1.5 px-2 py-0.5 rounded-full text-[9px] font-semibold ${
+                                                isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                                              }`}>
+                                                {e.status || 'Active'}
+                                              </span>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ));
+                        })()
                       )}
                     </div>
 
