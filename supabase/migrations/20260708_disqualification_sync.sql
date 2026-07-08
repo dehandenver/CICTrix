@@ -125,4 +125,9 @@ FROM applicants a;
 
 GRANT SELECT ON applicant_tracker_view TO anon, authenticated, service_role;
 
+-- Reload PostgREST's schema cache so the new view/columns are immediately
+-- visible to the REST API. Without this, the tracker fails with
+-- "Could not find the table 'public.applicant_tracker_view' in the schema cache".
+NOTIFY pgrst, 'reload schema';
+
 COMMIT;
