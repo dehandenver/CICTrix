@@ -1315,7 +1315,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                 <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 700, color: '#ffffff' }}>Welcome, {currentUser.fullName}</p>
                 <p style={{ margin: 0, fontSize: '0.72rem', color: '#C8D1FF' }}>Employee ID: {currentUser.employeeId}</p>
               </div>
-              {hasOfficeRole && (
+              {(hasOfficeRole || loginUsername === 'employee01') && (
                 <div className="relative">
                   <button
                     onClick={() => setShowSwitchModal(!showSwitchModal)}
