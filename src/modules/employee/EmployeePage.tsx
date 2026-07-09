@@ -507,7 +507,12 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   });
 
   const handleSaveWorkspaceTargets = async (submit: boolean) => {
-    if (!currentUser.supabaseId) return;
+    if (!currentUser.supabaseId) {
+      setIpcrError(
+        'Your account isn’t linked to an employee record in the database, so targets can’t be saved. Please contact your PM / administrator.',
+      );
+      return;
+    }
     if (!ipcrRatingPeriod.trim()) {
       setIpcrError('No active rating period.');
       return;
@@ -542,7 +547,12 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   };
 
   const handleSubmitWorkspaceAccomplishments = async (submit: boolean) => {
-    if (!currentUser.supabaseId) return;
+    if (!currentUser.supabaseId) {
+      setIpcrError(
+        'Your account isn’t linked to an employee record in the database, so the IPCR can’t be saved. Please contact your PM / administrator.',
+      );
+      return;
+    }
     if (!ipcrRatingPeriod.trim()) {
       setIpcrError('No active rating period.');
       return;
@@ -2752,6 +2762,26 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                 Phase 2: Accomplishments & Ratings
               </button>
             </div>
+
+            {/* Account-not-linked warning: without a Supabase employees row we
+                cannot key the workspace, so saves would silently no-op. */}
+            {!currentUser.supabaseId && (
+              <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-xs font-semibold">
+                ⚠️ Your account isn’t linked to an employee record in the database, so your IPCR can’t be saved yet.
+                Please ask your PM / administrator to link your account (Supabase <span className="font-mono">employees</span> row) before filling this out.
+              </div>
+            )}
+            {/* Inline feedback for the workspace (Phase 1 + Phase 2 handlers). */}
+            {ipcrError && (
+              <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-xs font-semibold">
+                {ipcrError}
+              </div>
+            )}
+            {saveSuccess && (
+              <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg p-3 text-xs font-semibold">
+                {saveSuccess}
+              </div>
+            )}
 
             {/* Subtab content */}
             {ipcrSubtab === 'phase1' && (
