@@ -197,6 +197,31 @@ export async function getOfficeDeptHead(
   }
 }
 
+/**
+ * Read-only roster of office roles, for consumers that must not see credentials.
+ *
+ * Deliberately does NOT select account_username / account_password: L&D reads
+ * this table to know who reviews its drafts, and has no business holding Office
+ * Account passwords. Migration 20260713 also revokes those columns from `anon`
+ * at the database level, so this is defence in depth rather than the only guard.
+ */
+export async function listOfficeRolesReadOnly(): Promise<OfficeRoleAssignment[]> {
+  try {
+    const { data, error } = await supabase
+      .from('office_role_assignments')
+      .select('id, employee_id, employee_name, office_id, office_name, role, status, assigned_at')
+      .eq('status', 'Active')
+      .order('office_name', { ascending: true });
+    if (error) {
+      console.error('[officeRoles] listOfficeRolesReadOnly failed:', error);
+      return [];
+    }
+    return (data ?? []) as OfficeRoleAssignment[];
+  } catch {
+    return [];
+  }
+}
+
 /** List office-role assignments (active only by default). */
 export async function listAssignments(
   includeRevoked = false,

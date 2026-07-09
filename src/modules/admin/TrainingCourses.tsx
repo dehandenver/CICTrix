@@ -14,7 +14,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { EmptyState } from '../../components/EmptyState';
 import { getDepartmentIdOptions, type DepartmentOption } from '../../lib/api/departments';
-import { listEmployeeOptions, type EmployeeOption } from '../../lib/api/officeRoles';
+import { getOfficeDeptHead, listEmployeeOptions, type EmployeeOption } from '../../lib/api/officeRoles';
 import {
   addDraftMember,
   createCourseDraft,
@@ -32,6 +32,7 @@ import {
   type DraftStatus,
 } from '../../lib/api/trainingPipeline';
 import { ActorRoleSwitch } from './components/ActorRoleSwitch';
+import { NoDeptHeadNotice } from './components/NoDeptHeadNotice';
 import { TRAINING_CATEGORIES, categoryColor, type TrainingCategory } from './trainingCategories';
 
 const DRAFT_STATUSES: DraftStatus[] = ['Draft', 'Sent to Dept Head', 'Returned', 'Finalized'];
@@ -366,6 +367,20 @@ const DraftDetail = ({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [returnNote, setReturnNote] = useState('');
+  const [deptHead, setDeptHead] = useState<{ employeeName: string | null } | null>(null);
+  const [headChecked, setHeadChecked] = useState(false);
+
+  // Without a Dept Head this draft can never leave 'Sent to Dept Head'. Say so
+  // up front rather than letting Send silently strand it.
+  useEffect(() => {
+    let cancelled = false;
+    void getOfficeDeptHead(draft.targetDepartmentId).then((h) => {
+      if (cancelled) return;
+      setDeptHead(h);
+      setHeadChecked(true);
+    });
+    return () => { cancelled = true; };
+  }, [draft.targetDepartmentId]);
 
   const color = categoryColor(draft.category);
   const included = draft.members.filter((m) => m.state === 'Included');
@@ -568,12 +583,26 @@ const DraftDetail = ({
             <section className="rounded-xl border border-gray-200 bg-gray-50/60 p-4">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Workflow</h3>
 
+              {headChecked && !deptHead && (
+                <NoDeptHeadNotice
+                  departmentName={draft.targetDepartmentName}
+                  context="This draft cannot be reviewed, so it cannot be sent, returned, or finalized."
+                  className="mb-3"
+                />
+              )}
+
               {draft.status === 'Draft' && (
                 <button
                   type="button"
-                  disabled={busy || included.length === 0}
+                  disabled={busy || included.length === 0 || !deptHead}
                   onClick={() => void runAction(() => sendDraftToDeptHead(draft.id))}
-                  title={included.length === 0 ? 'Recommend at least one employee first.' : undefined}
+                  title={
+                    !deptHead
+                      ? 'This office has no Department Head to review the draft.'
+                      : included.length === 0
+                        ? 'Recommend at least one employee first.'
+                        : undefined
+                  }
                   className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
                 >
                   <Send className="h-4 w-4" /> Send to Dept Head

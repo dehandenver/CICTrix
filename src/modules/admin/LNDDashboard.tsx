@@ -3,6 +3,7 @@ import {
   BarChart2,
   BookOpen,
   Building2,
+  CalendarClock,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -17,6 +18,7 @@ import {
   Search,
   Send,
   Settings,
+  ShieldCheck,
   TrendingUp,
   Upload,
   Users,
@@ -47,6 +49,7 @@ import { EmployeeDevelopment } from './EmployeeDevelopment';
 import { PMReports } from './PMReports';
 import { SeminarEnrollment } from './SeminarEnrollment';
 import { TrainingCalendar } from './TrainingCalendar';
+import { TrainingPlan } from './TrainingPlan';
 import { TrainingCourses } from './TrainingCourses';
 import { CATEGORY_COLORS, TRAINING_CATEGORIES } from './trainingCategories';
 
@@ -82,16 +85,19 @@ import { createDocumentRequest } from '../../lib/employeeDocuments';
 import { listTrainingRequestsDetailed, type TrainingRequest } from '../../lib/api/trainingRequests';
 import EmployeeDirectory from './EmployeeDirectory';
 import { LndSummaryOfRatings } from './LndSummaryOfRatings';
+import { OfficeRoles } from './OfficeRoles';
 
 type MenuId =
   | 'dashboard'
   | 'summary-of-ratings'
   | 'training-calendar'
+  | 'training-plan'
   | 'training-courses'
   | 'seminar-enrollment'
   | 'employee-progress'
   | 'documents'
   | 'employees'
+  | 'office-roles'
   | 'settings';
 
 type MenuItem = {
@@ -117,11 +123,13 @@ const LND_MENU: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', sublabel: 'Overview and KPIs', icon: LayoutDashboard },
   { id: 'summary-of-ratings', label: 'Summary of Ratings', sublabel: 'IPCR performance data', icon: BarChart2 },
   { id: 'training-calendar', label: 'Training Calendar', sublabel: 'This year’s trainings', icon: CalendarDays },
+  { id: 'training-plan', label: 'Training Plan', sublabel: 'Next year’s plan', icon: CalendarClock },
   { id: 'training-courses', label: 'Training Courses', sublabel: 'Courses and sessions', icon: BookOpen },
   { id: 'seminar-enrollment', label: 'Seminar Enrollment', sublabel: 'Registrations and slots', icon: ClipboardCheck },
   { id: 'employee-progress', label: 'Employee Development', sublabel: 'Employees and ratings', icon: Users },
   { id: 'documents', label: 'Documents', sublabel: 'Document submissions', icon: FileText },
   { id: 'employees', label: 'Employees', sublabel: 'Directory and profiles', icon: UsersRound },
+  { id: 'office-roles', label: 'Office Roles', sublabel: 'Who reviews drafts (read-only)', icon: ShieldCheck },
   { id: 'settings', label: 'Settings', sublabel: 'Division preferences', icon: Settings },
 ];
 
@@ -1661,6 +1669,8 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
             <LndSummaryOfRatings />
           ) : activeModule === 'training-calendar' ? (
             <TrainingCalendar />
+          ) : activeModule === 'training-plan' ? (
+            <TrainingPlan />
           ) : activeModule === 'training-courses' ? (
             <TrainingCourses />
           ) : activeModule === 'seminar-enrollment' ? (
@@ -1674,6 +1684,8 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
               selectedReportId={selectedReportId}
               onSelectionConsumed={() => setSelectedReportId(null)}
             />
+          ) : activeModule === 'office-roles' ? (
+            <OfficeRoles />
           ) : activeModule === 'employees' ? (
             <EmployeeDirectory />
           ) : (
