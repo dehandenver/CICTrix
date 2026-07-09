@@ -7,7 +7,7 @@ export type TrainingSession = {
   scheduled_date: string;
   capacity: number;
   location: string | null;
-  status: 'Upcoming' | 'Completed' | 'Cancelled';
+  status: 'Scheduled' | 'Ongoing' | 'Completed' | 'Cancelled';
   created_at: string;
   training_programs?: { name: string; category: string };
   training_enrollments?: { id: string }[];
@@ -17,7 +17,7 @@ export async function getUpcomingSessions(limit: number = 10) {
   const { data, error } = await supabase
     .from('training_sessions')
     .select('*, training_programs(name, category), training_enrollments(id)')
-    .eq('status', 'Upcoming')
+    .eq('status', 'Scheduled')
     .order('scheduled_date', { ascending: true })
     .limit(limit);
 

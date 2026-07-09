@@ -3,6 +3,7 @@ import {
   BarChart2,
   BookOpen,
   Building2,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -45,7 +46,9 @@ type EmployeeOption = { id: string; name: string; position: string; department: 
 import { EmployeeDevelopment } from './EmployeeDevelopment';
 import { PMReports } from './PMReports';
 import { SeminarEnrollment } from './SeminarEnrollment';
-import { TrainingCourses, type Course } from './TrainingCourses';
+import { TrainingCalendar } from './TrainingCalendar';
+import { TrainingCourses } from './TrainingCourses';
+import { CATEGORY_COLORS, TRAINING_CATEGORIES } from './trainingCategories';
 
 type DocumentRow = {
   no: number;
@@ -83,6 +86,7 @@ import { LndSummaryOfRatings } from './LndSummaryOfRatings';
 type MenuId =
   | 'dashboard'
   | 'summary-of-ratings'
+  | 'training-calendar'
   | 'training-courses'
   | 'seminar-enrollment'
   | 'employee-progress'
@@ -112,6 +116,7 @@ type StatCardProps = {
 const LND_MENU: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', sublabel: 'Overview and KPIs', icon: LayoutDashboard },
   { id: 'summary-of-ratings', label: 'Summary of Ratings', sublabel: 'IPCR performance data', icon: BarChart2 },
+  { id: 'training-calendar', label: 'Training Calendar', sublabel: 'This year’s trainings', icon: CalendarDays },
   { id: 'training-courses', label: 'Training Courses', sublabel: 'Courses and sessions', icon: BookOpen },
   { id: 'seminar-enrollment', label: 'Seminar Enrollment', sublabel: 'Registrations and slots', icon: ClipboardCheck },
   { id: 'employee-progress', label: 'Employee Development', sublabel: 'Employees and ratings', icon: Users },
@@ -193,20 +198,10 @@ const StatCard = ({ label, value, icon: Icon, color, sublabel }: StatCardProps) 
 
 // ── Dashboard constants ───────────────────────────────────────────────────────
 
-const TRAINING_CATEGORIES = [
-  'Cultural Transformation',
-  'Employee Development',
-  'Leadership',
-  'Technical',
-] as const;
-
-/** Fixed category colors — used consistently across all LnD pages (calendar chips, request tags, etc.). */
-export const CATEGORY_COLORS: Record<string, string> = {
-  'Cultural Transformation': '#7c3aed',
-  'Employee Development': '#0891b2',
-  'Leadership': '#d97706',
-  'Technical': '#16a34a',
-};
+// Categories and their colors are defined in ./trainingCategories so that
+// TrainingCourses and SeminarEnrollment can share them without importing this
+// module (which imports them). Re-exported here for existing callers.
+export { CATEGORY_COLORS };
 
 const COMPETENCY_LIST = [
   'Knowledge of Local Governance',
@@ -1646,7 +1641,6 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
 
 export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boolean }) => {
   const [activeModule, setActiveModule] = useState<MenuId>('dashboard');
-  const [courses, setCourses] = useState<Course[]>([]);
 
   // Lifted so AdminHeader notifications can deep-link into a specific report.
   const [showPMReports, setShowPMReports] = useState(false);
@@ -1665,8 +1659,10 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
             <LndDashboardContent />
           ) : activeModule === 'summary-of-ratings' ? (
             <LndSummaryOfRatings />
+          ) : activeModule === 'training-calendar' ? (
+            <TrainingCalendar />
           ) : activeModule === 'training-courses' ? (
-            <TrainingCourses courses={courses} onAddCourse={(newCourse) => setCourses((prev) => [...prev, newCourse])} />
+            <TrainingCourses />
           ) : activeModule === 'seminar-enrollment' ? (
             <SeminarEnrollment />
           ) : activeModule === 'employee-progress' ? (

@@ -922,9 +922,15 @@ function AppContent() {
               </AdminRoute>
             }
           />
+          {/* Requires an employee session; OfficeAccountConsole then denies anyone
+              without an Active office_role_assignments grant. */}
           <Route
             path="/office/dashboard"
-            element={<OfficeAccountConsole />}
+            element={
+              <EmployeeRoute session={employeeSession}>
+                <OfficeAccountConsole />
+              </EmployeeRoute>
+            }
           />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

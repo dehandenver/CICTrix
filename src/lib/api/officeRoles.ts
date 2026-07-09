@@ -89,6 +89,114 @@ async function logAudit(entry: {
   if (error) console.warn('[officeRoles] audit log failed:', error);
 }
 
+/**
+ * An office role this employee currently holds. `officeId` is a uuid FK to
+ * departments(id) — never match offices by name, the names in this database
+ * have case-variant duplicates and values absent from `departments`.
+ */
+export interface ActiveOfficeRole {
+  assignmentId: string;
+  role: OfficeRole;
+  officeId: string | null;
+  officeName: string | null;
+}
+
+/**
+ * Resolve whatever id the employee session happens to carry (`supabaseId` or
+ * `employeeId`) to the canonical `employees.id` that office_role_assignments
+ * keys on. Returns null if the id matches no employee.
+ */
+export async function resolveEmployeeId(sessionId: string): Promise<string | null> {
+  if (!sessionId) return null;
+  try {
+    const { data, error } = await supabase
+      .from('employees_with_department')
+      .select('id')
+      .or(`id.eq.${sessionId},employee_id.eq.${sessionId}`)
+      .maybeSingle();
+    if (error) return null;
+    return data?.id ? String(data.id) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Every Active office role the employee holds. This is the single source of
+ * truth for Office Account access and for Dept Head review gates — not the
+ * employee's job title, which carries no office and cannot be revoked, and not
+ * departments.head_employee_id, which has no status or audit trail.
+ *
+ * An employee may hold more than one (e.g. Supervisor of one office and Dept
+ * Head of another), so this returns a list rather than a single role.
+ */
+export async function getActiveOfficeRoles(employeeId: string): Promise<ActiveOfficeRole[]> {
+  if (!employeeId) return [];
+  try {
+    const { data, error } = await supabase
+      .from('office_role_assignments')
+      .select('id, role, office_id, office_name')
+      .eq('employee_id', employeeId)
+      .eq('status', 'Active');
+    if (error) {
+      console.error('[officeRoles] getActiveOfficeRoles failed:', error);
+      return [];
+    }
+    return (data ?? []).map((r: any) => ({
+      assignmentId: String(r.id),
+      role: r.role as OfficeRole,
+      officeId: r.office_id ? String(r.office_id) : null,
+      officeName: r.office_name ?? null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The employee's primary office role, or null if they hold none. DeptHead wins
+ * over Supervisor when both are held, since it is the more privileged of the two.
+ */
+export async function getActiveOfficeRole(employeeId: string): Promise<ActiveOfficeRole | null> {
+  const roles = await getActiveOfficeRoles(employeeId);
+  if (roles.length === 0) return null;
+  return roles.find((r) => r.role === 'DeptHead') ?? roles[0];
+}
+
+/** Whether this employee is the Dept Head of a specific office (by uuid). */
+export async function isDeptHeadOfOffice(employeeId: string, officeId: string): Promise<boolean> {
+  if (!employeeId || !officeId) return false;
+  const roles = await getActiveOfficeRoles(employeeId);
+  return roles.some((r) => r.role === 'DeptHead' && r.officeId === officeId);
+}
+
+/**
+ * The Dept Head currently assigned to an office, or null if the office has
+ * none. Page 4 uses this to explain *why* a draft cannot be reviewed rather
+ * than rendering an empty screen.
+ */
+export async function getOfficeDeptHead(
+  officeId: string,
+): Promise<{ employeeId: string | null; employeeName: string | null } | null> {
+  if (!officeId) return null;
+  try {
+    const { data, error } = await supabase
+      .from('office_role_assignments')
+      .select('employee_id, employee_name')
+      .eq('office_id', officeId)
+      .eq('role', 'DeptHead')
+      .eq('status', 'Active')
+      .maybeSingle();
+    if (error || !data) return null;
+    return {
+      employeeId: data.employee_id ? String(data.employee_id) : null,
+      employeeName: data.employee_name ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** List office-role assignments (active only by default). */
 export async function listAssignments(
   includeRevoked = false,

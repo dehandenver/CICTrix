@@ -31,6 +31,12 @@ import {
 import { LogoutConfirmPopover } from '../../../components/LogoutConfirmPopover';
 import { supabase } from '../../../lib/supabase';
 import {
+  getActiveOfficeRole,
+  resolveEmployeeId,
+  ROLE_LABELS,
+  type ActiveOfficeRole,
+} from '../../../lib/api/officeRoles';
+import {
   listTrainingRequestsDetailed,
   createTrainingRequest,
   logPostTrainingProficiency,
@@ -109,14 +115,6 @@ const INITIAL_TRANSMITTALS: TransmittalRecord[] = [
   { id: 'TX-002', batchId: 'BATCH-2025-02', verifiedCount: 3, transmittedAt: '2026-06-29 09:15', status: 'In PM Vault' }
 ];
 
-const IPCR_POSITIONS_ELIGIBLE_FOR_SWITCH = ['department head', 'supervisor'];
-
-function canSwitchAccount(position: string | null | undefined): boolean {
-  if (!position) return false;
-  const p = position.toLowerCase();
-  return IPCR_POSITIONS_ELIGIBLE_FOR_SWITCH.some((kw) => p.includes(kw));
-}
-
 export const OfficeAccountConsole: React.FC = () => {
   const navigate = useNavigate();
   const [showSwitchModal, setShowSwitchModal] = useState(false);
@@ -124,7 +122,10 @@ export const OfficeAccountConsole: React.FC = () => {
   // Logged-in office account user info
   const [currentUserName, setCurrentUserName] = useState<string>('Office User');
   const [currentUserPosition, setCurrentUserPosition] = useState<string | null>(null);
-  const [switchEnabled, setSwitchEnabled] = useState(false);
+  /** Derived from office_role_assignments, never from the employee's job title. */
+  const [officeRole, setOfficeRole] = useState<ActiveOfficeRole | null>(null);
+  const [officeRoleLoading, setOfficeRoleLoading] = useState(true);
+  const switchEnabled = officeRole !== null;
   // Navigation tabs: 'targets' | 'ratings' | 'training-requests'
   const [activeTab, setActiveTab] = useState<'targets' | 'ratings' | 'training-requests'>('targets');
 
@@ -160,7 +161,14 @@ export const OfficeAccountConsole: React.FC = () => {
   const [postTrainingScore, setPostTrainingScore] = useState<number>(4);
   const [isSubmittingEvaluation, setIsSubmittingEvaluation] = useState(false);
 
-  // Load current office account user info from session and check switch eligibility
+  // Load current office account user info and resolve their office role.
+  //
+  // Eligibility comes from office_role_assignments, which is a revocable,
+  // audited, office-scoped grant. It is deliberately NOT derived from
+  // current_position: a job title carries no office (so it cannot answer "Dept
+  // Head of *which* department?"), cannot be revoked without editing HR
+  // records, and was previously matched by substring — one rename away from
+  // silently granting or removing portal access.
   useEffect(() => {
     async function loadUserSession() {
       try {
@@ -169,19 +177,25 @@ export const OfficeAccountConsole: React.FC = () => {
         const session = JSON.parse(raw) as { employeeId?: string; fullName?: string; supabaseId?: string };
         if (session.fullName) setCurrentUserName(session.fullName);
 
-        // Look up position from employees_with_department using supabaseId or employee_id
-        const lookupId = session.supabaseId ?? session.employeeId;
-        if (!lookupId) return;
+        const sessionId = session.supabaseId ?? session.employeeId;
+        if (!sessionId) return;
+
+        const employeeId = await resolveEmployeeId(sessionId);
+        if (!employeeId) return;
+
+        // Job title is display-only here.
         const { data } = await (supabase as any)
           .from('employees_with_department')
           .select('current_position')
-          .or(`id.eq.${lookupId},employee_id.eq.${lookupId}`)
+          .eq('id', employeeId)
           .maybeSingle();
-        const pos: string | null = data?.current_position ?? null;
-        setCurrentUserPosition(pos);
-        setSwitchEnabled(canSwitchAccount(pos));
+        setCurrentUserPosition(data?.current_position ?? null);
+
+        setOfficeRole(await getActiveOfficeRole(employeeId));
       } catch {
-        // session missing or malformed — keep defaults
+        // session missing or malformed — keep defaults (no office role)
+      } finally {
+        setOfficeRoleLoading(false);
       }
     }
     void loadUserSession();
@@ -449,9 +463,47 @@ export const OfficeAccountConsole: React.FC = () => {
     setTimeout(() => setConsoleMessage(null), 6000);
   };
 
+  // Route guard. /office/dashboard was previously reachable by anyone who knew
+  // the URL. Access is now an Active office_role_assignments grant, nothing else.
+  if (officeRoleLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-100">
+        <p className="text-sm text-slate-500">Checking office access…</p>
+      </div>
+    );
+  }
+
+  if (!officeRole) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-100 px-6">
+        <div className="max-w-md rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-50 text-amber-600">
+            <Lock className="h-6 w-6" />
+          </div>
+          <h1 className="text-xl font-bold text-slate-900">No Office Account access</h1>
+          <p className="mt-2 text-sm text-slate-600">
+            The Office Account Console is available to employees holding an active Supervisor or
+            Department Head assignment. Your account has none.
+          </p>
+          <p className="mt-3 text-xs text-slate-400">
+            Access is granted in Access &amp; Role Management, not by job title. Ask a system
+            administrator to assign you an office role.
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate('/employee/dashboard')}
+            className="mt-6 rounded-lg bg-slate-800 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-900"
+          >
+            Back to Employee Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800">
-      
+
       {/* ── Top Header ── */}
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white shadow-sm print:hidden">
         <div className="flex items-center justify-between px-6 py-3">
@@ -553,7 +605,11 @@ export const OfficeAccountConsole: React.FC = () => {
                 )}
                 <div className="leading-tight text-left">
                   <p className="text-sm font-semibold text-slate-800">{currentUserName}</p>
-                  <p className="text-xs text-slate-500">{currentUserPosition ?? 'Office Account Console'}</p>
+                  <p className="text-xs text-slate-500">
+                    {ROLE_LABELS[officeRole.role]}
+                    {officeRole.officeName ? ` · ${officeRole.officeName}` : ''}
+                    {currentUserPosition ? ` · ${currentUserPosition}` : ''}
+                  </p>
                 </div>
               </div>
             </div>
