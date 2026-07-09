@@ -190,9 +190,11 @@ export const OfficeAccountConsole: React.FC = () => {
           .select('current_position')
           .eq('id', employeeId)
           .maybeSingle();
-        const pos: string | null = data?.current_position ?? null;
-        setCurrentUserPosition(pos);
-        // switchEnabled is derived from officeRole (see above), not stored.
+        setCurrentUserPosition(data?.current_position ?? null);
+
+        // The one thing that grants access. `switchEnabled` is derived from this,
+        // never stored, and never inferred from the employee's job title.
+        setOfficeRole(await getActiveOfficeRole(employeeId));
       } catch {
         // session missing or malformed — keep defaults (no office role)
       } finally {
