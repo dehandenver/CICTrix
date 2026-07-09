@@ -32,13 +32,6 @@ interface ApplicationRecord {
   disqualification_message_visible: boolean;
 }
 
-interface ActivityLogEntry {
-  event_type: string;
-  event_label: string;
-  event_description: string | null;
-  occurred_at: string;
-}
-
 interface AttachmentRow {
   id: string;
   file_name: string;
@@ -251,7 +244,6 @@ export const ApplicationStatusPage = () => {
   const [loading, setLoading] = useState(false);
   const [record, setRecord] = useState<ApplicationRecord | null>(null);
   const [attachments, setAttachments] = useState<AttachmentRow[]>([]);
-  const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>([]);
   const [docReviews, setDocReviews] = useState<Record<string, DocReview>>({});
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState('');
@@ -304,17 +296,6 @@ export const ApplicationStatusPage = () => {
 
   // Real audit trail (RLS only returns visible_to_applicant = true rows) —
   // powers the extra "Application Disqualified" timeline entry below.
-  const fetchActivityLog = async (applicantId: string) => {
-    try {
-      const { data, error: err } = await (supabase as any)
-        .from('application_activity_log')
-        .select('event_type, event_label, event_description, occurred_at')
-        .eq('application_id', applicantId)
-        .order('occurred_at', { ascending: false });
-      if (!err && Array.isArray(data)) setActivityLog(data as ActivityLogEntry[]);
-    } catch { /* silently ignore */ }
-  };
-
   // Reuses the same query column/value as the original handleSearch so we are
   // guaranteed to get fresh data even if UUID-based lookups are restricted by RLS.
   const fetchRecord = async () => {
@@ -360,7 +341,6 @@ export const ApplicationStatusPage = () => {
         if ((payload.new as { id?: string })?.id === rid) {
           void fetchRecord();
           void fetchAttachments(rid);
-          void fetchActivityLog(rid);
         }
       })
       .subscribe();
@@ -374,11 +354,9 @@ export const ApplicationStatusPage = () => {
     const rid = record.id;
     // Immediate first poll so we never show stale data after search
     void fetchRecord();
-    void fetchActivityLog(rid);
     const interval = setInterval(() => {
       void fetchAttachments(rid);
       void fetchRecord();
-      void fetchActivityLog(rid);
     }, 2000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -410,7 +388,6 @@ export const ApplicationStatusPage = () => {
     setSearched(false);
     setRecord(null);
     setAttachments([]);
-    setActivityLog([]);
     setDocReviews({});
     setUploadSuccess(null);
     setResolvedDocTypes(new Set());
@@ -442,7 +419,6 @@ export const ApplicationStatusPage = () => {
       searchParamsRef.current = { col: lookupColumn as 'item_number' | 'email', val: lookupValue };
       setRecord(mapped);
       await fetchAttachments(mapped.id);
-      await fetchActivityLog(mapped.id);
 
       // Load doc reviews from localStorage
       const allReviews = loadDocReviews();

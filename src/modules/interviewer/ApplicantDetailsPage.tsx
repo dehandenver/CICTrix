@@ -95,7 +95,7 @@ type EducationAttainmentValue =
   | 'masteral_units'
   | 'graduate_school';
 
-type TabKey = 'overview' | 'qualifications' | 'documents' | 'interview' | 'activity';
+type TabKey = 'overview' | 'qualifications' | 'documents' | 'interview';
 
 type ScoreBreakdown = {
   total: number;
@@ -1517,11 +1517,9 @@ export function ApplicantDetailsPage() {
     setShowResubmitModal(true);
   };
 
-  // `sendNotice` is the only difference between the modal's two actions.
-  // "Shortlist Only" records the identical resubmission request and status
-  // change but does not email the applicant — it is not a way to shortlist
-  // someone without naming a document and a reason.
-  const handleSubmitResubmission = async (sendNotice: boolean = true) => {
+  // "Send Notice" is the modal's only action: a resubmission request always
+  // names at least one document and a reason, and always emails the applicant.
+  const handleSubmitResubmission = async () => {
     if (resubmitSelectedSlots.length === 0 || !resubmitReason.trim()) return;
     if (!applicant) return;
     setResubmitSending(true);
@@ -1561,26 +1559,20 @@ export function ApplicantDetailsPage() {
     await persistStatus('action_required');
 
     // Attempt email; failure is non-blocking.
-    if (sendNotice) {
-      try {
-        const docList = resubmitSelectedSlots.map((s) => `• ${s}`).join('\n');
-        const notesSection = resubmitNotes.trim() ? `\n\nAdditional Notes from RSP:\n${resubmitNotes.trim()}` : '';
-        await sendEmail({
-          to: applicant.email,
-          subject: `Notice of Resubmission — ${resubmitSelectedSlots.join(', ')}`,
-          body: `Dear ${applicant.first_name},\n\nThe following submitted document(s) require resubmission:\n${docList}\n\nReason: ${resubmitReason.trim()}${notesSection}\n\nPlease log in to the Applicant Portal and re-upload the corrected document(s) at your earliest convenience.\n\nThank you,\nRecruitment Office`,
-          applicantId: applicant.id,
-        });
-      } catch (err) {
-        console.warn('[handleSubmitResubmission] Email failed:', err);
-      }
+    try {
+      const docList = resubmitSelectedSlots.map((s) => `• ${s}`).join('\n');
+      const notesSection = resubmitNotes.trim() ? `\n\nAdditional Notes from RSP:\n${resubmitNotes.trim()}` : '';
+      await sendEmail({
+        to: applicant.email,
+        subject: `Notice of Resubmission — ${resubmitSelectedSlots.join(', ')}`,
+        body: `Dear ${applicant.first_name},\n\nThe following submitted document(s) require resubmission:\n${docList}\n\nReason: ${resubmitReason.trim()}${notesSection}\n\nPlease log in to the Applicant Portal and re-upload the corrected document(s) at your earliest convenience.\n\nThank you,\nRecruitment Office`,
+        applicantId: applicant.id,
+      });
+    } catch (err) {
+      console.warn('[handleSubmitResubmission] Email failed:', err);
     }
 
-    setToast(
-      sendNotice
-        ? `Resubmission notice sent for ${resubmitSelectedSlots.length} document(s). Tracker updated.`
-        : `Shortlisted and recorded ${resubmitSelectedSlots.length} document(s) for resubmission. No email sent.`,
-    );
+    setToast(`Resubmission notice sent for ${resubmitSelectedSlots.length} document(s). Tracker updated.`);
     // Auto-close modal and reset state.
     setShowResubmitModal(false);
     setResubmitSelectedSlots([]);
@@ -1881,7 +1873,6 @@ export function ApplicantDetailsPage() {
             {[
               { key: 'overview', label: 'Overview', icon: User },
               { key: 'documents', label: 'Documents', icon: FileText },
-              { key: 'activity', label: 'Activity', icon: ActivityIcon },
             ].map((tab) => {
               const Icon = tab.icon;
               return (
@@ -2126,113 +2117,6 @@ export function ApplicantDetailsPage() {
                         </article>
                       );
                     })}
-                  </div>
-                </article>
-              )}
-
-              {activeTab === 'activity' && (
-                <article className="rounded-xl border border-slate-200">
-                  <h3 className="border-b border-slate-200 px-4 py-3 text-sm font-bold uppercase tracking-wide text-slate-500">Activity Timeline</h3>
-                  <div className="space-y-0 p-4">
-                    {(() => {
-                      // Build a chronological activity list from Supabase data.
-                      type ActivityEntry = { event: string; detail?: string; actor: string; date: string; tone: 'blue' | 'amber' | 'emerald' | 'slate' };
-                      const events: ActivityEntry[] = [];
-
-                      // 1. Application submitted / received
-                      if (applicant?.created_at) {
-                        events.push({ event: 'Application Submitted', detail: 'Application form completed and submitted by the applicant.', actor: fullName || 'Applicant', date: applicant.created_at, tone: 'blue' });
-                        events.push({ event: 'Application Received by RSP', detail: 'System automatically received and recorded the application.', actor: 'System', date: applicant.created_at, tone: 'slate' });
-                      }
-
-                      // 2. Process real attachments (non-notice)
-                      const realAttachments = attachments.filter((a) => a.document_type !== 'resubmission_request' && a.document_type !== 'resubmission_resolved');
-                      const noticeAttachments = attachments.filter((a) => a.document_type === 'resubmission_request');
-
-                      // Group real attachments by document_type to detect re-uploads
-                      const byType = new Map<string, AttachmentRecord[]>();
-                      realAttachments.forEach((a) => {
-                        const key = a.document_type || a.file_name || 'other';
-                        const existing = byType.get(key) ?? [];
-                        byType.set(key, [...existing, a]);
-                      });
-
-                      // Collect initial uploads (first version per type) into one batch event;
-                      // re-uploads (version 2+) remain individual since they are intentional actions.
-                      const initialBatch: { label: string; date: string }[] = [];
-                      byType.forEach((docs) => {
-                        const sorted = [...docs].sort((x, y) => new Date(x.created_at ?? '').getTime() - new Date(y.created_at ?? '').getTime());
-                        sorted.forEach((doc, i) => {
-                          const label = labelize(doc.document_type || doc.file_name || 'Document');
-                          if (i === 0) {
-                            initialBatch.push({ label, date: doc.created_at ?? applicant?.created_at ?? '' });
-                          } else {
-                            events.push({ event: `Document Re-uploaded — ${label}`, detail: `Applicant submitted a new version. File: ${doc.file_name}`, actor: fullName || 'Applicant', date: doc.created_at ?? '', tone: 'emerald' });
-                          }
-                        });
-                      });
-                      if (initialBatch.length > 0) {
-                        const earliest = initialBatch.reduce((min, d) => d.date < min ? d.date : min, initialBatch[0].date);
-                        const labels = initialBatch.map((d) => d.label).join(', ');
-                        events.push({
-                          event: `Documents Submitted — ${initialBatch.length} file${initialBatch.length > 1 ? 's' : ''}`,
-                          detail: labels,
-                          actor: fullName || 'Applicant',
-                          date: earliest,
-                          tone: 'blue',
-                        });
-                      }
-
-                      // 3. Resubmission notices
-                      noticeAttachments.forEach((notice) => {
-                        const parts = notice.file_name.split('::');
-                        const docLabel = parts[1] ?? notice.file_name;
-                        const reason = parts[2] ?? '';
-                        const notes = notice.file_path === '—' ? '' : notice.file_path;
-                        events.push({
-                          event: `Resubmission Requested — ${docLabel}`,
-                          detail: [reason ? `Reason: ${reason}` : '', notes ? `RSP Note: ${notes}` : ''].filter(Boolean).join(' · '),
-                          actor: 'RSP Admin',
-                          date: notice.created_at ?? '',
-                          tone: 'amber',
-                        });
-                      });
-
-                      // 4. Status update (from applicant.status if not default)
-                      const norm = normalizeText(applicant?.status ?? '');
-                      if (norm && norm !== 'pending' && norm !== 'new application' && applicant?.status) {
-                        const statusDate = (applicant as any).updated_at ?? applicant?.created_at ?? '';
-                        events.push({ event: `Status Updated — ${applicant.status}`, detail: 'RSP Admin updated the applicant\'s status.', actor: 'RSP Admin', date: statusDate, tone: norm.includes('qualif') || norm.includes('recommend') ? 'emerald' : norm.includes('disqual') || norm.includes('not qual') ? 'amber' : 'slate' });
-                      }
-
-                      // Sort all events chronologically (oldest first)
-                      events.sort((x, y) => new Date(x.date).getTime() - new Date(y.date).getTime());
-
-                      const TONE_DOT: Record<string, string> = {
-                        blue: 'bg-[#363EE8]',
-                        amber: 'bg-amber-500',
-                        emerald: 'bg-emerald-500',
-                        slate: 'bg-slate-400',
-                      };
-
-                      if (events.length === 0) {
-                        return <p className="text-sm text-slate-400">No activity yet.</p>;
-                      }
-
-                      return events.map((entry, idx) => (
-                        <div key={`${entry.event}-${idx}`} className="relative flex gap-3 pb-5 last:pb-0">
-                          {idx < events.length - 1 && (
-                            <span className="absolute left-[4.5px] top-5 h-[calc(100%-1rem)] w-px bg-slate-200" aria-hidden="true" />
-                          )}
-                          <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${TONE_DOT[entry.tone]}`} />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-semibold text-slate-900">{entry.event}</p>
-                            {entry.detail && <p className="mt-0.5 text-xs text-slate-500">{entry.detail}</p>}
-                            <p className="mt-0.5 text-xs text-slate-400">{formatDate(entry.date)} · {entry.actor}</p>
-                          </div>
-                        </div>
-                      ));
-                    })()}
                   </div>
                 </article>
               )}
@@ -2533,21 +2417,7 @@ export function ApplicantDetailsPage() {
               {resubmitSuccess && (
                 <p className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{resubmitSuccess}</p>
               )}
-              <div className="flex justify-between gap-3">
-                <button
-                  type="button"
-                  onClick={() => void handleSubmitResubmission(false)}
-                  disabled={resubmitSelectedSlots.length === 0 || !resubmitReason.trim() || resubmitSending}
-                  title={
-                    resubmitSelectedSlots.length === 0 || !resubmitReason.trim()
-                      ? 'Select at least one document and a reason first'
-                      : 'Record the resubmission request and shortlist, without emailing the applicant'
-                  }
-                  className="rounded-xl border px-5 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                  style={{ borderColor: '#363EE8', color: '#363EE8' }}
-                >
-                  Shortlist Only
-                </button>
+              <div className="flex justify-end gap-3">
                 <div className="flex gap-3">
                   <button
                     type="button"
@@ -2561,7 +2431,7 @@ export function ApplicantDetailsPage() {
                   {!resubmitSuccess && (
                     <button
                       type="button"
-                      onClick={() => void handleSubmitResubmission(true)}
+                      onClick={() => void handleSubmitResubmission()}
                       disabled={resubmitSelectedSlots.length === 0 || !resubmitReason.trim() || resubmitSending}
                       className="inline-flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                       style={{ backgroundColor: '#363EE8' }}
