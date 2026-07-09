@@ -69,17 +69,38 @@ export function generateIpcrPdf(data: IpcrPdfData): File {
     align: 'center',
   });
 
-  // ── Commitment sentence ──────────────────────────────────────────────────
+  // ── Rating-scale legend box (top-right, matching the reference form) ──────
+  const rsW = 54;
+  const rsX = pageW - margin - rsW;
+  const rsY = margin + 4;
+  const rsLines = [
+    '5 - OUTSTANDING',
+    '4 - VERY SATISFACTORY',
+    '3 - SATISFACTORY',
+    '2 - UNSATISFACTORY',
+    '1 - POOR',
+  ];
+  const rsH = 5 + rsLines.length * 3.1 + 2;
+  doc.setDrawColor(120);
+  doc.rect(rsX, rsY, rsW, rsH);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7);
+  doc.text('RATING SCALE', rsX + rsW / 2, rsY + 3.5, { align: 'center' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.5);
+  rsLines.forEach((l, i) => doc.text(l, rsX + 2, rsY + 7.5 + i * 3.1));
+
+  // ── Commitment sentence (wraps to the left of the rating-scale box) ───────
   let y = margin + 8;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
   const commit =
-    `I, ${data.employeeName || '—'}, ${data.position || '—'} of ${data.department || '—'}, ` +
+    `I, ${data.employeeName || '—'}, ${data.position || '—'} at the ${data.department || '—'}, ` +
     `commit to deliver and agree to be rated on the attainment of the following targets in ` +
     `accordance with the indicated measures for the period ${data.period || '—'}.`;
-  const commitLines = doc.splitTextToSize(commit, usableW);
+  const commitLines = doc.splitTextToSize(commit, usableW - rsW - 6);
   doc.text(commitLines, margin, y);
-  y += commitLines.length * 4 + 3;
+  y = Math.max(y + commitLines.length * 4, rsY + rsH) + 3;
 
   // ── Signatory header (Reviewed by / Approved by / Date) ──────────────────
   doc.setFontSize(8);
@@ -197,8 +218,8 @@ export function generateIpcrPdf(data: IpcrPdfData): File {
   drawTableHeader();
 
   const sections: Array<{ key: 'core' | 'strategic' | 'support'; title: string }> = [
-    { key: 'core', title: 'CORE FUNCTIONS' },
     { key: 'strategic', title: 'STRATEGIC PRIORITY' },
+    { key: 'core', title: 'CORE FUNCTIONS' },
     { key: 'support', title: 'SUPPORT FUNCTIONS' },
   ];
   for (const sec of sections) {
@@ -211,34 +232,21 @@ export function generateIpcrPdf(data: IpcrPdfData): File {
     }
   }
 
-  // ── Rating scale legend ──────────────────────────────────────────────────
-  y += 3;
-  ensureSpace(6);
-  doc.setFont('helvetica', 'italic');
-  doc.setFontSize(6.5);
-  doc.setTextColor(90);
-  doc.text(
-    'Rating Scale:  5 - Outstanding   4 - Very Satisfactory   3 - Satisfactory   2 - Unsatisfactory   1 - Poor',
-    margin,
-    y,
-  );
-  doc.setTextColor(0);
-  y += 6;
-
   // ── Average Rating summary table ─────────────────────────────────────────
+  // Columns match the reference form: Category · MFO · Average · % Weight · Rating.
   const byKey = (k: 'core' | 'strategic' | 'support') =>
     data.rows.find((r) => sectionOf(r.category) === k)?.rating ?? null;
+  const countOf = (k: 'core' | 'strategic' | 'support') =>
+    data.rows.filter((r) => sectionOf(r.category) === k).length;
 
-  ensureSpace(48);
+  y += 4;
+  ensureSpace(52);
   const sumX = margin;
-  const sc = { cat: 66, avg: 30, wt: 30, rate: 30 };
-  const sumW = sc.cat + sc.avg + sc.wt + sc.rate;
+  const sc = { cat: 60, mfo: 18, avg: 26, wt: 26, rate: 26 };
+  const sumW = sc.cat + sc.mfo + sc.avg + sc.wt + sc.rate;
   const rowHt = 5;
   const sumRow = (
-    cat: string,
-    avg: string,
-    wt: string,
-    rate: string,
+    cells: [string, string, string, string, string],
     opts: { header?: boolean; bold?: boolean } = {},
   ) => {
     if (opts.header) {
@@ -248,14 +256,14 @@ export function generateIpcrPdf(data: IpcrPdfData): File {
     doc.setFont('helvetica', opts.header || opts.bold ? 'bold' : 'normal');
     doc.setFontSize(7);
     doc.setDrawColor(150);
-    doc.rect(sumX, y, sc.cat, rowHt);
-    doc.rect(sumX + sc.cat, y, sc.avg, rowHt);
-    doc.rect(sumX + sc.cat + sc.avg, y, sc.wt, rowHt);
-    doc.rect(sumX + sc.cat + sc.avg + sc.wt, y, sc.rate, rowHt);
-    doc.text(cat, sumX + pad, y + 3.4);
-    doc.text(avg, sumX + sc.cat + sc.avg / 2, y + 3.4, { align: 'center' });
-    doc.text(wt, sumX + sc.cat + sc.avg + sc.wt / 2, y + 3.4, { align: 'center' });
-    doc.text(rate, sumX + sc.cat + sc.avg + sc.wt + sc.rate / 2, y + 3.4, { align: 'center' });
+    const widths = [sc.cat, sc.mfo, sc.avg, sc.wt, sc.rate];
+    let cx = sumX;
+    widths.forEach((w, i) => {
+      doc.rect(cx, y, w, rowHt);
+      if (i === 0) doc.text(cells[i], cx + pad, y + 3.4);
+      else doc.text(cells[i], cx + w / 2, y + 3.4, { align: 'center' });
+      cx += w;
+    });
     y += rowHt;
   };
 
@@ -263,40 +271,86 @@ export function generateIpcrPdf(data: IpcrPdfData): File {
   doc.setFontSize(8);
   doc.text('Average Rating', sumX, y - 1);
   y += 2;
-  sumRow('Category', 'Average', '% Weight', 'Rating', { header: true });
-  sumRow('Strategic Priority', fmtRating(byKey('strategic')), '', fmtRating(byKey('strategic')));
-  sumRow('Core Functions', fmtRating(byKey('core')), '', fmtRating(byKey('core')));
-  sumRow('Support Functions', fmtRating(byKey('support')), '', fmtRating(byKey('support')));
-  sumRow('Total Overall Rating', '', '', fmtRating(data.overallScore), { bold: true });
-  sumRow('Final Average Rating', '', '', fmtRating(data.overallScore), { bold: true });
-  sumRow('Adjectival Rating', '', '', data.adjectival || '', { bold: true });
+  sumRow(['Category', 'MFO', 'Average', '% Weight', 'Rating'], { header: true });
+  sumRow([
+    'Strategic Priority',
+    String(countOf('strategic')),
+    fmtRating(byKey('strategic')),
+    '',
+    fmtRating(byKey('strategic')),
+  ]);
+  sumRow([
+    'Core Functions',
+    String(countOf('core')),
+    fmtRating(byKey('core')),
+    '',
+    fmtRating(byKey('core')),
+  ]);
+  sumRow([
+    'Support Functions',
+    String(countOf('support')),
+    fmtRating(byKey('support')),
+    '',
+    fmtRating(byKey('support')),
+  ]);
+  sumRow(['Total Overall Rating', '', '', '', fmtRating(data.overallScore)], { bold: true });
+  sumRow(['Final Average Rating', '', '', '', fmtRating(data.overallScore)], { bold: true });
+  sumRow(['Adjectival Rating', '', '', '', data.adjectival || ''], { bold: true });
+
+  // ── Comments & recommendations box ───────────────────────────────────────
+  y += 5;
+  ensureSpace(18);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.text('Comments & recommendations:', margin, y);
+  y += 1.5;
+  doc.setDrawColor(150);
+  doc.rect(margin, y, usableW, 12);
+  y += 12 + 6;
 
   // ── Signature blocks ─────────────────────────────────────────────────────
-  y += 8;
-  ensureSpace(20);
+  ensureSpace(24);
   const sigW = usableW / 3;
-  const sigBlock = (i: number, roleLabel: string, name: string, subLabel: string) => {
+  const sigBlock = (
+    i: number,
+    roleLabel: string,
+    name: string,
+    subLabel: string,
+    certify?: string,
+  ) => {
     const x = margin + sigW * i;
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.setTextColor(90);
     doc.text(roleLabel, x, y);
+    if (certify) {
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(5.8);
+      const cl = doc.splitTextToSize(certify, sigW - 6) as string[];
+      doc.text(cl, x, y + 3);
+    }
     doc.setTextColor(0);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
-    doc.text(name || '____________________', x, y + 8);
+    doc.text(name || '____________________', x, y + 9);
     doc.setDrawColor(150);
-    doc.line(x, y + 9, x + sigW - 6, y + 9);
+    doc.line(x, y + 10, x + sigW - 6, y + 10);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6.5);
     doc.setTextColor(90);
-    doc.text(subLabel, x, y + 12.5);
+    doc.text(subLabel, x, y + 13.5);
     doc.setTextColor(0);
   };
   sigBlock(0, 'Discussed with:', data.employeeName, 'Employee · Signature over Printed Name / Date');
-  sigBlock(1, 'Assessed by:', '', 'Immediate Supervisor / Date');
+  sigBlock(
+    1,
+    'Assessed by:',
+    '',
+    'Immediate Supervisor / Date',
+    'I certify that I discussed my assessment of the performance with the employee.',
+  );
   sigBlock(2, 'Final Rating by:', '', 'Head of Office / Date');
-  y += 18;
+  y += 19;
 
   // ── Footer ───────────────────────────────────────────────────────────────
   ensureSpace(8);
