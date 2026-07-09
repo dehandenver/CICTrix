@@ -192,7 +192,7 @@ export const OfficeAccountConsole: React.FC = () => {
           .maybeSingle();
         const pos: string | null = data?.current_position ?? null;
         setCurrentUserPosition(pos);
-        setSwitchEnabled(canSwitchAccount(pos));
+        // switchEnabled is derived from officeRole (see above), not stored.
       } catch {
         // session missing or malformed — keep defaults (no office role)
       } finally {
