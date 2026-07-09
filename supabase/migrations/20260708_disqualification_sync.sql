@@ -27,6 +27,9 @@ BEGIN;
 -- 1) applicants — disqualification audit fields
 ALTER TABLE applicants
   ADD COLUMN IF NOT EXISTS disqualified_at timestamptz,
+  -- Legacy free-text reason. Written by ApplicantDetailsPage/QualifiedApplicantsPage
+  -- and read by the tracker, but never created by an earlier migration.
+  ADD COLUMN IF NOT EXISTS disqualification_reason text,
   ADD COLUMN IF NOT EXISTS disqualification_reason_category text,
   ADD COLUMN IF NOT EXISTS disqualification_message text,
   ADD COLUMN IF NOT EXISTS disqualification_message_visible boolean NOT NULL DEFAULT false,
