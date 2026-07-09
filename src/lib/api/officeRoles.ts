@@ -101,20 +101,34 @@ export interface ActiveOfficeRole {
   officeName: string | null;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Resolve whatever id the employee session happens to carry (`supabaseId` or
  * `employeeId`) to the canonical `employees.id` that office_role_assignments
  * keys on. Returns null if the id matches no employee.
+ *
+ * The two ids have different types: `employees.id` is a uuid, while
+ * `employees_with_department.employee_id` is a human code like "EMP-2024-001".
+ * Querying them together with `.or(id.eq.X,employee_id.eq.X)` makes Postgres
+ * cast X to uuid for the first branch, so a session carrying an employee code
+ * fails the whole query with 22P02 rather than matching the second branch.
+ * Pick the column by the shape of the value instead.
  */
 export async function resolveEmployeeId(sessionId: string): Promise<string | null> {
   if (!sessionId) return null;
   try {
+    const column = UUID_RE.test(sessionId) ? 'id' : 'employee_id';
     const { data, error } = await supabase
       .from('employees_with_department')
       .select('id')
-      .or(`id.eq.${sessionId},employee_id.eq.${sessionId}`)
+      .eq(column, sessionId)
+      .limit(1)
       .maybeSingle();
-    if (error) return null;
+    if (error) {
+      console.error('[officeRoles] resolveEmployeeId failed:', error);
+      return null;
+    }
     return data?.id ? String(data.id) : null;
   } catch {
     return null;
