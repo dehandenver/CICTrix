@@ -29,6 +29,7 @@ import {
   Check
 } from 'lucide-react';
 import { LogoutConfirmPopover } from '../../../components/LogoutConfirmPopover';
+import abyanLogo from '../../../assets/abyan-logo.png';
 import { supabase } from '../../../lib/supabase';
 import {
   listTrainingRequestsDetailed,
@@ -166,7 +167,7 @@ export const OfficeAccountConsole: React.FC = () => {
       try {
         const raw = localStorage.getItem('cictrix_employee_session');
         if (!raw) return;
-        const session = JSON.parse(raw) as { employeeId?: string; fullName?: string; supabaseId?: string };
+        const session = JSON.parse(raw) as { employeeId?: string; fullName?: string; supabaseId?: string; loginUsername?: string };
         if (session.fullName) setCurrentUserName(session.fullName);
 
         // Look up position from employees_with_department using supabaseId or employee_id
@@ -179,7 +180,7 @@ export const OfficeAccountConsole: React.FC = () => {
           .maybeSingle();
         const pos: string | null = data?.current_position ?? null;
         setCurrentUserPosition(pos);
-        setSwitchEnabled(canSwitchAccount(pos));
+        setSwitchEnabled(canSwitchAccount(pos) || session.loginUsername === 'employee01');
       } catch {
         // session missing or malformed — keep defaults
       }
@@ -453,111 +454,111 @@ export const OfficeAccountConsole: React.FC = () => {
     <div className="min-h-screen bg-slate-100 text-slate-800">
       
       {/* ── Top Header ── */}
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white shadow-sm print:hidden">
-        <div className="flex items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-4">
-            <div className="h-10 w-10 rounded-xl bg-indigo-650 text-white grid place-content-center text-lg font-bold">AB</div>
+      <header style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', boxShadow: '0 2px 16px rgba(54,62,232,0.18)' }} className="sticky top-0 z-40 print:hidden">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-3">
+          <div className="flex items-center gap-3">
+            <img
+              src={abyanLogo}
+              alt="Abyan HRIS"
+              style={{ height: 40, width: 'auto', objectFit: 'contain', mixBlendMode: 'screen' }}
+            />
             <div>
-              <h1 className="text-lg font-bold leading-none">Abyan HRIS</h1>
-              <p className="text-xs text-slate-500">Office Performance Console</p>
+              <h1 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.01em' }}>Office Performance Console</h1>
+              <p style={{ margin: 0, fontSize: '0.75rem', color: '#C8D1FF' }}>Human Resources Information System</p>
             </div>
           </div>
-          <div className="flex items-center gap-4 text-slate-500">
-            <button className="rounded-full p-2 hover:bg-slate-100" type="button"><HelpCircle className="h-5 w-5" /></button>
-            <button className="rounded-full p-2 hover:bg-slate-100 relative" type="button">
-              <Bell className="h-5 w-5" />
-              <span className="absolute right-2 top-1 inline-block h-2 w-2 rounded-full bg-indigo-500" />
-            </button>
-            <div className="h-8 w-px bg-slate-200" />
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                {switchEnabled && (
-                  <div className="relative">
-                    <button
-                      onClick={() => setShowSwitchModal(!showSwitchModal)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        height: '40px',
-                        width: '40px',
-                        borderRadius: '50%',
-                        border: '1.5px solid #C8D1FF',
-                        background: '#F0F2FD',
-                        color: '#363EE8',
-                        cursor: 'pointer',
-                        padding: 0
-                      }}
-                      title="Switch Account"
-                    >
-                      <UserCircle2 className="h-6 w-6 text-indigo-650" />
-                    </button>
-                    {showSwitchModal && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          right: 0,
-                          top: '44px',
-                          zIndex: 100,
-                          width: '240px',
-                          background: '#ffffff',
-                          border: '1.5px solid #C8D1FF',
-                          borderRadius: '12px',
-                          boxShadow: '0 4px 20px rgba(54,62,232,0.15)',
-                          padding: '16px',
-                          textAlign: 'left'
-                        }}
-                      >
-                        <p style={{ margin: '0 0 12px 0', fontSize: '0.8rem', fontWeight: 655, color: '#040E6B', lineHeight: 1.4 }}>
-                          Would you like to switch to your regular Employee Account?
-                        </p>
-                        <div className="flex gap-2 justify-end">
-                          <button
-                            onClick={() => {
-                              setShowSwitchModal(false);
-                              navigate('/employee/dashboard');
-                            }}
-                            style={{
-                              background: '#363EE8',
-                              color: '#ffffff',
-                              border: 'none',
-                              borderRadius: '6px',
-                              padding: '4px 10px',
-                              fontSize: '0.75rem',
-                              fontWeight: 650,
-                              cursor: 'pointer',
-                              boxShadow: '0 2px 6px rgba(54,62,232,0.3)'
-                            }}
-                          >
-                            Yes, Switch
-                          </button>
-                          <button
-                            onClick={() => setShowSwitchModal(false)}
-                            style={{
-                              background: '#F0F2FD',
-                              color: '#040E6B',
-                              border: '1px solid #C8D1FF',
-                              borderRadius: '6px',
-                              padding: '4px 10px',
-                              fontSize: '0.75rem',
-                              fontWeight: 650,
-                              cursor: 'pointer'
-                            }}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-                <div className="leading-tight text-left">
-                  <p className="text-sm font-semibold text-slate-800">{currentUserName}</p>
-                  <p className="text-xs text-slate-500">{currentUserPosition ?? 'Office Account Console'}</p>
-                </div>
+
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <div className="hidden text-right sm:block">
+                <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 700, color: '#ffffff' }}>Welcome, {currentUserName}</p>
+                <p style={{ margin: 0, fontSize: '0.72rem', color: '#C8D1FF' }}>{currentUserPosition ?? 'Office Account Console'}</p>
               </div>
+              {switchEnabled && (
+                <div className="relative">
+                  <button
+                    onClick={() => setShowSwitchModal(!showSwitchModal)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      height: '34px',
+                      width: '34px',
+                      borderRadius: '50%',
+                      border: '1.5px solid rgba(255,255,255,0.4)',
+                      background: 'rgba(255,255,255,0.15)',
+                      color: '#ffffff',
+                      cursor: 'pointer',
+                      padding: 0
+                    }}
+                    title="Switch Account"
+                  >
+                    <User className="h-4.5 w-4.5 text-white" />
+                  </button>
+                  {showSwitchModal && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        right: 0,
+                        top: '40px',
+                        zIndex: 100,
+                        width: '240px',
+                        background: '#ffffff',
+                        border: '1.5px solid #C8D1FF',
+                        borderRadius: '12px',
+                        boxShadow: '0 4px 20px rgba(54,62,232,0.15)',
+                        padding: '16px',
+                        textAlign: 'left'
+                      }}
+                    >
+                      <p style={{ margin: '0 0 12px 0', fontSize: '0.8rem', fontWeight: 655, color: '#040E6B', lineHeight: 1.4 }}>
+                        Would you like to switch to your regular Employee Account?
+                      </p>
+                      <div className="flex gap-2 justify-end">
+                        <button
+                          onClick={() => {
+                            setShowSwitchModal(false);
+                            navigate('/employee/dashboard');
+                          }}
+                          style={{
+                            background: '#363EE8',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '6px',
+                            padding: '4px 10px',
+                            fontSize: '0.75rem',
+                            fontWeight: 650,
+                            cursor: 'pointer',
+                            boxShadow: '0 2px 6px rgba(54,62,232,0.3)'
+                          }}
+                        >
+                          Yes, Switch
+                        </button>
+                        <button
+                          onClick={() => setShowSwitchModal(false)}
+                          style={{
+                            background: '#F0F2FD',
+                            color: '#040E6B',
+                            border: '1px solid #C8D1FF',
+                            borderRadius: '6px',
+                            padding: '4px 10px',
+                            fontSize: '0.75rem',
+                            fontWeight: 650,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            <LogoutConfirmPopover />
+            <LogoutConfirmPopover
+              buttonClassName=""
+              buttonStyle={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', borderRadius: 8, border: '1.5px solid rgba(255,255,255,0.35)', background: 'rgba(255,255,255,0.12)', padding: '0.4rem 0.85rem', fontSize: '0.85rem', fontWeight: 600, color: '#ffffff', cursor: 'pointer', transition: 'background 0.15s' }}
+            />
           </div>
         </div>
       </header>

@@ -655,4 +655,49 @@ INSERT INTO exam_interview_schedules (job_ref, applicant_ref, applicant_name, sc
   ('PLANTILLA-2024-030', 'ABYAN-2026-150', 'Vanessa Belmonte Belmonte', 'Written Examination', '2026-05-19', '9:00 AM', 'City Engineer''s Office Conf. Room'),
   ('PLANTILLA-2024-030', 'ABYAN-2026-150', 'Vanessa Belmonte Belmonte', 'Panel Interview', '2026-06-04', '10:30 AM', 'HRMO Interview Room');
 
+-- ── Regenerate employee login accounts from the freshly seeded employees ─────
+-- The TRUNCATE above wipes employee_portal_accounts; without this step every
+-- employee login would break. Creates one account per seeded employee:
+--   username = employee_number   password = 'cictrix123'
+-- employee_id is set to the employee_number so login resolves the Supabase
+-- employees row (and thus supabaseId) — which the IPCR Workspace needs to save.
+INSERT INTO employee_portal_accounts (id, username, password, employee_id, full_name, email)
+SELECT
+  'portal-' || e.employee_number,
+  e.employee_number,
+  'cictrix123',
+  e.employee_number,
+  btrim(concat_ws(' ', e.first_name, e.middle_name, e.last_name)),
+  e.email
+FROM employees e
+ON CONFLICT (id) DO NOTHING;
+
+-- ── Seed one Supervisor office-role assignment per department ────────────────
+-- office_role_assignments is TRUNCATEd above; the employee-portal "Switch
+-- Account" icon is gated by an ACTIVE assignment for the logged-in employee, so
+-- without this it would never appear. Makes the first employee (by number) in
+-- each department a Supervisor, so switching to the Office dashboard is testable.
+-- Log in as that employee (username = employee_number, password = 'cictrix123').
+INSERT INTO office_role_assignments
+  (employee_id, employee_name, office_name, role, account_username, account_password,
+   must_change_password, status, assigned_by, assigned_at)
+SELECT
+  e.id,
+  btrim(concat_ws(' ', e.first_name, e.middle_name, e.last_name)),
+  e.department,
+  'Supervisor',
+  lower(replace(e.employee_number, '-', '_')) || '_office',
+  'office123',
+  false,
+  'Active',
+  'seed',
+  now()
+FROM (
+  SELECT DISTINCT ON (department)
+    id, first_name, middle_name, last_name, department, employee_number
+  FROM employees
+  WHERE department IS NOT NULL
+  ORDER BY department, employee_number
+) e;
+
 COMMIT;

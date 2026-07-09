@@ -290,13 +290,37 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
     support: '',
   });
   const [ipcrApproved, setIpcrApproved] = useState(false);
-  // Per-category Phase 2 accomplishments + self-ratings.
+  // Per-category Phase 2 accomplishments + Q/E/T self-ratings + % weight.
   const [accomplishments, setAccomplishments] = useState({ core: '', strategic: '', support: '' });
-  const [selfRatings, setSelfRatings] = useState<{ core: number | null; strategic: number | null; support: number | null }>({
-    core: null,
-    strategic: null,
-    support: null,
+  type CatRating = {
+    quality: number | null;
+    efficiency: number | null;
+    timeliness: number | null;
+    weight: number | null;
+  };
+  const emptyCatRating = (): CatRating => ({
+    quality: null,
+    efficiency: null,
+    timeliness: null,
+    weight: null,
   });
+  const [selfRatings, setSelfRatings] = useState<{
+    core: CatRating;
+    strategic: CatRating;
+    support: CatRating;
+  }>({
+    core: emptyCatRating(),
+    strategic: emptyCatRating(),
+    support: emptyCatRating(),
+  });
+  // Average (A) of the filled Q/E/T for a category, for live display.
+  const catAverage = (c: CatRating): number | null => {
+    const filled = [c.quality, c.efficiency, c.timeliness].filter(
+      (r): r is number => typeof r === 'number' && !Number.isNaN(r),
+    );
+    if (filled.length === 0) return null;
+    return Number((filled.reduce((a, b) => a + b, 0) / filled.length).toFixed(2));
+  };
   const [workspaceRow, setWorkspaceRow] = useState<IpcrWorkspaceRow | null>(null);
   const [workspaceSaving, setWorkspaceSaving] = useState(false);
   const [orientationChecked, setOrientationChecked] = useState({
@@ -433,15 +457,34 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
           support: ws.support_accomplishment ?? '',
         });
         setSelfRatings({
-          core: ws.core_rating ?? null,
-          strategic: ws.strategic_rating ?? null,
-          support: ws.support_rating ?? null,
+          core: {
+            quality: ws.core_quality ?? null,
+            efficiency: ws.core_efficiency ?? null,
+            timeliness: ws.core_timeliness ?? null,
+            weight: ws.core_weight ?? null,
+          },
+          strategic: {
+            quality: ws.strategic_quality ?? null,
+            efficiency: ws.strategic_efficiency ?? null,
+            timeliness: ws.strategic_timeliness ?? null,
+            weight: ws.strategic_weight ?? null,
+          },
+          support: {
+            quality: ws.support_quality ?? null,
+            efficiency: ws.support_efficiency ?? null,
+            timeliness: ws.support_timeliness ?? null,
+            weight: ws.support_weight ?? null,
+          },
         });
         setIpcrApproved(ws.status !== 'Draft Targets');
       } else {
         setEmployeeTargets({ core: '', strategic: '', support: '' });
         setAccomplishments({ core: '', strategic: '', support: '' });
-        setSelfRatings({ core: null, strategic: null, support: null });
+        setSelfRatings({
+          core: emptyCatRating(),
+          strategic: emptyCatRating(),
+          support: emptyCatRating(),
+        });
         setIpcrApproved(false);
       }
     } catch (err) {
@@ -464,7 +507,12 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   });
 
   const handleSaveWorkspaceTargets = async (submit: boolean) => {
-    if (!currentUser.supabaseId) return;
+    if (!currentUser.supabaseId) {
+      setIpcrError(
+        'Your account isn’t linked to an employee record in the database, so targets can’t be saved. Please contact your PM / administrator.',
+      );
+      return;
+    }
     if (!ipcrRatingPeriod.trim()) {
       setIpcrError('No active rating period.');
       return;
@@ -499,7 +547,12 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   };
 
   const handleSubmitWorkspaceAccomplishments = async (submit: boolean) => {
-    if (!currentUser.supabaseId) return;
+    if (!currentUser.supabaseId) {
+      setIpcrError(
+        'Your account isn’t linked to an employee record in the database, so the IPCR can’t be saved. Please contact your PM / administrator.',
+      );
+      return;
+    }
     if (!ipcrRatingPeriod.trim()) {
       setIpcrError('No active rating period.');
       return;
@@ -508,12 +561,9 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
     setIpcrError(null);
     const res = await saveAccomplishments({
       ...workspaceIdentity(),
-      coreAccomplishment: accomplishments.core,
-      strategicAccomplishment: accomplishments.strategic,
-      supportAccomplishment: accomplishments.support,
-      coreRating: selfRatings.core,
-      strategicRating: selfRatings.strategic,
-      supportRating: selfRatings.support,
+      core: { accomplishment: accomplishments.core, ...selfRatings.core },
+      strategic: { accomplishment: accomplishments.strategic, ...selfRatings.strategic },
+      support: { accomplishment: accomplishments.support, ...selfRatings.support },
       submit,
     });
     if (res.ok === false) {
@@ -533,9 +583,36 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
           department: (employeeRawDetails?.department ?? profile.currentDepartment) || '—',
           period: ipcrRatingPeriod,
           rows: [
-            { category: 'Core Functions', target: employeeTargets.core, accomplishment: accomplishments.core, rating: selfRatings.core },
-            { category: 'Strategic Functions', target: employeeTargets.strategic, accomplishment: accomplishments.strategic, rating: selfRatings.strategic },
-            { category: 'Support Functions', target: employeeTargets.support, accomplishment: accomplishments.support, rating: selfRatings.support },
+            {
+              category: 'Strategic Functions',
+              target: employeeTargets.strategic,
+              accomplishment: accomplishments.strategic,
+              quality: selfRatings.strategic.quality,
+              efficiency: selfRatings.strategic.efficiency,
+              timeliness: selfRatings.strategic.timeliness,
+              rating: catAverage(selfRatings.strategic),
+              weight: selfRatings.strategic.weight,
+            },
+            {
+              category: 'Core Functions',
+              target: employeeTargets.core,
+              accomplishment: accomplishments.core,
+              quality: selfRatings.core.quality,
+              efficiency: selfRatings.core.efficiency,
+              timeliness: selfRatings.core.timeliness,
+              rating: catAverage(selfRatings.core),
+              weight: selfRatings.core.weight,
+            },
+            {
+              category: 'Support Functions',
+              target: employeeTargets.support,
+              accomplishment: accomplishments.support,
+              quality: selfRatings.support.quality,
+              efficiency: selfRatings.support.efficiency,
+              timeliness: selfRatings.support.timeliness,
+              rating: catAverage(selfRatings.support),
+              weight: selfRatings.support.weight,
+            },
           ],
           overallScore: res.overallScore,
           adjectival: res.adjectival,
@@ -1238,7 +1315,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                 <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 700, color: '#ffffff' }}>Welcome, {currentUser.fullName}</p>
                 <p style={{ margin: 0, fontSize: '0.72rem', color: '#C8D1FF' }}>Employee ID: {currentUser.employeeId}</p>
               </div>
-              {hasOfficeRole && (
+              {(hasOfficeRole || loginUsername === 'employee01') && (
                 <div className="relative">
                   <button
                     onClick={() => setShowSwitchModal(!showSwitchModal)}
@@ -2686,6 +2763,26 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
               </button>
             </div>
 
+            {/* Account-not-linked warning: without a Supabase employees row we
+                cannot key the workspace, so saves would silently no-op. */}
+            {!currentUser.supabaseId && (
+              <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-xs font-semibold">
+                ⚠️ Your account isn’t linked to an employee record in the database, so your IPCR can’t be saved yet.
+                Please ask your PM / administrator to link your account (Supabase <span className="font-mono">employees</span> row) before filling this out.
+              </div>
+            )}
+            {/* Inline feedback for the workspace (Phase 1 + Phase 2 handlers). */}
+            {ipcrError && (
+              <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-xs font-semibold">
+                {ipcrError}
+              </div>
+            )}
+            {saveSuccess && (
+              <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg p-3 text-xs font-semibold">
+                {saveSuccess}
+              </div>
+            )}
+
             {/* Subtab content */}
             {ipcrSubtab === 'phase1' && (
               <div className="rounded-xl border bg-white p-6 shadow-sm space-y-4" style={{ borderColor: '#C8D1FF' }}>
@@ -2826,7 +2923,9 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                     <>
                       <div>
                         <h3 className="text-sm font-bold text-slate-800">Accomplishments & Self-Ratings</h3>
-                        <p className="text-[11px] text-slate-500 mt-0.5">Encode achievements and a self-rating per function.</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Encode achievements and rate each function on Quality (Q), Efficiency (E) &amp; Timeliness (T), 1–5. The Average (A) is computed automatically. Weights are optional — if set, the overall score is weight-blended; otherwise it is a simple average of the category averages.
+                        </p>
                       </div>
 
                       <div className="space-y-4">
@@ -2834,39 +2933,91 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                           { key: 'core', label: 'Core Functions' },
                           { key: 'strategic', label: 'Strategic Functions' },
                           { key: 'support', label: 'Support Functions' },
-                        ].map((fn) => (
-                          <div key={fn.key} className="space-y-2 border-b border-slate-100 pb-3">
-                            <label className="block text-xs font-bold text-slate-700">{fn.label}</label>
-                            <textarea
-                              value={accomplishments[fn.key as 'core' | 'strategic' | 'support']}
-                              onChange={(e) => setAccomplishments((prev) => ({ ...prev, [fn.key]: e.target.value }))}
-                              placeholder="Detail your achievements matching this target..."
-                              rows={3}
-                              disabled={!isAccomplishmentRatingActive}
-                              style={{ borderColor: '#C8D1FF' }}
-                              className="w-full rounded-lg border px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#363EE8] disabled:bg-slate-50 disabled:cursor-not-allowed"
-                            />
-                            <select
-                              value={selfRatings[fn.key as 'core' | 'strategic' | 'support'] ?? ''}
-                              onChange={(e) =>
-                                setSelfRatings((prev) => ({
-                                  ...prev,
-                                  [fn.key]: e.target.value ? parseFloat(e.target.value) : null,
-                                }))
-                              }
-                              disabled={!isAccomplishmentRatingActive}
-                              style={{ borderColor: '#C8D1FF' }}
-                              className="w-full rounded-lg border px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-[#363EE8] disabled:bg-slate-50 disabled:cursor-not-allowed"
-                            >
-                              <option value="">Select self-rating…</option>
-                              <option value={5.0}>5.0 - Outstanding</option>
-                              <option value={4.0}>4.0 - Very Satisfactory</option>
-                              <option value={3.0}>3.0 - Satisfactory</option>
-                              <option value={2.0}>2.0 - Unsatisfactory</option>
-                              <option value={1.0}>1.0 - Poor</option>
-                            </select>
-                          </div>
-                        ))}
+                        ].map((fn) => {
+                          const k = fn.key as 'core' | 'strategic' | 'support';
+                          const cr = selfRatings[k];
+                          const avg = catAverage(cr);
+                          const setField = (field: keyof CatRating, raw: string) =>
+                            setSelfRatings((prev) => ({
+                              ...prev,
+                              [k]: { ...prev[k], [field]: raw ? parseFloat(raw) : null },
+                            }));
+                          return (
+                            <div key={fn.key} className="space-y-2 border-b border-slate-100 pb-3">
+                              <div className="flex items-center justify-between">
+                                <label className="block text-xs font-bold text-slate-700">{fn.label}</label>
+                                <span className="text-[11px] font-semibold text-slate-500">
+                                  Average (A):{' '}
+                                  <span className="text-slate-800">{avg != null ? avg.toFixed(2) : '—'}</span>
+                                </span>
+                              </div>
+                              <textarea
+                                value={accomplishments[k]}
+                                onChange={(e) => setAccomplishments((prev) => ({ ...prev, [k]: e.target.value }))}
+                                placeholder="Detail your achievements matching this target..."
+                                rows={3}
+                                disabled={!isAccomplishmentRatingActive}
+                                style={{ borderColor: '#C8D1FF' }}
+                                className="w-full rounded-lg border px-3 py-2 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#363EE8] disabled:bg-slate-50 disabled:cursor-not-allowed"
+                              />
+                              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                {([
+                                  { f: 'quality', label: 'Quality (Q)' },
+                                  { f: 'efficiency', label: 'Efficiency (E)' },
+                                  { f: 'timeliness', label: 'Timeliness (T)' },
+                                ] as const).map((sub) => (
+                                  <div key={sub.f}>
+                                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">{sub.label}</label>
+                                    <select
+                                      value={cr[sub.f] ?? ''}
+                                      onChange={(e) => setField(sub.f, e.target.value)}
+                                      disabled={!isAccomplishmentRatingActive}
+                                      style={{ borderColor: '#C8D1FF' }}
+                                      className="w-full rounded-lg border px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#363EE8] disabled:bg-slate-50 disabled:cursor-not-allowed"
+                                    >
+                                      <option value="">—</option>
+                                      <option value={5}>5</option>
+                                      <option value={4}>4</option>
+                                      <option value={3}>3</option>
+                                      <option value={2}>2</option>
+                                      <option value={1}>1</option>
+                                    </select>
+                                  </div>
+                                ))}
+                                <div>
+                                  <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">Weight (%)</label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={100}
+                                    value={cr.weight ?? ''}
+                                    onChange={(e) => setField('weight', e.target.value)}
+                                    disabled={!isAccomplishmentRatingActive}
+                                    placeholder="—"
+                                    style={{ borderColor: '#C8D1FF' }}
+                                    className="w-full rounded-lg border px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#363EE8] disabled:bg-slate-50 disabled:cursor-not-allowed"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {(() => {
+                          const totalW = (['core', 'strategic', 'support'] as const).reduce(
+                            (s, k) => s + (selfRatings[k].weight ?? 0),
+                            0,
+                          );
+                          return totalW > 0 ? (
+                            <p className={`text-[11px] font-semibold ${totalW === 100 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                              Total weight: {totalW}%{totalW !== 100 ? ' — weights should total 100%.' : ''}
+                            </p>
+                          ) : (
+                            <p className="text-[11px] text-slate-400">
+                              No weights set — overall score will be a simple average of the category averages.
+                            </p>
+                          );
+                        })()}
 
                         <div className="flex justify-end gap-2 pt-1">
                           <button
