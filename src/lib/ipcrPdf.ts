@@ -23,7 +23,13 @@ export interface IpcrPdfRow {
   category: string;
   target: string;
   accomplishment: string;
+  quality: number | null;
+  efficiency: number | null;
+  timeliness: number | null;
+  /** Average (A) of the filled Q/E/T. */
   rating: number | null;
+  /** Per-category % weight (blank when unset). */
+  weight: number | null;
 }
 
 export interface IpcrPdfData {
@@ -208,9 +214,10 @@ export function generateIpcrPdf(data: IpcrPdfData): File {
     doc.text(mfoLines, colX.mfo + pad, y + pad + 2.6);
     doc.text(indicLines, colX.indic + pad, y + pad + 2.6);
     doc.text(accLines, colX.acc + pad, y + pad + 2.6);
-    // single self-rating goes into the Average (A) sub-column
-    doc.text(fmtRating(row.rating), colX.rating + sub * 3 + sub / 2, y + rowH / 2 + 1, {
-      align: 'center',
+    // Q / E / T sub-scores + the computed Average (A)
+    const cellY = y + rowH / 2 + 1;
+    [row.quality, row.efficiency, row.timeliness, row.rating].forEach((v, i) => {
+      doc.text(fmtRating(v), colX.rating + sub * i + sub / 2, cellY, { align: 'center' });
     });
     y += rowH;
   };
@@ -226,7 +233,16 @@ export function generateIpcrPdf(data: IpcrPdfData): File {
     drawSectionBanner(sec.title);
     const rowsForSec = data.rows.filter((r) => sectionOf(r.category) === sec.key);
     if (rowsForSec.length === 0) {
-      drawFunctionRow({ category: '—', target: '—', accomplishment: '—', rating: null });
+      drawFunctionRow({
+        category: '—',
+        target: '—',
+        accomplishment: '—',
+        quality: null,
+        efficiency: null,
+        timeliness: null,
+        rating: null,
+        weight: null,
+      });
     } else {
       rowsForSec.forEach(drawFunctionRow);
     }
@@ -236,6 +252,10 @@ export function generateIpcrPdf(data: IpcrPdfData): File {
   // Columns match the reference form: Category · MFO · Average · % Weight · Rating.
   const byKey = (k: 'core' | 'strategic' | 'support') =>
     data.rows.find((r) => sectionOf(r.category) === k)?.rating ?? null;
+  const weightOf = (k: 'core' | 'strategic' | 'support') => {
+    const w = data.rows.find((r) => sectionOf(r.category) === k)?.weight;
+    return w !== null && w !== undefined && !Number.isNaN(w) ? `${Number(w)}%` : '';
+  };
   const countOf = (k: 'core' | 'strategic' | 'support') =>
     data.rows.filter((r) => sectionOf(r.category) === k).length;
 
@@ -276,21 +296,21 @@ export function generateIpcrPdf(data: IpcrPdfData): File {
     'Strategic Priority',
     String(countOf('strategic')),
     fmtRating(byKey('strategic')),
-    '',
+    weightOf('strategic'),
     fmtRating(byKey('strategic')),
   ]);
   sumRow([
     'Core Functions',
     String(countOf('core')),
     fmtRating(byKey('core')),
-    '',
+    weightOf('core'),
     fmtRating(byKey('core')),
   ]);
   sumRow([
     'Support Functions',
     String(countOf('support')),
     fmtRating(byKey('support')),
-    '',
+    weightOf('support'),
     fmtRating(byKey('support')),
   ]);
   sumRow(['Total Overall Rating', '', '', '', fmtRating(data.overallScore)], { bold: true });

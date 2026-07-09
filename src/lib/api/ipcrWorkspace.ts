@@ -40,6 +40,20 @@ export interface IpcrWorkspaceRow {
   core_accomplishment: string | null;
   strategic_accomplishment: string | null;
   support_accomplishment: string | null;
+  // Per-category Q/E/T sub-ratings + % weight (migration 020). The Average (A)
+  // per category is stored in the pre-existing *_rating columns below.
+  core_quality: number | null;
+  core_efficiency: number | null;
+  core_timeliness: number | null;
+  core_weight: number | null;
+  strategic_quality: number | null;
+  strategic_efficiency: number | null;
+  strategic_timeliness: number | null;
+  strategic_weight: number | null;
+  support_quality: number | null;
+  support_efficiency: number | null;
+  support_timeliness: number | null;
+  support_weight: number | null;
   core_rating: number | null;
   strategic_rating: number | null;
   support_rating: number | null;
@@ -145,30 +159,58 @@ export async function saveTargets(
   }
 }
 
-/** Mean of the filled (non-null) category ratings, rounded to 2 decimals. */
-export function computeOverallScore(
-  ratings: Array<number | null | undefined>,
-): number | null {
-  const filled = ratings.filter((r): r is number => typeof r === 'number' && !Number.isNaN(r));
+/** Per-category self-rating: Q/E/T sub-scores + an optional % weight. */
+export interface CategoryRating {
+  accomplishment: string;
+  quality: number | null;
+  efficiency: number | null;
+  timeliness: number | null;
+  weight: number | null;
+}
+
+/** Average (A) of the filled Q/E/T sub-scores for a category, or null. */
+export function categoryAverage(c: CategoryRating): number | null {
+  const filled = [c.quality, c.efficiency, c.timeliness].filter(
+    (r): r is number => typeof r === 'number' && !Number.isNaN(r),
+  );
   if (filled.length === 0) return null;
-  const sum = filled.reduce((a, b) => a + b, 0);
-  return Number((sum / filled.length).toFixed(2));
+  return Number((filled.reduce((a, b) => a + b, 0) / filled.length).toFixed(2));
 }
 
 /**
- * Save Phase 2 accomplishments + self-ratings. `submit=true` computes the
- * overall score + adjectival rating (via bucketForScore), sets status to
- * "Accomplishments Submitted", and advances the PM tracker for the rating phase.
- * The generated PDF url is attached afterwards via attachPdfUrl().
+ * Overall score across the three categories. When weights are provided it is
+ * the weight-blended average of the category averages; otherwise a simple mean
+ * of the filled category averages. Rounded to 2 decimals.
+ */
+export function computeOverallScore(
+  parts: Array<{ average: number | null; weight: number | null }>,
+): number | null {
+  const filled = parts.filter(
+    (p): p is { average: number; weight: number | null } =>
+      typeof p.average === 'number' && !Number.isNaN(p.average),
+  );
+  if (filled.length === 0) return null;
+  const weightSum = filled.reduce((s, p) => s + (p.weight ?? 0), 0);
+  if (weightSum > 0) {
+    const weighted = filled.reduce((s, p) => s + p.average * (p.weight ?? 0), 0);
+    return Number((weighted / weightSum).toFixed(2));
+  }
+  const mean = filled.reduce((s, p) => s + p.average, 0) / filled.length;
+  return Number(mean.toFixed(2));
+}
+
+/**
+ * Save Phase 2 accomplishments + Q/E/T self-ratings and per-category weights.
+ * `submit=true` computes each category Average (A) and the overall score +
+ * adjectival rating (via bucketForScore), sets status to "Accomplishments
+ * Submitted", and advances the PM tracker for the rating phase. The generated
+ * PDF url is attached afterwards via attachPdfUrl().
  */
 export async function saveAccomplishments(
   input: Identity & {
-    coreAccomplishment: string;
-    strategicAccomplishment: string;
-    supportAccomplishment: string;
-    coreRating: number | null;
-    strategicRating: number | null;
-    supportRating: number | null;
+    core: CategoryRating;
+    strategic: CategoryRating;
+    support: CategoryRating;
     submit: boolean;
   },
 ): Promise<
@@ -176,21 +218,36 @@ export async function saveAccomplishments(
   | { ok: false; error: string }
 > {
   try {
+    const coreAvg = categoryAverage(input.core);
+    const strategicAvg = categoryAverage(input.strategic);
+    const supportAvg = categoryAverage(input.support);
     const overallScore = computeOverallScore([
-      input.coreRating,
-      input.strategicRating,
-      input.supportRating,
+      { average: coreAvg, weight: input.core.weight },
+      { average: strategicAvg, weight: input.strategic.weight },
+      { average: supportAvg, weight: input.support.weight },
     ]);
     const adjectival = overallScore !== null ? bucketForScore(overallScore) : null;
 
     const payload: Record<string, unknown> = {
       ...identityColumns(input),
-      core_accomplishment: input.coreAccomplishment || null,
-      strategic_accomplishment: input.strategicAccomplishment || null,
-      support_accomplishment: input.supportAccomplishment || null,
-      core_rating: input.coreRating,
-      strategic_rating: input.strategicRating,
-      support_rating: input.supportRating,
+      core_accomplishment: input.core.accomplishment || null,
+      strategic_accomplishment: input.strategic.accomplishment || null,
+      support_accomplishment: input.support.accomplishment || null,
+      core_quality: input.core.quality,
+      core_efficiency: input.core.efficiency,
+      core_timeliness: input.core.timeliness,
+      core_weight: input.core.weight,
+      strategic_quality: input.strategic.quality,
+      strategic_efficiency: input.strategic.efficiency,
+      strategic_timeliness: input.strategic.timeliness,
+      strategic_weight: input.strategic.weight,
+      support_quality: input.support.quality,
+      support_efficiency: input.support.efficiency,
+      support_timeliness: input.support.timeliness,
+      support_weight: input.support.weight,
+      core_rating: coreAvg,
+      strategic_rating: strategicAvg,
+      support_rating: supportAvg,
     };
     if (input.submit) {
       payload.status = 'Accomplishments Submitted';
