@@ -672,4 +672,32 @@ SELECT
 FROM employees e
 ON CONFLICT (id) DO NOTHING;
 
+-- ── Seed one Supervisor office-role assignment per department ────────────────
+-- office_role_assignments is TRUNCATEd above; the employee-portal "Switch
+-- Account" icon is gated by an ACTIVE assignment for the logged-in employee, so
+-- without this it would never appear. Makes the first employee (by number) in
+-- each department a Supervisor, so switching to the Office dashboard is testable.
+-- Log in as that employee (username = employee_number, password = 'cictrix123').
+INSERT INTO office_role_assignments
+  (employee_id, employee_name, office_name, role, account_username, account_password,
+   must_change_password, status, assigned_by, assigned_at)
+SELECT
+  e.id,
+  btrim(concat_ws(' ', e.first_name, e.middle_name, e.last_name)),
+  e.department,
+  'Supervisor',
+  lower(replace(e.employee_number, '-', '_')) || '_office',
+  'office123',
+  false,
+  'Active',
+  'seed',
+  now()
+FROM (
+  SELECT DISTINCT ON (department)
+    id, first_name, middle_name, last_name, department, employee_number
+  FROM employees
+  WHERE department IS NOT NULL
+  ORDER BY department, employee_number
+) e;
+
 COMMIT;
