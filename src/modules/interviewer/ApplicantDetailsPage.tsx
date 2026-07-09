@@ -95,7 +95,7 @@ type EducationAttainmentValue =
   | 'masteral_units'
   | 'graduate_school';
 
-type TabKey = 'overview' | 'qualifications' | 'documents' | 'interview' | 'activity';
+type TabKey = 'overview' | 'qualifications' | 'documents' | 'interview';
 
 type ScoreBreakdown = {
   total: number;
@@ -776,6 +776,26 @@ export function ApplicantDetailsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applicant?.id, attachments, docReviews]);
 
+  // Validation state is derived from the durable doc_validated rows, not from
+  // localStorage — otherwise an applicant validated on one RSP machine still
+  // looks unvalidated on another. `docsValidated` remains as an optimistic
+  // override so the UI flips immediately after handleValidateAllDocs runs,
+  // before `attachments` refetches.
+  const rawTypeOf = (att: AttachmentRecord) =>
+    (att.document_type as string | null) || FILE_NAME_TO_TYPE[att.file_name] || 'other';
+
+  const realDocs = attachments.filter(
+    (a) => a.document_type !== 'resubmission_request' &&
+           a.document_type !== 'resubmission_resolved' &&
+           a.document_type !== 'doc_validated',
+  );
+  const validatedDocTypes = new Set(
+    attachments.filter((a) => a.document_type === 'doc_validated').map((a) => a.file_name),
+  );
+  const docsAwaitingValidation = realDocs.filter((a) => !validatedDocTypes.has(rawTypeOf(a)));
+  const docsValidatedDurable = realDocs.length > 0 && docsAwaitingValidation.length === 0;
+  const docsValidatedEffective = docsValidated || docsValidatedDurable;
+
   useEffect(() => {
     const load = async () => {
       if (!id) return;
@@ -794,7 +814,9 @@ export function ApplicantDetailsPage() {
       setWrittenScore(getStoredWrittenScore(id));
       setIsScoreFinalized(getStoredFinalizedState(id));
       setIsScoreDraft(getStoredDraftState(id));
-      setDocsValidated(localStorage.getItem(`cictrix_docs_validated_${id}`) === 'true');
+      // Do not seed from localStorage: docsValidatedDurable derives the real
+      // answer from the doc_validated rows once attachments load.
+      setDocsValidated(false);
 
       const loadFromClient = async (client: any) => {
         const applicantRes = await client.from('applicants').select('*').eq('id', id).single();
@@ -1495,6 +1517,8 @@ export function ApplicantDetailsPage() {
     setShowResubmitModal(true);
   };
 
+  // "Send Notice" is the modal's only action: a resubmission request always
+  // names at least one document and a reason, and always emails the applicant.
   const handleSubmitResubmission = async () => {
     if (resubmitSelectedSlots.length === 0 || !resubmitReason.trim()) return;
     if (!applicant) return;
@@ -1581,7 +1605,6 @@ export function ApplicantDetailsPage() {
         existingValidatedTypes.add(rawDocType);
       }
     }
-    localStorage.setItem(`cictrix_docs_validated_${id}`, 'true');
     setDocsValidated(true);
     addDocTimeline('Documents Validated: All submitted documents have been reviewed and validated.');
     void (supabase as any).from('applicants').update({ updated_at: new Date().toISOString() }).eq('id', applicant.id);
@@ -1776,7 +1799,7 @@ export function ApplicantDetailsPage() {
                 });
                 const autoDocsCleared = allRequiredUploaded && allRequiredReviewed && allRequiredApproved;
 
-                const qualifyLocked = !(docsValidated || autoDocsCleared) || hasResubmissionPending;
+                const qualifyLocked = !(docsValidatedEffective || autoDocsCleared) || hasResubmissionPending;
                 const qualifyTitle =
                   hasResubmissionPending
                     ? 'Some documents require resubmission'
@@ -1802,7 +1825,14 @@ export function ApplicantDetailsPage() {
                   </button>
                   <button
                     type="button"
-                    disabled={isApplicantDisqualified}
+                    // Once documents are validated the applicant has moved past the
+                    // "needs more documents" step, so shortlisting no longer applies.
+                    disabled={isApplicantDisqualified || (docsValidatedEffective && !isApplicantShortlisted)}
+                    title={
+                      docsValidatedEffective && !isApplicantShortlisted
+                        ? 'Documents are already validated — this applicant can no longer be shortlisted'
+                        : undefined
+                    }
                     onClick={() => {
                       if (isApplicantShortlisted) {
                         void persistStatus('unshortlist');
@@ -1843,7 +1873,6 @@ export function ApplicantDetailsPage() {
             {[
               { key: 'overview', label: 'Overview', icon: User },
               { key: 'documents', label: 'Documents', icon: FileText },
-              { key: 'activity', label: 'Activity', icon: ActivityIcon },
             ].map((tab) => {
               const Icon = tab.icon;
               return (
@@ -1953,7 +1982,7 @@ export function ApplicantDetailsPage() {
                         <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Submitted Documents</h3>
                         {!isDocLocked() && realAttachments.length > 0 && (
                           <div className="flex items-center gap-2">
-                            {docsValidated ? (
+                            {docsValidatedEffective ? (
                               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
                                 <CheckCircle2 size={12} /> Validated
                               </span>
@@ -1961,8 +1990,13 @@ export function ApplicantDetailsPage() {
                               <button
                                 type="button"
                                 onClick={() => void handleValidateAllDocs()}
-                                title="Validate all submitted documents"
-                                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-semibold transition"
+                                disabled={docsAwaitingValidation.length === 0}
+                                title={
+                                  docsAwaitingValidation.length === 0
+                                    ? 'No submitted documents are awaiting validation'
+                                    : `Validate all ${docsAwaitingValidation.length} submitted document(s)`
+                                }
+                                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
                                 style={{ borderColor: '#059669', color: '#059669', backgroundColor: '#f0fdf4' }}
                               >
                                 <CheckCircle2 size={12} /> Validate Documents
@@ -2083,113 +2117,6 @@ export function ApplicantDetailsPage() {
                         </article>
                       );
                     })}
-                  </div>
-                </article>
-              )}
-
-              {activeTab === 'activity' && (
-                <article className="rounded-xl border border-slate-200">
-                  <h3 className="border-b border-slate-200 px-4 py-3 text-sm font-bold uppercase tracking-wide text-slate-500">Activity Timeline</h3>
-                  <div className="space-y-0 p-4">
-                    {(() => {
-                      // Build a chronological activity list from Supabase data.
-                      type ActivityEntry = { event: string; detail?: string; actor: string; date: string; tone: 'blue' | 'amber' | 'emerald' | 'slate' };
-                      const events: ActivityEntry[] = [];
-
-                      // 1. Application submitted / received
-                      if (applicant?.created_at) {
-                        events.push({ event: 'Application Submitted', detail: 'Application form completed and submitted by the applicant.', actor: fullName || 'Applicant', date: applicant.created_at, tone: 'blue' });
-                        events.push({ event: 'Application Received by RSP', detail: 'System automatically received and recorded the application.', actor: 'System', date: applicant.created_at, tone: 'slate' });
-                      }
-
-                      // 2. Process real attachments (non-notice)
-                      const realAttachments = attachments.filter((a) => a.document_type !== 'resubmission_request' && a.document_type !== 'resubmission_resolved');
-                      const noticeAttachments = attachments.filter((a) => a.document_type === 'resubmission_request');
-
-                      // Group real attachments by document_type to detect re-uploads
-                      const byType = new Map<string, AttachmentRecord[]>();
-                      realAttachments.forEach((a) => {
-                        const key = a.document_type || a.file_name || 'other';
-                        const existing = byType.get(key) ?? [];
-                        byType.set(key, [...existing, a]);
-                      });
-
-                      // Collect initial uploads (first version per type) into one batch event;
-                      // re-uploads (version 2+) remain individual since they are intentional actions.
-                      const initialBatch: { label: string; date: string }[] = [];
-                      byType.forEach((docs) => {
-                        const sorted = [...docs].sort((x, y) => new Date(x.created_at ?? '').getTime() - new Date(y.created_at ?? '').getTime());
-                        sorted.forEach((doc, i) => {
-                          const label = labelize(doc.document_type || doc.file_name || 'Document');
-                          if (i === 0) {
-                            initialBatch.push({ label, date: doc.created_at ?? applicant?.created_at ?? '' });
-                          } else {
-                            events.push({ event: `Document Re-uploaded — ${label}`, detail: `Applicant submitted a new version. File: ${doc.file_name}`, actor: fullName || 'Applicant', date: doc.created_at ?? '', tone: 'emerald' });
-                          }
-                        });
-                      });
-                      if (initialBatch.length > 0) {
-                        const earliest = initialBatch.reduce((min, d) => d.date < min ? d.date : min, initialBatch[0].date);
-                        const labels = initialBatch.map((d) => d.label).join(', ');
-                        events.push({
-                          event: `Documents Submitted — ${initialBatch.length} file${initialBatch.length > 1 ? 's' : ''}`,
-                          detail: labels,
-                          actor: fullName || 'Applicant',
-                          date: earliest,
-                          tone: 'blue',
-                        });
-                      }
-
-                      // 3. Resubmission notices
-                      noticeAttachments.forEach((notice) => {
-                        const parts = notice.file_name.split('::');
-                        const docLabel = parts[1] ?? notice.file_name;
-                        const reason = parts[2] ?? '';
-                        const notes = notice.file_path === '—' ? '' : notice.file_path;
-                        events.push({
-                          event: `Resubmission Requested — ${docLabel}`,
-                          detail: [reason ? `Reason: ${reason}` : '', notes ? `RSP Note: ${notes}` : ''].filter(Boolean).join(' · '),
-                          actor: 'RSP Admin',
-                          date: notice.created_at ?? '',
-                          tone: 'amber',
-                        });
-                      });
-
-                      // 4. Status update (from applicant.status if not default)
-                      const norm = normalizeText(applicant?.status ?? '');
-                      if (norm && norm !== 'pending' && norm !== 'new application' && applicant?.status) {
-                        const statusDate = (applicant as any).updated_at ?? applicant?.created_at ?? '';
-                        events.push({ event: `Status Updated — ${applicant.status}`, detail: 'RSP Admin updated the applicant\'s status.', actor: 'RSP Admin', date: statusDate, tone: norm.includes('qualif') || norm.includes('recommend') ? 'emerald' : norm.includes('disqual') || norm.includes('not qual') ? 'amber' : 'slate' });
-                      }
-
-                      // Sort all events chronologically (oldest first)
-                      events.sort((x, y) => new Date(x.date).getTime() - new Date(y.date).getTime());
-
-                      const TONE_DOT: Record<string, string> = {
-                        blue: 'bg-[#363EE8]',
-                        amber: 'bg-amber-500',
-                        emerald: 'bg-emerald-500',
-                        slate: 'bg-slate-400',
-                      };
-
-                      if (events.length === 0) {
-                        return <p className="text-sm text-slate-400">No activity yet.</p>;
-                      }
-
-                      return events.map((entry, idx) => (
-                        <div key={`${entry.event}-${idx}`} className="relative flex gap-3 pb-5 last:pb-0">
-                          {idx < events.length - 1 && (
-                            <span className="absolute left-[4.5px] top-5 h-[calc(100%-1rem)] w-px bg-slate-200" aria-hidden="true" />
-                          )}
-                          <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${TONE_DOT[entry.tone]}`} />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-semibold text-slate-900">{entry.event}</p>
-                            {entry.detail && <p className="mt-0.5 text-xs text-slate-500">{entry.detail}</p>}
-                            <p className="mt-0.5 text-xs text-slate-400">{formatDate(entry.date)} · {entry.actor}</p>
-                          </div>
-                        </div>
-                      ));
-                    })()}
                   </div>
                 </article>
               )}
@@ -2490,16 +2417,7 @@ export function ApplicantDetailsPage() {
               {resubmitSuccess && (
                 <p className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{resubmitSuccess}</p>
               )}
-              <div className="flex justify-between gap-3">
-                <button
-                  type="button"
-                  onClick={() => void persistStatus('shortlist').then(() => setShowResubmitModal(false))}
-                  disabled={resubmitSending || isApplicantShortlisted}
-                  className="rounded-xl border px-5 py-2 text-sm font-semibold disabled:opacity-50"
-                  style={{ borderColor: '#363EE8', color: '#363EE8' }}
-                >
-                  Shortlist Only
-                </button>
+              <div className="flex justify-end gap-3">
                 <div className="flex gap-3">
                   <button
                     type="button"

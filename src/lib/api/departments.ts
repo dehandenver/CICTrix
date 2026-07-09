@@ -102,6 +102,17 @@ export async function getDepartmentOptions(): Promise<DepartmentOption[]> {
 }
 
 /**
+ * Department options keyed by uuid. Prefer this over getDepartmentOptions for
+ * anything that persists a department: names in this database have case-variant
+ * duplicates, so a name is not a safe key.
+ */
+export async function getDepartmentIdOptions(): Promise<DepartmentOption[]> {
+  const result = await listDepartments(false);
+  if (!result.success) return [];
+  return result.data.map((d) => ({ value: d.id, label: d.name }));
+}
+
+/**
  * Resolve a department name to its UUID. Used by writes that still take a
  * name from the UI but need to persist the FK. Returns null if unknown.
  */

@@ -22,6 +22,7 @@ import { RSPDashboard } from './modules/admin/RSPDashboard.tsx';
 import { SettingsPage } from './modules/admin/SettingsPage';
 import { SuperAdminDashboard } from './modules/admin/SuperAdminDashboard';
 import { OfficeAccountConsole } from './modules/admin/pm/OfficeAccountConsole';
+import { TrainingCoursesPrototype } from './modules/admin/prototypes/TrainingCoursesPrototype';
 import { SupervisorAccessPage } from './modules/admin/SupervisorAccessPage';
 import { SystemAdministrationPage } from './modules/admin/SystemAdministrationPage';
 import { IPCRManagementPage } from './modules/admin/IPCRManagementPage';
@@ -922,10 +923,18 @@ function AppContent() {
               </AdminRoute>
             }
           />
+          {/* Requires an employee session; OfficeAccountConsole then denies anyone
+              without an Active office_role_assignments grant. */}
           <Route
             path="/office/dashboard"
-            element={<OfficeAccountConsole />}
+            element={
+              <EmployeeRoute session={employeeSession}>
+                <OfficeAccountConsole />
+              </EmployeeRoute>
+            }
           />
+          {/* Prototype — sample data, no auth, not part of the L&D portal. */}
+          <Route path="/prototype/training-courses" element={<TrainingCoursesPrototype />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
 
