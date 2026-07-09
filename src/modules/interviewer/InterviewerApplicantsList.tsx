@@ -918,9 +918,10 @@ export function InterviewerApplicantsList() {
                     <button type="button" className="details-btn details-btn-danger" onClick={() => void updateApplicantStatus(activeApplicant.id, 'Not Qualified')}>
                       <AlertCircle size={16} /> Disqualify
                     </button>
-                    <button type="button" className="details-btn details-btn-primary" onClick={() => void updateApplicantStatus(activeApplicant.id, 'Shortlisted')}>
-                      <Star size={16} /> Shortlist
-                    </button>
+                    {/* Shortlisting must name the documents and reason requiring
+                        resubmission, which happens in the RSP "Notice of Resubmission"
+                        modal on /admin/rsp/applicant/:id. That route is admin-only,
+                        so there is no standalone shortlist action here. */}
                     <button type="button" className="details-btn details-btn-success" onClick={() => void updateApplicantStatus(activeApplicant.id, 'Recommended for Hiring')}>
                       <CheckCircle2 size={16} /> Qualify
                     </button>

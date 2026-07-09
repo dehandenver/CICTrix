@@ -776,6 +776,26 @@ export function ApplicantDetailsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applicant?.id, attachments, docReviews]);
 
+  // Validation state is derived from the durable doc_validated rows, not from
+  // localStorage — otherwise an applicant validated on one RSP machine still
+  // looks unvalidated on another. `docsValidated` remains as an optimistic
+  // override so the UI flips immediately after handleValidateAllDocs runs,
+  // before `attachments` refetches.
+  const rawTypeOf = (att: AttachmentRecord) =>
+    (att.document_type as string | null) || FILE_NAME_TO_TYPE[att.file_name] || 'other';
+
+  const realDocs = attachments.filter(
+    (a) => a.document_type !== 'resubmission_request' &&
+           a.document_type !== 'resubmission_resolved' &&
+           a.document_type !== 'doc_validated',
+  );
+  const validatedDocTypes = new Set(
+    attachments.filter((a) => a.document_type === 'doc_validated').map((a) => a.file_name),
+  );
+  const docsAwaitingValidation = realDocs.filter((a) => !validatedDocTypes.has(rawTypeOf(a)));
+  const docsValidatedDurable = realDocs.length > 0 && docsAwaitingValidation.length === 0;
+  const docsValidatedEffective = docsValidated || docsValidatedDurable;
+
   useEffect(() => {
     const load = async () => {
       if (!id) return;
@@ -794,7 +814,9 @@ export function ApplicantDetailsPage() {
       setWrittenScore(getStoredWrittenScore(id));
       setIsScoreFinalized(getStoredFinalizedState(id));
       setIsScoreDraft(getStoredDraftState(id));
-      setDocsValidated(localStorage.getItem(`cictrix_docs_validated_${id}`) === 'true');
+      // Do not seed from localStorage: docsValidatedDurable derives the real
+      // answer from the doc_validated rows once attachments load.
+      setDocsValidated(false);
 
       const loadFromClient = async (client: any) => {
         const applicantRes = await client.from('applicants').select('*').eq('id', id).single();
@@ -1495,7 +1517,11 @@ export function ApplicantDetailsPage() {
     setShowResubmitModal(true);
   };
 
-  const handleSubmitResubmission = async () => {
+  // `sendNotice` is the only difference between the modal's two actions.
+  // "Shortlist Only" records the identical resubmission request and status
+  // change but does not email the applicant — it is not a way to shortlist
+  // someone without naming a document and a reason.
+  const handleSubmitResubmission = async (sendNotice: boolean = true) => {
     if (resubmitSelectedSlots.length === 0 || !resubmitReason.trim()) return;
     if (!applicant) return;
     setResubmitSending(true);
@@ -1535,20 +1561,26 @@ export function ApplicantDetailsPage() {
     await persistStatus('action_required');
 
     // Attempt email; failure is non-blocking.
-    try {
-      const docList = resubmitSelectedSlots.map((s) => `• ${s}`).join('\n');
-      const notesSection = resubmitNotes.trim() ? `\n\nAdditional Notes from RSP:\n${resubmitNotes.trim()}` : '';
-      await sendEmail({
-        to: applicant.email,
-        subject: `Notice of Resubmission — ${resubmitSelectedSlots.join(', ')}`,
-        body: `Dear ${applicant.first_name},\n\nThe following submitted document(s) require resubmission:\n${docList}\n\nReason: ${resubmitReason.trim()}${notesSection}\n\nPlease log in to the Applicant Portal and re-upload the corrected document(s) at your earliest convenience.\n\nThank you,\nRecruitment Office`,
-        applicantId: applicant.id,
-      });
-    } catch (err) {
-      console.warn('[handleSubmitResubmission] Email failed:', err);
+    if (sendNotice) {
+      try {
+        const docList = resubmitSelectedSlots.map((s) => `• ${s}`).join('\n');
+        const notesSection = resubmitNotes.trim() ? `\n\nAdditional Notes from RSP:\n${resubmitNotes.trim()}` : '';
+        await sendEmail({
+          to: applicant.email,
+          subject: `Notice of Resubmission — ${resubmitSelectedSlots.join(', ')}`,
+          body: `Dear ${applicant.first_name},\n\nThe following submitted document(s) require resubmission:\n${docList}\n\nReason: ${resubmitReason.trim()}${notesSection}\n\nPlease log in to the Applicant Portal and re-upload the corrected document(s) at your earliest convenience.\n\nThank you,\nRecruitment Office`,
+          applicantId: applicant.id,
+        });
+      } catch (err) {
+        console.warn('[handleSubmitResubmission] Email failed:', err);
+      }
     }
 
-    setToast(`Resubmission notice sent for ${resubmitSelectedSlots.length} document(s). Tracker updated.`);
+    setToast(
+      sendNotice
+        ? `Resubmission notice sent for ${resubmitSelectedSlots.length} document(s). Tracker updated.`
+        : `Shortlisted and recorded ${resubmitSelectedSlots.length} document(s) for resubmission. No email sent.`,
+    );
     // Auto-close modal and reset state.
     setShowResubmitModal(false);
     setResubmitSelectedSlots([]);
@@ -1581,7 +1613,6 @@ export function ApplicantDetailsPage() {
         existingValidatedTypes.add(rawDocType);
       }
     }
-    localStorage.setItem(`cictrix_docs_validated_${id}`, 'true');
     setDocsValidated(true);
     addDocTimeline('Documents Validated: All submitted documents have been reviewed and validated.');
     void (supabase as any).from('applicants').update({ updated_at: new Date().toISOString() }).eq('id', applicant.id);
@@ -1776,7 +1807,7 @@ export function ApplicantDetailsPage() {
                 });
                 const autoDocsCleared = allRequiredUploaded && allRequiredReviewed && allRequiredApproved;
 
-                const qualifyLocked = !(docsValidated || autoDocsCleared) || hasResubmissionPending;
+                const qualifyLocked = !(docsValidatedEffective || autoDocsCleared) || hasResubmissionPending;
                 const qualifyTitle =
                   hasResubmissionPending
                     ? 'Some documents require resubmission'
@@ -1802,7 +1833,14 @@ export function ApplicantDetailsPage() {
                   </button>
                   <button
                     type="button"
-                    disabled={isApplicantDisqualified}
+                    // Once documents are validated the applicant has moved past the
+                    // "needs more documents" step, so shortlisting no longer applies.
+                    disabled={isApplicantDisqualified || (docsValidatedEffective && !isApplicantShortlisted)}
+                    title={
+                      docsValidatedEffective && !isApplicantShortlisted
+                        ? 'Documents are already validated — this applicant can no longer be shortlisted'
+                        : undefined
+                    }
                     onClick={() => {
                       if (isApplicantShortlisted) {
                         void persistStatus('unshortlist');
@@ -1953,7 +1991,7 @@ export function ApplicantDetailsPage() {
                         <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Submitted Documents</h3>
                         {!isDocLocked() && realAttachments.length > 0 && (
                           <div className="flex items-center gap-2">
-                            {docsValidated ? (
+                            {docsValidatedEffective ? (
                               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
                                 <CheckCircle2 size={12} /> Validated
                               </span>
@@ -1961,8 +1999,13 @@ export function ApplicantDetailsPage() {
                               <button
                                 type="button"
                                 onClick={() => void handleValidateAllDocs()}
-                                title="Validate all submitted documents"
-                                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-semibold transition"
+                                disabled={docsAwaitingValidation.length === 0}
+                                title={
+                                  docsAwaitingValidation.length === 0
+                                    ? 'No submitted documents are awaiting validation'
+                                    : `Validate all ${docsAwaitingValidation.length} submitted document(s)`
+                                }
+                                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
                                 style={{ borderColor: '#059669', color: '#059669', backgroundColor: '#f0fdf4' }}
                               >
                                 <CheckCircle2 size={12} /> Validate Documents
@@ -2493,9 +2536,14 @@ export function ApplicantDetailsPage() {
               <div className="flex justify-between gap-3">
                 <button
                   type="button"
-                  onClick={() => void persistStatus('shortlist').then(() => setShowResubmitModal(false))}
-                  disabled={resubmitSending || isApplicantShortlisted}
-                  className="rounded-xl border px-5 py-2 text-sm font-semibold disabled:opacity-50"
+                  onClick={() => void handleSubmitResubmission(false)}
+                  disabled={resubmitSelectedSlots.length === 0 || !resubmitReason.trim() || resubmitSending}
+                  title={
+                    resubmitSelectedSlots.length === 0 || !resubmitReason.trim()
+                      ? 'Select at least one document and a reason first'
+                      : 'Record the resubmission request and shortlist, without emailing the applicant'
+                  }
+                  className="rounded-xl border px-5 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                   style={{ borderColor: '#363EE8', color: '#363EE8' }}
                 >
                   Shortlist Only
@@ -2513,7 +2561,7 @@ export function ApplicantDetailsPage() {
                   {!resubmitSuccess && (
                     <button
                       type="button"
-                      onClick={() => void handleSubmitResubmission()}
+                      onClick={() => void handleSubmitResubmission(true)}
                       disabled={resubmitSelectedSlots.length === 0 || !resubmitReason.trim() || resubmitSending}
                       className="inline-flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                       style={{ backgroundColor: '#363EE8' }}

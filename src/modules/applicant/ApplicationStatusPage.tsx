@@ -68,12 +68,14 @@ type BadgeTone = 'approved' | 'in-review' | 'rejected' | 'new';
 const STATUS_BADGE: Record<string, { label: string; tone: BadgeTone }> = {
   'New Application': { label: 'New', tone: 'new' },
   'Pending': { label: 'New', tone: 'new' },
-  'Under Review': { label: 'Under Review', tone: 'in-review' },
-  'Shortlisted': { label: 'In Review', tone: 'in-review' },
+  'Under Review': { label: 'Under Evaluation', tone: 'in-review' },
+  'Reviewed': { label: 'Under Evaluation', tone: 'in-review' },
+  'Shortlisted': { label: 'Additional Documents Requested', tone: 'in-review' },
   'For Interview': { label: 'In Review', tone: 'in-review' },
   'Interview Scheduled': { label: 'In Review', tone: 'in-review' },
   'Interview Completed': { label: 'In Review', tone: 'in-review' },
-  'Recommended for Hiring': { label: 'Approved', tone: 'approved' },
+  // Documents validated, awaiting scheduling — mid-process, never "Approved".
+  'Recommended for Hiring': { label: 'Documents Validated', tone: 'in-review' },
   'Hired': { label: 'Approved', tone: 'approved' },
   'Accepted': { label: 'Approved', tone: 'approved' },
   'Not Qualified': { label: 'Not Qualified', tone: 'rejected' },
@@ -123,47 +125,87 @@ const getNoticeMessage = (status: string, tone: BadgeTone, reason?: string | nul
   return NOTICE_MESSAGE[tone];
 };
 
-const TIMELINE_STAGES = [
-  { key: 'submitted', title: 'Application Submitted', subtitle: 'Your application has been received' },
-  { key: 'verification', title: 'Uploaded Documents', subtitle: 'View your uploaded documents, status, and RSP remarks' },
-  { key: 'qualifications', title: 'Qualifications Assessment', subtitle: 'Reviewing educational background and experience' },
-  { key: 'exam_interview', title: 'Exam & Interview', subtitle: 'Written examination and panel interview' },
-  { key: 'committee', title: 'Committee Review', subtitle: 'Application reviewed by admissions committee' },
-  { key: 'final', title: 'Final Decision', subtitle: 'Final decision on application' },
-] as const;
+type PhaseTone = 'new' | 'in-review' | 'action' | 'approved' | 'rejected';
 
-type StageState = 'done' | 'current' | 'pending' | 'rejected' | 'cancelled';
+interface ApplicantPhase {
+  headline: string;
+  detail: string;
+  tone: PhaseTone;
+  showSchedule: boolean;
+  showCongrats: boolean;
+}
 
-const stageStatesForStatus = (rawStatus: string, docsValidated: boolean, hasSchedule: boolean): StageState[] => {
-  const status = rawStatus.toLowerCase();
-  const v: StageState = docsValidated ? 'done' : 'current';
+// The single thing the applicant is told about their application.
+//
+// 'Recommended for Hiring' is what RSP's "Qualify" button writes: it means the
+// documents were validated and the applicant may now be scheduled. It is NOT a
+// final decision, so it must never show the congratulations block — only the
+// terminal 'Hired'/'Accepted' does. Order matters here: several live statuses
+// share substrings, and these checks run top-down.
+const resolvePhase = (rawStatus: string, hasSchedule: boolean): ApplicantPhase => {
+  const s = (rawStatus ?? '').toLowerCase();
 
-  if (status.includes('reject') || status.includes('not qualified') || status.includes('disqual') || status.includes('failed')) {
-    if (hasSchedule) {
-      // Applicant reached the exam/interview stage before disqualification
-      return ['done', 'done', 'done', 'rejected', 'cancelled', 'cancelled'];
-    }
-    return ['done', v, 'rejected', 'cancelled', 'cancelled', 'cancelled'];
+  if (s.includes('disqual') || s.includes('not qualified') || s.includes('reject') || s.includes('failed')) {
+    return {
+      headline: 'Disqualified',
+      detail: 'Your application will no longer proceed in the selection process. For further inquiries, please contact the Recruitment Office.',
+      tone: 'rejected', showSchedule: false, showCongrats: false,
+    };
   }
-  // Hired / Accepted / Recommended for Hiring → all stages done, final decision made
-  if (status.includes('hired') || status.includes('accept') || status.includes('recommend')) {
-    return ['done', 'done', 'done', 'done', 'done', 'done'];
+  // 'hiring' does not contain 'hired', so 'Recommended for Hiring' falls through.
+  if (s.includes('hired') || s.includes('accept')) {
+    return {
+      headline: 'Qualified',
+      detail: 'You have been selected for this position.',
+      tone: 'approved', showSchedule: false, showCongrats: true,
+    };
   }
-  // Scores submitted → exam & interview done, committee now reviewing
-  if (status.includes('interview completed')) {
-    return ['done', 'done', 'done', 'done', 'current', 'pending'];
+  if (s.includes('interview completed')) {
+    return {
+      headline: 'Application Under Final Review',
+      detail: 'Your examination and interview are complete. Your application is now undergoing final review.',
+      tone: 'in-review', showSchedule: false, showCongrats: false,
+    };
   }
-  // Scheduled → exam & interview stage is active
-  if (status.includes('interview') || hasSchedule) {
-    return ['done', 'done', 'done', 'current', 'pending', 'pending'];
+  if (s.includes('recommend') || s.includes('document verified')) {
+    return hasSchedule
+      ? {
+          headline: 'Scheduled for Exam & Interview',
+          detail: 'Your documents have been validated. Your schedule is shown below.',
+          tone: 'in-review', showSchedule: true, showCongrats: false,
+        }
+      : {
+          headline: 'Documents Validated — Awaiting Exam & Interview Schedule',
+          detail: 'Your documents have been validated by the RSP Office. You will be notified once your exam and interview are scheduled.',
+          tone: 'in-review', showSchedule: false, showCongrats: false,
+        };
   }
-  if (status.includes('shortlist')) {
-    return ['done', v, 'current', 'pending', 'pending', 'pending'];
+  if (s.includes('interview') || hasSchedule) {
+    return {
+      headline: 'Scheduled for Exam & Interview',
+      detail: 'Your schedule is shown below. Please arrive at the venue on time.',
+      tone: 'in-review', showSchedule: true, showCongrats: false,
+    };
   }
-  if (status.includes('under review') || status.includes('reviewing')) {
-    return ['done', v, 'pending', 'pending', 'pending', 'pending'];
+  if (s.includes('action required') || s.includes('shortlist')) {
+    return {
+      headline: 'Additional Documents Requested',
+      detail: 'The RSP Office needs one or more documents resubmitted before your application can proceed.',
+      tone: 'action', showSchedule: false, showCongrats: false,
+    };
   }
-  return ['done', docsValidated ? 'done' : 'pending', 'pending', 'pending', 'pending', 'pending'];
+  if (s.includes('under review') || s.includes('reviewed') || s.includes('reviewing')) {
+    return {
+      headline: 'Under Evaluation',
+      detail: 'Your application and uploaded documents are currently being reviewed by our recruitment team.',
+      tone: 'in-review', showSchedule: false, showCongrats: false,
+    };
+  }
+  return {
+    headline: 'Pending Review',
+    detail: 'Your application has been received. We will begin reviewing it shortly.',
+    tone: 'new', showSchedule: false, showCongrats: false,
+  };
 };
 
 const formatDate = (iso: string | null) => {
@@ -518,9 +560,10 @@ export const ApplicationStatusPage = () => {
 
   const badge = record ? getBadge(record.status) : null;
   const hasSchedule = !!(record?.exam_date || record?.interview_date);
-  const stageStates = record ? stageStatesForStatus(record.status, docsValidated, hasSchedule) : [];
   const fullName = record ? `${record.first_name} ${record.last_name}`.trim() : '';
-  const isHired = record ? (() => { const s = record.status.toLowerCase(); return s.includes('hired') || s.includes('accept') || s.includes('recommend'); })() : false;
+  // 'Recommended for Hiring' means documents validated, not selected — it must
+  // not count as hired. Only the terminal 'Hired'/'Accepted' statuses do.
+  const isHired = record ? (() => { const s = record.status.toLowerCase(); return s.includes('hired') || s.includes('accept'); })() : false;
   const programType =
     record?.application_type === 'promotion' ? 'Promotional Application' : 'Job Application';
 
@@ -857,200 +900,105 @@ export const ApplicationStatusPage = () => {
               </section>
             )}
 
-            {/* Application Progress */}
+            {/* Current Status — single card. Replaces the former multi-step timeline. */}
             <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-              <h3 className="text-xl font-bold" style={{ color: '#040E6B' }}>Application Progress</h3>
-              <p className="mt-1 text-sm" style={{ color: '#363EE8' }}>Track your application through each stage</p>
+              <h3 className="text-xl font-bold" style={{ color: '#040E6B' }}>Current Status</h3>
+              <p className="mt-1 text-sm" style={{ color: '#363EE8' }}>Where your application stands right now</p>
 
-              <ol className="mt-6">
-                {TIMELINE_STAGES.map((stage, index) => {
-                  const state = stageStates[index] ?? 'pending';
-                  const isLast = index === TIMELINE_STAGES.length - 1;
-                  const isVerification = stage.key === 'verification';
-                  const isExamInterview = stage.key === 'exam_interview';
-                  const isFinal = stage.key === 'final';
+              {(() => {
+                const phase = resolvePhase(record.status, hasSchedule);
+                const toneStyles: Record<string, { wrap: string; title: string }> = {
+                  'new': { wrap: 'border-slate-200 bg-slate-50', title: 'text-slate-700' },
+                  'in-review': { wrap: 'border-blue-200 bg-blue-50', title: 'text-blue-800' },
+                  'action': { wrap: 'border-amber-200 bg-amber-50', title: 'text-amber-800' },
+                  'approved': { wrap: 'border-emerald-200 bg-emerald-50', title: 'text-emerald-800' },
+                  'rejected': { wrap: 'border-rose-200 bg-rose-50', title: 'text-rose-800' },
+                };
+                const t = toneStyles[phase.tone] ?? toneStyles['new'];
+                const pendingDocs = resubmissionNotices.map((n) => parseNotice(n).document).filter(Boolean);
 
-                  const iconWrap =
-                    state === 'done' ? 'bg-emerald-100 text-emerald-600' :
-                      state === 'current' ? 'text-white' :
-                        state === 'rejected' ? 'bg-rose-100 text-rose-600' :
-                          state === 'cancelled' ? 'bg-slate-100 text-slate-300' :
-                            'text-slate-400';
-                  const currentBg = state === 'current' ? { backgroundColor: '#363EE8' } : {};
-                  const titleStyle =
-                    state === 'pending' ? { color: '#C8D1FF' } :
-                      state === 'cancelled' ? { color: '#CBD5E1', textDecoration: 'line-through' as const } :
-                        state === 'rejected' ? { color: '#9F1239' } :
-                          { color: '#040E6B' };
-                  const subtitleStyle =
-                    state === 'cancelled' ? { color: '#CBD5E1' } :
-                      state === 'rejected' ? { color: '#BE123C' } :
-                        { color: '#363EE8' };
-                  const dateForStage =
-                    state === 'done' || state === 'current' || state === 'rejected'
-                      ? (index === 0 ? formatShortDate(record.created_at) : formatShortDate(record.updated_at))
-                      : '';
-                  const connectorClass =
-                    state === 'done' ? 'bg-emerald-200' :
-                      state === 'rejected' ? 'bg-rose-200' :
-                        state === 'cancelled' ? 'border-l border-dashed border-slate-200 w-0' :
-                          'bg-slate-200';
+                return (
+                  <div className={`mt-5 rounded-xl border px-5 py-4 ${t.wrap}`}>
+                    <p className={`text-lg font-bold ${t.title}`}>{phase.headline}</p>
+                    <p className="mt-1 text-sm" style={{ color: '#040E6B' }}>{phase.detail}</p>
+                    <p className="mt-2 text-xs" style={{ color: '#363EE8' }}>Last updated {formatDate(record.updated_at)}</p>
 
-                  return (
-                    <li key={stage.key} className={`relative flex gap-4 pb-6 last:pb-0 ${state === 'cancelled' ? 'opacity-50' : ''}`}>
-                      {!isLast && (
-                        <span
-                          className={`absolute left-[18px] top-9 h-[calc(100%-2rem)] ${state === 'cancelled' ? 'border-l border-dashed border-slate-200' : `w-px ${connectorClass}`}`}
-                          aria-hidden="true"
-                        />
-                      )}
+                    {phase.tone === 'action' && pendingDocs.length > 0 && (
+                      <div className="mt-3">
+                        <p className="text-xs font-bold uppercase tracking-wide text-amber-700">Documents needed</p>
+                        <ul className="mt-1 list-disc pl-5 text-sm text-amber-800">
+                          {pendingDocs.map((d) => (
+                            <li key={d}>{d}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
 
-                      <span className={`relative z-[1] flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full ${iconWrap}`} style={currentBg}>
-                        {state === 'rejected'
-                          ? <CircleX size={18} />
-                          : state === 'cancelled'
-                            ? <span className="text-sm font-bold text-slate-300">—</span>
-                            : <CheckCircle2 size={18} />}
-                      </span>
+                    {phase.showCongrats && (
+                      <div className="mt-3 rounded-xl border border-emerald-200 bg-white px-4 py-3">
+                        <p className="text-sm font-bold text-emerald-800">Congratulations!</p>
+                        <p className="mt-0.5 text-sm text-emerald-700">
+                          You have been selected for the position of <span className="font-semibold">{record.position}</span>.
+                          The RSP Office will contact you with further instructions regarding your appointment.
+                        </p>
+                      </div>
+                    )}
 
-                      <div className="flex-1 pt-1">
-                        <div className="flex flex-wrap items-baseline justify-between gap-2">
-                          <h4 className="text-base font-semibold" style={titleStyle}>{stage.title}</h4>
-                          {dateForStage && (
-                            <span className="text-xs font-medium" style={{ color: '#363EE8' }}>{dateForStage}</span>
+                    {phase.tone === 'rejected' && disqualificationSummary && (
+                      <div className="mt-3 rounded-xl border border-rose-200 bg-white px-4 py-3">
+                        <p className="text-sm font-semibold text-rose-800">Reason</p>
+                        <p className="mt-1 text-sm text-rose-700">{disqualificationSummary}</p>
+                      </div>
+                    )}
+
+                    {phase.showSchedule && hasSchedule && (
+                      <div className="mt-4 rounded-xl border overflow-hidden" style={{ borderColor: '#C8D1FF' }}>
+                        <div className="px-3 py-2" style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)' }}>
+                          <p className="text-xs font-bold text-white tracking-wide uppercase">Your Schedule</p>
+                        </div>
+                        <div className="divide-y bg-white" style={{ borderColor: '#EEF0FD' }}>
+                          {(record.exam_date || record.exam_time) && (
+                            <div className="px-3 py-2 flex items-start gap-2">
+                              <span className="mt-0.5 text-xs font-bold uppercase tracking-wide w-28 shrink-0" style={{ color: '#363EE8' }}>Written Exam</span>
+                              <span className="text-sm font-medium" style={{ color: '#040E6B' }}>
+                                {[record.exam_date && formatDate(record.exam_date), record.exam_time && formatTime12h(record.exam_time)].filter(Boolean).join(' · ')}
+                              </span>
+                            </div>
+                          )}
+                          {(record.oral_exam_date || record.oral_exam_time) && (
+                            <div className="px-3 py-2 flex items-start gap-2">
+                              <span className="mt-0.5 text-xs font-bold uppercase tracking-wide w-28 shrink-0" style={{ color: '#363EE8' }}>Oral Exam</span>
+                              <span className="text-sm font-medium" style={{ color: '#040E6B' }}>
+                                {[record.oral_exam_date && formatDate(record.oral_exam_date), record.oral_exam_time && formatTime12h(record.oral_exam_time)].filter(Boolean).join(' · ')}
+                              </span>
+                            </div>
+                          )}
+                          {(record.interview_date || record.interview_time) && (
+                            <div className="px-3 py-2 flex items-start gap-2">
+                              <span className="mt-0.5 text-xs font-bold uppercase tracking-wide w-28 shrink-0" style={{ color: '#363EE8' }}>Interview</span>
+                              <span className="text-sm font-medium" style={{ color: '#040E6B' }}>
+                                {[record.interview_date && formatDate(record.interview_date), record.interview_time && formatTime12h(record.interview_time)].filter(Boolean).join(' · ')}
+                              </span>
+                            </div>
+                          )}
+                          {record.venue && (
+                            <div className="px-3 py-2 flex items-start gap-2">
+                              <span className="mt-0.5 text-xs font-bold uppercase tracking-wide w-28 shrink-0" style={{ color: '#363EE8' }}>Venue</span>
+                              <span className="text-sm font-medium" style={{ color: '#040E6B' }}>{record.venue}</span>
+                            </div>
+                          )}
+                          {record.schedule_instructions && (
+                            <div className="px-3 py-2">
+                              <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: '#363EE8' }}>Instructions</p>
+                              <p className="text-sm" style={{ color: '#040E6B' }}>{record.schedule_instructions}</p>
+                            </div>
                           )}
                         </div>
-                        <p className="mt-0.5 text-sm" style={subtitleStyle}>{stage.subtitle}</p>
-
-                        {/* Verification stage: doc status */}
-                        {isVerification && hasActionRequired && (
-                          <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700">
-                            <AlertCircle size={12} /> Document resubmission required
-                          </div>
-                        )}
-                        {state === 'done' && stage.key === 'verification' && !hasActionRequired && (
-                          <div className="mt-3 rounded-lg px-3 py-2 text-sm" style={{ backgroundColor: '#C8D1FF', color: '#040E6B' }}>
-                            {docsValidated ? 'All documents verified by RSP Admin' : 'All required documents received'}
-                          </div>
-                        )}
-
-                        {/* Exam & Interview — show schedule when active or done */}
-                        {isExamInterview && (state === 'current' || state === 'done') && hasSchedule && (
-                          <div className="mt-3 rounded-xl border overflow-hidden" style={{ borderColor: '#C8D1FF' }}>
-                            <div className="px-3 py-2" style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)' }}>
-                              <p className="text-xs font-bold text-white tracking-wide uppercase">Your Schedule</p>
-                            </div>
-                            <div className="divide-y bg-white" style={{ borderColor: '#EEF0FD' }}>
-                              {(record.exam_date || record.exam_time) && (
-                                <div className="px-3 py-2 flex items-start gap-2">
-                                  <span className="mt-0.5 text-xs font-bold uppercase tracking-wide w-28 shrink-0" style={{ color: '#363EE8' }}>Written Exam</span>
-                                  <span className="text-sm font-medium" style={{ color: '#040E6B' }}>
-                                    {[record.exam_date && formatDate(record.exam_date), record.exam_time && formatTime12h(record.exam_time)].filter(Boolean).join(' · ')}
-                                  </span>
-                                </div>
-                              )}
-                              {(record.oral_exam_date || record.oral_exam_time) && (
-                                <div className="px-3 py-2 flex items-start gap-2">
-                                  <span className="mt-0.5 text-xs font-bold uppercase tracking-wide w-28 shrink-0" style={{ color: '#363EE8' }}>Oral Exam</span>
-                                  <span className="text-sm font-medium" style={{ color: '#040E6B' }}>
-                                    {[record.oral_exam_date && formatDate(record.oral_exam_date), record.oral_exam_time && formatTime12h(record.oral_exam_time)].filter(Boolean).join(' · ')}
-                                  </span>
-                                </div>
-                              )}
-                              {(record.interview_date || record.interview_time) && (
-                                <div className="px-3 py-2 flex items-start gap-2">
-                                  <span className="mt-0.5 text-xs font-bold uppercase tracking-wide w-28 shrink-0" style={{ color: '#363EE8' }}>Interview</span>
-                                  <span className="text-sm font-medium" style={{ color: '#040E6B' }}>
-                                    {[record.interview_date && formatDate(record.interview_date), record.interview_time && formatTime12h(record.interview_time)].filter(Boolean).join(' · ')}
-                                  </span>
-                                </div>
-                              )}
-                              {record.venue && (
-                                <div className="px-3 py-2 flex items-start gap-2">
-                                  <span className="mt-0.5 text-xs font-bold uppercase tracking-wide w-28 shrink-0" style={{ color: '#363EE8' }}>Venue</span>
-                                  <span className="text-sm font-medium" style={{ color: '#040E6B' }}>{record.venue}</span>
-                                </div>
-                              )}
-                              {record.schedule_instructions && (
-                                <div className="px-3 py-2">
-                                  <p className="text-xs font-bold uppercase tracking-wide mb-1" style={{ color: '#363EE8' }}>Instructions</p>
-                                  <p className="text-sm" style={{ color: '#040E6B' }}>{record.schedule_instructions}</p>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                        {isExamInterview && state === 'done' && (
-                          <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
-                            <CheckCircle2 size={12} /> Examination and interview completed
-                          </div>
-                        )}
-
-                        {/* Committee Review */}
-                        {state === 'done' && stage.key === 'committee' && (
-                          <div className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                            Interview and exam scores evaluated by the committee
-                          </div>
-                        )}
-
-                        {/* Final Decision — hired message */}
-                        {isFinal && state === 'done' && isHired && (
-                          <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-                            <p className="text-sm font-bold text-emerald-800">Congratulations!</p>
-                            <p className="mt-0.5 text-sm text-emerald-700">
-                              You have been selected for the position of <span className="font-semibold">{record.position}</span>.
-                              The RSP Office will contact you with further instructions regarding your appointment.
-                            </p>
-                          </div>
-                        )}
-
-                        {/* Shortlist notice */}
-                        {stage.key === 'qualifications' && state === 'current' && record && record.status.toLowerCase().includes('shortlist') && (
-                          <div className="mt-3 rounded-lg border px-3 py-2 text-sm font-medium" style={{ backgroundColor: '#EEF0FD', borderColor: '#C8D1FF', color: '#040E6B' }}>
-                            Your application has been shortlisted and is undergoing further committee evaluation.
-                          </div>
-                        )}
-                        {/* Disqualification — shown on the stage where rejection occurred */}
-                        {state === 'rejected' && (
-                          <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
-                            <p className="text-sm font-semibold text-rose-800">Application did not advance past this stage</p>
-                            {disqualificationSummary && (
-                              <p className="mt-1 text-sm text-rose-700">{disqualificationSummary}</p>
-                            )}
-                          </div>
-                        )}
-                        {/* Cancelled — stages that will never be reached */}
-                        {state === 'cancelled' && (
-                          <p className="mt-1 text-xs italic text-slate-300">This stage was not reached</p>
-                        )}
                       </div>
-                    </li>
-                  );
-                })}
-
-                {/* Extra entry sourced from application_activity_log — the real
-                    audit trail, not the computed stage list above. */}
-                {(() => {
-                  const disqualifiedEvent = activityLog.find((entry) => entry.event_type === 'disqualified');
-                  if (!disqualifiedEvent) return null;
-                  return (
-                    <li key="disqualified-event" className="relative flex gap-4 pt-2">
-                      <span className="relative z-[1] flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600">
-                        <CircleX size={18} />
-                      </span>
-                      <div className="flex-1 pt-1">
-                        <div className="flex flex-wrap items-baseline justify-between gap-2">
-                          <h4 className="text-base font-semibold" style={{ color: '#9F1239' }}>{disqualifiedEvent.event_label}</h4>
-                          <span className="text-xs font-medium" style={{ color: '#363EE8' }}>{formatShortDate(disqualifiedEvent.occurred_at)}</span>
-                        </div>
-                        {disqualifiedEvent.event_description && (
-                          <p className="mt-0.5 text-sm" style={{ color: '#BE123C' }}>{disqualifiedEvent.event_description}</p>
-                        )}
-                      </div>
-                    </li>
-                  );
-                })()}
-              </ol>
+                    )}
+                  </div>
+                );
+              })()}
             </section>
 
             {/* Submitted Documents */}
