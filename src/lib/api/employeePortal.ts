@@ -223,16 +223,31 @@ export async function fetchPortalEmployeeByNumber(
   if (!employeeNumber) return { ok: false, error: 'No employee number provided.' };
 
   try {
-    const { data, error } = await supabase
-      .from('employees')
+    // Read through employees_with_department, not the base employees table.
+    // employees has RLS enabled with policies that only match Supabase-Auth
+    // admins / self-users (20260510_create_employees_table.sql); portal
+    // employees reach PostgREST as anon, so the base table returns zero rows
+    // and login silently loses supabaseId (the "account not linked" banner).
+    // The view is GRANTed to anon and bypasses RLS. It renames some columns,
+    // so normalise back to the base-column names mapSupabaseRowToEmployee reads.
+    const { data, error } = await (supabase as any)
+      .from('employees_with_department')
       .select('*')
-      .eq('employee_number', employeeNumber)
+      .eq('employee_id', employeeNumber) // view: employee_number AS employee_id
       .maybeSingle();
 
     if (error) throw error;
     if (!data) return { ok: false, error: `No employee row found for ${employeeNumber}.` };
 
-    return { ok: true, data: mapSupabaseRowToEmployee(data) };
+    const normalised = {
+      ...data,
+      employee_number: data.employee_id,
+      phone: data.mobile_number,
+      sex: data.gender,
+      current_address_street: data.home_address,
+    };
+
+    return { ok: true, data: mapSupabaseRowToEmployee(normalised) };
   } catch (err: any) {
     console.error('[employeePortal] fetchPortalEmployeeByNumber error:', err);
     return { ok: false, error: err?.message ?? 'Unknown error.' };
