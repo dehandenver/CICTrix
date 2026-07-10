@@ -58,6 +58,19 @@ import {
   attachPdfUrl,
   type IpcrWorkspaceRow,
 } from '../../lib/api/ipcrWorkspace';
+import {
+  FUNCTION_TYPES,
+  blankMfo,
+  emptyTargets,
+  flattenForWorkspace,
+  getActiveCycle,
+  hasSubmittableTarget,
+  loadTargetSetting,
+  saveTargetSetting,
+  type FunctionType,
+  type TargetsByFunction,
+  type TargetStatus,
+} from '../../lib/api/ipcrTargets';
 import { generateIpcrPdf } from '../../lib/ipcrPdf';
 import { supabase as supabaseClient } from '../../lib/supabase';
 
@@ -289,6 +302,12 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
     strategic: '',
     support: '',
   });
+  // Phase 1 relational model (target_settings -> mfos -> success_indicators).
+  // employeeTargets above stays as the flattened text ipcr_workspace/PDF read.
+  const [targetRows, setTargetRows] = useState<TargetsByFunction>(emptyTargets());
+  const [targetStatus, setTargetStatus] = useState<TargetStatus>('draft');
+  const [targetReviewComment, setTargetReviewComment] = useState<string | null>(null);
+  const [activeCycleId, setActiveCycleId] = useState<number | null>(null);
   const [ipcrApproved, setIpcrApproved] = useState(false);
   // Per-category Phase 2 accomplishments + Q/E/T self-ratings + % weight.
   const [accomplishments, setAccomplishments] = useState({ core: '', strategic: '', support: '' });
@@ -442,6 +461,19 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
         setSystemSchedules({ target: null, rating: null });
       }
 
+      // Phase 1 relational targets. Falls back to a single blank MFO per
+      // category when the employee has no target_settings row yet.
+      const activeCycleRes = await getActiveCycle();
+      if (activeCycleRes.ok && activeCycleRes.data) {
+        setActiveCycleId(activeCycleRes.data.id);
+        const tsRes = await loadTargetSetting(currentUser.supabaseId, activeCycleRes.data.id);
+        if (tsRes.ok) {
+          setTargetRows(tsRes.data.targets);
+          setTargetStatus(tsRes.data.setting?.status ?? 'draft');
+          setTargetReviewComment(tsRes.data.setting?.review_comment ?? null);
+        }
+      }
+
       // Load the "My IPCR Workspace" row for this period and hydrate the form.
       const ws = await getWorkspace(currentUser.supabaseId, resolvedPeriod);
       setWorkspaceRow(ws);
@@ -517,22 +549,42 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       setIpcrError('No active rating period.');
       return;
     }
-    if (
-      submit &&
-      !employeeTargets.core.trim() &&
-      !employeeTargets.strategic.trim() &&
-      !employeeTargets.support.trim()
-    ) {
-      setIpcrError('Enter at least one target before submitting.');
+    if (submit && !hasSubmittableTarget(targetRows)) {
+      setIpcrError('Add at least one MFO with a success indicator before submitting.');
+      return;
+    }
+    if (!activeCycleId) {
+      setIpcrError('No active performance cycle. Please contact your PM / administrator.');
       return;
     }
     setWorkspaceSaving(true);
     setIpcrError(null);
+
+    // Source of truth: the relational rows Phase 2 will attach ratings to.
+    const targetRes = await saveTargetSetting({
+      employeeId: currentUser.supabaseId,
+      cycleId: activeCycleId,
+      targets: targetRows,
+      submit,
+    });
+    if (targetRes.ok === false) {
+      setWorkspaceSaving(false);
+      setIpcrError(targetRes.error);
+      return;
+    }
+
+    // Mirror a flattened summary into ipcr_workspace, which Phase 2 and the
+    // generated IPCR PDF still read from.
+    const flattened = {
+      core: flattenForWorkspace(targetRows.core),
+      strategic: flattenForWorkspace(targetRows.strategic),
+      support: flattenForWorkspace(targetRows.support),
+    };
+    setEmployeeTargets(flattened);
+
     const res = await saveTargets({
       ...workspaceIdentity(),
-      core: employeeTargets.core,
-      strategic: employeeTargets.strategic,
-      support: employeeTargets.support,
+      ...flattened,
       submit,
     });
     setWorkspaceSaving(false);
@@ -540,11 +592,44 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       setIpcrError(res.error || 'Failed to save targets.');
       return;
     }
+    setTargetStatus(targetRes.data.status);
+    if (submit) setTargetReviewComment(null);
     setWorkspaceRow(res.row);
     setIpcrApproved(res.row.status !== 'Draft Targets');
     setSaveSuccess(submit ? 'Targets submitted to your Office Account for approval.' : 'Targets saved as draft.');
     setTimeout(() => setSaveSuccess(null), 4000);
   };
+
+  // ── Phase 1 table editing ──────────────────────────────────────────────────
+  const targetsLocked = targetStatus === 'submitted' || targetStatus === 'approved';
+
+  const mutateTargets = (fn: (draft: TargetsByFunction) => void) => {
+    setTargetRows((prev) => {
+      const next: TargetsByFunction = {
+        core: prev.core.map((m) => ({ ...m, indicators: m.indicators.map((si) => ({ ...si })) })),
+        strategic: prev.strategic.map((m) => ({ ...m, indicators: m.indicators.map((si) => ({ ...si })) })),
+        support: prev.support.map((m) => ({ ...m, indicators: m.indicators.map((si) => ({ ...si })) })),
+      };
+      fn(next);
+      // A category never renders empty.
+      for (const key of FUNCTION_TYPES) if (next[key].length === 0) next[key] = [blankMfo()];
+      return next;
+    });
+  };
+
+  const addMfo = (fn: FunctionType) => mutateTargets((d) => { d[fn].push(blankMfo()); });
+  const removeMfo = (fn: FunctionType, i: number) => mutateTargets((d) => { d[fn].splice(i, 1); });
+  const setMfoTitle = (fn: FunctionType, i: number, title: string) =>
+    mutateTargets((d) => { d[fn][i].title = title; });
+  const addIndicator = (fn: FunctionType, i: number) =>
+    mutateTargets((d) => { d[fn][i].indicators.push({ description: '' }); });
+  const removeIndicator = (fn: FunctionType, i: number, j: number) =>
+    mutateTargets((d) => {
+      d[fn][i].indicators.splice(j, 1);
+      if (d[fn][i].indicators.length === 0) d[fn][i].indicators.push({ description: '' });
+    });
+  const setIndicator = (fn: FunctionType, i: number, j: number, description: string) =>
+    mutateTargets((d) => { d[fn][i].indicators[j].description = description; });
 
   const handleSubmitWorkspaceAccomplishments = async (submit: boolean) => {
     if (!currentUser.supabaseId) {
@@ -2810,34 +2895,114 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                   </div>
                 </div>
 
-                <div className="space-y-5">
-                  {[
-                    { key: 'core', label: 'Core Functions', placeholder: 'e.g. Process payroll within 3 days of timesheet approval.' },
-                    { key: 'strategic', label: 'Strategic Functions', placeholder: 'e.g. Formulate training programs based on competency gaps.' },
-                    { key: 'support', label: 'Support Functions', placeholder: 'e.g. Provide IT helpdesk assistance within 15 minutes.' }
-                  ].map(fn => {
-                    const val = employeeTargets[fn.key as 'core' | 'strategic' | 'support'];
+                {targetStatus === 'rejected' && targetReviewComment && (
+                  <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
+                    <p className="text-xs font-bold text-rose-800">Returned for revision</p>
+                    <p className="mt-1 text-sm text-rose-700">{targetReviewComment}</p>
+                  </div>
+                )}
+
+                <div className="space-y-6">
+                  {([
+                    { key: 'core', label: 'Core Functions', mfoPlaceholder: 'e.g. Payroll Management', siPlaceholder: 'e.g. Process payroll within 3 days of timesheet approval.' },
+                    { key: 'strategic', label: 'Strategic Functions', mfoPlaceholder: 'e.g. Competency Development', siPlaceholder: 'e.g. Formulate training programs based on competency gaps.' },
+                    { key: 'support', label: 'Support Functions', mfoPlaceholder: 'e.g. IT Helpdesk', siPlaceholder: 'e.g. Provide IT helpdesk assistance within 15 minutes.' },
+                  ] as const).map((fn) => {
+                    const rows = targetRows[fn.key];
+                    const readOnly = targetsLocked || ipcrApproved || !isTargetSettingActive;
                     return (
-                      <div key={fn.key} className="space-y-1.5">
+                      <div key={fn.key} className="space-y-2">
                         <label className="block text-xs font-bold text-slate-700">{fn.label}</label>
-                        <textarea
-                          value={val}
-                          onChange={(e) => {
-                            if (ipcrApproved || !isTargetSettingActive) return;
-                            setEmployeeTargets(prev => ({ ...prev, [fn.key]: e.target.value }));
-                          }}
-                          disabled={ipcrApproved || !isTargetSettingActive}
-                          placeholder={fn.placeholder}
-                          rows={3}
-                          style={{ borderColor: '#C8D1FF' }}
-                          className="w-full rounded-lg border px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#363EE8] disabled:bg-slate-50 disabled:cursor-not-allowed"
-                        />
+                        <div className="overflow-x-auto rounded-lg border" style={{ borderColor: '#C8D1FF' }}>
+                          <table className="w-full min-w-[640px] border-collapse text-sm">
+                            <thead>
+                              <tr className="bg-slate-50 text-left">
+                                <th className="w-2/5 border-b px-3 py-2 text-xs font-bold text-slate-600" style={{ borderColor: '#C8D1FF' }}>MFO</th>
+                                <th className="border-b px-3 py-2 text-xs font-bold text-slate-600" style={{ borderColor: '#C8D1FF' }}>Success Indicators (Targets + Measures)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {rows.map((mfo, i) => (
+                                <tr key={i} className="align-top">
+                                  <td className="border-b px-3 py-2" style={{ borderColor: '#EEF0FD' }}>
+                                    <div className="flex items-start gap-1.5">
+                                      <input
+                                        type="text"
+                                        value={mfo.title}
+                                        onChange={(e) => setMfoTitle(fn.key, i, e.target.value)}
+                                        disabled={readOnly}
+                                        placeholder={fn.mfoPlaceholder}
+                                        style={{ borderColor: '#C8D1FF' }}
+                                        className="w-full rounded-lg border px-2.5 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#363EE8] disabled:bg-slate-50 disabled:cursor-not-allowed"
+                                      />
+                                      {!readOnly && (
+                                        <button
+                                          type="button"
+                                          onClick={() => removeMfo(fn.key, i)}
+                                          title="Delete this MFO"
+                                          className="mt-1 shrink-0 rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                                        >
+                                          <Trash2 className="h-4 w-4" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="border-b px-3 py-2" style={{ borderColor: '#EEF0FD' }}>
+                                    <div className="space-y-1.5">
+                                      {mfo.indicators.map((si, j) => (
+                                        <div key={j} className="flex items-start gap-1.5">
+                                          <input
+                                            type="text"
+                                            value={si.description}
+                                            onChange={(e) => setIndicator(fn.key, i, j, e.target.value)}
+                                            disabled={readOnly}
+                                            placeholder={fn.siPlaceholder}
+                                            style={{ borderColor: '#C8D1FF' }}
+                                            className="w-full rounded-lg border px-2.5 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#363EE8] disabled:bg-slate-50 disabled:cursor-not-allowed"
+                                          />
+                                          {!readOnly && (
+                                            <button
+                                              type="button"
+                                              onClick={() => removeIndicator(fn.key, i, j)}
+                                              title="Delete this success indicator"
+                                              className="mt-1 shrink-0 rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                                            >
+                                              <Trash2 className="h-4 w-4" />
+                                            </button>
+                                          )}
+                                        </div>
+                                      ))}
+                                      {!readOnly && (
+                                        <button
+                                          type="button"
+                                          onClick={() => addIndicator(fn.key, i)}
+                                          className="text-xs font-semibold text-[#363EE8] hover:underline"
+                                        >
+                                          + Add Success Indicator
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        {!readOnly && (
+                          <button
+                            type="button"
+                            onClick={() => addMfo(fn.key)}
+                            className="text-xs font-semibold text-[#363EE8] hover:underline"
+                          >
+                            + Add MFO
+                          </button>
+                        )}
                       </div>
                     );
                   })}
                 </div>
 
-                {!ipcrApproved && isTargetSettingActive && (
+                {!targetsLocked && !ipcrApproved && isTargetSettingActive && (
                   <div className="flex justify-end gap-2 pt-3">
                     <button
                       onClick={() => void handleSaveWorkspaceTargets(false)}
