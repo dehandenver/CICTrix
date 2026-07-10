@@ -82,16 +82,26 @@ export const flattenForWorkspace = (mfos: MfoDraft[]): string =>
     })
     .join('\n\n');
 
-/** The cycle Phase 1 is being set for: the newest non-closed performance cycle. */
+/**
+ * The cycle Phase 1 is being set for.
+ *
+ * performance_cycles.status is constrained to ('Active','Completed','Planned').
+ * Prefer the newest 'Active' cycle; fall back to the newest 'Planned' one so a
+ * cycle that has not opened yet still lets targets be drafted. A 'Completed'
+ * cycle is never returned — targets must not be written against a closed cycle.
+ */
 export async function getActiveCycle(): Promise<Result<PerformanceCycle | null>> {
   try {
     const { data, error } = await (supabase as any)
       .from('performance_cycles')
       .select('id, title, start_date, end_date, status')
-      .order('start_date', { ascending: false })
-      .limit(1);
+      .in('status', ['Active', 'Planned'])
+      .order('start_date', { ascending: false });
     if (error) return { ok: false, error: error.message };
-    return { ok: true, data: (data?.[0] as PerformanceCycle) ?? null };
+
+    const rows = (data ?? []) as PerformanceCycle[];
+    const preferred = rows.find((c) => c.status === 'Active') ?? rows[0] ?? null;
+    return { ok: true, data: preferred };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Failed to load cycle.' };
   }

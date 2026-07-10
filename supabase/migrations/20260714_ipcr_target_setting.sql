@@ -118,12 +118,14 @@ CREATE INDEX IF NOT EXISTS target_settings_employee_cycle_idx
 -- performance_cycles is empty in production, and target_settings.cycle_id is a
 -- NOT NULL FK to it, so Phase 1 cannot be saved until a cycle exists. Seed the
 -- current calendar year if the table has no rows at all.
+-- status is constrained to ('Active','Completed','Planned') by
+-- 20260518_pm_performance_evaluations_and_competencies.sql — capitalised.
 INSERT INTO performance_cycles (title, start_date, end_date, status)
 SELECT
   to_char(now(), 'YYYY') || ' Performance Cycle',
   make_date(EXTRACT(YEAR FROM now())::int, 1, 1),
   make_date(EXTRACT(YEAR FROM now())::int, 12, 31),
-  'active'
+  'Active'
 WHERE NOT EXISTS (SELECT 1 FROM performance_cycles);
 
 
