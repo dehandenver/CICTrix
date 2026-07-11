@@ -49,6 +49,7 @@ import {
   logPostTrainingProficiency,
   type TrainingRequest
 } from '../../../lib/api/trainingRequests';
+import { Phase2RatingPanel } from './Phase2RatingPanel';
 
 type Pillar = 'Cultural Transformation' | 'Employee Development' | 'Leadership' | 'Technical';
 
@@ -982,6 +983,11 @@ export const OfficeAccountConsole: React.FC = () => {
 
                 <div className="p-6">
                   {ratingsSubtab === 'review' && (
+                    <Phase2RatingPanel currentEmployeeId={currentEmployeeId} />
+                  )}
+
+                  {/* Legacy mock override table — superseded by Phase2RatingPanel above. */}
+                  {false && ratingsSubtab === 'review' && (
                     <div className="space-y-4">
                       <div>
                         <h3 className="text-sm font-bold text-slate-800">Accomplishment Audits & Overrides</h3>

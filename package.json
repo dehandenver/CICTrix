@@ -10,7 +10,10 @@
     "test": "vitest run",
     "docker:start": "scripts\\start-dev.bat",
     "docker:stop": "scripts\\stop-dev.bat",
-    "docker:setup": "scripts\\setup-backend.bat"
+    "docker:setup": "scripts\\setup-backend.bat",
+    "sync:rsp": "node scripts/sync-rsp-portals.mjs",
+    "seed:ipcr-historical": "node scripts/seed-ipcr-historical.mjs",
+    "seed:ipcr-maria": "node scripts/seed-ipcr-maria.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.93.3",
