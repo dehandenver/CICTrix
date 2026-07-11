@@ -14,9 +14,11 @@ import {
   listRatableTargets,
   loadRatingSheet,
   saveRatings,
+  openSelfRatingPeriod,
   type RatableTarget,
   type RatingSheet,
 } from '../../../lib/api/ipcrRatings';
+import { createNotifications } from '../../../lib/api/employeeNotifications';
 
 const FUNCTION_LABEL: Record<string, string> = {
   core: 'Core Functions',
@@ -53,6 +55,7 @@ export const Phase2RatingPanel: React.FC<{ currentEmployeeId: string | null }> =
   const [loadingSheet, setLoadingSheet] = useState(false);
   const [scores, setScores] = useState<Record<string, LocalScore>>({});
   const [saving, setSaving] = useState(false);
+  const [opening, setOpening] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
 
   const refreshList = async () => {
@@ -120,14 +123,44 @@ export const Phase2RatingPanel: React.FC<{ currentEmployeeId: string | null }> =
     void refreshList();
   };
 
+  const openWindow = async () => {
+    if (!window.confirm('Open the self-rating period for ALL employees with locked, approved IPCRs? They will be notified and able to submit their Phase 2 self-ratings.')) return;
+    setOpening(true);
+    setNotice(null);
+    const res = await openSelfRatingPeriod({ openedBy: currentEmployeeId ?? 'office_account' });
+    if (res.ok === false) { setOpening(false); setNotice({ tone: 'err', text: res.error }); return; }
+    const ids = res.data.employeeIds;
+    if (ids.length) {
+      await createNotifications(ids.map((id) => ({
+        employeeId: id,
+        type: 'phase2_open',
+        title: 'Self-rating period is now open',
+        message: 'The Accomplishments & Self-Ratings module is now available. Please encode your achievements and self-ratings for this rating period.',
+        link: '/employee/ipcr-workspace',
+      })));
+    }
+    setOpening(false);
+    setNotice({ tone: 'ok', text: ids.length ? `Self-rating period opened for ${ids.length} employee(s); notifications sent.` : 'No locked records to open (all already open or submitted).' });
+    void refreshList();
+  };
+
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="text-sm font-bold text-slate-800">Phase 2 · QET Rating (per Success Indicator)</h3>
-        <p className="text-xs text-slate-500 mt-0.5">
-          Score each Success Indicator of a frozen IPCR on Quality, Efficiency, and Timeliness (1–5). Save progress
-          any time; complete once every indicator is fully scored.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-bold text-slate-800">Phase 2 · QET Rating (per Success Indicator)</h3>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Score each Success Indicator of a frozen IPCR on Quality, Efficiency, and Timeliness (1–5). Save progress
+            any time; complete once every indicator is fully scored.
+          </p>
+        </div>
+        <button
+          onClick={() => void openWindow()}
+          disabled={opening}
+          className="shrink-0 rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3 py-2 text-xs font-semibold text-white shadow disabled:opacity-50"
+        >
+          {opening ? 'Opening…' : 'Open Self-Rating Period'}
+        </button>
       </div>
 
       {notice && (

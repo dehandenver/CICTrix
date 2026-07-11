@@ -24,7 +24,7 @@ import type { FunctionType } from './ipcrTargets';
 
 const supabase = supabaseClient as any;
 
-export type Phase2Status = 'not_started' | 'in_progress' | 'completed';
+export type Phase2Status = 'not_started' | 'locked' | 'open' | 'in_progress' | 'completed';
 
 export interface RatableTarget {
   targetSettingId: string;
@@ -41,6 +41,7 @@ export interface RatableTarget {
 export interface RatingIndicator {
   successIndicatorId: string;
   description: string;
+  accomplishment: string;
   quality: number | null;
   efficiency: number | null;
   timeliness: number | null;
@@ -172,9 +173,10 @@ export async function loadRatingSheet(targetSettingId: string): Promise<Result<R
 
     const ratingBySi = new Map<string, any>();
     if (siIds.length) {
+      // select('*') so a not-yet-migrated `accomplishment` column can't 400 the query.
       const { data: ratings } = await supabase
         .from('success_indicator_ratings')
-        .select('success_indicator_id, quality, efficiency, timeliness, rated_by, overridden_by')
+        .select('*')
         .in('success_indicator_id', siIds);
       for (const r of (ratings ?? []) as any[]) ratingBySi.set(r.success_indicator_id, r);
     }
@@ -196,6 +198,7 @@ export async function loadRatingSheet(targetSettingId: string): Promise<Result<R
             return {
               successIndicatorId: si.id,
               description: si.description ?? '',
+              accomplishment: r?.accomplishment ?? '',
               quality: r?.quality ?? null,
               efficiency: r?.efficiency ?? null,
               timeliness: r?.timeliness ?? null,
@@ -379,4 +382,161 @@ async function rollUpToWorkspace(
   }
 
   return { overallScore, adjectival };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Employee-facing Phase 2 (self-rating) — gated by phase2_status.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface EmployeeRatingSheet extends RatingSheet {
+  phase2OpenTargetDate: string | null;
+}
+
+/**
+ * The employee's own Phase 2 sheet: their frozen (approved) record, its
+ * phase2_status gate, and every Success Indicator with any existing self-rating
+ * + achievement text. Resolves the record by employee (latest approved) so it
+ * doesn't depend on performance_cycles being readable by anon.
+ */
+export async function loadEmployeeRatingSheet(
+  employeeId: string,
+): Promise<Result<EmployeeRatingSheet | null>> {
+  try {
+    const { data: settings, error } = await supabase
+      .from('target_settings')
+      .select('*')
+      .eq('employee_id', employeeId)
+      .eq('status', 'approved')
+      .order('approved_at', { ascending: false })
+      .limit(1);
+    if (error) return { ok: false, error: error.message };
+    const setting = (settings ?? [])[0];
+    if (!setting) return { ok: true, data: null };
+
+    const res = await loadRatingSheet(setting.id);
+    if (res.ok === false) return res;
+    return {
+      ok: true,
+      data: {
+        ...res.data,
+        // phase2_status may be undefined pre-migration → treat as locked.
+        phase2Status: (setting.phase2_status ?? 'locked') as Phase2Status,
+        phase2OpenTargetDate: setting.phase2_open_target_date ?? null,
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Failed to load your rating sheet.' };
+  }
+}
+
+/**
+ * Save the employee's own per-indicator self-ratings + achievement text.
+ * `submit=true` locks it (phase2_status → 'completed'); otherwise 'in_progress'.
+ * Only allowed while the window is open. Rolls up to ipcr_workspace.
+ */
+export async function saveEmployeeRatings(params: {
+  targetSettingId: string;
+  employeeId: string;
+  entries: Array<RatingInput & { accomplishment: string }>;
+  submit: boolean;
+}): Promise<Result<{ phase2Status: Phase2Status; overallScore: number | null; adjectival: string | null }>> {
+  const { targetSettingId, employeeId, entries, submit } = params;
+  try {
+    const { data: setting, error: sErr } = await supabase
+      .from('target_settings')
+      .select('id, employee_id, cycle_id, status, phase2_status')
+      .eq('id', targetSettingId)
+      .maybeSingle();
+    if (sErr) return { ok: false, error: sErr.message };
+    if (!setting) return { ok: false, error: 'Record not found.' };
+    if (setting.employee_id !== employeeId)
+      return { ok: false, error: 'You can only rate your own IPCR.' };
+    const gate = (setting.phase2_status ?? 'locked') as Phase2Status;
+    if (gate === 'locked' || gate === 'not_started')
+      return { ok: false, error: 'The self-rating period has not opened yet.' };
+    if (gate === 'completed')
+      return { ok: false, error: 'Your self-ratings have already been submitted.' };
+
+    const rows = entries.map((e) => ({
+      success_indicator_id: e.successIndicatorId,
+      accomplishment: e.accomplishment?.trim() || null,
+      quality: clamp15(e.quality),
+      efficiency: clamp15(e.efficiency),
+      timeliness: clamp15(e.timeliness),
+      rated_by: employeeId,
+      updated_at: nowIso(),
+    }));
+    if (rows.length) {
+      const { error: upErr } = await supabase
+        .from('success_indicator_ratings')
+        .upsert(rows, { onConflict: 'success_indicator_id' });
+      if (upErr) return { ok: false, error: upErr.message };
+    }
+
+    const phase2Status: Phase2Status = submit ? 'completed' : 'in_progress';
+    const { error: stErr } = await supabase
+      .from('target_settings')
+      .update({
+        phase2_status: phase2Status,
+        phase2_completed_at: submit ? nowIso() : null,
+        phase2_submitted_at: submit ? nowIso() : null,
+        updated_at: nowIso(),
+      })
+      .eq('id', targetSettingId);
+    if (stErr) return { ok: false, error: stErr.message };
+
+    const { overallScore, adjectival } = await rollUpToWorkspace(targetSettingId, setting, submit).catch(() => ({
+      overallScore: null,
+      adjectival: null,
+    }));
+
+    supabase
+      .from('ipcr_audit_log')
+      .insert({
+        target_setting_id: targetSettingId,
+        action: 'rate',
+        performed_by: employeeId,
+        performed_by_role: 'employee',
+        reason: submit ? 'Phase 2 self-rating submitted' : 'Phase 2 self-rating draft',
+      })
+      .then(() => undefined, () => undefined);
+
+    return { ok: true, data: { phase2Status, overallScore, adjectival } };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Failed to save your ratings.' };
+  }
+}
+
+/**
+ * Office/PM bulk action: OPEN the self-rating window for a whole period. Flips
+ * every LOCKED approved record for that cycle to 'open', records who/when, and
+ * returns the affected employee ids so the caller can notify them. This is the
+ * explicit, audited transition (not a silent date flip).
+ */
+export async function openSelfRatingPeriod(params: {
+  cycleId?: number;
+  openedBy: string;
+}): Promise<Result<{ employeeIds: string[] }>> {
+  try {
+    let query = supabase
+      .from('target_settings')
+      .select('id, employee_id')
+      .eq('status', 'approved')
+      .in('phase2_status', ['locked', 'not_started']);
+    if (params.cycleId != null) query = query.eq('cycle_id', params.cycleId);
+    const { data: locked, error } = await query;
+    if (error) return { ok: false, error: error.message };
+    const rows = (locked ?? []) as any[];
+    if (!rows.length) return { ok: true, data: { employeeIds: [] } };
+
+    const { error: upErr } = await supabase
+      .from('target_settings')
+      .update({ phase2_status: 'open', phase2_opened_at: nowIso(), phase2_opened_by: params.openedBy, updated_at: nowIso() })
+      .in('id', rows.map((r) => r.id));
+    if (upErr) return { ok: false, error: upErr.message };
+
+    return { ok: true, data: { employeeIds: rows.map((r) => String(r.employee_id)) } };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Failed to open the self-rating period.' };
+  }
 }

@@ -33,6 +33,9 @@ export interface MfoDraft {
 
 export type TargetsByFunction = Record<FunctionType, MfoDraft[]>;
 
+// Phase 2 self-rating lifecycle (migration 20260718). 'not_started' is legacy.
+export type Phase2Status = 'not_started' | 'locked' | 'open' | 'in_progress' | 'completed';
+
 export interface TargetSettingRow {
   id: string;
   employee_id: string;
@@ -42,6 +45,11 @@ export interface TargetSettingRow {
   reviewed_by: string | null;
   reviewed_at: string | null;
   review_comment: string | null;
+  // Phase 2 gating — present only after migration 20260718 (undefined before).
+  phase2_status?: Phase2Status;
+  phase2_open_target_date?: string | null;
+  phase2_opened_at?: string | null;
+  phase2_submitted_at?: string | null;
 }
 
 export interface PerformanceCycle {

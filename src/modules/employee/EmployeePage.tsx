@@ -73,6 +73,7 @@ import {
   type TargetStatus,
 } from '../../lib/api/ipcrTargets';
 import { generateIpcrPdf } from '../../lib/ipcrPdf';
+import { EmployeePhase2 } from './EmployeePhase2';
 import { supabase as supabaseClient } from '../../lib/supabase';
 
 /**
@@ -2922,8 +2923,11 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                     const readOnly = targetsLocked || ipcrApproved || !isTargetSettingActive;
                     return (
                       <div key={fn.key} className="space-y-2">
-                        <label className="block text-xs font-bold text-slate-700">{fn.label}</label>
-                        <div className="overflow-x-auto rounded-lg border" style={{ borderColor: '#C8D1FF' }}>
+                        <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                          {readOnly && <Lock className="h-3.5 w-3.5 text-slate-400" />}
+                          {fn.label}
+                        </label>
+                        <div className={`overflow-x-auto rounded-lg border ${readOnly ? 'bg-slate-50/60' : ''}`} style={{ borderColor: '#C8D1FF' }}>
                           <table className="w-full min-w-[640px] border-collapse text-sm">
                             <thead>
                               <tr className="bg-slate-50 text-left">
@@ -2943,7 +2947,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                                         disabled={readOnly}
                                         placeholder={fn.mfoPlaceholder}
                                         style={{ borderColor: '#C8D1FF' }}
-                                        className="w-full rounded-lg border px-2.5 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#363EE8] disabled:bg-slate-50 disabled:cursor-not-allowed"
+                                        className="w-full rounded-lg border px-2.5 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#363EE8] disabled:bg-slate-100 disabled:text-slate-500 disabled:border-slate-200 disabled:cursor-default disabled:shadow-inner"
                                       />
                                       {!readOnly && (
                                         <button
@@ -2968,7 +2972,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                                             disabled={readOnly}
                                             placeholder={fn.siPlaceholder}
                                             style={{ borderColor: '#C8D1FF' }}
-                                            className="w-full rounded-lg border px-2.5 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#363EE8] disabled:bg-slate-50 disabled:cursor-not-allowed"
+                                            className="w-full rounded-lg border px-2.5 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#363EE8] disabled:bg-slate-100 disabled:text-slate-500 disabled:border-slate-200 disabled:cursor-default disabled:shadow-inner"
                                           />
                                           {!readOnly && (
                                             <button
@@ -3034,6 +3038,11 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
             )}
 
             {ipcrSubtab === 'phase2' && (
+              <EmployeePhase2 employeeId={currentUser.supabaseId ?? null} />
+            )}
+
+            {/* Legacy per-group Phase 2 — superseded by EmployeePhase2 (per-indicator + gating). */}
+            {false && ipcrSubtab === 'phase2' && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Left Panel */}
                 <div className="rounded-xl border bg-white p-5 shadow-sm space-y-4" style={{ borderColor: '#C8D1FF' }}>
