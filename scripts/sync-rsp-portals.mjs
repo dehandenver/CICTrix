@@ -37,7 +37,55 @@ const rand4 = () => Math.floor(1000 + Math.random() * 9000);
 const genPassword = () => `Cic-${Math.random().toString(36).slice(2, 8)}${rand4()}`;
 const DEFAULT_PORTAL_PASSWORD = 'Cictrix@2026'; // new logins only; existing ones untouched
 
+async function reconcileOrphanPortals() {
+  // A portal account whose employee_id matches no employees row can never resolve
+  // an employees.id, so the Employee Portal shows "account isn't linked" and loads
+  // nothing. Create the missing employees row (from the portal's own data) so the
+  // existing login resolves. Deduped by employee_number; emails kept unique.
+  const [{ data: allPortals }, { data: empRows }] = await Promise.all([
+    db.from('employee_portal_accounts').select('employee_id, full_name, email, mobile_number'),
+    db.from('employees').select('id, employee_number, email'),
+  ]);
+  const existingNums = new Set((empRows ?? []).map((e) => e.employee_number));
+  const usedEmails = new Set((empRows ?? []).map((e) => (e.email ?? '').toLowerCase()).filter(Boolean));
+  const anchorCreatedBy = (empRows ?? [])[0]?.id;
+  const seen = new Set();
+  let reconciled = 0;
+  for (const p of allPortals ?? []) {
+    const num = p.employee_id;
+    if (!num || existingNums.has(num) || seen.has(num)) continue;
+    seen.add(num);
+    const name = (p.full_name ?? '').trim() || num;
+    const parts = name.split(/\s+/);
+    const last = parts.length > 1 ? parts[parts.length - 1] : '';
+    const first = parts.length > 1 ? parts.slice(0, -1).join(' ') : name;
+    let email = (p.email ?? '').trim();
+    if (!email || usedEmails.has(email.toLowerCase())) email = `${slugify(num)}@placeholder.local`;
+    usedEmails.add(email.toLowerCase());
+    const { error } = await db.from('employees').insert({
+      employee_number: num,
+      first_name: first,
+      last_name: last,
+      email,
+      phone: p.mobile_number || null,
+      department: 'Operations',
+      position: 'Administrative Officer',
+      employment_status: 'Probationary',
+      date_hired: '2026-01-06',
+      status: 'Active',
+      created_by: anchorCreatedBy,
+    });
+    if (error) console.warn(`  ⚠ reconcile ${num}: ${error.message}`);
+    else { existingNums.add(num); reconciled++; }
+  }
+  return reconciled;
+}
+
 async function main() {
+  console.log('▶ Reconciling orphan portal accounts…');
+  const reconciled = await reconcileOrphanPortals().catch((e) => die('reconcile orphans', e));
+  console.log(`  ${reconciled} orphan portal account(s) linked to a new employees row.\n`);
+
   console.log('▶ Loading RSP roster (active employees)…');
   const employees = await loadActiveEmployees(db).catch((e) => die('load employees', e));
   const resolveDept = await buildDepartmentResolver(db).catch((e) => die('load departments', e));

@@ -280,23 +280,63 @@ function pickTemplate(employee) {
 const flatten = (mfos) =>
   mfos.map((m) => `${m.title}\n${m.indicators.map((d) => `  - ${d}`).join('\n')}`).join('\n\n');
 
-async function ensureCycle() {
-  const existing = await db.from('performance_cycles').select('id').eq('title', CYCLE_TITLE).maybeSingle();
-  if (existing.data?.id) return existing.data.id;
-  const { data, error } = await db
+// Seed against the cycle the Employee Portal actually reads — the newest Active
+// (or Planned) performance_cycle — so the frozen targets show up in "My IPCR
+// Workspace". Falls back to creating the historical cycle only if none exists.
+async function resolveCycle() {
+  const { data } = await db
+    .from('performance_cycles')
+    .select('id, title, status')
+    .in('status', ['Active', 'Planned'])
+    .order('start_date', { ascending: false });
+  const preferred = (data ?? []).find((c) => c.status === 'Active') ?? (data ?? [])[0];
+  if (preferred?.id) return preferred.id;
+  const { data: created, error } = await db
     .from('performance_cycles')
     .insert({ title: CYCLE_TITLE, start_date: '2026-01-01', end_date: '2026-06-30', status: 'Completed' })
     .select('id')
     .single();
   if (error) die('ensure cycle failed', error);
-  return data.id;
+  return created.id;
+}
+
+// One Phase 2 rating shell per success indicator that lacks one (Q/E/T null),
+// so the Office Console rating panel + progress counts work for records that
+// were approved before the ratings table existed. Non-destructive.
+async function backfillRatingShells(designated) {
+  const { data: settings } = await db.from('target_settings').select('id, employee_id');
+  const empByTs = new Map((settings ?? []).map((s) => [s.id, s.employee_id]));
+  const { data: mfoRows } = await db.from('mfos').select('id, target_setting_id');
+  const tsByMfo = new Map((mfoRows ?? []).map((m) => [m.id, m.target_setting_id]));
+  const { data: sis } = await db.from('success_indicators').select('id, mfo_id');
+  const { data: rated } = await db.from('success_indicator_ratings').select('success_indicator_id');
+  const have = new Set((rated ?? []).map((r) => r.success_indicator_id));
+  const rows = [];
+  for (const si of sis ?? []) {
+    if (have.has(si.id)) continue;
+    const tsId = tsByMfo.get(si.mfo_id);
+    const empId = tsId ? empByTs.get(tsId) : null;
+    const rater = empId ? designated.get(String(empId)) ?? null : null;
+    rows.push({ success_indicator_id: si.id, quality: null, efficiency: null, timeliness: null, rated_by: rater, updated_at: new Date().toISOString() });
+  }
+  if (rows.length) {
+    const { error } = await db.from('success_indicator_ratings').upsert(rows, { onConflict: 'success_indicator_id' });
+    if (error) console.warn(`  ⚠ rating-shell backfill: ${error.message}`);
+  }
+  return rows.length;
 }
 
 async function main() {
   console.log('▶ Loading roster + approver map…');
   const employees = await loadActiveEmployees(db).catch((e) => die('load employees', e));
   const resolveDept = await buildDepartmentResolver(db).catch((e) => die('load departments', e));
-  const cycleId = await ensureCycle();
+  const cycleId = await resolveCycle();
+
+  // Preserve any real / pre-existing targets — only seed employees who have NO
+  // target_setting for this cycle yet. (The existing roster already has frozen
+  // targets; this fills in the gaps, e.g. reconciled orphan accounts.)
+  const { data: existingTs } = await db.from('target_settings').select('employee_id').eq('cycle_id', cycleId);
+  const alreadyHasTargets = new Set((existingTs ?? []).map((t) => String(t.employee_id)));
 
   const { data: approverRows } = await db
     .from('ipcr_designated_approvers')
@@ -329,6 +369,7 @@ async function main() {
     const e = employees[idx];
     const num = empNumber(e);
     const name = empFullName(e);
+    if (alreadyHasTargets.has(String(e.id))) { skipped++; continue; } // don't clobber existing targets
     const approver = resolveApprover(e);
     if (!approver) {
       console.warn(`  ⚠ ${num}: no eligible approver (only one active employee?) — skipping.`);
@@ -441,10 +482,15 @@ async function main() {
     if (done % 25 === 0) console.log(`  …${done} seeded`);
   }
 
+  // Backfill Phase 2 rating shells for ALL success indicators (incl. the
+  // pre-existing roster that was approved before the ratings table existed).
+  const shells = await backfillRatingShells(designated);
+
   console.log('\n✅ Historical seed complete.');
-  console.log(`   Frozen Phase 1 records: ${done}  (with an admin edit: ${edits})`);
-  if (skipped) console.log(`   Skipped: ${skipped}`);
-  console.log(`   Period "${PERIOD}" · cycle #${cycleId} · Phase 2 = not_started (ready to rate).`);
+  console.log(`   New frozen Phase 1 records: ${done}  (with an admin edit: ${edits})`);
+  console.log(`   Skipped (already had targets): ${skipped}`);
+  console.log(`   Phase 2 rating shells created: ${shells}`);
+  console.log(`   Cycle #${cycleId} · Phase 2 = not_started (ready to rate).`);
 }
 
 main().catch((e) => die('unexpected error', e));
