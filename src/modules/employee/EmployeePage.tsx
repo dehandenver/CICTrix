@@ -1122,7 +1122,11 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   }, [location.pathname]);
 
   useEffect(() => {
-    if (activeTab === 'submission') {
+    // The IPCR data (frozen targets, workspace row) is rendered under the
+    // 'ipcr-workspace' tab — load it there. ('submission' is the Submission Bin
+    // and was the historical, now-incorrect trigger, which left the workspace
+    // blank for everyone regardless of what was in the database.)
+    if (activeTab === 'ipcr-workspace' || activeTab === 'submission') {
       void loadIPCRData();
     }
   }, [activeTab, currentUser?.supabaseId]);
