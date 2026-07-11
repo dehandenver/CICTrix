@@ -1208,18 +1208,49 @@ interface ApplicantsListViewProps {
   onUpdateScores:         (applicant: ApplicantRecord) => void;
 }
 
+// Score columns per appointment track. Original and Promotional applicants are
+// judged against different qualification sets, so each tab shows only its own.
+type ScoreCol = { key: CatKey; label: string };
+const ORIGINAL_SCORE_COLS: ScoreCol[] = [
+  { key: 'education',   label: 'Educ /20' },
+  { key: 'experience',  label: 'Exp /25' },
+  { key: 'writtenExam', label: 'Written /100' },
+  { key: 'oralExam',    label: 'Oral /20' },
+];
+const PROMOTIONAL_SCORE_COLS: ScoreCol[] = [
+  { key: 'education',   label: 'Educ /20' },
+  { key: 'experience',  label: 'Exp /25' },
+  { key: 'performance', label: 'Perf /20' },
+  { key: 'potential',   label: 'Potential /25' },
+  { key: 'pcpt',        label: 'PCPT /20' },
+];
+
 const ApplicantsListView = ({ folder, completedEvaluationIds, savedCatScores, onBack, onUpdateScores }: ApplicantsListViewProps) => {
   const [search, setSearch] = useState('');
+  const [scoreTab, setScoreTab] = useState<AppointmentType>('original');
+
+  // Derive scores + appointment type once, so we can both route each row into
+  // the Original / Promotional tab and count each track independently.
+  const typed = useMemo(() =>
+    folder.applicants.map(a => {
+      const cs = deriveInitial(a, savedCatScores);
+      const apptType: AppointmentType = cs.appointmentType ?? 'original';
+      return { ...a, overallScore: calcOverall(cs).value, catScores: cs, apptType };
+    }),
+    [folder.applicants, savedCatScores],
+  );
+
+  const originalCount = useMemo(() => typed.filter(t => t.apptType !== 'promotional').length, [typed]);
+  const promotionalCount = useMemo(() => typed.filter(t => t.apptType === 'promotional').length, [typed]);
+  const activeCount = scoreTab === 'promotional' ? promotionalCount : originalCount;
+  const scoreCols = scoreTab === 'promotional' ? PROMOTIONAL_SCORE_COLS : ORIGINAL_SCORE_COLS;
 
   const ranked = useMemo(() =>
-    folder.applicants
+    typed
+      .filter(t => (scoreTab === 'promotional' ? t.apptType === 'promotional' : t.apptType !== 'promotional'))
       .filter(a => !search || a.full_name.toLowerCase().includes(search.toLowerCase()))
-      .map(a => {
-        const cs = deriveInitial(a, savedCatScores);
-        return { ...a, overallScore: calcOverall(cs).value, catScores: cs };
-      })
       .sort((a, b) => (b.overallScore ?? -1) - (a.overallScore ?? -1)),
-    [folder.applicants, search, savedCatScores],
+    [typed, scoreTab, search],
   );
 
   return (
@@ -1239,18 +1270,47 @@ const ApplicantsListView = ({ folder, completedEvaluationIds, savedCatScores, on
         </div>
         <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: '#0f172a' }}>{folder.position}</h2>
         <p style={{ margin: '0.15rem 0 0', fontSize: '0.875rem', color: '#64748b' }}>
-          {folder.office} &middot; {folder.count} qualified applicant{folder.count !== 1 ? 's' : ''}
+          {folder.office} &middot; {activeCount} {scoreTab === 'promotional' ? 'Promotional' : 'Original'} qualified applicant{activeCount !== 1 ? 's' : ''}
         </p>
       </div>
 
-      {/* Search */}
-      <div style={{ position: 'relative' }}>
-        <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', pointerEvents: 'none' }} />
-        <input
-          value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Search applicants by name…"
-          style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: 12, padding: '0.6rem 0.75rem 0.6rem 2.25rem', fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box', background: '#fff' }}
-        />
+      {/* Track toggle (Original / Promotional) + search */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'inline-flex', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 10, padding: 3 }}>
+          {([
+            { key: 'original', label: 'Original', count: originalCount },
+            { key: 'promotional', label: 'Promotional', count: promotionalCount },
+          ] as const).map(t => {
+            const active = scoreTab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setScoreTab(t.key)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+                  padding: '0.4rem 0.9rem', borderRadius: 8, border: 'none', cursor: 'pointer',
+                  fontSize: '0.8rem', fontWeight: 700,
+                  background: active ? '#fff' : 'transparent',
+                  color: active ? '#040E6B' : '#64748b',
+                  boxShadow: active ? '0 1px 3px rgba(15,23,42,0.12)' : 'none',
+                  transition: 'all 0.15s',
+                }}
+              >
+                {t.label}
+                <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999, fontSize: '0.68rem', fontWeight: 800, background: active ? '#e0e7ff' : '#e2e8f0', color: active ? '#3730a3' : '#64748b' }}>{t.count}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+          <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', pointerEvents: 'none' }} />
+          <input
+            value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search applicants by name…"
+            style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: 12, padding: '0.6rem 0.75rem 0.6rem 2.25rem', fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box', background: '#fff' }}
+          />
+        </div>
       </div>
 
       {/* Table */}
@@ -1260,16 +1320,11 @@ const ApplicantsListView = ({ folder, completedEvaluationIds, savedCatScores, on
             <tr style={{ borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
               <th style={{ padding: '0.75rem 1rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', width: 48 }}>#</th>
               <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Applicant Name</th>
-              <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Type</th>
               <th style={{ padding: '0.75rem 0.75rem', textAlign: 'left', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Exam Schedule</th>
               <th style={{ padding: '0.75rem 0.75rem', textAlign: 'left', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Interview Schedule</th>
-              <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Educ /20</th>
-              <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Exp /25</th>
-              <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Perf /20</th>
-              <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Written /100</th>
-              <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Potential /25</th>
-              <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>PCPT /20</th>
-              <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Oral /20</th>
+              {scoreCols.map(c => (
+                <th key={c.key} style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>{c.label}</th>
+              ))}
               <th style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Status</th>
               <th style={{ padding: '0.75rem 1rem', textAlign: 'center', fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b' }}>Actions</th>
             </tr>
@@ -1278,8 +1333,6 @@ const ApplicantsListView = ({ folder, completedEvaluationIds, savedCatScores, on
             {ranked.map((a, i) => {
               const isFinalized = !!savedCatScores[a.id] || completedEvaluationIds.has(a.id);
               const cs = a.catScores;
-              const apptType: AppointmentType = cs.appointmentType ?? 'original';
-              const isPromotional = apptType === 'promotional';
               const sv = (key: CatKey): string => {
                 const v = cs[key].finalScore ?? cs[key].initialScore;
                 return v > 0 ? String(v) : '—';
@@ -1298,11 +1351,6 @@ const ApplicantsListView = ({ folder, completedEvaluationIds, savedCatScores, on
                   <td style={{ padding: '0.75rem 1rem' }}>
                     <p style={{ margin: 0, fontWeight: 700, color: '#0f172a', fontSize: '0.9rem' }}>{a.full_name}</p>
                     <p style={{ margin: 0, fontSize: '0.72rem', color: '#94a3b8' }}>Qualified: {fmtDate(a.created_at)}</p>
-                  </td>
-                  <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center' }}>
-                    <span style={{ display: 'inline-block', padding: '0.2rem 0.6rem', borderRadius: 999, fontSize: '0.7rem', fontWeight: 700, background: isPromotional ? '#f3e8ff' : '#eff6ff', color: isPromotional ? '#7c3aed' : '#1d4ed8' }}>
-                      {isPromotional ? 'Promotional' : 'Original'}
-                    </span>
                   </td>
                   <td style={{ padding: '0.75rem 0.75rem' }}>
                     {a.exam_date ? (
@@ -1324,13 +1372,9 @@ const ApplicantsListView = ({ folder, completedEvaluationIds, savedCatScores, on
                       <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>—</span>
                     )}
                   </td>
-                  <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>{sv('education')}</td>
-                  <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>{sv('experience')}</td>
-                  <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.85rem', fontWeight: 600, color: isPromotional ? '#334155' : '#cbd5e1' }}>{isPromotional ? sv('performance') : '—'}</td>
-                  <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>{sv('writtenExam')}</td>
-                  <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.85rem', fontWeight: 600, color: isPromotional ? '#334155' : '#cbd5e1' }}>{isPromotional ? sv('potential') : '—'}</td>
-                  <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.85rem', fontWeight: 600, color: !isPromotional ? '#334155' : '#cbd5e1' }}>{!isPromotional ? sv('pcpt') : '—'}</td>
-                  <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.85rem', fontWeight: 600, color: !isPromotional ? '#334155' : '#cbd5e1' }}>{!isPromotional ? sv('oralExam') : '—'}</td>
+                  {scoreCols.map(c => (
+                    <td key={c.key} style={{ padding: '0.75rem 0.75rem', textAlign: 'center', fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>{sv(c.key)}</td>
+                  ))}
                   <td style={{ padding: '0.75rem 0.75rem', textAlign: 'center' }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.65rem', borderRadius: 999, fontSize: '0.72rem', fontWeight: 700, background: isFinalized ? '#dcfce7' : '#fef3c7', color: isFinalized ? '#15803d' : '#92400e', border: `1px solid ${isFinalized ? '#bbf7d0' : '#fde68a'}` }}>
                       {isFinalized && <CheckCircle2 size={11} />}
@@ -1350,9 +1394,9 @@ const ApplicantsListView = ({ folder, completedEvaluationIds, savedCatScores, on
             })}
             {ranked.length === 0 && (
               <tr>
-                <td colSpan={14} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
+                <td colSpan={scoreCols.length + 6} style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
                   <FolderOpen size={40} style={{ display: 'block', margin: '0 auto 0.75rem', opacity: 0.3 }} />
-                  <p style={{ fontWeight: 600, margin: 0 }}>No applicants found</p>
+                  <p style={{ fontWeight: 600, margin: 0 }}>No {scoreTab === 'promotional' ? 'promotional' : 'original'} applicants found</p>
                 </td>
               </tr>
             )}
