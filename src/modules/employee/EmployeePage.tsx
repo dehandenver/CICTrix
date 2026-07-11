@@ -66,6 +66,7 @@ import {
   getActiveCycle,
   hasSubmittableTarget,
   loadTargetSetting,
+  loadLatestTargetSetting,
   saveTargetSetting,
   type FunctionType,
   type TargetsByFunction,
@@ -461,17 +462,22 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
         setSystemSchedules({ target: null, rating: null });
       }
 
-      // Phase 1 relational targets. Falls back to a single blank MFO per
-      // category when the employee has no target_settings row yet.
+      // Phase 1 relational targets. If the active cycle resolves, load by cycle;
+      // otherwise (e.g. performance_cycles not readable by the anon client due to
+      // RLS) fall back to loading the employee's frozen targets directly, so the
+      // "Frozen Targets" panel still renders instead of "No target configured".
       const activeCycleRes = await getActiveCycle();
+      let tsRes;
       if (activeCycleRes.ok && activeCycleRes.data) {
         setActiveCycleId(activeCycleRes.data.id);
-        const tsRes = await loadTargetSetting(currentUser.supabaseId, activeCycleRes.data.id);
-        if (tsRes.ok) {
-          setTargetRows(tsRes.data.targets);
-          setTargetStatus(tsRes.data.setting?.status ?? 'draft');
-          setTargetReviewComment(tsRes.data.setting?.review_comment ?? null);
-        }
+        tsRes = await loadTargetSetting(currentUser.supabaseId, activeCycleRes.data.id);
+      } else {
+        tsRes = await loadLatestTargetSetting(currentUser.supabaseId);
+      }
+      if (tsRes.ok) {
+        setTargetRows(tsRes.data.targets);
+        setTargetStatus(tsRes.data.setting?.status ?? 'draft');
+        setTargetReviewComment(tsRes.data.setting?.review_comment ?? null);
       }
 
       // Load the "My IPCR Workspace" row for this period and hydrate the form.

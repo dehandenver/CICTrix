@@ -129,30 +129,60 @@ export async function loadTargetSetting(
     const setting = (settings?.[0] as TargetSettingRow) ?? null;
     if (!setting) return { ok: true, data: { setting: null, targets: emptyTargets() } };
 
-    const { data: mfoRows, error: mErr } = await (supabase as any)
-      .from('mfos')
-      .select('id, function_type, title, sort_order, success_indicators(id, description, sort_order)')
-      .eq('target_setting_id', setting.id)
-      .order('sort_order', { ascending: true });
-    if (mErr) return { ok: false, error: mErr.message };
+    const targets = await hydrateTargets(setting.id);
+    return { ok: true, data: { setting, targets } };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Failed to load targets.' };
+  }
+}
 
-    const targets = emptyTargets();
-    for (const fn of FUNCTION_TYPES) targets[fn] = [];
+/** Load + group an MFO/SI tree for one target setting into TargetsByFunction. */
+async function hydrateTargets(settingId: string): Promise<TargetsByFunction> {
+  const { data: mfoRows } = await (supabase as any)
+    .from('mfos')
+    .select('id, function_type, title, sort_order, success_indicators(id, description, sort_order)')
+    .eq('target_setting_id', settingId)
+    .order('sort_order', { ascending: true });
 
-    for (const row of (mfoRows ?? []) as any[]) {
-      const indicators = ((row.success_indicators ?? []) as any[])
-        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-        .map((si) => ({ id: si.id as string, description: (si.description ?? '') as string }));
-      targets[row.function_type as FunctionType].push({
-        id: row.id as string,
-        title: (row.title ?? '') as string,
-        indicators: indicators.length ? indicators : [{ description: '' }],
-      });
-    }
+  const targets = emptyTargets();
+  for (const fn of FUNCTION_TYPES) targets[fn] = [];
 
-    // A category with no persisted rows still renders one blank MFO.
-    for (const fn of FUNCTION_TYPES) if (targets[fn].length === 0) targets[fn] = [blankMfo()];
+  for (const row of (mfoRows ?? []) as any[]) {
+    const indicators = ((row.success_indicators ?? []) as any[])
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+      .map((si: any) => ({ id: si.id as string, description: (si.description ?? '') as string }));
+    targets[row.function_type as FunctionType].push({
+      id: row.id as string,
+      title: (row.title ?? '') as string,
+      indicators: indicators.length ? indicators : [{ description: '' }],
+    });
+  }
 
+  // A category with no persisted rows still renders one blank MFO.
+  for (const fn of FUNCTION_TYPES) if (targets[fn].length === 0) targets[fn] = [blankMfo()];
+  return targets;
+}
+
+/**
+ * Load the employee's frozen targets WITHOUT needing the cycle id. Used as a
+ * fallback when performance_cycles isn't readable by the anon client (RLS), so
+ * the Employee Portal's "Frozen Targets" still render. Prefers the approved
+ * (frozen) record, else the most recent one.
+ */
+export async function loadLatestTargetSetting(
+  employeeId: string,
+): Promise<Result<{ setting: TargetSettingRow | null; targets: TargetsByFunction }>> {
+  try {
+    const { data: settings, error } = await (supabase as any)
+      .from('target_settings')
+      .select('*')
+      .eq('employee_id', employeeId)
+      .order('created_at', { ascending: false });
+    if (error) return { ok: false, error: error.message };
+    const rows = (settings ?? []) as TargetSettingRow[];
+    const setting = rows.find((s) => s.status === 'approved') ?? rows[0] ?? null;
+    if (!setting) return { ok: true, data: { setting: null, targets: emptyTargets() } };
+    const targets = await hydrateTargets(setting.id);
     return { ok: true, data: { setting, targets } };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Failed to load targets.' };
