@@ -251,6 +251,21 @@ function AppContent() {
       pagibigNumber: '',
       tinNumber: '',
     });
+
+    // Self-heal a session that was created before the employee had a Supabase
+    // `employees` row (so supabaseId is missing). Without this, a plain refresh
+    // keeps showing "account isn't linked" and an empty IPCR even after the row
+    // is created — the user would otherwise have to log out and back in. Re-resolve
+    // the row by employee number and patch both the live state and the stored session.
+    if (!session.supabaseId && session.employeeId) {
+      void fetchPortalEmployeeByNumber(session.employeeId).then((res) => {
+        if (!res.ok || !res.data.supabaseId) return;
+        setCurrentEmployee(res.data);
+        const healed: EmployeeSession = { ...session, supabaseId: res.data.supabaseId };
+        localStorage.setItem(EMPLOYEE_SESSION_KEY, JSON.stringify(healed));
+        setEmployeeSession(healed);
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
