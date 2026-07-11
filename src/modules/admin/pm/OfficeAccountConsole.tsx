@@ -38,6 +38,12 @@ import {
   type ActiveOfficeRole,
 } from '../../../lib/api/officeRoles';
 import {
+  listPendingApprovals,
+  approveTargets,
+  returnForRevision,
+  type PendingApproval,
+} from '../../../lib/api/ipcrApproval';
+import {
   listTrainingRequestsDetailed,
   createTrainingRequest,
   logPostTrainingProficiency,
@@ -123,9 +129,59 @@ export const OfficeAccountConsole: React.FC = () => {
   // Logged-in office account user info
   const [currentUserName, setCurrentUserName] = useState<string>('Office User');
   const [currentUserPosition, setCurrentUserPosition] = useState<string | null>(null);
+  // The logged-in office account's employees.id — used as the approver and for
+  // the self-approval block (a dual-role user must not approve their own IPCR).
+  const [currentEmployeeId, setCurrentEmployeeId] = useState<string | null>(null);
   /** Derived from office_role_assignments, never from the employee's job title. */
   const [officeRole, setOfficeRole] = useState<ActiveOfficeRole | null>(null);
   const [officeRoleLoading, setOfficeRoleLoading] = useState(true);
+
+  // Real IPCR submissions awaiting this office's approval.
+  const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
+  const [approvalsLoading, setApprovalsLoading] = useState(false);
+  const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
+  const [approvalNotice, setApprovalNotice] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
+  const [returnDraftId, setReturnDraftId] = useState<string | null>(null);
+  const [returnComment, setReturnComment] = useState('');
+
+  const refreshPendingApprovals = async () => {
+    setApprovalsLoading(true);
+    const res = await listPendingApprovals();
+    setApprovalsLoading(false);
+    if (res.ok === false) { setApprovalNotice({ tone: 'err', text: res.error }); return; }
+    setPendingApprovals(res.data);
+  };
+
+  const handleApprove = async (p: PendingApproval) => {
+    setApprovalBusyId(p.targetSettingId);
+    setApprovalNotice(null);
+    const res = await approveTargets({
+      targetSettingId: p.targetSettingId,
+      approverEmployeeId: currentEmployeeId,
+      submitterEmployeeId: p.employeeId,
+    });
+    setApprovalBusyId(null);
+    if (res.ok === false) { setApprovalNotice({ tone: 'err', text: res.error }); return; }
+    setApprovalNotice({ tone: 'ok', text: `Approved and frozen: ${p.employeeName}'s targets.` });
+    void refreshPendingApprovals();
+  };
+
+  const handleReturn = async (p: PendingApproval) => {
+    setApprovalBusyId(p.targetSettingId);
+    setApprovalNotice(null);
+    const res = await returnForRevision({
+      targetSettingId: p.targetSettingId,
+      approverEmployeeId: currentEmployeeId,
+      submitterEmployeeId: p.employeeId,
+      comment: returnComment,
+    });
+    setApprovalBusyId(null);
+    if (res.ok === false) { setApprovalNotice({ tone: 'err', text: res.error }); return; }
+    setApprovalNotice({ tone: 'ok', text: `Returned to ${p.employeeName} for revision.` });
+    setReturnDraftId(null);
+    setReturnComment('');
+    void refreshPendingApprovals();
+  };
   const switchEnabled = officeRole !== null;
   // Navigation tabs: 'targets' | 'ratings' | 'training-requests'
   const [activeTab, setActiveTab] = useState<'targets' | 'ratings' | 'training-requests'>('targets');
@@ -183,6 +239,7 @@ export const OfficeAccountConsole: React.FC = () => {
 
         const employeeId = await resolveEmployeeId(sessionId);
         if (!employeeId) return;
+        setCurrentEmployeeId(employeeId);
 
         // Job title is display-only here.
         const { data } = await (supabase as any)
@@ -194,7 +251,9 @@ export const OfficeAccountConsole: React.FC = () => {
 
         // The one thing that grants access. `switchEnabled` is derived from this,
         // never stored, and never inferred from the employee's job title.
-        setOfficeRole(await getActiveOfficeRole(employeeId));
+        const role = await getActiveOfficeRole(employeeId);
+        setOfficeRole(role);
+        if (role) void refreshPendingApprovals();
       } catch {
         // session missing or malformed — keep defaults (no office role)
       } finally {
@@ -756,94 +815,97 @@ export const OfficeAccountConsole: React.FC = () => {
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <h3 className="text-sm font-bold text-slate-800">Direct Target Verification Desk</h3>
-                          <p className="text-xs text-slate-500 mt-0.5">Allows rewriting target texts to correct wording or metrics before push.</p>
+                          <h3 className="text-sm font-bold text-slate-800">IPCR Targets Awaiting Approval</h3>
+                          <p className="text-xs text-slate-500 mt-0.5">Review an employee’s submitted targets, then approve (freeze) or return for revision.</p>
                         </div>
                         <button
-                          onClick={transmitTargetsToPM}
-                          className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 text-xs font-semibold flex items-center gap-1.5 shadow-sm transition"
+                          onClick={() => void refreshPendingApprovals()}
+                          className="rounded-lg border border-slate-200 bg-white hover:bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700"
                         >
-                          <FolderSymlink className="h-4 w-4" />
-                          Transmit Verified Targets to PM
+                          Refresh
                         </button>
                       </div>
 
-                      <div className="overflow-x-auto rounded-lg border border-slate-150">
-                        <table className="w-full text-left border-collapse text-xs">
-                          <thead>
-                            <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-150">
-                              <th className="px-4 py-3">Employee</th>
-                              <th className="px-4 py-3">Proposed Target Metric</th>
-                              <th className="px-4 py-3 text-center">Status</th>
-                              <th className="px-4 py-3 text-center">Action</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {targets.map(t => (
-                              <tr key={t.id} className="hover:bg-slate-50/30 transition">
-                                <td className="px-4 py-3">
-                                  <p className="font-bold text-slate-800">{t.name}</p>
-                                  <p className="text-[10px] text-slate-500">{t.position}</p>
-                                </td>
-                                <td className="px-4 py-3 max-w-md">
-                                  {editingTargetId === t.id ? (
-                                    <div className="flex gap-2">
+                      {approvalNotice && (
+                        <div className={`rounded-lg px-3 py-2 text-xs font-semibold ${approvalNotice.tone === 'ok' ? 'bg-emerald-50 text-emerald-800 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
+                          {approvalNotice.text}
+                        </div>
+                      )}
+
+                      {approvalsLoading ? (
+                        <p className="text-xs text-slate-500">Loading submissions…</p>
+                      ) : pendingApprovals.length === 0 ? (
+                        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center">
+                          <p className="text-sm font-semibold text-slate-600">No IPCRs are awaiting approval.</p>
+                          <p className="text-xs text-slate-400 mt-1">Submissions appear here once an employee clicks “Submit Targets for Approval”.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {pendingApprovals.map((p) => {
+                            const isOwn = !!currentEmployeeId && currentEmployeeId === p.employeeId;
+                            const busy = approvalBusyId === p.targetSettingId;
+                            return (
+                              <div key={p.targetSettingId} className="rounded-xl border border-slate-200 bg-white shadow-sm">
+                                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+                                  <div>
+                                    <p className="text-sm font-bold text-slate-800">{p.employeeName}</p>
+                                    <p className="text-[11px] text-slate-500">{[p.position, p.department].filter(Boolean).join(' · ') || '—'}</p>
+                                  </div>
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-bold text-amber-800">Submitted for approval</span>
+                                </div>
+
+                                <div className="px-4 py-3 space-y-3">
+                                  {(['core', 'strategic', 'support'] as const).map((ft) => {
+                                    const group = p.mfos.filter((m) => m.functionType === ft);
+                                    if (group.length === 0) return null;
+                                    const label = ft === 'core' ? 'Core Functions' : ft === 'strategic' ? 'Strategic Functions' : 'Support Functions';
+                                    return (
+                                      <div key={ft}>
+                                        <p className="text-[11px] font-bold uppercase tracking-wide text-indigo-600">{label}</p>
+                                        <ul className="mt-1 space-y-1.5">
+                                          {group.map((m) => (
+                                            <li key={m.id} className="rounded-lg bg-slate-50 px-3 py-2">
+                                              <p className="text-xs font-semibold text-slate-800">{m.title || '(untitled MFO)'}</p>
+                                              {m.indicators.length > 0 && (
+                                                <ul className="mt-1 list-disc pl-5 text-[11px] text-slate-600">
+                                                  {m.indicators.map((si) => (<li key={si.id}>{si.description}</li>))}
+                                                </ul>
+                                              )}
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-3">
+                                  {isOwn ? (
+                                    <p className="text-[11px] font-semibold text-slate-500">This is your own IPCR — it must be approved by another office account.</p>
+                                  ) : returnDraftId === p.targetSettingId ? (
+                                    <div className="flex flex-1 flex-wrap items-center gap-2">
                                       <input
                                         type="text"
-                                        value={editTargetValue}
-                                        onChange={(e) => setEditTargetValue(e.target.value)}
-                                        className="flex-1 rounded border border-indigo-300 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                        value={returnComment}
+                                        onChange={(e) => setReturnComment(e.target.value)}
+                                        placeholder="Reason for returning (optional)"
+                                        className="flex-1 min-w-[200px] rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
                                       />
-                                      <button
-                                        onClick={() => saveTargetEdit(t.id)}
-                                        className="bg-indigo-600 hover:bg-indigo-750 text-white rounded px-2.5 py-1 font-semibold"
-                                      >
-                                        Save
-                                      </button>
-                                      <button
-                                        onClick={() => setEditingTargetId(null)}
-                                        className="bg-slate-150 text-slate-700 rounded px-2.5 py-1"
-                                      >
-                                        Cancel
-                                      </button>
+                                      <button onClick={() => void handleReturn(p)} disabled={busy} className="rounded-lg bg-amber-600 hover:bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Confirm Return</button>
+                                      <button onClick={() => { setReturnDraftId(null); setReturnComment(''); }} disabled={busy} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600">Cancel</button>
                                     </div>
                                   ) : (
-                                    <p className="text-slate-700">
-                                      {t.targetMetric}
-                                      {t.lastEditedBy && (
-                                        <span className="ml-2 inline-block rounded bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 text-[9px] text-indigo-700 font-bold uppercase">
-                                          Adjusted by {t.lastEditedBy}
-                                        </span>
-                                      )}
-                                    </p>
+                                    <>
+                                      <button onClick={() => void handleApprove(p)} disabled={busy} className="rounded-lg bg-emerald-600 hover:bg-emerald-700 px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{busy ? 'Working…' : 'Approve & Freeze'}</button>
+                                      <button onClick={() => { setReturnDraftId(p.targetSettingId); setReturnComment(''); }} disabled={busy} className="rounded-lg border border-amber-300 bg-white hover:bg-amber-50 px-4 py-1.5 text-xs font-semibold text-amber-700 disabled:opacity-50">Return for Revision</button>
+                                    </>
                                   )}
-                                </td>
-                                <td className="px-4 py-3 text-center">
-                                  <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                                    t.status === 'Transmitted' 
-                                      ? 'bg-emerald-50 text-emerald-800' 
-                                      : t.status === 'Verified'
-                                      ? 'bg-blue-50 text-blue-800'
-                                      : 'bg-amber-50 text-amber-800'
-                                  }`}>
-                                    {t.status}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 text-center">
-                                  {t.status !== 'Transmitted' && (
-                                    <button
-                                      onClick={() => startEditing(t)}
-                                      className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white hover:bg-slate-50 px-2 py-1 font-semibold text-slate-700"
-                                    >
-                                      <Edit3 className="h-3.5 w-3.5" /> Adjust
-                                    </button>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
 
