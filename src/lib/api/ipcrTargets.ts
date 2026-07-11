@@ -11,7 +11,12 @@
 import { supabase } from '../supabase';
 
 export type FunctionType = 'core' | 'strategic' | 'support';
-export type TargetStatus = 'draft' | 'submitted' | 'approved' | 'rejected';
+// Matches the target_settings.status check in 20260715_ipcr_phase1_workflow_phase2.sql.
+export type TargetStatus =
+  | 'draft'
+  | 'submitted_for_approval'
+  | 'returned_for_revision'
+  | 'approved';
 
 export const FUNCTION_TYPES: FunctionType[] = ['core', 'strategic', 'support'];
 
@@ -177,15 +182,15 @@ export async function saveTargetSetting(params: {
     if (existing.ok === false) return existing;
 
     const current = existing.data.setting;
-    if (current && (current.status === 'submitted' || current.status === 'approved')) {
+    if (current && (current.status === 'submitted_for_approval' || current.status === 'approved')) {
       return { ok: false, error: 'Targets are locked and can no longer be edited.' };
     }
 
-    // Upsert the parent row. Resubmitting after a rejection clears the review.
+    // Upsert the parent row. Resubmitting after a return-for-revision clears the review.
     const settingPayload: Record<string, unknown> = {
       employee_id: employeeId,
       cycle_id: cycleId,
-      status: submit ? 'submitted' : 'draft',
+      status: submit ? 'submitted_for_approval' : 'draft',
       updated_at: nowIso,
     };
     if (submit) {

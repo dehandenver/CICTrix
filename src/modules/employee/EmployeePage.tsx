@@ -601,7 +601,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   };
 
   // ── Phase 1 table editing ──────────────────────────────────────────────────
-  const targetsLocked = targetStatus === 'submitted' || targetStatus === 'approved';
+  const targetsLocked = targetStatus === 'submitted_for_approval' || targetStatus === 'approved';
 
   const mutateTargets = (fn: (draft: TargetsByFunction) => void) => {
     setTargetRows((prev) => {
@@ -2895,7 +2895,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                   </div>
                 </div>
 
-                {targetStatus === 'rejected' && targetReviewComment && (
+                {targetStatus === 'returned_for_revision' && targetReviewComment && (
                   <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
                     <p className="text-xs font-bold text-rose-800">Returned for revision</p>
                     <p className="mt-1 text-sm text-rose-700">{targetReviewComment}</p>
