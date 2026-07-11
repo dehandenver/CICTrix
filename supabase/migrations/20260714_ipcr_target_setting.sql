@@ -25,7 +25,7 @@
 --     against employee_portal_accounts and hold a localStorage session, so they
 --     reach PostgREST as `anon` and auth.uid() is NULL for them. RLS therefore
 --     cannot distinguish one employee from another.
---
+-- 
 --       - Weighting writes are locked to service_role. The FastAPI backend
 --         performs the RBAC check (DeptHead for that department) and writes with
 --         the service key. An anon client cannot insert or update a config.
