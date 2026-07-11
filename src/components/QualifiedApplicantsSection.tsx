@@ -283,6 +283,19 @@ const fmtDate = (iso: string) => {
   catch { return iso; }
 };
 
+// True when a schedule date is still upcoming (strictly after today), so the
+// Applicant Score table can show "scheduled but not yet happened" in a muted
+// secondary colour vs an already-completed (past/today) date in solid navy.
+const isUpcoming = (iso?: string | null): boolean => {
+  if (!iso) return false;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime() > today.getTime();
+};
+
 const fmtSize = (bytes?: number) => {
   if (!bytes) return '';
   if (bytes < 1024) return `${bytes} B`;
@@ -1293,9 +1306,9 @@ const ApplicantsListView = ({ folder, completedEvaluationIds, savedCatScores, on
                   </td>
                   <td style={{ padding: '0.75rem 0.75rem' }}>
                     {a.exam_date ? (
-                      <div>
-                        <p style={{ margin: 0, fontSize: '0.78rem', fontWeight: 600, color: '#040E6B' }}>{fmtDate(a.exam_date)}</p>
-                        {a.exam_time && <p style={{ margin: 0, fontSize: '0.72rem', color: '#64748b' }}>{a.exam_time}</p>}
+                      <div title={isUpcoming(a.exam_date) ? 'Scheduled — not yet held' : 'Completed / past date'}>
+                        <p style={{ margin: 0, fontSize: '0.78rem', fontWeight: 600, color: isUpcoming(a.exam_date) ? '#64748b' : '#040E6B', fontStyle: isUpcoming(a.exam_date) ? 'italic' : 'normal' }}>{fmtDate(a.exam_date)}</p>
+                        {a.exam_time && <p style={{ margin: 0, fontSize: '0.72rem', color: '#94a3b8' }}>{a.exam_time}</p>}
                       </div>
                     ) : (
                       <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>—</span>
@@ -1303,9 +1316,9 @@ const ApplicantsListView = ({ folder, completedEvaluationIds, savedCatScores, on
                   </td>
                   <td style={{ padding: '0.75rem 0.75rem' }}>
                     {a.interview_date ? (
-                      <div>
-                        <p style={{ margin: 0, fontSize: '0.78rem', fontWeight: 600, color: '#040E6B' }}>{fmtDate(a.interview_date)}</p>
-                        {a.interview_time && <p style={{ margin: 0, fontSize: '0.72rem', color: '#64748b' }}>{a.interview_time}</p>}
+                      <div title={isUpcoming(a.interview_date) ? 'Scheduled — not yet held' : 'Completed / past date'}>
+                        <p style={{ margin: 0, fontSize: '0.78rem', fontWeight: 600, color: isUpcoming(a.interview_date) ? '#64748b' : '#040E6B', fontStyle: isUpcoming(a.interview_date) ? 'italic' : 'normal' }}>{fmtDate(a.interview_date)}</p>
+                        {a.interview_time && <p style={{ margin: 0, fontSize: '0.72rem', color: '#94a3b8' }}>{a.interview_time}</p>}
                       </div>
                     ) : (
                       <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>—</span>
