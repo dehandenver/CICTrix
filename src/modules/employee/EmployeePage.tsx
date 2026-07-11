@@ -3036,18 +3036,38 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                   </div>
 
                   <div className="space-y-4 divide-y divide-slate-100">
-                    <div className="pt-3">
-                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Core Functions</p>
-                      <p className="text-xs text-slate-700 mt-1 font-semibold">{employeeTargets.core || 'No target configured.'}</p>
-                    </div>
-                    <div className="pt-3">
-                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Strategic Functions</p>
-                      <p className="text-xs text-slate-700 mt-1 font-semibold">{employeeTargets.strategic || 'No target configured.'}</p>
-                    </div>
-                    <div className="pt-3">
-                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">Support Functions</p>
-                      <p className="text-xs text-slate-700 mt-1 font-semibold">{employeeTargets.support || 'No target configured.'}</p>
-                    </div>
+                    {([
+                      { key: 'core', label: 'Core Functions' },
+                      { key: 'strategic', label: 'Strategic Functions' },
+                      { key: 'support', label: 'Support Functions' },
+                    ] as const).map((fn) => {
+                      const mfos = targetRows[fn.key].filter(
+                        (m) => m.title.trim() || m.indicators.some((si) => si.description.trim()),
+                      );
+                      return (
+                        <div key={fn.key} className="pt-3">
+                          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wide">{fn.label}</p>
+                          {mfos.length === 0 ? (
+                            <p className="text-xs text-slate-400 mt-1 italic">No target configured.</p>
+                          ) : (
+                            <ul className="mt-1 space-y-2">
+                              {mfos.map((m, i) => (
+                                <li key={i}>
+                                  <p className="text-xs font-bold text-slate-800">{m.title || '(untitled MFO)'}</p>
+                                  {m.indicators.some((si) => si.description.trim()) && (
+                                    <ul className="mt-0.5 list-disc pl-4 text-[11px] text-slate-600">
+                                      {m.indicators
+                                        .filter((si) => si.description.trim())
+                                        .map((si, j) => (<li key={j}>{si.description}</li>))}
+                                    </ul>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
