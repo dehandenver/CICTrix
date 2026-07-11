@@ -2451,8 +2451,8 @@ export function ApplicantDetailsPage() {
           <div className="mx-auto h-[96vh] w-full max-w-[1450px] overflow-y-auto rounded-2xl bg-white" onClick={(event) => event.stopPropagation()}>
             <div className="sticky top-0 z-10 flex items-center justify-between px-8 py-5 text-white" style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', fontFamily: 'Poppins, sans-serif' }}>
               <div>
-                <h2 className="text-3xl font-bold text-white">Applicant Evaluation & Scoring</h2>
-                <p className="text-lg" style={{ color: '#C8D1FF' }}>{fullName} — {applicant.position || '--'}</p>
+                <h2 className="scoring-modal-title text-3xl font-bold text-white">Applicant Evaluation & Scoring</h2>
+                <p className="scoring-modal-subtitle text-lg" style={{ color: 'rgba(255,255,255,0.9)' }}>{fullName} — {applicant.position || '--'}</p>
               </div>
               <button type="button" onClick={() => setShowScoresModal(false)} className="rounded-lg p-2 text-white/90 hover:bg-white/10">
                 <X size={36} />
