@@ -13,7 +13,9 @@
     "docker:setup": "scripts\\setup-backend.bat",
     "sync:rsp": "node scripts/sync-rsp-portals.mjs",
     "seed:ipcr-historical": "node scripts/seed-ipcr-historical.mjs",
-    "seed:ipcr-maria": "node scripts/seed-ipcr-maria.mjs"
+    "seed:ipcr-maria": "node scripts/seed-ipcr-maria.mjs",
+    "audit:ipcr": "node scripts/audit-ipcr.mjs",
+    "fix:ipcr-timeline": "node scripts/fix-ipcr-timeline.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.93.3",

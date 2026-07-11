@@ -38,12 +38,14 @@ import {
 const env = loadEnv();
 const db = serviceClient(env);
 
-const PERIOD = 'January–June 2026';            // en-dash form the Employee Portal uses
-const CYCLE_TITLE = 'January–June 2026';
-const D = {                                     // all comfortably in the past
-  submitted: '2026-01-15T09:30:00+08:00',
-  edited: '2026-01-18T11:00:00+08:00',
-  approved: '2026-01-22T14:10:00+08:00',
+const PERIOD = 'July–December 2025';            // completed prior semester
+const CYCLE_TITLE = 'July–December 2025';
+// A coherent completed-period timeline: targets planned near the end of the
+// period (Dec 2025), approved/frozen ~6 months before today (mid-Jan 2026).
+const D = {
+  submitted: '2025-12-08T09:30:00+08:00',
+  edited: '2025-12-18T11:00:00+08:00',
+  approved: '2026-01-12T14:10:00+08:00',
 };
 
 // ── Template library: [keywords] → { core, strategic, support } ──────────────
