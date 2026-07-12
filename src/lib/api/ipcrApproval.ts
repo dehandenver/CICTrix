@@ -12,6 +12,7 @@
  * pending IPCR; office-scoping is a follow-up.
  */
 import { supabase } from '../supabase';
+import { createNotifications } from './employeeNotifications';
 
 export interface PendingIndicator {
   id: string;
@@ -121,12 +122,19 @@ export async function approveTargets(p: {
     return { ok: false, error: 'You cannot approve your own IPCR.' };
   }
   try {
+    const now = new Date();
+    const openTarget = new Date(now);
+    openTarget.setMonth(openTarget.getMonth() + 5); // display-only expected open (~5 months)
+    // Approval freezes Phase 1 AND auto-locks Phase 2 (locked ≠ open — the office
+    // must still explicitly open the rating window later).
     const { error } = await (supabase as any)
       .from('target_settings')
       .update({
         status: 'approved',
         approved_by: p.approverEmployeeId,
-        approved_at: new Date().toISOString(),
+        approved_at: now.toISOString(),
+        phase2_status: 'locked',
+        phase2_open_target_date: openTarget.toISOString().slice(0, 10),
       })
       .eq('id', p.targetSettingId)
       .eq('status', 'submitted_for_approval'); // only a pending record can be approved
@@ -137,9 +145,69 @@ export async function approveTargets(p: {
       performed_by: p.approverEmployeeId,
       performed_by_role: 'office_account',
     });
+    // Notify the employee their IPCR is validated + locked (distinct from open).
+    await createNotifications([
+      {
+        employeeId: p.submitterEmployeeId,
+        type: 'ipcr_validated',
+        title: 'Your IPCR has been validated',
+        message: 'Your IPCR targets have been validated and are now locked for this rating period.',
+        link: '/employee/ipcr-workspace',
+      },
+    ]);
     return { ok: true, data: null };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Approve failed.' };
+  }
+}
+
+/**
+ * Office Account edits/overrides MFO titles and Success Indicator text on a
+ * still-pending submission, before approving. Only allowed while the record is
+ * SUBMITTED_FOR_APPROVAL (the DB immutability trigger blocks edits once approved).
+ * Every change is logged. Blocks acting on your own IPCR (dual-role).
+ */
+export async function adminEditTargets(p: {
+  targetSettingId: string;
+  approverEmployeeId: string | null;
+  submitterEmployeeId: string;
+  mfos: Array<{ id: string; title: string }>;
+  indicators: Array<{ id: string; description: string }>;
+}): Promise<Result<null>> {
+  if (p.approverEmployeeId && p.approverEmployeeId === p.submitterEmployeeId) {
+    return { ok: false, error: 'You cannot edit your own IPCR.' };
+  }
+  try {
+    const { data: setting } = await (supabase as any)
+      .from('target_settings')
+      .select('status')
+      .eq('id', p.targetSettingId)
+      .maybeSingle();
+    if (!setting) return { ok: false, error: 'Submission not found.' };
+    if (setting.status !== 'submitted_for_approval') {
+      return { ok: false, error: 'Only a submitted (pending) IPCR can be edited.' };
+    }
+    for (const m of p.mfos) {
+      const { error } = await (supabase as any).from('mfos').update({ title: m.title }).eq('id', m.id);
+      if (error) return { ok: false, error: error.message };
+    }
+    for (const si of p.indicators) {
+      const { error } = await (supabase as any)
+        .from('success_indicators')
+        .update({ description: si.description })
+        .eq('id', si.id);
+      if (error) return { ok: false, error: error.message };
+    }
+    await writeAudit({
+      target_setting_id: p.targetSettingId,
+      action: 'admin_edit',
+      performed_by: p.approverEmployeeId,
+      performed_by_role: 'office_account',
+      reason: 'Office Account edited targets before approval',
+    });
+    return { ok: true, data: null };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Edit failed.' };
   }
 }
 

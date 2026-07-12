@@ -24,7 +24,7 @@ import type { FunctionType } from './ipcrTargets';
 
 const supabase = supabaseClient as any;
 
-export type Phase2Status = 'not_started' | 'locked' | 'open' | 'in_progress' | 'completed';
+export type Phase2Status = 'not_started' | 'locked' | 'open' | 'in_progress' | 'completed' | 'closed';
 
 export interface RatableTarget {
   targetSettingId: string;
@@ -538,5 +538,40 @@ export async function openSelfRatingPeriod(params: {
     return { ok: true, data: { employeeIds: rows.map((r) => String(r.employee_id)) } };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Failed to open the self-rating period.' };
+  }
+}
+
+/**
+ * Office/PM bulk action: CLOSE the self-rating window. Flips every currently
+ * OPEN or IN_PROGRESS record to 'closed' (records who/when). Records that were
+ * already 'completed' (employee submitted) are left as-is — they're terminal.
+ * Closing is allowed even if not every employee has submitted; the employee then
+ * sees a read-only view of whatever they had saved.
+ */
+export async function closeSelfRatingPeriod(params: {
+  cycleId?: number;
+  closedBy: string;
+}): Promise<Result<{ employeeIds: string[] }>> {
+  try {
+    let query = supabase
+      .from('target_settings')
+      .select('id, employee_id')
+      .eq('status', 'approved')
+      .in('phase2_status', ['open', 'in_progress']);
+    if (params.cycleId != null) query = query.eq('cycle_id', params.cycleId);
+    const { data: openRows, error } = await query;
+    if (error) return { ok: false, error: error.message };
+    const rows = (openRows ?? []) as any[];
+    if (!rows.length) return { ok: true, data: { employeeIds: [] } };
+
+    const { error: upErr } = await supabase
+      .from('target_settings')
+      .update({ phase2_status: 'closed', phase2_closed_at: nowIso(), phase2_closed_by: params.closedBy, updated_at: nowIso() })
+      .in('id', rows.map((r) => r.id));
+    if (upErr) return { ok: false, error: upErr.message };
+
+    return { ok: true, data: { employeeIds: rows.map((r) => String(r.employee_id)) } };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Failed to close the self-rating period.' };
   }
 }

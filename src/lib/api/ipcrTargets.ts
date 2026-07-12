@@ -34,7 +34,7 @@ export interface MfoDraft {
 export type TargetsByFunction = Record<FunctionType, MfoDraft[]>;
 
 // Phase 2 self-rating lifecycle (migration 20260718). 'not_started' is legacy.
-export type Phase2Status = 'not_started' | 'locked' | 'open' | 'in_progress' | 'completed';
+export type Phase2Status = 'not_started' | 'locked' | 'open' | 'in_progress' | 'completed' | 'closed';
 
 export interface TargetSettingRow {
   id: string;

@@ -15,6 +15,7 @@ import {
   loadRatingSheet,
   saveRatings,
   openSelfRatingPeriod,
+  closeSelfRatingPeriod,
   type RatableTarget,
   type RatingSheet,
 } from '../../../lib/api/ipcrRatings';
@@ -56,6 +57,7 @@ export const Phase2RatingPanel: React.FC<{ currentEmployeeId: string | null }> =
   const [scores, setScores] = useState<Record<string, LocalScore>>({});
   const [saving, setSaving] = useState(false);
   const [opening, setOpening] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
 
   const refreshList = async () => {
@@ -144,6 +146,27 @@ export const Phase2RatingPanel: React.FC<{ currentEmployeeId: string | null }> =
     void refreshList();
   };
 
+  const closeWindow = async () => {
+    if (!window.confirm('Close the self-rating period? Employees with open/in-progress ratings will switch to a read-only view of what they saved (unsubmitted work is preserved). They will be notified.')) return;
+    setClosing(true);
+    setNotice(null);
+    const res = await closeSelfRatingPeriod({ closedBy: currentEmployeeId ?? 'office_account' });
+    if (res.ok === false) { setClosing(false); setNotice({ tone: 'err', text: res.error }); return; }
+    const ids = res.data.employeeIds;
+    if (ids.length) {
+      await createNotifications(ids.map((id) => ({
+        employeeId: id,
+        type: 'phase2_closed',
+        title: 'Self-rating period has closed',
+        message: 'The Accomplishments & Self-Ratings window has closed. Your saved ratings are now read-only for this rating period.',
+        link: '/employee/ipcr-workspace',
+      })));
+    }
+    setClosing(false);
+    setNotice({ tone: 'ok', text: ids.length ? `Self-rating period closed for ${ids.length} employee(s); notifications sent.` : 'No open records to close.' });
+    void refreshList();
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -154,13 +177,22 @@ export const Phase2RatingPanel: React.FC<{ currentEmployeeId: string | null }> =
             any time; complete once every indicator is fully scored.
           </p>
         </div>
-        <button
-          onClick={() => void openWindow()}
-          disabled={opening}
-          className="shrink-0 rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3 py-2 text-xs font-semibold text-white shadow disabled:opacity-50"
-        >
-          {opening ? 'Opening…' : 'Open Self-Rating Period'}
-        </button>
+        <div className="flex shrink-0 gap-2">
+          <button
+            onClick={() => void openWindow()}
+            disabled={opening || closing}
+            className="rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3 py-2 text-xs font-semibold text-white shadow disabled:opacity-50"
+          >
+            {opening ? 'Opening…' : 'Open Rating Period'}
+          </button>
+          <button
+            onClick={() => void closeWindow()}
+            disabled={opening || closing}
+            className="rounded-lg border border-amber-300 bg-white hover:bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 disabled:opacity-50"
+          >
+            {closing ? 'Closing…' : 'Close Rating Period'}
+          </button>
+        </div>
       </div>
 
       {notice && (

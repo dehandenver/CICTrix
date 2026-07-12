@@ -25,6 +25,10 @@ import { markEmployeeNotificationsRead } from '../../lib/api/employeeNotificatio
 const LOCKED_NOTICE =
   'Notice: Your targets have been finalized and locked for this rating period. The Accomplishments & Self-Ratings module will be available after 4-5 months. We will notify you when the semester ends and the self-rating period opens.';
 
+// Distinct meaning from LOCKED (window ended vs. not-yet-opened).
+const CLOSED_NOTICE =
+  'Notice: The self-rating period for this rating period has closed. Your saved accomplishments and self-ratings are shown below for your reference and can no longer be edited.';
+
 const FUNCTION_GROUPS = [
   { key: 'core', label: 'Core Functions' },
   { key: 'strategic', label: 'Strategic Functions' },
@@ -77,7 +81,7 @@ export const EmployeePhase2: React.FC<{ employeeId: string | null }> = ({ employ
     [sheet],
   );
   const editable = status === 'open' || status === 'in_progress';
-  const readOnly = status === 'completed';
+  const readOnly = status === 'completed' || status === 'closed';
 
   const groupAverages = useMemo(() => {
     const out: Record<string, number | null> = {};
@@ -175,7 +179,9 @@ export const EmployeePhase2: React.FC<{ employeeId: string | null }> = ({ employ
             Accomplishments &amp; Self-Ratings
           </h3>
           <p className="text-[11px] text-slate-500 mt-0.5">
-            {readOnly
+            {status === 'closed'
+              ? 'The self-rating period has closed — your saved ratings are read-only.'
+              : readOnly
               ? 'Your self-ratings have been submitted and are locked.'
               : 'For each Success Indicator, detail your achievement and rate Quality (Q), Efficiency (E) & Timeliness (T), 1–5. Averages compute automatically.'}
           </p>
@@ -189,6 +195,13 @@ export const EmployeePhase2: React.FC<{ employeeId: string | null }> = ({ employ
       {notice && (
         <div className={`rounded-lg px-3 py-2 text-xs font-semibold ${notice.tone === 'ok' ? 'bg-emerald-50 text-emerald-800 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
           {notice.text}
+        </div>
+      )}
+
+      {status === 'closed' && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+          <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <p className="text-[11px] font-semibold text-amber-800">{CLOSED_NOTICE}</p>
         </div>
       )}
 
@@ -266,8 +279,11 @@ export const EmployeePhase2: React.FC<{ employeeId: string | null }> = ({ employ
       </div>
 
       {readOnly ? (
-        <div className="flex items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
-          <CheckCircle className="h-4 w-4" /> Submitted — overall rating {overall != null ? overall.toFixed(2) : '—'}.
+        <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${status === 'closed' ? 'border-slate-200 bg-slate-50 text-slate-600' : 'border-emerald-100 bg-emerald-50 text-emerald-800'}`}>
+          <CheckCircle className="h-4 w-4" />
+          {status === 'closed'
+            ? `Rating period closed — overall ${overall != null ? overall.toFixed(2) : '—'} from your saved ratings.`
+            : `Submitted — overall rating ${overall != null ? overall.toFixed(2) : '—'}.`}
         </div>
       ) : (
         <div className="flex items-center justify-between gap-2">
