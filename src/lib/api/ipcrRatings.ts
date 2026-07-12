@@ -452,10 +452,14 @@ export async function saveEmployeeRatings(params: {
     if (setting.employee_id !== employeeId)
       return { ok: false, error: 'You can only rate your own IPCR.' };
     const gate = (setting.phase2_status ?? 'locked') as Phase2Status;
-    if (gate === 'locked' || gate === 'not_started')
-      return { ok: false, error: 'The self-rating period has not opened yet.' };
+    // Employees may PREPARE (draft-save) while locked, but may only SUBMIT once the
+    // Office Account has opened the rating period.
     if (gate === 'completed')
       return { ok: false, error: 'Your self-ratings have already been submitted.' };
+    if (gate === 'closed')
+      return { ok: false, error: 'The self-rating period has closed.' };
+    if (submit && (gate === 'locked' || gate === 'not_started'))
+      return { ok: false, error: 'Submission opens during the rating period. You can save a draft for now.' };
 
     const rows = entries.map((e) => ({
       success_indicator_id: e.successIndicatorId,
@@ -473,7 +477,13 @@ export async function saveEmployeeRatings(params: {
       if (upErr) return { ok: false, error: upErr.message };
     }
 
-    const phase2Status: Phase2Status = submit ? 'completed' : 'in_progress';
+    // Draft-saving while locked keeps it locked (prep only); draft while open →
+    // in_progress; submit → completed.
+    const phase2Status: Phase2Status = submit
+      ? 'completed'
+      : gate === 'locked' || gate === 'not_started'
+      ? 'locked'
+      : 'in_progress';
     const { error: stErr } = await supabase
       .from('target_settings')
       .update({
@@ -518,11 +528,13 @@ export async function openSelfRatingPeriod(params: {
   openedBy: string;
 }): Promise<Result<{ employeeIds: string[] }>> {
   try {
+    // Open/re-open: anything not currently open and not still-submitted becomes
+    // 'open' (includes 'closed', so a closed period can be re-opened).
     let query = supabase
       .from('target_settings')
       .select('id, employee_id')
       .eq('status', 'approved')
-      .in('phase2_status', ['locked', 'not_started']);
+      .in('phase2_status', ['locked', 'not_started', 'closed']);
     if (params.cycleId != null) query = query.eq('cycle_id', params.cycleId);
     const { data: locked, error } = await query;
     if (error) return { ok: false, error: error.message };

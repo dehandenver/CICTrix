@@ -14,6 +14,7 @@
     "sync:rsp": "node scripts/sync-rsp-portals.mjs",
     "seed:ipcr-historical": "node scripts/seed-ipcr-historical.mjs",
     "seed:ipcr-maria": "node scripts/seed-ipcr-maria.mjs",
+    "seed:ipcr-scores": "node scripts/seed-ipcr-scores.mjs",
     "audit:ipcr": "node scripts/audit-ipcr.mjs",
     "fix:ipcr-timeline": "node scripts/fix-ipcr-timeline.mjs"
   },

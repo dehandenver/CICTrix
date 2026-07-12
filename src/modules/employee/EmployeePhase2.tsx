@@ -79,8 +79,15 @@ export const EmployeePhase2: React.FC<{ employeeId: string | null }> = ({ employ
     () => (sheet ? sheet.mfos.flatMap((m) => m.indicators.map((si) => si.successIndicatorId)) : []),
     [sheet],
   );
-  const editable = status === 'open' || status === 'in_progress';
+  const isLocked = status === 'locked' || status === 'not_started';
   const readOnly = status === 'completed' || status === 'closed';
+  // Locked, open and in_progress can all be typed into (prepared). Only open /
+  // in_progress can SUBMIT — submission is gated to the rating period.
+  const editable = !readOnly;
+  const canSubmit = status === 'open' || status === 'in_progress';
+  const expectedOpen = sheet?.phase2OpenTargetDate
+    ? new Date(sheet.phase2OpenTargetDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+    : null;
 
   const groupAverages = useMemo(() => {
     const out: Record<string, number | null> = {};
@@ -146,29 +153,8 @@ export const EmployeePhase2: React.FC<{ employeeId: string | null }> = ({ employ
     );
   }
 
-  // ── LOCKED: only the notice, no form fields at all ─────────────────────────
-  if (status === 'locked' || status === 'not_started') {
-    const expected = sheet.phase2OpenTargetDate
-      ? new Date(sheet.phase2OpenTargetDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-      : null;
-    return (
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
-        <div className="flex items-start gap-3">
-          <Lock className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-          <div>
-            <p className="text-sm font-semibold leading-relaxed text-amber-900">{LOCKED_NOTICE}</p>
-            {expected && (
-              <p className="mt-2 text-xs font-medium text-amber-700">
-                Expected to open around {expected}.
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ── OPEN / IN_PROGRESS / COMPLETED: the per-indicator table ────────────────
+  // The form is always accessible (frozen targets + accomplishment + Q/E/T). The
+  // gating is on the SUBMIT action + the locked/closed notices below.
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -180,8 +166,10 @@ export const EmployeePhase2: React.FC<{ employeeId: string | null }> = ({ employ
           <p className="text-[11px] text-slate-500 mt-0.5">
             {status === 'closed'
               ? 'The self-rating period has closed — your saved ratings are read-only.'
-              : readOnly
+              : status === 'completed'
               ? 'Your self-ratings have been submitted and are locked.'
+              : isLocked
+              ? 'You can prepare your achievements and ratings now — submission opens during the rating period.'
               : 'For each Success Indicator, detail your achievement and rate Quality (Q), Efficiency (E) & Timeliness (T), 1–5. Averages compute automatically.'}
           </p>
         </div>
@@ -194,6 +182,20 @@ export const EmployeePhase2: React.FC<{ employeeId: string | null }> = ({ employ
       {notice && (
         <div className={`rounded-lg px-3 py-2 text-xs font-semibold ${notice.tone === 'ok' ? 'bg-emerald-50 text-emerald-800 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
           {notice.text}
+        </div>
+      )}
+
+      {isLocked && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+          <div className="flex items-start gap-2">
+            <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <div>
+              <p className="text-[11px] font-semibold leading-relaxed text-amber-900">{LOCKED_NOTICE}</p>
+              {expectedOpen && (
+                <p className="mt-1 text-[10px] font-medium text-amber-700">Expected to open around {expectedOpen}.</p>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -286,13 +288,21 @@ export const EmployeePhase2: React.FC<{ employeeId: string | null }> = ({ employ
         </div>
       ) : (
         <div className="flex items-center justify-between gap-2">
-          <p className="flex items-center gap-1 text-[10px] text-slate-400"><Info className="h-3 w-3" /> Q = Quality · E = Efficiency · T = Timeliness · A = Average</p>
+          <p className="flex items-center gap-1 text-[10px] text-slate-400">
+            <Info className="h-3 w-3" />
+            {isLocked ? 'You can save a draft now; Submit opens during the rating period.' : 'Q = Quality · E = Efficiency · T = Timeliness · A = Average'}
+          </p>
           <div className="flex gap-2">
             <button onClick={() => void persist(false)} disabled={saving} className="rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2 text-xs font-semibold transition disabled:opacity-50">
               {saving ? 'Saving…' : 'Save Draft'}
             </button>
-            <button onClick={() => void persist(true)} disabled={saving || !isComplete} title={isComplete ? '' : 'Rate every indicator on Q, E and T first.'} className="inline-flex items-center gap-1 rounded-lg bg-[#363EE8] hover:bg-[#2e35d4] text-white px-4 py-2 text-xs font-semibold shadow transition disabled:bg-slate-400 disabled:cursor-not-allowed">
-              <CheckCircle className="h-3.5 w-3.5" /> Submit Self-Ratings
+            <button
+              onClick={() => void persist(true)}
+              disabled={saving || !isComplete || !canSubmit}
+              title={!canSubmit ? 'Submission opens during the rating period.' : isComplete ? '' : 'Rate every indicator on Q, E and T first.'}
+              className="inline-flex items-center gap-1 rounded-lg bg-[#363EE8] hover:bg-[#2e35d4] text-white px-4 py-2 text-xs font-semibold shadow transition disabled:bg-slate-400 disabled:cursor-not-allowed"
+            >
+              {canSubmit ? <CheckCircle className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />} Submit Self-Ratings
             </button>
           </div>
         </div>
