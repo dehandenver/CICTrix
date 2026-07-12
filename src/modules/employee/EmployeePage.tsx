@@ -2927,10 +2927,10 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                           {readOnly && <Lock className="h-3.5 w-3.5 text-slate-400" />}
                           {fn.label}
                         </label>
-                        <div className={`overflow-x-auto rounded-lg border ${readOnly ? 'bg-slate-50/60' : ''}`} style={{ borderColor: '#C8D1FF' }}>
+                        <div className={`overflow-x-auto rounded-lg border ${readOnly ? 'bg-slate-100 opacity-95' : ''}`} style={{ borderColor: readOnly ? '#cbd5e1' : '#C8D1FF' }}>
                           <table className="w-full min-w-[640px] border-collapse text-sm">
                             <thead>
-                              <tr className="bg-slate-50 text-left">
+                              <tr className={`text-left ${readOnly ? 'bg-slate-200' : 'bg-slate-50'}`}>
                                 <th className="w-2/5 border-b px-3 py-2 text-xs font-bold text-slate-600" style={{ borderColor: '#C8D1FF' }}>MFO</th>
                                 <th className="border-b px-3 py-2 text-xs font-bold text-slate-600" style={{ borderColor: '#C8D1FF' }}>Success Indicators (Targets + Measures)</th>
                               </tr>
@@ -2947,7 +2947,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                                         disabled={readOnly}
                                         placeholder={fn.mfoPlaceholder}
                                         style={{ borderColor: '#C8D1FF' }}
-                                        className="w-full rounded-lg border px-2.5 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#363EE8] disabled:bg-slate-100 disabled:text-slate-500 disabled:border-slate-200 disabled:cursor-default disabled:shadow-inner"
+                                        className="w-full rounded-lg border px-2.5 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#363EE8] disabled:bg-slate-200 disabled:text-slate-600 disabled:border-slate-300 disabled:cursor-default"
                                       />
                                       {!readOnly && (
                                         <button
@@ -2972,7 +2972,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                                             disabled={readOnly}
                                             placeholder={fn.siPlaceholder}
                                             style={{ borderColor: '#C8D1FF' }}
-                                            className="w-full rounded-lg border px-2.5 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#363EE8] disabled:bg-slate-100 disabled:text-slate-500 disabled:border-slate-200 disabled:cursor-default disabled:shadow-inner"
+                                            className="w-full rounded-lg border px-2.5 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-[#363EE8] disabled:bg-slate-200 disabled:text-slate-600 disabled:border-slate-300 disabled:cursor-default"
                                           />
                                           {!readOnly && (
                                             <button

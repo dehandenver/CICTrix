@@ -21,9 +21,8 @@ import {
 } from '../../lib/api/ipcrRatings';
 import { markEmployeeNotificationsRead } from '../../lib/api/employeeNotifications';
 
-// Do NOT paraphrase — exact copy required by spec.
 const LOCKED_NOTICE =
-  'Notice: Your targets have been finalized and locked for this rating period. The Accomplishments & Self-Ratings module will be available after 4-5 months. We will notify you when the semester ends and the self-rating period opens.';
+  'Notice: Your targets have been finalized and locked for this rating period. You will be able to encode your accomplishments and self-ratings for each Success Indicator here, but the submission opens during the rating period (about 4–5 months from now). We will notify you as soon as the IPCR self-rating submission is open.';
 
 // Distinct meaning from LOCKED (window ended vs. not-yet-opened).
 const CLOSED_NOTICE =
