@@ -11,6 +11,7 @@ import {
 import { sendEmail } from '../lib/email';
 import { createPassword, upsertEmployeePortalAccount } from '../lib/employeePortalData';
 import { supabase } from '../lib/supabase';
+import { buildEvaluationSnapshotMap } from '../lib/evaluationScores';
 import {
   ArrowLeft,
   Building2,
@@ -47,11 +48,40 @@ interface CredentialResult {
 const QUALIFY_STATUSES = ['qualified', 'recommended for hiring', 'accepted', 'for hiring'];
 const EXACT_QUALIFY = ['hired'];
 
+// Disqualified/rejected applicants never surface here, regardless of scores.
+const isRejected = (status: string) => {
+  const s = status.toLowerCase().trim();
+  return s.includes('not qualified') || s.includes('disqualif') || s.includes('reject');
+};
+
 const isForHiring = (status: string) => {
   const s = status.toLowerCase().trim();
   // Exclude disqualified/rejected statuses — "not qualified" contains "qualified" so check this first.
-  if (s.includes('not qualified') || s.includes('disqualif') || s.includes('reject')) return false;
+  if (isRejected(status)) return false;
   return QUALIFY_STATUSES.some(q => s.includes(q)) || EXACT_QUALIFY.includes(s);
+};
+
+const CAT_SCORES_KEY = 'cictrix_category_scores';
+
+// Mirrors the "Finalized" flag on the Applicant Score tab: an applicant is
+// considered completed once RSP has saved their category scores (localStorage)
+// or an interviewer evaluation is marked completed. Every completed applicant
+// should appear in the For Hiring list even before being manually marked.
+const buildCompletedSet = async (): Promise<Set<string>> => {
+  const completed = new Set<string>();
+  try {
+    const catScores = JSON.parse(localStorage.getItem(CAT_SCORES_KEY) ?? '{}');
+    Object.keys(catScores).forEach(id => completed.add(String(id)));
+  } catch { /* ignore malformed cache */ }
+  try {
+    const { data } = await (supabase as any).from('evaluations').select('*');
+    if (Array.isArray(data)) {
+      buildEvaluationSnapshotMap(data).forEach(snap => {
+        if (snap.completed) completed.add(String(snap.applicantId));
+      });
+    }
+  } catch { /* evaluations unavailable — fall back to saved scores only */ }
+  return completed;
 };
 
 const fmtScore = (v: number | null) => (v != null ? v.toFixed(2) : '—');
@@ -72,7 +102,15 @@ export const ForHiringPage = () => {
       setLoading(true);
       try {
         ensureRecruitmentSeedData();
-        const local = getApplicants().filter(a => isForHiring(a.status));
+
+        // Applicant qualifies for this list if it is already flagged for hiring
+        // OR it is "completed" (Finalized) on the Applicant Score tab — but never
+        // if it has been disqualified/rejected.
+        const completedIds = await buildCompletedSet();
+        const includeApplicant = (id: string, status: string) =>
+          !isRejected(status) && (isForHiring(status) || completedIds.has(String(id)));
+
+        const local = getApplicants().filter(a => includeApplicant(a.id, a.status));
 
         const remoteData: any[] = [];
         try {
@@ -98,7 +136,7 @@ export const ForHiringPage = () => {
 
         remoteData.forEach((r: any) => {
           const status = String(r.status ?? '');
-          if (!isForHiring(status)) return;
+          if (!includeApplicant(String(r.id), status)) return;
 
           const fullName = [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')
             || r.full_name || '';
@@ -171,7 +209,11 @@ export const ForHiringPage = () => {
     };
     void load();
     window.addEventListener('cictrix:applicants-updated', load);
-    return () => window.removeEventListener('cictrix:applicants-updated', load);
+    window.addEventListener('cictrix:category-scores-updated', load);
+    return () => {
+      window.removeEventListener('cictrix:applicants-updated', load);
+      window.removeEventListener('cictrix:category-scores-updated', load);
+    };
   }, []);
 
   // ── Department folder list ────────────────────────────────────────────────
@@ -405,7 +447,7 @@ export const ForHiringPage = () => {
           <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white py-20 text-slate-400">
             <Users className="mb-3 h-10 w-10" />
             <p className="font-medium">No qualified applicants yet.</p>
-            <p className="mt-1 text-sm">Applicants recommended for hiring will appear here.</p>
+            <p className="mt-1 text-sm">Applicants completed in the Applicant Score appear here.</p>
           </div>
         ) : (
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
