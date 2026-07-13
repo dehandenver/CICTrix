@@ -1,10 +1,10 @@
-import { ArrowUpDown, RefreshCw, Search, Send, X } from 'lucide-react';
+import { ArrowLeft, ArrowUpDown, Building2, ChevronRight, RefreshCw, Search, Send, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { EmptyState } from '../../components/EmptyState';
 import { getIPCRRecordsFromGapView } from '../../lib/api/competencyGapAnalysis';
 import { createTrainingRequest } from '../../lib/api/trainingRequests';
 import { supabase as supabaseClient } from '../../lib/supabase';
-import { REPORT_PERIOD, getAdjectival, type IPCRRatingRecord } from './pm/SummaryOfRatings';
+import { REPORT_PERIOD, getAdjectival, groupByDept, type IPCRRatingRecord } from './pm/SummaryOfRatings';
 
 const supabase = supabaseClient as any;
 
@@ -55,8 +55,10 @@ export const LndSummaryOfRatings = () => {
   const [loading, setLoading] = useState(true);
   const [lastSynced, setLastSynced] = useState<Date | null>(null);
   const [sortAsc, setSortAsc] = useState(true);
+  const [deptSortAsc, setDeptSortAsc] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [deptFilter, setDeptFilter] = useState('');
+  // null → department landing view; a department name → drilled-in employee view
+  const [activeDept, setActiveDept] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Per-row training request modal
@@ -95,10 +97,26 @@ export const LndSummaryOfRatings = () => {
     void fetchRecords();
   }, []);
 
-  const departments = useMemo(
-    () => Array.from(new Set(records.map(r => r.department))).sort(),
-    [records]
-  );
+  // Department landing rows — grouped, with avg rating and low-performer counts.
+  const deptRows = useMemo(() => {
+    const groups = groupByDept(records);
+    const rows = Array.from(groups.entries()).map(([department, g]) => {
+      const lowCount =
+        g.distribution.Unsatisfactory + g.distribution.Poor;
+      return {
+        department,
+        count: g.records.length,
+        avg: g._count > 0 ? g.avg : null,
+        lowCount,
+        nonSubmission: g.distribution['Non-Submission'],
+      };
+    });
+    return rows.sort((a, b) => {
+      const aAvg = a.avg ?? -1;
+      const bAvg = b.avg ?? -1;
+      return deptSortAsc ? aAvg - bAvg : bAvg - aAvg;
+    });
+  }, [records, deptSortAsc]);
 
   // Bottom quartile threshold — flag employees below the 25th percentile score
   const bottomQuartileThreshold = useMemo(() => {
@@ -110,23 +128,19 @@ export const LndSummaryOfRatings = () => {
     return scores[Math.floor(scores.length * 0.25)];
   }, [records]);
 
+  // Employees within the drilled-in department, searched + sorted by rating.
   const filteredSorted = useMemo(() => {
+    if (!activeDept) return [];
     const term = searchTerm.toLowerCase();
     return records
-      .filter(r => {
-        const matchSearch =
-          !term ||
-          r.name.toLowerCase().includes(term) ||
-          r.department.toLowerCase().includes(term);
-        const matchDept = !deptFilter || r.department === deptFilter;
-        return matchSearch && matchDept;
-      })
+      .filter(r => r.department === activeDept)
+      .filter(r => !term || r.name.toLowerCase().includes(term))
       .sort((a, b) => {
         const aScore = a.numericalRating ?? -1;
         const bScore = b.numericalRating ?? -1;
         return sortAsc ? aScore - bScore : bScore - aScore;
       });
-  }, [records, searchTerm, deptFilter, sortAsc]);
+  }, [records, searchTerm, activeDept, sortAsc]);
 
   const allVisibleIds = useMemo(
     () => new Set(filteredSorted.map(r => r.id)),
@@ -145,6 +159,18 @@ export const LndSummaryOfRatings = () => {
 
   const toggleAll = () =>
     setSelectedIds(allSelected ? new Set() : new Set(allVisibleIds));
+
+  const enterDept = (dept: string) => {
+    setActiveDept(dept);
+    setSearchTerm('');
+    setSelectedIds(new Set());
+  };
+
+  const backToDepartments = () => {
+    setActiveDept(null);
+    setSearchTerm('');
+    setSelectedIds(new Set());
+  };
 
   const openModal = async (record: IPCRRatingRecord) => {
     setModalBusy(true);
@@ -240,13 +266,40 @@ export const LndSummaryOfRatings = () => {
       <section>
         <p className="text-sm font-medium text-gray-500">
           <span className="text-blue-600">L&D</span>{' '}
-          <span className="mx-1 text-gray-400">/</span> Summary of Ratings
+          <span className="mx-1 text-gray-400">/</span>{' '}
+          {activeDept === null ? (
+            <span>Summary of Ratings</span>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={backToDepartments}
+                className="text-blue-600 hover:underline"
+              >
+                Summary of Ratings
+              </button>
+              <span className="mx-1 text-gray-400">/</span> {activeDept}
+            </>
+          )}
         </p>
         <div className="mt-1 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Summary of Ratings</h1>
+            {activeDept !== null && (
+              <button
+                type="button"
+                onClick={backToDepartments}
+                className="mb-2 inline-flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-blue-600 transition"
+              >
+                <ArrowLeft className="h-4 w-4" /> All departments
+              </button>
+            )}
+            <h1 className="text-3xl font-bold text-gray-900">
+              {activeDept === null ? 'Summary of Ratings' : activeDept}
+            </h1>
             <p className="mt-1 text-sm text-gray-500">
-              IPCR performance ratings — Training Needs Assessment source · read-only
+              {activeDept === null
+                ? 'IPCR performance ratings by department — Training Needs Assessment source · read-only'
+                : `Employee ratings · sorted lowest-first · ${REPORT_PERIOD}`}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -268,6 +321,98 @@ export const LndSummaryOfRatings = () => {
         </div>
       </section>
 
+      {activeDept === null ? (
+      /* ── Department landing table ─────────────────────────────── */
+      <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+        {loading && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur-[1px]">
+            <span className="text-sm text-gray-500">Loading…</span>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 px-5 py-3">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+            {deptRows.length} department{deptRows.length !== 1 ? 's' : ''} · {records.length} employees
+          </span>
+          <button
+            type="button"
+            onClick={() => setDeptSortAsc(v => !v)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:border-blue-400 hover:text-blue-600 transition"
+          >
+            <ArrowUpDown className="h-3.5 w-3.5" />
+            {deptSortAsc ? 'Lowest avg first' : 'Highest avg first'}
+          </button>
+        </div>
+
+        {/* Column headers */}
+        <div className="grid grid-cols-12 items-center border-b border-gray-100 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+          <div className="col-span-5">Department</div>
+          <div className="col-span-2 text-center">Employees</div>
+          <div className="col-span-2 text-center">Avg Rating</div>
+          <div className="col-span-2 text-center">Needs Attention</div>
+          <div className="col-span-1" />
+        </div>
+
+        {deptRows.length === 0 && !loading ? (
+          <div className="py-12">
+            <EmptyState
+              title="No departments found"
+              description="No IPCR records are available to summarize yet."
+            />
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {deptRows.map(d => {
+              const adj = getAdjectival(d.avg);
+              return (
+                <button
+                  key={d.department}
+                  type="button"
+                  onClick={() => enterDept(d.department)}
+                  className="grid w-full grid-cols-12 items-center px-5 py-4 text-left transition hover:bg-blue-50/40"
+                >
+                  <div className="col-span-5 flex items-center gap-3">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                      <Building2 className="h-4 w-4" />
+                    </span>
+                    <span className="text-sm font-semibold text-gray-900">{d.department}</span>
+                  </div>
+                  <div className="col-span-2 text-center text-sm text-gray-600">{d.count}</div>
+                  <div className="col-span-2 flex flex-col items-center gap-1">
+                    <span className="text-sm font-bold text-gray-900">
+                      {d.avg !== null ? d.avg.toFixed(2) : '—'}
+                    </span>
+                    <span
+                      className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${adj.pillClass}`}
+                    >
+                      {adj.label}
+                    </span>
+                  </div>
+                  <div className="col-span-2 text-center">
+                    {d.lowCount > 0 ? (
+                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
+                        {d.lowCount} low
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
+                    {d.nonSubmission > 0 && (
+                      <span className="ml-1 inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                        {d.nonSubmission} no sub
+                      </span>
+                    )}
+                  </div>
+                  <div className="col-span-1 flex justify-end">
+                    <ChevronRight className="h-4 w-4 text-gray-400" />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      ) : (
+      <>
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
         <div className="relative flex-1 min-w-[220px]">
@@ -275,24 +420,12 @@ export const LndSummaryOfRatings = () => {
           <input
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
-            placeholder="Search by employee name or department…"
+            placeholder="Search employees in this department…"
             className="w-full rounded-lg border border-gray-200 py-1.5 pl-9 pr-4 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
-        <select
-          value={deptFilter}
-          onChange={e => setDeptFilter(e.target.value)}
-          className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 focus:border-blue-500 focus:outline-none w-52"
-        >
-          <option value="">All departments</option>
-          {departments.map(dept => (
-            <option key={dept} value={dept}>
-              {dept}
-            </option>
-          ))}
-        </select>
         <span className="ml-auto text-xs text-gray-400">
-          {filteredSorted.length} of {records.length} employees
+          {filteredSorted.length} employee{filteredSorted.length !== 1 ? 's' : ''}
         </span>
       </div>
 
@@ -413,6 +546,8 @@ export const LndSummaryOfRatings = () => {
           </div>
         )}
       </div>
+      </>
+      )}
 
       {/* Bulk action bar — floats at bottom when rows are selected */}
       {someSelected && (
