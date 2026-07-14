@@ -50,8 +50,12 @@ export function JobPortalPage() {
           title: job.title || '',
           department: job.department || '',
           itemNumber: job.jobCode || job.id || '',
-          postingDate: job.postedDate ? new Date(job.postedDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-          closingDate: job.applicationDeadline ? new Date(job.applicationDeadline).toISOString().split('T')[0] : new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+          postingDate: job.postedDate ? new Date(job.postedDate).toISOString().split('T')[0] : '',
+          // No invented deadline. A posting with no deadline on record shows
+          // "Not specified" rather than a fabricated 30-days-from-now date.
+          closingDate: job.applicationDeadline
+            ? new Date(job.applicationDeadline).toISOString().split('T')[0]
+            : '',
           type: job.employmentStatus === 'Permanent' ? 'Plantilla' : 'Contractual',
           positionType: job.positionType || 'Civil Service',
           employmentStatus: job.employmentStatus || 'Permanent',
@@ -166,7 +170,9 @@ export function JobPortalPage() {
   };
 
   const formatDate = (dateStr: string) => {
+    if (!dateStr) return 'Not specified';
     const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) return 'Not specified';
     return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   };
 
@@ -404,7 +410,9 @@ export function JobPortalPage() {
                     </div>
                     <div className="flex items-center justify-between text-xs text-slate-500">
                       <span className="flex items-center gap-1"><Clock size={13} /> Deadline</span>
-                      <span className="font-semibold text-rose-600">{formatDate(job.closingDate)}</span>
+                      <span className={job.closingDate ? 'font-semibold text-rose-600' : 'font-medium italic text-slate-400'}>
+                        {formatDate(job.closingDate)}
+                      </span>
                     </div>
                   </div>
                 </div>

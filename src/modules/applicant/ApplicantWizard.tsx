@@ -20,7 +20,8 @@ import {
     findEmployeePortalAccount,
     getEmployeePortalAccounts,
 } from '../../lib/employeePortalData';
-import { getEmployeeRecordsFromSupabase, syncApplicantSubmissionToRecruitment, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
+import { syncApplicantSubmissionToRecruitment, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
+import { fetchEmployeeApplicationProfile } from '../../lib/api/employeeApplicationProfile';
 import { ATTACHMENTS_BUCKET, supabase } from '../../lib/supabase';
 import '../../styles/wizard.css';
 import type { ApplicantFormData, UploadedFile, ValidationErrors } from '../../types/applicant.types';
@@ -163,6 +164,9 @@ export const ApplicantWizard: React.FC = () => {
   const [submitError, setSubmitError] = useState('');
   const [showEmployeeAuth, setShowEmployeeAuth] = useState(false);
   const [employeeNumber, setEmployeeNumber] = useState('');
+  // Explains that the form was auto-filled from the employee's record (or why
+  // it wasn't). Cleared once they leave the promotional flow.
+  const [prefillNotice, setPrefillNotice] = useState('');
   const [employeePassword, setEmployeePassword] = useState('');
   const [showEmployeePassword, setShowEmployeePassword] = useState(false);
   const [employeeAuthError, setEmployeeAuthError] = useState('');
@@ -661,18 +665,24 @@ const handleNextToReview = () => {
       return;
     }
 
-    // Look up the employee in Supabase (source of truth) to get the most
-    // up-to-date position/department, falling back to the portal account's
-    // cached fields if no row exists yet.
-    const employeeRecord = (await getEmployeeRecordsFromSupabase()).find(
-      (record) => String(record.employeeId ?? '').trim() === String(matchedAccount?.employee?.employeeId ?? '').trim()
-    );
-    const [firstName, ...remainingParts] = String(matchedAccount?.employee?.fullName ?? '').trim().split(/\s+/);
-    const lastName = remainingParts.length > 0 ? remainingParts[remainingParts.length - 1] : '';
-    const middleName = remainingParts.length > 1 ? remainingParts.slice(0, -1).join(' ') : '';
-    const currentDepartment = employeeRecord?.department || matchedAccount?.employee?.currentDepartment || '';
-    const currentDivision = employeeRecord?.division || matchedAccount?.employee?.currentDivision || '';
-    const currentPosition = employeeRecord?.position || matchedAccount?.employee?.currentPosition || '';
+    const matchedEmployeeNumber = String(matchedAccount?.employee?.employeeId ?? '').trim();
+
+    // The applicant is an existing employee, so their education, work history,
+    // contact details and current post are already on file. Pull the whole
+    // profile and prefill the form instead of making them retype it.
+    const profile = await fetchEmployeeApplicationProfile(matchedEmployeeNumber);
+
+    // Fallbacks for when there's no employees row yet: derive what we can from
+    // the portal account, and leave the rest blank for them to fill in.
+    const [accountFirstName, ...remainingParts] = String(matchedAccount?.employee?.fullName ?? '')
+      .trim()
+      .split(/\s+/);
+    const accountLastName = remainingParts.length > 0 ? remainingParts[remainingParts.length - 1] : '';
+    const accountMiddleName = remainingParts.length > 1 ? remainingParts.slice(0, -1).join(' ') : '';
+
+    const currentDepartment = profile?.currentDepartment || matchedAccount?.employee?.currentDepartment || '';
+    const currentDivision = profile?.currentDivision || matchedAccount?.employee?.currentDivision || '';
+    const currentPosition = profile?.currentPosition || matchedAccount?.employee?.currentPosition || '';
 
     setAuthenticatedEmployeeAccount(matchedAccount);
     setApplicationType('promotion');
@@ -682,20 +692,48 @@ const handleNextToReview = () => {
     setFormData({
       ...INITIAL_FORM_DATA,
       application_type: 'promotion',
-      first_name: firstName || '',
-      middle_name: middleName,
-      last_name: lastName,
-      gender: matchedAccount?.employee?.gender === 'Prefer not to say' ? '' : String(matchedAccount?.employee?.gender ?? ''),
-      address: matchedAccount?.employee?.homeAddress || '',
-      contact_number: matchedAccount?.employee?.mobileNumber || '',
-      email: matchedAccount?.employee?.email || '',
-      employee_id: matchedAccount?.employee?.employeeId || '',
+
+      // Identity & contact
+      first_name: profile?.firstName || accountFirstName || '',
+      middle_name: profile?.middleName || accountMiddleName,
+      last_name: profile?.lastName || accountLastName,
+      gender:
+        profile?.sex ||
+        (matchedAccount?.employee?.gender === 'Prefer not to say'
+          ? ''
+          : String(matchedAccount?.employee?.gender ?? '')),
+      address: profile?.address || matchedAccount?.employee?.homeAddress || '',
+      contact_number: profile?.contactNumber || matchedAccount?.employee?.mobileNumber || '',
+      email: profile?.email || matchedAccount?.employee?.email || '',
+
+      // Employment
+      employee_id: matchedEmployeeNumber,
       current_position: currentPosition,
       current_department: currentDepartment,
       current_division: currentDivision,
       employee_username: matchedAccount?.username || '',
       office: currentDepartment,
+
+      // Educational background — from employee_education
+      education_attainment: profile?.educationAttainment || '',
+      education_degree: profile?.educationDegree || '',
+      education_school: profile?.educationSchool || '',
+
+      // Work experience — from employee_work_experience
+      work_experience_years: profile?.workExperienceYears || '',
+      work_experience_months: profile?.workExperienceMonths || '',
+      relevant_experience_position: profile?.relevantExperiencePosition || '',
+      relevant_experience_company: profile?.relevantExperienceCompany || '',
+      relevant_experience_duties: profile?.relevantExperienceDuties || '',
     });
+
+    // Tell them what happened. Silence here reads as "the form is just blank".
+    setPrefillNotice(
+      profile
+        ? 'We filled in your details from your employee record. Review each field and update anything that has changed.'
+        : "We couldn't find your employee record, so please fill in your details manually.",
+    );
+
     setSubmitError('');
     setShowEmployeeAuth(false);
     setEmployeeAuthError('');
@@ -892,6 +930,25 @@ const handleNextToReview = () => {
                   <h2>Personal &amp; Application Information</h2>
                   <p>Please provide your complete details for evaluation.</p>
                 </div>
+
+                {prefillNotice && applicationType === 'promotion' && (
+                  <div
+                    role="status"
+                    style={{
+                      margin: '0 0 16px',
+                      padding: '12px 16px',
+                      borderRadius: 10,
+                      border: '1px solid #bfdbfe',
+                      background: '#eff6ff',
+                      color: '#1e3a8a',
+                      fontSize: 14,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {prefillNotice}
+                  </div>
+                )}
+
                 <div className="wizard-content">
                   <ApplicantAssessmentForm
                       formData={formData}

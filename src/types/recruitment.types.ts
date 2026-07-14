@@ -13,7 +13,10 @@ export interface JobPosting {
   summary: string;
   responsibilities: string[];
   qualifications: {
+    /** Highest educational attainment required, e.g. "College Graduate". */
     education: string;
+    /** The course/discipline it must be in, e.g. "BS Information Technology or related". */
+    educationField?: string;
     experience: { years: number; field: string };
     skills: string[];
     certifications: string[];

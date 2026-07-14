@@ -1,8 +1,9 @@
 import { ArrowLeft, Briefcase, MapPin, BookOpen, Award, Users, FileText, Calendar, Clock, CheckCircle2 } from 'lucide-react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { getJobPostings } from '../lib/recruitmentData';
 import { JobPosting } from '../types/recruitment.types';
+import { QualificationGapPanel } from './QualificationGapPanel';
 
 interface LandingJobData {
   id: number;
@@ -14,20 +15,57 @@ interface LandingJobData {
   type: string;
 }
 
+/**
+ * One qualification standard. An unstated requirement renders as muted italic
+ * placeholder text rather than a fabricated value.
+ */
+const RequirementCard = ({
+  icon,
+  label,
+  value,
+  emptyText,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  emptyText: string;
+}) => (
+  <div className="rounded-xl border border-slate-200 bg-white p-4">
+    <dt className="mb-2 flex items-center gap-2 text-sm font-bold text-slate-900">
+      {icon}
+      {label}
+    </dt>
+    <dd className={value ? 'text-base text-slate-700' : 'text-base italic text-slate-400'}>
+      {value || emptyText}
+    </dd>
+  </div>
+);
+
 export const JobDetailsPage = () => {
   const navigate = useNavigate();
   const { jobId } = useParams();
   const location = useLocation();
   // Lazy initializer reads location.state immediately, preventing "not found" flash
   const [landingJob] = useState<LandingJobData | null>(() => location.state?.landingJob ?? null);
-  const [job, setJob] = useState<JobPosting | null>(null);
+  const [job, setJob] = useState<JobPosting | null>(
+    // The Job Portal navigates by item number and hands us the posting it
+    // already loaded. Seed from it so the Qualifications panel renders on that
+    // path too — it used to be gated behind `!landingJob`, which meant anyone
+    // arriving from the portal never saw the requirements at all.
+    () => (location.state?.landingJob?.originalJob as JobPosting | undefined) ?? null,
+  );
+  const [allPostings, setAllPostings] = useState<JobPosting[]>([]);
 
   useEffect(() => {
-    if (landingJob) return; // already have data from navigation state
     const jobs = getJobPostings();
-    const foundJob = jobs.find(j => j.id === jobId);
-    setJob(foundJob || null);
-  }, [jobId, landingJob]);
+    setAllPostings(jobs);
+    setJob((current) => {
+      if (current) return current;
+      // The route param is the item number on the portal path and the id on
+      // the admin path — accept either.
+      return jobs.find((j) => j.id === jobId || j.jobCode === jobId) ?? null;
+    });
+  }, [jobId]);
 
   if (!job && !landingJob) {
     return (
@@ -50,9 +88,18 @@ export const JobDetailsPage = () => {
   const displayJob = landingJob || job;
   const title = landingJob?.title || job?.title || '';
   const itemNo = landingJob?.itemNumber || job?.jobCode || '';
-  const department = landingJob?.department || job?.division || job?.department || '';
+  const department = job?.department || landingJob?.department || '';
   const postingDate = landingJob?.postingDate || job?.postedDate || '';
   const closingDate = landingJob?.closingDate || job?.applicationDeadline || '';
+
+  // Never print "Invalid Date" or a made-up date for a field the posting
+  // simply doesn't have.
+  const formatDate = (value: string): string => {
+    if (!value) return 'Not specified';
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return 'Not specified';
+    return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
@@ -99,7 +146,7 @@ export const JobDetailsPage = () => {
                 <span className="font-semibold text-slate-700">Salary Grade</span>
               </div>
               <p className="text-slate-900 font-medium text-lg">
-                {job?.salaryGrade != null ? job.salaryGrade : 'N/A'}
+                {job?.salaryGrade != null ? `SG ${job.salaryGrade}` : 'Not specified'}
               </p>
             </div>
 
@@ -109,7 +156,7 @@ export const JobDetailsPage = () => {
                 <Calendar className="h-5 w-5 text-sky-600" />
                 <span className="font-semibold text-slate-700">Posted</span>
               </div>
-              <p className="text-slate-900 font-medium text-lg">{new Date(postingDate).toLocaleDateString()}</p>
+              <p className="text-slate-900 font-medium text-lg">{formatDate(postingDate)}</p>
             </div>
 
             {/* Closing/Application Date */}
@@ -118,11 +165,11 @@ export const JobDetailsPage = () => {
                 <Clock className="h-5 w-5 text-sky-600" />
                 <span className="font-semibold text-slate-700">Application Closes</span>
               </div>
-              <p className="text-slate-900 font-medium text-lg">{new Date(closingDate).toLocaleDateString()}</p>
+              <p className="text-slate-900 font-medium text-lg">{formatDate(closingDate)}</p>
             </div>
           </div>
 
-          {job && !landingJob && job.monthlySalary != null && (
+          {job && job.monthlySalary != null && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 px-8 py-6">
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-slate-600">
@@ -137,107 +184,132 @@ export const JobDetailsPage = () => {
           )}
         </div>
 
-        {/* Requirements Section - Only for Database Jobs */}
-        {job && !landingJob && (
+        {/* Qualification Standards */}
+        {job && (
         <div className="bg-white rounded-2xl shadow-lg overflow-hidden mb-6 border-l-4 border-blue-600">
           <div className="bg-blue-50 px-8 py-6 border-b border-slate-200">
             <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
               <BookOpen className="h-6 w-6 text-blue-600" />
-              Qualifications & Requirements
+              Qualification Standards
             </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              What this position requires. Anything marked "Not specified" has no stated requirement.
+            </p>
           </div>
 
-          <div className="px-8 py-8 space-y-8">
-            {/* Required group */}
-            <p className="text-xs font-semibold uppercase tracking-wide text-rose-600">Required</p>
-
-            {/* Eligibility */}
-            <div>
-              <h3 className="text-lg font-bold text-slate-900 mb-3 flex items-center gap-2">
+          <div className="px-8 py-8 space-y-6">
+            {/* ── Education: the headline requirement, laid out in full ── */}
+            <div className="rounded-xl border-2 border-blue-200 bg-blue-50 p-5">
+              <h3 className="mb-4 flex items-center gap-2 text-lg font-bold text-slate-900">
                 <Award className="h-5 w-5 text-blue-600" />
-                Eligibility
+                Educational Attainment
               </h3>
-              <p className="text-slate-700 text-base leading-relaxed bg-blue-50 p-4 rounded-lg">
-                {job.eligibility
-                  ?? (job.qualifications.certifications && job.qualifications.certifications.length > 0
-                    ? job.qualifications.certifications.join(', ')
-                    : 'None specified')}
-              </p>
-            </div>
 
-            {/* Education */}
-            <div>
-              <h3 className="text-lg font-bold text-slate-900 mb-3 flex items-center gap-2">
-                <Award className="h-5 w-5 text-blue-600" />
-                Education
-              </h3>
-              <p className="text-slate-700 text-base leading-relaxed bg-blue-50 p-4 rounded-lg">
-                {job.qualifications.education || 'None specified'}
-              </p>
-            </div>
+              <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="rounded-lg bg-white p-4">
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Minimum Level Required
+                  </dt>
+                  <dd
+                    className={`mt-1 text-lg font-bold ${
+                      job.qualifications.education ? 'text-[#050D65]' : 'italic font-medium text-slate-400'
+                    }`}
+                  >
+                    {job.qualifications.education || 'Not specified'}
+                  </dd>
+                </div>
 
-            {/* Optional group */}
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 pt-2">Optional</p>
+                <div className="rounded-lg bg-white p-4">
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Field of Study
+                  </dt>
+                  <dd
+                    className={`mt-1 text-base font-semibold ${
+                      job.qualifications.educationField ? 'text-slate-800' : 'italic font-medium text-slate-400'
+                    }`}
+                  >
+                    {job.qualifications.educationField || 'Any field'}
+                  </dd>
+                </div>
+              </dl>
 
-            {/* Degree / Course */}
-            {job.qualifications.experience.field && (
-              <div>
-                <h3 className="text-lg font-bold text-slate-900 mb-3 flex items-center gap-2">
-                  <BookOpen className="h-5 w-5 text-blue-600" />
-                  Degree / Course
-                </h3>
-                <p className="text-slate-700 text-base leading-relaxed bg-blue-50 p-4 rounded-lg">
-                  {job.qualifications.experience.field}
+              {job.qualifications.education && (
+                <p className="mt-4 text-sm text-slate-600">
+                  Applicants must have attained at least{' '}
+                  <strong className="text-slate-800">{job.qualifications.education}</strong>
+                  {job.qualifications.educationField
+                    ? <> in <strong className="text-slate-800">{job.qualifications.educationField}</strong>.</>
+                    : '. Any field of study is accepted.'}
                 </p>
-              </div>
-            )}
-
-            {/* Training */}
-            <div>
-              <h3 className="text-lg font-bold text-slate-900 mb-3 flex items-center gap-2">
-                <BookOpen className="h-5 w-5 text-blue-600" />
-                Training
-              </h3>
-              <p className="text-slate-700 text-base leading-relaxed bg-blue-50 p-4 rounded-lg">
-                {job.training ?? job.qualifications.preferred ?? 'None Required'}
-              </p>
+              )}
             </div>
 
-            {/* Work Experience */}
-            <div>
-              <h3 className="text-lg font-bold text-slate-900 mb-3 flex items-center gap-2">
-                <Briefcase className="h-5 w-5 text-blue-600" />
-                Work Experience
-              </h3>
-              <p className="text-slate-700 text-base leading-relaxed bg-blue-50 p-4 rounded-lg">
-                {(() => {
+            {/* ── The rest of the CSC standards ── */}
+            <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <RequirementCard
+                icon={<Briefcase className="h-5 w-5 text-blue-600" />}
+                label="Work Experience"
+                value={(() => {
                   const total = Number(job.qualifications.experience.years || 0);
-                  if (total <= 0) return 'None Required';
+                  if (total <= 0) return '';
                   const years = Math.floor(total);
                   const months = Math.round((total - years) * 12);
                   const parts: string[] = [];
                   if (years > 0) parts.push(`${years} year${years === 1 ? '' : 's'}`);
                   if (months > 0) parts.push(`${months} month${months === 1 ? '' : 's'}`);
-                  return parts.join(' ') || 'None Required';
+                  const duration = parts.join(' ');
+                  const field = job.qualifications.experience.field;
+                  return field ? `${duration} in ${field}` : duration;
                 })()}
-              </p>
-            </div>
+                emptyText="None required"
+              />
+              <RequirementCard
+                icon={<BookOpen className="h-5 w-5 text-blue-600" />}
+                label="Training"
+                value={job.training ?? ''}
+                emptyText="None required"
+              />
+              <RequirementCard
+                icon={<Award className="h-5 w-5 text-blue-600" />}
+                label="Eligibility"
+                value={job.eligibility ?? ''}
+                emptyText="Not specified"
+              />
+              <RequirementCard
+                icon={<Award className="h-5 w-5 text-blue-600" />}
+                label="Competency"
+                value={job.competency ?? ''}
+                emptyText="Not specified"
+              />
+            </dl>
 
-            {/* Competency */}
-            <div>
-              <h3 className="text-lg font-bold text-slate-900 mb-3 flex items-center gap-2">
-                <Award className="h-5 w-5 text-blue-600" />
-                Competency
-              </h3>
-              <p className="text-slate-700 text-base leading-relaxed bg-blue-50 p-4 rounded-lg">
-                {job.competency
-                  ?? (job.qualifications.skills && job.qualifications.skills.length > 0
-                    ? job.qualifications.skills.join(', ')
-                    : 'N/A')}
-              </p>
-            </div>
+            {/* ── Skills ── */}
+            {job.qualifications.skills.length > 0 && (
+              <div>
+                <h3 className="mb-3 flex items-center gap-2 text-lg font-bold text-slate-900">
+                  <CheckCircle2 className="h-5 w-5 text-blue-600" />
+                  Required Skills
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {job.qualifications.skills.map((skill) => (
+                    <span
+                      key={skill}
+                      className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-medium text-[#050D65]"
+                    >
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
+        )}
+
+        {/* Where do I stand? — gap analysis against this posting and against the
+            most senior position in the same department. */}
+        {job && (
+          <QualificationGapPanel posting={job} allPostings={allPostings} department={department} />
         )}
 
         {/* Responsibilities Section */}

@@ -108,6 +108,11 @@ interface JobRecord {
   status: JobStatus;
   created_at: string;
   applicant_count: number;
+  // The full posting this row came from. The dashboard only edits a handful of
+  // columns, but it re-persists EVERY row on any change (status toggle, delete),
+  // so without carrying the rest of the posting along, qualifications/salary
+  // grade/deadline would be overwritten with defaults on every such write.
+  posting?: JobPosting;
 }
 
 interface ApplicantRecord {
@@ -324,36 +329,43 @@ const mapRecruitmentPostingsToDashboardJobs = (rows: JobPosting[]): JobRecord[] 
           : 'Open',
     created_at: String(item.postedDate ?? new Date().toISOString()),
     applicant_count: Number(item.applicantCount ?? 0),
+    posting: item,
   }));
 };
 
 const persistDashboardJobsToRecruitment = (rows: JobRecord[]) => {
   const nowIso = new Date().toISOString();
-  const mapped: JobPosting[] = rows.map((row, index) => ({
-    id: String(row.id ?? crypto.randomUUID()),
-    jobCode: row.item_number || `ABYAN-2026-${String(index + 1).padStart(3, '0')}`,
-    title: row.title,
-    department: row.department || 'Operations',
-    division: 'Operations',
-    positionType: 'Civil Service',
-    numberOfPositions: 1,
-    employmentStatus: 'Permanent',
-    summary: `${row.title} recruitment posting.`,
-    responsibilities: ['Review and process applications.'],
-    qualifications: {
-      education: "Bachelor's Degree",
-      experience: { years: 0, field: 'General' },
-      skills: [],
-      certifications: [],
-    },
-    requiredDocuments: ['Resume/CV', 'Application Letter'],
-    applicationDeadline: new Date(Date.now() + 30 * 86400000).toISOString(),
-    status: row.status === 'Closed' ? 'Closed' : row.status === 'Reviewing' ? 'Draft' : 'Active',
-    postedDate: row.created_at || nowIso,
-    postedBy: 'HR Admin',
-    applicantCount: row.applicant_count ?? 0,
-    qualifiedCount: 0,
-  }));
+  const mapped: JobPosting[] = rows.map((row, index) => {
+    const base = row.posting;
+    return {
+      // Preserve everything the dashboard doesn't edit. Only the columns the
+      // dashboard actually owns are overwritten below.
+      ...(base ?? {}),
+      id: String(row.id ?? base?.id ?? crypto.randomUUID()),
+      jobCode: row.item_number || base?.jobCode || `ABYAN-2026-${String(index + 1).padStart(3, '0')}`,
+      title: row.title,
+      department: row.department || base?.department || 'Operations',
+      division: base?.division,
+      positionType: base?.positionType ?? 'Civil Service',
+      numberOfPositions: base?.numberOfPositions ?? 1,
+      employmentStatus: base?.employmentStatus ?? 'Permanent',
+      summary: base?.summary ?? '',
+      responsibilities: base?.responsibilities ?? [],
+      qualifications: base?.qualifications ?? {
+        education: '',
+        experience: { years: 0, field: '' },
+        skills: [],
+        certifications: [],
+      },
+      requiredDocuments: base?.requiredDocuments ?? [],
+      applicationDeadline: base?.applicationDeadline ?? '',
+      status: row.status === 'Closed' ? 'Closed' : row.status === 'Reviewing' ? 'Draft' : 'Active',
+      postedDate: row.created_at || base?.postedDate || nowIso,
+      postedBy: base?.postedBy ?? 'HR Admin',
+      applicantCount: row.applicant_count ?? 0,
+      qualifiedCount: base?.qualifiedCount ?? 0,
+    };
+  });
 
   saveJobPostings(mapped);
 };
@@ -1004,7 +1016,7 @@ export const RSPDashboard = () => {
     templateFileName: '',
   });
 
-  const [newJob, setNewJob] = useState({
+  const EMPTY_NEW_JOB = {
     title: '',
     item_number: '',
     department: '',
@@ -1015,8 +1027,21 @@ export const RSPDashboard = () => {
     application_deadline: '',
     description: '',
     responsibilities: '',
-    qualifications: '',
-  });
+    // Structured CSC Qualification Standards. These used to be one free-text
+    // blob that was thrown away on save; they now persist to job_postings
+    // (migration 021) and drive both the portal's Qualifications panel and the
+    // applicant gap analysis.
+    salary_grade: '',
+    education_requirement: '',
+    education_field: '',
+    experience_years: '',
+    experience_field: '',
+    training_requirement: '',
+    eligibility: '',
+    required_skills: '',
+  };
+
+  const [newJob, setNewJob] = useState(EMPTY_NEW_JOB);
 
   const [newRater, setNewRater] = useState({
     name: '',
@@ -2441,37 +2466,70 @@ export const RSPDashboard = () => {
   const handleCreateJob = async () => {
     if (!newJob.title || !newJob.item_number || !newJob.department) return;
 
-    const payload = {
+    const createdAt = new Date().toISOString();
+    // job_postings.id is a uuid column — the old code handed it an incrementing
+    // integer, so the upsert was rejected and the posting only ever existed in
+    // the local cache.
+    const id = crypto.randomUUID();
+
+    const splitLines = (value: string): string[] =>
+      value
+        .split(/[\n;•]+/)
+        .map((line) => line.replace(/^[-*]\s*/, '').trim())
+        .filter(Boolean);
+
+    // The posting as the rest of the app understands it. Everything the RSP
+    // typed is preserved here and persisted by mapJobPostingToSupabaseRow.
+    const posting: JobPosting = {
+      id,
+      jobCode: newJob.item_number,
       title: newJob.title,
-      item_number: newJob.item_number,
       department: newJob.department,
-      office: newJob.department,
-      status: newJob.status,
-      created_at: new Date().toISOString(),
+      positionType: 'Civil Service',
+      numberOfPositions: Number(newJob.slots) || 1,
+      employmentStatus: 'Permanent',
+      summary: newJob.description.trim(),
+      responsibilities: splitLines(newJob.responsibilities),
+      qualifications: {
+        education: newJob.education_requirement.trim(),
+        educationField: newJob.education_field.trim() || undefined,
+        experience: {
+          years: Number(newJob.experience_years) || 0,
+          field: newJob.experience_field.trim(),
+        },
+        skills: splitLines(newJob.required_skills),
+        certifications: [],
+      },
+      salaryGrade: newJob.salary_grade ? Number(newJob.salary_grade) : undefined,
+      eligibility: newJob.eligibility.trim() || undefined,
+      training: newJob.training_requirement.trim() || undefined,
+      requiredDocuments: [],
+      applicationDeadline: newJob.application_deadline || '',
+      status: newJob.status === 'Closed' ? 'Closed' : newJob.status === 'Reviewing' ? 'Draft' : 'Active',
+      postedDate: createdAt,
+      postedBy: 'HR Admin',
+      applicantCount: 0,
+      qualifiedCount: 0,
     };
 
-    const numericIds = jobs
-      .map((job) => (typeof job.id === 'number' ? job.id : Number.NaN))
-      .filter((id) => Number.isFinite(id)) as number[];
-    const localId = numericIds.length > 0 ? Math.max(...numericIds) + 1 : 1;
-    const nextJobs = [{ ...payload, id: localId, applicant_count: 0 } as JobRecord, ...jobs];
+    const nextJobs: JobRecord[] = [
+      {
+        id,
+        title: newJob.title,
+        item_number: newJob.item_number,
+        department: newJob.department,
+        status: newJob.status,
+        created_at: createdAt,
+        applicant_count: 0,
+        posting,
+      },
+      ...jobs,
+    ];
     setJobs(nextJobs);
     persistDashboardJobsToRecruitment(nextJobs);
 
     setShowJobDialog(false);
-    setNewJob({
-      title: '',
-      item_number: '',
-      department: '',
-      status: 'Open',
-      position_level: '',
-      slots: '1',
-      employment_type: 'Full-time',
-      application_deadline: '',
-      description: '',
-      responsibilities: '',
-      qualifications: '',
-    });
+    setNewJob(EMPTY_NEW_JOB);
   };
 
   const handleDeleteJob = async (job: JobRecord) => {
@@ -6020,15 +6078,153 @@ export const RSPDashboard = () => {
                       onChange={(event) => setNewJob((prev) => ({ ...prev, responsibilities: event.target.value }))}
                     />
                   </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="!mb-2 flex items-center gap-2 text-4xl font-bold text-[var(--text-primary)]">
+                  <FileText size={28} className="text-blue-600" /> Qualification Standards
+                </h3>
+                <p className="mb-4 text-base text-[var(--text-secondary)]">
+                  What this position actually requires. Applicants see these on the job posting, and
+                  the portal uses them to show each person exactly what they're missing. Leave a field
+                  blank if it genuinely doesn't apply — blanks show as "Not specified" rather than a
+                  made-up requirement.
+                </p>
+
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">
+                        Highest Educational Attainment
+                      </label>
+                      <select
+                        className="w-full rounded-xl border border-[var(--border-color)] bg-white p-3 text-base"
+                        value={newJob.education_requirement}
+                        onChange={(event) =>
+                          setNewJob((prev) => ({ ...prev, education_requirement: event.target.value }))
+                        }
+                      >
+                        <option value="">Not specified</option>
+                        <option value="Elementary Graduate">Elementary Graduate</option>
+                        <option value="High School Graduate">High School Graduate</option>
+                        <option value="College Level">College Level</option>
+                        <option value="College Graduate">College Graduate</option>
+                        <option value="Masteral Units">Masteral Units</option>
+                        <option value="Graduate School">Graduate School</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">
+                        Field of Study
+                      </label>
+                      <input
+                        className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
+                        placeholder="e.g. BS Information Technology or related field"
+                        value={newJob.education_field}
+                        onChange={(event) =>
+                          setNewJob((prev) => ({ ...prev, education_field: event.target.value }))
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">
+                        Years of Experience
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.5}
+                        className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
+                        placeholder="0"
+                        value={newJob.experience_years}
+                        onChange={(event) =>
+                          setNewJob((prev) => ({ ...prev, experience_years: event.target.value }))
+                        }
+                      />
+                    </div>
+                    <div className="xl:col-span-2">
+                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">
+                        Experience In
+                      </label>
+                      <input
+                        className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
+                        placeholder="e.g. Systems administration / network operations"
+                        value={newJob.experience_field}
+                        onChange={(event) =>
+                          setNewJob((prev) => ({ ...prev, experience_field: event.target.value }))
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">
+                        Salary Grade
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={33}
+                        className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
+                        placeholder="e.g. 22"
+                        value={newJob.salary_grade}
+                        onChange={(event) =>
+                          setNewJob((prev) => ({ ...prev, salary_grade: event.target.value }))
+                        }
+                      />
+                      <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                        Ranks this position within its department.
+                      </p>
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">
+                        Training
+                      </label>
+                      <input
+                        className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
+                        placeholder="e.g. 8 hours of relevant training"
+                        value={newJob.training_requirement}
+                        onChange={(event) =>
+                          setNewJob((prev) => ({ ...prev, training_requirement: event.target.value }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">
+                        Eligibility
+                      </label>
+                      <input
+                        className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
+                        placeholder="e.g. CS Professional / RA 1080"
+                        value={newJob.eligibility}
+                        onChange={(event) =>
+                          setNewJob((prev) => ({ ...prev, eligibility: event.target.value }))
+                        }
+                      />
+                    </div>
+                  </div>
+
                   <div>
-                    <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Qualifications</label>
+                    <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">
+                      Required Skills
+                    </label>
                     <textarea
                       rows={4}
                       className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
-                      placeholder="List required qualifications, education, and experience..."
-                      value={newJob.qualifications}
-                      onChange={(event) => setNewJob((prev) => ({ ...prev, qualifications: event.target.value }))}
+                      placeholder="One skill per line, e.g.&#10;Network administration&#10;SQL&#10;Technical documentation"
+                      value={newJob.required_skills}
+                      onChange={(event) =>
+                        setNewJob((prev) => ({ ...prev, required_skills: event.target.value }))
+                      }
                     />
+                    <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                      One per line. These drive the applicant's skills-gap comparison.
+                    </p>
                   </div>
                 </div>
               </section>

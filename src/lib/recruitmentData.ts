@@ -299,28 +299,43 @@ export const getJobPostingsFromSupabase = async (): Promise<JobPosting[]> => {
     return data.map((row: any): JobPosting => {
       const status = mapSupabaseStatusToJobPostingStatus(row.status);
 
+      // Read what the posting ACTUALLY says. Anything genuinely unset stays
+      // empty/undefined so the UI can render "Not specified" instead of a
+      // made-up requirement (the old mapper hardcoded "Bachelor's Degree" and
+      // a 30-day deadline for every single job).
       return {
         id: String(row.id ?? ''),
         jobCode: row.item_number || row.jobCode || '',
         title: row.title || '',
         department: row.department || '',
-        division: 'Operations',
-        positionType: 'Civil Service',
-        numberOfPositions: 1,
-        employmentStatus: 'Permanent',
-        summary: row.summary || `${row.title || ''} recruitment posting.`,
-        responsibilities: [],
+        division: row.division || undefined,
+        positionType: (row.position_type || 'Civil Service') as JobPosting['positionType'],
+        numberOfPositions: Number(row.number_of_positions ?? 1) || 1,
+        employmentStatus: (row.employment_status || 'Permanent') as JobPosting['employmentStatus'],
+        summary: row.summary || row.description || '',
+        responsibilities: toStringList(row.responsibilities),
         qualifications: {
-          education: "Bachelor's Degree",
-          experience: { years: 0, field: 'General' },
-          skills: [],
-          certifications: [],
+          education: String(row.education_requirement ?? '').trim(),
+          educationField: row.education_field || undefined,
+          experience: {
+            years: Number(row.experience_years ?? 0) || 0,
+            field: String(row.experience_field ?? '').trim(),
+          },
+          skills: toStringList(row.required_skills),
+          certifications: toStringList(row.certifications),
+          preferred: row.preferred_qualifications || undefined,
         },
-        requiredDocuments: [],
-        applicationDeadline: new Date(Date.now() + 30 * 86400000).toISOString(),
+        salaryGrade: row.salary_grade == null ? undefined : Number(row.salary_grade),
+        monthlySalary: row.monthly_salary == null ? undefined : Number(row.monthly_salary),
+        eligibility: row.eligibility || undefined,
+        training: row.training_requirement || undefined,
+        competency: row.competency || undefined,
+        requiredDocuments: toStringList(row.required_documents),
+        applicationDeadline: row.application_deadline || '',
+        expectedStartDate: row.expected_start_date || undefined,
         status,
         postedDate: row.created_at || row.postedDate || new Date().toISOString(),
-        postedBy: 'HR Admin',
+        postedBy: row.posted_by || 'HR Admin',
         applicantCount: 0,
         qualifiedCount: 0,
       };
@@ -409,7 +424,69 @@ const mapJobPostingToSupabaseRow = (job: JobPosting) => ({
     : job.status === 'Filled' ? 'Closed'
     : job.status === 'Closed' ? 'Closed'
     : 'On Hold',
+
+  // Real posting + qualification fields (migration 021). Before that column set
+  // existed these were dropped on save and re-invented on read, so every job
+  // advertised the same fake "Bachelor's Degree".
+  summary: job.summary || null,
+  division: job.division || null,
+  position_type: job.positionType || null,
+  employment_status: job.employmentStatus || null,
+  number_of_positions: job.numberOfPositions ?? 1,
+  salary_grade: job.salaryGrade ?? null,
+  monthly_salary: job.monthlySalary ?? null,
+
+  education_requirement: job.qualifications?.education || null,
+  education_field: job.qualifications?.educationField || null,
+  experience_years: job.qualifications?.experience?.years ?? 0,
+  experience_field: job.qualifications?.experience?.field || null,
+  training_requirement: job.training || null,
+  eligibility: job.eligibility || null,
+  competency: job.competency || null,
+  preferred_qualifications: job.qualifications?.preferred || null,
+
+  responsibilities: job.responsibilities ?? [],
+  required_skills: job.qualifications?.skills ?? [],
+  certifications: job.qualifications?.certifications ?? [],
+  required_documents: job.requiredDocuments ?? [],
+
+  application_deadline: toDateOnly(job.applicationDeadline),
+  expected_start_date: toDateOnly(job.expectedStartDate),
+  posted_by: job.postedBy || null,
 });
+
+// job_postings.application_deadline / expected_start_date are DATE columns;
+// the app carries ISO timestamps. Null out anything unparseable rather than
+// letting Postgres reject the whole upsert.
+const toDateOnly = (value: string | undefined | null): string | null => {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
+};
+
+// jsonb list columns arrive as arrays, but tolerate a JSON string or a
+// comma/newline-separated string typed into the RSP free-text fields.
+const toStringList = (value: unknown): string[] => {
+  if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean);
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    if (trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) return parsed.map((v) => String(v).trim()).filter(Boolean);
+      } catch {
+        // fall through to the separator split
+      }
+    }
+    return trimmed
+      .split(/[\n,;•]+/)
+      .map((v) => v.trim())
+      .filter(Boolean);
+  }
+  return [];
+};
 
 const mapSupabaseStatusToJobPostingStatus = (raw: string | null | undefined): JobPosting['status'] => {
   const v = String(raw ?? '').toLowerCase();
