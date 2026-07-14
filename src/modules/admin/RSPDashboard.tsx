@@ -2579,7 +2579,7 @@ export const RSPDashboard = () => {
     'applicant-score': 'Applicant Score',
     'new-hired': 'Newly Hired Employees',
     raters: 'Rater Management & Access Control',
-    accounts: 'Employee Accounts',
+    accounts: 'Office Directory',
     reports: 'Archives',
     settings: 'Settings',
     succession: 'Succession Planning',
@@ -4024,7 +4024,7 @@ export const RSPDashboard = () => {
                         onClick={() => setAccountsView('directory')}
                         className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
                       >
-                        <ChevronLeft size={13} /> Employee Accounts
+                        <ChevronLeft size={13} /> Office Directory
                       </button>
                       <ChevronRight size={13} className="text-slate-400" />
                       <span className="font-medium text-slate-700">{selectedDirectoryCard?.position ?? 'Position'}</span>

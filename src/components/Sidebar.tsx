@@ -221,7 +221,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
     {
       path: '/admin/rsp/accounts',
       icon: Users,
-      label: 'Employee Accounts',
+      label: 'Office Directory',
       sublabel: 'All employees',
       isActive: location.pathname === '/admin/rsp/accounts',
       roles: ['rsp'],
