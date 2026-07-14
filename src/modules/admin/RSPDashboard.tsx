@@ -315,6 +315,62 @@ const formatDate = (dateValue: string) => {
   });
 };
 
+type FunnelStage = 'pending' | 'reviewed' | 'shortlisted' | 'qualified' | 'hired' | 'notQualified';
+
+/**
+ * Place an applicant in exactly ONE funnel stage.
+ *
+ * This used to be four independent substring tests (`includes('qualif')` and
+ * friends), which mis-stated the pipeline badly: "Not Qualified" matched
+ * 'qualif' and was counted as QUALIFIED, "New Application" matched nothing so
+ * genuinely-pending applicants went uncounted, and anyone Hired or Recommended
+ * for Hiring fell through every bucket and disappeared from the funnel
+ * entirely. One applicant could also land in several bars at once.
+ *
+ * Order matters below: the rejection check must run before the 'qualif' check,
+ * and the hired check before 'recommended'. Statuses are matched loosely
+ * because the live data carries values outside the ApplicantStatus union
+ * (e.g. 'Reviewed', 'Pending', 'For Deliberation').
+ */
+const funnelStageOf = (rawStatus: string): FunnelStage => {
+  const status = String(rawStatus ?? '').trim().toLowerCase();
+
+  // Terminal: out of the running. Must precede the 'qualif' test below,
+  // otherwise "not qualified" reads as qualified.
+  if (status.includes('not qualified') || status.includes('disqualif') ||
+      status.includes('reject') || status.includes('withdraw') ||
+      status.includes('failed')) {
+    return 'notQualified';
+  }
+
+  // Terminal: made it all the way through.
+  if (status.includes('hired') && !status.includes('recommended')) return 'hired';
+  if (status.includes('deployed') || status.includes('onboard')) return 'hired';
+
+  // Cleared evaluation, awaiting/holding an offer.
+  if (status.includes('recommended') || status.includes('finalized') ||
+      status.includes('qualified') || status.includes('passed')) {
+    return 'qualified';
+  }
+
+  // In assessment: shortlisted through interview.
+  if (status.includes('shortlist') || status.includes('interview') ||
+      status.includes('exam') || status.includes('deliberation')) {
+    return 'shortlisted';
+  }
+
+  // Screening.
+  if (status.includes('review') || status.includes('verified') ||
+      status.includes('screening')) {
+    return 'reviewed';
+  }
+
+  // Everything else is still waiting on first touch — 'New Application',
+  // 'Pending', 'Action Required', and any status we don't recognise (better
+  // to show it as needing attention than to silently drop it).
+  return 'pending';
+};
+
 const mapRecruitmentPostingsToDashboardJobs = (rows: JobPosting[]): JobRecord[] => {
   return rows.map((item) => ({
     id: item.id,
@@ -1473,11 +1529,18 @@ export const RSPDashboard = () => {
   }, [jobsWithCounts, applicants]);
 
   const funnelStats = useMemo(() => {
-    const pending = applicants.filter((a) => a.status.toLowerCase().includes('pending')).length;
-    const reviewed = applicants.filter((a) => a.status.toLowerCase().includes('review')).length;
-    const shortlisted = applicants.filter((a) => a.status.toLowerCase().includes('shortlist')).length;
-    const qualified = applicants.filter((a) => a.status.toLowerCase().includes('qualif')).length;
-    return { pending, reviewed, shortlisted, qualified };
+    const counts: Record<FunnelStage, number> = {
+      pending: 0,
+      reviewed: 0,
+      shortlisted: 0,
+      qualified: 0,
+      hired: 0,
+      notQualified: 0,
+    };
+    for (const applicant of applicants) {
+      counts[funnelStageOf(applicant.status)] += 1;
+    }
+    return { ...counts, total: applicants.length };
   }, [applicants]);
 
   const officeOptions = useMemo(() => Array.from(new Set(applicants.map((a) => a.office).filter(Boolean))), [applicants]);
@@ -3299,7 +3362,9 @@ export const RSPDashboard = () => {
                 <div className="rounded-2xl border border-[var(--border-color)] bg-white p-5">
                   <div className="flex items-center justify-between border-b border-[var(--border-color)] pb-4">
                     <h3 className="!mb-0 text-lg font-semibold">Application Funnel</h3>
-                    <ChevronRight className="rotate-[-45deg] text-blue-600" size={20} />
+                    <span className="text-sm font-semibold text-[var(--text-secondary)]">
+                      {funnelStats.total} total
+                    </span>
                   </div>
                   <div className="space-y-4 pt-5">
                     {[
@@ -3307,9 +3372,14 @@ export const RSPDashboard = () => {
                       { label: 'Reviewed', value: funnelStats.reviewed, color: 'bg-blue-500' },
                       { label: 'Shortlisted', value: funnelStats.shortlisted, color: 'bg-purple-500' },
                       { label: 'Qualified', value: funnelStats.qualified, color: 'bg-green-500' },
+                      { label: 'Hired', value: funnelStats.hired, color: 'bg-emerald-600' },
+                      { label: 'Not Qualified', value: funnelStats.notQualified, color: 'bg-slate-400' },
                     ].map((item) => {
-                      const maxValue = Math.max(1, funnelStats.pending, funnelStats.reviewed, funnelStats.shortlisted, funnelStats.qualified);
-                      const width = `${(item.value / maxValue) * 100}%`;
+                      // Bars are a share of ALL applicants, so the four stages plus
+                      // the two terminal ones always add up to the total — no one is
+                      // double-counted and no one is invisible.
+                      const total = Math.max(1, funnelStats.total);
+                      const share = (item.value / total) * 100;
                       return (
                         <div key={item.label}>
                           <div className="mb-1 flex items-center justify-between text-sm">
@@ -3317,7 +3387,10 @@ export const RSPDashboard = () => {
                             <span className="font-semibold">{item.value}</span>
                           </div>
                           <div className="h-3 rounded-full bg-slate-200">
-                            <div className={`h-3 rounded-full ${item.color}`} style={{ width }} />
+                            <div
+                              className={`h-3 rounded-full ${item.color}`}
+                              style={{ width: `${share}%` }}
+                            />
                           </div>
                         </div>
                       );
