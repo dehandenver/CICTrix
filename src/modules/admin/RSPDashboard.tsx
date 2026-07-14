@@ -133,6 +133,13 @@ interface ApplicantRecord {
   office: string;
   status: string;
   created_at: string;
+  /**
+   * When this person was actually hired — distinct from created_at, which for
+   * an applicant is when they APPLIED. Drives the "Newly Hired" badge in the
+   * Office Directory. Left undefined when we have no real hire date on record;
+   * the badge is then simply not shown rather than guessed from the wrong date.
+   */
+  hire_date?: string;
   total_score: number | null;
   qualification_score?: number | null;
   // Schedule fields set by PendingAssignmentList / Rater Management.
@@ -319,6 +326,27 @@ const formatDate = (dateValue: string) => {
     day: 'numeric',
     year: 'numeric',
   });
+};
+
+/** How long a new hire keeps the "Newly Hired" badge in the Office Directory. */
+const NEWLY_HIRED_BADGE_DAYS = 14;
+
+/**
+ * True for the two weeks following someone's hire date. Returns false when the
+ * hire date is missing, unparseable, or in the future — we would rather show no
+ * badge than a wrong one.
+ */
+const isNewlyHired = (hireDate: string | null | undefined): boolean => {
+  if (!hireDate) return false;
+  const hired = new Date(hireDate);
+  if (Number.isNaN(hired.getTime())) return false;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  hired.setHours(0, 0, 0, 0);
+
+  const daysSinceHire = Math.floor((today.getTime() - hired.getTime()) / 86400000);
+  return daysSinceHire >= 0 && daysSinceHire < NEWLY_HIRED_BADGE_DAYS;
 };
 
 type FunnelStage = 'pending' | 'reviewed' | 'shortlisted' | 'qualified' | 'hired' | 'notQualified';
@@ -2176,15 +2204,37 @@ export const RSPDashboard = () => {
     return map;
   }, [credentialedNewlyHiredRows, portalAccountByEmployeeId, portalAccounts]);
 
+  // Real hire dates, keyed by BOTH applicant id and employee number so any
+  // directory source can resolve one. newly_hired.dateHired is set at the
+  // moment the account is generated, so it is the authoritative hire date.
+  const hireDateByKey = useMemo(() => {
+    const map = new Map<string, string>();
+    newlyHiredRows.forEach((row) => {
+      const dateHired = String(row.dateHired ?? '').trim();
+      if (!dateHired) return;
+      const applicantId = String(row.applicantId ?? '').trim();
+      const employeeId = String(row.employeeId ?? '').trim();
+      if (applicantId) map.set(applicantId, dateHired);
+      if (employeeId) map.set(employeeId, dateHired);
+    });
+    return map;
+  }, [newlyHiredRows]);
+
   const credentialedApplicantDirectorySource = useMemo(
     () =>
       applicants
         .filter((employee) => credentialedApplicantIds.has(employee.id))
-        .map((employee) => ({
-          ...employee,
-          employeeId: employeeNumberFromNewlyHired.get(employee.id),
-        })),
-    [applicants, credentialedApplicantIds, employeeNumberFromNewlyHired]
+        .map((employee) => {
+          const employeeId = employeeNumberFromNewlyHired.get(employee.id);
+          return {
+            ...employee,
+            employeeId,
+            hire_date:
+              hireDateByKey.get(String(employee.id)) ??
+              (employeeId ? hireDateByKey.get(String(employeeId)) : undefined),
+          };
+        }),
+    [applicants, credentialedApplicantIds, employeeNumberFromNewlyHired, hireDateByKey]
   );
 
   // Loaded from Supabase employees table on mount. Used as the fallback
@@ -2224,6 +2274,13 @@ export const RSPDashboard = () => {
           office: String(record.department ?? record.division ?? '').trim() || 'Unassigned Office',
           status: 'Active',
           created_at: String(record.startDate ?? account?.createdAt ?? new Date().toISOString()),
+          // employees.date_hired first; otherwise the moment their portal
+          // account was generated, which is when the hire flow ran.
+          hire_date:
+            hireDateByKey.get(employeeId) ||
+            String(record.startDate ?? '').trim() ||
+            account?.createdAt ||
+            undefined,
           total_score: null,
         });
 
@@ -2245,12 +2302,13 @@ export const RSPDashboard = () => {
         office: account.employee.currentDepartment || 'Unassigned',
         status: 'Active',
         created_at: account.createdAt,
+        hire_date: hireDateByKey.get(employeeId) || account.createdAt || undefined,
         total_score: null,
       });
     });
 
     return records;
-  }, [portalAccountByEmployeeId, portalAccounts, supabaseEmployeeRecords]);
+  }, [hireDateByKey, portalAccountByEmployeeId, portalAccounts, supabaseEmployeeRecords]);
 
   const directoryEmployeesSource = useMemo(
     () => {
@@ -2273,6 +2331,10 @@ export const RSPDashboard = () => {
             ...employee,
             status: 'Hired',
             employeeId: undefined, // No employee number yet
+            // No credentials generated, so no newly_hired row to read a hire
+            // date from. created_at is their APPLICATION date, so it is not a
+            // stand-in — leave undefined and show no badge.
+            hire_date: hireDateByKey.get(key),
           });
         });
 
@@ -2285,13 +2347,13 @@ export const RSPDashboard = () => {
 
       return Array.from(merged.values());
     },
-    [applicants, credentialedApplicantDirectorySource, fallbackEmployeeDirectorySource]
+    [applicants, credentialedApplicantDirectorySource, fallbackEmployeeDirectorySource, hireDateByKey]
   );
 
   const employeeDirectoryCards = useMemo(() => {
     const source = directoryEmployeesSource;
     const searchTerm = employeeDirectorySearch.trim().toLowerCase();
-    const grouped = new Map<string, { position: string; office: string; count: number; activeCount: number; inactiveCount: number; status: EmployeeDirectoryCardStatus }>();
+    const grouped = new Map<string, { position: string; office: string; count: number; activeCount: number; inactiveCount: number; newlyHiredCount: number; status: EmployeeDirectoryCardStatus }>();
 
     source.forEach((employee) => {
       // Skip placeholder/unassigned positions
@@ -2302,6 +2364,7 @@ export const RSPDashboard = () => {
 
       const office = employee.office || 'Unassigned Office';
       const isInactive = employee.status.toLowerCase().includes('inactive');
+      const newHire = isNewlyHired(employee.hire_date);
       const key = `${position}__${office}`;
       const existing = grouped.get(key);
 
@@ -2312,6 +2375,7 @@ export const RSPDashboard = () => {
         } else {
           existing.activeCount += 1;
         }
+        if (newHire) existing.newlyHiredCount += 1;
       } else {
         grouped.set(key, {
           position,
@@ -2319,6 +2383,7 @@ export const RSPDashboard = () => {
           count: 1,
           activeCount: isInactive ? 0 : 1,
           inactiveCount: isInactive ? 1 : 0,
+          newlyHiredCount: newHire ? 1 : 0,
           status: isInactive ? 'Inactive' : 'Active',
         });
       }
@@ -3959,6 +4024,14 @@ export const RSPDashboard = () => {
                             >
                               <td className="px-5 py-4">
                                 <span className="font-semibold text-sm text-slate-900">{card.position}</span>
+                                {card.newlyHiredCount > 0 && (
+                                  <span
+                                    className="ml-2 inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-emerald-700"
+                                    title={`${card.newlyHiredCount} employee(s) hired in the last ${NEWLY_HIRED_BADGE_DAYS} days`}
+                                  >
+                                    {card.newlyHiredCount > 1 ? `${card.newlyHiredCount} Newly Hired` : 'Newly Hired'}
+                                  </span>
+                                )}
                               </td>
                               <td className="px-5 py-4 text-sm text-slate-600">
                                 <span className="inline-flex items-center gap-1.5"><MapPin size={13} className="text-slate-400" /> {card.office}</span>
@@ -4047,10 +4120,21 @@ export const RSPDashboard = () => {
                         {selectedPositionEmployees.map((employee) => {
                           const statusLabel = employee.status.toLowerCase().includes('inactive') ? 'Inactive' : 'Active';
                           const empNum = employeeNumberById.get(employee.id) ?? '';
+                          const newHire = isNewlyHired(employee.hire_date);
                           return (
                             <tr key={employee.id} onClick={() => openEmployeeDetails(employee.id)} className="cursor-pointer hover:bg-slate-50 transition-colors">
                               <td className="px-5 py-3.5">
-                                <p className="!mb-0 font-semibold" style={{ color: '#040E6B' }}>{employee.full_name}</p>
+                                <div className="flex items-center gap-2">
+                                  <p className="!mb-0 font-semibold" style={{ color: '#040E6B' }}>{employee.full_name}</p>
+                                  {newHire && (
+                                    <span
+                                      className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-emerald-700"
+                                      title={`Hired ${formatDate(employee.hire_date!)} — badge shows for ${NEWLY_HIRED_BADGE_DAYS} days`}
+                                    >
+                                      Newly Hired
+                                    </span>
+                                  )}
+                                </div>
                                 {empNum && <p className="!mb-0 mt-0.5 text-xs font-medium" style={{ color: '#363EE8' }}>{empNum}</p>}
                                 <p className="!mb-0 mt-0.5 text-xs text-slate-400">{employee.email || '--'}</p>
                               </td>

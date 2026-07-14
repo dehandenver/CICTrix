@@ -7,7 +7,9 @@ import {
   ensureRecruitmentSeedData,
   getApplicants,
   saveApplicants,
+  saveNewlyHired,
 } from '../lib/recruitmentData';
+import type { NewlyHired } from '../types/recruitment.types';
 import { sendEmail } from '../lib/email';
 import { createPassword, upsertEmployeePortalAccount } from '../lib/employeePortalData';
 import { supabase } from '../lib/supabase';
@@ -268,6 +270,8 @@ export const ForHiringPage = () => {
 
     const hiredIds: string[] = [];
     const newCredentials: CredentialResult[] = [];
+    const newlyHiredRecords: NewlyHired[] = [];
+    const hiredAt = new Date().toISOString();
 
     for (const row of confirmTarget) {
       let employeeId = '';
@@ -314,6 +318,38 @@ export const ForHiringPage = () => {
       );
       hiredIds.push(row.id);
 
+      // Record the hire itself. This is what carries the DATE HIRED — the
+      // applicant's created_at is when they applied, not when they were hired —
+      // so without this row the Office Directory has no basis for the "Newly
+      // Hired" badge, and the Newly Hired page has nothing to list.
+      const [firstName = '', ...restName] = row.fullName.trim().split(/\s+/);
+      newlyHiredRecords.push({
+        id: `nh-${employeeId}`,
+        applicantId: row.id,
+        rankingRank: 0,
+        rankingScore: row.interviewScore ?? row.examScore ?? 0,
+        employeeInfo: {
+          firstName,
+          lastName: restName.join(' '),
+          email: row.email,
+          phone: '',
+          emergencyContact: { name: '', relationship: '', phone: '' },
+          governmentIds: {},
+        },
+        position: row.position,
+        department: row.department,
+        employmentType: 'Permanent',
+        dateHired: hiredAt,
+        expectedStartDate: hiredAt,
+        status: 'Pending Onboarding',
+        onboardingProgress: 0,
+        onboardingChecklist: [],
+        documents: [],
+        notes: [],
+        timeline: [],
+        employeeId,
+      } as NewlyHired);
+
       let emailSent = false;
       const recipient = row.email.trim();
       if (recipient) {
@@ -339,6 +375,17 @@ export const ForHiringPage = () => {
       }
 
       newCredentials.push({ fullName: row.fullName, employeeId, tempPassword, email: recipient, emailSent, position: row.position, department: row.department });
+    }
+
+    // Persist the hires before dropping them from this list, so the Office
+    // Directory and Newly Hired page pick them up on their next load.
+    if (newlyHiredRecords.length > 0) {
+      try {
+        await saveNewlyHired(newlyHiredRecords);
+      } catch {
+        /* credentials are already issued; the directory falls back to the
+           portal account's creation date if this write didn't land */
+      }
     }
 
     setHiring(false);
@@ -531,7 +578,7 @@ export const ForHiringPage = () => {
             className="inline-flex items-center gap-2 rounded-xl bg-[#363EE8] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <UserCheck className="h-4 w-4" />
-            Create Employee Record{selected.size > 1 ? `s (${selected.size})` : ''}
+            Generate Employee Account{selected.size > 1 ? `s (${selected.size})` : ''}
           </button>
         </div>
 
@@ -625,33 +672,24 @@ export const ForHiringPage = () => {
           <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[#363EE8]/10">
             <UserCheck className="h-6 w-6 text-[#363EE8]" />
           </div>
-          <h2 className="mb-2 text-lg font-bold text-slate-900">Confirm Employee Record Creation</h2>
+          <h2 className="mb-2 text-lg font-bold text-slate-900">
+            {confirmTarget.length === 1
+              ? 'Are you sure you want to hire this applicant?'
+              : 'Are you sure you want to hire these applicants?'}
+          </h2>
 
-          {confirmTarget.length === 1 ? (
-            <>
-              <p className="text-sm font-semibold text-slate-800 mb-1">{confirmTarget[0].fullName}</p>
-              <p className="text-sm text-slate-600">
-                Are you sure you want to hire this applicant for the position of{' '}
-                <strong>{confirmTarget[0].position || '—'}</strong> under the{' '}
-                <strong>{confirmTarget[0].department || '—'}</strong> department? This action will create an employee record and generate a system account.
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="mb-3 text-sm text-slate-600">
-                Are you sure you want to create employee records for the following{' '}
-                <strong>{confirmTarget.length} applicants</strong>? This action will create employee records and generate system accounts.
-              </p>
-              <ul className="mb-3 max-h-48 overflow-y-auto rounded-xl border border-slate-200 divide-y divide-slate-100">
-                {confirmTarget.map(r => (
-                  <li key={r.id} className="px-3 py-2.5">
-                    <p className="text-sm font-semibold text-slate-800">{r.fullName}</p>
-                    <p className="text-xs text-slate-500">{r.position || '—'} — {r.department || '—'}</p>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
+          <p className="mb-3 text-sm text-slate-600">
+            This will generate their employee account and move them into the Office Directory.
+          </p>
+
+          <ul className="mb-3 max-h-48 overflow-y-auto rounded-xl border border-slate-200 divide-y divide-slate-100">
+            {confirmTarget.map(r => (
+              <li key={r.id} className="px-3 py-2.5">
+                <p className="text-sm font-semibold text-slate-800">{r.fullName}</p>
+                <p className="text-xs text-slate-500">{r.position || '—'} — {r.department || '—'}</p>
+              </li>
+            ))}
+          </ul>
 
           <div className="mt-5 flex justify-end gap-3">
             <button
@@ -668,7 +706,7 @@ export const ForHiringPage = () => {
               disabled={hiring}
               className="rounded-xl bg-[#363EE8] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
             >
-              {hiring ? 'Creating…' : 'Yes, Create Record'}
+              {hiring ? 'Hiring…' : 'Yes, hire'}
             </button>
           </div>
         </div>
