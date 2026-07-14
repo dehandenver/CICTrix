@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   Briefcase,
@@ -70,43 +70,85 @@ export function JobPortalPage() {
     void syncJobs();
   }, []);
 
-  // Filter options
+  // Only Active postings are ever shown, so every filter option must be derived
+  // from them too — otherwise the dropdowns advertise departments/types that
+  // have no actual vacancy behind them.
+  const activeJobs = useMemo(
+    () => jobs.filter((job) => String(job.status).toLowerCase() === 'active'),
+    [jobs],
+  );
+
+  const matchesSearch = useCallback(
+    (job: any) => {
+      const query = searchQuery.trim().toLowerCase();
+      if (!query) return true;
+      return (
+        job.title.toLowerCase().includes(query) ||
+        job.department.toLowerCase().includes(query) ||
+        job.type.toLowerCase().includes(query) ||
+        String(job.positionType).toLowerCase().includes(query)
+      );
+    },
+    [searchQuery],
+  );
+
+  // Filter options — blank values are dropped so we never render an empty option.
   const departments = useMemo(() => {
-    const depts = new Set(jobs.map((j) => j.department));
+    const depts = new Set(
+      activeJobs.map((j) => String(j.department ?? '').trim()).filter(Boolean),
+    );
     return ['All', ...Array.from(depts).sort()];
-  }, [jobs]);
+  }, [activeJobs]);
 
   const employmentTypes = useMemo(() => {
-    const types = new Set(jobs.map((j) => j.type));
+    const types = new Set(activeJobs.map((j) => String(j.type ?? '').trim()).filter(Boolean));
     return ['All', ...Array.from(types).sort()];
-  }, [jobs]);
+  }, [activeJobs]);
+
+  // How many postings each option would yield under the OTHER active filters.
+  // Zero means the option is a dead end, so it gets greyed out (disabled).
+  const deptCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const dept of departments) {
+      counts.set(
+        dept,
+        activeJobs.filter(
+          (job) =>
+            (dept === 'All' || job.department === dept) &&
+            (selectedType === 'All' || job.type === selectedType) &&
+            matchesSearch(job),
+        ).length,
+      );
+    }
+    return counts;
+  }, [departments, activeJobs, selectedType, matchesSearch]);
+
+  const typeCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const type of employmentTypes) {
+      counts.set(
+        type,
+        activeJobs.filter(
+          (job) =>
+            (type === 'All' || job.type === type) &&
+            (selectedDept === 'All' || job.department === selectedDept) &&
+            matchesSearch(job),
+        ).length,
+      );
+    }
+    return counts;
+  }, [employmentTypes, activeJobs, selectedDept, matchesSearch]);
 
   // Filtered & Active vacancies
-  const activeVacancies = useMemo(() => {
-    return jobs.filter((job) => {
-      // Must be active status
-      const isActive = String(job.status).toLowerCase() === 'active';
-      if (!isActive) return false;
-
-      // Filter by department
-      if (selectedDept !== 'All' && job.department !== selectedDept) return false;
-
-      // Filter by type
-      if (selectedType !== 'All' && job.type !== selectedType) return false;
-
-      // Search keyword filter
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
-        const matchesTitle = job.title.toLowerCase().includes(query);
-        const matchesDept = job.department.toLowerCase().includes(query);
-        const matchesType = job.type.toLowerCase().includes(query);
-        const matchesCategory = String(job.positionType).toLowerCase().includes(query);
-        return matchesTitle || matchesDept || matchesType || matchesCategory;
-      }
-
-      return true;
-    });
-  }, [jobs, selectedDept, selectedType, searchQuery]);
+  const activeVacancies = useMemo(
+    () =>
+      activeJobs.filter((job) => {
+        if (selectedDept !== 'All' && job.department !== selectedDept) return false;
+        if (selectedType !== 'All' && job.type !== selectedType) return false;
+        return matchesSearch(job);
+      }),
+    [activeJobs, selectedDept, selectedType, matchesSearch],
+  );
 
   // Pagination
   const totalPages = Math.ceil(activeVacancies.length / itemsPerPage);
@@ -247,9 +289,20 @@ export function JobPortalPage() {
                 }}
                 className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-[#050D65] shadow-sm transition focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30"
               >
-                {departments.map((dept) => (
-                  <option key={dept} value={dept}>{dept}</option>
-                ))}
+                {departments.map((dept) => {
+                  const count = deptCounts.get(dept) ?? 0;
+                  const empty = count === 0 && dept !== selectedDept;
+                  return (
+                    <option
+                      key={dept}
+                      value={dept}
+                      disabled={empty}
+                      style={empty ? { color: '#9ca3af' } : undefined}
+                    >
+                      {dept} ({count})
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
@@ -264,9 +317,20 @@ export function JobPortalPage() {
                 }}
                 className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-[#050D65] shadow-sm transition focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30"
               >
-                {employmentTypes.map((type) => (
-                  <option key={type} value={type}>{type}</option>
-                ))}
+                {employmentTypes.map((type) => {
+                  const count = typeCounts.get(type) ?? 0;
+                  const empty = count === 0 && type !== selectedType;
+                  return (
+                    <option
+                      key={type}
+                      value={type}
+                      disabled={empty}
+                      style={empty ? { color: '#9ca3af' } : undefined}
+                    >
+                      {type} ({count})
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
