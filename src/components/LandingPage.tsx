@@ -207,13 +207,6 @@ export const LandingPage = () => {
               >
                 About
               </a>
-              <button
-                type="button"
-                onClick={() => contactRef.current?.scrollIntoView({ behavior: 'smooth' })}
-                className="rounded-md px-4 py-2 text-sm font-medium text-white/80 hover:bg-white/15 hover:text-white transition-colors"
-              >
-                Contacts
-              </button>
             </nav>
 
             {/* Login Dropdown */}

@@ -41,12 +41,6 @@ export function ContactsPage() {
               >
                 About
               </Link>
-              <Link
-                to="/contacts"
-                className="rounded-md px-4 py-2 text-sm font-medium bg-white/20 text-white transition-colors"
-              >
-                Contacts
-              </Link>
             </nav>
 
             {/* Login Dropdown */}
