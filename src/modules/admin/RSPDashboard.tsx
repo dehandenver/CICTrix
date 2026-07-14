@@ -124,6 +124,12 @@ interface ApplicantRecord {
   email: string;
   contact_number: string;
   position: string;
+  /**
+   * The plantilla item number of the posting applied to. This is the real key
+   * between an applicant and a job; matching on `position` (the job title)
+   * instead double-counts whenever two postings share a title.
+   */
+  item_number?: string;
   office: string;
   status: string;
   created_at: string;
@@ -1288,6 +1294,7 @@ export const RSPDashboard = () => {
             email: String(item?.email ?? ''),
             contact_number: String(item?.contact_number ?? ''),
             position: String(item?.position ?? ''),
+            item_number: String(item?.item_number ?? ''),
             office: String(item?.office ?? item?.department ?? 'Unassigned'),
             status: resolvedStatus,
             created_at: String(item?.created_at ?? new Date().toISOString()),
@@ -1505,24 +1512,39 @@ export const RSPDashboard = () => {
   }, []);
 
   const jobsWithCounts = useMemo(() => {
-    const counts = new Map<string, number>();
+    // Count against the plantilla item number, which uniquely identifies a
+    // posting. The previous version keyed on the job TITLE, so two postings
+    // sharing a title (e.g. three "Accountant III" openings) each claimed the
+    // same applicants and every one of them reported an inflated count.
+    // Title is kept only as a fallback for legacy rows with no item number.
+    const byItem = new Map<string, number>();
+    const byTitle = new Map<string, number>();
     applicants.forEach((applicant) => {
-      const key = applicant.position;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+      const item = String(applicant.item_number ?? '').trim();
+      if (item) byItem.set(item, (byItem.get(item) ?? 0) + 1);
+      else {
+        const title = applicant.position;
+        if (title) byTitle.set(title, (byTitle.get(title) ?? 0) + 1);
+      }
     });
 
-    return jobs.map((job) => ({
-      ...job,
-      applicant_count: counts.get(job.title) ?? 0,
-    }));
+    return jobs.map((job) => {
+      const item = String(job.item_number ?? '').trim();
+      const count = (item ? byItem.get(item) ?? 0 : 0) + (byTitle.get(job.title) ?? 0);
+      return { ...job, applicant_count: count };
+    });
   }, [jobs, applicants]);
 
   const dashboardStats = useMemo(() => {
-    const totalJobs = jobsWithCounts.filter((job) => job.status !== 'Closed').length;
+    const totalJobs = jobsWithCounts.filter((job) => job.status === 'Open').length;
     const totalApplicants = applicants.length;
-    const shortlisted = applicants.filter((applicant) =>
-      ['shortlisted', 'reviewed', 'qualified', 'accepted'].includes(applicant.status.toLowerCase())
-    ).length;
+    // Shortlisted means shortlisted — the old check also swept in 'reviewed'
+    // and 'accepted', so applicants who had merely been screened were reported
+    // as shortlisted. Reuse the funnel's single-bucket classifier so this card
+    // and the funnel can never disagree.
+    const shortlisted = applicants.filter((a) => funnelStageOf(a.status) === 'shortlisted').length;
+    // Positions still being evaluated, i.e. closed to new applicants but not
+    // yet filled.
     const underReview = jobsWithCounts.filter((job) => job.status === 'Reviewing').length;
 
     return { totalJobs, totalApplicants, shortlisted, underReview };
@@ -1542,6 +1564,55 @@ export const RSPDashboard = () => {
     }
     return { ...counts, total: applicants.length };
   }, [applicants]);
+
+  // "Recent" has to mean recent. This used to be applicants.slice(0, 5), i.e.
+  // whatever five happened to be first in load order, regardless of date.
+  const recentApplicants = useMemo(() => {
+    return [...applicants]
+      .sort((a, b) => {
+        const aTime = new Date(a.created_at).getTime();
+        const bTime = new Date(b.created_at).getTime();
+        if (Number.isNaN(aTime) && Number.isNaN(bTime)) return 0;
+        if (Number.isNaN(aTime)) return 1;
+        if (Number.isNaN(bTime)) return -1;
+        return bTime - aTime;
+      })
+      .slice(0, 5);
+  }, [applicants]);
+
+  // Positions by department. The old version derived BOTH the department list
+  // and the "positions" number from the APPLICANTS (distinct applicant.position
+  // per office), so a department with open postings but no applicants yet was
+  // missing entirely, and the position count described what people applied for
+  // rather than what actually exists.
+  //
+  // Positions now come from the real postings; applicants are counted by their
+  // own department rather than through the posting link, because most
+  // applicants reference postings that have since been deleted — going through
+  // the link would strand them and this panel would contradict the "Total
+  // Applicants" card above it. Departments are the union of both sources.
+  const departmentBreakdown = useMemo(() => {
+    const rows = new Map<string, { department: string; positions: number; applicants: number }>();
+    const rowFor = (name: string) => {
+      const department = name.trim() || 'Unassigned';
+      const existing = rows.get(department);
+      if (existing) return existing;
+      const created = { department, positions: 0, applicants: 0 };
+      rows.set(department, created);
+      return created;
+    };
+
+    jobs.forEach((job) => {
+      rowFor(String(job.department ?? '')).positions += 1;
+    });
+    applicants.forEach((applicant) => {
+      rowFor(String(applicant.office ?? '')).applicants += 1;
+    });
+
+    return Array.from(rows.values()).sort(
+      (a, b) => b.applicants - a.applicants || b.positions - a.positions,
+    );
+  }, [jobs, applicants]);
 
   const officeOptions = useMemo(() => Array.from(new Set(applicants.map((a) => a.office).filter(Boolean))), [applicants]);
   const departmentSelectionOptions = useMemo(() => {
@@ -3240,18 +3311,47 @@ export const RSPDashboard = () => {
     }
   };
 
+  // The nearest still-future deadline among open postings. The old version just
+  // grabbed jobsWithCounts[0] and asserted it "closes soon" — an arbitrary job,
+  // with no reference to any deadline at all (and no posting currently has one).
+  const nextDeadline = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const upcoming = jobsWithCounts
+      .filter((job) => job.status === 'Open')
+      .map((job) => {
+        const raw = job.posting?.applicationDeadline;
+        if (!raw) return null;
+        const date = new Date(raw);
+        if (Number.isNaN(date.getTime())) return null;
+        date.setHours(0, 0, 0, 0);
+        if (date.getTime() < today.getTime()) return null;
+        return { title: job.title, date };
+      })
+      .filter((entry): entry is { title: string; date: Date } => entry !== null)
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    if (upcoming.length === 0) return null;
+
+    const next = upcoming[0];
+    const days = Math.round((next.date.getTime() - today.getTime()) / 86400000);
+    const when = days === 0 ? 'closes today' : days === 1 ? 'closes tomorrow' : `closes in ${days} days`;
+    return `${next.title} ${when} (${formatDate(next.date.toISOString())})`;
+  }, [jobsWithCounts]);
+
   const urgentItems = [
     {
       title: 'Deadline Approaching',
-      subtitle:
-        jobsWithCounts.length > 0
-          ? `${jobsWithCounts[0].title} closes soon`
-          : 'No active job deadlines found',
+      subtitle: nextDeadline ?? 'No upcoming application deadlines set.',
       color: 'border-l-[4px] border-l-orange-500 bg-orange-50',
     },
     {
       title: 'Pending Reviews',
-      subtitle: `${funnelStats.pending} applications awaiting initial review`,
+      subtitle:
+        funnelStats.pending === 1
+          ? '1 application awaiting initial review'
+          : `${funnelStats.pending} applications awaiting initial review`,
       color: 'border-l-[4px] border-l-blue-500 bg-blue-50',
     },
   ];
@@ -3406,18 +3506,20 @@ export const RSPDashboard = () => {
                     <Calendar className="text-[var(--text-muted)]" size={20} />
                   </div>
                   <div className="space-y-4">
-                    {applicants.slice(0, 5).map((applicant) => (
+                    {recentApplicants.map((applicant) => (
                       <div key={applicant.id} className="flex items-start gap-4 border-b border-[var(--border-color)] pb-3 last:border-b-0">
                         <div className="rounded-xl bg-blue-100 p-3 text-blue-600">
                           <FileText size={18} />
                         </div>
                         <div>
                           <p className="!mb-1 text-base text-[var(--text-primary)]">{applicant.full_name}</p>
-                          <p className="!mb-0 text-sm text-[var(--text-secondary)]">{formatDate(applicant.created_at)}</p>
+                          <p className="!mb-0 text-sm text-[var(--text-secondary)]">
+                            {applicant.position || 'Unspecified position'} · {applicant.status} · {formatDate(applicant.created_at)}
+                          </p>
                         </div>
                       </div>
                     ))}
-                    {applicants.length === 0 && <p className="!mb-0 text-sm text-[var(--text-secondary)]">No recent activity found.</p>}
+                    {recentApplicants.length === 0 && <p className="!mb-0 text-sm text-[var(--text-secondary)]">No recent activity found.</p>}
                   </div>
                 </div>
 
@@ -3427,20 +3529,20 @@ export const RSPDashboard = () => {
                     <Building2 className="text-[var(--text-muted)]" size={20} />
                   </div>
                   <div className="space-y-3">
-                    {officeOptions.map((office) => {
-                      const officeApplicants = applicants.filter((applicant) => applicant.office === office);
-                      const officePositions = new Set(officeApplicants.map((applicant) => applicant.position)).size;
+                    {departmentBreakdown.map((row) => {
                       return (
-                        <div key={office} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                        <div key={row.department} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
                           <div>
-                            <p className="!mb-1 text-base font-semibold text-[var(--text-primary)]">{office}</p>
-                            <p className="!mb-0 text-sm text-[var(--text-secondary)]">{officePositions} position{officePositions === 1 ? '' : 's'}</p>
+                            <p className="!mb-1 text-base font-semibold text-[var(--text-primary)]">{row.department}</p>
+                            <p className="!mb-0 text-sm text-[var(--text-secondary)]">
+                              {row.positions} position{row.positions === 1 ? '' : 's'}
+                            </p>
                           </div>
-                          <p className="!mb-0 text-right text-xl font-bold text-blue-600">{officeApplicants.length}</p>
+                          <p className="!mb-0 text-right text-xl font-bold text-blue-600">{row.applicants}</p>
                         </div>
                       );
                     })}
-                    {officeOptions.length === 0 && <p className="!mb-0 text-sm text-[var(--text-secondary)]">No department data available.</p>}
+                    {departmentBreakdown.length === 0 && <p className="!mb-0 text-sm text-[var(--text-secondary)]">No department data available.</p>}
                   </div>
                 </div>
               </section>
