@@ -2424,7 +2424,7 @@ export const RSPDashboard = () => {
 
   const employeeDirectoryOfficeOptions = useMemo(
     () =>
-      Array.from(new Set(directoryEmployeesSource.map((employee) => (employee as any).department || 'Unassigned Office'))).sort((a, b) =>
+      Array.from(new Set(directoryEmployeesSource.map((employee) => employee.office || 'Unassigned Office'))).sort((a, b) =>
         a.localeCompare(b)
       ),
     [directoryEmployeesSource]
@@ -2574,7 +2574,7 @@ export const RSPDashboard = () => {
     return directoryEmployeesSource.map((employee) => ({
       id: employee.id,
       name: employee.full_name,
-      department: (employee as any).department || 'Unassigned Office',
+      department: employee.office || 'Unassigned Office',
     }));
   }, [directoryEmployeesSource]);
 
