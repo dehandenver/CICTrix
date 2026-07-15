@@ -71,13 +71,20 @@ type EmployeeIdentity = { name: string; position: string; department: string };
 // back null — which is why every attendee used to render "Unknown employee".
 // Identity is resolved separately against the anon-readable, normalised
 // `employees_with_department` view instead (the same pattern succession.ts uses).
-const EVENT_SELECT = `
-  id, title, category, competency, scheduled_date, end_date, instructor_name, location,
+// `competency` only exists after migration 20260724. Kept separate from the base
+// select so the calendar can degrade gracefully (fetch without it) if the
+// frontend is ever live before that migration is applied — a missing column must
+// never blank the whole calendar.
+const EVENT_SELECT_BASE = `
+  id, title, category, scheduled_date, end_date, instructor_name, location,
   objectives, status, capacity, roster_finalized_at,
   training_enrollments (
     id, employee_id, enrollment_status, attendance_status
   )
 `;
+const EVENT_SELECT = `id, title, category, competency, scheduled_date, end_date, instructor_name, location,
+  objectives, status, capacity, roster_finalized_at,
+  training_enrollments ( id, employee_id, enrollment_status, attendance_status )`;
 
 const mapAttendee = (
   row: EnrollmentRow,
@@ -154,14 +161,25 @@ export async function listCalendarEvents(year: number): Promise<CalendarEvent[]>
   const yearStart = new Date(Date.UTC(year, 0, 1)).toISOString();
   const yearEnd = new Date(Date.UTC(year + 1, 0, 1)).toISOString();
 
-  const { data, error } = await supabase
-    .from('training_sessions')
-    .select(EVENT_SELECT)
-    // Starts before the year ends, AND (ends after the year starts OR is a
-    // single-day event that starts within the year).
-    .lt('scheduled_date', yearEnd)
-    .or(`end_date.gte.${yearStart},and(end_date.is.null,scheduled_date.gte.${yearStart})`)
-    .order('scheduled_date', { ascending: true });
+  // Same filter chain for both attempts; only the select column list differs.
+  const run = (select: string) =>
+    supabase
+      .from('training_sessions')
+      .select(select)
+      // Starts before the year ends, AND (ends after the year starts OR is a
+      // single-day event that starts within the year).
+      .lt('scheduled_date', yearEnd)
+      .or(`end_date.gte.${yearStart},and(end_date.is.null,scheduled_date.gte.${yearStart})`)
+      .order('scheduled_date', { ascending: true });
+
+  let { data, error } = await run(EVENT_SELECT);
+  // PostgREST error 42703 = undefined column: the competency column isn't there
+  // yet (migration 20260724 not applied). Retry without it rather than blanking
+  // the calendar; events simply have no competency until the migration lands.
+  if (error && ((error as any).code === '42703' || /competency/i.test(error.message ?? ''))) {
+    console.warn('training_sessions.competency missing — retrying without it (apply migration 20260724).');
+    ({ data, error } = await run(EVENT_SELECT_BASE));
+  }
 
   if (error) {
     console.error('Error fetching calendar events:', error);
