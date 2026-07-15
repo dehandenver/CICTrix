@@ -173,6 +173,9 @@ const DEMO_ACCOUNT: EmployeePortalAccount = {
     philhealthNumber: 'PH-01-2345678-9',
     pagibigNumber: '121234567890',
     tinNumber: '123-456-789-000',
+    currentPosition: 'Administrative Assistant I',
+    currentDepartment: 'Office of the City Mayor',
+    currentDivision: 'Administrative Division',
   },
 };
 
