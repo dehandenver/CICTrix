@@ -16,6 +16,7 @@ import abyanLogo from '../assets/abyan-logo.png';
 import { SharedFooter } from './SharedFooter';
 import { getAuthoritativeJobPostings, loadJobPostings } from '../lib/recruitmentData';
 import type { JobPosting } from '../types/recruitment.types';
+import { POSITIONS, POSITION_TO_DEPARTMENT_MAP } from '../constants/positions';
 
 /* ── trish UI theme tokens ──────────────────────────────────────────
    Brand: Indigo #363EE8 · Hover #2E35D4 · Soft #EEF2FF
@@ -68,26 +69,57 @@ export const LandingPage = () => {
         
         console.log('[LandingPage] Fetched jobs from Supabase:', allJobs);
         
-        // Convert JobPosting to display format
-        const displayJobs = allJobs
-          .filter((job) => {
-            const statusMatch = String(job?.status ?? '').toLowerCase() === 'active';
-            console.log(`[LandingPage] Job "${job.title}" status: "${job.status}" -> "${String(job?.status ?? '').toLowerCase()}" -> matches: ${statusMatch}`);
-            return statusMatch;
-          })
-          .map((job, idx) => ({
-            id: idx + 1,
-            title: job.title || '',
+        const activePostings = allJobs.filter((job) => {
+          return String(job?.status ?? '').toLowerCase() === 'active';
+        });
+
+        const seenPositions = new Set<string>();
+        const displayJobs: any[] = [];
+        let idCounter = 1;
+
+        // 1. Process active postings first
+        activePostings.forEach((job) => {
+          const title = job.title || '';
+          const normalizedTitle = title.trim().toLowerCase();
+          seenPositions.add(normalizedTitle);
+
+          displayJobs.push({
+            id: idCounter++,
+            title: title,
             department: job.department || '',
             itemNumber: job.jobCode || job.id || '',
-            postingDate: job.postedDate ? new Date(job.postedDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-            closingDate: job.applicationDeadline ? new Date(job.applicationDeadline).toISOString().split('T')[0] : new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+            postingDate: job.postedDate ? new Date(job.postedDate).toISOString().split('T')[0] : '',
+            closingDate: job.applicationDeadline ? new Date(job.applicationDeadline).toISOString().split('T')[0] : '',
             type: job.employmentStatus === 'Permanent' ? 'Plantilla' : 'Contractual',
             positionType: job.positionType || '',
             employmentStatus: job.employmentStatus || '',
-          }));
+            hasPosting: true,
+            originalJob: job,
+          });
+        });
+
+        // 2. Add standard POSITIONS that don't have active postings
+        POSITIONS.forEach((pos) => {
+          const normalized = pos.trim().toLowerCase();
+          if (!seenPositions.has(normalized)) {
+            seenPositions.add(normalized);
+            const department = POSITION_TO_DEPARTMENT_MAP[pos] || '';
+            displayJobs.push({
+              id: idCounter++,
+              title: pos,
+              department: department,
+              itemNumber: 'N/A',
+              postingDate: '',
+              closingDate: '',
+              type: 'N/A',
+              positionType: '',
+              employmentStatus: '',
+              hasPosting: false,
+            });
+          }
+        });
         
-        console.log('[LandingPage] Display jobs after filtering:', displayJobs);
+        console.log('[LandingPage] Display jobs with inactive ones grayed out:', displayJobs);
         setVacancyJobs(displayJobs);
       } catch (err) {
         console.error('[LandingPage] Error loading jobs:', err);
@@ -122,19 +154,31 @@ export const LandingPage = () => {
       const q = searchQuery.toLowerCase();
       result = result.filter(
         (job) =>
-          job.title.toLowerCase().includes(q) ||
-          job.department.toLowerCase().includes(q) ||
-          job.type.toLowerCase().includes(q) ||
-          job.positionType.toLowerCase().includes(q) ||
-          job.employmentStatus.toLowerCase().includes(q)
+          (job.title || '').toLowerCase().includes(q) ||
+          (job.department || '').toLowerCase().includes(q) ||
+          (job.type || '').toLowerCase().includes(q) ||
+          (job.positionType || '').toLowerCase().includes(q) ||
+          (job.employmentStatus || '').toLowerCase().includes(q)
       );
     }
 
     // Sort options: Newest to Oldest, Oldest to Newest, Position Title (A-Z), Position Title (Z-A), Department
     if (sortBy === 'newest') {
-      result.sort((a, b) => new Date(b.postingDate).getTime() - new Date(a.postingDate).getTime());
+      result.sort((a, b) => {
+        if (a.hasPosting === b.hasPosting) {
+          if (!a.hasPosting) return 0;
+          return new Date(b.postingDate).getTime() - new Date(a.postingDate).getTime();
+        }
+        return a.hasPosting ? -1 : 1;
+      });
     } else if (sortBy === 'oldest') {
-      result.sort((a, b) => new Date(a.postingDate).getTime() - new Date(b.postingDate).getTime());
+      result.sort((a, b) => {
+        if (a.hasPosting === b.hasPosting) {
+          if (!a.hasPosting) return 0;
+          return new Date(a.postingDate).getTime() - new Date(b.postingDate).getTime();
+        }
+        return a.hasPosting ? -1 : 1;
+      });
     } else if (sortBy === 'title-az') {
       result.sort((a, b) => a.title.localeCompare(b.title));
     } else if (sortBy === 'title-za') {
@@ -347,35 +391,63 @@ export const LandingPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {paginatedJobs.map((job) => (
-                  <tr key={job.id} className="border-b border-slate-200 transition hover:bg-slate-50">
-                    <td className="px-4 py-3">
-                      <p className="font-semibold text-[#050D65]">{job.title}</p>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">{job.department}</td>
-                    <td className="px-4 py-3 font-mono text-slate-600">{job.itemNumber}</td>
-                    <td className="px-4 py-3 text-slate-600">{formatDate(job.postingDate)}</td>
-                    <td className="px-4 py-3 text-slate-600">{formatDate(job.closingDate)}</td>
-                    <td className="px-4 py-3 text-center">
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/job-details/${job.itemNumber}`, { state: { landingJob: job } })}
-                        className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50 hover:border-slate-400 cursor-pointer"
-                      >
-                        Details
-                      </button>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <button
-                        type="button"
-                        onClick={() => navigate('/apply', { state: { landingJob: job } })}
-                        className="inline-flex items-center gap-1 rounded-lg bg-[#363EE8] px-3 py-2 text-xs font-medium text-white transition hover:bg-[#2f35d0] cursor-pointer"
-                      >
-                        Apply
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {paginatedJobs.map((job) => {
+                  const hasPosting = job.hasPosting !== false;
+                  return (
+                    <tr 
+                      key={job.id} 
+                      className={`border-b border-slate-200 transition ${
+                        hasPosting 
+                          ? 'hover:bg-slate-50' 
+                          : 'bg-slate-50/50 opacity-60'
+                      }`}
+                    >
+                      <td className="px-4 py-3">
+                        <p className={`font-semibold ${hasPosting ? 'text-[#050D65]' : 'text-slate-400'}`}>{job.title}</p>
+                      </td>
+                      <td className={`px-4 py-3 ${hasPosting ? 'text-slate-600' : 'text-slate-400'}`}>
+                        {job.department || 'N/A'}
+                      </td>
+                      <td className={`px-4 py-3 font-mono ${hasPosting ? 'text-slate-600' : 'text-slate-400'}`}>
+                        {job.itemNumber}
+                      </td>
+                      <td className={`px-4 py-3 ${hasPosting ? 'text-slate-600' : 'text-slate-400'}`}>
+                        {job.postingDate ? formatDate(job.postingDate) : '-'}
+                      </td>
+                      <td className={`px-4 py-3 ${hasPosting ? 'text-slate-600' : 'text-slate-400'}`}>
+                        {job.closingDate ? formatDate(job.closingDate) : '-'}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          type="button"
+                          disabled={!hasPosting}
+                          onClick={() => navigate(`/job-details/${job.itemNumber}`, { state: { landingJob: job } })}
+                          className={`inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                            hasPosting
+                              ? 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-400 cursor-pointer'
+                              : 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
+                          }`}
+                        >
+                          Details
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          type="button"
+                          disabled={!hasPosting}
+                          onClick={() => navigate('/apply', { state: { landingJob: job } })}
+                          className={`inline-flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-medium text-white transition ${
+                            hasPosting
+                              ? 'bg-[#363EE8] hover:bg-[#2f35d0] cursor-pointer'
+                              : 'bg-slate-300 cursor-not-allowed'
+                          }`}
+                        >
+                          Apply
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

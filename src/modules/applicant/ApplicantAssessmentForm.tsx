@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Card, Input, Select } from '../../components';
-import { DEPARTMENT_OPTIONS, POSITION_TO_DEPARTMENT_MAP, POSITIONS } from '../../constants/positions';
+import { DEPARTMENT_OPTIONS, POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import { ensureRecruitmentSeedData, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
 import type { ApplicantFormData, ValidationErrors } from '../../types/applicant.types';
 
@@ -26,11 +26,11 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
   onApplicationTypeChange,
   lockedPosition = false,
 }) => {
-  const [dynamicPositionOptions, setDynamicPositionOptions] = useState<Array<{ value: string; label: string; disabled?: boolean }>>([]);
+  const [dynamicPositionOptions, setDynamicPositionOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [positionDepartmentMap, setPositionDepartmentMap] = useState<Record<string, string>>({});
   const hasLoadedPositionsRef = useRef(false);
 
-  const syncPostedPositions = (currentSelectedPosition?: string, skipClearingOnFirstLoad = false) => {
+  const syncPostedPositions = (currentSelectedPosition?: string) => {
     ensureRecruitmentSeedData();
 
     const activeRows = getAuthoritativeJobPostings().filter(
@@ -48,71 +48,41 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
       } else {
         setDynamicPositionOptions([]);
       }
+
       return;
     }
 
     hasLoadedPositionsRef.current = true;
 
-    const nextOptions: Array<{ value: string; label: string; disabled?: boolean }> = [];
+    const seen = new Set<string>();
+    const nextOptions: Array<{ value: string; label: string }> = [];
     const nextDepartmentMap: Record<string, string> = {};
 
-    // 1. Get titles of all active job postings (normalized)
-    const activePositionTitles = new Set(
-      activeRows.map((row) => String(row?.title ?? '').trim().toLowerCase())
-    );
-
-    // 2. Populate nextDepartmentMap from active rows
     activeRows.forEach((row) => {
       const title = String(row?.title ?? '').trim();
       const department = String(row?.department ?? '').trim();
-      if (title && department && !nextDepartmentMap[title]) {
+      if (!title) return;
+
+      const normalized = title.toLowerCase();
+      if (!seen.has(normalized)) {
+        seen.add(normalized);
+        nextOptions.push({ value: title, label: title });
+      }
+
+      if (department && !nextDepartmentMap[title]) {
         nextDepartmentMap[title] = department;
       }
     });
 
-    // 3. Add all standard POSITIONS first
-    const seen = new Set<string>();
-    POSITIONS.forEach((pos) => {
-      const normalized = pos.toLowerCase();
-      seen.add(normalized);
-      const hasPosting = activePositionTitles.has(normalized);
-      nextOptions.push({
-        value: pos,
-        label: pos,
-        disabled: !hasPosting,
-      });
-    });
-
-    // 4. Add any other active postings that are not in standard POSITIONS
-    activeRows.forEach((row) => {
-      const title = String(row?.title ?? '').trim();
-      if (!title) return;
-      const normalized = title.toLowerCase();
-      if (!seen.has(normalized)) {
-        seen.add(normalized);
-        nextOptions.push({
-          value: title,
-          label: title,
-          disabled: false,
-        });
-      }
-    });
-
+    setPositionDepartmentMap(nextDepartmentMap);
     // If the current selected position came from a landing/page click and
-    // isn't present in the active job options or options list, make sure it is in the list
-    if (currentSelectedPosition) {
-      const normalizedCurrent = currentSelectedPosition.toLowerCase();
-      const existingOpt = nextOptions.find((opt) => opt.value.toLowerCase() === normalizedCurrent);
-      if (!existingOpt) {
-        const fallbackDept = POSITION_TO_DEPARTMENT_MAP[currentSelectedPosition] || '';
-        // Unshift/add it as enabled since the user clicked it or it was prefilled
-        nextOptions.unshift({ value: currentSelectedPosition, label: currentSelectedPosition, disabled: false });
-        if (fallbackDept && !nextDepartmentMap[currentSelectedPosition]) {
-          nextDepartmentMap[currentSelectedPosition] = fallbackDept;
-        }
-      } else {
-        // If it exists but is disabled, enable it if it's currently selected/prefilled
-        existingOpt.disabled = false;
+    // isn't present in the active job options, make sure the dropdown still
+    // contains it so the prefilled value remains visible and selectable.
+    if (currentSelectedPosition && !nextOptions.some((option) => option.value === currentSelectedPosition)) {
+      const fallbackDept = POSITION_TO_DEPARTMENT_MAP[currentSelectedPosition] || '';
+      nextOptions.unshift({ value: currentSelectedPosition, label: currentSelectedPosition });
+      if (fallbackDept && !nextDepartmentMap[currentSelectedPosition]) {
+        nextDepartmentMap[currentSelectedPosition] = fallbackDept;
       }
     }
 
@@ -121,15 +91,13 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
   };
 
   useEffect(() => {
-    // On initial load, don't clear the position if it's pre-filled from URL
-    const isInitial = hasInitialPositionRef.current;
-    syncPostedPositions(formData.position, isInitial);
-    loadJobPostings().then(() => syncPostedPositions(formData.position, false));
+    syncPostedPositions(formData.position);
+    loadJobPostings().then(() => syncPostedPositions(formData.position));
 
     const onFocus = () => {
-      loadJobPostings().then(() => syncPostedPositions(formData.position, false));
+      loadJobPostings().then(() => syncPostedPositions(formData.position));
     };
-    const onUpdated = () => syncPostedPositions(formData.position, false);
+    const onUpdated = () => syncPostedPositions(formData.position);
     window.addEventListener('focus', onFocus);
     window.addEventListener('cictrix:job-postings-updated', onUpdated as EventListener);
 
@@ -147,15 +115,7 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
     if (!hasLoadedPositionsRef.current) return;
 
     const exists = dynamicPositionOptions.some((option) => option.value === formData.position);
-    if (!exists) {
-      // Only clear if this wasn't the initial pre-filled position
-      // This allows time for the positions to load from the database
-      if (!hasInitialPositionRef.current) {
-        onChange('position', '');
-        onChange('office', '');
-      }
-      return;
-    }
+    if (exists) return;
 
     onChange('position', '');
     onChange('office', '');
