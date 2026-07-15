@@ -30,12 +30,26 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
   const [positionDepartmentMap, setPositionDepartmentMap] = useState<Record<string, string>>({});
   const hasLoadedPositionsRef = useRef(false);
 
-  const syncPostedPositions = (currentSelectedPosition?: string) => {
+  const syncPostedPositions = (currentSelectedPosition?: string, skipClearingOnFirstLoad = false) => {
     ensureRecruitmentSeedData();
 
     const activeRows = getAuthoritativeJobPostings().filter(
       (row) => String(row?.status ?? '').trim().toLowerCase() === 'active'
     );
+
+    if (activeRows.length === 0) {
+      setPositionDepartmentMap({});
+      // If there are no authoritative job rows yet, preserve any
+      // prefilled position coming from the landing page so the user
+      // doesn't lose the selection while the background loader runs.
+      if (currentSelectedPosition) {
+        setDynamicPositionOptions([{ value: currentSelectedPosition, label: currentSelectedPosition }]);
+        // Keep existing office value — do not clear it here.
+      } else {
+        setDynamicPositionOptions([]);
+      }
+      return;
+    }
 
     hasLoadedPositionsRef.current = true;
 
@@ -107,13 +121,15 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
   };
 
   useEffect(() => {
-    syncPostedPositions(formData.position);
-    loadJobPostings().then(() => syncPostedPositions(formData.position));
+    // On initial load, don't clear the position if it's pre-filled from URL
+    const isInitial = hasInitialPositionRef.current;
+    syncPostedPositions(formData.position, isInitial);
+    loadJobPostings().then(() => syncPostedPositions(formData.position, false));
 
     const onFocus = () => {
-      loadJobPostings().then(() => syncPostedPositions(formData.position));
+      loadJobPostings().then(() => syncPostedPositions(formData.position, false));
     };
-    const onUpdated = () => syncPostedPositions(formData.position);
+    const onUpdated = () => syncPostedPositions(formData.position, false);
     window.addEventListener('focus', onFocus);
     window.addEventListener('cictrix:job-postings-updated', onUpdated as EventListener);
 
@@ -131,7 +147,15 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
     if (!hasLoadedPositionsRef.current) return;
 
     const exists = dynamicPositionOptions.some((option) => option.value === formData.position);
-    if (exists) return;
+    if (!exists) {
+      // Only clear if this wasn't the initial pre-filled position
+      // This allows time for the positions to load from the database
+      if (!hasInitialPositionRef.current) {
+        onChange('position', '');
+        onChange('office', '');
+      }
+      return;
+    }
 
     onChange('position', '');
     onChange('office', '');
