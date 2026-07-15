@@ -15,6 +15,7 @@ import { mockDatabase } from '../lib/mockDatabase';
 import { getAuthoritativeJobPostings } from '../lib/recruitmentData';
 import { isMockModeEnabled, supabase } from '../lib/supabase';
 import { RaterManagementNavigationGuide } from './RaterManagementNavigationGuide';
+import { AdminHeader } from './AdminHeader';
 import { Sidebar } from './Sidebar';
 
 type RaterStatus = 'Active' | 'Inactive';
@@ -580,6 +581,9 @@ export const RaterManagementPage = () => {
       closeAssignModal();
       setToast('Rater access updated.');
       await loadRaters();
+      // Let other pages (e.g. Qualified Applicants assignment dropdown) refetch
+      // their interviewer list so a newly-added rater shows up immediately.
+      window.dispatchEvent(new CustomEvent('cictrix:raters-updated'));
     } catch {
       setRatersData(previousRows);
       setToast('Failed to save rater access.');
@@ -641,38 +645,25 @@ export const RaterManagementPage = () => {
   };
 
   return (
+    <div className="min-h-screen bg-[#f8f9fa]">
+      <AdminHeader userName="RSP Admin" divisionLabel="RSP Division" />
     <div className="admin-layout">
       <Sidebar activeModule="RSP" userRole="rsp" />
-      <main className="admin-content bg-gray-50">
-        <div className="min-h-screen bg-gray-50 p-6 md:p-8">
-          <div className="mb-6 flex items-center justify-between gap-4 text-sm text-gray-500">
-            <div className="flex space-x-2">
-              <span className="cursor-pointer text-blue-600">RSP</span>
-              <span>/</span>
-              <span className="cursor-pointer text-blue-600">Settings</span>
-              <span>/</span>
-              <span>Rater Management</span>
-            </div>
-            <button
-              type="button"
-              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              onClick={() => setShowGuide(true)}
-            >
-              How to Navigate
-            </button>
+      <main className="admin-content bg-slate-50 !p-0">
+        <div className="border-b border-slate-200 bg-white px-8 py-6 flex items-center justify-between gap-4">
+          <div>
+            <h1 className="!mb-1 !text-2xl font-bold">Rater Management</h1>
+            <p className="!mb-0 text-base text-slate-500">Assign raters and define their evaluation access for specific job positions.</p>
           </div>
-
-          <div className="mb-8">
-            <div className="mb-2 flex items-center space-x-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                <Shield className="h-5 w-5" />
-              </div>
-              <h1 className="text-2xl font-semibold text-gray-900">Rater Management &amp; Access Control</h1>
-            </div>
-            <p className="text-sm text-gray-500">
-              Assign raters and define their evaluation access for specific job positions.
-            </p>
-          </div>
+          <button
+            type="button"
+            className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            onClick={() => setShowGuide(true)}
+          >
+            How to Navigate
+          </button>
+        </div>
+        <div className="p-6 md:p-8">
 
           <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-3">
             <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-6">
@@ -1006,6 +997,7 @@ export const RaterManagementPage = () => {
           {toast}
         </div>
       )}
+    </div>
     </div>
   );
 };

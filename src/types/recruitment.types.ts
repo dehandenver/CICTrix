@@ -13,13 +13,23 @@ export interface JobPosting {
   summary: string;
   responsibilities: string[];
   qualifications: {
+    /** Highest educational attainment required, e.g. "College Graduate". */
     education: string;
+    /** The course/discipline it must be in, e.g. "BS Information Technology or related". */
+    educationField?: string;
     experience: { years: number; field: string };
     skills: string[];
     certifications: string[];
     preferred?: string;
   };
   requiredDocuments: string[];
+  // CREATE JOB spec additions on Job Information.
+  salaryGrade?: number;
+  monthlySalary?: number;
+  // Optional structured qualification details (mirror Qualifications form).
+  eligibility?: string;
+  training?: string;
+  competency?: string;
   applicationDeadline: string;
   interviewPeriod?: { start: string; end: string };
   expectedStartDate?: string;
@@ -39,7 +49,9 @@ export type ApplicantStatus =
   | 'Interview Completed'
   | 'Recommended for Hiring'
   | 'Not Qualified'
-  | 'Rejected';
+  | 'Rejected'
+  | 'Document Verified'
+  | 'Action Required';
 
 export interface Applicant {
   id: string;
@@ -63,6 +75,7 @@ export interface Applicant {
   };
   qualificationScore: number;
   status: ApplicantStatus;
+  educationAttainment?: string;
   education: Array<{ degree: string; school: string; year: number }>;
   experience: Array<{ title: string; company: string; years: number }>;
   skills: string[];
@@ -174,6 +187,8 @@ export interface EmployeeRecord {
   id: string;
   employeeId: string;
   name: string;
+  firstName: string;
+  lastName: string;
   position: string;
   department: string;
   division?: string;

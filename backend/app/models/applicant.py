@@ -51,6 +51,9 @@ class StatusUpdateRequest(BaseModel):
 class ApplicantResponse(ApplicantBase):
     id: str
     status: str
+    total_score: Optional[float] = None
+    qualification_score: Optional[float] = None
+    full_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

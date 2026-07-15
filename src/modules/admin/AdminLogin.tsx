@@ -29,10 +29,9 @@ export const AdminLogin = () => {
     <div className="admin-login-page">
       <div className="admin-login-card">
         <div className="admin-login-header">
-          <img className="admin-login-header-logo" src={hrisLogo} alt="HRIS logo" />
+          <img className="admin-login-header-logo" src={hrisLogo} alt="Abyan logo" />
           <div className="admin-login-badge">Admin</div>
-          <h1>HRIS Admin Portal</h1>
-          <p>Sign in to manage jobs, raters, and applicant flow.</p>
+          <h1>Abyan HRIS Admin Portal</h1>
         </div>
 
         <form className="admin-login-form" onSubmit={handleSubmit}>
@@ -72,9 +71,6 @@ export const AdminLogin = () => {
           </Button>
         </form>
 
-        <p className="admin-login-note">
-          This is a demo login. Connect to Supabase Auth when ready.
-        </p>
       </div>
     </div>
   );

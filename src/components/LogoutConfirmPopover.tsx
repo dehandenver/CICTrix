@@ -12,6 +12,8 @@ interface LogoutConfirmPopoverProps {
   children?: React.ReactNode;
   /** Override button styles — applied instead of defaults */
   buttonClassName?: string;
+  /** Inline style overrides for the trigger button */
+  buttonStyle?: React.CSSProperties;
   /**
    * Where the popover appears relative to the button.
    * - `"below"` (default): drops down from the button (good for header bars)
@@ -29,6 +31,7 @@ export const LogoutConfirmPopover = ({
   className = '',
   children,
   buttonClassName,
+  buttonStyle,
   position = 'below',
 }: LogoutConfirmPopoverProps) => {
   const navigate = useNavigate();
@@ -85,6 +88,7 @@ export const LogoutConfirmPopover = ({
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={buttonClassName ?? defaultButtonClass}
+        style={buttonStyle}
       >
         {children ?? (
           <>

@@ -26,20 +26,48 @@ export const POSITION_OPTIONS = POSITIONS.map(pos => ({
 }));
 
 /**
- * @deprecated Source of truth is now the `departments` table (migration 006).
- * Use listDepartments() / getDepartmentOptions() from src/lib/api/departments.ts.
- * This constant is retained as an offline fallback during phase 1 and should
- * not be referenced by new code.
+ * Place of Assignation options used in CREATE JOB and across the recruitment
+ * portal. Scoped to the five offices in the project's MVP scope.
  */
 export const DEPARTMENTS = [
-  'Human Resources',
-  'Finance',
-  'Information Technology',
-  'Operations',
-  'Sales & Marketing',
-  'Customer Support',
-  'Legal',
-  'Product Management'
+  'Office of the City Engineer',
+  'Office of the City Accountant',
+  'City Health Office',
+  'Office of the City Social Welfare and Development',
+  'General Services Office',
+] as const;
+
+/**
+ * Competencies catalog used by the qualifications dropdown on CREATE JOB and
+ * by the competency gap analysis in Succession Planning.
+ */
+export const COMPETENCIES = [
+  'Knowledge of Local Governance',
+  'Public Administration Principles',
+  'Community Engagement Skills',
+  'Project Management in a Public Setting',
+  'Fiscal Management / Budgeting for LGU',
+  'Transparency and Accountability Practices',
+  'Disaster Risk Reduction and Management',
+  'Digital Literacy for Government Services',
+  'Ethical Conduct and Public Service Standards',
+  'Technical Writing for Government Documents',
+  'Data and Records Management and Organization',
+  'Public Communication Skills',
+] as const;
+
+/**
+ * Education options for the Qualifications section on CREATE JOB.
+ */
+export const EDUCATION_LEVELS = [
+  'Elementary Level',
+  'Elementary Graduate',
+  'High School Level',
+  'High School Graduate',
+  'College Level',
+  'College Graduate',
+  'Masteral Units',
+  'Graduate School',
 ] as const;
 
 /**

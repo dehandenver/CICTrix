@@ -8,10 +8,11 @@ import {
     ShieldCheck,
     UserPlus,
     Users,
+    Briefcase,
 } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
-import hrisLogo from '../../assets/hris-logo.svg';
+import { useLocation, useNavigate } from 'react-router-dom';
+import abyanLogo from '../../assets/abyan-logo.png';
 import { Button, Dialog } from '../../components';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import {
@@ -19,11 +20,14 @@ import {
     findEmployeePortalAccount,
     getEmployeePortalAccounts,
 } from '../../lib/employeePortalData';
-import { getEmployeeRecordsFromSupabase, syncApplicantSubmissionToRecruitment } from '../../lib/recruitmentData';
+import { syncApplicantSubmissionToRecruitment, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
+import { fetchEmployeeApplicationProfile } from '../../lib/api/employeeApplicationProfile';
 import { ATTACHMENTS_BUCKET, supabase } from '../../lib/supabase';
 import '../../styles/wizard.css';
 import type { ApplicantFormData, UploadedFile, ValidationErrors } from '../../types/applicant.types';
+import type { JobPosting } from '../../types/recruitment.types';
 import { validateApplicantForm, validateFiles } from '../../utils/validation';
+import { logErrorForAdmin } from '../../utils/errorLogger';
 import { ApplicantAssessmentForm } from './ApplicantAssessmentForm';
 import { AttachmentsUploadForm, REQUIRED_DOCUMENTS } from './AttachmentsUploadForm';
 
@@ -106,11 +110,25 @@ const INITIAL_FORM_DATA: ApplicantFormData = {
   current_department: '',
   current_division: '',
   employee_username: '',
+  education_attainment: '',
+  education_degree: '',
+  education_school: '',
+  work_experience_years: '',
+  work_experience_months: '',
+  relevant_experience_position: '',
+  relevant_experience_company: '',
+  relevant_experience_duties: '',
+  gov_id_type: '',
+  gov_id_expiration: '',
 };
 
-const buildApplicantItemNumber = (sequence: number): string => {
+const buildApplicantItemNumber = (): string => {
   const year = new Date().getFullYear();
-  return `ITEM-${year}-${String(sequence).padStart(4, '0')}`;
+  // Random 7-char alphanumeric suffix — avoids collision with plantilla item numbers
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let suffix = '';
+  for (let i = 0; i < 7; i++) suffix += chars[Math.floor(Math.random() * chars.length)];
+  return `APP-${year}-${suffix}`;
 };
 
 const normalizeAuthValue = (value: string) => String(value ?? '').trim().toLowerCase();
@@ -161,13 +179,22 @@ export const ApplicantWizard: React.FC = () => {
   const [submitError, setSubmitError] = useState('');
   const [showEmployeeAuth, setShowEmployeeAuth] = useState(false);
   const [employeeNumber, setEmployeeNumber] = useState('');
+  // Explains that the form was auto-filled from the employee's record (or why
+  // it wasn't). Cleared once they leave the promotional flow.
+  const [prefillNotice, setPrefillNotice] = useState('');
   const [employeePassword, setEmployeePassword] = useState('');
   const [showEmployeePassword, setShowEmployeePassword] = useState(false);
   const [employeeAuthError, setEmployeeAuthError] = useState('');
   const [authenticatedEmployeeAccount, setAuthenticatedEmployeeAccount] = useState<EmployeePortalAccount | null>(
     persisted.authenticatedEmployeeAccount ?? null,
   );
+  const [activeJobs, setActiveJobs] = useState<JobPosting[]>([]);
+  const [isLockedPosition, setIsLockedPosition] = useState(false);
   const isGeneratingItemNumberRef = useRef(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const landingJobAppliedRef = useRef(false);
+  const [prefilledFromLanding, setPrefilledFromLanding] = useState(false);
 
   // Persist the wizard state whenever the user advances or edits.
   useEffect(() => {
@@ -179,6 +206,95 @@ export const ApplicantWizard: React.FC = () => {
       authenticatedEmployeeAccount,
     });
   }, [entryMode, applicationType, currentStep, formData, authenticatedEmployeeAccount]);
+
+  useEffect(() => {
+    const state = location.state as { landingJob?: { title: string; itemNumber: string; department: string } } | null;
+    const landingJob = state?.landingJob;
+    const searchParams = new URLSearchParams(location.search);
+    const positionFromQuery = searchParams.get('position') || undefined;
+    const itemNumberFromQuery = searchParams.get('itemNumber') || undefined;
+    const officeFromQuery = searchParams.get('office') || undefined;
+
+    // If the applicant has already started filling the wizard in this tab
+    // (sessionStorage has formData with any user input), we must NOT reset
+    // their work just because location.state.landingJob or the URL params
+    // are still present after a page refresh. Lock the position fields and
+    // keep their existing input.
+    const hasInProgressFormData = Boolean(
+      formData.first_name ||
+      formData.last_name ||
+      formData.middle_name ||
+      formData.email ||
+      formData.contact_number ||
+      formData.address ||
+      formData.work_experience_years ||
+      formData.relevant_experience_position ||
+      formData.relevant_experience_company ||
+      formData.relevant_experience_duties ||
+      formData.education_attainment
+    );
+
+    if (landingJob && !landingJobAppliedRef.current) {
+      landingJobAppliedRef.current = true;
+      setPrefilledFromLanding(true);
+      setEntryMode('wizard');
+      setIsLockedPosition(true);
+      setSubmitError('');
+
+      if (hasInProgressFormData) {
+        // Preserve everything the applicant has already filled in; only make
+        // sure the position/office/item match the landing job they clicked.
+        setFormData((prev) => ({
+          ...prev,
+          application_type: 'job',
+          position: landingJob.title,
+          office: landingJob.department,
+        }));
+        return;
+      }
+
+      setApplicationType('job');
+      setCurrentStep(1);
+      setAuthenticatedEmployeeAccount(null);
+      setFormData({
+        ...INITIAL_FORM_DATA,
+        application_type: 'job',
+        position: landingJob.title,
+        office: landingJob.department,
+      });
+      setFiles([]);
+      return;
+    }
+
+    if ((positionFromQuery || itemNumberFromQuery) && !landingJobAppliedRef.current) {
+      landingJobAppliedRef.current = true;
+      setPrefilledFromLanding(true);
+      setEntryMode('wizard');
+      setIsLockedPosition(true);
+      setSubmitError('');
+
+      if (hasInProgressFormData) {
+        setFormData((prev) => ({
+          ...prev,
+          application_type: 'job',
+          position: positionFromQuery || prev.position,
+          office: officeFromQuery || POSITION_TO_DEPARTMENT_MAP[positionFromQuery || ''] || prev.office,
+        }));
+        return;
+      }
+
+      setApplicationType('job');
+      setCurrentStep(1);
+      setAuthenticatedEmployeeAccount(null);
+      setFormData({
+        ...INITIAL_FORM_DATA,
+        application_type: 'job',
+        position: positionFromQuery || '',
+        office: officeFromQuery || POSITION_TO_DEPARTMENT_MAP[positionFromQuery || ''] || '',
+      });
+      setFiles([]);
+    }
+  }, [location.state, location.search]);
 
   const handleFormChange = (field: keyof ApplicantFormData, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -193,26 +309,29 @@ export const ApplicantWizard: React.FC = () => {
   };
 
   const handleNext = () => {
-    const validationErrors = validateApplicantForm(formData);
+    const validationErrors = validateApplicantForm(formData, 1);
 
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
+      setSubmitError('Please complete all required fields before proceeding.');
+      logErrorForAdmin('Validation error on step 1 of Applicant Wizard', validationErrors, 'Form Validation');
       return;
     }
 
     setErrors({});
+    setSubmitError('');
     setCurrentStep(2);
   };
 
 const handleNextToReview = () => {
-    const fileValidationError = validateFiles(files.map((f) => f.file), files, applicationType);
-    if (fileValidationError) {
-      setFileError(fileValidationError);
-      return;
-    }
-    setFileError('');
-    setCurrentStep(3);
-  };
+    const fileValidationError = validateFiles(files.map((f) => f.file), files, applicationType);
+    if (fileValidationError) {
+      setFileError(fileValidationError);
+      return;
+    }
+    setFileError('');
+    setCurrentStep(3);
+  };
 
   const handleBack = () => {
     if (currentStep === 3) {
@@ -233,7 +352,8 @@ const handleNextToReview = () => {
 
       // Supabase is required for file storage
       if (!hasUpload) {
-        throw new Error('Supabase storage is not available. Please check your configuration.');
+        logErrorForAdmin('Supabase storage client upload function not found', null, 'File Upload');
+        throw new Error('File upload failed. Please check your internet connection and try again.');
       }
 
       let filePath = generatedPath;
@@ -241,10 +361,11 @@ const handleNextToReview = () => {
         const uploadResult = await storageBucket.upload(generatedPath, uploadedFile.file);
         const uploadError = (uploadResult as any).error;
         if (uploadError) {
-          throw new Error(`Failed to upload ${uploadedFile.file.name}: ${uploadError}`);
+          throw new Error(String(uploadError));
         }
       } catch (error) {
-        throw new Error(`Failed to upload ${uploadedFile.file.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        logErrorForAdmin(`Failed to upload ${uploadedFile.file.name} to storage bucket`, error, 'File Upload');
+        throw new Error('File upload failed. Please check your internet connection and try again.');
       }
 
       const attachmentPayload = {
@@ -256,13 +377,18 @@ const handleNextToReview = () => {
         document_type: (uploadedFile as any).documentType || 'other',
       };
 
-      const insertResult = typeof client?.insertAttachment === 'function'
-        ? await client.insertAttachment(attachmentPayload)
-        : await client.from('applicant_attachments').insert(attachmentPayload);
+      try {
+        const insertResult = typeof client?.insertAttachment === 'function'
+          ? await client.insertAttachment(attachmentPayload)
+          : await client.from('applicant_attachments').insert(attachmentPayload);
 
-      const insertError = (insertResult as any).error;
-      if (insertError) {
-        throw new Error(`Failed to save ${uploadedFile.file.name} record`);
+        const insertError = (insertResult as any).error;
+        if (insertError) {
+          throw new Error(String(insertError));
+        }
+      } catch (error) {
+        logErrorForAdmin(`Failed to insert attachment metadata for ${uploadedFile.file.name} to DB`, error, 'File Upload');
+        throw new Error('File upload failed. Please check your internet connection and try again.');
       }
 
       persisted.push({
@@ -321,8 +447,14 @@ const handleNextToReview = () => {
   };
 
   const submitWithClient = async (): Promise<string> => {
-    const itemNumber = formData.item_number || buildApplicantItemNumber(Date.now() % 10000);
+    // Generate a unique random application tracking code.
+    // Use the one already shown in the form if set, otherwise generate fresh.
+    const itemNumber = formData.item_number || buildApplicantItemNumber();
     const safe = (val: string | null | undefined) => (val == null ? '' : String(val));
+
+    const experienceYears = parseInt(formData.work_experience_years || '0', 10) || 0;
+    const experienceMonths = parseInt(formData.work_experience_months || '0', 10) || 0;
+    const totalExperienceYears = +(experienceYears + experienceMonths / 12).toFixed(2);
 
     const applicantPayload: Record<string, any> = {
       first_name: formData.first_name.trim(),
@@ -338,6 +470,7 @@ const handleNextToReview = () => {
       is_pwd: formData.is_pwd,
       application_type: applicationType,
       status: 'New Application',
+      years_of_experience: totalExperienceYears > 0 ? totalExperienceYears : null,
     };
 
     if (applicationType === 'promotion') {
@@ -348,14 +481,49 @@ const handleNextToReview = () => {
       if (formData.employee_username) applicantPayload.employee_username = formData.employee_username;
     }
 
-    const { data: applicantData, error: applicantError } = await (supabase as any)
-      .from('applicants')
-      .insert(applicantPayload)
-      .select('id, item_number')
-      .single();
+    let applicantData;
+    try {
+      const { data, error } = await (supabase as any)
+        .from('applicants')
+        .insert(applicantPayload)
+        .select('id, item_number')
+        .single();
 
-    if (applicantError || !applicantData?.id) {
-      throw new Error(applicantError?.message || 'Failed to create applicant record. Please try again.');
+      if (error || !data?.id) {
+        throw error || new Error('Empty ID returned from database');
+      }
+      applicantData = data;
+    } catch (dbErr: any) {
+      logErrorForAdmin('Database insertion error during applicant record creation', dbErr, 'Database Submission');
+
+      // Classify the failure so the applicant sees a useful message rather
+      // than the generic "server unavailable" string — and so HR can tell at
+      // a glance what to fix.
+      const rawMessage = String(dbErr?.message ?? dbErr ?? '');
+      const code = String(dbErr?.code ?? '');
+      const lower = rawMessage.toLowerCase();
+
+      let userMessage: string;
+      if (code === '23505' || lower.includes('duplicate')) {
+        userMessage = 'An application with this email or item number already exists. Please check your previous submission.';
+      } else if (code === '23502' || lower.includes('null value') || lower.includes('not-null')) {
+        userMessage = 'A required field is missing. Please go back and review the form.';
+      } else if (
+        code === '42703' ||
+        code === 'PGRST204' ||
+        lower.includes("could not find the") ||
+        lower.includes('column') && lower.includes('does not exist')
+      ) {
+        userMessage = `Your application form is newer than the database schema. Please contact HR. (Schema: ${rawMessage.slice(0, 140)})`;
+      } else if (code === '42501' || lower.includes('row-level security') || lower.includes('permission denied')) {
+        userMessage = 'Permission denied by database security policies. Please contact HR. (RLS)';
+      } else if (lower.includes('failed to fetch') || lower.includes('networkerror')) {
+        userMessage = 'Network connection lost. Please check your internet and try again.';
+      } else {
+        userMessage = `Submission failed: ${rawMessage.slice(0, 200)} — please try again, or contact HR if this keeps happening.`;
+      }
+
+      throw new Error(userMessage);
     }
 
     saveApplicantAppointmentType(applicantData.id, applicationType);
@@ -386,6 +554,15 @@ const handleNextToReview = () => {
         : undefined,
       submittedAt: new Date().toISOString(),
       attachments: syncedAttachments,
+      educationAttainment: formData.education_attainment || undefined,
+      educationDegree: formData.education_degree || undefined,
+      educationSchool: formData.education_school || undefined,
+      workExperienceYears: (() => {
+        const years = parseInt(formData.work_experience_years || '0', 10) || 0;
+        const months = parseInt(formData.work_experience_months || '0', 10) || 0;
+        const total = years + months / 12;
+        return total > 0 ? Math.round(total * 100) / 100 : undefined;
+      })(),
     });
 
     return applicantData.item_number || itemNumber;
@@ -437,12 +614,25 @@ const handleNextToReview = () => {
 
   const handleCloseSuccessDialog = () => {
     setShowSuccessDialog(false);
+    navigate('/');
   };
 
-  const handleStartJobApplication = () => {
+  const handleStartJobApplication = (job?: JobPosting) => {
     setApplicationType('job');
     setAuthenticatedEmployeeAccount(null);
-    setFormData({ ...INITIAL_FORM_DATA, application_type: 'job' });
+    if (job) {
+      setFormData({
+        ...INITIAL_FORM_DATA,
+        application_type: 'job',
+        position: job.title,
+        office: job.department || job.division || '',
+        item_number: job.jobCode || '',
+      });
+      setIsLockedPosition(true);
+    } else {
+      setFormData({ ...INITIAL_FORM_DATA, application_type: 'job' });
+      setIsLockedPosition(false);
+    }
     setFiles([]);
     setEntryMode('wizard');
     setCurrentStep(1);
@@ -490,18 +680,24 @@ const handleNextToReview = () => {
       return;
     }
 
-    // Look up the employee in Supabase (source of truth) to get the most
-    // up-to-date position/department, falling back to the portal account's
-    // cached fields if no row exists yet.
-    const employeeRecord = (await getEmployeeRecordsFromSupabase()).find(
-      (record) => String(record.employeeId ?? '').trim() === String(matchedAccount?.employee?.employeeId ?? '').trim()
-    );
-    const [firstName, ...remainingParts] = String(matchedAccount?.employee?.fullName ?? '').trim().split(/\s+/);
-    const lastName = remainingParts.length > 0 ? remainingParts[remainingParts.length - 1] : '';
-    const middleName = remainingParts.length > 1 ? remainingParts.slice(0, -1).join(' ') : '';
-    const currentDepartment = employeeRecord?.department || matchedAccount?.employee?.currentDepartment || '';
-    const currentDivision = employeeRecord?.division || matchedAccount?.employee?.currentDivision || '';
-    const currentPosition = employeeRecord?.position || matchedAccount?.employee?.currentPosition || '';
+    const matchedEmployeeNumber = String(matchedAccount?.employee?.employeeId ?? '').trim();
+
+    // The applicant is an existing employee, so their education, work history,
+    // contact details and current post are already on file. Pull the whole
+    // profile and prefill the form instead of making them retype it.
+    const profile = await fetchEmployeeApplicationProfile(matchedEmployeeNumber);
+
+    // Fallbacks for when there's no employees row yet: derive what we can from
+    // the portal account, and leave the rest blank for them to fill in.
+    const [accountFirstName, ...remainingParts] = String(matchedAccount?.employee?.fullName ?? '')
+      .trim()
+      .split(/\s+/);
+    const accountLastName = remainingParts.length > 0 ? remainingParts[remainingParts.length - 1] : '';
+    const accountMiddleName = remainingParts.length > 1 ? remainingParts.slice(0, -1).join(' ') : '';
+
+    const currentDepartment = profile?.currentDepartment || matchedAccount?.employee?.currentDepartment || '';
+    const currentDivision = profile?.currentDivision || matchedAccount?.employee?.currentDivision || '';
+    const currentPosition = profile?.currentPosition || matchedAccount?.employee?.currentPosition || '';
 
     setAuthenticatedEmployeeAccount(matchedAccount);
     setApplicationType('promotion');
@@ -511,20 +707,48 @@ const handleNextToReview = () => {
     setFormData({
       ...INITIAL_FORM_DATA,
       application_type: 'promotion',
-      first_name: firstName || '',
-      middle_name: middleName,
-      last_name: lastName,
-      gender: matchedAccount?.employee?.gender === 'Prefer not to say' ? '' : String(matchedAccount?.employee?.gender ?? ''),
-      address: matchedAccount?.employee?.homeAddress || '',
-      contact_number: matchedAccount?.employee?.mobileNumber || '',
-      email: matchedAccount?.employee?.email || '',
-      employee_id: matchedAccount?.employee?.employeeId || '',
+
+      // Identity & contact
+      first_name: profile?.firstName || accountFirstName || '',
+      middle_name: profile?.middleName || accountMiddleName,
+      last_name: profile?.lastName || accountLastName,
+      gender:
+        profile?.sex ||
+        (matchedAccount?.employee?.gender === 'Prefer not to say'
+          ? ''
+          : String(matchedAccount?.employee?.gender ?? '')),
+      address: profile?.address || matchedAccount?.employee?.homeAddress || '',
+      contact_number: profile?.contactNumber || matchedAccount?.employee?.mobileNumber || '',
+      email: profile?.email || matchedAccount?.employee?.email || '',
+
+      // Employment
+      employee_id: matchedEmployeeNumber,
       current_position: currentPosition,
       current_department: currentDepartment,
       current_division: currentDivision,
       employee_username: matchedAccount?.username || '',
       office: currentDepartment,
+
+      // Educational background — from employee_education
+      education_attainment: profile?.educationAttainment || '',
+      education_degree: profile?.educationDegree || '',
+      education_school: profile?.educationSchool || '',
+
+      // Work experience — from employee_work_experience
+      work_experience_years: profile?.workExperienceYears || '',
+      work_experience_months: profile?.workExperienceMonths || '',
+      relevant_experience_position: profile?.relevantExperiencePosition || '',
+      relevant_experience_company: profile?.relevantExperienceCompany || '',
+      relevant_experience_duties: profile?.relevantExperienceDuties || '',
     });
+
+    // Tell them what happened. Silence here reads as "the form is just blank".
+    setPrefillNotice(
+      profile
+        ? 'We filled in your details from your employee record. Review each field and update anything that has changed.'
+        : "We couldn't find your employee record, so please fill in your details manually.",
+    );
+
     setSubmitError('');
     setShowEmployeeAuth(false);
     setEmployeeAuthError('');
@@ -580,72 +804,40 @@ const handleNextToReview = () => {
     if (entryMode !== 'wizard' || currentStep !== 1 || !hasStartedAssessment || formData.item_number) {
       return;
     }
-
-    if (isGeneratingItemNumberRef.current) {
-      return;
-    }
-
-    let cancelled = false;
-
-    const generateItemNumber = async () => {
-      isGeneratingItemNumberRef.current = true;
-      try {
-        const supabaseCountResult = await supabase
-          .from('applicants')
-          .select('id', { count: 'exact', head: true });
-        const supabaseCount = Number((supabaseCountResult as any).count ?? 0);
-
-        if (!cancelled) {
-          setFormData((prev) => {
-            if (prev.item_number) return prev;
-            return { ...prev, item_number: buildApplicantItemNumber(supabaseCount + 1) };
-          });
-        }
-      } catch (error) {
-        console.error('Failed to generate item number from Supabase:', error);
-        if (!cancelled) {
-          // Generate a unique sequence based on timestamp as last resort
-          const fallbackSequence = Date.now() % 10000;
-          setFormData((prev) => {
-            if (prev.item_number) return prev;
-            return { ...prev, item_number: buildApplicantItemNumber(fallbackSequence) };
-          });
-        }
-      } finally {
-        isGeneratingItemNumberRef.current = false;
-      }
-    };
-
-    void generateItemNumber();
-
-    return () => {
-      cancelled = true;
-    };
+    if (isGeneratingItemNumberRef.current) return;
+    isGeneratingItemNumberRef.current = true;
+    setFormData((prev) => {
+      if (prev.item_number) return prev;
+      return { ...prev, item_number: buildApplicantItemNumber() };
+    });
+    isGeneratingItemNumberRef.current = false;
   }, [currentStep, entryMode, formData.item_number, hasStartedAssessment]);
+
+  useEffect(() => {
+    if (entryMode === 'landing') {
+      loadJobPostings().then(() => {
+        const jobs = getAuthoritativeJobPostings().filter(job => job.status === 'Active');
+        setActiveJobs(jobs);
+      });
+    }
+  }, [entryMode]);
 
   return (
     <div className="applicant-shell">
       <header className="applicant-topbar">
-        <div className="applicant-brand">
-          <img src={hrisLogo} alt="HRIS logo" className="applicant-brand-logo" />
+          <div className="applicant-brand">
+            <img src={abyanLogo} alt="ABYAN logo" className="applicant-brand-logo" />
           <div>
-            <h1>HRIS Applicant Portal</h1>
+            <h1>Abyan HRIS Applicant Portal</h1>
             <p>Human Resource Information System</p>
           </div>
         </div>
       </header>
 
-      {entryMode === 'wizard' && (
-        <div className="application-type-banner">
-          <strong>Application Type:</strong>{' '}
-          {applicationType === 'promotion' ? 'Promotional Application' : 'Job Application'}
-        </div>
-      )}
-
       {entryMode === 'landing' ? (
         <main className="portal-landing">
           <div className="portal-landing-header">
-            <h2>Welcome to HRIS Applicant Portal</h2>
+            <h2>Welcome to Abyan HRIS Applicant Portal</h2>
             <p>Please begin your application below</p>
           </div>
 
@@ -654,13 +846,37 @@ const handleNextToReview = () => {
               <UserPlus size={46} />
             </div>
             <h3>Job Application</h3>
-            <p>Apply for available positions</p>
-            <Button className="entry-primary-button" onClick={handleStartJobApplication}>
-              Start Application
+            <p>Apply for a general position or select from the vacancies below</p>
+            <Button className="entry-primary-button" onClick={() => handleStartJobApplication()}>
+              Start General Application
             </Button>
           </div>
 
-          <button className="employee-promotion-button" onClick={handleOpenEmployeeAuth}>
+          {activeJobs.length > 0 && (
+            <div className="mt-8 rounded-2xl bg-white p-6 shadow-sm border border-slate-200 w-full max-w-2xl mx-auto">
+              <h3 className="text-xl font-bold mb-4 text-slate-800 text-center">Currently Vacant Jobs</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                {activeJobs.map(job => (
+                  <div key={job.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4 hover:border-blue-300 hover:shadow-md transition-all flex flex-col h-full text-left">
+                    <h4 className="font-bold text-slate-900 leading-tight mb-1">{job.title}</h4>
+                    <p className="text-sm text-slate-600 flex-1">{job.division || job.department}</p>
+                    <div className="mt-4 pt-4 border-t border-slate-200">
+                      <p className="text-xs font-mono text-slate-500 mb-3">Item No: {job.jobCode}</p>
+                      <button 
+                        onClick={() => handleStartJobApplication(job)} 
+                        className="w-full flex items-center justify-center gap-2 rounded-full bg-white py-2.5 px-4 font-bold text-blue-600 border-[1.5px] border-blue-600 hover:bg-blue-50 transition-colors shadow-sm"
+                      >
+                        <Briefcase size={18} />
+                        Apply for a Job
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <button className="employee-promotion-button mt-8" onClick={handleOpenEmployeeAuth}>
             <Users size={18} />
             <span>I'm a current employee applying for promotion</span>
           </button>
@@ -729,21 +945,41 @@ const handleNextToReview = () => {
                   <h2>Personal &amp; Application Information</h2>
                   <p>Please provide your complete details for evaluation.</p>
                 </div>
+
+                {prefillNotice && applicationType === 'promotion' && (
+                  <div
+                    role="status"
+                    style={{
+                      margin: '0 0 16px',
+                      padding: '12px 16px',
+                      borderRadius: 10,
+                      border: '1px solid #bfdbfe',
+                      background: '#eff6ff',
+                      color: '#1e3a8a',
+                      fontSize: 14,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {prefillNotice}
+                  </div>
+                )}
+
                 <div className="wizard-content">
                   <ApplicantAssessmentForm
-                    formData={formData}
-                    errors={errors}
-                    onChange={handleFormChange}
-                    applicationType={applicationType}
-                    isEmployee={Boolean(authenticatedEmployeeAccount?.employee?.employeeId)}
-                    onApplicationTypeChange={(next) => {
-                      // Guard: an authenticated employee may never switch to Original.
-                      // (UI also hides the radio group in that case, but defense-in-depth.)
-                      if (authenticatedEmployeeAccount?.employee?.employeeId && next === 'job') return;
-                      setApplicationType(next);
-                      handleFormChange('application_type', next);
-                    }}
-                  />
+                      formData={formData}
+                      errors={errors}
+                      onChange={handleFormChange}
+                      applicationType={applicationType}
+                      isEmployee={Boolean(authenticatedEmployeeAccount?.employee?.employeeId)}
+                      onApplicationTypeChange={(next) => {
+                        // Guard: an authenticated employee may never switch to Original.
+                        // (UI also hides the radio group in that case, but defense-in-depth.)
+                        if (authenticatedEmployeeAccount?.employee?.employeeId && next === 'job') return;
+                        setApplicationType(next);
+                        handleFormChange('application_type', next);
+                      }}
+                      lockedPosition={isLockedPosition}
+                    />
                 </div>
               </>
             )}
@@ -761,6 +997,9 @@ const handleNextToReview = () => {
                     error={fileError}
                     itemNumber={formData.item_number}
                     applicationType={applicationType}
+                    formData={formData}
+                    onChange={handleFormChange}
+                    errors={errors}
                   />
                 </div>
               </>
@@ -831,8 +1070,8 @@ const handleNextToReview = () => {
                       <p>{formData.office || '-'}</p>
                     </div>
                     <div>
-                      <label>Item Number</label>
-                      <p>{formData.item_number || '-'}</p>
+                      <label>Item Number (Application ID)</label>
+                      <p className="font-semibold text-slate-700 bg-slate-100 px-2 py-1 rounded inline-block cursor-not-allowed select-none">{formData.item_number || '-'}</p>
                     </div>
                     <div>
                       <label>Contact Number</label>
@@ -842,6 +1081,29 @@ const handleNextToReview = () => {
                       <label>PWD Status</label>
                       <p>{formData.is_pwd ? 'Yes' : 'No'}</p>
                     </div>
+                    {formData.gov_id_type && (
+                      <div>
+                        <label>Government ID Type</label>
+                        <p>{formData.gov_id_type} {formData.gov_id_expiration ? `(Expires: ${formData.gov_id_expiration})` : '(No Expiration)'}</p>
+                      </div>
+                    )}
+                    {(formData.education_degree || formData.education_school) && (
+                      <div>
+                        <label>Educational Background</label>
+                        <p>{[formData.education_degree, formData.education_school].filter(Boolean).join(', ') || '-'}</p>
+                      </div>
+                    )}
+                    {(formData.work_experience_years || formData.work_experience_months || formData.relevant_experience_position) && (
+                      <div className="sm:col-span-2 border-t border-slate-100 pt-3 mt-1">
+                        <label className="font-semibold text-slate-700">Relevant Work Experience</label>
+                        <div className="bg-slate-50 p-3 rounded-lg mt-1 space-y-1">
+                          <p><strong>Duration:</strong> {formData.work_experience_years ? `${formData.work_experience_years} years` : '0 years'} {formData.work_experience_months ? `${formData.work_experience_months} months` : ''}</p>
+                          {formData.relevant_experience_position && <p><strong>Position:</strong> {formData.relevant_experience_position}</p>}
+                          {formData.relevant_experience_company && <p><strong>Company:</strong> {formData.relevant_experience_company}</p>}
+                          {formData.relevant_experience_duties && <p className="text-xs text-slate-600 mt-2"><strong>Duties:</strong> {formData.relevant_experience_duties}</p>}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -999,8 +1261,45 @@ const handleNextToReview = () => {
             <p className="submission-reference-label">Your Application Item Number</p>
             <p className="submission-reference">{submissionReference}</p>
             <p className="submission-reference-hint">
-              Save this number. You can use it at <strong>/track</strong> to check your application status anytime.
+              You can track your application status anytime using this code or your email address.
             </p>
+          </div>
+          <div className="flex gap-3 mt-6">
+            <Button
+              variant="outline"
+              onClick={handleCloseSuccessDialog}
+              style={{ flex: 1 }}
+            >
+              Back to Home
+            </Button>
+            <Button
+              onClick={() => {
+                navigate('/track');
+                setShowSuccessDialog(false);
+              }}
+              style={{ flex: 1 }}
+            >
+              Track Application
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      <Dialog open={isSubmitting} onClose={() => {}}>
+        <div className="flex flex-col items-center justify-center p-6 text-center" style={{ minWidth: '320px' }}>
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-t-[#363EE8] border-slate-200 mb-4" />
+          <h3 className="text-lg font-bold text-[#050D65] mb-1">Submitting Application</h3>
+          <p className="text-xs text-slate-500 mb-6">Uploading files and finalizing records...</p>
+          
+          <div className="w-full space-y-2 text-left">
+            {files.map((f) => (
+              <div key={f.id} className="flex items-center justify-between text-xs border border-slate-100 bg-slate-50 p-2 rounded-lg">
+                <span className="font-medium text-slate-700 truncate max-w-[220px]">
+                  📄 {REQUIRED_DOCUMENTS.find(d => d.type === (f as any).documentType)?.label || f.file.name}
+                </span>
+                <span className="text-[#363EE8] font-bold animate-pulse">Uploading...</span>
+              </div>
+            ))}
           </div>
         </div>
       </Dialog>

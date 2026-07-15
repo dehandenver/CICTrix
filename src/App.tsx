@@ -2,9 +2,12 @@ import { useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Dialog } from './components/Dialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { JobDetailsPage } from './components/JobDetailsPage';
 import { JobPostingsPage } from './components/JobPostingsPage';
 import { NewlyHiredPage } from './components/NewlyHiredPage';
 import { QualifiedApplicantsPage } from './components/QualifiedApplicantsPage';
+import { ForHiringPage } from './components/ForHiringPage';
+import { ApplicationsListPage } from './components/ApplicationsListPage';
 import { QualifiedApplicantsRSPPage } from './components/QualifiedApplicantsRSPPage';
 import { RaterManagementPage } from './components/RaterManagementPage';
 import SuccessionReadinessEngine from './components/SuccessionReadinessEngine';
@@ -18,10 +21,20 @@ import { PMDashboard } from './modules/admin/PMDashboard';
 import { RSPDashboard } from './modules/admin/RSPDashboard.tsx';
 import { SettingsPage } from './modules/admin/SettingsPage';
 import { SuperAdminDashboard } from './modules/admin/SuperAdminDashboard';
+import { OfficeAccountConsole } from './modules/admin/pm/OfficeAccountConsole';
+import { TrainingCoursesPrototype } from './modules/admin/prototypes/TrainingCoursesPrototype';
+import { SupervisorAccessPage } from './modules/admin/SupervisorAccessPage';
+import { SystemAdministrationPage } from './modules/admin/SystemAdministrationPage';
+import { IPCRManagementPage } from './modules/admin/IPCRManagementPage';
+import { CompetencyFrameworkPage } from './modules/admin/CompetencyFrameworkPageView';
 import { ApplicantWizard } from './modules/applicant/ApplicantWizard';
 import { ApplicationStatusPage } from './modules/applicant/ApplicationStatusPage';
 import { LandingPage } from './components/LandingPage';
-import { EmployeeLoginPage, EmployeePage } from './modules/employee';
+import { AboutPage } from './components/AboutPage';
+import { JobPortalPage } from './components/JobPortalPage';
+import { UnauthorizedPage } from './components/UnauthorizedPage';
+import { SessionExpiredPage } from './components/SessionExpiredPage';
+import { EmployeeLoginPage, EmployeePage, SetInitialPasswordPage } from './modules/employee';
 import { ApplicantDetailsPage } from './modules/interviewer/ApplicantDetailsPage.tsx';
 import { EvaluationForm } from './modules/interviewer/EvaluationForm';
 import { InterviewerApplicantsList } from './modules/interviewer/InterviewerApplicantsList';
@@ -157,7 +170,7 @@ const AdminRoute = ({
   }
 
   if (allowedRoles && !allowedRoles.includes(session.role)) {
-    return <Navigate to={getRoleDefaultRoute(session.role)} replace />;
+    return <Navigate to="/unauthorized" replace />;
   }
 
   return children;
@@ -186,6 +199,9 @@ const EmployeeRoute = ({
   if (!session) {
     return <Navigate to="/employee/login" replace />;
   }
+  if (session.mustChangePassword) {
+    return <Navigate to="/employee/set-password" replace />;
+  }
   return children;
 };
 
@@ -209,34 +225,45 @@ function AppContent() {
     return 'dashboard';
   };
 
-  // Restore currentEmployee from session on page reload (supabaseId available → re-fetch).
+  // Restore currentEmployee from session on page reload.
   useEffect(() => {
     const session = loadEmployeeSession();
     if (!session) return;
-    if (session.supabaseId) {
-      // We have the UUID — full fetch happens inside EmployeePage on mount.
-      // Build a minimal stub so the routes render immediately while EmployeePage
-      // re-fetches the live data.
-      setCurrentEmployee({
-        employeeId: session.employeeId,
-        fullName: session.fullName,
-        email: session.email,
-        supabaseId: session.supabaseId,
-        // Required by the Employee type — safe defaults.
-        dateOfBirth: '',
-        age: 0,
-        gender: 'Prefer not to say',
-        civilStatus: 'Single',
-        nationality: 'Filipino',
-        mobileNumber: '',
-        homeAddress: '',
-        emergencyContactName: '',
-        emergencyRelationship: '',
-        emergencyContactNumber: '',
-        sssNumber: '',
-        philhealthNumber: '',
-        pagibigNumber: '',
-        tinNumber: '',
+    // Always build a stub from the stored session so the routes render
+    // immediately. EmployeePage re-fetches the full live record on mount.
+    setCurrentEmployee({
+      employeeId: session.employeeId,
+      fullName: session.fullName,
+      email: session.email,
+      supabaseId: session.supabaseId,
+      dateOfBirth: '',
+      age: 0,
+      gender: 'Prefer not to say',
+      civilStatus: 'Single',
+      nationality: 'Filipino',
+      mobileNumber: '',
+      homeAddress: '',
+      emergencyContactName: '',
+      emergencyRelationship: '',
+      emergencyContactNumber: '',
+      sssNumber: '',
+      philhealthNumber: '',
+      pagibigNumber: '',
+      tinNumber: '',
+    });
+
+    // Self-heal a session that was created before the employee had a Supabase
+    // `employees` row (so supabaseId is missing). Without this, a plain refresh
+    // keeps showing "account isn't linked" and an empty IPCR even after the row
+    // is created — the user would otherwise have to log out and back in. Re-resolve
+    // the row by employee number and patch both the live state and the stored session.
+    if (!session.supabaseId && session.employeeId) {
+      void fetchPortalEmployeeByNumber(session.employeeId).then((res) => {
+        if (!res.ok || !res.data.supabaseId) return;
+        setCurrentEmployee(res.data);
+        const healed: EmployeeSession = { ...session, supabaseId: res.data.supabaseId };
+        localStorage.setItem(EMPLOYEE_SESSION_KEY, JSON.stringify(healed));
+        setEmployeeSession(healed);
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -305,6 +332,12 @@ function AppContent() {
     };
 
     void checkInterviewerAccess();
+    if (typeof window === 'undefined') {
+      return () => {
+        cancelled = true;
+      };
+    }
+
     const intervalId = window.setInterval(() => {
       void checkInterviewerAccess();
     }, 3000);
@@ -329,17 +362,19 @@ function AppContent() {
   useEffect(() => {
     // Notify data-driven pages that a route has been activated so they can refresh
     // without requiring a full browser reload.
-    window.dispatchEvent(new CustomEvent('cictrix:route-activated'));
-    const routeActivationTimer = window.setTimeout(() => {
+    if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('cictrix:route-activated'));
-    }, 120);
+      const routeActivationTimer = window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('cictrix:route-activated'));
+      }, 120);
 
-    const cleanupUiReset = scheduleTransientUiReset({ dispatchOverlayClose: true });
+      const cleanupUiReset = scheduleTransientUiReset({ dispatchOverlayClose: true });
 
-    return () => {
-      window.clearTimeout(routeActivationTimer);
-      cleanupUiReset();
-    };
+      return () => {
+        window.clearTimeout(routeActivationTimer);
+        cleanupUiReset();
+      };
+    }
   }, [location.pathname, location.search]);
 
   const handleLogin = (email: string, role: Role) => {
@@ -408,12 +443,33 @@ function AppContent() {
       fullName: resolvedEmployee.fullName,
       loginUsername: trimmedUsername,
       supabaseId,
+      mustChangePassword: Boolean(portalAccount.mustChangePassword),
     };
 
     setCurrentEmployee(resolvedEmployee);
     setEmployeeSession(session);
     localStorage.setItem(EMPLOYEE_SESSION_KEY, JSON.stringify(session));
+    const empParams = new URLSearchParams(location.search);
+    const empReturnTo = empParams.get('returnTo');
+    const empDefault = session.mustChangePassword ? '/employee/set-password' : '/employee/dashboard';
+    navigate(empReturnTo && empReturnTo.startsWith('/') && !empReturnTo.startsWith('//')
+      ? empReturnTo
+      : empDefault
+    );
+  };
+
+  const handleInitialPasswordSet = () => {
+    if (!employeeSession) return;
+    const updated: EmployeeSession = { ...employeeSession, mustChangePassword: false };
+    setEmployeeSession(updated);
+    localStorage.setItem(EMPLOYEE_SESSION_KEY, JSON.stringify(updated));
     navigate('/employee/dashboard');
+  };
+
+  const handleInterviewerLogout = () => {
+    setInterviewerSession(null);
+    localStorage.removeItem(INTERVIEWER_SESSION_KEY);
+    navigate('/interviewer/login');
   };
 
   const handleEmployeeLogout = () => {
@@ -441,10 +497,15 @@ function AppContent() {
 
   return (
     <div className="app">
-      <Routes>
+        <Routes>
           <Route path="/" element={<LandingPage />} />
+          <Route path="/about" element={<AboutPage />} />
+          <Route path="/contacts" element={<Navigate to="/" replace />} />
           <Route path="/apply" element={<ApplicantWizard />} />
           <Route path="/track" element={<ApplicationStatusPage />} />
+          <Route path="/job-portal" element={<JobPortalPage />} />
+          <Route path="/unauthorized" element={<UnauthorizedPage />} />
+          <Route path="/session-expired" element={<SessionExpiredPage />} />
           <Route path="/succession" element={<SuccessionReadinessEngine />} />
           
           {/* Interviewer Routes */}
@@ -453,7 +514,7 @@ function AppContent() {
             path="/interviewer/dashboard"
             element={
               <InterviewerRoute session={interviewerSession}>
-                <InterviewerDashboard session={interviewerSession} />
+                <InterviewerDashboard session={interviewerSession} onLogout={handleInterviewerLogout} />
               </InterviewerRoute>
             }
           />
@@ -485,12 +546,31 @@ function AppContent() {
           />
           <Route path="/employee/login" element={<EmployeeLoginPage onLogin={handleEmployeeLogin} />} />
           <Route
+            path="/employee/set-password"
+            element={
+              employeeSession ? (
+                employeeSession.mustChangePassword ? (
+                  <SetInitialPasswordPage
+                    username={employeeSession.loginUsername ?? employeeSession.employeeId}
+                    fullName={employeeSession.fullName}
+                    onDone={handleInitialPasswordSet}
+                  />
+                ) : (
+                  <Navigate to="/employee/dashboard" replace />
+                )
+              ) : (
+                <Navigate to="/employee/login" replace />
+              )
+            }
+          />
+          <Route
             path="/employee/dashboard"
             element={
               <EmployeeRoute session={employeeSession}>
                 {currentEmployee ? (
                   <EmployeePage
                     currentUser={currentEmployee}
+                    loginUsername={employeeSession?.loginUsername}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -508,6 +588,7 @@ function AppContent() {
                 {currentEmployee ? (
                   <EmployeePage
                     currentUser={currentEmployee}
+                    loginUsername={employeeSession?.loginUsername}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -525,6 +606,7 @@ function AppContent() {
                 {currentEmployee ? (
                   <EmployeePage
                     currentUser={currentEmployee}
+                    loginUsername={employeeSession?.loginUsername}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -542,6 +624,7 @@ function AppContent() {
                 {currentEmployee ? (
                   <EmployeePage
                     currentUser={currentEmployee}
+                    loginUsername={employeeSession?.loginUsername}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -559,6 +642,43 @@ function AppContent() {
                 {currentEmployee ? (
                   <EmployeePage
                     currentUser={currentEmployee}
+                    loginUsername={employeeSession?.loginUsername}
+                    onLogout={handleEmployeeLogout}
+                  />
+                ) : (
+                  <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-600">
+                    Loading employee profile...
+                  </div>
+                )}
+              </EmployeeRoute>
+            }
+          />
+           <Route
+            path="/employee/ipcr-workspace"
+            element={
+              <EmployeeRoute session={employeeSession}>
+                {currentEmployee ? (
+                  <EmployeePage
+                    currentUser={currentEmployee}
+                    loginUsername={employeeSession?.loginUsername}
+                    onLogout={handleEmployeeLogout}
+                  />
+                ) : (
+                  <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-600">
+                    Loading employee profile...
+                  </div>
+                )}
+              </EmployeeRoute>
+            }
+          />
+          <Route
+            path="/employee/new-entrants"
+            element={
+              <EmployeeRoute session={employeeSession}>
+                {currentEmployee ? (
+                  <EmployeePage
+                    currentUser={currentEmployee}
+                    loginUsername={employeeSession?.loginUsername}
                     onLogout={handleEmployeeLogout}
                   />
                 ) : (
@@ -576,6 +696,39 @@ function AppContent() {
           
           {/* Admin Routes */}
           <Route path="/admin/login" element={<LoginPage onLogin={handleLogin} />} />
+          <Route
+            path="/admin/supervisors"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin']}>
+                <SupervisorAccessPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/system-admin"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin']}>
+                <SystemAdministrationPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/ipcr"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'pm']}>
+                <IPCRManagementPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/competency"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'pm']}>
+                <CompetencyFrameworkPage />
+              </AdminRoute>
+            }
+          />
+          <Route path="/admin/users" element={<Navigate to="/admin/supervisors" replace />} />
           <Route
             path="/admin"
             element={
@@ -611,10 +764,50 @@ function AppContent() {
             }
           />
           <Route
-            path="/admin/rsp/qualified"
+            path="/admin/rsp/applications"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <ApplicationsListPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/rsp/applicant-score"
             element={
               <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
                 <QualifiedApplicantsRSPPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/rsp/applicant-ranking"
+            element={<Navigate to="/admin/rsp/for-hiring" replace />}
+          />
+          <Route
+            path="/admin/rsp/for-hiring"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <ForHiringPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/job-details/:jobId"
+            element={<JobDetailsPage />}
+          />
+          <Route
+            path="/admin/rsp/job/:jobId"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <JobDetailsPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/rsp/qualified"
+            element={
+              <AdminRoute session={adminSession} allowedRoles={['super-admin', 'rsp']}>
+                <QualifiedApplicantsRSPPage mode="pending" />
               </AdminRoute>
             }
           />
@@ -745,6 +938,18 @@ function AppContent() {
               </AdminRoute>
             }
           />
+          {/* Requires an employee session; OfficeAccountConsole then denies anyone
+              without an Active office_role_assignments grant. */}
+          <Route
+            path="/office/dashboard"
+            element={
+              <EmployeeRoute session={employeeSession}>
+                <OfficeAccountConsole />
+              </EmployeeRoute>
+            }
+          />
+          {/* Prototype — sample data, no auth, not part of the L&D portal. */}
+          <Route path="/prototype/training-courses" element={<TrainingCoursesPrototype />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
 

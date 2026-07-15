@@ -1,8 +1,10 @@
 import {
   Award,
+  BarChart2,
   BookOpen,
   Building2,
-  Calendar,
+  CalendarClock,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -12,12 +14,12 @@ import {
   FileText,
   Info,
   LayoutDashboard,
-  LineChart as LineChartIcon,
   Plus,
   Search,
   Send,
   Settings,
-  Target,
+  ShieldCheck,
+  TrendingUp,
   Upload,
   Users,
   UsersRound,
@@ -25,24 +27,31 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
   Legend,
-  Line,
-  LineChart as RechartsLineChart,
+  PolarAngleAxis,
+  PolarGrid,
+  PolarRadiusAxis,
+  Radar,
+  RadarChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts';
 import { AdminHeader } from '../../components/AdminHeader';
-import { getAllEmployees, type Employee } from '../../lib/api/employees';
 import { supabase } from '../../lib/supabase';
 
 type EmployeeOption = { id: string; name: string; position: string; department: string };
 import { EmployeeDevelopment } from './EmployeeDevelopment';
 import { PMReports } from './PMReports';
 import { SeminarEnrollment } from './SeminarEnrollment';
-import { TrainingCourses, type Course } from './TrainingCourses';
+import { TrainingCalendar } from './TrainingCalendar';
+import { TrainingPlan } from './TrainingPlan';
+import { TrainingCourses } from './TrainingCourses';
+import { CATEGORY_COLORS, TRAINING_CATEGORIES } from './trainingCategories';
 
 type DocumentRow = {
   no: number;
@@ -70,25 +79,25 @@ const getDocRowInitials = (name: string): string => {
 };
 
 import { EmptyState } from '../../components/EmptyState';
-import { computeLNDSkillGaps, getEmployeeCompetencies } from '../../lib/api/competencies';
 import { getDocumentRequests, updateDocumentRequestStatus, type DocumentRequest } from '../../lib/api/documentRequests';
 import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
 import { createDocumentRequest } from '../../lib/employeeDocuments';
-import { getActivePrograms, getTopProgramsByEnrollment, type TrainingProgram } from '../../lib/api/trainingPrograms';
-import { getTrainingRequests, summarizeByStatus } from '../../lib/api/trainingRequests';
-import { getMonthlySessionCounts, getUpcomingSessions } from '../../lib/api/trainingSessions';
+import { listTrainingRequestsDetailed, type TrainingRequest } from '../../lib/api/trainingRequests';
 import EmployeeDirectory from './EmployeeDirectory';
-
-type Priority = 'high' | 'medium' | 'low';
-type RequestStatus = 'approved' | 'pending' | 'rejected';
+import { LndSummaryOfRatings } from './LndSummaryOfRatings';
+import { OfficeRoles } from './OfficeRoles';
 
 type MenuId =
   | 'dashboard'
+  | 'summary-of-ratings'
+  | 'training-calendar'
+  | 'training-plan'
   | 'training-courses'
   | 'seminar-enrollment'
   | 'employee-progress'
   | 'documents'
   | 'employees'
+  | 'office-roles'
   | 'settings';
 
 type MenuItem = {
@@ -112,25 +121,17 @@ type StatCardProps = {
 
 const LND_MENU: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', sublabel: 'Overview and KPIs', icon: LayoutDashboard },
+  { id: 'summary-of-ratings', label: 'Summary of Ratings', sublabel: 'IPCR performance data', icon: BarChart2 },
+  { id: 'training-calendar', label: 'Training Calendar', sublabel: 'This year’s trainings', icon: CalendarDays },
+  { id: 'training-plan', label: 'Training Plan', sublabel: 'Next year’s plan', icon: CalendarClock },
   { id: 'training-courses', label: 'Training Courses', sublabel: 'Courses and sessions', icon: BookOpen },
   { id: 'seminar-enrollment', label: 'Seminar Enrollment', sublabel: 'Registrations and slots', icon: ClipboardCheck },
   { id: 'employee-progress', label: 'Employee Development', sublabel: 'Employees and ratings', icon: Users },
   { id: 'documents', label: 'Documents', sublabel: 'Document submissions', icon: FileText },
   { id: 'employees', label: 'Employees', sublabel: 'Directory and profiles', icon: UsersRound },
+  { id: 'office-roles', label: 'Office Roles', sublabel: 'Who reviews drafts (read-only)', icon: ShieldCheck },
   { id: 'settings', label: 'Settings', sublabel: 'Division preferences', icon: Settings },
 ];
-
-const priorityColor = (priority: Priority) => {
-  if (priority === 'high') return 'bg-red-100 text-red-700';
-  if (priority === 'medium') return 'bg-yellow-100 text-yellow-700';
-  return 'bg-green-100 text-green-700';
-};
-
-const statusColor = (status: RequestStatus) => {
-  if (status === 'approved') return 'bg-green-100 text-green-700';
-  if (status === 'pending') return 'bg-yellow-100 text-yellow-700';
-  return 'bg-red-100 text-red-700';
-};
 
 
 const LndSidebar = ({ activeModule, onSelect }: { activeModule: MenuId; onSelect: (id: MenuId) => void }) => {
@@ -203,259 +204,422 @@ const StatCard = ({ label, value, icon: Icon, color, sublabel }: StatCardProps) 
   );
 };
 
+// ── Dashboard constants ───────────────────────────────────────────────────────
+
+// Categories and their colors are defined in ./trainingCategories so that
+// TrainingCourses and SeminarEnrollment can share them without importing this
+// module (which imports them). Re-exported here for existing callers.
+export { CATEGORY_COLORS };
+
+const COMPETENCY_LIST = [
+  'Knowledge of Local Governance',
+  'Public Administration Principles',
+  'Community Engagement Skills',
+  'Project Management in a Public Setting',
+  'Fiscal Management/Budgeting for LGU',
+  'Transparency and Accountability Practices',
+  'Disaster Risk Reduction and Management',
+  'Digital Literacy for Government Services',
+  'Ethical Conduct and Public Service Standards',
+  'Technical Writing for Government Documents',
+  'Data and Records Management and Organization',
+  'Public Communication Skills',
+] as const;
+
+const COMPETENCY_SHORT: Record<string, string> = {
+  'Knowledge of Local Governance': 'Local governance',
+  'Public Administration Principles': 'Public admin principles',
+  'Community Engagement Skills': 'Community engagement',
+  'Project Management in a Public Setting': 'Project mgmt (public)',
+  'Fiscal Management/Budgeting for LGU': 'Fiscal mgmt/budgeting',
+  'Transparency and Accountability Practices': 'Transparency/accountability',
+  'Disaster Risk Reduction and Management': 'DRRM',
+  'Digital Literacy for Government Services': 'Digital literacy',
+  'Ethical Conduct and Public Service Standards': 'Ethical conduct',
+  'Technical Writing for Government Documents': 'Technical writing',
+  'Data and Records Management and Organization': 'Data/records mgmt',
+  'Public Communication Skills': 'Public communication',
+};
+
+/** Fixed department color palette — separate from category colors to avoid confusion. */
+const DEPT_PALETTE = [
+  '#2563eb', '#dc2626', '#059669', '#d97706', '#7c3aed',
+  '#db2777', '#0891b2', '#65a30d', '#ea580c', '#6366f1',
+];
+
+// ── Dashboard component ───────────────────────────────────────────────────────
+
 const LndDashboardContent = () => {
-  const [lndLoading, setLndLoading] = useState(true);
-  const [trainingPrograms, setTrainingPrograms] = useState<TrainingProgram[]>([]);
-  const [monthlyTrainingData, setMonthlyTrainingData] = useState<any[]>([]);
-  const [competencyGaps, setCompetencyGaps] = useState<any[]>([]);
-  const [upcomingSeminars, setUpcomingSeminars] = useState<any[]>([]);
-  const [topPrograms, setTopPrograms] = useState<any[]>([]);
-  const [trainingRequests, setTrainingRequests] = useState<any[]>([]);
-  const [totalEmployees, setTotalEmployees] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [requests, setRequests] = useState<TrainingRequest[]>([]);
+  const [selectedRadarDept, setSelectedRadarDept] = useState('');
+  const [viewDeptDetails, setViewDeptDetails] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [
-          programs,
-          sessionsCount,
-          reqs,
-          compRes,
-          topProgs,
-          upcSeminars,
-          empRes
-        ] = await Promise.all([
-          getActivePrograms(),
-          getMonthlySessionCounts(12),
-          getTrainingRequests(),
-          getEmployeeCompetencies(),
-          getTopProgramsByEnrollment(5),
-          getUpcomingSessions(5),
-          getAllEmployees({ status: 'Active' })
-        ]);
-
+        const data = await listTrainingRequestsDetailed();
         if (cancelled) return;
-
-        setTrainingPrograms(programs);
-        setMonthlyTrainingData(sessionsCount);
-        setTrainingRequests(reqs);
-        
-        if (compRes.success && compRes.data) {
-          setCompetencyGaps(computeLNDSkillGaps(compRes.data).slice(0, 4));
-        }
-        
-        setTopPrograms(topProgs);
-        setUpcomingSeminars(upcSeminars);
-        
-        if (empRes.success && Array.isArray(empRes.data)) {
-          setTotalEmployees(empRes.data.length);
-        }
+        setRequests(data);
+        const depts = Array.from(new Set(data.map((r: TrainingRequest) => r.employees?.department).filter(Boolean)));
+        if (depts.length > 0) setSelectedRadarDept(depts[0] as string);
       } catch (err) {
-        console.error('Error fetching LND dashboard data', err);
+        console.error('LND dashboard error', err);
       } finally {
-        if (!cancelled) setLndLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
   }, []);
 
-  const approvedCount = useMemo(
-    () => summarizeByStatus(trainingRequests).approved,
-    [trainingRequests]
+  const currentYear = new Date().getFullYear().toString();
+
+  const departments = useMemo(
+    () => Array.from(new Set(requests.map(r => r.employees?.department).filter(Boolean))) as string[],
+    [requests]
   );
+
+  const deptColorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    departments.forEach((dept, i) => map.set(dept, DEPT_PALETTE[i % DEPT_PALETTE.length]));
+    return map;
+  }, [departments]);
+
+  const ytdCount = useMemo(
+    () => requests.filter(r => r.requested_at?.startsWith(currentYear)).length,
+    [requests, currentYear]
+  );
+
+  const topCategoryEntry = useMemo(() => {
+    const counts = TRAINING_CATEGORIES.map(cat => ({
+      cat,
+      count: requests.filter(r => r.category === cat && r.requested_at?.startsWith(currentYear)).length,
+    }));
+    return counts.reduce((best, cur) => (cur.count > best.count ? cur : best), { cat: '' as string, count: 0 });
+  }, [requests, currentYear]);
+
+  // Per-department request counts — shown in the stacked bar legend
+  const deptCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of requests) {
+      const dept = r.employees?.department;
+      if (dept) map.set(dept, (map.get(dept) ?? 0) + 1);
+    }
+    return map;
+  }, [requests]);
+
+  // Stacked bar: one entry per category, departments as segment keys — current year only
+  const categoryChartData = useMemo(() =>
+    TRAINING_CATEGORIES.map(cat => {
+      const entry: Record<string, any> = { category: cat };
+      for (const dept of departments) {
+        entry[dept] = requests.filter(r =>
+          r.category === cat &&
+          r.employees?.department === dept &&
+          r.requested_at?.startsWith(currentYear)
+        ).length;
+      }
+      return entry;
+    }),
+    [requests, departments, currentYear]
+  );
+
+  // Radar: demand share per competency for the selected department
+  const radarData = useMemo(() => {
+    const deptReqs = requests.filter(r => r.employees?.department === selectedRadarDept);
+    const total = deptReqs.length || 1;
+    return COMPETENCY_LIST.map(comp => ({
+      subject: COMPETENCY_SHORT[comp] ?? comp,
+      fullName: comp,
+      value: Math.round(deptReqs.filter(r => r.competency === comp).length / total * 100),
+    }));
+  }, [requests, selectedRadarDept]);
+
+  // Demand table: one row per department, top competency + priority + demand %
+  const demandTableData = useMemo(() => {
+    return departments.map(dept => {
+      const deptReqs = requests.filter(r => r.employees?.department === dept);
+      const total = deptReqs.length || 1;
+      const compCounts = new Map<string, number>();
+      for (const r of deptReqs) {
+        if (r.competency) compCounts.set(r.competency, (compCounts.get(r.competency) ?? 0) + 1);
+      }
+      let topComp = '—', topCount = 0;
+      for (const [comp, cnt] of compCounts) {
+        if (cnt > topCount) { topComp = comp; topCount = cnt; }
+      }
+      const demand = Math.round(topCount / total * 100);
+      const priority: 'high' | 'medium' | 'emerging' = demand >= 60 ? 'high' : demand >= 30 ? 'medium' : 'emerging';
+      return { department: dept, topCompetency: topComp, demand, priority };
+    }).sort((a, b) => b.demand - a.demand);
+  }, [requests, departments]);
+
+  // Full request history for the department drill-down modal, most recent first
+  const deptDetailRequests = useMemo(() => {
+    if (!viewDeptDetails) return [];
+    return requests
+      .filter(r => r.employees?.department === viewDeptDetails)
+      .sort((a, b) => (b.requested_at ?? '').localeCompare(a.requested_at ?? ''));
+  }, [requests, viewDeptDetails]);
 
   return (
     <div className="space-y-6 p-8">
+      {/* Header */}
       <section>
         <p className="text-sm font-medium text-gray-500">
           <span className="text-blue-600">L&D</span> <span className="mx-1 text-gray-400">/</span> Dashboard
         </p>
-        <h1 className="mt-1 text-3xl font-bold text-gray-900">Learning & Development</h1>
-        <p className="mt-1 text-sm text-gray-500">Monitor training programs, competency development, and completion performance.</p>
+        <h1 className="mt-1 text-3xl font-bold text-gray-900">Dashboard & Analytics</h1>
+        <p className="mt-1 text-sm text-gray-500">Training volume, category demand, and competency gaps at a glance.</p>
       </section>
 
-      <section className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4 relative">
-        {lndLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
-        <StatCard label="Total Employees" value={totalEmployees.toString()} icon={Users} color="blue" sublabel="Workforce covered" />
-        <StatCard label="Training Programs" value={trainingPrograms.length.toString()} icon={BookOpen} color="green" sublabel="Active modules" />
-        {/* Active Participants and Completed Trainings require enrollment tracking tables, currently defaulting to 0 until seeded */}
-        <StatCard label="Active Participants" value="0" icon={Award} color="orange" sublabel="In current cycle" />
-        <StatCard label="Completed Trainings" value="0" icon={ClipboardCheck} color="purple" sublabel="This quarter" />
+      {/* Metric Cards */}
+      <section className="grid grid-cols-1 gap-6 md:grid-cols-3 relative">
+        {loading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
+        <StatCard label="Total training requests (office accounts)" value={ytdCount.toString()} icon={ClipboardList} color="blue" sublabel="Year to date" />
+        <article className="rounded-2xl border border-gray-200 bg-white p-5 transition hover:shadow-md">
+          <div className="flex items-start justify-between">
+            <div className="min-w-0 flex-1 pr-3">
+              <p className="text-sm font-medium text-gray-500">Most requested category, YTD</p>
+              <p className="mt-1 text-3xl font-bold text-gray-900 leading-tight truncate">
+                {topCategoryEntry.count > 0 ? topCategoryEntry.cat : '—'}
+              </p>
+              {topCategoryEntry.count > 0 && (
+                <p className="mt-1 text-xs text-gray-500">{topCategoryEntry.count} requests</p>
+              )}
+            </div>
+            <div
+              className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl"
+              style={{
+                backgroundColor: topCategoryEntry.cat && CATEGORY_COLORS[topCategoryEntry.cat]
+                  ? `${CATEGORY_COLORS[topCategoryEntry.cat]}22`
+                  : 'rgb(254 215 170)',
+                color: topCategoryEntry.cat && CATEGORY_COLORS[topCategoryEntry.cat]
+                  ? CATEGORY_COLORS[topCategoryEntry.cat]
+                  : 'rgb(194 65 12)',
+              }}
+            >
+              <Award className="h-6 w-6" />
+            </div>
+          </div>
+        </article>
+        <StatCard label="Departments reporting" value={departments.length.toString()} icon={Building2} color="green" sublabel="With active requests" />
       </section>
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-5 relative min-h-[350px]">
-        {lndLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Trainings Conducted (This Month)</h2>
-          <p className="text-xs text-gray-500">Weekly trend by category</p>
+      {/* Category chart — stacked bar, 4 categories × departments */}
+      <section className="rounded-2xl border border-gray-200 bg-white p-5 relative min-h-[380px]">
+        {loading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
+        <div className="mb-1">
+          <h2 className="text-sm font-semibold text-gray-700">Training requests by category and department, current year</h2>
         </div>
-        {monthlyTrainingData.length === 0 && !lndLoading ? (
-          <EmptyState title="No training data" description="No training sessions have been conducted yet." />
+        {departments.length === 0 && !loading ? (
+          <div className="mt-6"><EmptyState title="No request data" description="No training requests have been submitted yet." /></div>
         ) : (
-          <div className="h-[300px] w-full">
+          <div className="h-[310px] w-full mt-4">
             <ResponsiveContainer width="100%" height="100%">
-              <RechartsLineChart data={monthlyTrainingData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6b7280' }} />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="Leadership" stroke="#2563eb" strokeWidth={2.5} dot={{ r: 4 }} />
-                <Line type="monotone" dataKey="Technical" stroke="#16a34a" strokeWidth={2.5} dot={{ r: 4 }} />
-                <Line type="monotone" dataKey="SoftSkills" stroke="#ea580c" strokeWidth={2.5} dot={{ r: 4 }} />
-                <Line type="monotone" dataKey="Compliance" stroke="#9333ea" strokeWidth={2.5} dot={{ r: 4 }} />
-              </RechartsLineChart>
+              <BarChart data={categoryChartData} margin={{ top: 4, right: 16, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                <XAxis dataKey="category" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#374151' }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#6b7280' }} allowDecimals={false} />
+                <Tooltip
+                  cursor={{ fill: 'rgba(0,0,0,0.04)' }}
+                  content={({ active, payload, label }: any) => {
+                    if (!active || !payload?.length) return null;
+                    return (
+                      <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-lg text-xs min-w-[160px]">
+                        <p className="mb-2 font-semibold text-gray-800">{label}</p>
+                        {payload.map((entry: any) => (
+                          <div key={entry.dataKey} className="flex items-center gap-2 py-0.5">
+                            <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: entry.fill }} />
+                            <span className="flex-1 truncate text-gray-600">{entry.dataKey}</span>
+                            <span className="font-semibold text-gray-800">{entry.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  }}
+                />
+                <Legend
+                  content={() => (
+                    <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 justify-center">
+                      {departments.map(dept => (
+                        <div key={dept} className="flex items-center gap-1.5 text-xs text-gray-600">
+                          <span className="inline-block h-3 w-3 shrink-0 rounded-sm" style={{ backgroundColor: deptColorMap.get(dept) }} />
+                          {dept} ({deptCounts.get(dept) ?? 0})
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                />
+                {departments.map(dept => (
+                  <Bar key={dept} dataKey={dept} stackId="a" fill={deptColorMap.get(dept)} />
+                ))}
+              </BarChart>
             </ResponsiveContainer>
           </div>
         )}
       </section>
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-5 relative">
-        {lndLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="inline-flex items-center gap-2 text-lg font-semibold text-gray-900">
-            <Target className="h-5 w-5 text-blue-600" />
-            Competency Gaps Analysis
-          </h2>
-          <button type="button" className="text-sm font-semibold text-blue-600 hover:text-blue-700">View Details</button>
+      {/* Competency radar — one department at a time via dropdown */}
+      <section className="rounded-2xl border border-gray-200 bg-white p-5 relative min-h-[420px]">
+        {loading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Competency profile by department</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Each axis shows that competency's share of the department's total requests</p>
+          </div>
+          {departments.length > 0 && (
+            <select
+              value={selectedRadarDept}
+              onChange={e => setSelectedRadarDept(e.target.value)}
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              {departments.map(dept => (
+                <option key={dept} value={dept}>{dept}</option>
+              ))}
+            </select>
+          )}
         </div>
-
-        {competencyGaps.length === 0 && !lndLoading ? (
-          <EmptyState title="No competency gaps" description="All competency assessments are either completed or not yet recorded." />
+        {departments.length === 0 && !loading ? (
+          <EmptyState title="No data" description="No training requests available for competency analysis." />
         ) : (
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {competencyGaps.map((item) => (
-              <article key={item.skill} className="rounded-xl border border-gray-200 p-4">
-                <div className="mb-4 flex items-start justify-between">
-                  <div>
-                    <h3 className="text-base font-semibold text-gray-900">{item.skill}</h3>
-                    <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${priorityColor(item.priority)}`}>
-                      {item.priority}
-                    </span>
-                  </div>
-                  <p className="text-sm font-semibold text-red-600">Gap {item.gap}%</p>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <div>
-                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Current Level</p>
-                    <div className="h-2.5 rounded-full bg-gray-200">
-                      <div className="h-2.5 rounded-full bg-orange-500" style={{ width: `${item.currentLevel}%` }} />
-                    </div>
-                    <p className="mt-1 text-xs text-gray-600">{item.currentLevel}%</p>
-                  </div>
-                  <div>
-                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Target Level</p>
-                    <div className="h-2.5 rounded-full bg-gray-200">
-                      <div className="h-2.5 rounded-full bg-blue-600" style={{ width: `${item.targetLevel}%` }} />
-                    </div>
-                    <p className="mt-1 text-xs text-gray-600">{item.targetLevel}%</p>
-                  </div>
-                </div>
-              </article>
-            ))}
+          <div className="h-[340px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <RadarChart data={radarData} margin={{ top: 10, right: 40, bottom: 10, left: 40 }}>
+                <PolarGrid stroke="#e5e7eb" />
+                <PolarAngleAxis dataKey="subject" tick={{ fontSize: 11, fill: '#374151' }} />
+                <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 10, fill: '#9ca3af' }} tickCount={4} />
+                <Radar
+                  name={selectedRadarDept}
+                  dataKey="value"
+                  stroke="#2563eb"
+                  fill="#2563eb"
+                  fillOpacity={0.18}
+                  strokeWidth={2}
+                />
+                <Tooltip
+                  content={({ active, payload }: any) => {
+                    if (!active || !payload?.length) return null;
+                    const item = payload[0]?.payload;
+                    return (
+                      <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-lg text-xs">
+                        <p className="font-semibold text-gray-800 mb-1">{item?.fullName}</p>
+                        <p className="text-gray-600">Demand: <span className="font-semibold text-gray-900">{item?.value}%</span></p>
+                      </div>
+                    );
+                  }}
+                />
+              </RadarChart>
+            </ResponsiveContainer>
           </div>
         )}
       </section>
 
-      <section className="grid grid-cols-1 gap-6 lg:grid-cols-2 relative">
-        <article className="rounded-2xl border border-gray-200 bg-white p-5 relative min-h-[250px]">
-          {lndLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
-          <h2 className="mb-4 inline-flex items-center gap-2 text-lg font-semibold text-gray-900">
-            <Calendar className="h-5 w-5 text-blue-600" />
-            Upcoming Seminars
-          </h2>
-          {upcomingSeminars.length === 0 && !lndLoading ? (
-            <EmptyState title="No upcoming seminars" description="There are currently no training sessions scheduled." />
-          ) : (
-            <div className="space-y-3">
-              {upcomingSeminars.map((seminar) => (
-                <div key={seminar.id} className="rounded-xl border border-gray-200 p-3 transition hover:bg-gray-50">
-                  <p className="text-sm font-semibold text-gray-900">{seminar.title}</p>
-                  <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-gray-500">
-                    <span>{seminar.date}</span>
-                    <span className="inline-flex items-center gap-1">
-                      <Users className="h-3.5 w-3.5" />
-                      {seminar.participants} participants
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-gray-600">Instructor: {seminar.instructor}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </article>
-
-        <article className="rounded-2xl border border-gray-200 bg-white p-5 relative min-h-[250px]">
-          {lndLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
-          <h2 className="mb-4 inline-flex items-center gap-2 text-lg font-semibold text-gray-900">
-            <LineChartIcon className="h-5 w-5 text-blue-600" />
-            Top Performing Programs
-          </h2>
-          {topPrograms.length === 0 && !lndLoading ? (
-            <EmptyState title="No top programs" description="No training programs have sufficient completion data yet." />
-          ) : (
-            <div className="space-y-3">
-              {topPrograms.map((program, index) => (
-                <div key={program.id} className="rounded-xl border border-gray-200 p-3">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-700">
-                      {index + 1}
-                    </span>
-                    <p className="flex-1 text-sm font-semibold text-gray-900">{program.title}</p>
-                  </div>
-                  <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                    <p className="text-gray-600">Rating: <span className="font-semibold text-gray-900">{program.rating} <span className="text-yellow-500">★</span></span></p>
-                    <p className="text-gray-600">Completion: <span className="font-semibold text-gray-900">{program.completionRate}%</span></p>
-                    <p className="text-gray-600">Participants: <span className="font-semibold text-gray-900">{program.participants}</span></p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </article>
-      </section>
-
-      <section className="rounded-2xl border border-gray-200 bg-white p-5 relative min-h-[300px]">
-        {lndLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
-        <h2 className="mb-4 text-lg font-semibold text-gray-900">Recent Training Requests</h2>
-        {trainingRequests.length === 0 && !lndLoading ? (
-          <EmptyState title="No training requests" description="Employees have not submitted any training requests yet." />
+      {/* Competency demand table */}
+      <section className="rounded-2xl border border-gray-200 bg-white p-5 relative">
+        {loading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Competency demand by department</h2>
+          <p className="text-xs text-gray-400 mt-0.5">Top requested competency per department · all requests · sorted by demand</p>
+        </div>
+        {demandTableData.length === 0 && !loading ? (
+          <EmptyState title="No demand data" description="No department competency demand data available yet." />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full border-collapse">
-              <thead>
-                <tr className="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wide text-gray-600">
-                  <th className="px-3 py-3">Employee</th>
-                  <th className="px-3 py-3">Position</th>
-                  <th className="px-3 py-3">Department</th>
-                  <th className="px-3 py-3">Requested Training</th>
-                  <th className="px-3 py-3">Date Requested</th>
-                  <th className="px-3 py-3">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {trainingRequests.map((request) => (
-                  <tr key={request.id} className="border-b border-gray-100 text-sm hover:bg-gray-50">
-                    <td className="px-3 py-3 font-medium text-gray-900">{request.employee}</td>
-                    <td className="px-3 py-3 text-gray-700">{request.position}</td>
-                    <td className="px-3 py-3 text-gray-700">{request.department}</td>
-                    <td className="px-3 py-3 text-gray-700">{request.requestedTraining}</td>
-                    <td className="px-3 py-3 text-gray-700">{request.dateRequested}</td>
-                    <td className="px-3 py-3">
-                      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${statusColor(request.status)}`}>
-                        {request.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className="grid grid-cols-12 items-center px-4 py-2.5 text-xs font-medium text-gray-500 border-b border-gray-100">
+              <div className="col-span-3">Department</div>
+              <div className="col-span-4">Top requested competency</div>
+              <div className="col-span-2">Status</div>
+              <div className="col-span-2">Demand level</div>
+              <div className="col-span-1" />
+            </div>
+            <div className="divide-y divide-gray-100">
+              {demandTableData.map(row => (
+                <div key={row.department} className="grid grid-cols-12 items-center px-4 py-3.5 hover:bg-gray-50/50 transition">
+                  <div className="col-span-3 text-sm font-bold text-gray-900">{row.department}</div>
+                  <div className="col-span-4 text-xs text-gray-600 leading-snug pr-3">{row.topCompetency}</div>
+                  <div className="col-span-2 flex">
+                    {row.priority === 'high' && (
+                      <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold bg-red-100 text-red-700">High priority</span>
+                    )}
+                    {row.priority === 'medium' && (
+                      <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold bg-amber-100 text-amber-700">Medium priority</span>
+                    )}
+                    {row.priority === 'emerging' && (
+                      <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold bg-blue-100 text-blue-700">Emerging need</span>
+                    )}
+                  </div>
+                  <div className="col-span-2 flex items-center gap-2">
+                    <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+                      <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${row.demand}%` }} />
+                    </div>
+                    <span className="text-xs font-semibold text-gray-700 w-9 shrink-0 text-right">{row.demand}%</span>
+                  </div>
+                  <div className="col-span-1 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setViewDeptDetails(row.department)}
+                      className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-semibold text-gray-600 hover:border-blue-400 hover:text-blue-600 transition whitespace-nowrap"
+                    >
+                      View details
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
-        <p className="mt-3 text-xs text-gray-500">Approved requests this cycle: {approvedCount}</p>
       </section>
+
+      {/* Department request history drill-down */}
+      {viewDeptDetails && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setViewDeptDetails(null)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl mx-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-6 pt-6 pb-2 sticky top-0 bg-white">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">{viewDeptDetails}</h2>
+                <p className="text-sm text-slate-500 mt-0.5">{deptDetailRequests.length} training request{deptDetailRequests.length === 1 ? '' : 's'}</p>
+              </div>
+              <button type="button" onClick={() => setViewDeptDetails(null)} className="text-slate-400 hover:text-slate-600 transition">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="px-6 pb-6 pt-4">
+              {deptDetailRequests.length === 0 ? (
+                <EmptyState title="No requests" description="This department has no training requests yet." />
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {deptDetailRequests.map(r => {
+                    const name = [r.employees?.first_name, r.employees?.last_name].filter(Boolean).join(' ').trim() || 'Unknown';
+                    return (
+                      <div key={r.id} className="py-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-slate-900 truncate">{name}</p>
+                          <p className="text-xs text-slate-500 truncate">{r.competency ?? r.title}</p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {r.category && (
+                            <span
+                              className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold"
+                              style={{ backgroundColor: `${CATEGORY_COLORS[r.category]}1a`, color: CATEGORY_COLORS[r.category] }}
+                            >
+                              {r.category}
+                            </span>
+                          )}
+                          <span className="text-xs text-slate-400 w-20 text-right">
+                            {r.requested_at ? new Date(r.requested_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -1485,7 +1649,6 @@ const LNDDocuments = ({ showPMReports, setShowPMReports, selectedReportId, onSel
 
 export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boolean }) => {
   const [activeModule, setActiveModule] = useState<MenuId>('dashboard');
-  const [courses, setCourses] = useState<Course[]>([]);
 
   // Lifted so AdminHeader notifications can deep-link into a specific report.
   const [showPMReports, setShowPMReports] = useState(false);
@@ -1496,20 +1659,20 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
       <AdminHeader
         userName="Alex Gonzales"
         divisionLabel="L&D Division"
-        division="lnd"
-        onNotificationClick={(item) => {
-          setActiveModule('documents');
-          setShowPMReports(true);
-          setSelectedReportId(item.payload.reportId);
-        }}
       />
       <div className="flex">
         <LndSidebar activeModule={activeModule} onSelect={setActiveModule} />
         <main className="flex-1">
           {activeModule === 'dashboard' ? (
             <LndDashboardContent />
+          ) : activeModule === 'summary-of-ratings' ? (
+            <LndSummaryOfRatings />
+          ) : activeModule === 'training-calendar' ? (
+            <TrainingCalendar />
+          ) : activeModule === 'training-plan' ? (
+            <TrainingPlan />
           ) : activeModule === 'training-courses' ? (
-            <TrainingCourses courses={courses} onAddCourse={(newCourse) => setCourses((prev) => [...prev, newCourse])} />
+            <TrainingCourses />
           ) : activeModule === 'seminar-enrollment' ? (
             <SeminarEnrollment />
           ) : activeModule === 'employee-progress' ? (
@@ -1521,6 +1684,8 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
               selectedReportId={selectedReportId}
               onSelectionConsumed={() => setSelectedReportId(null)}
             />
+          ) : activeModule === 'office-roles' ? (
+            <OfficeRoles />
           ) : activeModule === 'employees' ? (
             <EmployeeDirectory />
           ) : (

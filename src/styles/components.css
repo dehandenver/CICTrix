@@ -45,10 +45,29 @@
   background-color: var(--color-background);
 }
 
-.input:disabled {
-  background-color: var(--color-background-secondary);
-  cursor: not-allowed;
-  opacity: 0.6;
+.input:disabled,
+.select:disabled {
+  background-color: #e5e7eb;
+  cursor: not-allowed !important;
+  opacity: 0.8;
+  color: #6b7280;
+  border-color: #d1d5db;
+  pointer-events: none;
+}
+
+.input:read-only,
+.input-readonly {
+  background-color: #e5e7eb;
+  cursor: not-allowed !important;
+  color: #6b7280;
+  border-color: #d1d5db;
+}
+
+.input:read-only:focus,
+.input-readonly:focus {
+  background-color: #e5e7eb;
+  border-color: #d1d5db;
+  box-shadow: none;
 }
 
 .input-error {

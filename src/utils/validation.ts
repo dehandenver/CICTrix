@@ -1,6 +1,13 @@
 import type { ApplicantFormData, ValidationErrors } from '../types/applicant.types';
 
-export const validateApplicantForm = (data: ApplicantFormData): ValidationErrors => {
+export const validateApplicantForm = (
+  data: ApplicantFormData,
+  // Step 1 = Personal & Application Info (Government ID fields live on Step 2
+  // and must NOT be required by step-1's "Next" handler — that was the bug
+  // where Next stayed blocked even after every visible field was filled).
+  // Pass 'all' / 'submit' when validating the full payload before submission.
+  step: 1 | 2 | 3 | 'all' | 'submit' = 'all',
+): ValidationErrors => {
   const errors: ValidationErrors = {};
 
   // First name validation
@@ -60,6 +67,54 @@ export const validateApplicantForm = (data: ApplicantFormData): ValidationErrors
     errors.office = 'Office is required';
   }
 
+  // Relevant Work Experience validation
+  const hasExperienceYears = data.work_experience_years && data.work_experience_years.trim();
+  const hasExperienceMonths = data.work_experience_months && data.work_experience_months.trim();
+  const hasExperienceFilled =
+    hasExperienceYears ||
+    hasExperienceMonths ||
+    (data.relevant_experience_position && data.relevant_experience_position.trim()) ||
+    (data.relevant_experience_company && data.relevant_experience_company.trim()) ||
+    (data.relevant_experience_duties && data.relevant_experience_duties.trim());
+
+  if (hasExperienceFilled) {
+    if (!hasExperienceYears && !hasExperienceMonths) {
+      errors.work_experience_years = 'Years/months of experience is required';
+    }
+    if (!data.relevant_experience_position || !data.relevant_experience_position.trim()) {
+      errors.relevant_experience_position = 'Position held is required';
+    }
+    if (!data.relevant_experience_company || !data.relevant_experience_company.trim()) {
+      errors.relevant_experience_company = 'Company/organization is required';
+    }
+    if (!data.relevant_experience_duties || !data.relevant_experience_duties.trim()) {
+      errors.relevant_experience_duties = 'Description of duties is required';
+    }
+  }
+
+  // Government ID validation for original application. These inputs render on
+  // Step 2 (Upload Requirements), so skip them when validating Step 1.
+  const checkGovId = data.application_type === 'job' && step !== 1;
+  if (checkGovId) {
+    if (!data.gov_id_type) {
+      errors.gov_id_type = 'Government ID type is required';
+    }
+
+    const needsExpiration = ['Passport', "Driver's License", 'PRC ID', 'Postal ID'].includes(data.gov_id_type);
+    if (needsExpiration) {
+      if (!data.gov_id_expiration) {
+        errors.gov_id_expiration = 'Expiration date is required';
+      } else {
+        const expDate = new Date(data.gov_id_expiration);
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        if (expDate <= today) {
+          errors.gov_id_expiration = 'The ID must not be expired';
+        }
+      }
+    }
+  }
+
   return errors;
 };
 
@@ -82,7 +137,8 @@ export const validateFiles = (
       'eligibility_proof',
       'training_certificate',
       'transcript_of_records',
-      'drug_test'
+      'drug_test',
+      'government_id'
     ];
 
     const uploadedTypes = categorizedFiles.map(f => f.documentType);
@@ -95,7 +151,8 @@ export const validateFiles = (
         eligibility_proof: 'Proof of Eligibility Rating/License',
         training_certificate: 'Certificate of Relevant Training/Seminars',
         transcript_of_records: 'Transcript of Records',
-        drug_test: 'Drug Test Result'
+        drug_test: 'Drug Test Result',
+        government_id: 'Government-Issued ID'
       };
       const missing = missingRequired.map(type => docNames[type]).join(', ');
       return `Missing required documents: ${missing}`;

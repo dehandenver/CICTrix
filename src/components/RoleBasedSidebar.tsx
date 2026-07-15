@@ -25,7 +25,7 @@ export const RoleBasedSidebar: React.FC = () => {
     <aside className="w-64 bg-gray-800 text-white min-h-screen flex flex-col">
       {/* User Info Section */}
       <div className="p-4 bg-gray-900">
-        <h2 className="text-xl font-bold mb-1">CICTrix HRIS</h2>
+        <h2 className="text-xl font-bold mb-1">Abyan HRIS</h2>
         <div className="text-sm text-gray-400">
           <p className="font-medium text-white">{profile?.name || profile?.email}</p>
           <p className="text-xs">

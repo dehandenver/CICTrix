@@ -4,6 +4,11 @@ Reference for local development access to frontend pages and backend API endpoin
 
 ## Live Production URLs (Vercel)
 
+> Canonical production host is **cic-trix.vercel.app** — the Vercel project that
+> auto-deploys from `main`. The separate `cictrix.vercel.app` and
+> `cic-trix-jet.vercel.app` projects do not track `main` and serve stale builds;
+> do not use them.
+
 | Service / Portal | Live URL | Description / Access |
 |---|---|---|
 | **1. Applicant Portal (Home)** | [https://cic-trix.vercel.app/](https://cic-trix.vercel.app/) | Public — submit a new application |
@@ -44,6 +49,11 @@ Reference for local development access to frontend pages and backend API endpoin
 - URL: [http://localhost:5173/employee/dashboard](http://localhost:5173/employee/dashboard)
 - Description: Employee profile and assigned tasks
 - Access: Requires employee login
+
+### Office Account Console (Module 2)
+- URL: [http://localhost:5173/office/dashboard](http://localhost:5173/office/dashboard)
+- Description: Shared dashboard for Office Management (Supervisors & Dept. Heads)
+- Access: Office Supervisors / Department Heads
 
 ## Interviewer / Rater Access
 
@@ -215,4 +225,4 @@ npm run dev
 - Replace local URLs with your production domain in deployment documentation.
 - Default credentials are for local testing only; rotate credentials before production use.
 
-Last updated: March 9, 2026
+Last updated: July 11, 2026

@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
+import { AdminHeader } from './AdminHeader';
+import { ApplicantsTabBar } from './ApplicantsTabBar';
+import { PendingAssignmentList } from './PendingAssignmentList';
 import { QualifiedApplicantsSection } from './QualifiedApplicantsSection';
 import { Sidebar } from './Sidebar';
-import { ATTACHMENTS_BUCKET, supabase } from '../lib/supabase';
-import { runSingleFlight } from '../lib/singleFlight';
+import { supabase } from '../lib/supabase';
 import { buildEvaluationSnapshotMap, subscribeToEvaluationChanges, type EvaluationSnapshot } from '../lib/evaluationScores';
 import { mockDatabase } from '../lib/mockDatabase';
 import { getPreferredDataSourceMode } from '../lib/dataSourceMode';
 import { isMockModeEnabled } from '../lib/supabase';
+import { mergeLocalSchedules } from '../lib/applicantSchedule';
 
 export interface ApplicantRecord {
   id: string;
@@ -19,11 +22,28 @@ export interface ApplicantRecord {
   created_at: string;
   total_score: number | null;
   application_type?: string | null;
+  // Schedule + interviewer assignment (migration 007). Drives
+  // /admin/rsp/qualified Pending Assignment → /admin/rsp/applicant-score.
+  exam_date?: string | null;
+  exam_time?: string | null;
+  interview_date?: string | null;
+  interview_time?: string | null;
+  assigned_interviewer_email?: string | null;
+  education_level?: string | null;
+  years_of_experience?: number | null;
 }
+
+export type QualifiedRspMode = 'pending' | 'score';
 
 export type InterviewerEvaluation = EvaluationSnapshot;
 
-export const QualifiedApplicantsRSPPage = () => {
+interface QualifiedApplicantsRSPPageProps {
+  /** 'pending' = subtab 2 (assign schedule + interviewer).
+   *  'score'   = subtab 3 (existing folder/scoring view). */
+  mode?: QualifiedRspMode;
+}
+
+export const QualifiedApplicantsRSPPage = ({ mode = 'score' }: QualifiedApplicantsRSPPageProps = {}) => {
   const [applicants, setApplicants] = useState<ApplicantRecord[]>([]);
   const [completedEvaluationIds, setCompletedEvaluationIds] = useState<Set<string>>(new Set());
   const [evaluationsByApplicant, setEvaluationsByApplicant] = useState<Record<string, InterviewerEvaluation>>({});
@@ -108,10 +128,24 @@ export const QualifiedApplicantsRSPPage = () => {
             created_at: String(row?.created_at || ''),
             total_score: row?.total_score ? Number(row.total_score) : null,
             application_type: row?.application_type ?? null,
+            exam_date: row?.exam_date ?? null,
+            exam_time: row?.exam_time ?? null,
+            interview_date: row?.interview_date ?? null,
+            interview_time: row?.interview_time ?? null,
+            assigned_interviewer_email: row?.assigned_interviewer_email ?? null,
+            education_level: row?.education_level ?? row?.educational_attainment ?? row?.education ?? null,
+            years_of_experience: row?.years_of_experience != null
+              ? Number(row.years_of_experience)
+              : row?.years_experience != null
+              ? Number(row.years_experience)
+              : null,
           };
         });
 
-        setApplicants(mappedApplicants);
+        // Fill any null schedule fields from the localStorage cache written by
+        // saveApplicantAssignment — handles cases where Supabase columns are
+        // not yet in the DB or the fetch races with a recent save.
+        setApplicants(mergeLocalSchedules(mappedApplicants));
 
         const evaluationMap = buildEvaluationSnapshotMap(dbEvaluations);
         const completedIds = new Set<string>();
@@ -145,25 +179,50 @@ export const QualifiedApplicantsRSPPage = () => {
 
   if (loading) {
     return (
-      <div className="admin-layout">
-        <Sidebar activeModule="RSP" userRole="rsp" />
-        <main className="admin-content bg-slate-50" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
-          <p>Loading qualified applicants...</p>
-        </main>
+      <div className="min-h-screen bg-[#f8f9fa]">
+        <AdminHeader userName="RSP Admin" divisionLabel="RSP Division" />
+        <div className="admin-layout">
+          <Sidebar activeModule="RSP" userRole="rsp" />
+          <main className="admin-content bg-slate-50 !p-0">
+            <div className="border-b border-slate-200 bg-white px-8 py-6">
+              <h1 className="!mb-1 !text-2xl font-bold">{mode === 'pending' ? 'Qualified Applicants' : 'Applicant Score'}</h1>
+              <p className="!mb-0 text-base text-slate-500">{mode === 'pending' ? 'Applicants who passed evaluation and are eligible for further processing' : 'View and update applicant evaluation scores for original and promotional applicants'}</p>
+            </div>
+            <ApplicantsTabBar />
+            <div className="flex items-center justify-center p-12 text-slate-500">Loading applicants...</div>
+          </main>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="admin-layout">
-      <Sidebar activeModule="RSP" userRole="rsp" />
-      <main className="admin-content bg-slate-50">
-        <QualifiedApplicantsSection
-          applicants={applicants}
-          completedEvaluationIds={completedEvaluationIds}
-          evaluationsByApplicant={evaluationsByApplicant}
-        />
-      </main>
+    <div className="min-h-screen bg-[#f8f9fa]">
+      <AdminHeader userName="RSP Admin" divisionLabel="RSP Division" />
+      <div className="admin-layout">
+        <Sidebar activeModule="RSP" userRole="rsp" />
+        <main className="admin-content bg-slate-50 !p-0">
+          <div className="border-b border-slate-200 bg-white px-8 py-6">
+            <h1 className="!mb-1 !text-2xl font-bold">{mode === 'pending' ? 'Qualified Applicants' : 'Applicant Score'}</h1>
+            <p className="!mb-0 text-base text-slate-500">{mode === 'pending' ? 'Applicants who passed evaluation and are eligible for further processing' : 'View and update applicant evaluation scores for original and promotional applicants'}</p>
+          </div>
+          <ApplicantsTabBar />
+          <div className="p-6">
+            {mode === 'pending' ? (
+              <PendingAssignmentList
+                applicants={applicants}
+                completedEvaluationIds={completedEvaluationIds}
+              />
+            ) : (
+              <QualifiedApplicantsSection
+                applicants={applicants}
+                completedEvaluationIds={completedEvaluationIds}
+                evaluationsByApplicant={evaluationsByApplicant}
+              />
+            )}
+          </div>
+        </main>
+      </div>
     </div>
   );
 };

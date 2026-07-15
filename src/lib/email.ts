@@ -37,17 +37,14 @@ export async function sendEmail(payload: SendEmailPayload): Promise<SendEmailRes
 
   let response: Response;
   try {
-    response = await fetch('http://localhost:8000/api/email/send', {
+    response = await fetch('/api/email/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
   } catch (networkError) {
     console.error('sendEmail: network error', networkError);
-    throw new Error(
-      'Could not reach the backend at http://localhost:8000/api/email/send. Make sure the backend ' +
-        'server is running (cd backend && python -m uvicorn main:app --reload).',
-    );
+    throw new Error('Email could not be delivered — the mail service is unavailable. The resubmission notice has been recorded in the tracker.');
   }
 
   let parsed: any = null;

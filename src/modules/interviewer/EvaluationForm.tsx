@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import iloiloCitySeal from '../../assets/iloilo-city-seal.png';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { Dialog } from '../../components/Dialog';
@@ -195,32 +196,6 @@ export function EvaluationForm() {
     setPcptScores(prev => ({ ...prev, [field]: value }));
   };
 
-  // Helper functions inside component to access state
-  const renderStars = (score: number, onSelect: (value: number) => void) => {
-    return (
-      <span className="star-rating">
-        {[1, 2, 3, 4, 5].map(i => (
-          <span
-            key={i}
-            className={`star ${i <= score ? 'filled' : 'empty'}`}
-            role="button"
-            tabIndex={0}
-            onClick={() => onSelect(i)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onSelect(i);
-              }
-            }}
-          >
-            ★
-          </span>
-        ))}
-        <span className="score-value">{score}</span>
-      </span>
-    );
-  };
-
   const calculateTotalScore = () => {
     const scores = [
       evaluation.communication_skills_score,
@@ -265,9 +240,8 @@ export function EvaluationForm() {
     if (id) {
       const type = getStoredAppointmentType(id);
       setAppointmentType(type);
-      if (type === 'promotional') {
-        setActiveTab('pcpt');
-      }
+      // Original applicants → Oral only; Promotional → PCPT only
+      setActiveTab(type === 'promotional' ? 'pcpt' : 'oral');
       fetchApplicantData();
     }
   }, [id]);
@@ -345,6 +319,7 @@ export function EvaluationForm() {
       setApplicant(applicantData);
       if (id && isPromotionalSource(applicantData)) {
         setAppointmentType('promotional');
+        setActiveTab('pcpt');
         try {
           const raw = localStorage.getItem(SCORE_SETUP_STORAGE_KEY);
           const parsed = raw ? (JSON.parse(raw) as Record<string, AppointmentType>) : {};
@@ -353,6 +328,8 @@ export function EvaluationForm() {
         } catch {
           // Best effort persistence only.
         }
+      } else {
+        setActiveTab('oral');
       }
       setAttachments(attachmentsData || []);
 
@@ -588,19 +565,19 @@ export function EvaluationForm() {
 
       {applicant && (
         <div className="evaluation-content">
-          <div className="evaluation-tabs">
-            <button
-              type="button"
-              className={`evaluation-tab ${activeTab === 'pcpt' ? 'active' : ''}`}
-              onClick={() => setActiveTab('pcpt')}
-            >
-              PCPT Evaluation
-            </button>
-            {hasOralEvaluation && (
+          <div className="evaluation-tabs" style={{ gridTemplateColumns: '1fr' }}>
+            {appointmentType === 'promotional' && (
               <button
                 type="button"
-                className={`evaluation-tab ${activeTab === 'oral' ? 'active' : ''}`}
-                onClick={() => setActiveTab('oral')}
+                className="evaluation-tab active"
+              >
+                PCPT Evaluation
+              </button>
+            )}
+            {appointmentType === 'original' && (
+              <button
+                type="button"
+                className="evaluation-tab active"
               >
                 Oral Interview Form
               </button>
@@ -865,6 +842,21 @@ export function EvaluationForm() {
           {hasOralEvaluation && activeTab === 'oral' && (
             <>
               <div className="oral-form-header">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1.25rem', marginBottom: '1rem' }}>
+                  <img
+                    src={iloiloCitySeal}
+                    alt="OCHRMO Seal"
+                    style={{ height: '72px', width: '72px', objectFit: 'contain' }}
+                  />
+                  <div style={{ textAlign: 'left' }}>
+                    <p style={{ margin: 0, fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#555' }}>
+                      Office of the City Human Resource Management Officer
+                    </p>
+                    <p style={{ margin: '0.15rem 0 0', fontSize: '0.75rem', color: '#777' }}>
+                      Iloilo City Government
+                    </p>
+                  </div>
+                </div>
                 <h1 className="oral-title">ORAL INTERVIEW ASSESSMENT FORM</h1>
                 <p className="oral-subtitle">Evaluate the applicant's communication ability, confidence, comprehension, and other oral interview traits</p>
                 <hr className="oral-divider" />
@@ -918,9 +910,9 @@ export function EvaluationForm() {
 
               <div className="rating-scale-box">
                 <strong>Rating Scale:</strong>
-                <span>5 – Excellent</span>
-                <span>4 – Very Good</span>
-                <span>3 – Good</span>
+                <span>5 – Outstanding</span>
+                <span>4 – Very Satisfactory</span>
+                <span>3 – Satisfactory</span>
                 <span>2 – Fair</span>
                 <span>1 – Poor</span>
               </div>
@@ -932,7 +924,7 @@ export function EvaluationForm() {
                       <tr>
                         <th>CRITERIA</th>
                         <th>DESCRIPTION</th>
-                        <th>RATING (1-5)</th>
+                        <th>SCORE</th>
                         <th>REMARKS</th>
                       </tr>
                     </thead>
@@ -940,21 +932,18 @@ export function EvaluationForm() {
                       <tr>
                         <td><strong>Communication Skills</strong></td>
                         <td>Clarity and organization of thoughts</td>
-                        <td className="rating-cell">
-                          {renderStars(evaluation.communication_skills_score, (value) =>
-                            handleInputChange('communication_skills_score', value)
-                          )}
+                        <td>
                           <select
-                            className="hidden-select"
-                            value={evaluation.communication_skills_score || 0}
-                            onChange={(e) => handleInputChange('communication_skills_score', parseInt(e.target.value, 10))}
+                            className="pcpt-score-select"
+                            value={evaluation.communication_skills_score || '-'}
+                            onChange={(e) => handleInputChange('communication_skills_score', e.target.value === '-' ? 0 : parseInt(e.target.value, 10))}
                           >
-                            <option value="0">0</option>
-                            <option value="1">1</option>
-                            <option value="2">2</option>
-                            <option value="3">3</option>
-                            <option value="4">4</option>
-                            <option value="5">5</option>
+                            <option value="-">-</option>
+                            <option value="5">5 – Outstanding</option>
+                            <option value="4">4 – Very Satisfactory</option>
+                            <option value="3">3 – Satisfactory</option>
+                            <option value="2">2 – Fair</option>
+                            <option value="1">1 – Poor</option>
                           </select>
                         </td>
                         <td>
@@ -970,21 +959,18 @@ export function EvaluationForm() {
                       <tr>
                         <td><strong>Confidence</strong></td>
                         <td>Composure, posture, and assurance during interview</td>
-                        <td className="rating-cell">
-                          {renderStars(evaluation.confidence_score, (value) =>
-                            handleInputChange('confidence_score', value)
-                          )}
+                        <td>
                           <select
-                            className="hidden-select"
-                            value={evaluation.confidence_score || 0}
-                            onChange={(e) => handleInputChange('confidence_score', parseInt(e.target.value, 10))}
+                            className="pcpt-score-select"
+                            value={evaluation.confidence_score || '-'}
+                            onChange={(e) => handleInputChange('confidence_score', e.target.value === '-' ? 0 : parseInt(e.target.value, 10))}
                           >
-                            <option value="0">0</option>
-                            <option value="1">1</option>
-                            <option value="2">2</option>
-                            <option value="3">3</option>
-                            <option value="4">4</option>
-                            <option value="5">5</option>
+                            <option value="-">-</option>
+                            <option value="5">5 – Outstanding</option>
+                            <option value="4">4 – Very Satisfactory</option>
+                            <option value="3">3 – Satisfactory</option>
+                            <option value="2">2 – Fair</option>
+                            <option value="1">1 – Poor</option>
                           </select>
                         </td>
                         <td>
@@ -1000,21 +986,18 @@ export function EvaluationForm() {
                       <tr>
                         <td><strong>Comprehension</strong></td>
                         <td>Understanding of questions and ability to respond logically</td>
-                        <td className="rating-cell">
-                          {renderStars(evaluation.comprehension_score, (value) =>
-                            handleInputChange('comprehension_score', value)
-                          )}
+                        <td>
                           <select
-                            className="hidden-select"
-                            value={evaluation.comprehension_score || 0}
-                            onChange={(e) => handleInputChange('comprehension_score', parseInt(e.target.value, 10))}
+                            className="pcpt-score-select"
+                            value={evaluation.comprehension_score || '-'}
+                            onChange={(e) => handleInputChange('comprehension_score', e.target.value === '-' ? 0 : parseInt(e.target.value, 10))}
                           >
-                            <option value="0">0</option>
-                            <option value="1">1</option>
-                            <option value="2">2</option>
-                            <option value="3">3</option>
-                            <option value="4">4</option>
-                            <option value="5">5</option>
+                            <option value="-">-</option>
+                            <option value="5">5 – Outstanding</option>
+                            <option value="4">4 – Very Satisfactory</option>
+                            <option value="3">3 – Satisfactory</option>
+                            <option value="2">2 – Fair</option>
+                            <option value="1">1 – Poor</option>
                           </select>
                         </td>
                         <td>
@@ -1030,21 +1013,18 @@ export function EvaluationForm() {
                       <tr>
                         <td><strong>Personality</strong></td>
                         <td>Professional attitude, enthusiasm, and behavior</td>
-                        <td className="rating-cell">
-                          {renderStars(evaluation.personality_score, (value) =>
-                            handleInputChange('personality_score', value)
-                          )}
+                        <td>
                           <select
-                            className="hidden-select"
-                            value={evaluation.personality_score || 0}
-                            onChange={(e) => handleInputChange('personality_score', parseInt(e.target.value, 10))}
+                            className="pcpt-score-select"
+                            value={evaluation.personality_score || '-'}
+                            onChange={(e) => handleInputChange('personality_score', e.target.value === '-' ? 0 : parseInt(e.target.value, 10))}
                           >
-                            <option value="0">0</option>
-                            <option value="1">1</option>
-                            <option value="2">2</option>
-                            <option value="3">3</option>
-                            <option value="4">4</option>
-                            <option value="5">5</option>
+                            <option value="-">-</option>
+                            <option value="5">5 – Outstanding</option>
+                            <option value="4">4 – Very Satisfactory</option>
+                            <option value="3">3 – Satisfactory</option>
+                            <option value="2">2 – Fair</option>
+                            <option value="1">1 – Poor</option>
                           </select>
                         </td>
                         <td>
@@ -1060,21 +1040,18 @@ export function EvaluationForm() {
                       <tr>
                         <td><strong>Job Knowledge</strong></td>
                         <td>Awareness of role responsibilities and technical background</td>
-                        <td className="rating-cell">
-                          {renderStars(evaluation.job_knowledge_score, (value) =>
-                            handleInputChange('job_knowledge_score', value)
-                          )}
+                        <td>
                           <select
-                            className="hidden-select"
-                            value={evaluation.job_knowledge_score || 0}
-                            onChange={(e) => handleInputChange('job_knowledge_score', parseInt(e.target.value, 10))}
+                            className="pcpt-score-select"
+                            value={evaluation.job_knowledge_score || '-'}
+                            onChange={(e) => handleInputChange('job_knowledge_score', e.target.value === '-' ? 0 : parseInt(e.target.value, 10))}
                           >
-                            <option value="0">0</option>
-                            <option value="1">1</option>
-                            <option value="2">2</option>
-                            <option value="3">3</option>
-                            <option value="4">4</option>
-                            <option value="5">5</option>
+                            <option value="-">-</option>
+                            <option value="5">5 – Outstanding</option>
+                            <option value="4">4 – Very Satisfactory</option>
+                            <option value="3">3 – Satisfactory</option>
+                            <option value="2">2 – Fair</option>
+                            <option value="1">1 – Poor</option>
                           </select>
                         </td>
                         <td>
@@ -1090,21 +1067,18 @@ export function EvaluationForm() {
                       <tr>
                         <td><strong>Overall Impression</strong></td>
                         <td>General suitability for the position</td>
-                        <td className="rating-cell">
-                          {renderStars(evaluation.overall_impression_score, (value) =>
-                            handleInputChange('overall_impression_score', value)
-                          )}
+                        <td>
                           <select
-                            className="hidden-select"
-                            value={evaluation.overall_impression_score || 0}
-                            onChange={(e) => handleInputChange('overall_impression_score', parseInt(e.target.value, 10))}
+                            className="pcpt-score-select"
+                            value={evaluation.overall_impression_score || '-'}
+                            onChange={(e) => handleInputChange('overall_impression_score', e.target.value === '-' ? 0 : parseInt(e.target.value, 10))}
                           >
-                            <option value="0">0</option>
-                            <option value="1">1</option>
-                            <option value="2">2</option>
-                            <option value="3">3</option>
-                            <option value="4">4</option>
-                            <option value="5">5</option>
+                            <option value="-">-</option>
+                            <option value="5">5 – Outstanding</option>
+                            <option value="4">4 – Very Satisfactory</option>
+                            <option value="3">3 – Satisfactory</option>
+                            <option value="2">2 – Fair</option>
+                            <option value="1">1 – Poor</option>
                           </select>
                         </td>
                         <td>

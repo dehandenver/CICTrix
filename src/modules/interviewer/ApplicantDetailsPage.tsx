@@ -2,6 +2,8 @@ import {
     Activity as ActivityIcon,
     ArrowLeft,
     CheckCircle2,
+    ChevronLeft,
+    ChevronRight,
     CircleX,
     Eye,
     FileText,
@@ -14,13 +16,16 @@ import {
     Users,
     X
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { AdminHeader } from '../../components/AdminHeader';
+import { Sidebar } from '../../components/Sidebar';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import { mockDatabase } from '../../lib/mockDatabase';
 import { sendEmail } from '../../lib/email';
 import { getApplicants, getAuthoritativeJobPostings, saveApplicants } from '../../lib/recruitmentData';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../../lib/supabase';
+import { DISQUALIFICATION_REASON_OPTIONS, buildDisqualificationActivityDescription } from '../../lib/applicationActivity';
 import type { Applicant, JobPosting } from '../../types/recruitment.types';
 
 type ApplicantRecord = {
@@ -46,6 +51,7 @@ type AttachmentRecord = {
   file_name: string;
   file_path: string;
   created_at?: string;
+  document_type?: string;
 };
 
 type EvaluationRecord = {
@@ -89,7 +95,7 @@ type EducationAttainmentValue =
   | 'masteral_units'
   | 'graduate_school';
 
-type TabKey = 'overview' | 'qualifications' | 'documents' | 'interview' | 'activity';
+type TabKey = 'overview' | 'qualifications' | 'documents' | 'interview';
 
 type ScoreBreakdown = {
   total: number;
@@ -170,6 +176,18 @@ const labelize = (value?: string) =>
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 const normalizeText = (value: string) => String(value ?? '').trim().toLowerCase();
+
+// ── Document Review (localStorage, shared with QualifiedApplicantsPage) ────────
+type DocReviewStatus = 'pending' | 'approved' | 'resubmission_requested';
+interface DocReview { status: DocReviewStatus; remarks: string; reviewedAt: string; }
+const DOC_REVIEW_KEY = 'cictrix_doc_reviews';
+const loadDocReviews = (): Record<string, DocReview> => {
+  try { return JSON.parse(localStorage.getItem(DOC_REVIEW_KEY) ?? '{}'); } catch { return {}; }
+};
+const RESUBMISSION_REASONS = [
+  'Blurred image', 'Missing page', 'Incomplete document', 'Invalid document',
+  'Document expired', 'Wrong document submitted', 'Low resolution / unreadable',
+];
 
 const statusBadge = (status?: string) => {
   const normalized = normalizeText(status ?? '');
@@ -508,6 +526,20 @@ const saveStoredEducationAttainment = (applicantId: string, educationAttainment:
   }
 };
 
+const formValueToEducationAttainmentValue = (formValue: string): EducationAttainmentValue => {
+  const map: Record<string, EducationAttainmentValue> = {
+    'Elementary Level': 'elementary_level',
+    'Elementary Graduate': 'elementary_graduate',
+    'High School Level': 'high_school_level',
+    'High School Graduate': 'high_school_graduate',
+    'College Level': 'college_level',
+    'College Graduate': 'college_graduate',
+    'Masteral Units': 'masteral_units',
+    'Graduate School': 'graduate_school',
+  };
+  return map[formValue] ?? '';
+};
+
 const getStoredExperienceYears = (applicantId: string): string => {
   try {
     const raw = localStorage.getItem(SCORE_EXPERIENCE_STORAGE_KEY);
@@ -627,6 +659,31 @@ const getStoredInterviewerScoreSnapshot = (
   }
 };
 
+const DOCUMENT_SLOTS = [
+  { type: 'application_letter',            label: 'Application Letter',                       required: true  },
+  { type: 'pds_with_photo',               label: 'Personal Data Sheet',                      required: true  },
+  { type: 'curriculum_vitae',             label: 'Curriculum Vitae',                         required: true  },
+  { type: 'eligibility_proof',            label: 'Proof of Eligibility Rating/License',      required: true  },
+  { type: 'training_certificate',         label: 'Certificate of Relevant Training/Seminars', required: true  },
+  { type: 'transcript_of_records',        label: 'Transcript of Records',                    required: true  },
+  { type: 'previous_employer_certificate',label: 'Certificate from Previous Employer',       required: false },
+  { type: 'drug_test',                    label: 'Drug Test Result',                         required: true  },
+  { type: 'other',                        label: 'Other Supporting Documents',               required: false },
+] as const;
+
+// Labelize'd file_name aliases → slot type (for attachments without document_type)
+const FILE_NAME_TO_TYPE: Record<string, string> = {
+  'Application Letter': 'application_letter',
+  'Pds With Photo':     'pds_with_photo',
+  'Curriculum Vitae':   'curriculum_vitae',
+  'Eligibility Proof':  'eligibility_proof',
+  'Training Certificate': 'training_certificate',
+  'Transcript Of Records': 'transcript_of_records',
+  'Previous Employer Certificate': 'previous_employer_certificate',
+  'Drug Test':          'drug_test',
+  'Other':              'other',
+};
+
 export function ApplicantDetailsPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -654,18 +711,90 @@ export function ApplicantDetailsPage() {
   const [emailTemplate, setEmailTemplate] = useState('');
   const [emailSubject, setEmailSubject] = useState('');
   const [emailBody, setEmailBody] = useState('');
+  const [emailNotes, setEmailNotes] = useState('');
 
   const [applicantStatus, setApplicantStatus] = useState<null | 'shortlist' | 'qualified' | 'disqualify'>(null);
   const [confirmAction, setConfirmAction] = useState<null | 'qualified' | 'disqualify'>(null);
+  const [confirmReasonCategory, setConfirmReasonCategory] = useState('');
   const [confirmReason, setConfirmReason] = useState('');
+  const [confirmMessageVisible, setConfirmMessageVisible] = useState(false);
   const [confirmSubmitting, setConfirmSubmitting] = useState(false);
-  const [disqualifyReason, setDisqualifyReason] = useState('');
 
   const [applicant, setApplicant] = useState<ApplicantRecord | null>(null);
   const [recruitmentApplicant, setRecruitmentApplicant] = useState<Applicant | null>(routeState?.applicant ?? null);
   const [attachments, setAttachments] = useState<AttachmentRecord[]>([]);
   const [evaluation, setEvaluation] = useState<EvaluationRecord | null>(null);
   const [, setToast] = useState<string | null>(null);
+  const [docReviews, setDocReviews] = useState<Record<string, DocReview>>(loadDocReviews);
+  const [openedDocFilePaths, setOpenedDocFilePaths] = useState<Set<string>>(new Set());
+  const [docsValidated, setDocsValidated] = useState(false);
+  const [showResubmitModal, setShowResubmitModal] = useState(false);
+  const [resubmitSelectedSlots, setResubmitSelectedSlots] = useState<string[]>([]);
+  const [resubmitReason, setResubmitReason] = useState('');
+  const [resubmitNotes, setResubmitNotes] = useState('');
+  const [resubmitSending, setResubmitSending] = useState(false);
+  const [resubmitSuccess, setResubmitSuccess] = useState<string | null>(null);
+  const [resubmitError, setResubmitError] = useState<string | null>(null);
+  const syncedValidatedRef = useRef<Set<string>>(new Set());
+
+  // Self-healing sync: if localStorage says a doc is approved but Supabase has no
+  // doc_validated row for it (e.g., insert failed in a previous session), create it now.
+  // Also pings applicants.updated_at so the tracker's realtime subscription fires.
+  useEffect(() => {
+    if (!applicant?.id || !attachments.length) return;
+    const existingValidatedTypes = new Set(
+      attachments.filter((a) => a.document_type === 'doc_validated').map((a) => a.file_name),
+    );
+    const realDocs = attachments.filter(
+      (a) => a.document_type !== 'resubmission_request' && a.document_type !== 'resubmission_resolved' && a.document_type !== 'doc_validated',
+    );
+    let synced = false;
+    for (const att of realDocs) {
+      const key = `${id}::${att.file_path}`;
+      const rawDocType = (att.document_type as string | null) || FILE_NAME_TO_TYPE[att.file_name] || 'other';
+      if (
+        docReviews[key]?.status === 'approved' &&
+        !existingValidatedTypes.has(rawDocType) &&
+        !syncedValidatedRef.current.has(rawDocType)
+      ) {
+        syncedValidatedRef.current.add(rawDocType);
+        synced = true;
+        void (supabase as any).from('applicant_attachments').insert({
+          applicant_id: applicant.id,
+          file_name: rawDocType,
+          file_path: `validated::${rawDocType}`,
+          document_type: 'doc_validated',
+          file_type: 'validation',
+          file_size: 0,
+        });
+      }
+    }
+    // Ping the tracker via the applicants subscription after creating missing rows.
+    if (synced) {
+      void (supabase as any).from('applicants').update({ updated_at: new Date().toISOString() }).eq('id', applicant.id);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applicant?.id, attachments, docReviews]);
+
+  // Validation state is derived from the durable doc_validated rows, not from
+  // localStorage — otherwise an applicant validated on one RSP machine still
+  // looks unvalidated on another. `docsValidated` remains as an optimistic
+  // override so the UI flips immediately after handleValidateAllDocs runs,
+  // before `attachments` refetches.
+  const rawTypeOf = (att: AttachmentRecord) =>
+    (att.document_type as string | null) || FILE_NAME_TO_TYPE[att.file_name] || 'other';
+
+  const realDocs = attachments.filter(
+    (a) => a.document_type !== 'resubmission_request' &&
+           a.document_type !== 'resubmission_resolved' &&
+           a.document_type !== 'doc_validated',
+  );
+  const validatedDocTypes = new Set(
+    attachments.filter((a) => a.document_type === 'doc_validated').map((a) => a.file_name),
+  );
+  const docsAwaitingValidation = realDocs.filter((a) => !validatedDocTypes.has(rawTypeOf(a)));
+  const docsValidatedDurable = realDocs.length > 0 && docsAwaitingValidation.length === 0;
+  const docsValidatedEffective = docsValidated || docsValidatedDurable;
 
   useEffect(() => {
     const load = async () => {
@@ -685,6 +814,9 @@ export function ApplicantDetailsPage() {
       setWrittenScore(getStoredWrittenScore(id));
       setIsScoreFinalized(getStoredFinalizedState(id));
       setIsScoreDraft(getStoredDraftState(id));
+      // Do not seed from localStorage: docsValidatedDurable derives the real
+      // answer from the doc_validated rows once attachments load.
+      setDocsValidated(false);
 
       const loadFromClient = async (client: any) => {
         const applicantRes = await client.from('applicants').select('*').eq('id', id).single();
@@ -889,6 +1021,65 @@ export function ApplicantDetailsPage() {
     load();
   }, [id, routeState]);
 
+  // Pre-fill the Experience scoring input with what the applicant submitted in
+  // the application portal (work_experience_years). RSP can still overwrite it
+  // — we only fill when no stored RSP value exists yet.
+  useEffect(() => {
+    if (!id || experienceYears.trim()) return;
+    const submitted =
+      (applicant as any)?.years_of_experience ??
+      (applicant as any)?.work_experience_years ??
+      (recruitmentApplicant as any)?.workExperienceYears;
+    if (submitted == null || submitted === '') return;
+    const numeric = Number(submitted);
+    if (!Number.isFinite(numeric) || numeric <= 0) return;
+    const rounded = Math.round(numeric * 100) / 100;
+    setExperienceYears(String(rounded));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applicant, recruitmentApplicant, id]);
+
+  // Pre-fill Education scoring from the applicant's form selection. Only fills
+  // when the RSP has not yet manually scored this field.
+  useEffect(() => {
+    if (!id || educationAttainment) return;
+    const stored = getStoredEducationAttainment(id);
+    if (stored) return;
+    const rawEd =
+      String((applicant as any)?.education_attainment ?? '').trim() ||
+      String((applicant as any)?.education_level ?? '').trim() ||
+      String(recruitmentApplicant?.educationAttainment ?? '').trim();
+    const mapped = formValueToEducationAttainmentValue(rawEd);
+    if (mapped) setEducationAttainment(mapped);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applicant, recruitmentApplicant, id]);
+
+  // Real-time subscription: refresh attachments when the applicant re-uploads a doc.
+  useEffect(() => {
+    if (!id) return;
+    const channel = (supabase as any)
+      .channel(`rsp_applicant_attachments_${id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'applicant_attachments',
+        filter: `applicant_id=eq.${id}`,
+      }, async () => {
+        try {
+          const res = await (supabase as any)
+            .from('applicant_attachments')
+            .select('*')
+            .eq('applicant_id', id)
+            .order('created_at', { ascending: false });
+          if (!res.error && Array.isArray(res.data)) {
+            setAttachments(mergeAttachmentRows(res.data as AttachmentRecord[], buildAttachmentRowsFromRecruitment(recruitmentApplicant)));
+          }
+        } catch { /* best effort */ }
+      })
+      .subscribe();
+    return () => { void (supabase as any).removeChannel(channel); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
   const fullName = useMemo(() => (applicant ? getFullName(applicant) : ''), [applicant]);
   const resolvedStatus = recruitmentApplicant?.status || applicant?.status;
   const badge = statusBadge(resolvedStatus);
@@ -900,16 +1091,14 @@ export function ApplicantDetailsPage() {
   const hasSavedEvaluation = Boolean(
     hasInterviewScores(evaluation) || interviewerScoreSnapshot?.pcptAverage || interviewerScoreSnapshot?.oralAverage
   );
-  const backTo = routeState?.from || '/admin/rsp/qualified';
-  const sourcePath = routeState?.from || '';
-  const isJobScopedQualifiedRoute = /^\/admin\/rsp\/qualified\/[^/?#]+/.test(sourcePath);
-  // Admin-RSP applicant detail route is the one at /admin/rsp/applicant/:id.
-  // Show Qualify/Shortlist/Disqualify/Send Message buttons whenever we're on that path,
-  // independent of routeState (which is lost on hard refresh or direct navigation).
-  const isOnRspApplicantRoute = location.pathname.startsWith('/admin/rsp/applicant/');
-  const isFromJobPosts = isOnRspApplicantRoute || sourcePath.startsWith('/admin/rsp/jobs') || isJobScopedQualifiedRoute;
-  const showViewScoresButton = !isFromJobPosts;
-  const showJobPostActionButtons = isFromJobPosts;
+  const isRspAdmin = location.pathname.startsWith('/admin/rsp/');
+  const backTo = routeState?.from || (isRspAdmin ? '/admin/rsp/applications' : '/admin/rsp/qualified');
+  const backLabel = backTo.includes('qualified') ? 'Qualified Applicants'
+    : backTo.includes('applicant-score') ? 'Applicant Score'
+    : backTo.includes('for-hiring') ? 'For Hiring'
+    : 'Applications';
+  const showViewScoresButton = false;
+  const showJobPostActionButtons = true;
   const scoreActionLabel = isScoreFinalized ? 'View Score' : 'Update Score';
   const isForcedPromotionalAppointment = isPromotionalSource(recruitmentApplicant, applicant);
   const isApplicantDisqualified =
@@ -919,9 +1108,6 @@ export function ApplicantDetailsPage() {
     normalizeText(resolvedStatus ?? '').includes('recommend') ||
     normalizeText(resolvedStatus ?? '') === 'qualified';
   const isApplicantShortlisted = normalizeText(resolvedStatus ?? '').includes('shortlist');
-  // Once any decision (shortlist, qualify, or disqualify) is saved, all three header buttons lock.
-  // Only lock buttons for terminal states (qualified or disqualified)
-  const hasFinalDecision = isApplicantQualified || isApplicantDisqualified;
   const primaryEducation = recruitmentApplicant?.education?.[0] ?? null;
   const primaryExperience = recruitmentApplicant?.experience?.[0] ?? null;
 
@@ -1048,6 +1234,7 @@ export function ApplicantDetailsPage() {
     setEmailTemplate('');
     setEmailSubject('');
     setEmailBody('');
+    setEmailNotes('');
     setShowSendEmailModal(true);
   };
 
@@ -1063,10 +1250,13 @@ export function ApplicantDetailsPage() {
     setEmailSuccess(null);
 
     try {
+      const fullBody = emailNotes.trim()
+        ? `${emailBody}\n\n---\nAdditional Notes from RSP Admin:\n${emailNotes.trim()}`
+        : emailBody;
       const result = await sendEmail({
         to: applicant.email,
         subject: emailSubject.trim(),
-        body: emailBody,
+        body: fullBody,
         applicantId: applicant.id,
         template: emailTemplate || undefined,
       });
@@ -1112,8 +1302,8 @@ export function ApplicantDetailsPage() {
   };
 
   const persistStatus = async (
-    action: 'shortlist' | 'qualified' | 'disqualify',
-    reasonInput?: string,
+    action: 'shortlist' | 'unshortlist' | 'qualified' | 'disqualify' | 'document_verified' | 'action_required' | 'under_review',
+    disqualifyDetails?: { reasonCategory: string; message: string; messageVisible: boolean },
   ) => {
     // Only `applicant` (the ApplicantRecord from DB) is required. The richer
     // `recruitmentApplicant` (Applicant with notes/timeline/etc) may be null for
@@ -1124,69 +1314,100 @@ export function ApplicantDetailsPage() {
     }
 
     // Immediately update local status for instant UI feedback
-    setApplicantStatus(action);
-
-    const statusMap: Record<'shortlist' | 'qualified' | 'disqualify', Applicant['status']> = {
-      shortlist: 'Shortlisted',
-      qualified: 'Recommended for Hiring',
-      disqualify: 'Not Qualified',
-    };
-    const nextStatus = statusMap[action];
-    const reason = action === 'disqualify' ? (reasonInput ?? '').trim() : null;
-
-    const payload = {
-      applicant_id: applicant.id,
-      status: nextStatus,
-      disqualification_reason: reason || null,
-    };
-
-    // Persist to backend (best-effort) with Supabase fallback. Uses relative /api/
-    // so Vite's proxy handles routing. Verifies Supabase update actually affected
-    // a row (RLS can cause a zero-row silent update with error:null).
-    let persisted = false;
-    try {
-      const res = await fetch(`/api/applicants/${applicant.id}/status`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        persisted = true;
-        console.info('[ApplicantDetailsPage] backend PATCH ok');
-      } else {
-        console.warn('[ApplicantDetailsPage] backend PATCH failed', res.status);
-      }
-    } catch (err) {
-      console.warn('[ApplicantDetailsPage] backend PATCH threw', err);
+    if (action === 'shortlist' || action === 'qualified' || action === 'disqualify') {
+      setApplicantStatus(action);
+    } else if (action === 'unshortlist') {
+      setApplicantStatus(null);
     }
 
-    if (!persisted) {
-      try {
-        const dbUpdate: Record<string, unknown> = { status: nextStatus };
-        if (reason) dbUpdate.disqualification_reason = reason;
-        const { data: updatedRows, error } = await (supabase as any)
-          .from('applicants')
-          .update(dbUpdate)
-          .eq('id', applicant.id)
-          .select('id, status');
-        if (error) {
-          console.error('[ApplicantDetailsPage] supabase update error', error);
-        } else if (!Array.isArray(updatedRows) || updatedRows.length === 0) {
-          console.error(
-            '[ApplicantDetailsPage] supabase update returned 0 rows — likely RLS blocking UPDATE on applicants for this role',
-          );
-        } else {
-          persisted = true;
-          console.info('[ApplicantDetailsPage] supabase update ok', updatedRows[0]);
-        }
-      } catch (err) {
-        console.error('[ApplicantDetailsPage] supabase update threw', err);
+    const statusMap: Record<string, Applicant['status']> = {
+      shortlist: 'Shortlisted',
+      unshortlist: 'Under Review',
+      qualified: 'Recommended for Hiring',
+      disqualify: 'Not Qualified',
+      document_verified: 'Document Verified',
+      action_required: 'Action Required',
+      under_review: 'Under Review',
+    };
+    const nextStatus = statusMap[action];
+    // The legacy free-text `disqualification_reason` field (and this same string
+    // reused for the activity-log description) is read unconditionally by older
+    // UI — it must never carry the admin's message unless messageVisible is on,
+    // or the visibility toggle would be meaningless.
+    const reason = action === 'disqualify' && disqualifyDetails
+      ? buildDisqualificationActivityDescription(
+          disqualifyDetails.reasonCategory,
+          disqualifyDetails.messageVisible ? disqualifyDetails.message : '',
+        )
+      : null;
+
+    // Go straight to Supabase — this is the single source of truth the public
+    // tracker also reads from. (A backend-API PATCH path used to run first,
+    // but it and this fallback always ended up writing the same values, so
+    // it was removed as a redundant hop.)
+    let persisted = false;
+    let disqualifiedByUserId: string | null = null;
+
+    try {
+      const dbUpdate: Record<string, unknown> = {
+        status: nextStatus,
+        // Explicitly bump updated_at so the Supabase real-time subscription
+        // always fires on the tracker side, even if status didn't change text.
+        updated_at: new Date().toISOString(),
+      };
+      if (action === 'disqualify') {
+        dbUpdate.disqualification_reason = reason || null;
+        dbUpdate.disqualified_at = new Date().toISOString();
+        dbUpdate.disqualification_reason_category = disqualifyDetails?.reasonCategory ?? null;
+        dbUpdate.disqualification_message = disqualifyDetails?.message?.trim() || null;
+        dbUpdate.disqualification_message_visible = disqualifyDetails?.messageVisible ?? false;
+        dbUpdate.is_final = true;
+        try {
+          const { data: userData } = await (supabase as any).auth.getUser();
+          disqualifiedByUserId = userData?.user?.id ?? null;
+        } catch { /* leave disqualified_by unset */ }
+        dbUpdate.disqualified_by = disqualifiedByUserId;
+      } else {
+        // Clear any stale disqualification reason when moving out of that state.
+        dbUpdate.disqualification_reason = null;
       }
+      const { data: updatedRows, error } = await (supabase as any)
+        .from('applicants')
+        .update(dbUpdate)
+        .eq('id', applicant.id)
+        .select('id, status');
+      if (error) {
+        console.error('[ApplicantDetailsPage] supabase update error', error);
+      } else if (!Array.isArray(updatedRows) || updatedRows.length === 0) {
+        console.error(
+          '[ApplicantDetailsPage] supabase update returned 0 rows — likely RLS blocking UPDATE on applicants for this role',
+        );
+      } else {
+        persisted = true;
+        console.info('[ApplicantDetailsPage] supabase update ok', updatedRows[0]);
+
+        if (action === 'disqualify') {
+          try {
+            await (supabase as any).from('application_activity_log').insert({
+              application_id: applicant.id,
+              event_type: 'disqualified',
+              event_label: 'Application Disqualified',
+              event_description: reason,
+              created_by: disqualifiedByUserId,
+              visible_to_applicant: true,
+            });
+          } catch (logErr) {
+            console.warn('[ApplicantDetailsPage] activity log insert failed', logErr);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[ApplicantDetailsPage] supabase update threw', err);
     }
 
     if (!persisted) {
       console.error(
-        '[ApplicantDetailsPage] status NOT persisted to DB. Local UI updated only. Backend + Supabase both failed.',
+        '[ApplicantDetailsPage] status NOT persisted to DB. Local UI updated only.',
       );
     }
 
@@ -1252,7 +1473,154 @@ export function ApplicantDetailsPage() {
 
   const handleSubmitStatusEvaluation = async () => {
     if (!applicantStatus) return;
-    await persistStatus(applicantStatus, applicantStatus === 'disqualify' ? disqualifyReason : undefined);
+    await persistStatus(applicantStatus);
+  };
+
+  // ── Doc review helpers ────────────────────────────────────────────────────────
+  const getDocReviewKey = (fileUrl: string) => `${id}::${fileUrl}`;
+
+  const persistDocReview = (key: string, review: DocReview) => {
+    const updated = { ...docReviews, [key]: review };
+    setDocReviews(updated);
+    localStorage.setItem(DOC_REVIEW_KEY, JSON.stringify(updated));
+    return updated;
+  };
+
+  const addDocTimeline = (event: string) => {
+    const now = new Date().toISOString();
+    setRecruitmentApplicant((prev) => {
+      if (!prev) return prev;
+      return { ...prev, timeline: [...(prev.timeline ?? []), { event, date: now, actor: 'RSP Admin' }] };
+    });
+  };
+
+  const handleRequestResubmission = async (fileUrl: string, docType: string, remarks: string) => {
+    if (!remarks.trim()) return;
+    const key = getDocReviewKey(fileUrl);
+    persistDocReview(key, { status: 'resubmission_requested', remarks: remarks.trim(), reviewedAt: new Date().toISOString() });
+    addDocTimeline(`Action Required: Resubmission requested for ${docType} — "${remarks.trim()}".`);
+    setToast('Resubmission requested.');
+    await persistStatus('action_required');
+  };
+
+  const handleOpenDocument = async (filePath: string) => {
+    await openDocument(filePath);
+    setOpenedDocFilePaths((prev) => new Set([...prev, filePath]));
+  };
+
+  const openResubmitModal = () => {
+    setResubmitSelectedSlots([]);
+    setResubmitReason('');
+    setResubmitNotes('');
+    setResubmitSuccess(null);
+    setResubmitError(null);
+    setShowResubmitModal(true);
+  };
+
+  // "Send Notice" is the modal's only action: a resubmission request always
+  // names at least one document and a reason, and always emails the applicant.
+  const handleSubmitResubmission = async () => {
+    if (resubmitSelectedSlots.length === 0 || !resubmitReason.trim()) return;
+    if (!applicant) return;
+    setResubmitSending(true);
+    setResubmitError(null);
+
+    // Shortlist the applicant first if not already shortlisted.
+    if (!isApplicantShortlisted) {
+      await persistStatus('shortlist');
+    }
+
+    // Insert a resubmission_request row in Supabase for each selected document.
+    for (const slotLabel of resubmitSelectedSlots) {
+      const slot = DOCUMENT_SLOTS.find((s) => s.label === slotLabel);
+      if (!slot) continue;
+      const matchedAtt = attachments.find((a) => {
+        const resolvedType = a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other';
+        return resolvedType === slot.type && a.document_type !== 'resubmission_request' && a.document_type !== 'resubmission_resolved' && a.document_type !== 'doc_validated';
+      });
+      if (matchedAtt) {
+        await handleRequestResubmission(matchedAtt.file_path, slotLabel, resubmitReason.trim());
+      }
+      try {
+        await (supabase as any).from('applicant_attachments').insert({
+          applicant_id: applicant.id,
+          file_name: `RESUBMIT::${slotLabel}::${resubmitReason.trim()}`,
+          file_path: resubmitNotes.trim() || '—',
+          document_type: 'resubmission_request',
+          file_type: 'notice',
+          file_size: 0,
+        });
+      } catch (supaErr) {
+        console.warn('[handleSubmitResubmission] Supabase insert failed for', slotLabel, supaErr);
+      }
+    }
+
+    addDocTimeline(`Action Required: Resubmission requested for ${resubmitSelectedSlots.join(', ')} — "${resubmitReason.trim()}".`);
+    await persistStatus('action_required');
+
+    // Attempt email; failure is non-blocking.
+    try {
+      const docList = resubmitSelectedSlots.map((s) => `• ${s}`).join('\n');
+      const notesSection = resubmitNotes.trim() ? `\n\nAdditional Notes from RSP:\n${resubmitNotes.trim()}` : '';
+      await sendEmail({
+        to: applicant.email,
+        subject: `Notice of Resubmission — ${resubmitSelectedSlots.join(', ')}`,
+        body: `Dear ${applicant.first_name},\n\nThe following submitted document(s) require resubmission:\n${docList}\n\nReason: ${resubmitReason.trim()}${notesSection}\n\nPlease log in to the Applicant Portal and re-upload the corrected document(s) at your earliest convenience.\n\nThank you,\nRecruitment Office`,
+        applicantId: applicant.id,
+      });
+    } catch (err) {
+      console.warn('[handleSubmitResubmission] Email failed:', err);
+    }
+
+    setToast(`Resubmission notice sent for ${resubmitSelectedSlots.length} document(s). Tracker updated.`);
+    // Auto-close modal and reset state.
+    setShowResubmitModal(false);
+    setResubmitSelectedSlots([]);
+    setResubmitReason('');
+    setResubmitNotes('');
+    setResubmitSending(false);
+  };
+
+  const handleValidateAllDocs = async () => {
+    if (!id || !applicant?.id) return;
+    const realDocs = attachments.filter(
+      (a) => a.document_type !== 'resubmission_request' &&
+             a.document_type !== 'resubmission_resolved' &&
+             a.document_type !== 'doc_validated',
+    );
+    const existingValidatedTypes = new Set(
+      attachments.filter((a) => a.document_type === 'doc_validated').map((a) => a.file_name),
+    );
+    for (const att of realDocs) {
+      const rawDocType = (att.document_type as string | null) || FILE_NAME_TO_TYPE[att.file_name] || 'other';
+      if (!existingValidatedTypes.has(rawDocType)) {
+        await (supabase as any).from('applicant_attachments').insert({
+          applicant_id: applicant.id,
+          file_name: rawDocType,
+          file_path: `validated::${rawDocType}`,
+          document_type: 'doc_validated',
+          file_type: 'validation',
+          file_size: 0,
+        });
+        existingValidatedTypes.add(rawDocType);
+      }
+    }
+    setDocsValidated(true);
+    addDocTimeline('Documents Validated: All submitted documents have been reviewed and validated.');
+    void (supabase as any).from('applicants').update({ updated_at: new Date().toISOString() }).eq('id', applicant.id);
+    setToast('Documents validated — applicant tracker updated to show Verified.');
+  };
+
+  const isDocLocked = () => {
+    const s = normalizeText(resolvedStatus ?? '');
+    return s.includes('disqualif') || s.includes('not qualified') || s.includes('failed');
+  };
+
+  const getDocReadiness = () => {
+    if (attachments.length === 0) return { ready: false, reason: 'No documents uploaded yet' };
+    const hasRejected = attachments.some((a) => (docReviews[getDocReviewKey(a.file_path)]?.status ?? 'pending') === 'resubmission_requested');
+    if (hasRejected) return { ready: false, reason: 'Some documents require resubmission before proceeding' };
+    return { ready: true, reason: '' };
   };
 
   const handleSaveScoreSetup = async () => {
@@ -1352,21 +1720,41 @@ export function ApplicantDetailsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100">
-      <main className="bg-slate-100 !p-0">
-        <header className="border-b border-slate-200 bg-white px-4 py-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-2.5">
-              <button
-                type="button"
-                onClick={() => navigate(backTo)}
-                className="mt-0.5 rounded-full p-1.5 text-slate-500 hover:bg-slate-100"
-              >
-                <ArrowLeft size={16} />
-              </button>
+    <div className={isRspAdmin ? 'min-h-screen bg-[#f8f9fa]' : 'min-h-screen bg-slate-100'}>
+      {isRspAdmin && <AdminHeader userName="RSP Admin" divisionLabel="RSP Division" />}
+      <div className={isRspAdmin ? 'admin-layout' : ''}>
+        {isRspAdmin && <Sidebar activeModule="RSP" userRole="rsp" />}
+      <main className={isRspAdmin ? 'admin-content bg-white !p-0' : 'bg-slate-100 !p-0'}>
+        <header className="border-b border-slate-200 bg-white px-6 py-4">
+          {/* Breadcrumb */}
+          <div className="mb-3 flex items-center gap-1.5 text-xs">
+            <button type="button" onClick={() => navigate(backTo)} className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline">
+              <ChevronLeft size={12} /> {backLabel}
+            </button>
+            <ChevronRight size={12} className="text-slate-400" />
+            <span className="text-slate-500">{fullName}</span>
+          </div>
+
+          <div className="flex items-start justify-between gap-4">
+            {/* Profile card inline */}
+            <div className="flex items-center gap-4">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
+                <User size={28} />
+              </div>
               <div>
-                <p className="text-xs text-slate-500">Recruitment <span className="px-1">/</span> Applicants <span className="px-1">/</span> <span className="font-semibold text-slate-700">Details</span></p>
-                <h1 className="text-[27px] leading-tight font-semibold text-slate-900">{fullName}</h1>
+                <h1 className="!mb-0 text-xl font-bold text-slate-900">{fullName}</h1>
+                <p className="text-sm text-slate-500">{applicant.position || applicant.office || 'Applicant'}</p>
+                <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                  <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${normalizeText(resolvedStatus ?? '').includes('pending') || !resolvedStatus ? 'border-amber-300 bg-amber-100 text-amber-700' : badge.className}`}>
+                    {(normalizeText(resolvedStatus ?? '').includes('pending') || !resolvedStatus) ? 'Under Review' : badge.label}
+                  </span>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                    {applicant.item_number || applicant.id}
+                  </span>
+                  {applicant.office && (
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-600">{applicant.office}</span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -1381,53 +1769,101 @@ export function ApplicantDetailsPage() {
                 </button>
               )}
 
-              {showJobPostActionButtons && (
+              {showJobPostActionButtons && (() => {
+                const submittedFilePaths = DOCUMENT_SLOTS
+                  .map((s) => attachments.find((a) => (a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other') === s.type))
+                  .filter(Boolean)
+                  .map((a) => a!.file_path);
+                const allDocsOpened = submittedFilePaths.length > 0 && submittedFilePaths.every((fp) => openedDocFilePaths.has(fp));
+                const hasResubmissionPending = attachments.some((a) => (docReviews[getDocReviewKey(a.file_path)]?.status ?? 'pending') === 'resubmission_requested');
+
+                // Spec (Qualification Verification Requirement → Document
+                // Completion Validation): the Qualify button must remain
+                // disabled until every required document has been uploaded,
+                // reviewed, AND approved. Auto-derive these so the lock is
+                // automatic, not dependent on the manual "Validate Documents"
+                // click.
+                const requiredSlotTypes = DOCUMENT_SLOTS.filter((s) => s.required).map((s) => s.type);
+                const requiredAttachments = requiredSlotTypes.map((type) =>
+                  attachments.find((a) => (a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other') === type)
+                );
+                const allRequiredUploaded = requiredAttachments.every(Boolean);
+                const allRequiredReviewed = requiredAttachments.every((a) => {
+                  if (!a) return false;
+                  const review = docReviews[getDocReviewKey(a.file_path)];
+                  return review?.status === 'approved' || review?.status === 'resubmission_requested';
+                });
+                const allRequiredApproved = requiredAttachments.every((a) => {
+                  if (!a) return false;
+                  return docReviews[getDocReviewKey(a.file_path)]?.status === 'approved';
+                });
+                const autoDocsCleared = allRequiredUploaded && allRequiredReviewed && allRequiredApproved;
+
+                const qualifyLocked = !(docsValidatedEffective || autoDocsCleared) || hasResubmissionPending;
+                const qualifyTitle =
+                  hasResubmissionPending
+                    ? 'Some documents require resubmission'
+                    : !allRequiredUploaded
+                      ? 'All required documents must be uploaded before qualification.'
+                      : !allRequiredReviewed
+                        ? 'All required documents must be reviewed before qualification.'
+                        : !allRequiredApproved
+                          ? 'All required documents must be approved before qualification.'
+                          : undefined;
+                return (
                 <>
                   <button
                     type="button"
-                    onClick={handleSendMessage}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm"
-                  >
-                    <Send size={14} /> Send Message
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => { setConfirmAction('disqualify'); setConfirmReason(''); }}
-                    disabled={hasFinalDecision}
-                    className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm ${
                       isApplicantDisqualified
-                        ? 'border-rose-500 bg-rose-600 text-white'
-                        : 'border-rose-200 bg-white text-rose-700'
+                        ? 'border-rose-500 bg-rose-500 text-white'
+                        : 'border-rose-400 bg-white text-rose-600 hover:bg-rose-50'
                     }`}
                   >
                     <CircleX size={14} /> Disqualify
                   </button>
                   <button
                     type="button"
-                    onClick={() => { void persistStatus('shortlist'); }}
-                    disabled={hasFinalDecision}
-                    className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+                    // Once documents are validated the applicant has moved past the
+                    // "needs more documents" step, so shortlisting no longer applies.
+                    disabled={isApplicantDisqualified || (docsValidatedEffective && !isApplicantShortlisted)}
+                    title={
+                      docsValidatedEffective && !isApplicantShortlisted
+                        ? 'Documents are already validated — this applicant can no longer be shortlisted'
+                        : undefined
+                    }
+                    onClick={() => {
+                      if (isApplicantShortlisted) {
+                        void persistStatus('unshortlist');
+                      } else {
+                        openResubmitModal();
+                      }
+                    }}
+                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
                       isApplicantShortlisted
-                        ? 'bg-blue-700 text-white'
-                        : 'bg-blue-600 text-white'
+                        ? 'border-[#363EE8] bg-[#363EE8] text-white'
+                        : 'border-[#363EE8] bg-white text-[#363EE8] hover:bg-blue-50'
                     }`}
                   >
-                    <Star size={14} /> Shortlist
+                    <Star size={14} /> {isApplicantShortlisted ? 'Undo Shortlist' : 'Shortlist'}
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setConfirmAction('qualified'); }}
-                    disabled={hasFinalDecision}
-                    className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
+                    onClick={() => { if (!qualifyLocked) setConfirmAction('qualified'); }}
+                    disabled={qualifyLocked}
+                    title={qualifyTitle}
+                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
                       isApplicantQualified
-                        ? 'bg-emerald-700 text-white'
-                        : 'bg-emerald-600 text-white'
+                        ? 'border-emerald-600 bg-emerald-600 text-white'
+                        : 'border-emerald-500 bg-white text-emerald-600 hover:bg-emerald-50'
                     }`}
                   >
                     <CheckCircle2 size={14} /> Qualify
                   </button>
                 </>
-              )}
+                );
+              })()}
             </div>
           </div>
         </header>
@@ -1437,14 +1873,13 @@ export function ApplicantDetailsPage() {
             {[
               { key: 'overview', label: 'Overview', icon: User },
               { key: 'documents', label: 'Documents', icon: FileText },
-              { key: 'activity', label: 'Activity', icon: ActivityIcon },
             ].map((tab) => {
               const Icon = tab.icon;
               return (
                 <button
                   key={tab.key}
                   type="button"
-                  className={`inline-flex items-center gap-1.5 border-b-2 pb-2 pt-2.5 font-semibold ${activeTab === tab.key ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-600'}`}
+                  className={`inline-flex items-center gap-1.5 border-b-2 pb-2 pt-2.5 font-semibold ${activeTab === tab.key ? 'border-[#363EE8] text-[#363EE8]' : 'border-transparent text-slate-600 hover:text-slate-900'}`}
                   onClick={() => setActiveTab(tab.key as TabKey)}
                 >
                   <Icon className="h-3.5 w-3.5" /> {tab.label}
@@ -1455,94 +1890,77 @@ export function ApplicantDetailsPage() {
         </div>
 
         <section className="p-3">
-          <div className="grid h-[calc(100vh-150px)] grid-cols-1 gap-3 overflow-hidden lg:grid-cols-[260px_1fr]">
-            <aside className="overflow-y-auto rounded-xl border border-slate-200 bg-white p-3">
-              <div className="mx-auto mb-3 flex h-24 w-24 items-center justify-center rounded-full bg-blue-600 text-white">
-                <User className="h-11 w-11" />
-              </div>
-
-              <h2 className="text-center text-3xl font-semibold text-slate-900">{fullName}</h2>
-              <div className="mt-2 text-center">
-                <span className={`rounded-full border px-3 py-0.5 text-xs font-semibold ${normalizeText(resolvedStatus).includes('pending') || !resolvedStatus ? 'border-amber-300 bg-amber-100 text-amber-700' : badge.className}`}>
-                  {(normalizeText(resolvedStatus).includes('pending') || !resolvedStatus) ? 'PENDING' : badge.label.toUpperCase()}
-                </span>
-              </div>
-
-              <div className="mt-4 space-y-3 border-t border-slate-200 pt-3 text-sm">
-                <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Application ID</p><p className="font-semibold text-slate-800">{applicant.id}</p></div>
-                <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Date Applied</p><p className="font-semibold text-slate-800">{formatDate(applicant.created_at)}</p></div>
-                <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Email</p><p className="font-semibold text-slate-800">{applicant.email || '--'}</p></div>
-                <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Phone</p><p className="font-semibold text-slate-800">{applicant.contact_number || '--'}</p></div>
-                <div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Location</p><p className="font-semibold text-slate-800">{applicant.address || applicant.office || '--'}</p></div>
-              </div>
-            </aside>
-
-            <section className="overflow-y-auto rounded-xl border border-slate-200 bg-white p-3">
+          <div className="h-[calc(100vh-165px)] overflow-hidden">
+            <section className="h-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-4">
               {activeTab === 'overview' && (
                 <div className="space-y-3">
                   <article className="rounded-xl border border-slate-200">
-                    <h3 className="border-b border-slate-200 px-3 py-2 text-2xl font-semibold text-slate-900">Personal Information</h3>
-                    <div className="grid grid-cols-1 gap-0 px-3 py-1 md:grid-cols-2">
-                      <div className="border-b border-slate-100 py-2.5"><p className="font-semibold text-slate-500">Full Name</p><p className="text-sm text-slate-900">{fullName}</p></div>
-                      <div className="border-b border-slate-100 py-2.5"><p className="font-semibold text-slate-500">Email Address</p><p className="text-sm text-slate-900">{applicant.email || '--'}</p></div>
-                      <div className="border-b border-slate-100 py-2.5"><p className="font-semibold text-slate-500">Phone Number</p><p className="text-sm text-slate-900">{applicant.contact_number || '--'}</p></div>
-                      <div className="border-b border-slate-100 py-2.5"><p className="font-semibold text-slate-500">Address</p><p className="text-sm text-slate-900">{applicant.address || '--'}</p></div>
-                      <div className="py-2.5"><p className="font-semibold text-slate-500">PWD Status</p><p className="text-sm text-slate-900">{applicant.is_pwd ? 'PWD' : 'Not Applicable'}</p></div>
+                    <h3 className="border-b border-slate-200 px-4 py-2.5 text-sm font-bold uppercase tracking-wide text-slate-500">Personal Information</h3>
+                    <div className="divide-y divide-slate-100 px-4">
+                      <div className="flex items-start justify-between py-2.5"><span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Full Name</span><span className="text-sm text-slate-800 text-right">{fullName}</span></div>
+                      <div className="flex items-start justify-between py-2.5"><span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Email Address</span><span className="text-sm text-slate-800 text-right">{applicant.email || '--'}</span></div>
+                      <div className="flex items-start justify-between py-2.5"><span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Phone Number</span><span className="text-sm text-slate-800 text-right">{applicant.contact_number || '--'}</span></div>
+                      <div className="flex items-start justify-between py-2.5"><span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Address</span><span className="text-sm text-slate-800 text-right">{applicant.address || '--'}</span></div>
+                      <div className="flex items-start justify-between py-2.5"><span className="text-xs font-semibold text-slate-500 w-36 shrink-0">PWD Status</span><span className="text-sm text-slate-800 text-right">{applicant.is_pwd === true ? <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">PWD</span> : 'Not a PWD'}</span></div>
                     </div>
                   </article>
 
                   <article className="rounded-xl border border-slate-200">
-                    <h3 className="border-b border-slate-200 px-3 py-2 text-2xl font-semibold text-slate-900">Qualifications</h3>
-                    <div className="grid grid-cols-1 gap-0 px-3 py-1 md:grid-cols-2">
-                      <div className="border-b border-slate-100 py-2.5">
-                        <p className="font-semibold text-slate-500">Education</p>
-                        <p className="text-sm text-slate-900">
-                          {primaryEducation
-                            ? [primaryEducation.degree, primaryEducation.school].filter(Boolean).join(', ') || '--'
-                            : '--'}
-                        </p>
+                    <h3 className="border-b border-slate-200 px-4 py-2.5 text-sm font-bold uppercase tracking-wide text-slate-500">Qualifications</h3>
+                    <div className="divide-y divide-slate-100 px-4">
+                      <div className="flex items-start justify-between py-2.5">
+                        <span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Education</span>
+                        <span className="text-sm text-slate-800 text-right">
+                          {(() => {
+                            const row = applicant as any;
+                            const attainment = String(row?.education_attainment ?? '').trim();
+                            const degree = String(row?.education_degree ?? '').trim();
+                            const school = String(row?.education_school ?? '').trim();
+                            const parts = [attainment, degree, school].filter(Boolean);
+                            if (parts.length > 0) return parts.join(' · ');
+                            if (primaryEducation) return [primaryEducation.degree, primaryEducation.school].filter(Boolean).join(', ') || '--';
+                            return '--';
+                          })()}
+                        </span>
                       </div>
-                      <div className="border-b border-slate-100 py-2.5">
-                        <p className="font-semibold text-slate-500">Work Experience</p>
-                        <p className="text-sm text-slate-900">
-                          {primaryExperience
-                            ? `${primaryExperience.years} year${primaryExperience.years === 1 ? '' : 's'} as ${primaryExperience.title}`
-                            : '--'}
-                        </p>
+                      <div className="flex items-start justify-between py-2.5">
+                        <span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Work Experience</span>
+                        <span className="text-sm text-slate-800 text-right">
+                          {(() => {
+                            const row = applicant as any;
+                            const totalYearsRaw = row?.work_experience_years ?? row?.years_of_experience ?? primaryExperience?.years ?? null;
+                            const monthsRaw = row?.work_experience_months;
+                            const totalYears = totalYearsRaw == null ? null : Number(totalYearsRaw);
+                            if (totalYears == null || !Number.isFinite(totalYears) || totalYears < 0) return '--';
+                            const wholeYears = Math.floor(totalYears);
+                            const derivedMonths = Math.round((totalYears - wholeYears) * 12);
+                            const months = monthsRaw != null && Number.isFinite(Number(monthsRaw)) ? Number(monthsRaw) : derivedMonths;
+                            const segments: string[] = [];
+                            if (wholeYears > 0) segments.push(`${wholeYears} year${wholeYears === 1 ? '' : 's'}`);
+                            if (months > 0) segments.push(`${months} month${months === 1 ? '' : 's'}`);
+                            return segments.length > 0 ? segments.join(' ') : '0 months';
+                          })()}
+                        </span>
                       </div>
-                      <div className="py-2.5 md:col-span-2">
-                        <p className="font-semibold text-slate-500">Application Date</p>
-                        <p className="text-sm text-slate-900">{formatDate(applicant.created_at)}</p>
+                      <div className="flex items-start justify-between py-2.5">
+                        <span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Application Date</span>
+                        <span className="text-sm text-slate-800 text-right">{formatDate(applicant.created_at)}</span>
                       </div>
                     </div>
                   </article>
 
-                  {/* Status Evaluation section removed as requested */}
-
                   <article className="rounded-xl border border-slate-200">
-                    <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
-                      <h3 className="text-2xl font-semibold text-slate-900">Internal Notes</h3>
-                      <button
-                        type="button"
-                        className="text-sm font-medium text-blue-600"
-                        onClick={() => setShowNoteEditor(true)}
-                      >
-                        Add Note
-                      </button>
+                    <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
+                      <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Internal Notes</h3>
+                      <button type="button" className="text-xs font-semibold text-blue-600 hover:underline" onClick={() => setShowNoteEditor(true)}>Add Note</button>
                     </div>
-
                     {!notes.trim() && !showNoteEditor ? (
-                      <div className="px-3 py-4 text-sm text-slate-500">
-                        <p className="inline-flex items-center gap-2"><MessageSquare className="h-4 w-4" /> No notes yet. Add notes to track internal comments and observations.</p>
+                      <div className="px-4 py-3 text-sm text-slate-400">
+                        <p className="inline-flex items-center gap-2"><MessageSquare className="h-3.5 w-3.5" /> No notes yet.</p>
                       </div>
                     ) : (
-                      <div className="px-3 py-3">
-                        <textarea
-                          value={notes}
-                          onChange={(event) => setNotes(event.target.value)}
-                          placeholder="Add internal comments and observations..."
-                          className="min-h-24 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                        />
+                      <div className="px-4 py-3">
+                        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Add internal comments..." className="min-h-20 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
                         <div className="mt-2 flex gap-2">
                           <button type="button" onClick={handleSaveNotes} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white">Save Note</button>
                           <button type="button" onClick={() => setShowNoteEditor(false)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Cancel</button>
@@ -1555,42 +1973,150 @@ export function ApplicantDetailsPage() {
 
               {activeTab === 'documents' && (
                 <article className="rounded-xl border border-slate-200">
-                  <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
-                    <h3 className="text-xl font-semibold text-slate-900">Submitted Documents</h3>
-                    <button className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600" onClick={handleSendMessage}>
-                      <Mail className="h-4 w-4" /> Send Message
-                    </button>
-                  </div>
-                  <div className="space-y-2 p-3">
-                    {attachments.length > 0 ? attachments.map((doc) => (
-                      <article key={doc.id} className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2.5">
-                        <div>
-                          <p className="text-base font-semibold text-slate-900">{doc.file_name}</p>
-                          <p className="text-sm text-slate-500">Uploaded {formatDate(doc.created_at || applicant.created_at)}</p>
-                        </div>
-                        <button className="text-sm font-semibold text-blue-600" onClick={() => openDocument(doc.file_path)}>View</button>
-                      </article>
-                    )) : <p className="text-slate-500">No uploaded documents found for this applicant yet.</p>}
-                  </div>
-                </article>
-              )}
-
-              {activeTab === 'activity' && (
-                <article className="rounded-xl border border-slate-200">
-                  <h3 className="border-b border-slate-200 px-3 py-2 text-xl font-semibold text-slate-900">Activity Timeline</h3>
-                  <div className="space-y-3 p-3">
-                    {(recruitmentApplicant?.timeline || []).map((entry, index) => (
-                      <div key={`${entry.event}-${index}`} className="flex gap-3">
-                        <span className="mt-2 h-3 w-3 rounded-full bg-blue-600" />
-                        <div>
-                          <p className="text-base font-semibold text-slate-900">{entry.event}</p>
-                          <p className="text-sm text-slate-500">{formatDate(entry.date)} • {entry.actor}</p>
-                        </div>
+                  {(() => {
+                    const realAttachments = attachments.filter(
+                      (a) => a.document_type !== 'resubmission_request' && a.document_type !== 'resubmission_resolved' && a.document_type !== 'doc_validated',
+                    );
+                    return (
+                      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                        <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Submitted Documents</h3>
+                        {!isDocLocked() && realAttachments.length > 0 && (
+                          <div className="flex items-center gap-2">
+                            {docsValidatedEffective ? (
+                              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                                <CheckCircle2 size={12} /> Validated
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => void handleValidateAllDocs()}
+                                disabled={docsAwaitingValidation.length === 0}
+                                title={
+                                  docsAwaitingValidation.length === 0
+                                    ? 'No submitted documents are awaiting validation'
+                                    : `Validate all ${docsAwaitingValidation.length} submitted document(s)`
+                                }
+                                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
+                                style={{ borderColor: '#059669', color: '#059669', backgroundColor: '#f0fdf4' }}
+                              >
+                                <CheckCircle2 size={12} /> Validate Documents
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
-                    ))}
-                    {(!recruitmentApplicant?.timeline || recruitmentApplicant.timeline.length === 0) && (
-                      <p className="text-slate-500">No activity yet.</p>
-                    )}
+                    );
+                  })()}
+
+                  {isDocLocked() && (
+                    <div className="mx-4 mt-4 flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+                      <Lock className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" />
+                      <div>
+                        <p className="text-sm font-semibold text-rose-700">Application Closed</p>
+                        <p className="text-xs text-rose-600">This applicant has been disqualified or failed. Document review and resubmission are locked.</p>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-2 p-4">
+                    {DOCUMENT_SLOTS.map((slot, idx) => {
+                      // All real submissions for this slot, oldest first
+                      const matched = attachments
+                        .filter(a => {
+                          const resolvedType = a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other';
+                          return resolvedType === slot.type && a.document_type !== 'resubmission_request' && a.document_type !== 'resubmission_resolved';
+                        })
+                        .sort((x, y) => new Date(x.created_at ?? '').getTime() - new Date(y.created_at ?? '').getTime());
+
+                      // Resubmission notice for this slot from Supabase
+                      const slotNotice = attachments.find(a =>
+                        a.document_type === 'resubmission_request' &&
+                        a.file_name.split('::')[1] === slot.label
+                      );
+
+                      const isSubmitted = matched.length > 0;
+                      const hasSupabaseResubmissionRequest = Boolean(slotNotice);
+                      const latestDoc = matched[matched.length - 1];
+                      const latestApproved = latestDoc ? docReviews[getDocReviewKey(latestDoc.file_path)]?.status === 'approved' : false;
+
+                      return (
+                        <article key={slot.type} className={`rounded-xl border ${hasSupabaseResubmissionRequest ? 'border-amber-300 bg-amber-50/30' : latestApproved ? 'border-emerald-300 bg-emerald-50/40' : isSubmitted ? 'border-blue-200 bg-blue-50/20' : 'border-dashed border-slate-200 bg-slate-50/50'}`}>
+                          <div className="flex items-start gap-2.5 px-3 py-3">
+                            <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-bold ${hasSupabaseResubmissionRequest ? 'bg-amber-100 text-amber-700' : isSubmitted ? 'bg-[#363EE8]/10 text-[#363EE8]' : 'bg-slate-100 text-slate-400'}`}>
+                              {idx + 1}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center justify-between gap-1.5">
+                                <span className="text-sm font-semibold" style={{ color: '#040E6B' }}>{slot.label}</span>
+                                {hasSupabaseResubmissionRequest && (
+                                  <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Resubmission Requested</span>
+                                )}
+                              </div>
+
+                              {/* Resubmission notice detail */}
+                              {slotNotice && (() => {
+                                const parts = slotNotice.file_name.split('::');
+                                const reason = parts[2] ?? '';
+                                const notes = slotNotice.file_path === '—' ? '' : slotNotice.file_path;
+                                return (
+                                  <div className="mt-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs">
+                                    {reason && <p className="text-amber-800"><span className="font-semibold">Reason:</span> {reason}</p>}
+                                    {notes && <p className="mt-0.5 text-amber-700"><span className="font-semibold">RSP Note:</span> {notes}</p>}
+                                    <p className="mt-0.5 text-amber-500">Sent: {formatDate(slotNotice.created_at)}</p>
+                                  </div>
+                                );
+                              })()}
+
+                              {!isSubmitted && (
+                                <p className="mt-1 text-xs italic text-slate-400">Not yet submitted</p>
+                              )}
+
+                              {/* All versions of this document */}
+                              {matched.map((doc, versionIdx) => {
+                                const reviewKey = getDocReviewKey(doc.file_path);
+                                const review = docReviews[reviewKey];
+                                const localStatus: DocReviewStatus = review?.status ?? 'pending';
+                                const isLatest = versionIdx === matched.length - 1;
+                                const isResubmission = versionIdx > 0;
+
+                                const versionLabel = isResubmission
+                                  ? `Resubmission #${versionIdx}`
+                                  : 'Original Submission';
+
+                                return (
+                                  <div key={doc.id} className={`mt-2 rounded-lg border px-3 py-2 ${isResubmission ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-100 bg-slate-50'}`}>
+                                    <div className="flex items-start justify-between gap-4">
+                                      <button className="flex-1 text-left" onClick={() => void handleOpenDocument(doc.file_path)}>
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${isResubmission ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                                            {versionLabel}
+                                          </span>
+                                          {isLatest && (
+                                            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">Current</span>
+                                          )}
+                                          {localStatus === 'approved' && (
+                                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">✓ Approved</span>
+                                          )}
+                                          {localStatus === 'resubmission_requested' && (
+                                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">⚠ Resubmission</span>
+                                          )}
+                                        </div>
+                                        <p className="mt-1 truncate text-xs text-slate-500">{doc.file_name}</p>
+                                        <p className="text-xs text-slate-400">Uploaded {formatDate(doc.created_at || applicant.created_at)}</p>
+                                        {localStatus === 'resubmission_requested' && review?.remarks && (
+                                          <p className="mt-0.5 text-xs text-amber-700 font-medium">Reason: {review.remarks}</p>
+                                        )}
+                                      </button>
+                                      
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })}
                   </div>
                 </article>
               )}
@@ -1673,6 +2199,21 @@ export function ApplicantDetailsPage() {
                 <p className="mt-1 text-xs text-slate-400">Be clear and professional in your communication</p>
               </div>
 
+              {/* Additional Notes from RSP Admin */}
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                  Additional Notes from RSP Admin <span className="font-normal text-slate-400">(Optional)</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={emailNotes}
+                  onChange={(e) => setEmailNotes(e.target.value)}
+                  placeholder="Add any internal notes or specific instructions for the applicant..."
+                  className="w-full resize-none rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                />
+                <p className="mt-1 text-xs text-slate-400">These notes will be appended to the email message</p>
+              </div>
+
               {/* Applicant Documents Summary */}
               <div>
                 <p className="mb-3 text-sm font-bold text-slate-700">Applicant Documents Summary</p>
@@ -1740,7 +2281,7 @@ export function ApplicantDetailsPage() {
               <div className="flex justify-end gap-3">
                 <button
                   type="button"
-                  onClick={() => { setShowSendEmailModal(false); setEmailError(null); setEmailSuccess(null); }}
+                  onClick={() => { setShowSendEmailModal(false); setEmailError(null); setEmailSuccess(null); setEmailNotes(''); }}
                   disabled={emailSending}
                   className="rounded-2xl border border-slate-300 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
@@ -1760,13 +2301,158 @@ export function ApplicantDetailsPage() {
         </div>
       )}
 
+      {/* Notice of Resubmission modal */}
+      {showResubmitModal && (
+        <div className="fixed inset-0 z-[270] flex items-center justify-center bg-black/60 p-4" onClick={() => setShowResubmitModal(false)}>
+          <div className="flex w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" style={{ fontFamily: 'Poppins, sans-serif', maxHeight: '90vh' }} onClick={(e) => e.stopPropagation()}>
+
+            {/* Header — brand gradient */}
+            <div className="flex items-center gap-3 px-6 py-4" style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)' }}>
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15">
+                <Mail size={20} className="text-white" />
+              </div>
+              <h2 className="flex-1 text-base font-bold text-white">Notice of Resubmission</h2>
+              <button type="button" onClick={() => setShowResubmitModal(false)} className="rounded-lg p-1.5 text-white/70 hover:bg-white/10">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+
+              {/* Recipient row */}
+              <div className="grid grid-cols-2 gap-3 rounded-xl px-4 py-3" style={{ backgroundColor: '#EEF0FD' }}>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#363EE8' }}>TO:</p>
+                  <p className="mt-0.5 truncate text-sm font-semibold" style={{ color: '#040E6B' }}>{applicant?.email || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#363EE8' }}>APPLICANT NAME:</p>
+                  <p className="mt-0.5 text-sm font-semibold" style={{ color: '#040E6B' }}>{fullName || '—'}</p>
+                </div>
+              </div>
+
+              {/* Document selector — multi-select pill buttons */}
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold" style={{ color: '#040E6B' }}>
+                  Document for Resubmission <span className="text-rose-500">*</span>
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {DOCUMENT_SLOTS.filter((s) => attachments.some((a) => (a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other') === s.type)).map((s) => {
+                    const isSelected = resubmitSelectedSlots.includes(s.label);
+                    return (
+                      <button
+                        key={s.type}
+                        type="button"
+                        onClick={() => setResubmitSelectedSlots((prev) =>
+                          isSelected ? prev.filter((x) => x !== s.label) : [...prev, s.label]
+                        )}
+                        className="rounded-full border px-3 py-1 text-xs font-semibold transition-all"
+                        style={isSelected
+                          ? { backgroundColor: '#363EE8', borderColor: '#363EE8', color: '#ffffff' }
+                          : { backgroundColor: '#ffffff', borderColor: '#C8D1FF', color: '#040E6B' }
+                        }
+                      >{s.label}</button>
+                    );
+                  })}
+                </div>
+                {resubmitSelectedSlots.length > 0 && (
+                  <p className="mt-2 rounded-lg px-3 py-1.5 text-xs font-medium" style={{ backgroundColor: '#EEF0FD', color: '#363EE8' }}>
+                    Selected: {resubmitSelectedSlots.join(', ')}
+                  </p>
+                )}
+              </div>
+
+              {/* Reason chips */}
+              <div>
+                <label className="mb-2 block text-sm font-semibold" style={{ color: '#040E6B' }}>
+                  Reason for Resubmission <span className="text-rose-500">*</span>
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {RESUBMISSION_REASONS.map((r) => {
+                    const selected = resubmitReason === r;
+                    return (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => setResubmitReason(r)}
+                        className="rounded-full border px-3 py-1 text-xs font-semibold transition-all"
+                        style={selected
+                          ? { backgroundColor: '#363EE8', borderColor: '#363EE8', color: '#ffffff' }
+                          : { backgroundColor: '#ffffff', borderColor: '#C8D1FF', color: '#040E6B' }
+                        }
+                      >{r}</button>
+                    );
+                  })}
+                </div>
+                {resubmitReason && (
+                  <p className="mt-2 rounded-lg px-3 py-1.5 text-xs font-medium" style={{ backgroundColor: '#EEF0FD', color: '#363EE8' }}>
+                    Selected: {resubmitReason}
+                  </p>
+                )}
+              </div>
+
+              {/* Message / Additional Notes */}
+              <div>
+                <label className="mb-1.5 block text-sm font-semibold" style={{ color: '#040E6B' }}>
+                  Message <span className="font-normal text-slate-400">(Optional)</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={resubmitNotes}
+                  onChange={(e) => setResubmitNotes(e.target.value)}
+                  placeholder="Add specific instructions or details for the applicant regarding this resubmission..."
+                  className="w-full resize-none rounded-xl border px-4 py-3 text-sm outline-none focus:ring-2"
+                  style={{ borderColor: '#C8D1FF', color: '#040E6B' }}
+                />
+                <p className="mt-1 text-xs" style={{ color: '#363EE8' }}>This message will be included in the email and shown in the applicant's tracker.</p>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="border-t px-6 py-4" style={{ borderColor: '#C8D1FF' }}>
+              {resubmitError && (
+                <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{resubmitError}</p>
+              )}
+              {resubmitSuccess && (
+                <p className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{resubmitSuccess}</p>
+              )}
+              <div className="flex justify-end gap-3">
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => { setShowResubmitModal(false); setResubmitNotes(''); setResubmitReason(''); setResubmitSelectedSlots([]); setResubmitError(null); setResubmitSuccess(null); }}
+                    disabled={resubmitSending}
+                    className="rounded-xl border px-5 py-2 text-sm font-semibold disabled:opacity-50"
+                    style={{ borderColor: '#C8D1FF', color: '#040E6B' }}
+                  >
+                    Cancel
+                  </button>
+                  {!resubmitSuccess && (
+                    <button
+                      type="button"
+                      onClick={() => void handleSubmitResubmission()}
+                      disabled={resubmitSelectedSlots.length === 0 || !resubmitReason.trim() || resubmitSending}
+                      className="inline-flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                      style={{ backgroundColor: '#363EE8' }}
+                    >
+                      <Send size={14} /> {resubmitSending ? 'Sending…' : 'Send Notice'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showScoresModal && (
         <div className="fixed inset-0 z-[260] bg-black/80 p-4" onClick={() => setShowScoresModal(false)}>
           <div className="mx-auto h-[96vh] w-full max-w-[1450px] overflow-y-auto rounded-2xl bg-white" onClick={(event) => event.stopPropagation()}>
-            <div className="sticky top-0 z-10 flex items-center justify-between bg-blue-700 px-8 py-5 text-white">
+            <div className="sticky top-0 z-10 flex items-center justify-between px-8 py-5 text-white" style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', fontFamily: 'Poppins, sans-serif' }}>
               <div>
-                <h2 className="text-3xl font-bold">Applicant Evaluation & Scoring</h2>
-                <p className="text-lg text-blue-100">{fullName} - {applicant.position || '--'}</p>
+                <h2 className="scoring-modal-title text-3xl font-bold text-white">Applicant Evaluation & Scoring</h2>
+                <p className="scoring-modal-subtitle text-lg" style={{ color: 'rgba(255,255,255,0.9)' }}>{fullName} — {applicant.position || '--'}</p>
               </div>
               <button type="button" onClick={() => setShowScoresModal(false)} className="rounded-lg p-2 text-white/90 hover:bg-white/10">
                 <X size={36} />
@@ -1884,7 +2570,14 @@ export function ApplicantDetailsPage() {
 
               <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="mb-2 text-xl font-semibold text-slate-800">I Education (20%)</p>
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xl font-semibold text-slate-800">I Education (20%)</p>
+                    {educationAttainment && (
+                      <span className="rounded-full px-2 py-0.5 text-xs font-semibold" style={{ backgroundColor: '#EEF0FD', color: '#363EE8' }}>
+                        Auto-filled · Editable
+                      </span>
+                    )}
+                  </div>
                   <select
                     value={educationAttainment}
                     onChange={(event) => setEducationAttainment(event.target.value as EducationAttainmentValue)}
@@ -1900,7 +2593,14 @@ export function ApplicantDetailsPage() {
                   <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-blue-700">{modalEducationScore}</span></p>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="mb-2 text-xl font-semibold text-slate-800">II Experience (20%)</p>
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xl font-semibold text-slate-800">II Experience (20%)</p>
+                    {experienceYears && (
+                      <span className="rounded-full px-2 py-0.5 text-xs font-semibold" style={{ backgroundColor: '#EEF0FD', color: '#363EE8' }}>
+                        Auto-filled · Editable
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="number"
                     min={0}
@@ -1914,6 +2614,28 @@ export function ApplicantDetailsPage() {
                   <p className="mt-1 text-sm text-slate-400">1-5 yrs = 12 pts | 6-10 yrs = 14 pts | 11-15 yrs = 16 pts</p>
                   <p className="text-sm text-slate-400">16-20 yrs = 18 pts | 21+ yrs = 18 pts</p>
                   <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-blue-700">{modalExperienceScore}</span></p>
+                  {(() => {
+                    const experienceDocs = attachments.filter((a) => {
+                      const type = String(a.document_type ?? FILE_NAME_TO_TYPE[a.file_name] ?? '').toLowerCase();
+                      const name = String(a.file_name ?? '').toLowerCase();
+                      return (
+                        type === 'curriculum_vitae' ||
+                        name.includes('cv') ||
+                        name.includes('resume') ||
+                        name.includes('experience')
+                      );
+                    });
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => experienceDocs.forEach((doc) => void openDocument(doc.file_path))}
+                        disabled={experienceDocs.length === 0}
+                        className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:text-blue-800 disabled:cursor-not-allowed disabled:text-slate-400"
+                      >
+                        <FileText size={14} /> View Experience Documents ({experienceDocs.length} {experienceDocs.length === 1 ? 'file' : 'files'}) ↗
+                      </button>
+                    );
+                  })()}
                 </div>
                 {isPromotionalAppointment ? (
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
@@ -2086,7 +2808,7 @@ export function ApplicantDetailsPage() {
 
       {confirmAction && (() => {
         const isDisqualify = confirmAction === 'disqualify';
-        const canConfirm = !confirmSubmitting && (!isDisqualify || confirmReason.trim().length > 0);
+        const canConfirm = !confirmSubmitting && (!isDisqualify || confirmReasonCategory.trim().length > 0);
         return (
           <div
             className="fixed inset-0 z-[250] flex items-center justify-center bg-black/50 p-4"
@@ -2106,28 +2828,57 @@ export function ApplicantDetailsPage() {
                 </div>
                 <div className="flex-1">
                   <h3 className="!mb-1 text-lg font-bold text-slate-900">
-                    {isDisqualify ? 'Disqualify this applicant?' : 'Qualify this applicant?'}
+                    {isDisqualify ? 'Confirm Disqualification' : 'Qualify this applicant?'}
                   </h3>
                   <p className="!mb-0 text-sm text-slate-600">
                     {isDisqualify
-                      ? `This will mark ${fullName} as not qualified. This action cannot be undone from this screen.`
+                      ? `This action is final and cannot be undone. ${fullName} will be notified and cannot proceed further in this application.`
                       : `This will recommend ${fullName} for hiring. This action cannot be undone from this screen.`}
                   </p>
                 </div>
               </div>
 
               {isDisqualify && (
-                <div className="px-6 pt-4">
-                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                    Reason for disqualification <span className="text-rose-500">*</span>
+                <div className="space-y-3 px-6 pt-4">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                      Reason for disqualification <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={confirmReasonCategory}
+                      onChange={(event) => setConfirmReasonCategory(event.target.value)}
+                      className="w-full rounded-xl border border-rose-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-100"
+                    >
+                      <option value="">Select a reason…</option>
+                      {DISQUALIFICATION_REASON_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                      Message to applicant <span className="text-slate-400 font-normal">(optional)</span>
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={confirmReason}
+                      onChange={(event) => setConfirmReason(event.target.value)}
+                      placeholder="Add any additional detail…"
+                      className="w-full resize-none rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-100"
+                    />
+                  </div>
+                  <label className="flex items-start gap-2 text-xs text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={confirmMessageVisible}
+                      onChange={(event) => setConfirmMessageVisible(event.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      Show this message to the applicant on the public tracker. If left unchecked, only the reason
+                      category is shown — the message stays internal to RSP.
+                    </span>
                   </label>
-                  <textarea
-                    rows={3}
-                    value={confirmReason}
-                    onChange={(event) => setConfirmReason(event.target.value)}
-                    placeholder="Please provide a clear reason…"
-                    className="w-full resize-none rounded-xl border border-rose-300 bg-white px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-100"
-                  />
                 </div>
               )}
 
@@ -2146,9 +2897,16 @@ export function ApplicantDetailsPage() {
                     if (!canConfirm) return;
                     setConfirmSubmitting(true);
                     try {
-                      await persistStatus(confirmAction, isDisqualify ? confirmReason : undefined);
+                      await persistStatus(
+                        confirmAction,
+                        isDisqualify
+                          ? { reasonCategory: confirmReasonCategory, message: confirmReason, messageVisible: confirmMessageVisible }
+                          : undefined,
+                      );
                       setConfirmAction(null);
                       setConfirmReason('');
+                      setConfirmReasonCategory('');
+                      setConfirmMessageVisible(false);
                     } finally {
                       setConfirmSubmitting(false);
                     }
@@ -2158,13 +2916,14 @@ export function ApplicantDetailsPage() {
                     isDisqualify ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
                   }`}
                 >
-                  {confirmSubmitting ? 'Saving…' : 'OK'}
+                  {confirmSubmitting ? 'Saving…' : isDisqualify ? 'Confirm Disqualification' : 'OK'}
                 </button>
               </div>
             </div>
           </div>
         );
       })()}
+      </div>{/* /admin-layout wrapper */}
     </div>
   );
 }

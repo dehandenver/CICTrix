@@ -1,10 +1,11 @@
 .applicant-shell {
   min-height: 100vh;
-  background: #e5e7eb;
+  font-family: var(--font-family);
+  background: linear-gradient(180deg, #C8D1FF 0%, #EFF3FF 45%, #FFFFFF 100%);
 }
 
 .applicant-topbar {
-  background: var(--color-primary);
+  background: #363EE8;
   border-bottom: 1px solid rgba(255, 255, 255, 0.2);
   padding: 0.95rem 1.5rem;
 }
@@ -19,9 +20,10 @@
   width: 58px;
   height: 58px;
   object-fit: contain;
-  background: #ffffff;
+  background: transparent;
   border-radius: 3px;
   padding: 0.2rem;
+  mix-blend-mode: screen;
 }
 
 .applicant-brand h1 {
@@ -33,13 +35,13 @@
 .applicant-brand p {
   margin: 0;
   font-size: var(--font-size-lg);
-  color: var(--color-accent-yellow);
+  color: #EFF3FF;
   font-weight: 500;
 }
 
 .application-type-banner {
-  background: var(--color-accent-yellow);
-  color: #111827;
+  background: #EEF2FF;
+  color: #040E6B;
   font-size: var(--font-size-base);
   padding: 0.85rem 1.5rem;
 }
@@ -49,6 +51,18 @@
   margin: 0 auto;
   padding: 2.5rem 1.25rem 3rem;
   text-align: center;
+}
+
+.portal-landing-header h2 {
+  margin: 0;
+  font-size: var(--font-size-4xl);
+  color: #040E6B;
+}
+
+.portal-landing-header p {
+  margin: 0.6rem 0 2rem;
+  color: #475569;
+  font-size: var(--font-size-xl);
 }
 
 .portal-landing-header h2 {
@@ -64,12 +78,12 @@
 
 .application-entry-card {
   background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 14px;
+  border: 1px solid rgba(54, 62, 232, 0.12);
+  border-radius: 18px;
   padding: 2rem;
   max-width: 760px;
   margin: 0 auto;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.07);
+  box-shadow: 0 20px 50px rgba(54, 62, 232, 0.08);
 }
 
 .entry-icon-wrap {
@@ -77,8 +91,8 @@
   height: 92px;
   border-radius: 50%;
   margin: 0 auto 1rem;
-  background: #dbeafe;
-  color: var(--color-primary);
+  background: rgba(54, 62, 232, 0.12);
+  color: #363EE8;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -100,6 +114,13 @@
   font-size: var(--font-size-xl);
   padding-top: 0.95rem;
   padding-bottom: 0.95rem;
+  background: #363EE8;
+  color: #ffffff;
+  border: none;
+}
+
+.entry-primary-button:hover {
+  background: #2f35d0;
 }
 
 .employee-promotion-button {
@@ -163,13 +184,13 @@
 
 .wizard-sidebar {
   background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 14px;
+  border: 1px solid rgba(54, 62, 232, 0.12);
+  border-radius: 18px;
   padding: 1.6rem;
   height: fit-content;
   position: sticky;
   top: 1rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 20px 40px rgba(54, 62, 232, 0.08);
 }
 
 .wizard-sidebar h3 {
@@ -197,13 +218,9 @@
   flex-shrink: 0;
 }
 
-.progress-badge.active {
-  background: var(--color-primary);
-  color: #ffffff;
-}
-
+.progress-badge.active,
 .progress-badge.completed {
-  background: var(--color-primary);
+  background: #363EE8;
   color: #ffffff;
 }
 
@@ -222,17 +239,17 @@
 
 .progress-reminder {
   margin-top: 1.2rem;
-  border: 1px solid #eab308;
-  border-radius: 10px;
-  background: #fffbeb;
-  padding: 0.9rem;
+  border: 1px solid #C8D1FF;
+  border-radius: 14px;
+  background: #F3F5FF;
+  padding: 1rem;
 }
 
 .progress-reminder p {
   margin: 0;
-  color: #0f4d8a;
+  color: #040E6B;
   font-size: var(--font-size-sm);
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 .wizard-main {
@@ -259,10 +276,10 @@
 }
 
 .review-panel {
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  background: #f1f5f9;
-  padding: 1.1rem;
+  border: 1px solid #D7E0FF;
+  border-radius: 16px;
+  background: #F8FAFF;
+  padding: 1.25rem;
   margin-bottom: 1rem;
 }
 
@@ -460,6 +477,28 @@
 .submission-success-card {
   text-align: center;
   padding: 0.6rem 0.3rem;
+}
+
+.submission-success-card h3 {
+  color: #040E6B;
+}
+
+.submission-success-card p {
+  color: #334155;
+}
+
+.submission-reference-box {
+  margin-top: 1.25rem;
+  background: #EEF2FF;
+  border: 1.5px solid #C8D1FF;
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  text-align: center;
+}
+
+.submission-reference {
+  font-size: 1.6rem;
+  color: #040E6B;
 }
 
 .success-icon-wrap {

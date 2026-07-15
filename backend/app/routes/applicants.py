@@ -4,7 +4,7 @@ from app.models.applicant import ApplicantResponse, ApplicantCreate, ApplicantUp
 from app.models.user import UserRole
 from app.core.security import TokenData
 from app.core.supabase_client import db
-from app.utils.dependencies import get_current_user, require_role
+from app.utils.dependencies import get_current_user, require_role, get_authenticated_user
 
 router = APIRouter(prefix="/api/applicants", tags=["applicants"])
 
@@ -220,16 +220,17 @@ async def update_applicant(
 async def update_applicant_status(
     applicant_id: str,
     body: StatusUpdateRequest,
-    current_user: TokenData = Depends(require_role("ADMIN", "PM", "RSP", "LND")),
+    current_user: TokenData = Depends(get_authenticated_user),
 ):
     """
     Update an applicant's evaluation status.
-    Payload:
-      - status: "shortlisted" | "qualified" | "disqualified"
-      - disqualification_reason: required (non-null) when status == "disqualified"
+    Accepts both custom backend JWTs and Supabase JWTs so RSP portal users
+    (who authenticate via Supabase Auth) can call this without a separate backend login.
+    Uses the service-role client so the update bypasses RLS policies.
 
-    If status is "disqualified", the disqualification_reason is persisted.
-    For shortlisted/qualified the disqualification_reason is stored as null.
+    Payload:
+      - status: "shortlisted" | "qualified" | "disqualified" | "hired"
+      - disqualification_reason: required when status == "disqualified"
     """
     if body.status == "disqualified" and not (body.disqualification_reason or "").strip():
         raise HTTPException(
@@ -244,17 +245,30 @@ async def update_applicant_status(
         "hired": "Hired",
     }
 
-    try:
-        client = db.get_client()
+    if body.status not in status_label_map:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid status '{body.status}'. Must be one of: {list(status_label_map.keys())}",
+        )
 
-        existing = client.table("applicants").select("*").eq("id", applicant_id).execute()
+    try:
+        # Use service-role client so this update bypasses any RLS policies
+        # that would block the anon/authenticated-user key from writing.
+        client = db.get_service_client()
+
+        existing = client.table("applicants").select("id").eq("id", applicant_id).execute()
         if not existing.data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Applicant not found",
             )
 
-        update_dict: dict = {"status": status_label_map[body.status]}
+        from datetime import datetime, timezone
+        update_dict: dict = {
+            "status": status_label_map[body.status],
+            # Always bump updated_at so the tracker's real-time subscription fires.
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
         if body.status == "disqualified":
             update_dict["disqualification_reason"] = (body.disqualification_reason or "").strip()
         else:
@@ -266,6 +280,12 @@ async def update_applicant_status(
             .eq("id", applicant_id)
             .execute()
         )
+
+        if not response.data:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Update returned no data — check service role key configuration.",
+            )
 
         return response.data[0]
 

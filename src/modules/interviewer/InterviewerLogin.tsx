@@ -1,9 +1,10 @@
-import { Eye, EyeOff, Lock, LogIn, User } from 'lucide-react';
+import { Eye, EyeOff, Lock, Mail } from 'lucide-react';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { mockDatabase } from '../../lib/mockDatabase';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
-import '../../styles/interviewer.css';
+import abyanLogo from '../../assets/abyan-logo.png';
+import iloiloCitySeal from '../../assets/iloilo-city-seal.png';
 
 interface InterviewerLoginProps {
   onLogin: (email: string, name: string) => void;
@@ -52,6 +53,16 @@ export function InterviewerLogin({ onLogin }: InterviewerLoginProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  const navigateAfterLogin = () => {
+    const returnTo = searchParams.get('returnTo');
+    navigate(
+      returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//')
+        ? returnTo
+        : '/interviewer/dashboard'
+    );
+  };
 
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -105,7 +116,7 @@ export function InterviewerLogin({ onLogin }: InterviewerLoginProps) {
           // Do not block login when last_login write fails.
         }
         onLogin(raterRecord.email || normalizedEmail, raterRecord.name || 'Interviewer');
-        navigate('/interviewer/dashboard');
+        navigateAfterLogin();
         return;
       }
 
@@ -129,7 +140,7 @@ export function InterviewerLogin({ onLogin }: InterviewerLoginProps) {
       const resolvedEmail = authData.user.email ?? normalizedEmail;
       const userName = raterRecord.name || 'Interviewer';
       onLogin(resolvedEmail, userName);
-      navigate('/interviewer/dashboard');
+      navigateAfterLogin();
     } catch (err) {
       console.error('Login error:', err);
       setError('Login failed. Please try again.');
@@ -139,129 +150,214 @@ export function InterviewerLogin({ onLogin }: InterviewerLoginProps) {
   };
 
   return (
-    <div className="interviewer-login-page">
-      <div className="login-container">
-        <div className="login-illustration">
-          <div className="illustration-bg">
-            <span className="floating-orb orb-1"></span>
-            <span className="floating-orb orb-2"></span>
-            <span className="floating-orb orb-3"></span>
-          </div>
-          <div className="illustration-content">
-            <div className="logo-badge">
-              <User size={48} />
+    <div
+      className="min-h-screen w-full bg-slate-50 text-slate-900"
+      style={{ fontFamily: "'Poppins', system-ui, -apple-system, sans-serif" }}
+    >
+      <div className="flex min-h-screen w-full">
+        {/* LEFT — brand panel */}
+        <aside
+          className="relative hidden w-1/2 overflow-hidden lg:flex"
+          style={{ background: 'linear-gradient(135deg, #363EE8 0%, #050D65 100%)', color: '#FFFFFF' }}
+        >
+          {/* Decorative orbs */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -top-32 -left-32 h-96 w-96 rounded-full blur-3xl"
+            style={{ backgroundColor: 'rgba(200,209,255,0.18)' }}
+          />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -bottom-40 -right-24 h-[28rem] w-[28rem] rounded-full blur-3xl"
+            style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}
+          />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0"
+            style={{
+              backgroundImage:
+                'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.15) 1px, transparent 0)',
+              backgroundSize: '24px 24px',
+              opacity: 0.35,
+            }}
+          />
+
+          <div className="relative z-10 flex w-full flex-col p-12">
+            {/* Top wordmark with logo */}
+            <a href="/" className="flex items-center gap-3">
+              <img
+                src={abyanLogo}
+                alt="Abyan Logo"
+                className="h-10 w-auto object-contain"
+                style={{ mixBlendMode: 'screen' }}
+              />
+              <div className="flex flex-col leading-tight">
+                <span className="text-base font-bold tracking-wide text-white">ABYAN HRIS</span>
+                <span className="text-xs font-medium" style={{ color: 'rgba(200,209,255,0.85)' }}>
+                  Human Resource Information System
+                </span>
+              </div>
+            </a>
+
+            {/* Center hero — OCHRMO seal */}
+            <div className="m-auto w-full max-w-md text-center">
+              <div className="mx-auto mb-8 flex h-32 w-32 items-center justify-center rounded-full"
+                style={{
+                  backgroundColor: 'rgba(255,255,255,0.12)',
+                  boxShadow: 'inset 0 0 0 2px rgba(255,255,255,0.25)',
+                  padding: '12px',
+                }}
+              >
+                <img
+                  src={iloiloCitySeal}
+                  alt="OCHRMO Seal"
+                  className="h-full w-full object-contain"
+                />
+              </div>
+              <h1
+                className="text-4xl font-bold tracking-tight text-white"
+                style={{ lineHeight: 1.1 }}
+              >
+                Interviewer Portal
+              </h1>
+              <p
+                className="mt-3 text-base font-medium"
+                style={{ color: 'rgba(200,209,255,0.90)' }}
+              >
+                Evaluation &amp; Assessment
+              </p>
+              <ul className="mt-10 space-y-3 text-center text-sm" style={{ color: 'rgba(255,255,255,0.85)' }}>
+                {['View Assigned Applicants', 'Conduct Evaluations', 'Submit Recommendations'].map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
             </div>
-            <h2>Interviewer Portal</h2>
-            <p className="subtitle">CICTrix HRIS - Evaluation & Assessment</p>
-            <ul className="feature-list">
-              <li className="feature-item">View Assigned Applicants</li>
-              <li className="feature-item">Conduct Evaluations</li>
-              <li className="feature-item">Submit Recommendations</li>
-            </ul>
-          </div>
-        </div>
 
-        <div className="login-form-panel">
-          <div className="login-header">
-            <h1>Welcome Back</h1>
-            <p>Sign in to access your interviewer dashboard</p>
+            <p className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.45)' }}>
+              &copy; {new Date().getFullYear()} Abyan HRIS. All rights reserved.
+            </p>
           </div>
+        </aside>
 
-          <form onSubmit={handleLogin} className="login-form">
-            {error && (
-              <div className="error-banner">
-                <span>⚠️</span>
-                <span>{error}</span>
+        {/* RIGHT — form panel */}
+        <main className="flex w-full items-center justify-center px-6 py-12 lg:w-1/2 lg:px-16">
+          <div className="w-full max-w-md">
+            {/* Mobile-only brand */}
+            <div className="mb-8 flex items-center gap-2 lg:hidden">
+              <img src={abyanLogo} alt="Abyan" className="h-8 w-auto object-contain" />
+              <span className="text-sm font-semibold text-slate-900">Abyan HRIS</span>
+            </div>
+
+            <div className="mb-8">
+              <h1
+                className="text-3xl font-bold tracking-tight"
+                style={{ color: '#040E6B', lineHeight: 1.15 }}
+              >
+                Welcome back
+              </h1>
+            </div>
+
+            <form onSubmit={handleLogin} className="space-y-5">
+              {error && (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                  {error}
+                </div>
+              )}
+
+              {/* Email */}
+              <div>
+                <label htmlFor="int-email" className="mb-2 block text-sm font-semibold" style={{ color: '#040E6B' }}>
+                  Email Address
+                </label>
+                <div className="relative">
+                  <Mail
+                    className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                    strokeWidth={1.8}
+                  />
+                  <input
+                    id="int-email"
+                    type="email"
+                    placeholder="Enter your email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    autoComplete="email"
+                    disabled={loading}
+                    className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-3 text-sm text-slate-900 placeholder:text-slate-400 transition-shadow focus:border-[#363EE8] focus:outline-none focus:ring-4 focus:ring-[#EEF2FF]"
+                  />
+                </div>
+              </div>
+
+              {/* Password */}
+              <div>
+                <label htmlFor="int-password" className="mb-2 block text-sm font-semibold" style={{ color: '#040E6B' }}>
+                  Password
+                </label>
+                <div className="relative">
+                  <Lock
+                    className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+                    strokeWidth={1.8}
+                  />
+                  <input
+                    id="int-password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoComplete="current-password"
+                    disabled={loading}
+                    className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-11 text-sm text-slate-900 placeholder:text-slate-400 transition-shadow focus:border-[#363EE8] focus:outline-none focus:ring-4 focus:ring-[#EEF2FF]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    disabled={loading}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 disabled:cursor-not-allowed"
+                  >
+                    {showPassword ? <EyeOff size={16} strokeWidth={1.8} /> : <Eye size={16} strokeWidth={1.8} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Remember + forgot */}
+              <div className="flex items-center justify-between pt-1">
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 cursor-pointer rounded border-gray-300 focus:ring-2 focus:ring-[#EEF2FF]"
+                  />
+                  Remember me
+                </label>
+                <button
+                  type="button"
+                  className="text-sm font-medium transition"
+                  style={{ color: '#363EE8' }}
+                >
+                  Forgot password?
+                </button>
+              </div>
+
+              {/* Submit */}
+              <button
+                type="submit"
+                disabled={loading}
+                className="mt-2 inline-flex w-full items-center justify-center rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-sm transition focus:outline-none focus:ring-4 focus:ring-[#EEF2FF] disabled:cursor-not-allowed disabled:opacity-60"
+                style={{ backgroundColor: '#363EE8' }}
+                onMouseEnter={(e) => { if (!loading) e.currentTarget.style.backgroundColor = '#2830c5'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#363EE8'; }}
+              >
+                {loading ? 'Signing in…' : 'Sign in'}
+              </button>
+            </form>
+
+            {isMockModeEnabled && (
+              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                <span className="font-semibold">Demo Mode:</span> Use any active rater email with any non-empty password.
               </div>
             )}
 
-            <div className="form-field">
-              <label htmlFor="email">Email Address</label>
-              <div className="input-wrapper">
-                <User size={20} className="input-icon" />
-                <input
-                  id="email"
-                  type="email"
-                  placeholder="interviewer@cictrix.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  autoComplete="email"
-                  disabled={loading}
-                />
-              </div>
-            </div>
-
-            <div className="form-field">
-              <label htmlFor="password">Password</label>
-              <div className="input-wrapper">
-                <Lock size={20} className="input-icon" />
-                <input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="current-password"
-                  disabled={loading}
-                  style={{ paddingRight: '2.5rem' }}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((prev) => !prev)}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  disabled={loading}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    padding: 0,
-                    cursor: loading ? 'not-allowed' : 'pointer',
-                    position: 'absolute',
-                    right: '0.75rem',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    color: 'var(--text-secondary)',
-                  }}
-                >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
-            </div>
-
-            <div className="form-options">
-              <label className="checkbox-label">
-                <input type="checkbox" />
-                <span>Remember me</span>
-              </label>
-              <a href="#" className="forgot-link">Forgot password?</a>
-            </div>
-
-            <button type="submit" className="login-button" disabled={loading}>
-              {loading ? (
-                <>
-                  <div className="spinner-small"></div>
-                  <span>Signing in...</span>
-                </>
-              ) : (
-                <>
-                  <LogIn size={20} />
-                  <span>Sign In</span>
-                </>
-              )}
-            </button>
-
-            <div className="login-footer">
-              <p>
-                Need help? Contact <a href="mailto:hr@cictrix.com">hr@cictrix.com</a>
-              </p>
-              {isMockModeEnabled && (
-                <div className="demo-credentials">
-                  <p className="demo-title">Demo Mode:</p>
-                  <code>Use any active rater email with any non-empty password</code>
-                </div>
-              )}
-            </div>
-          </form>
-        </div>
+          </div>
+        </main>
       </div>
     </div>
   );

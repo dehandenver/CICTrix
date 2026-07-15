@@ -67,27 +67,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 
     // User doesn't have the required role
     if (!allowedRoles.includes(userRole)) {
-      return (
-        <div className="flex items-center justify-center min-h-screen bg-gray-50">
-          <div className="max-w-md w-full bg-white shadow-lg rounded-lg p-8 text-center">
-            <div className="text-red-500 text-6xl mb-4">🚫</div>
-            <h1 className="text-2xl font-bold text-gray-800 mb-2">Access Denied</h1>
-            <p className="text-gray-600 mb-6">
-              You don't have permission to access this page.
-              <br />
-              Required role: <strong>{allowedRoles.join(' or ')}</strong>
-              <br />
-              Your role: <strong>{userRole}</strong>
-            </p>
-            <button
-              onClick={() => window.history.back()}
-              className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition"
-            >
-              Go Back
-            </button>
-          </div>
-        </div>
-      );
+      return <Navigate to="/unauthorized" replace />;
     }
   }
 

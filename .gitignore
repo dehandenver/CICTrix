@@ -27,6 +27,10 @@ dist-ssr
 .env
 .env.local
 .env.production
+.env.seed
+
+# Seed script outputs (contain known demo passwords)
+scripts/seed-credentials.md
 
 # Build outputs
 build
@@ -34,3 +38,4 @@ coverage
 
 # Supabase
 .supabase
+.vercel

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Card, Checkbox, Input, Select } from '../../components';
+import { Card, Input, Select } from '../../components';
 import { DEPARTMENT_OPTIONS, POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import { ensureRecruitmentSeedData, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
 import type { ApplicantFormData, ValidationErrors } from '../../types/applicant.types';
@@ -13,6 +13,8 @@ interface ApplicantAssessmentFormProps {
   isEmployee?: boolean;
   /** Called when a non-employee toggles the application type radio group. Ignored when isEmployee. */
   onApplicationTypeChange?: (next: 'job' | 'promotion') => void;
+  /** When true the position/department were prefilled from a job click and should be locked */
+  lockedPosition?: boolean;
 }
 
 export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = ({
@@ -22,10 +24,11 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
   applicationType = 'job',
   isEmployee = false,
   onApplicationTypeChange,
+  lockedPosition = false,
 }) => {
   const [dynamicPositionOptions, setDynamicPositionOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [positionDepartmentMap, setPositionDepartmentMap] = useState<Record<string, string>>({});
-  const hasInitialPositionRef = useRef<boolean>(Boolean(formData.position));
+  const hasLoadedPositionsRef = useRef(false);
 
   const syncPostedPositions = (currentSelectedPosition?: string, skipClearingOnFirstLoad = false) => {
     ensureRecruitmentSeedData();
@@ -35,18 +38,20 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
     );
 
     if (activeRows.length === 0) {
-      // Don't clear if this is the initial load with pre-filled position
-      if (!skipClearingOnFirstLoad) {
-        setPositionDepartmentMap({});
+      setPositionDepartmentMap({});
+      // If there are no authoritative job rows yet, preserve any
+      // prefilled position coming from the landing page so the user
+      // doesn't lose the selection while the background loader runs.
+      if (currentSelectedPosition) {
+        setDynamicPositionOptions([{ value: currentSelectedPosition, label: currentSelectedPosition }]);
+        // Keep existing office value — do not clear it here.
+      } else {
         setDynamicPositionOptions([]);
-
-        if (currentSelectedPosition) {
-          onChange('position', '');
-          onChange('office', '');
-        }
       }
       return;
     }
+
+    hasLoadedPositionsRef.current = true;
 
     const seen = new Set<string>();
     const nextOptions: Array<{ value: string; label: string }> = [];
@@ -69,15 +74,19 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
     });
 
     setPositionDepartmentMap(nextDepartmentMap);
-    setDynamicPositionOptions(nextOptions);
-
-    if (currentSelectedPosition) {
-      const stillActive = nextOptions.some((option) => option.value === currentSelectedPosition);
-      if (!stillActive && !skipClearingOnFirstLoad) {
-        onChange('position', '');
-        onChange('office', '');
+    // If the current selected position came from a landing/page click and
+    // isn't present in the active job options, make sure the dropdown still
+    // contains it so the prefilled value remains visible and selectable.
+    if (currentSelectedPosition && !nextOptions.some((option) => option.value === currentSelectedPosition)) {
+      const fallbackDept = POSITION_TO_DEPARTMENT_MAP[currentSelectedPosition] || '';
+      nextOptions.unshift({ value: currentSelectedPosition, label: currentSelectedPosition });
+      if (fallbackDept && !nextDepartmentMap[currentSelectedPosition]) {
+        nextDepartmentMap[currentSelectedPosition] = fallbackDept;
       }
     }
+
+    setDynamicPositionOptions(nextOptions);
+    setPositionDepartmentMap(nextDepartmentMap);
   };
 
   useEffect(() => {
@@ -100,7 +109,12 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
   }, [formData.position, onChange]);
 
   useEffect(() => {
+    if (lockedPosition) return; // preserve prefilled values when fields are locked
     if (!formData.position) return;
+    // Only clear the position if positions have been loaded at least once
+    // This prevents clearing valid prefilled values while options are still loading
+    if (!hasLoadedPositionsRef.current) return;
+
     const exists = dynamicPositionOptions.some((option) => option.value === formData.position);
     if (!exists) {
       // Only clear if this wasn't the initial pre-filled position
@@ -112,23 +126,37 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
       return;
     }
 
-    // Clear the flag once we've found the position in the options
-    hasInitialPositionRef.current = false;
+    onChange('position', '');
+    onChange('office', '');
+  }, [dynamicPositionOptions, formData.position, onChange, lockedPosition]);
 
-    // Position exists - auto-populate department if not already set
-    if (!formData.office) {
-      const assignedDepartment = positionDepartmentMap[formData.position] ?? POSITION_TO_DEPARTMENT_MAP[formData.position];
-      if (assignedDepartment) {
-        onChange('office', assignedDepartment);
-      }
+  // Extract base position title (without rank level like I, II, III, IV, V, etc.)
+  const getBasePositionTitle = (position: string): string => {
+    return position.replace(/\s+(I+|V|X|XI+|IX|IV)$/i, '').trim();
+  };
+
+  // Auto-populate department when position is set (from prefilled data)
+  useEffect(() => {
+    if (!formData.position || formData.office) return;
+    const basePosition = getBasePositionTitle(formData.position);
+    const assignedDepartment = positionDepartmentMap[formData.position]
+      ?? positionDepartmentMap[basePosition]
+      ?? POSITION_TO_DEPARTMENT_MAP[formData.position]
+      ?? POSITION_TO_DEPARTMENT_MAP[basePosition];
+    if (assignedDepartment) {
+      onChange('office', assignedDepartment);
     }
-  }, [dynamicPositionOptions, formData.position, formData.office, positionDepartmentMap, onChange]);
+  }, [formData.position, formData.office, positionDepartmentMap, onChange]);
 
   const handlePositionChange = (positionValue: string) => {
     onChange('position', positionValue);
 
-    // Auto-assign department based on position
-    const assignedDepartment = positionDepartmentMap[positionValue] ?? POSITION_TO_DEPARTMENT_MAP[positionValue];
+    // Auto-assign department based on position (handle rank levels like I, II, III, V)
+    const basePosition = getBasePositionTitle(positionValue);
+    const assignedDepartment = positionDepartmentMap[positionValue]
+      ?? positionDepartmentMap[basePosition]
+      ?? POSITION_TO_DEPARTMENT_MAP[positionValue]
+      ?? POSITION_TO_DEPARTMENT_MAP[basePosition];
     if (assignedDepartment) {
       onChange('office', assignedDepartment);
     }
@@ -322,14 +350,31 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
           />
         </div>
 
-        <Select
-          label="Position Applied For"
-          options={dynamicPositionOptions}
-          value={formData.position}
-          onChange={(e) => handlePositionChange(e.target.value)}
-          error={errors.position}
-          required
-        />
+        {lockedPosition ? (
+          <Input
+            label="Position Applied For"
+            value={formData.position}
+            readOnly
+          />
+        ) : (
+          (() => {
+            const posOpts: Array<{ value: string; label: string }> = [...dynamicPositionOptions];
+            if (formData.position && !posOpts.some((p) => p.value === formData.position)) {
+              posOpts.unshift({ value: formData.position, label: formData.position });
+            }
+
+            return (
+              <Select
+                label="Position Applied For"
+                options={posOpts}
+                value={formData.position}
+                onChange={(e) => handlePositionChange(e.target.value)}
+                error={errors.position}
+                required
+              />
+            );
+          })()
+        )}
 
         <Input
           label="Item Number"
@@ -338,21 +383,182 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
           readOnly
         />
 
-        <Input
-          label="Department"
-          value={formData.office}
-          readOnly
-          className="bg-slate-50 cursor-not-allowed"
-        />
+        {
+          // Ensure the department dropdown contains the prefilled office
+          // (e.g., 'Human Resource Management Office') when it doesn't
+          // exactly match the static `DEPARTMENT_OPTIONS` list.
+        }
+        {lockedPosition ? (
+          <Input
+            label="Department"
+            value={formData.office}
+            readOnly
+          />
+        ) : (
+          (() => {
+            const deptOpts: Array<{ value: string; label: string }> = [...DEPARTMENT_OPTIONS];
+            if (formData.office && !deptOpts.some((d) => d.value === formData.office)) {
+              deptOpts.unshift({ value: formData.office, label: formData.office });
+            }
+
+            return (
+              <Select
+                label="Department"
+                options={deptOpts}
+                value={formData.office}
+                onChange={(e) => onChange('office', e.target.value)}
+                error={errors.office}
+                required
+              />
+            );
+          })()
+        )}
 
         <div className="md:col-span-2">
-          <Checkbox
-            label="I am a Person with Disability (PWD)"
-            checked={formData.is_pwd}
-            onChange={(e) => onChange('is_pwd', e.target.checked)}
-          />
+          <p className="mb-2 text-sm font-medium text-slate-700">Are you a Person with Disability (PWD)?</p>
+          <div className="flex gap-6">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+              <input
+                type="radio"
+                name="is_pwd"
+                value="yes"
+                checked={formData.is_pwd === true}
+                onChange={() => onChange('is_pwd', true)}
+                className="h-4 w-4 accent-blue-600"
+              />
+              Yes, I am a PWD
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+              <input
+                type="radio"
+                name="is_pwd"
+                value="no"
+                checked={formData.is_pwd === false}
+                onChange={() => onChange('is_pwd', false)}
+                className="h-4 w-4 accent-blue-600"
+              />
+              No
+            </label>
+          </div>
         </div>
       </div>
+
+      {/* Educational Background */}
+      <fieldset className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <legend className="px-2 text-sm font-semibold uppercase tracking-wide text-slate-700">
+          Educational Background
+        </legend>
+        <div className="space-y-3">
+          <div>
+            <label htmlFor="education-attainment" className="mb-1.5 block text-sm font-medium text-slate-700">
+              Highest Educational Attainment
+            </label>
+            <select
+              id="education-attainment"
+              value={formData.education_attainment}
+              onChange={(e) => {
+                const next = e.target.value;
+                onChange('education_attainment', next);
+                const needsDegree =
+                  next === 'College Graduate' ||
+                  next === 'Masteral Units' ||
+                  next === 'Graduate School';
+                if (!needsDegree && formData.education_degree) {
+                  onChange('education_degree', '');
+                }
+              }}
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">Select educational attainment...</option>
+              <option value="Elementary Level">Elementary Level</option>
+              <option value="Elementary Graduate">Elementary Graduate</option>
+              <option value="High School Level">High School Level</option>
+              <option value="High School Graduate">High School Graduate</option>
+              <option value="College Level">College Level</option>
+              <option value="College Graduate">College Graduate</option>
+              <option value="Masteral Units">Masteral Units</option>
+              <option value="Graduate School">Graduate School</option>
+            </select>
+          </div>
+
+          {(formData.education_attainment === 'College Graduate' ||
+            formData.education_attainment === 'Masteral Units' ||
+            formData.education_attainment === 'Graduate School') && (
+            <Input
+              label="Degree / Course"
+              placeholder="e.g. Bachelor of Science in Information Technology"
+              value={formData.education_degree}
+              onChange={(e) => onChange('education_degree', e.target.value)}
+            />
+          )}
+        </div>
+      </fieldset>
+
+      {/* Work Experience */}
+      <fieldset className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <legend className="px-2 text-sm font-semibold uppercase tracking-wide text-slate-700">
+          Relevant Work Experience
+        </legend>
+        <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+          <strong>HR Policy Notice:</strong> Only work experience relevant to the position you are applying for should be entered if required by HR policies. In Step 2, you will be asked to upload your <strong>Curriculum Vitae (CV)</strong> as supporting document.
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Input
+            label="Years of Relevant Experience"
+            type="number"
+            min={0}
+            placeholder="e.g. 5"
+            value={formData.work_experience_years}
+            onChange={(e) => onChange('work_experience_years', e.target.value)}
+            error={errors.work_experience_years}
+          />
+          <Input
+            label="Additional Months"
+            type="number"
+            min={0}
+            max={11}
+            placeholder="e.g. 6"
+            value={formData.work_experience_months}
+            onChange={(e) => onChange('work_experience_months', e.target.value)}
+          />
+          <div className="sm:col-span-2">
+            <Input
+              label="Position Held"
+              placeholder="e.g. Senior Administrative Assistant"
+              value={formData.relevant_experience_position || ''}
+              onChange={(e) => onChange('relevant_experience_position', e.target.value)}
+              error={errors.relevant_experience_position}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <Input
+              label="Company / Organization"
+              placeholder="e.g. Department of Public Works and Highways"
+              value={formData.relevant_experience_company || ''}
+              onChange={(e) => onChange('relevant_experience_company', e.target.value)}
+              error={errors.relevant_experience_company}
+            />
+          </div>
+          <div className="sm:col-span-2 mb-2">
+            <label className="mb-1.5 block text-sm font-medium text-slate-700">
+              Description of Duties (Related to the job applied for)
+            </label>
+            <textarea
+              placeholder="Describe your relevant duties and achievements..."
+              value={formData.relevant_experience_duties || ''}
+              onChange={(e) => onChange('relevant_experience_duties', e.target.value)}
+              className={`w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 min-h-[80px] ${
+                errors.relevant_experience_duties ? 'border-red-500 ring-1 ring-red-500' : ''
+              }`}
+            />
+            {errors.relevant_experience_duties && (
+              <span className="text-sm font-medium text-red-500 mt-1 block">
+                {errors.relevant_experience_duties}
+              </span>
+            )}
+          </div>
+        </div>
+      </fieldset>
     </Card>
   );
 };

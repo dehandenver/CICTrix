@@ -34,7 +34,28 @@ interface Applicant {
   status: string;
   created_at: string;
   evaluation_status: 'Completed' | 'In Progress' | 'Not Yet Rated';
+  application_type?: string | null;
+  employee_id?: string | null;
 }
+
+const SCORE_SETUP_STORAGE_KEY = 'cictrix_rsp_score_setup';
+
+const getApplicantType = (applicant: Applicant): 'Original' | 'Promotional' => {
+  const appType = String(applicant.application_type ?? '').trim().toLowerCase();
+  const hasEmployeeId = Boolean(applicant.employee_id);
+  return appType === 'promotion' || appType === 'promotional' || hasEmployeeId ? 'Promotional' : 'Original';
+};
+
+const storeApplicantTypeForEval = (applicantId: string, type: 'Original' | 'Promotional') => {
+  try {
+    const raw = localStorage.getItem(SCORE_SETUP_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    parsed[applicantId] = type === 'Promotional' ? 'promotional' : 'original';
+    localStorage.setItem(SCORE_SETUP_STORAGE_KEY, JSON.stringify(parsed));
+  } catch {
+    // best effort
+  }
+};
 
 interface ApplicantAttachment {
   id: string;
@@ -381,7 +402,8 @@ export function InterviewerApplicantsList() {
   
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'reviewed' | 'shortlisted' | 'qualified'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'to-evaluate' | 'evaluated'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'original' | 'promotional'>('all');
   const [jobDetails, setJobDetails] = useState<JobPosting | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -690,12 +712,16 @@ export function InterviewerApplicantsList() {
 
     if (!matchesSearch) return false;
 
+    if (typeFilter !== 'all') {
+      const applicantType = getApplicantType(applicant).toLowerCase();
+      if (typeFilter === 'original' && applicantType !== 'original') return false;
+      if (typeFilter === 'promotional' && applicantType !== 'promotional') return false;
+    }
+
     if (statusFilter === 'all') return true;
-    const status = applicant.status.toLowerCase();
-    if (statusFilter === 'pending') return status.includes('pending');
-    if (statusFilter === 'reviewed') return status.includes('review');
-    if (statusFilter === 'shortlisted') return status.includes('shortlist');
-    return status.includes('qualif') || status.includes('recommend') || status.includes('hired');
+    const isEvaluated = applicant.evaluation_status === 'Completed';
+    if (statusFilter === 'evaluated') return isEvaluated;
+    return !isEvaluated; // 'to-evaluate'
   });
 
   const activeAttachments = activeApplicant ? attachmentsByApplicant[activeApplicant.id] || [] : [];
@@ -751,7 +777,7 @@ export function InterviewerApplicantsList() {
 
       {/* Main Content */}
       <div className="applicants-page-container">
-        <div className="applicants-toolbar">
+        <div className="applicants-toolbar" style={{ gridTemplateColumns: '1fr auto auto' }}>
           <div className="applicants-search-box">
             <Search className="search-icon" size={20} />
             <input
@@ -763,14 +789,22 @@ export function InterviewerApplicantsList() {
           </div>
           <select
             className="filter-select"
+            value={typeFilter}
+            onChange={(event) => setTypeFilter(event.target.value as 'all' | 'original' | 'promotional')}
+            style={{ minWidth: '180px' }}
+          >
+            <option value="all">All Types</option>
+            <option value="original">Original Applicants</option>
+            <option value="promotional">Promotional Applicants</option>
+          </select>
+          <select
+            className="filter-select"
             value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value as 'all' | 'pending' | 'reviewed' | 'shortlisted' | 'qualified')}
+            onChange={(event) => setStatusFilter(event.target.value as 'all' | 'to-evaluate' | 'evaluated')}
           >
             <option value="all">All Status</option>
-            <option value="pending">Pending</option>
-            <option value="reviewed">Reviewed</option>
-            <option value="shortlisted">Shortlisted</option>
-            <option value="qualified">Qualified</option>
+            <option value="to-evaluate">To Evaluate</option>
+            <option value="evaluated">Evaluated</option>
           </select>
         </div>
 
@@ -794,14 +828,16 @@ export function InterviewerApplicantsList() {
               <thead>
                 <tr>
                   <th>APPLICANT NAME</th>
+                  <th>TYPE</th>
                   <th>CONTACT INFO</th>
                   <th>APPLICATION DATE</th>
-                  <th>STATUS</th>
                   <th>ACTION</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredApplicants.map((applicant) => (
+                {filteredApplicants.map((applicant) => {
+                  const appType = getApplicantType(applicant);
+                  return (
                   <tr key={applicant.id}>
                     <td>
                       <button
@@ -813,17 +849,27 @@ export function InterviewerApplicantsList() {
                       </button>
                     </td>
                     <td>
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        borderRadius: '999px',
+                        padding: '0.25rem 0.75rem',
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        letterSpacing: '0.03em',
+                        background: appType === 'Promotional' ? '#ede9fe' : '#dbeafe',
+                        color: appType === 'Promotional' ? '#6d28d9' : '#1d4ed8',
+                      }}>
+                        {appType}
+                      </span>
+                    </td>
+                    <td>
                       <div className="contact-info-cell">
                         <p>{applicant.email}</p>
                         <p>{applicant.contact_number || 'No contact number'}</p>
                       </div>
                     </td>
                     <td>{formatDate(applicant.created_at)}</td>
-                    <td>
-                      <span className={`applicant-status-pill ${getApplicantStatusBadgeClass(applicant.status)}`}>
-                        {applicant.status}
-                      </span>
-                    </td>
                     <td>
                       {applicant.evaluation_status === 'Completed' ? (
                         <button className="action-btn evaluated" disabled>
@@ -834,12 +880,7 @@ export function InterviewerApplicantsList() {
                           className="action-btn evaluate"
                           type="button"
                           onClick={() => {
-                            console.log('[EVAL CLICK] Navigating to evaluate:', {
-                              applicant_id: applicant.id,
-                              applicant_name: getFullName(applicant),
-                              applicant_email: applicant.email,
-                              position: applicant.position
-                            });
+                            storeApplicantTypeForEval(applicant.id, appType);
                             navigate(`/interviewer/evaluate/${applicant.id}`);
                           }}
                         >
@@ -848,7 +889,8 @@ export function InterviewerApplicantsList() {
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -876,9 +918,10 @@ export function InterviewerApplicantsList() {
                     <button type="button" className="details-btn details-btn-danger" onClick={() => void updateApplicantStatus(activeApplicant.id, 'Not Qualified')}>
                       <AlertCircle size={16} /> Disqualify
                     </button>
-                    <button type="button" className="details-btn details-btn-primary" onClick={() => void updateApplicantStatus(activeApplicant.id, 'Shortlisted')}>
-                      <Star size={16} /> Shortlist
-                    </button>
+                    {/* Shortlisting must name the documents and reason requiring
+                        resubmission, which happens in the RSP "Notice of Resubmission"
+                        modal on /admin/rsp/applicant/:id. That route is admin-only,
+                        so there is no standalone shortlist action here. */}
                     <button type="button" className="details-btn details-btn-success" onClick={() => void updateApplicantStatus(activeApplicant.id, 'Recommended for Hiring')}>
                       <CheckCircle2 size={16} /> Qualify
                     </button>

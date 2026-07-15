@@ -1,5 +1,6 @@
 import {
     AlertCircle,
+    BarChart2,
     Bell,
     Briefcase,
     Building2,
@@ -40,7 +41,12 @@ import {
     createPassword,
     createUniqueUsername,
     findEmployeePortalAccount,
+    findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail,
     getEmployeePortalAccounts,
+    getLastEmployeePasswordReset,
+    logEmployeePasswordReset,
+    type EmployeePasswordResetLog,
+    type EmployeePortalAccount,
     upsertEmployeePortalAccount,
 } from '../../lib/employeePortalData';
 import { mockDatabase } from '../../lib/mockDatabase';
@@ -58,6 +64,7 @@ import {
     type DeletedJobReport,
 } from '../../lib/recruitmentData';
 import { runSingleFlight, invalidateCacheKey } from '../../lib/singleFlight';
+import { mergeLocalSchedules } from '../../lib/applicantSchedule';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
 import { hireApplicant } from '../../lib/api/employeesApi';
 import {
@@ -73,12 +80,25 @@ import '../../styles/admin.css';
 import type { EmployeeRecord, JobPosting, NewlyHired } from '../../types/recruitment.types';
 
 type JobStatus = 'Open' | 'Reviewing' | 'Closed';
-type Section = 'dashboard' | 'jobs' | 'qualified' | 'new-hired' | 'raters' | 'accounts' | 'succession' | 'reports' | 'settings';
+type Section = 'dashboard' | 'jobs' | 'qualified' | 'applicant-score' | 'new-hired' | 'raters' | 'accounts' | 'succession' | 'reports' | 'settings';
 type BulkRecipientMode = 'all' | 'department' | 'selected';
 type EmployeeDocumentTemplateId = (typeof BULK_REQUEST_TEMPLATES)[number]['id'];
 type EmployeeDirectoryCardStatus = 'Active' | 'Inactive' | 'Mixed';
 
 const EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE = 6;
+
+const ADMIN_SESSION_KEY = 'cictrix_admin_session';
+
+const getCurrentAdminEmail = (): string => {
+  try {
+    const raw = localStorage.getItem(ADMIN_SESSION_KEY);
+    if (!raw) return 'super-admin';
+    const parsed = JSON.parse(raw) as { email?: string };
+    return parsed?.email || 'super-admin';
+  } catch {
+    return 'super-admin';
+  }
+};
 
 interface JobRecord {
   id: number | string;
@@ -88,21 +108,47 @@ interface JobRecord {
   status: JobStatus;
   created_at: string;
   applicant_count: number;
+  // The full posting this row came from. The dashboard only edits a handful of
+  // columns, but it re-persists EVERY row on any change (status toggle, delete),
+  // so without carrying the rest of the posting along, qualifications/salary
+  // grade/deadline would be overwritten with defaults on every such write.
+  posting?: JobPosting;
 }
 
 interface ApplicantRecord {
   id: string;
   employeeId?: string;
   full_name: string;
+  first_name?: string;
+  last_name?: string;
   email: string;
   contact_number: string;
   position: string;
+  /**
+   * The plantilla item number of the posting applied to. This is the real key
+   * between an applicant and a job; matching on `position` (the job title)
+   * instead double-counts whenever two postings share a title.
+   */
+  item_number?: string;
   office: string;
   status: string;
   created_at: string;
+  /**
+   * When this person was actually hired — distinct from created_at, which for
+   * an applicant is when they APPLIED. Drives the "Newly Hired" badge in the
+   * Office Directory. Left undefined when we have no real hire date on record;
+   * the badge is then simply not shown rather than guessed from the wrong date.
+   */
+  hire_date?: string;
   total_score: number | null;
+  qualification_score?: number | null;
+  // Schedule fields set by PendingAssignmentList / Rater Management.
+  exam_date?: string | null;
+  exam_time?: string | null;
+  interview_date?: string | null;
+  interview_time?: string | null;
+  assigned_interviewer_email?: string | null;
   // Optional metadata used by the assessment-form rendering paths.
-  // Persisted on the applicant record when scoring is finalized.
   appointmentType?: 'original' | 'promotional';
   positionType?: 'rank-and-file' | 'executive';
 }
@@ -257,8 +303,9 @@ const EMPLOYEE_DIRECTORY_POSITIONS_BY_DEPARTMENT: Record<string, string[]> = {
 };
 
 const resolveSection = (pathname: string, search: string): Section => {
-  if (pathname === '/admin/rsp/jobs') return 'jobs';
+  if (pathname === '/admin/rsp/jobs' || pathname === '/admin/rsp/applications') return 'jobs';
   if (pathname === '/admin/rsp/qualified') return 'qualified';
+  if (pathname === '/admin/rsp/applicant-score') return 'applicant-score';
   if (pathname === '/admin/rsp/new-hired') return 'new-hired';
   if (pathname === '/admin/rsp/raters' || pathname === '/admin/raters') return 'raters';
   if (pathname === '/admin/rsp/accounts') return 'accounts';
@@ -281,6 +328,83 @@ const formatDate = (dateValue: string) => {
   });
 };
 
+/** How long a new hire keeps the "Newly Hired" badge in the Office Directory. */
+const NEWLY_HIRED_BADGE_DAYS = 14;
+
+/**
+ * True for the two weeks following someone's hire date. Returns false when the
+ * hire date is missing, unparseable, or in the future — we would rather show no
+ * badge than a wrong one.
+ */
+const isNewlyHired = (hireDate: string | null | undefined): boolean => {
+  if (!hireDate) return false;
+  const hired = new Date(hireDate);
+  if (Number.isNaN(hired.getTime())) return false;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  hired.setHours(0, 0, 0, 0);
+
+  const daysSinceHire = Math.floor((today.getTime() - hired.getTime()) / 86400000);
+  return daysSinceHire >= 0 && daysSinceHire < NEWLY_HIRED_BADGE_DAYS;
+};
+
+type FunnelStage = 'pending' | 'reviewed' | 'shortlisted' | 'qualified' | 'hired' | 'notQualified';
+
+/**
+ * Place an applicant in exactly ONE funnel stage.
+ *
+ * This used to be four independent substring tests (`includes('qualif')` and
+ * friends), which mis-stated the pipeline badly: "Not Qualified" matched
+ * 'qualif' and was counted as QUALIFIED, "New Application" matched nothing so
+ * genuinely-pending applicants went uncounted, and anyone Hired or Recommended
+ * for Hiring fell through every bucket and disappeared from the funnel
+ * entirely. One applicant could also land in several bars at once.
+ *
+ * Order matters below: the rejection check must run before the 'qualif' check,
+ * and the hired check before 'recommended'. Statuses are matched loosely
+ * because the live data carries values outside the ApplicantStatus union
+ * (e.g. 'Reviewed', 'Pending', 'For Deliberation').
+ */
+const funnelStageOf = (rawStatus: string): FunnelStage => {
+  const status = String(rawStatus ?? '').trim().toLowerCase();
+
+  // Terminal: out of the running. Must precede the 'qualif' test below,
+  // otherwise "not qualified" reads as qualified.
+  if (status.includes('not qualified') || status.includes('disqualif') ||
+      status.includes('reject') || status.includes('withdraw') ||
+      status.includes('failed')) {
+    return 'notQualified';
+  }
+
+  // Terminal: made it all the way through.
+  if (status.includes('hired') && !status.includes('recommended')) return 'hired';
+  if (status.includes('deployed') || status.includes('onboard')) return 'hired';
+
+  // Cleared evaluation, awaiting/holding an offer.
+  if (status.includes('recommended') || status.includes('finalized') ||
+      status.includes('qualified') || status.includes('passed')) {
+    return 'qualified';
+  }
+
+  // In assessment: shortlisted through interview.
+  if (status.includes('shortlist') || status.includes('interview') ||
+      status.includes('exam') || status.includes('deliberation')) {
+    return 'shortlisted';
+  }
+
+  // Screening.
+  if (status.includes('review') || status.includes('verified') ||
+      status.includes('screening')) {
+    return 'reviewed';
+  }
+
+  // Everything else is still waiting on first touch — 'New Application',
+  // 'Pending', 'Action Required', and any status we don't recognise (better
+  // to show it as needing attention than to silently drop it).
+  return 'pending';
+};
+
 const mapRecruitmentPostingsToDashboardJobs = (rows: JobPosting[]): JobRecord[] => {
   return rows.map((item) => ({
     id: item.id,
@@ -295,36 +419,43 @@ const mapRecruitmentPostingsToDashboardJobs = (rows: JobPosting[]): JobRecord[] 
           : 'Open',
     created_at: String(item.postedDate ?? new Date().toISOString()),
     applicant_count: Number(item.applicantCount ?? 0),
+    posting: item,
   }));
 };
 
 const persistDashboardJobsToRecruitment = (rows: JobRecord[]) => {
   const nowIso = new Date().toISOString();
-  const mapped: JobPosting[] = rows.map((row, index) => ({
-    id: String(row.id ?? crypto.randomUUID()),
-    jobCode: row.item_number || `LGU-2026-${String(index + 1).padStart(3, '0')}`,
-    title: row.title,
-    department: row.department || 'Operations',
-    division: 'Operations',
-    positionType: 'Civil Service',
-    numberOfPositions: 1,
-    employmentStatus: 'Permanent',
-    summary: `${row.title} recruitment posting.`,
-    responsibilities: ['Review and process applications.'],
-    qualifications: {
-      education: "Bachelor's Degree",
-      experience: { years: 0, field: 'General' },
-      skills: [],
-      certifications: [],
-    },
-    requiredDocuments: ['Resume/CV', 'Application Letter'],
-    applicationDeadline: new Date(Date.now() + 30 * 86400000).toISOString(),
-    status: row.status === 'Closed' ? 'Closed' : row.status === 'Reviewing' ? 'Draft' : 'Active',
-    postedDate: row.created_at || nowIso,
-    postedBy: 'HR Admin',
-    applicantCount: row.applicant_count ?? 0,
-    qualifiedCount: 0,
-  }));
+  const mapped: JobPosting[] = rows.map((row, index) => {
+    const base = row.posting;
+    return {
+      // Preserve everything the dashboard doesn't edit. Only the columns the
+      // dashboard actually owns are overwritten below.
+      ...(base ?? {}),
+      id: String(row.id ?? base?.id ?? crypto.randomUUID()),
+      jobCode: row.item_number || base?.jobCode || `ABYAN-2026-${String(index + 1).padStart(3, '0')}`,
+      title: row.title,
+      department: row.department || base?.department || 'Operations',
+      division: base?.division,
+      positionType: base?.positionType ?? 'Civil Service',
+      numberOfPositions: base?.numberOfPositions ?? 1,
+      employmentStatus: base?.employmentStatus ?? 'Permanent',
+      summary: base?.summary ?? '',
+      responsibilities: base?.responsibilities ?? [],
+      qualifications: base?.qualifications ?? {
+        education: '',
+        experience: { years: 0, field: '' },
+        skills: [],
+        certifications: [],
+      },
+      requiredDocuments: base?.requiredDocuments ?? [],
+      applicationDeadline: base?.applicationDeadline ?? '',
+      status: row.status === 'Closed' ? 'Closed' : row.status === 'Reviewing' ? 'Draft' : 'Active',
+      postedDate: row.created_at || base?.postedDate || nowIso,
+      postedBy: base?.postedBy ?? 'HR Admin',
+      applicantCount: row.applicant_count ?? 0,
+      qualifiedCount: base?.qualifiedCount ?? 0,
+    };
+  });
 
   saveJobPostings(mapped);
 };
@@ -504,12 +635,12 @@ const convertEducationScore = (level: string): number => {
 };
 
 const convertExperienceScore = (years: number): number => {
-  if (years >= 21) return 18;
+  if (years >= 21) return 20;
   if (years >= 16) return 18;
   if (years >= 11) return 16;
   if (years >= 6) return 14;
   if (years >= 1) return 12;
-  return 10;
+  return 0;
 };
 
 const convertPerformanceScore = (rating: string): number => {
@@ -713,7 +844,7 @@ export const RSPDashboard = () => {
   const [qualifiedSearch, setQualifiedSearch] = useState('');
   const [qualifiedPosition, setQualifiedPosition] = useState('all');
   const [qualifiedOffice, setQualifiedOffice] = useState('all');
-  const [reportsView, setReportsView] = useState<'overview' | 'ranking' | 'assessment' | 'documents'>('overview');
+  const [reportsView, setReportsView] = useState<'overview' | 'ranking' | 'assessment' | 'documents' | 'closed' | 'temp'>('overview');
   const [activeRankingPosition, setActiveRankingPosition] = useState<string | null>(null);
   const [showRankingModal, setShowRankingModal] = useState(false);
   const [showHireApplicantsModal, setShowHireApplicantsModal] = useState(false);
@@ -722,6 +853,22 @@ export const RSPDashboard = () => {
   const [showAssessmentFormsModal, setShowAssessmentFormsModal] = useState(false);
   const [assessmentStatusFilter, setAssessmentStatusFilter] = useState<AssessmentStatusFilter>('all');
   const [assessmentSearch, setAssessmentSearch] = useState('');
+  const [archivesSearch, setArchivesSearch] = useState('');
+  const [archivesAssessmentSearch, setArchivesAssessmentSearch] = useState('');
+  const [archivesAssessmentDeptFilter, setArchivesAssessmentDeptFilter] = useState('all');
+  const [archivesAssessmentPage, setArchivesAssessmentPage] = useState(0);
+  const [archivesRankingSearch, setArchivesRankingSearch] = useState('');
+  const [archivesRankingDeptFilter, setArchivesRankingDeptFilter] = useState('all');
+  const [archivesRankingPage, setArchivesRankingPage] = useState(0);
+  const [archivesClosedSearch, setArchivesClosedSearch] = useState('');
+  const [archivesClosedDeptFilter, setArchivesClosedDeptFilter] = useState('all');
+  const [archivesClosedPage, setArchivesClosedPage] = useState(0);
+  const [archivesTempSearch, setArchivesTempSearch] = useState('');
+  const [archivesTempDeptFilter, setArchivesTempDeptFilter] = useState('all');
+  const [archivesTempPage, setArchivesTempPage] = useState(0);
+  const [rankingPositionFilter, setRankingPositionFilter] = useState<string>('all');
+  const [rankingNavDept, setRankingNavDept] = useState<string | null>(null);
+  const [rankingNavPos, setRankingNavPos] = useState<string | null>(null);
   const [activeDocumentTemplateId, setActiveDocumentTemplateId] = useState<EmployeeDocumentTemplateId | null>(null);
   const [expandedDocumentOffices, setExpandedDocumentOffices] = useState<Record<string, boolean>>({});
   const [selectedDocumentSubmissionIds, setSelectedDocumentSubmissionIds] = useState<string[]>([]);
@@ -730,7 +877,7 @@ export const RSPDashboard = () => {
   const [raterSearch, setRaterSearch] = useState('');
   const [raterStatus, setRaterStatus] = useState('all');
   const [raterAssignedPositionsByEmail, setRaterAssignedPositionsByEmail] = useState<Record<string, string[]>>({});
-  const [accountsView, setAccountsView] = useState<'overview' | 'directory' | 'position' | 'details'>('overview');
+  const [accountsView, setAccountsView] = useState<'directory' | 'position' | 'details'>('directory');
   const [employeeDirectorySearch, setEmployeeDirectorySearch] = useState('');
   const [employeeDirectoryStatusFilter, setEmployeeDirectoryStatusFilter] = useState<'all' | EmployeeDirectoryCardStatus>('all');
   const [employeeDirectoryOfficeFilter, setEmployeeDirectoryOfficeFilter] = useState('all');
@@ -745,6 +892,42 @@ export const RSPDashboard = () => {
   const [resetPwUsername, setResetPwUsername] = useState<string | null>(null);
   const [resetPwValue, setResetPwValue] = useState<string | null>(null);
   const [resetPwError, setResetPwError] = useState<string | null>(null);
+  const [lastResetInfo, setLastResetInfo] = useState<EmployeePasswordResetLog | null>(null);
+
+  // Prefer matching by email (most authoritative since it's per-person), then by employee_number.
+  const findExistingPortalAccountForEmployee = async (details: ApplicantRecord): Promise<EmployeePortalAccount | null> => {
+    const empNumber = String(
+      details.employeeId ?? employeeNumberById.get(details.id) ?? '',
+    ).trim();
+    const empEmail = String((details as any).email ?? '').trim().toLowerCase();
+    const accounts = getEmployeePortalAccounts();
+
+    const localMatch = (
+      (empEmail
+        ? accounts.find((a) => String(a.employee.email ?? '').trim().toLowerCase() === empEmail)
+        : null)
+      ?? (empNumber
+        ? accounts.find((a) => String(a.employee.employeeId ?? '').trim() === empNumber)
+        : null)
+      ?? null
+    );
+    if (localMatch) return localMatch;
+
+    if (!empEmail && !empNumber) return null;
+
+    return await findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail(empNumber || undefined, empEmail || undefined);
+  };
+
+  const openResetPwModal = async () => {
+    setResetPwState('confirm');
+    setResetPwError(null);
+    setLastResetInfo(null);
+    if (!selectedEmployeeDetails) return;
+    const existingAccount = await findExistingPortalAccountForEmployee(selectedEmployeeDetails);
+    if (!existingAccount) return;
+    const lastReset = await getLastEmployeePasswordReset(existingAccount.id);
+    setLastResetInfo(lastReset);
+  };
 
   const handleResetEmployeePasswordConfirm = async () => {
     if (!selectedEmployeeDetails) {
@@ -763,25 +946,18 @@ export const RSPDashboard = () => {
           ?? '',
       ).trim();
       const empEmail = String((selectedEmployeeDetails as any).email ?? '').trim().toLowerCase();
-      const fullName = ('name' in selectedEmployeeDetails)
-        ? String((selectedEmployeeDetails as any).name ?? '').trim()
-        : `${(selectedEmployeeDetails as any).first_name ?? ''} ${(selectedEmployeeDetails as any).last_name ?? ''}`.trim();
-      const nameParts = fullName.split(' ');
-      const firstName = nameParts[0] || '';
-      const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+      const detailFirstName = String(selectedEmployeeDetails.first_name ?? '').trim();
+      const detailLastName = String(selectedEmployeeDetails.last_name ?? '').trim();
+      const fullName = (detailFirstName || detailLastName)
+        ? `${detailFirstName} ${detailLastName}`.trim()
+        : String(selectedEmployeeDetails.full_name ?? '').trim();
+      const firstName = detailFirstName || fullName.split(' ')[0] || '';
+      const lastName = detailLastName
+        || (fullName.split(' ').length > 1 ? fullName.split(' ').slice(1).join(' ') : '');
       const fullNameNormalized = fullName.toLowerCase();
 
       const accounts = getEmployeePortalAccounts();
-
-      // Prefer matching by email (most authoritative since it's per-person), then by employee_number.
-      const existingAccount =
-        (empEmail
-          ? accounts.find((a) => String(a.employee.email ?? '').trim().toLowerCase() === empEmail)
-          : null)
-        ?? (empNumber
-          ? accounts.find((a) => String(a.employee.employeeId ?? '').trim() === empNumber)
-          : null)
-        ?? null;
+      const existingAccount = await findExistingPortalAccountForEmployee(selectedEmployeeDetails);
 
       // Build the username that should be assigned to the *current* employee.
       // Sanitize the same way createUniqueUsername does so we can compare apples-to-apples.
@@ -854,11 +1030,14 @@ export const RSPDashboard = () => {
         email: empEmail || baseEmployee.email,
       };
 
+      const accountId = existingAccount?.id ?? `employee-account-${empNumber || username}`;
+
       upsertEmployeePortalAccount({
-        id: existingAccount?.id ?? `employee-account-${empNumber || username}`,
+        id: accountId,
         username,
         password: newPassword,
         employee: realignedEmployee,
+        mustChangePassword: true,
       });
 
       // Sanity-check the new credential pair authenticates.
@@ -871,6 +1050,13 @@ export const RSPDashboard = () => {
 
       // Note: fullNameNormalized is only used here to keep ESLint quiet about the local.
       void fullNameNormalized;
+
+      await logEmployeePasswordReset({
+        accountId,
+        username,
+        employeeNumber: empNumber || undefined,
+        resetBy: getCurrentAdminEmail(),
+      });
 
       setResetPwUsername(username);
       setResetPwValue(newPassword);
@@ -887,6 +1073,7 @@ export const RSPDashboard = () => {
     setResetPwUsername(null);
     setResetPwValue(null);
     setResetPwError(null);
+    setLastResetInfo(null);
   };
 
   const copyResetPwValue = async (value: string) => {
@@ -919,7 +1106,7 @@ export const RSPDashboard = () => {
     templateFileName: '',
   });
 
-  const [newJob, setNewJob] = useState({
+  const EMPTY_NEW_JOB = {
     title: '',
     item_number: '',
     department: '',
@@ -930,8 +1117,21 @@ export const RSPDashboard = () => {
     application_deadline: '',
     description: '',
     responsibilities: '',
-    qualifications: '',
-  });
+    // Structured CSC Qualification Standards. These used to be one free-text
+    // blob that was thrown away on save; they now persist to job_postings
+    // (migration 021) and drive both the portal's Qualifications panel and the
+    // applicant gap analysis.
+    salary_grade: '',
+    education_requirement: '',
+    education_field: '',
+    experience_years: '',
+    experience_field: '',
+    training_requirement: '',
+    eligibility: '',
+    required_skills: '',
+  };
+
+  const [newJob, setNewJob] = useState(EMPTY_NEW_JOB);
 
   const [newRater, setNewRater] = useState({
     name: '',
@@ -1122,10 +1322,16 @@ export const RSPDashboard = () => {
             email: String(item?.email ?? ''),
             contact_number: String(item?.contact_number ?? ''),
             position: String(item?.position ?? ''),
+            item_number: String(item?.item_number ?? ''),
             office: String(item?.office ?? item?.department ?? 'Unassigned'),
             status: resolvedStatus,
             created_at: String(item?.created_at ?? new Date().toISOString()),
             total_score: resolvedScore > 0 ? resolvedScore : null,
+            exam_date: item?.exam_date ?? null,
+            exam_time: item?.exam_time ?? null,
+            interview_date: item?.interview_date ?? null,
+            interview_time: item?.interview_time ?? null,
+            assigned_interviewer_email: item?.assigned_interviewer_email ?? null,
           };
         });
 
@@ -1154,8 +1360,10 @@ export const RSPDashboard = () => {
 
         // Store evaluations in state for use in Assessment Forms
         (window as any).__evaluationsByApplicantId = evaluationsByApplicantId;
-        
-        setApplicants(Array.from(mergedById.values()));
+
+        // Merge localStorage schedule cache so schedule columns show immediately
+        // even when the Supabase columns are present but the fetch raced a save.
+        setApplicants(mergeLocalSchedules(Array.from(mergedById.values())));
       } else {
         setApplicants([]);
       }
@@ -1296,6 +1504,13 @@ export const RSPDashboard = () => {
       setExpandedDocumentOffices({});
       setSelectedDocumentSubmissionIds([]);
       setReportsView('overview');
+      setArchivesSearch('');
+      setRankingPositionFilter('all');
+      setRankingNavDept(null);
+      setRankingNavPos(null);
+    }
+    if (section !== 'accounts') {
+      setAccountsView('directory');
     }
   }, [section]);
 
@@ -1325,36 +1540,107 @@ export const RSPDashboard = () => {
   }, []);
 
   const jobsWithCounts = useMemo(() => {
-    const counts = new Map<string, number>();
+    // Count against the plantilla item number, which uniquely identifies a
+    // posting. The previous version keyed on the job TITLE, so two postings
+    // sharing a title (e.g. three "Accountant III" openings) each claimed the
+    // same applicants and every one of them reported an inflated count.
+    // Title is kept only as a fallback for legacy rows with no item number.
+    const byItem = new Map<string, number>();
+    const byTitle = new Map<string, number>();
     applicants.forEach((applicant) => {
-      const key = applicant.position;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+      const item = String(applicant.item_number ?? '').trim();
+      if (item) byItem.set(item, (byItem.get(item) ?? 0) + 1);
+      else {
+        const title = applicant.position;
+        if (title) byTitle.set(title, (byTitle.get(title) ?? 0) + 1);
+      }
     });
 
-    return jobs.map((job) => ({
-      ...job,
-      applicant_count: counts.get(job.title) ?? 0,
-    }));
+    return jobs.map((job) => {
+      const item = String(job.item_number ?? '').trim();
+      const count = (item ? byItem.get(item) ?? 0 : 0) + (byTitle.get(job.title) ?? 0);
+      return { ...job, applicant_count: count };
+    });
   }, [jobs, applicants]);
 
   const dashboardStats = useMemo(() => {
-    const totalJobs = jobsWithCounts.filter((job) => job.status !== 'Closed').length;
+    const totalJobs = jobsWithCounts.filter((job) => job.status === 'Open').length;
     const totalApplicants = applicants.length;
-    const shortlisted = applicants.filter((applicant) =>
-      ['shortlisted', 'reviewed', 'qualified', 'accepted'].includes(applicant.status.toLowerCase())
-    ).length;
+    // Shortlisted means shortlisted — the old check also swept in 'reviewed'
+    // and 'accepted', so applicants who had merely been screened were reported
+    // as shortlisted. Reuse the funnel's single-bucket classifier so this card
+    // and the funnel can never disagree.
+    const shortlisted = applicants.filter((a) => funnelStageOf(a.status) === 'shortlisted').length;
+    // Positions still being evaluated, i.e. closed to new applicants but not
+    // yet filled.
     const underReview = jobsWithCounts.filter((job) => job.status === 'Reviewing').length;
 
     return { totalJobs, totalApplicants, shortlisted, underReview };
   }, [jobsWithCounts, applicants]);
 
   const funnelStats = useMemo(() => {
-    const pending = applicants.filter((a) => a.status.toLowerCase().includes('pending')).length;
-    const reviewed = applicants.filter((a) => a.status.toLowerCase().includes('review')).length;
-    const shortlisted = applicants.filter((a) => a.status.toLowerCase().includes('shortlist')).length;
-    const qualified = applicants.filter((a) => a.status.toLowerCase().includes('qualif')).length;
-    return { pending, reviewed, shortlisted, qualified };
+    const counts: Record<FunnelStage, number> = {
+      pending: 0,
+      reviewed: 0,
+      shortlisted: 0,
+      qualified: 0,
+      hired: 0,
+      notQualified: 0,
+    };
+    for (const applicant of applicants) {
+      counts[funnelStageOf(applicant.status)] += 1;
+    }
+    return { ...counts, total: applicants.length };
   }, [applicants]);
+
+  // "Recent" has to mean recent. This used to be applicants.slice(0, 5), i.e.
+  // whatever five happened to be first in load order, regardless of date.
+  const recentApplicants = useMemo(() => {
+    return [...applicants]
+      .sort((a, b) => {
+        const aTime = new Date(a.created_at).getTime();
+        const bTime = new Date(b.created_at).getTime();
+        if (Number.isNaN(aTime) && Number.isNaN(bTime)) return 0;
+        if (Number.isNaN(aTime)) return 1;
+        if (Number.isNaN(bTime)) return -1;
+        return bTime - aTime;
+      })
+      .slice(0, 5);
+  }, [applicants]);
+
+  // Positions by department. The old version derived BOTH the department list
+  // and the "positions" number from the APPLICANTS (distinct applicant.position
+  // per office), so a department with open postings but no applicants yet was
+  // missing entirely, and the position count described what people applied for
+  // rather than what actually exists.
+  //
+  // Positions now come from the real postings; applicants are counted by their
+  // own department rather than through the posting link, because most
+  // applicants reference postings that have since been deleted — going through
+  // the link would strand them and this panel would contradict the "Total
+  // Applicants" card above it. Departments are the union of both sources.
+  const departmentBreakdown = useMemo(() => {
+    const rows = new Map<string, { department: string; positions: number; applicants: number }>();
+    const rowFor = (name: string) => {
+      const department = name.trim() || 'Unassigned';
+      const existing = rows.get(department);
+      if (existing) return existing;
+      const created = { department, positions: 0, applicants: 0 };
+      rows.set(department, created);
+      return created;
+    };
+
+    jobs.forEach((job) => {
+      rowFor(String(job.department ?? '')).positions += 1;
+    });
+    applicants.forEach((applicant) => {
+      rowFor(String(applicant.office ?? '')).applicants += 1;
+    });
+
+    return Array.from(rows.values()).sort(
+      (a, b) => b.applicants - a.applicants || b.positions - a.positions,
+    );
+  }, [jobs, applicants]);
 
   const officeOptions = useMemo(() => Array.from(new Set(applicants.map((a) => a.office).filter(Boolean))), [applicants]);
   const departmentSelectionOptions = useMemo(() => {
@@ -1824,6 +2110,21 @@ export const RSPDashboard = () => {
   }, [activeAssessmentPosition, assessmentPositionCards]);
 
 
+  // All non-hired applicants grouped by office(dept) → position for historical ranking view
+  const rankingHistoricalData = useMemo(() => {
+    const notHired = applicants.filter(a => !a.status.toLowerCase().includes('hired'));
+    const byDept = new Map<string, Map<string, ApplicantRecord[]>>();
+    notHired.forEach(a => {
+      const dept = a.office || 'No Department';
+      const pos  = a.position || 'No Position';
+      if (!byDept.has(dept)) byDept.set(dept, new Map());
+      const posMap = byDept.get(dept)!;
+      if (!posMap.has(pos)) posMap.set(pos, []);
+      posMap.get(pos)!.push(a);
+    });
+    return byDept;
+  }, [applicants]);
+
   const newlyHiredApplicants = useMemo(() => {
     const applicantsById = new Map(applicants.map((applicant) => [String(applicant.id), applicant] as const));
 
@@ -1903,15 +2204,37 @@ export const RSPDashboard = () => {
     return map;
   }, [credentialedNewlyHiredRows, portalAccountByEmployeeId, portalAccounts]);
 
+  // Real hire dates, keyed by BOTH applicant id and employee number so any
+  // directory source can resolve one. newly_hired.dateHired is set at the
+  // moment the account is generated, so it is the authoritative hire date.
+  const hireDateByKey = useMemo(() => {
+    const map = new Map<string, string>();
+    newlyHiredRows.forEach((row) => {
+      const dateHired = String(row.dateHired ?? '').trim();
+      if (!dateHired) return;
+      const applicantId = String(row.applicantId ?? '').trim();
+      const employeeId = String(row.employeeId ?? '').trim();
+      if (applicantId) map.set(applicantId, dateHired);
+      if (employeeId) map.set(employeeId, dateHired);
+    });
+    return map;
+  }, [newlyHiredRows]);
+
   const credentialedApplicantDirectorySource = useMemo(
     () =>
       applicants
         .filter((employee) => credentialedApplicantIds.has(employee.id))
-        .map((employee) => ({
-          ...employee,
-          employeeId: employeeNumberFromNewlyHired.get(employee.id),
-        })),
-    [applicants, credentialedApplicantIds, employeeNumberFromNewlyHired]
+        .map((employee) => {
+          const employeeId = employeeNumberFromNewlyHired.get(employee.id);
+          return {
+            ...employee,
+            employeeId,
+            hire_date:
+              hireDateByKey.get(String(employee.id)) ??
+              (employeeId ? hireDateByKey.get(String(employeeId)) : undefined),
+          };
+        }),
+    [applicants, credentialedApplicantIds, employeeNumberFromNewlyHired, hireDateByKey]
   );
 
   // Loaded from Supabase employees table on mount. Used as the fallback
@@ -1943,12 +2266,21 @@ export const RSPDashboard = () => {
           id: employeeId,
           employeeId,
           full_name: String(account?.employee.fullName ?? record.name ?? 'Employee'),
+          first_name: record.firstName || undefined,
+          last_name: record.lastName || undefined,
           email: String(account?.employee.email ?? ''),
           contact_number: String(account?.employee.mobileNumber ?? ''),
           position: String(record.position ?? '').trim() || 'Unassigned Position',
           office: String(record.department ?? record.division ?? '').trim() || 'Unassigned Office',
           status: 'Active',
           created_at: String(record.startDate ?? account?.createdAt ?? new Date().toISOString()),
+          // employees.date_hired first; otherwise the moment their portal
+          // account was generated, which is when the hire flow ran.
+          hire_date:
+            hireDateByKey.get(employeeId) ||
+            String(record.startDate ?? '').trim() ||
+            account?.createdAt ||
+            undefined,
           total_score: null,
         });
 
@@ -1970,12 +2302,13 @@ export const RSPDashboard = () => {
         office: account.employee.currentDepartment || 'Unassigned',
         status: 'Active',
         created_at: account.createdAt,
+        hire_date: hireDateByKey.get(employeeId) || account.createdAt || undefined,
         total_score: null,
       });
     });
 
     return records;
-  }, [portalAccountByEmployeeId, portalAccounts, supabaseEmployeeRecords]);
+  }, [hireDateByKey, portalAccountByEmployeeId, portalAccounts, supabaseEmployeeRecords]);
 
   const directoryEmployeesSource = useMemo(
     () => {
@@ -1998,6 +2331,10 @@ export const RSPDashboard = () => {
             ...employee,
             status: 'Hired',
             employeeId: undefined, // No employee number yet
+            // No credentials generated, so no newly_hired row to read a hire
+            // date from. created_at is their APPLICATION date, so it is not a
+            // stand-in — leave undefined and show no badge.
+            hire_date: hireDateByKey.get(key),
           });
         });
 
@@ -2010,13 +2347,13 @@ export const RSPDashboard = () => {
 
       return Array.from(merged.values());
     },
-    [applicants, credentialedApplicantDirectorySource, fallbackEmployeeDirectorySource]
+    [applicants, credentialedApplicantDirectorySource, fallbackEmployeeDirectorySource, hireDateByKey]
   );
 
   const employeeDirectoryCards = useMemo(() => {
     const source = directoryEmployeesSource;
     const searchTerm = employeeDirectorySearch.trim().toLowerCase();
-    const grouped = new Map<string, { position: string; office: string; count: number; activeCount: number; inactiveCount: number; status: EmployeeDirectoryCardStatus }>();
+    const grouped = new Map<string, { position: string; office: string; count: number; activeCount: number; inactiveCount: number; newlyHiredCount: number; status: EmployeeDirectoryCardStatus }>();
 
     source.forEach((employee) => {
       // Skip placeholder/unassigned positions
@@ -2027,6 +2364,7 @@ export const RSPDashboard = () => {
 
       const office = employee.office || 'Unassigned Office';
       const isInactive = employee.status.toLowerCase().includes('inactive');
+      const newHire = isNewlyHired(employee.hire_date);
       const key = `${position}__${office}`;
       const existing = grouped.get(key);
 
@@ -2037,6 +2375,7 @@ export const RSPDashboard = () => {
         } else {
           existing.activeCount += 1;
         }
+        if (newHire) existing.newlyHiredCount += 1;
       } else {
         grouped.set(key, {
           position,
@@ -2044,6 +2383,7 @@ export const RSPDashboard = () => {
           count: 1,
           activeCount: isInactive ? 0 : 1,
           inactiveCount: isInactive ? 1 : 0,
+          newlyHiredCount: newHire ? 1 : 0,
           status: isInactive ? 'Inactive' : 'Active',
         });
       }
@@ -2299,13 +2639,15 @@ export const RSPDashboard = () => {
 
   const sectionTitle = {
     dashboard: 'RSP Dashboard',
-    jobs: 'Job Postings Management',
+    jobs: 'Applications',
     qualified: 'Qualified Applicants',
+    'applicant-score': 'Applicant Score',
     'new-hired': 'Newly Hired Employees',
     raters: 'Rater Management & Access Control',
-    accounts: 'Account Management',
-    reports: 'Reports & Document Generation',
+    accounts: 'Office Directory',
+    reports: 'Archives',
     settings: 'Settings',
+    succession: 'Succession Planning',
   }[section];
 
   const goToSection = (target: Section) => {
@@ -2323,37 +2665,70 @@ export const RSPDashboard = () => {
   const handleCreateJob = async () => {
     if (!newJob.title || !newJob.item_number || !newJob.department) return;
 
-    const payload = {
+    const createdAt = new Date().toISOString();
+    // job_postings.id is a uuid column — the old code handed it an incrementing
+    // integer, so the upsert was rejected and the posting only ever existed in
+    // the local cache.
+    const id = crypto.randomUUID();
+
+    const splitLines = (value: string): string[] =>
+      value
+        .split(/[\n;•]+/)
+        .map((line) => line.replace(/^[-*]\s*/, '').trim())
+        .filter(Boolean);
+
+    // The posting as the rest of the app understands it. Everything the RSP
+    // typed is preserved here and persisted by mapJobPostingToSupabaseRow.
+    const posting: JobPosting = {
+      id,
+      jobCode: newJob.item_number,
       title: newJob.title,
-      item_number: newJob.item_number,
       department: newJob.department,
-      office: newJob.department,
-      status: newJob.status,
-      created_at: new Date().toISOString(),
+      positionType: 'Civil Service',
+      numberOfPositions: Number(newJob.slots) || 1,
+      employmentStatus: 'Permanent',
+      summary: newJob.description.trim(),
+      responsibilities: splitLines(newJob.responsibilities),
+      qualifications: {
+        education: newJob.education_requirement.trim(),
+        educationField: newJob.education_field.trim() || undefined,
+        experience: {
+          years: Number(newJob.experience_years) || 0,
+          field: newJob.experience_field.trim(),
+        },
+        skills: splitLines(newJob.required_skills),
+        certifications: [],
+      },
+      salaryGrade: newJob.salary_grade ? Number(newJob.salary_grade) : undefined,
+      eligibility: newJob.eligibility.trim() || undefined,
+      training: newJob.training_requirement.trim() || undefined,
+      requiredDocuments: [],
+      applicationDeadline: newJob.application_deadline || '',
+      status: newJob.status === 'Closed' ? 'Closed' : newJob.status === 'Reviewing' ? 'Draft' : 'Active',
+      postedDate: createdAt,
+      postedBy: 'HR Admin',
+      applicantCount: 0,
+      qualifiedCount: 0,
     };
 
-    const numericIds = jobs
-      .map((job) => (typeof job.id === 'number' ? job.id : Number.NaN))
-      .filter((id) => Number.isFinite(id)) as number[];
-    const localId = numericIds.length > 0 ? Math.max(...numericIds) + 1 : 1;
-    const nextJobs = [{ ...payload, id: localId, applicant_count: 0 } as JobRecord, ...jobs];
+    const nextJobs: JobRecord[] = [
+      {
+        id,
+        title: newJob.title,
+        item_number: newJob.item_number,
+        department: newJob.department,
+        status: newJob.status,
+        created_at: createdAt,
+        applicant_count: 0,
+        posting,
+      },
+      ...jobs,
+    ];
     setJobs(nextJobs);
     persistDashboardJobsToRecruitment(nextJobs);
 
     setShowJobDialog(false);
-    setNewJob({
-      title: '',
-      item_number: '',
-      department: '',
-      status: 'Open',
-      position_level: '',
-      slots: '1',
-      employment_type: 'Full-time',
-      application_deadline: '',
-      description: '',
-      responsibilities: '',
-      qualifications: '',
-    });
+    setNewJob(EMPTY_NEW_JOB);
   };
 
   const handleDeleteJob = async (job: JobRecord) => {
@@ -2363,7 +2738,7 @@ export const RSPDashboard = () => {
     // Persist through the central recruitment utility so all dependent caches/events stay in sync.
     const nextRecruitmentRows: JobPosting[] = nextJobs.map((row, index) => ({
       id: String(row.id ?? crypto.randomUUID()),
-      jobCode: row.item_number || `LGU-2026-${String(index + 1).padStart(3, '0')}`,
+      jobCode: row.item_number || `ABYAN-2026-${String(index + 1).padStart(3, '0')}`,
       title: row.title,
       department: row.department || 'Operations',
       division: 'Operations',
@@ -2407,7 +2782,7 @@ export const RSPDashboard = () => {
     // Persist through the central recruitment utility so all dependent caches/events stay in sync.
     const nextRecruitmentRows: JobPosting[] = nextJobs.map((row, index) => ({
       id: String(row.id ?? crypto.randomUUID()),
-      jobCode: row.item_number || `LGU-2026-${String(index + 1).padStart(3, '0')}`,
+      jobCode: row.item_number || `ABYAN-2026-${String(index + 1).padStart(3, '0')}`,
       title: row.title,
       department: row.department || 'Operations',
       division: 'Operations',
@@ -2983,7 +3358,7 @@ export const RSPDashboard = () => {
       `Due Date: ${dueDate}\n\n` +
       `Please log in to the Employee Portal at /employee/login and upload your file ` +
       `under Document Requirements.\n\n` +
-      `Thank you,\nCICTrix HRIS — RSP Office`;
+      `Thank you,\nAbyan HRIS — RSP Office`;
 
     try {
       // Send a single email with the recipients in TO so the SMTP server delivers
@@ -3001,18 +3376,47 @@ export const RSPDashboard = () => {
     }
   };
 
+  // The nearest still-future deadline among open postings. The old version just
+  // grabbed jobsWithCounts[0] and asserted it "closes soon" — an arbitrary job,
+  // with no reference to any deadline at all (and no posting currently has one).
+  const nextDeadline = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const upcoming = jobsWithCounts
+      .filter((job) => job.status === 'Open')
+      .map((job) => {
+        const raw = job.posting?.applicationDeadline;
+        if (!raw) return null;
+        const date = new Date(raw);
+        if (Number.isNaN(date.getTime())) return null;
+        date.setHours(0, 0, 0, 0);
+        if (date.getTime() < today.getTime()) return null;
+        return { title: job.title, date };
+      })
+      .filter((entry): entry is { title: string; date: Date } => entry !== null)
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    if (upcoming.length === 0) return null;
+
+    const next = upcoming[0];
+    const days = Math.round((next.date.getTime() - today.getTime()) / 86400000);
+    const when = days === 0 ? 'closes today' : days === 1 ? 'closes tomorrow' : `closes in ${days} days`;
+    return `${next.title} ${when} (${formatDate(next.date.toISOString())})`;
+  }, [jobsWithCounts]);
+
   const urgentItems = [
     {
       title: 'Deadline Approaching',
-      subtitle:
-        jobsWithCounts.length > 0
-          ? `${jobsWithCounts[0].title} closes soon`
-          : 'No active job deadlines found',
+      subtitle: nextDeadline ?? 'No upcoming application deadlines set.',
       color: 'border-l-[4px] border-l-orange-500 bg-orange-50',
     },
     {
       title: 'Pending Reviews',
-      subtitle: `${funnelStats.pending} applications awaiting initial review`,
+      subtitle:
+        funnelStats.pending === 1
+          ? '1 application awaiting initial review'
+          : `${funnelStats.pending} applications awaiting initial review`,
       color: 'border-l-[4px] border-l-blue-500 bg-blue-50',
     },
   ];
@@ -3022,37 +3426,22 @@ export const RSPDashboard = () => {
       <AdminHeader
         userName="RSP Admin"
         divisionLabel="RSP Division"
-        division="rsp"
-        onNotificationClick={(item) => {
-          // Route to the most relevant page for the source of the notification.
-          if (item.source === 'applicant' && item.payload.applicantId) {
-            navigate(`/admin/rsp/applicant/${item.payload.applicantId}`);
-            return;
-          }
-          if (item.source === 'evaluation' && item.payload.applicantId) {
-            navigate(`/admin/rsp/applicant/${item.payload.applicantId}`);
-            return;
-          }
-          if (item.source === 'employee_doc') {
-            navigate('/admin/rsp/reports');
-            return;
-          }
-        }}
       />
     <div className="admin-layout">
       <Sidebar activeModule="RSP" userRole="rsp" />
 
       <main className="admin-content !p-0">
         <div className="border-b border-[var(--border-color)] bg-white px-8 py-6">
-          <h1 className={`!mb-1 font-bold ${section === 'new-hired' || section === 'reports' ? '!text-xl' : '!text-2xl'}`}>{sectionTitle}</h1>
-          <p className={`!mb-0 text-[var(--text-secondary)] ${section === 'new-hired' || section === 'reports' ? '!text-sm' : '!text-base'}`}>
+          <h1 className="!mb-1 !text-2xl font-bold">{sectionTitle}</h1>
+          <p className="!mb-0 text-base text-[var(--text-secondary)]">
             {section === 'dashboard' && 'Overview of recruitment, selection and placement activities'}
             {section === 'jobs' && 'Manage and monitor all job positions and their applicants'}
             {section === 'qualified' && 'List of applicants who passed the evaluation and are eligible for further processing'}
+            {section === 'applicant-score' && 'View and update applicant evaluation scores for original and promotional applicants'}
             {section === 'new-hired' && 'Generate employee accounts for newly hired staff'}
             {section === 'raters' && 'Assign raters and define their evaluation access for specific job positions'}
-            {section === 'accounts' && 'Manage employee accounts and information'}
-            {section === 'reports' && 'Generate official government reports and access employee documents'}
+            {section === 'accounts' && 'Browse and view employee records organized by position'}
+            {section === 'reports' && 'Assessment forms, application ranking records, and employee archive'}
             {section === 'succession' && 'Build and manage the pipeline for critical roles and leadership continuity'}
             {section === 'settings' && 'Manage your personal information and account details'}
           </p>
@@ -3138,7 +3527,9 @@ export const RSPDashboard = () => {
                 <div className="rounded-2xl border border-[var(--border-color)] bg-white p-5">
                   <div className="flex items-center justify-between border-b border-[var(--border-color)] pb-4">
                     <h3 className="!mb-0 text-lg font-semibold">Application Funnel</h3>
-                    <ChevronRight className="rotate-[-45deg] text-blue-600" size={20} />
+                    <span className="text-sm font-semibold text-[var(--text-secondary)]">
+                      {funnelStats.total} total
+                    </span>
                   </div>
                   <div className="space-y-4 pt-5">
                     {[
@@ -3146,9 +3537,14 @@ export const RSPDashboard = () => {
                       { label: 'Reviewed', value: funnelStats.reviewed, color: 'bg-blue-500' },
                       { label: 'Shortlisted', value: funnelStats.shortlisted, color: 'bg-purple-500' },
                       { label: 'Qualified', value: funnelStats.qualified, color: 'bg-green-500' },
+                      { label: 'Hired', value: funnelStats.hired, color: 'bg-emerald-600' },
+                      { label: 'Not Qualified', value: funnelStats.notQualified, color: 'bg-slate-400' },
                     ].map((item) => {
-                      const maxValue = Math.max(1, funnelStats.pending, funnelStats.reviewed, funnelStats.shortlisted, funnelStats.qualified);
-                      const width = `${(item.value / maxValue) * 100}%`;
+                      // Bars are a share of ALL applicants, so the four stages plus
+                      // the two terminal ones always add up to the total — no one is
+                      // double-counted and no one is invisible.
+                      const total = Math.max(1, funnelStats.total);
+                      const share = (item.value / total) * 100;
                       return (
                         <div key={item.label}>
                           <div className="mb-1 flex items-center justify-between text-sm">
@@ -3156,7 +3552,10 @@ export const RSPDashboard = () => {
                             <span className="font-semibold">{item.value}</span>
                           </div>
                           <div className="h-3 rounded-full bg-slate-200">
-                            <div className={`h-3 rounded-full ${item.color}`} style={{ width }} />
+                            <div
+                              className={`h-3 rounded-full ${item.color}`}
+                              style={{ width: `${share}%` }}
+                            />
                           </div>
                         </div>
                       );
@@ -3172,18 +3571,20 @@ export const RSPDashboard = () => {
                     <Calendar className="text-[var(--text-muted)]" size={20} />
                   </div>
                   <div className="space-y-4">
-                    {applicants.slice(0, 5).map((applicant) => (
+                    {recentApplicants.map((applicant) => (
                       <div key={applicant.id} className="flex items-start gap-4 border-b border-[var(--border-color)] pb-3 last:border-b-0">
                         <div className="rounded-xl bg-blue-100 p-3 text-blue-600">
                           <FileText size={18} />
                         </div>
                         <div>
                           <p className="!mb-1 text-base text-[var(--text-primary)]">{applicant.full_name}</p>
-                          <p className="!mb-0 text-sm text-[var(--text-secondary)]">{formatDate(applicant.created_at)}</p>
+                          <p className="!mb-0 text-sm text-[var(--text-secondary)]">
+                            {applicant.position || 'Unspecified position'} · {applicant.status} · {formatDate(applicant.created_at)}
+                          </p>
                         </div>
                       </div>
                     ))}
-                    {applicants.length === 0 && <p className="!mb-0 text-sm text-[var(--text-secondary)]">No recent activity found.</p>}
+                    {recentApplicants.length === 0 && <p className="!mb-0 text-sm text-[var(--text-secondary)]">No recent activity found.</p>}
                   </div>
                 </div>
 
@@ -3193,20 +3594,20 @@ export const RSPDashboard = () => {
                     <Building2 className="text-[var(--text-muted)]" size={20} />
                   </div>
                   <div className="space-y-3">
-                    {officeOptions.map((office) => {
-                      const officeApplicants = applicants.filter((applicant) => applicant.office === office);
-                      const officePositions = new Set(officeApplicants.map((applicant) => applicant.position)).size;
+                    {departmentBreakdown.map((row) => {
                       return (
-                        <div key={office} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                        <div key={row.department} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
                           <div>
-                            <p className="!mb-1 text-base font-semibold text-[var(--text-primary)]">{office}</p>
-                            <p className="!mb-0 text-sm text-[var(--text-secondary)]">{officePositions} position{officePositions === 1 ? '' : 's'}</p>
+                            <p className="!mb-1 text-base font-semibold text-[var(--text-primary)]">{row.department}</p>
+                            <p className="!mb-0 text-sm text-[var(--text-secondary)]">
+                              {row.positions} position{row.positions === 1 ? '' : 's'}
+                            </p>
                           </div>
-                          <p className="!mb-0 text-right text-xl font-bold text-blue-600">{officeApplicants.length}</p>
+                          <p className="!mb-0 text-right text-xl font-bold text-blue-600">{row.applicants}</p>
                         </div>
                       );
                     })}
-                    {officeOptions.length === 0 && <p className="!mb-0 text-sm text-[var(--text-secondary)]">No department data available.</p>}
+                    {departmentBreakdown.length === 0 && <p className="!mb-0 text-sm text-[var(--text-secondary)]">No department data available.</p>}
                   </div>
                 </div>
               </section>
@@ -3336,6 +3737,13 @@ export const RSPDashboard = () => {
           )}
 
           {section === 'qualified' && (
+            <QualifiedApplicantsSection
+              applicants={applicants}
+              completedEvaluationIds={completedEvaluationIds}
+            />
+          )}
+
+          {section === 'applicant-score' && (
             <QualifiedApplicantsSection
               applicants={applicants}
               completedEvaluationIds={completedEvaluationIds}
@@ -3527,51 +3935,14 @@ export const RSPDashboard = () => {
 
           {section === 'accounts' && (
             <>
-              {accountsView === 'overview' ? (
+              {accountsView === 'directory' ? (
                 <>
-                  <section className="rounded-2xl border border-[var(--border-color)] bg-white p-6 xl:w-3/5">
-                    <button
-                      type="button"
-                      onClick={() => setAccountsView('directory')}
-                      className="flex w-full items-center gap-4 rounded-2xl border border-[var(--border-color)] px-6 py-6 text-left transition hover:border-[var(--primary-color)]"
-                    >
-                      <div className="rounded-2xl bg-blue-100 p-4 text-blue-600"><Users size={28} /></div>
-                      <div className="flex-1">
-                        <p className="!mb-1 text-xl font-semibold text-[var(--text-primary)]">Employee Directory</p>
-                        <p className="!mb-0 text-lg text-[var(--text-secondary)]">View and manage all employee accounts, personal information, and document requirements</p>
-                      </div>
-                      <ChevronRight size={30} className="text-[var(--text-muted)]" />
-                    </button>
-                  </section>
-
-                  <section className="rounded-2xl border border-blue-200 bg-blue-50 p-6 xl:w-3/5">
-                    <h3 className="!mb-3 text-xl font-semibold text-blue-900">What you can do:</h3>
-                    <ul className="list-disc space-y-2 pl-6 text-base text-blue-800">
-                      <li>View all employees organized by position</li>
-                      <li>Access detailed employee profiles with personal information</li>
-                      <li>Request and manage employee document submissions</li>
-                      <li>Approve or request resubmission of documents</li>
-                    </ul>
-                  </section>
-                </>
-              ) : accountsView === 'directory' ? (
-                <>
-                  <section className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="!mb-1 text-base text-blue-600">RSP / Employees</p>
-                      <h2 className="!mb-1 text-4xl font-bold text-[var(--text-primary)]">Employee Directory</h2>
-                      <p className="!mb-0 text-lg text-[var(--text-secondary)]">
-                        Browse employees by position • {employeeDirectoryCards.totalEmployees} total employees
-                      </p>
-                    </div>
-                    <Button
-                      type="button"
-                      className="relative z-10 !px-6 !py-3 text-lg"
-                      onClick={openBulkRequestDialog}
-                    >
-                      <FileText size={20} /> Bulk Document Request
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm text-slate-500">{employeeDirectoryCards.totalEmployees} total employees</p>
+                    <Button type="button" onClick={openBulkRequestDialog}>
+                      <FileText size={16} /> Bulk Document Request
                     </Button>
-                  </section>
+                  </div>
 
                   <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
                     <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.3fr)_280px_280px]">
@@ -3631,57 +4002,67 @@ export const RSPDashboard = () => {
                       : `Position ${safeEmployeeDirectoryPage * EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE + 1} to ${Math.min((safeEmployeeDirectoryPage + 1) * EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE, employeeDirectoryCards.cards.length)} of ${employeeDirectoryCards.cards.length}`}
                   </div>
 
-                  <section className="grid grid-cols-[56px_minmax(0,1fr)_56px] items-start gap-4">
-                    <button
-                      type="button"
-                      onClick={() => setEmployeeDirectoryPage((current) => Math.max(0, current - 1))}
-                      disabled={safeEmployeeDirectoryPage === 0 || employeeDirectoryCards.cards.length === 0}
-                      className="flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 text-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <ChevronLeft size={24} />
-                    </button>
-
-                    <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-                      {paginatedEmployeeDirectoryCards.map((card) => (
-                        <button
-                          key={`${card.position}-${card.office}`}
-                          type="button"
-                          onClick={() => openPositionEmployees(card.position, card.office)}
-                          className="rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-                        >
-                          <div className="mb-3 flex items-start justify-between gap-3">
-                            <span className={`rounded-full px-3 py-1 text-sm font-semibold ${card.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : card.status === 'Inactive' ? 'bg-slate-200 text-slate-700' : 'bg-blue-100 text-blue-700'}`}>
-                              {card.status}
-                            </span>
-                            <ChevronRight size={18} className="text-slate-400" />
-                          </div>
-                          <h3 className="!mb-2 text-2xl font-bold text-slate-900">{card.position}</h3>
-                          <div className="space-y-2 text-base text-slate-600">
-                            <p className="!mb-0 inline-flex items-center gap-2"><MapPin size={16} className="text-slate-400" /> {card.office}</p>
-                            <p className="!mb-0 inline-flex items-center gap-2"><Users size={16} className="text-slate-400" /> {card.count} employee{card.count === 1 ? '' : 's'}</p>
-                            <p className="!mb-0 inline-flex items-center gap-2"><UserCheck size={16} className="text-slate-400" /> {card.activeCount} active • {card.inactiveCount} inactive</p>
-                          </div>
-                          <div className="mt-5 rounded-xl bg-blue-600 px-4 py-3 text-center text-base font-semibold text-white">
-                            View Employees
-                          </div>
-                        </button>
-                      ))}
-                      {employeeDirectoryCards.cards.length === 0 && (
-                        <div className="col-span-full rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">
-                          <Briefcase className="mx-auto h-10 w-10 text-slate-400" />
-                          <p className="mt-2 font-medium">No positions found for the selected filters.</p>
-                        </div>
-                      )}
+                  <section>
+                    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                      <table className="w-full min-w-full">
+                        <thead>
+                          <tr className="border-b border-slate-200 bg-slate-50">
+                            <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
+                            <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Office / Department</th>
+                            <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Employees</th>
+                            <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Active</th>
+                            <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Inactive</th>
+                            <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {paginatedEmployeeDirectoryCards.map((card) => (
+                            <tr
+                              key={`${card.position}-${card.office}`}
+                              className="border-b border-slate-100 hover:bg-slate-50 transition-colors last:border-0 cursor-pointer"
+                              onClick={() => openPositionEmployees(card.position, card.office)}
+                            >
+                              <td className="px-5 py-4">
+                                <span className="font-semibold text-sm text-slate-900">{card.position}</span>
+                                {card.newlyHiredCount > 0 && (
+                                  <span
+                                    className="ml-2 inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-emerald-700"
+                                    title={`${card.newlyHiredCount} employee(s) hired in the last ${NEWLY_HIRED_BADGE_DAYS} days`}
+                                  >
+                                    {card.newlyHiredCount > 1 ? `${card.newlyHiredCount} Newly Hired` : 'Newly Hired'}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-5 py-4 text-sm text-slate-600">
+                                <span className="inline-flex items-center gap-1.5"><MapPin size={13} className="text-slate-400" /> {card.office}</span>
+                              </td>
+                              <td className="px-5 py-4 text-center">
+                                <span className="font-bold text-slate-900 text-sm">{card.count}</span>
+                              </td>
+                              <td className="px-5 py-4 text-center">
+                                <span className="text-sm text-emerald-700 font-semibold">{card.activeCount}</span>
+                              </td>
+                              <td className="px-5 py-4 text-center">
+                                <span className="text-sm text-slate-500 font-semibold">{card.inactiveCount}</span>
+                              </td>
+                              <td className="px-5 py-4 text-center">
+                                <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${card.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : card.status === 'Inactive' ? 'bg-slate-200 text-slate-700' : 'bg-blue-100 text-blue-700'}`}>
+                                  {card.status}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                          {employeeDirectoryCards.cards.length === 0 && (
+                            <tr>
+                              <td colSpan={6} className="px-5 py-12 text-center text-slate-500">
+                                <Briefcase className="mx-auto mb-2 h-9 w-9 text-slate-300" />
+                                <p className="font-medium">No positions found for the selected filters.</p>
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setEmployeeDirectoryPage((current) => Math.min(employeeDirectoryPageCount - 1, current + 1))}
-                      disabled={safeEmployeeDirectoryPage >= employeeDirectoryPageCount - 1 || employeeDirectoryCards.cards.length === 0}
-                      className="flex h-14 w-14 items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 text-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <ChevronRight size={24} />
-                    </button>
                   </section>
 
                   <footer className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
@@ -3706,71 +4087,70 @@ export const RSPDashboard = () => {
                       </button>
                     </div>
                   </footer>
-
-                  <div>
-                    <Button variant="secondary" onClick={() => setAccountsView('overview')}>
-                      <ChevronLeft size={18} /> Back to Account Management
-                    </Button>
-                  </div>
                 </>
               ) : accountsView === 'position' ? (
                 <>
-                  <section>
-                    <button
-                      type="button"
-                      onClick={() => setAccountsView('directory')}
-                      className="mb-3 inline-flex items-center gap-2 text-xl font-semibold text-blue-600"
-                    >
-                      <ChevronLeft size={24} /> Employees
-                    </button>
-                    <h2 className="!mb-1 text-4xl font-bold text-[var(--text-primary)]">{selectedDirectoryCard?.position ?? 'Position'}</h2>
-                    <p className="!mb-0 text-lg text-[var(--text-secondary)]">{selectedPositionEmployees.length} employee{selectedPositionEmployees.length === 1 ? '' : 's'}</p>
-                  </section>
+                  <div>
+                    <div className="mb-1 flex items-center gap-1.5 text-sm">
+                      <button
+                        type="button"
+                        onClick={() => setAccountsView('directory')}
+                        className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
+                      >
+                        <ChevronLeft size={13} /> Office Directory
+                      </button>
+                      <ChevronRight size={13} className="text-slate-400" />
+                      <span className="font-medium text-slate-700">{selectedDirectoryCard?.position ?? 'Position'}</span>
+                    </div>
+                    <h2 className="!mb-0.5 text-xl font-bold text-[var(--text-primary)]">{selectedDirectoryCard?.position ?? 'Position'}</h2>
+                    <p className="!mb-0 text-sm text-[var(--text-secondary)]">{selectedPositionEmployees.length} employee{selectedPositionEmployees.length === 1 ? '' : 's'}</p>
+                  </div>
 
-                  <section className="overflow-hidden rounded-2xl border border-[var(--border-color)] bg-white">
-                    <table className="w-full border-collapse">
-                      <thead className="bg-slate-50 text-left text-sm uppercase tracking-wide text-[var(--text-secondary)]">
+                  <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                    <table className="w-full border-collapse text-sm">
+                      <thead className="bg-slate-50 text-left">
                         <tr>
-                          <th className="px-5 py-4">Employee Name</th>
-                          <th className="px-5 py-4">Employee Number</th>
-                          <th className="px-5 py-4">Position</th>
-                          <th className="px-5 py-4">Department</th>
-                          <th className="px-5 py-4">Status</th>
-                          <th className="px-5 py-4">Action</th>
+                          <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Employee Name</th>
+                          <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
+                          <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Department</th>
+                          <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
                         </tr>
                       </thead>
-                      <tbody>
+                      <tbody className="divide-y divide-slate-100">
                         {selectedPositionEmployees.map((employee) => {
                           const statusLabel = employee.status.toLowerCase().includes('inactive') ? 'Inactive' : 'Active';
+                          const empNum = employeeNumberById.get(employee.id) ?? '';
+                          const newHire = isNewlyHired(employee.hire_date);
                           return (
-                            <tr key={employee.id} className="border-t border-[var(--border-color)] text-lg">
-                              <td className="px-5 py-4">
-                                <p className="!mb-0 font-semibold text-[var(--text-primary)]">{employee.full_name}</p>
-                                <p className="!mb-0 text-base text-[var(--text-secondary)]">{employee.email || '--'}</p>
+                            <tr key={employee.id} onClick={() => openEmployeeDetails(employee.id)} className="cursor-pointer hover:bg-slate-50 transition-colors">
+                              <td className="px-5 py-3.5">
+                                <div className="flex items-center gap-2">
+                                  <p className="!mb-0 font-semibold" style={{ color: '#040E6B' }}>{employee.full_name}</p>
+                                  {newHire && (
+                                    <span
+                                      className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-emerald-700"
+                                      title={`Hired ${formatDate(employee.hire_date!)} — badge shows for ${NEWLY_HIRED_BADGE_DAYS} days`}
+                                    >
+                                      Newly Hired
+                                    </span>
+                                  )}
+                                </div>
+                                {empNum && <p className="!mb-0 mt-0.5 text-xs font-medium" style={{ color: '#363EE8' }}>{empNum}</p>}
+                                <p className="!mb-0 mt-0.5 text-xs text-slate-400">{employee.email || '--'}</p>
                               </td>
-                              <td className="px-5 py-4 text-[var(--text-secondary)]">{employeeNumberById.get(employee.id) ?? '--'}</td>
-                              <td className="px-5 py-4 text-[var(--text-secondary)]">{employee.position || '--'}</td>
-                              <td className="px-5 py-4 text-[var(--text-secondary)]">{employee.office || '--'}</td>
-                              <td className="px-5 py-4">
-                                <span className={`rounded-full px-3 py-1 text-sm font-semibold ${statusLabel === 'Active' ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-700'}`}>
+                              <td className="px-5 py-3.5 text-slate-600">{employee.position || '--'}</td>
+                              <td className="px-5 py-3.5 text-slate-600">{employee.office || '--'}</td>
+                              <td className="px-5 py-3.5">
+                                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusLabel === 'Active' ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-700'}`}>
                                   {statusLabel}
                                 </span>
-                              </td>
-                              <td className="px-5 py-4">
-                                <button
-                                  type="button"
-                                  onClick={() => openEmployeeDetails(employee.id)}
-                                  className="rounded-full border border-[var(--border-color)] p-2 text-[var(--text-muted)] transition hover:border-blue-400 hover:text-blue-600"
-                                >
-                                  <ChevronRight size={18} />
-                                </button>
                               </td>
                             </tr>
                           );
                         })}
                         {selectedPositionEmployees.length === 0 && (
                           <tr>
-                            <td colSpan={6} className="px-5 py-8 text-center text-base text-[var(--text-secondary)]">No employees found for this position.</td>
+                            <td colSpan={4} className="px-5 py-8 text-center text-sm text-slate-400">No employees found for this position.</td>
                           </tr>
                         )}
                       </tbody>
@@ -3779,207 +4159,201 @@ export const RSPDashboard = () => {
                 </>
               ) : (
                 <>
-                  <section>
+                  {/* Breadcrumb */}
+                  <div className="flex items-center gap-1.5 text-sm">
                     <button
                       type="button"
                       onClick={() => setAccountsView('position')}
-                      className="mb-3 inline-flex items-center gap-2 text-xl font-semibold text-blue-600"
+                      className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
                     >
-                      <ChevronLeft size={24} /> Back to Employees
+                      <ChevronLeft size={13} /> {selectedDirectoryCard?.position ?? 'Position'}
                     </button>
+                    <ChevronRight size={13} className="text-slate-400" />
+                    <span className="font-medium text-slate-700">{selectedEmployeeDetails?.full_name ?? 'Employee'}</span>
+                  </div>
 
-                    <div className="rounded-2xl border border-[var(--border-color)] bg-white p-6">
-                      <div className="mb-5 flex items-start gap-5">
-                        <div className="rounded-2xl bg-blue-100 p-5 text-blue-600"><User size={48} /></div>
-                        <div>
-                          <h2 className="!mb-1 text-4xl font-bold text-[var(--text-primary)]">{selectedEmployeeDetails?.full_name ?? 'Employee'}</h2>
-                          <p className="!mb-3 text-xl text-[var(--text-secondary)]">{selectedEmployeeDetails?.position || '--'}</p>
-                          <div className="flex flex-wrap gap-2 text-base">
-                            <span className="rounded-full bg-blue-100 px-3 py-1 text-blue-700">{selectedEmployeeDetails?.office || 'Unassigned Office'}</span>
-                            <span className="rounded-full bg-green-100 px-3 py-1 text-green-700">
-                              {selectedEmployeeDetails?.status?.toLowerCase().includes('inactive') ? 'Inactive' : 'Active'}
+                  {/* Header — matches Applicant detail style */}
+                  <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-5">
+                    <div className="flex items-start gap-4">
+                      <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-blue-100">
+                        <User size={24} className="text-blue-600" />
+                      </div>
+                      <div>
+                        <h2 className="!mb-0.5 text-xl font-bold" style={{ color: '#040E6B' }}>
+                          {selectedEmployeeDetails?.full_name ?? 'Employee'}
+                        </h2>
+                        <p className="!mb-2 text-sm text-slate-500">{selectedEmployeeDetails?.position || '—'}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${selectedEmployeeDetails?.status?.toLowerCase().includes('inactive') ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                            {selectedEmployeeDetails?.status?.toLowerCase().includes('inactive') ? 'Inactive' : 'Active'}
+                          </span>
+                          {selectedEmployeeDetails && employeeNumberById.get(selectedEmployeeDetails.id) && (
+                            <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                              {employeeNumberById.get(selectedEmployeeDetails.id)}
                             </span>
-                            <span className="rounded-full bg-slate-100 px-3 py-1 text-[var(--text-secondary)]">{selectedEmployeeDetails ? employeeNumberById.get(selectedEmployeeDetails.id) : '--'}</span>
-                          </div>
+                          )}
+                          <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                            {selectedEmployeeDetails?.office || 'Unassigned Office'}
+                          </span>
                         </div>
                       </div>
+                    </div>
+                    <div className="flex flex-shrink-0 items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowPositionChangeModal(true)}
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { void openResetPwModal(); }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-sm font-semibold text-rose-600 hover:bg-rose-50"
+                      >
+                        <Lock size={13} /> Reset Password
+                      </button>
+                    </div>
+                  </div>
 
-                      <div className="mt-2 border-b border-[var(--border-color)]">
-                        <button
-                          type="button"
-                          onClick={() => setEmployeeDetailsTab('personal')}
-                          className={`mr-6 border-b-2 px-2 py-3 text-xl font-semibold ${employeeDetailsTab === 'personal' ? 'border-blue-600 text-blue-600' : 'border-transparent text-[var(--text-secondary)]'}`}
-                        >
-                          Personal Details
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setEmployeeDetailsTab('documents')}
-                          className={`border-b-2 px-2 py-3 text-xl font-semibold ${employeeDetailsTab === 'documents' ? 'border-blue-600 text-blue-600' : 'border-transparent text-[var(--text-secondary)]'}`}
-                        >
-                          Documents & Requirements <span className="ml-1 rounded-full bg-blue-600 px-2 py-0.5 text-sm text-white">{selectedEmployeeDocuments.length}</span>
-                        </button>
-                      </div>
+                  {/* Tab bar — matches Applicant detail style */}
+                  <div className="flex items-center gap-0 border-b border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setEmployeeDetailsTab('personal')}
+                      className={`flex items-center gap-1.5 border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${employeeDetailsTab === 'personal' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                    >
+                      <User size={14} /> Overview
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEmployeeDetailsTab('documents')}
+                      className={`flex items-center gap-1.5 border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${employeeDetailsTab === 'documents' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                    >
+                      <FileText size={14} /> Documents
+                      {selectedEmployeeDocuments.length > 0 && (
+                        <span className="ml-0.5 rounded-full bg-blue-600 px-2 py-0.5 text-xs text-white">{selectedEmployeeDocuments.length}</span>
+                      )}
+                    </button>
+                  </div>
 
-                      {employeeDetailsTab === 'personal' ? (
-                        <div className="mt-5 grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-                          <div className="space-y-5">
-                            <section className="rounded-2xl border border-[var(--border-color)] p-5">
-                              <h3 className="!mb-3 flex items-center gap-2 text-2xl font-semibold text-[var(--text-primary)]"><Mail size={20} className="text-blue-600" /> Contact Information</h3>
-                              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                                <div>
-                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Email Address</p>
-                                  <p className="!mb-0 text-xl text-[var(--text-primary)]">{selectedEmployeeDetails?.email || '--'}</p>
-                                </div>
-                                <div>
-                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Contact Number</p>
-                                  <p className="!mb-0 flex items-center gap-2 text-xl text-[var(--text-primary)]"><Phone size={16} className="text-[var(--text-muted)]" /> {selectedEmployeeDetails?.contact_number || '--'}</p>
-                                </div>
-                                <div className="xl:col-span-2">
-                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Address</p>
-                                  <p className="!mb-0 flex items-center gap-2 text-xl text-[var(--text-primary)]"><MapPin size={16} className="text-[var(--text-muted)]" /> {selectedEmployeeProfile?.address || '--'}</p>
-                                </div>
-                              </div>
-                            </section>
-
-                            <section className="rounded-2xl border border-[var(--border-color)] p-5">
-                              <h3 className="!mb-3 text-2xl font-semibold text-[var(--text-primary)]">Personal Details</h3>
-                              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                                <div>
-                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Date of Birth</p>
-                                  <p className="!mb-0 text-xl text-[var(--text-primary)]">{selectedEmployeeProfile?.dateOfBirth || '--'}</p>
-                                </div>
-                                <div>
-                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Place of Birth</p>
-                                  <p className="!mb-0 text-xl text-[var(--text-primary)]">{selectedEmployeeProfile?.placeOfBirth || '--'}</p>
-                                </div>
-                                <div>
-                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Age</p>
-                                  <p className="!mb-0 text-xl text-[var(--text-primary)]">{selectedEmployeeProfile?.age || '--'}</p>
-                                </div>
-                                <div>
-                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Sex</p>
-                                  <p className="!mb-0 text-xl text-[var(--text-primary)]">{selectedEmployeeProfile?.sex || '--'}</p>
-                                </div>
-                                <div>
-                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Civil Status</p>
-                                  <p className="!mb-0 text-xl text-[var(--text-primary)]">{selectedEmployeeProfile?.civilStatus || '--'}</p>
-                                </div>
-                              </div>
-                            </section>
-
-                            <section className="rounded-2xl border border-[var(--border-color)] p-5">
-                              <h3 className="!mb-3 flex items-center gap-2 text-2xl font-semibold text-[var(--text-primary)]"><AlertCircle size={20} className="text-red-500" /> Emergency Contact</h3>
-                              <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                                <div>
-                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Contact Person</p>
-                                  <p className="!mb-0 text-xl text-[var(--text-primary)]">{selectedEmployeeProfile?.emergencyContactName || '--'}</p>
-                                </div>
-                                <div>
-                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Relationship</p>
-                                  <p className="!mb-0 text-xl text-[var(--text-primary)]">{selectedEmployeeProfile?.emergencyContactRelationship || '--'}</p>
-                                </div>
-                                <div>
-                                  <p className="!mb-1 text-base text-[var(--text-secondary)]">Phone Number</p>
-                                  <p className="!mb-0 text-xl text-[var(--text-primary)]">{selectedEmployeeProfile?.emergencyContactPhone || '--'}</p>
-                                </div>
-                              </div>
-                            </section>
-                          </div>
-
-                          <div className="space-y-4">
-                            <section className="rounded-2xl border border-[var(--border-color)] p-5">
-                              <div className="mb-3 flex items-center justify-between">
-                                <h3 className="!mb-0 text-2xl font-semibold text-[var(--text-primary)]">Employment Details</h3>
-                                <button
-                                  type="button"
-                                  onClick={() => setShowPositionChangeModal(true)}
-                                  className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white"
-                                >
-                                  Edit
-                                </button>
-                              </div>
-                              <p className="!mb-1 text-base text-[var(--text-secondary)]">Employee Number</p>
-                              <p className="!mb-3 text-xl font-semibold text-[var(--text-primary)]">{selectedEmployeeDetails ? employeeNumberById.get(selectedEmployeeDetails.id) : '--'}</p>
-                              <p className="!mb-1 text-base text-[var(--text-secondary)]">Position</p>
-                              <p className="!mb-3 text-xl text-[var(--text-primary)]">{selectedEmployeeDetails?.position || '--'}</p>
-                              <p className="!mb-1 text-base text-[var(--text-secondary)]">Department</p>
-                              <p className="!mb-3 text-xl text-[var(--text-primary)]">{selectedEmployeeDetails?.office || '--'}</p>
-                              <p className="!mb-1 text-base text-[var(--text-secondary)]">Date Hired</p>
-                              <p className="!mb-3 text-xl text-[var(--text-primary)]">{selectedEmployeeProfile?.dateHired || '--'}</p>
-                              <p className="!mb-1 text-base text-[var(--text-secondary)]">Employment Status</p>
-                              <p className="!mb-0 text-xl text-green-700">{selectedEmployeeDetails?.status?.toLowerCase().includes('inactive') ? 'Inactive' : 'Active'}</p>
-                            </section>
-
-                            <section className="rounded-2xl border border-[var(--border-color)] p-5">
-                              <h3 className="!mb-3 text-2xl font-semibold text-[var(--text-primary)]">Reset Password</h3>
-                              <button
-                                type="button"
-                                onClick={() => { setResetPwState('confirm'); setResetPwError(null); }}
-                                className="w-full rounded-xl bg-red-600 px-4 py-3 text-base font-semibold text-white"
-                              >
-                                <Lock size={16} className="mr-2 inline" /> Reset Password
-                              </button>
-                            </section>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="mt-5 space-y-5">
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <h3 className="!mb-1 text-3xl font-bold text-[var(--text-primary)]">Document Requirements</h3>
-                              <p className="!mb-0 text-lg text-[var(--text-secondary)]">Manage and review employee document submissions</p>
+                  {/* Overview tab content */}
+                  {employeeDetailsTab === 'personal' ? (
+                    <div className="space-y-4">
+                      {/* Personal Information */}
+                      <section className="rounded-2xl border border-slate-200 bg-white p-5">
+                        <h3 className="!mb-4 text-xs font-bold uppercase tracking-widest" style={{ color: '#363EE8' }}>Personal Information</h3>
+                        <div className="divide-y divide-slate-100">
+                          {([
+                            ['Full Name', selectedEmployeeDetails?.full_name],
+                            ['Email Address', selectedEmployeeDetails?.email],
+                            ['Phone Number', selectedEmployeeDetails?.contact_number],
+                            ['Address', selectedEmployeeProfile?.address],
+                            ['Date of Birth', selectedEmployeeProfile?.dateOfBirth],
+                            ['Place of Birth', selectedEmployeeProfile?.placeOfBirth],
+                            ['Age', selectedEmployeeProfile?.age],
+                            ['Sex', selectedEmployeeProfile?.sex],
+                            ['Civil Status', selectedEmployeeProfile?.civilStatus],
+                          ] as [string, string | null | undefined][]).map(([label, value]) => (
+                            <div key={label} className="flex items-center justify-between py-3">
+                              <p className="!mb-0 text-sm text-slate-500">{label}</p>
+                              <p className="!mb-0 text-sm font-medium" style={{ color: '#040E6B' }}>{value || '—'}</p>
                             </div>
-                            <button type="button" className="rounded-xl bg-blue-600 px-4 py-2 text-lg font-semibold text-white">
-                              <FileText size={16} className="mr-2 inline" /> Request Document
-                            </button>
-                          </div>
-
-                          {selectedEmployeeDocuments.map((doc) => (
-                            <article key={doc.id} className="rounded-2xl border border-[var(--border-color)] bg-white p-5">
-                              <div className="mb-2 flex items-center gap-3">
-                                <h4 className="!mb-0 text-2xl font-semibold text-[var(--text-primary)]">{doc.name}</h4>
-                                {doc.status === 'awaiting_review' && <span className="rounded-full bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-700">Awaiting Review</span>}
-                                {doc.status === 'rejected' && <span className="rounded-full bg-red-100 px-3 py-1 text-sm font-semibold text-red-700">Rejected</span>}
-                                {doc.status === 'pending_submission' && <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-700">Pending Submission</span>}
-                              </div>
-                              <p className="!mb-2 text-lg text-[var(--text-secondary)]">{doc.description}</p>
-                              <p className="!mb-2 text-base text-[var(--text-secondary)]">
-                                <Calendar size={16} className="mr-1 inline" /> Requested: {doc.requestedAt}
-                                {'  '}•{'  '}
-                                <Calendar size={16} className="mr-1 inline" /> Due: {doc.dueAt}
-                                {doc.submittedAt ? (
-                                  <>
-                                    {'  '}•{'  '}
-                                    <Download size={16} className="mr-1 inline" /> Submitted: {doc.submittedAt}
-                                  </>
-                                ) : null}
-                              </p>
-
-                              {doc.status === 'awaiting_review' && (
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                  <button type="button" className="rounded-xl bg-blue-100 px-4 py-2 text-base text-blue-700"><Eye size={16} className="mr-1 inline" /> View Document</button>
-                                  <button type="button" className="rounded-xl bg-green-600 px-4 py-2 text-base text-white"><Check size={16} className="mr-1 inline" /> Approve</button>
-                                  <button type="button" className="rounded-xl bg-red-600 px-4 py-2 text-base text-white"><X size={16} className="mr-1 inline" /> Request Resubmission</button>
-                                </div>
-                              )}
-
-                              {doc.status === 'rejected' && (
-                                <>
-                                  <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-lg text-red-700">
-                                    <strong>Rejection Reason:</strong> {doc.rejectionReason}
-                                  </div>
-                                  <p className="!mb-0 mt-3 text-base font-semibold text-red-700">
-                                    <AlertCircle size={16} className="mr-1 inline" /> Awaiting resubmission from employee
-                                  </p>
-                                </>
-                              )}
-                            </article>
                           ))}
                         </div>
-                      )}
+                      </section>
+
+                      {/* Employment Details */}
+                      <section className="rounded-2xl border border-slate-200 bg-white p-5">
+                        <h3 className="!mb-4 text-xs font-bold uppercase tracking-widest" style={{ color: '#363EE8' }}>Employment Details</h3>
+                        <div className="divide-y divide-slate-100">
+                          {([
+                            ['Employee Number', selectedEmployeeDetails ? (employeeNumberById.get(selectedEmployeeDetails.id) ?? null) : null],
+                            ['Position', selectedEmployeeDetails?.position],
+                            ['Department / Office', selectedEmployeeDetails?.office],
+                            ['Date Hired', selectedEmployeeProfile?.dateHired],
+                            ['Employment Status', selectedEmployeeDetails?.status?.toLowerCase().includes('inactive') ? 'Inactive' : 'Active'],
+                          ] as [string, string | null | undefined][]).map(([label, value]) => (
+                            <div key={label} className="flex items-center justify-between py-3">
+                              <p className="!mb-0 text-sm text-slate-500">{label}</p>
+                              <p className="!mb-0 text-sm font-medium" style={{ color: '#040E6B' }}>{value || '—'}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+
+                      {/* Emergency Contact */}
+                      <section className="rounded-2xl border border-slate-200 bg-white p-5">
+                        <h3 className="!mb-4 text-xs font-bold uppercase tracking-widest" style={{ color: '#363EE8' }}>Emergency Contact</h3>
+                        <div className="divide-y divide-slate-100">
+                          {([
+                            ['Contact Person', selectedEmployeeProfile?.emergencyContactName],
+                            ['Relationship', selectedEmployeeProfile?.emergencyContactRelationship],
+                            ['Phone Number', selectedEmployeeProfile?.emergencyContactPhone],
+                          ] as [string, string | null | undefined][]).map(([label, value]) => (
+                            <div key={label} className="flex items-center justify-between py-3">
+                              <p className="!mb-0 text-sm text-slate-500">{label}</p>
+                              <p className="!mb-0 text-sm font-medium" style={{ color: '#040E6B' }}>{value || '—'}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
                     </div>
-                  </section>
+                  ) : (
+                    /* Documents tab content */
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h3 className="!mb-0.5 text-base font-bold" style={{ color: '#040E6B' }}>Document Requirements</h3>
+                          <p className="!mb-0 text-sm text-slate-500">Manage and review employee document submissions</p>
+                        </div>
+                        <button type="button" className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white">
+                          <FileText size={14} /> Request Document
+                        </button>
+                      </div>
+
+                      {selectedEmployeeDocuments.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-400">
+                          No documents requested yet.
+                        </div>
+                      ) : selectedEmployeeDocuments.map((doc) => (
+                        <article key={doc.id} className="rounded-2xl border border-slate-200 bg-white p-5">
+                          <div className="mb-2 flex items-center gap-3">
+                            <h4 className="!mb-0 text-sm font-bold" style={{ color: '#040E6B' }}>{doc.name}</h4>
+                            {doc.status === 'awaiting_review' && <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-700">Awaiting Review</span>}
+                            {doc.status === 'rejected' && <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700">Rejected</span>}
+                            {doc.status === 'pending_submission' && <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Pending Submission</span>}
+                          </div>
+                          <p className="!mb-2 text-xs text-slate-500">{doc.description}</p>
+                          <p className="!mb-2 text-xs text-slate-400">
+                            <Calendar size={11} className="mr-1 inline" /> Requested: {doc.requestedAt}
+                            {' · '}
+                            <Calendar size={11} className="mr-1 inline" /> Due: {doc.dueAt}
+                            {doc.submittedAt && (
+                              <> · <Download size={11} className="mr-1 inline" /> Submitted: {doc.submittedAt}</>
+                            )}
+                          </p>
+                          {doc.status === 'awaiting_review' && (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <button type="button" className="inline-flex items-center gap-1 rounded-xl bg-blue-100 px-3 py-1.5 text-xs font-semibold text-blue-700"><Eye size={13} /> View Document</button>
+                              <button type="button" className="inline-flex items-center gap-1 rounded-xl bg-green-600 px-3 py-1.5 text-xs font-semibold text-white"><Check size={13} /> Approve</button>
+                              <button type="button" className="inline-flex items-center gap-1 rounded-xl bg-red-600 px-3 py-1.5 text-xs font-semibold text-white"><X size={13} /> Request Resubmission</button>
+                            </div>
+                          )}
+                          {doc.status === 'rejected' && (
+                            <>
+                              <div className="mt-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
+                                <strong>Rejection Reason:</strong> {doc.rejectionReason}
+                              </div>
+                              <p className="!mb-0 mt-2 text-xs font-semibold text-red-700">
+                                <AlertCircle size={12} className="mr-1 inline" /> Awaiting resubmission from employee
+                              </p>
+                            </>
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                  )}
 
                   {showPositionChangeModal && selectedEmployeeDetails && (
                     <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/50 p-4" onClick={() => setShowPositionChangeModal(false)}>
@@ -4112,101 +4486,476 @@ export const RSPDashboard = () => {
           {section === 'reports' && (
             <>
               {reportsView === 'overview' ? (
-                <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
-                  {[
-                    {
-                      title: 'Application Ranking Report',
-                      subtitle: 'Generate comparative assessment reports with applicant rankings',
-                      icon: FileText,
-                      color: 'bg-blue-100 text-blue-600',
-                      onClick: () => setReportsView('ranking'),
-                    },
-                    {
-                      title: 'Assessment Forms',
-                      subtitle: 'View and print individual applicant assessment reports',
-                      icon: Briefcase,
-                      color: 'bg-green-100 text-green-600',
-                      onClick: () => setReportsView('assessment'),
-                    },
-                  ].map((card) => {
-                    const Icon = card.icon;
+                <div className="flex flex-col gap-3">
+
+                  {/* ── Row 1: Application Ranking ── */}
+                  {(() => {
+                    const allRows: { dept: string; position: string }[] = [];
+                    rankingHistoricalData.forEach((posMap, dept) => {
+                      posMap.forEach((_rows, pos) => allRows.push({ dept, position: pos }));
+                    });
                     return (
                       <button
-                        key={card.title}
                         type="button"
-                        onClick={card.onClick}
-                        className="rounded-2xl border border-[var(--border-color)] bg-white p-5 text-left transition hover:border-[var(--primary-color)]"
+                        onClick={() => setReportsView('ranking')}
+                        className="group flex w-full items-center gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left shadow-sm transition hover:border-blue-300 hover:shadow-md"
                       >
-                          <div className="mb-6 flex items-start justify-between">
-                            <div className={`rounded-2xl p-3 ${card.color}`}><Icon size={24} /></div>
-                            <ChevronRight size={22} className="text-[var(--text-muted)]" />
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-100">
+                          <BarChart2 size={20} className="text-blue-600" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-bold text-slate-900">Application Ranking</p>
+                          <p className="text-xs text-slate-500">Applicant rankings by position and department</p>
                         </div>
-                          <h3 className="!mb-2 !text-lg font-semibold">{card.title}</h3>
-                          <p className="!mb-4 !text-sm text-[var(--text-secondary)]">{card.subtitle}</p>
-                          <span className="rounded-full bg-slate-100 px-3 py-1 !text-xs text-[var(--text-secondary)]">Official Template</span>
+                        <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-bold text-blue-700">{allRows.length}</span>
+                        <ChevronRight size={16} className="shrink-0 text-slate-400 group-hover:text-blue-600 transition-colors" />
                       </button>
                     );
-                  })}
+                  })()}
+
+                  {/* ── Row 2: Assessment Forms ── */}
+                  <button
+                    type="button"
+                    onClick={() => setReportsView('assessment')}
+                    className="group flex w-full items-center gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left shadow-sm transition hover:border-emerald-300 hover:shadow-md"
+                  >
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100">
+                      <FileText size={20} className="text-emerald-600" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-bold text-slate-900">Assessment Forms</p>
+                      <p className="text-xs text-slate-500">Assessment reports and scores per position</p>
+                    </div>
+                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-bold text-emerald-700">{assessmentPositionCards.length}</span>
+                    <ChevronRight size={16} className="shrink-0 text-slate-400 group-hover:text-emerald-600 transition-colors" />
+                  </button>
+
+                  {/* ── Row 3: Closed Jobs ── */}
+                  {(() => {
+                    const closedCount = jobs.filter(j => j.status === 'Closed').length;
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => setReportsView('closed')}
+                        className="group flex w-full items-center gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left shadow-sm transition hover:border-slate-400 hover:shadow-md"
+                      >
+                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-100">
+                          <Briefcase size={20} className="text-slate-600" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-bold text-slate-900">Closed Jobs</p>
+                          <p className="text-xs text-slate-500">Archived job postings no longer accepting applications</p>
+                        </div>
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-bold text-slate-700">{closedCount}</span>
+                        <ChevronRight size={16} className="shrink-0 text-slate-400 group-hover:text-slate-700 transition-colors" />
+                      </button>
+                    );
+                  })()}
+
+                  {/* ── Row 4: Temporary Employee Account Generation ── */}
+                  <button
+                    type="button"
+                    onClick={() => setReportsView('temp')}
+                    className="group flex w-full items-center gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 text-left shadow-sm transition hover:border-purple-300 hover:shadow-md"
+                  >
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-purple-100">
+                      <UserPlus size={20} className="text-purple-600" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-bold text-slate-900">Temporary Employee Account Generation</p>
+                      <p className="text-xs text-slate-500">Hired applicants and temporary employee accounts</p>
+                    </div>
+                    <span className="rounded-full bg-purple-50 px-3 py-1 text-sm font-bold text-purple-700">{newlyHiredApplicants.length}</span>
+                    <ChevronRight size={16} className="shrink-0 text-slate-400 group-hover:text-purple-600 transition-colors" />
+                  </button>
+
+                </div>
+
+              ) : reportsView === 'closed' ? (
+                <section className="space-y-4">
+                  <div>
+                    <div className="mb-2 flex flex-wrap items-center gap-1.5 text-sm">
+                      <button type="button" onClick={() => setReportsView('overview')} className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline">
+                        <ChevronLeft size={13} /> Archives
+                      </button>
+                      <ChevronRight size={13} className="text-slate-400" />
+                      <span className="font-medium text-slate-700">Closed Jobs</span>
+                    </div>
+                    <h2 className="text-xl font-bold text-[var(--text-primary)]">Closed Jobs</h2>
+                    <p className="text-sm text-[var(--text-secondary)]">Job postings that are no longer accepting applications.</p>
+                  </div>
+                  {(() => {
+                    const PAGE = 10;
+                    const closedJobs = jobs.filter(j => j.status === 'Closed');
+                    const t = archivesClosedSearch.trim().toLowerCase();
+                    const depts = [...new Set(closedJobs.map(j => j.department || 'Unassigned'))].sort();
+                    const filtered = closedJobs.filter(j =>
+                      (!t || j.title.toLowerCase().includes(t) || j.department.toLowerCase().includes(t)) &&
+                      (archivesClosedDeptFilter === 'all' || j.department === archivesClosedDeptFilter)
+                    );
+                    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE));
+                    const page = Math.min(archivesClosedPage, totalPages - 1);
+                    const sliced = filtered.slice(page * PAGE, (page + 1) * PAGE);
+                    const fmtDt = (iso: string) => { try { return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }); } catch { return iso; } };
+                    return (
+                      <>
+                        <div className="flex flex-wrap gap-2">
+                          <div className="relative flex-1 min-w-[180px]">
+                            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input value={archivesClosedSearch} onChange={e => { setArchivesClosedSearch(e.target.value); setArchivesClosedPage(0); }} placeholder="Search by job title or department…" className="h-9 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm focus:outline-none" />
+                          </div>
+                          <select value={archivesClosedDeptFilter} onChange={e => { setArchivesClosedDeptFilter(e.target.value); setArchivesClosedPage(0); }} className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm">
+                            <option value="all">All Departments</option>
+                            {depts.map(d => <option key={d} value={d}>{d}</option>)}
+                          </select>
+                        </div>
+                        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                          <table className="w-full min-w-full">
+                            <thead>
+                              <tr className="border-b border-slate-200 bg-slate-50">
+                                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position Title</th>
+                                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Department</th>
+                                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Item No.</th>
+                                <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Date</th>
+                                <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {sliced.length === 0 ? (
+                                <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-500">{closedJobs.length === 0 ? 'No closed jobs on record.' : 'No results match your search.'}</td></tr>
+                              ) : sliced.map(j => (
+                                <tr key={j.id} className="border-b border-slate-100 last:border-0">
+                                  <td className="px-5 py-3 text-sm font-semibold text-slate-900">{j.title}</td>
+                                  <td className="px-5 py-3 text-sm text-slate-600">{j.department}</td>
+                                  <td className="px-5 py-3 text-sm text-slate-500">{j.item_number || '—'}</td>
+                                  <td className="px-5 py-3 text-center text-sm text-slate-500">{fmtDt(j.created_at)}</td>
+                                  <td className="px-5 py-3 text-center">
+                                    <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">Closed</span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        {filtered.length > PAGE && (
+                          <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                            <span>Showing {page * PAGE + 1}–{Math.min((page + 1) * PAGE, filtered.length)} of {filtered.length}</span>
+                            <div className="flex gap-1.5">
+                              <button onClick={() => setArchivesClosedPage(p => Math.max(0, p - 1))} disabled={page === 0} className="rounded-lg border border-slate-200 px-3 py-1 font-semibold disabled:opacity-40">Previous</button>
+                              <button onClick={() => setArchivesClosedPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="rounded-lg border border-slate-200 px-3 py-1 font-semibold disabled:opacity-40">Next</button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </section>
+
+              ) : reportsView === 'temp' ? (
+                <section className="space-y-4">
+                  <div>
+                    <div className="mb-2 flex flex-wrap items-center gap-1.5 text-sm">
+                      <button type="button" onClick={() => setReportsView('overview')} className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline">
+                        <ChevronLeft size={13} /> Archives
+                      </button>
+                      <ChevronRight size={13} className="text-slate-400" />
+                      <span className="font-medium text-slate-700">Temporary Employee Account Generation</span>
+                    </div>
+                    <h2 className="text-xl font-bold text-[var(--text-primary)]">Temporary Employee Account Generation</h2>
+                    <p className="text-sm text-[var(--text-secondary)]">Hired applicants and their generated temporary accounts.</p>
+                  </div>
+                  {(() => {
+                    const PAGE = 10;
+                    const t = archivesTempSearch.trim().toLowerCase();
+                    const depts = [...new Set(newlyHiredApplicants.map(a => a.office || 'Unassigned'))].sort();
+                    const filtered = newlyHiredApplicants.filter(a =>
+                      (!t || a.full_name.toLowerCase().includes(t) || (a.email || '').toLowerCase().includes(t)) &&
+                      (archivesTempDeptFilter === 'all' || a.office === archivesTempDeptFilter)
+                    );
+                    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE));
+                    const page = Math.min(archivesTempPage, totalPages - 1);
+                    const sliced = filtered.slice(page * PAGE, (page + 1) * PAGE);
+                    const fmtDt = (iso: string) => { try { return new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }); } catch { return iso; } };
+                    return (
+                      <>
+                        <div className="flex flex-wrap gap-2">
+                          <div className="relative flex-1 min-w-[180px]">
+                            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input value={archivesTempSearch} onChange={e => { setArchivesTempSearch(e.target.value); setArchivesTempPage(0); }} placeholder="Search by employee name or email…" className="h-9 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm focus:outline-none" />
+                          </div>
+                          <select value={archivesTempDeptFilter} onChange={e => { setArchivesTempDeptFilter(e.target.value); setArchivesTempPage(0); }} className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm">
+                            <option value="all">All Departments</option>
+                            {depts.map(d => <option key={d} value={d}>{d}</option>)}
+                          </select>
+                        </div>
+                        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                          <table className="w-full min-w-full">
+                            <thead>
+                              <tr className="border-b border-slate-200 bg-slate-50">
+                                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Employee Name</th>
+                                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
+                                <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Department / Office</th>
+                                <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Date Hired</th>
+                                <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {sliced.length === 0 ? (
+                                <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-500">{newlyHiredApplicants.length === 0 ? 'No hired employees on record.' : 'No results match your search.'}</td></tr>
+                              ) : sliced.map(a => (
+                                <tr key={a.id} className="border-b border-slate-100 last:border-0">
+                                  <td className="px-5 py-3">
+                                    <p className="!mb-0 text-sm font-semibold text-slate-900">{a.full_name}</p>
+                                    <p className="!mb-0 text-xs text-slate-400">{a.email || '—'}</p>
+                                  </td>
+                                  <td className="px-5 py-3 text-sm text-slate-600">{a.position || '—'}</td>
+                                  <td className="px-5 py-3 text-sm text-slate-600">{a.office || '—'}</td>
+                                  <td className="px-5 py-3 text-center text-sm text-slate-500">{fmtDt(a.created_at)}</td>
+                                  <td className="px-5 py-3 text-center">
+                                    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${a.status.toLowerCase().includes('hired') || a.status.toLowerCase().includes('accept') ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+                                      {a.status}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        {filtered.length > PAGE && (
+                          <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                            <span>Showing {page * PAGE + 1}–{Math.min((page + 1) * PAGE, filtered.length)} of {filtered.length}</span>
+                            <div className="flex gap-1.5">
+                              <button onClick={() => setArchivesTempPage(p => Math.max(0, p - 1))} disabled={page === 0} className="rounded-lg border border-slate-200 px-3 py-1 font-semibold disabled:opacity-40">Previous</button>
+                              <button onClick={() => setArchivesTempPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="rounded-lg border border-slate-200 px-3 py-1 font-semibold disabled:opacity-40">Next</button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </section>
+
               ) : reportsView === 'documents' ? null : reportsView === 'ranking' ? (
                 <section className="space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--border-color)] bg-white p-5">
-                    <div>
-                      <p className="!mb-1 text-sm font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Reports / Application Ranking</p>
-                      <h2 className="!mb-1 text-2xl font-semibold text-[var(--text-primary)]">Application Ranking Reports</h2>
-                      <p className="!mb-0 text-base text-[var(--text-secondary)]">Generate ranking reports per position and select applicants to hire.</p>
+                  {/* ── Header bar ─────────────────────────────────────────── */}
+                  <div>
+                    <div className="mb-2 flex flex-wrap items-center gap-1.5 text-sm">
+                      <button
+                        type="button"
+                        onClick={() => setReportsView('overview')}
+                        className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
+                      >
+                        <ChevronLeft size={13} /> Archives
+                      </button>
+                      <ChevronRight size={13} className="text-slate-400" />
+                      <button
+                        type="button"
+                        onClick={() => { setRankingNavDept(null); setRankingNavPos(null); }}
+                        className={`font-medium ${rankingNavDept ? 'text-blue-600 hover:underline' : 'text-slate-700'}`}
+                      >
+                        Application Ranking
+                      </button>
+                      {rankingNavDept && (
+                        <>
+                          <ChevronRight size={13} className="text-slate-400" />
+                          <button
+                            type="button"
+                            onClick={() => setRankingNavPos(null)}
+                            className={`font-medium ${rankingNavPos ? 'text-blue-600 hover:underline' : 'text-slate-700'}`}
+                          >
+                            {rankingNavDept}
+                          </button>
+                        </>
+                      )}
+                      {rankingNavPos && (
+                        <>
+                          <ChevronRight size={13} className="text-slate-400" />
+                          <span className="font-medium text-slate-700">{rankingNavPos}</span>
+                        </>
+                      )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setReportsView('overview')}
-                      className="rounded-lg border border-[var(--border-color)] bg-white px-4 py-2 text-sm font-semibold text-[var(--text-primary)]"
-                    >
-                      Back to Reports
-                    </button>
+                    <h2 className="text-xl font-bold text-[var(--text-primary)]">
+                      {rankingNavPos ? rankingNavPos : rankingNavDept ? rankingNavDept : 'Application Ranking Reports'}
+                    </h2>
                   </div>
 
-                  {rankingPositionCards.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-[var(--border-color)] bg-white p-6 text-center">
-                      <p className="!mb-0 text-base text-[var(--text-secondary)]">No qualified applicants available for ranking reports yet.</p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                      {rankingPositionCards.map((card) => (
-                        <article key={card.position} className="rounded-2xl border border-[var(--border-color)] bg-white p-5">
-                          <p className="!mb-1 text-sm text-[var(--text-secondary)]">{card.department}</p>
-                          <h3 className="!mb-2 text-xl font-semibold text-[var(--text-primary)]">{card.position}</h3>
-                          <p className="!mb-4 text-sm text-[var(--text-secondary)]">
-                            Item No.: <span className="font-semibold text-[var(--text-primary)]">{card.itemNumber}</span>
-                            {' • '}
-                            Qualified Applicants: <span className="font-semibold text-[var(--text-primary)]">{card.qualifiedCount}</span>
+                  {/* ── Level 1: Department table ─────────────────────────── */}
+                  {!rankingNavDept && (
+                    rankingHistoricalData.size === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-[var(--border-color)] bg-white p-6 text-center">
+                        <p className="!mb-0 text-base text-[var(--text-secondary)]">No applicant records available yet.</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                        <table className="w-full min-w-full">
+                          <thead>
+                            <tr className="border-b border-slate-200 bg-slate-50">
+                              <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Department / Office</th>
+                              <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Positions</th>
+                              <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Applicants</th>
+                              <th className="w-10 px-5 py-3" />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Array.from(rankingHistoricalData.entries())
+                              .sort(([a], [b]) => a.localeCompare(b))
+                              .map(([dept, posMap]) => {
+                                const totalApplicants = Array.from(posMap.values()).reduce((s, arr) => s + arr.length, 0);
+                                return (
+                                  <tr
+                                    key={dept}
+                                    onClick={() => setRankingNavDept(dept)}
+                                    className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-blue-50/40 transition-colors group"
+                                  >
+                                    <td className="px-5 py-4">
+                                      <div className="flex items-center gap-3">
+                                        <div className="shrink-0 rounded-xl bg-[#363EE8]/10 p-2 text-[#363EE8]">
+                                          <Building2 size={18} />
+                                        </div>
+                                        <span className="text-sm font-semibold text-slate-900">{dept}</span>
+                                      </div>
+                                    </td>
+                                    <td className="px-5 py-4 text-center text-sm text-slate-600">{posMap.size}</td>
+                                    <td className="px-5 py-4 text-center">
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-[#363EE8]/10 px-2.5 py-0.5 text-xs font-semibold text-[#363EE8]">
+                                        {totalApplicants}
+                                      </span>
+                                    </td>
+                                    <td className="px-5 py-4 text-slate-400 group-hover:text-[#363EE8] transition-colors">
+                                      <ChevronRight size={16} />
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )
+                  )}
+
+                  {/* ── Level 2: Positions in selected department ─────────── */}
+                  {rankingNavDept && !rankingNavPos && (() => {
+                    const posMap = rankingHistoricalData.get(rankingNavDept);
+                    if (!posMap) return null;
+                    return (
+                      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                        <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
+                          <p className="!mb-0 text-sm font-bold uppercase tracking-wider text-slate-500">{rankingNavDept}</p>
+                        </div>
+                        <table className="w-full min-w-full">
+                          <thead>
+                            <tr className="border-b border-slate-200 bg-white">
+                              <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
+                              <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Applicants</th>
+                              <th className="w-10 px-5 py-3" />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {Array.from(posMap.entries())
+                              .sort(([a], [b]) => a.localeCompare(b))
+                              .map(([pos, rows]) => (
+                                <tr
+                                  key={pos}
+                                  onClick={() => setRankingNavPos(pos)}
+                                  className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-blue-50/40 transition-colors group"
+                                >
+                                  <td className="px-5 py-4 text-sm font-semibold text-slate-900">{pos}</td>
+                                  <td className="px-5 py-4 text-center">
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-[#363EE8]/10 px-2.5 py-0.5 text-xs font-semibold text-[#363EE8]">
+                                      {rows.length}
+                                    </span>
+                                  </td>
+                                  <td className="px-5 py-4 text-slate-400 group-hover:text-[#363EE8] transition-colors">
+                                    <ChevronRight size={16} />
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()}
+
+                  {/* ── Level 3: Applicants in selected position ──────────── */}
+                  {rankingNavDept && rankingNavPos && (() => {
+                    const posMap = rankingHistoricalData.get(rankingNavDept);
+                    const rows = (posMap?.get(rankingNavPos) ?? [])
+                      .slice()
+                      .sort((a, b) => (b.total_score ?? -1) - (a.total_score ?? -1));
+                    const fmtScore = (v: number | null | undefined) => v != null ? v.toFixed(2) : '—';
+                    return (
+                      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                        <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-3">
+                          <p className="!mb-0 text-sm font-bold uppercase tracking-wider text-slate-500">
+                            {rankingNavDept} — {rankingNavPos}
                           </p>
                           <button
                             type="button"
-                            onClick={() => openRankingReport(card.position)}
-                            className="rounded-lg bg-[var(--primary-color)] px-4 py-2 text-sm font-semibold text-white"
+                            onClick={() => openRankingReport(rankingNavPos)}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--primary-color)] px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 transition"
                           >
-                            Generate Ranking Report
+                            <FileText size={12} /> Generate Ranking Report
                           </button>
-                        </article>
-                      ))}
-                    </div>
-                  )}
+                        </div>
+                        <table className="w-full min-w-full">
+                          <thead>
+                            <tr className="border-b border-slate-200 bg-white">
+                              <th className="w-12 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Rank</th>
+                              <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Applicant Name</th>
+                              <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
+                              <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Interview Score</th>
+                              <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Exam Score</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rows.length === 0 ? (
+                              <tr>
+                                <td colSpan={5} className="px-5 py-8 text-center text-sm text-slate-500">No applicants found.</td>
+                              </tr>
+                            ) : rows.map((row, idx) => {
+                              const rank = idx + 1;
+                              const medalBg = rank === 1 ? 'bg-yellow-400 text-yellow-900' : rank === 2 ? 'bg-slate-300 text-slate-800' : rank === 3 ? 'bg-amber-500 text-amber-900' : 'bg-slate-100 text-slate-600';
+                              const statusLc = row.status.toLowerCase();
+                              const statusColor = statusLc.includes('hired') ? 'bg-green-100 text-green-700' : statusLc.includes('qualified') ? 'bg-blue-100 text-blue-700' : statusLc.includes('disqualified') || statusLc.includes('rejected') ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600';
+                              return (
+                                <tr key={row.id} className="border-b border-slate-100 last:border-0">
+                                  <td className="px-4 py-3 text-center">
+                                    <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${medalBg}`}>{rank}</span>
+                                  </td>
+                                  <td className="px-5 py-3">
+                                    <p className="!mb-0 text-sm font-semibold text-slate-900">{row.full_name}</p>
+                                    <p className="!mb-0 text-xs text-slate-400">{row.email}</p>
+                                  </td>
+                                  <td className="px-5 py-3">
+                                    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusColor}`}>{row.status}</span>
+                                  </td>
+                                  <td className="px-5 py-3 text-center text-sm font-bold text-[#040E6B]">{fmtScore(row.total_score)}</td>
+                                  <td className="px-5 py-3 text-center text-sm font-bold text-[#040E6B]">{fmtScore(row.qualification_score)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()}
                 </section>
               ) : (
                 <section className="space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--border-color)] bg-white p-5">
-                    <div>
-                      <p className="!mb-1 text-sm font-semibold uppercase tracking-wide text-[var(--text-secondary)]">Reports / Assessment Forms</p>
-                      <h2 className="!mb-1 text-2xl font-semibold text-[var(--text-primary)]">Assessment Forms</h2>
-                      <p className="!mb-0 text-base text-[var(--text-secondary)]">Select a job position to view and print assessment forms.</p>
+                  <div>
+                    <div className="mb-2 flex flex-wrap items-center gap-1.5 text-sm">
+                      <button
+                        type="button"
+                        onClick={() => setReportsView('overview')}
+                        className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
+                      >
+                        <ChevronLeft size={13} /> Archives
+                      </button>
+                      <ChevronRight size={13} className="text-slate-400" />
+                      <span className="font-medium text-slate-700">Assessment Forms</span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setReportsView('overview')}
-                      className="rounded-lg border border-[var(--border-color)] bg-white px-4 py-2 text-sm font-semibold text-[var(--text-primary)]"
-                    >
-                      Back to Reports
-                    </button>
+                    <h2 className="text-xl font-bold text-[var(--text-primary)]">Assessment Forms</h2>
+                    <p className="text-sm text-[var(--text-secondary)]">Select a job position to view and print assessment forms.</p>
                   </div>
 
                   {assessmentPositionCards.length === 0 ? (
@@ -4214,77 +4963,73 @@ export const RSPDashboard = () => {
                       <p className="!mb-0 text-base text-[var(--text-secondary)]">No assessment forms available for current job postings.</p>
                     </div>
                   ) : (
-                    <div className="space-y-4">
-                      {assessmentPositionCards.map((card, index) => (
-                        <article key={card.position} className="rounded-2xl border border-[var(--border-color)] bg-white p-5">
-                          <div className="mb-3 flex items-start justify-between gap-3">
-                            <div>
-                              <div className="mb-2 flex flex-wrap items-center gap-2">
-                                <span className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-700">Position #{index + 1}</span>
-                                <span className="text-sm text-[var(--text-secondary)]">{card.itemNumber}</span>
+                    (() => {
+                      // Group by department
+                      const byDept = new Map<string, typeof assessmentPositionCards>();
+                      assessmentPositionCards.forEach((card) => {
+                        const dept = card.department || 'Unassigned Department';
+                        if (!byDept.has(dept)) byDept.set(dept, []);
+                        byDept.get(dept)!.push(card);
+                      });
+                      return (
+                        <div className="space-y-4">
+                          {Array.from(byDept.entries()).map(([dept, cards]) => (
+                            <div key={dept} className="overflow-hidden rounded-2xl border border-[var(--border-color)] bg-white">
+                              {/* Department header */}
+                              <div className="border-b border-[var(--border-color)] bg-slate-50 px-5 py-3">
+                                <p className="!mb-0 text-sm font-bold uppercase tracking-wider text-[var(--text-secondary)]">{dept}</p>
                               </div>
-                              <h3 className="!mb-2 !text-lg font-semibold text-[var(--text-primary)]">{card.position}</h3>
-                              <p className="!mb-0 !text-sm text-[var(--text-secondary)]">{card.department} • {card.totalApplicants} Total Applicants</p>
+                              <table className="w-full min-w-full">
+                                <thead>
+                                  <tr className="border-b border-slate-100 bg-white">
+                                    <th className="px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Position</th>
+                                    <th className="px-5 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-slate-400">Total</th>
+                                    <th className="px-5 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-slate-400">Hired</th>
+                                    <th className="px-5 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-slate-400">Qualified</th>
+                                    <th className="px-5 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-slate-400">Disqualified</th>
+                                    <th className="px-5 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-slate-400">Report</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {cards.map((card) => (
+                                    <tr key={card.position} className="border-b border-slate-100 last:border-0">
+                                      <td className="px-5 py-3">
+                                        <p className="!mb-0 text-sm font-semibold text-[var(--text-primary)]">{card.position}</p>
+                                        <p className="!mb-0 text-xs text-[var(--text-secondary)]">{card.itemNumber}</p>
+                                      </td>
+                                      <td className="px-5 py-3 text-center text-sm font-bold text-slate-700">{card.totalApplicants}</td>
+                                      <td className="px-5 py-3 text-center">
+                                        <span className="rounded-md bg-green-100 px-2 py-0.5 text-xs font-semibold text-green-700">{card.hiredCount}</span>
+                                      </td>
+                                      <td className="px-5 py-3 text-center">
+                                        <span className="rounded-md bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">{card.qualifiedCount}</span>
+                                      </td>
+                                      <td className="px-5 py-3 text-center">
+                                        <span className="rounded-md bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">{card.disqualifiedCount}</span>
+                                      </td>
+                                      <td className="px-5 py-3 text-center">
+                                        <button
+                                          type="button"
+                                          onClick={() => openAssessmentForms(card.position)}
+                                          className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 transition-colors"
+                                        >
+                                          <FileText size={12} /> View
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
                             </div>
-                            <div className="rounded-2xl bg-green-100 p-3 text-green-600">
-                              <FileText size={24} />
-                            </div>
-                          </div>
-
-                          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
-                            <span className="rounded-md bg-green-100 px-2 py-1 font-semibold text-green-700">{card.hiredCount} Hired</span>
-                            <span className="rounded-md bg-blue-100 px-2 py-1 font-semibold text-blue-700">{card.qualifiedCount} Qualified</span>
-                            <span className="rounded-md bg-red-100 px-2 py-1 font-semibold text-red-700">{card.disqualifiedCount} Disqualified</span>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => openAssessmentForms(card.position)}
-                            className="w-full rounded-xl bg-green-600 px-4 py-2.5 text-base font-semibold text-white"
-                          >
-                            View Assessment Forms
-                          </button>
-                        </article>
-                      ))}
-                    </div>
+                          ))}
+                        </div>
+                      );
+                    })()
                   )}
                 </section>
               )}
 
-              {reportsView !== 'documents' ? (
-                <>
-                  <section>
-                    <h2 className="!mb-1 !text-lg font-semibold">Employee Documents</h2>
-                    <p className="!text-sm text-[var(--text-secondary)]">Access and download documents submitted by employees</p>
-                  </section>
-
-                  <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-                    {BULK_REQUEST_TEMPLATES.map((template) => (
-                      <button
-                        key={template.id}
-                        type="button"
-                        onClick={() => openDocumentTemplate(template.id)}
-                        className="rounded-2xl border border-[var(--border-color)] bg-white p-5 text-center transition hover:border-[var(--primary-color)]"
-                      >
-                        <div className="mb-3 inline-flex rounded-2xl bg-indigo-100 p-3 text-indigo-600">
-                          <FileText size={22} />
-                        </div>
-                        <h3 className="!mb-0 !text-sm font-semibold text-[var(--text-primary)]">{template.name.replace(' (Statement of Assets, Liabilities and Net Worth)', '')}</h3>
-                      </button>
-                    ))}
-                  </section>
-
-                  <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
-                    <h3 className="!mb-3 !text-base font-semibold text-blue-900">Document Generation Guidelines</h3>
-                    <ul className="list-disc space-y-2 pl-6 !text-sm text-blue-800">
-                      <li>All reports follow official government formatting standards</li>
-                      <li>Ranking reports are automatically formatted for landscape printing</li>
-                      <li>Assessment forms are portrait-oriented with conditional logic for disqualified applicants</li>
-                      <li>Use the Print function in your browser to generate PDF documents</li>
-                    </ul>
-                  </section>
-                </>
-              ) : (
+              {reportsView === 'documents' && (
                 <section className="space-y-4">
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
@@ -5136,7 +5881,8 @@ export const RSPDashboard = () => {
                     let performanceScore = null;
                     if (appointmentType === 'promotional') {
                       const perfRaw = resolveScoreValue(stored?.performance);
-                      performanceScore = typeof perfRaw === 'number' && perfRaw > 0 ? clamp20((perfRaw / 5.0) * 20) : null;
+                      // finalScore is already the converted score (12 for VS, 14 for O)
+                      performanceScore = typeof perfRaw === 'number' && perfRaw > 0 ? clamp20(perfRaw) : null;
                     }
 
                     // --- PCPT (both) ---
@@ -5591,15 +6337,153 @@ export const RSPDashboard = () => {
                       onChange={(event) => setNewJob((prev) => ({ ...prev, responsibilities: event.target.value }))}
                     />
                   </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="!mb-2 flex items-center gap-2 text-4xl font-bold text-[var(--text-primary)]">
+                  <FileText size={28} className="text-blue-600" /> Qualification Standards
+                </h3>
+                <p className="mb-4 text-base text-[var(--text-secondary)]">
+                  What this position actually requires. Applicants see these on the job posting, and
+                  the portal uses them to show each person exactly what they're missing. Leave a field
+                  blank if it genuinely doesn't apply — blanks show as "Not specified" rather than a
+                  made-up requirement.
+                </p>
+
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">
+                        Highest Educational Attainment
+                      </label>
+                      <select
+                        className="w-full rounded-xl border border-[var(--border-color)] bg-white p-3 text-base"
+                        value={newJob.education_requirement}
+                        onChange={(event) =>
+                          setNewJob((prev) => ({ ...prev, education_requirement: event.target.value }))
+                        }
+                      >
+                        <option value="">Not specified</option>
+                        <option value="Elementary Graduate">Elementary Graduate</option>
+                        <option value="High School Graduate">High School Graduate</option>
+                        <option value="College Level">College Level</option>
+                        <option value="College Graduate">College Graduate</option>
+                        <option value="Masteral Units">Masteral Units</option>
+                        <option value="Graduate School">Graduate School</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">
+                        Field of Study
+                      </label>
+                      <input
+                        className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
+                        placeholder="e.g. BS Information Technology or related field"
+                        value={newJob.education_field}
+                        onChange={(event) =>
+                          setNewJob((prev) => ({ ...prev, education_field: event.target.value }))
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">
+                        Years of Experience
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.5}
+                        className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
+                        placeholder="0"
+                        value={newJob.experience_years}
+                        onChange={(event) =>
+                          setNewJob((prev) => ({ ...prev, experience_years: event.target.value }))
+                        }
+                      />
+                    </div>
+                    <div className="xl:col-span-2">
+                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">
+                        Experience In
+                      </label>
+                      <input
+                        className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
+                        placeholder="e.g. Systems administration / network operations"
+                        value={newJob.experience_field}
+                        onChange={(event) =>
+                          setNewJob((prev) => ({ ...prev, experience_field: event.target.value }))
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">
+                        Salary Grade
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={33}
+                        className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
+                        placeholder="e.g. 22"
+                        value={newJob.salary_grade}
+                        onChange={(event) =>
+                          setNewJob((prev) => ({ ...prev, salary_grade: event.target.value }))
+                        }
+                      />
+                      <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                        Ranks this position within its department.
+                      </p>
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">
+                        Training
+                      </label>
+                      <input
+                        className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
+                        placeholder="e.g. 8 hours of relevant training"
+                        value={newJob.training_requirement}
+                        onChange={(event) =>
+                          setNewJob((prev) => ({ ...prev, training_requirement: event.target.value }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">
+                        Eligibility
+                      </label>
+                      <input
+                        className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
+                        placeholder="e.g. CS Professional / RA 1080"
+                        value={newJob.eligibility}
+                        onChange={(event) =>
+                          setNewJob((prev) => ({ ...prev, eligibility: event.target.value }))
+                        }
+                      />
+                    </div>
+                  </div>
+
                   <div>
-                    <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">Qualifications</label>
+                    <label className="mb-2 block text-base font-semibold text-[var(--text-primary)]">
+                      Required Skills
+                    </label>
                     <textarea
                       rows={4}
                       className="w-full rounded-xl border border-[var(--border-color)] p-3 text-base"
-                      placeholder="List required qualifications, education, and experience..."
-                      value={newJob.qualifications}
-                      onChange={(event) => setNewJob((prev) => ({ ...prev, qualifications: event.target.value }))}
+                      placeholder="One skill per line, e.g.&#10;Network administration&#10;SQL&#10;Technical documentation"
+                      value={newJob.required_skills}
+                      onChange={(event) =>
+                        setNewJob((prev) => ({ ...prev, required_skills: event.target.value }))
+                      }
                     />
+                    <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                      One per line. These drive the applicant's skills-gap comparison.
+                    </p>
                   </div>
                 </div>
               </section>
@@ -6001,15 +6885,21 @@ export const RSPDashboard = () => {
                   <p className="!mb-0 text-sm text-slate-700">
                     Generate a new password for{' '}
                     <span className="font-semibold">
-                      {'name' in selectedEmployeeDetails
-                        ? (String((selectedEmployeeDetails as any).name ?? '') || 'Unnamed Employee')
-                        : `${(selectedEmployeeDetails as any).first_name ?? ''} ${(selectedEmployeeDetails as any).last_name ?? ''}`.trim()}
+                      {(selectedEmployeeDetails.first_name || selectedEmployeeDetails.last_name)
+                        ? `${selectedEmployeeDetails.first_name ?? ''} ${selectedEmployeeDetails.last_name ?? ''}`.trim()
+                        : (selectedEmployeeDetails.full_name || 'Unnamed Employee')}
                     </span>
                     {employeeNumberById.get(selectedEmployeeDetails.id)
                       ? ` (${employeeNumberById.get(selectedEmployeeDetails.id)})`
                       : ''}
-                    ? The old password will stop working immediately.
+                    ? This generates a new password and invalidates the previous one immediately.
                   </p>
+                  {lastResetInfo && (
+                    <p className="!mb-0 text-xs text-slate-500">
+                      Last reset by {lastResetInfo.reset_by || 'unknown'} on{' '}
+                      {new Date(lastResetInfo.reset_at).toLocaleString()}.
+                    </p>
+                  )}
                   <div className="flex justify-end gap-2">
                     <button
                       type="button"

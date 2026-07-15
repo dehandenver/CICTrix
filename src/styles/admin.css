@@ -1287,5 +1287,48 @@
   }
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   RSP Brand Color Scheme
+   Body text: #040E6B (dark navy)  |  Headers: #363EE8 (brand blue)
+   ══════════════════════════════════════════════════════════════════════════ */
 
+/* 1 — Override CSS variables so var(--text-primary/secondary/muted) resolve to brand dark navy */
+.admin-layout {
+  --text-primary:   #040E6B;
+  --text-secondary: #040E6B;
+  --text-muted:     rgba(4, 14, 107, 0.55);
+  --icon-primary:   #040E6B;
+  color: #040E6B;
+}
+
+/* 2 — Override Tailwind slate text utilities inside the content area */
+.admin-content .text-slate-900,
+.admin-content .text-slate-800,
+.admin-content .text-slate-700,
+.admin-content .text-slate-600,
+.admin-content .text-slate-500,
+.admin-content .text-slate-400 {
+  color: #040E6B;
+}
+
+/* 3 — Brand blue for all section headings (overrides any Tailwind text class) */
+.admin-content h1,
+.admin-content h2,
+.admin-content h3,
+.admin-content h4 {
+  color: #363EE8 !important;
+}
+
+/* Scoring modal header title + subtitle must stay white on the dark gradient
+   header. The `.admin-content .scoring-modal-title` selector (specificity 0,2,0)
+   outranks the `.admin-content h2` override (0,1,1) — a bare `.scoring-modal-title`
+   would lose the !important tie on specificity. */
+.admin-content .scoring-modal-title,
+.scoring-modal-title {
+  color: #ffffff !important;
+}
+.admin-content .scoring-modal-subtitle,
+.scoring-modal-subtitle {
+  color: rgba(255, 255, 255, 0.9) !important;
+}
 

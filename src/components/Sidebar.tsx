@@ -1,10 +1,20 @@
-import { BookOpen, FileText, LayoutDashboard, Settings, TrendingUp, UserCog, Users, Network } from 'lucide-react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { BookOpen, Briefcase, ClipboardCheck, ClipboardList, FileText, LayoutDashboard, ListChecks, Network, Settings, ShieldCheck, TrendingUp, UserCheck, UserCog, Users } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { getApplicantsFromSupabase, getApplicants } from '../lib/recruitmentData';
 import '../styles/sidebar.css';
 
 type AdminRole = 'super-admin' | 'rsp' | 'lnd' | 'pm';
+
+// Maps the short module identifier (passed in by each dashboard) to the full
+// label shown in the sidebar header so admins see the spelled-out name.
+const ADMIN_MODULE_LABELS: Record<string, string> = {
+  RSP: 'Recruitment, Selection, and Placement',
+  PM: 'Performance Management',
+  LND: 'Learning and Development',
+  'L&D': 'Learning and Development',
+  Super: 'Super Admin',
+};
 
 interface SidebarProps {
   activeModule?: string;
@@ -23,21 +33,17 @@ interface MenuItem {
 
 export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
   const location = useLocation();
-  const navigate = useNavigate();
   const [qualifiedCount, setQualifiedCount] = useState(0);
 
-  // Function to update qualified applicant count
   const updateQualifiedCount = async () => {
     try {
-      // Try Supabase first (source of truth)
       const applicants = await getApplicantsFromSupabase();
       const count = applicants.filter((a) => {
         const s = (a.status || '').toLowerCase();
         return s.includes('qualified') || s.includes('recommend') || s.includes('hired');
       }).length;
       setQualifiedCount(count);
-    } catch (err) {
-      // Fallback to localStorage
+    } catch {
       try {
         const applicants = getApplicants();
         const count = applicants.filter((a) => {
@@ -52,10 +58,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
   };
 
   useEffect(() => {
-    // Initial load
     void updateQualifiedCount();
-
-    // Listen for applicant updates
     window.addEventListener('cictrix:applicants-updated', updateQualifiedCount);
     return () => window.removeEventListener('cictrix:applicants-updated', updateQualifiedCount);
   }, []);
@@ -74,7 +77,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
 
   const getPath = (module: 'dashboard' | 'rsp' | 'lnd' | 'pm' | 'settings', defaultPath: string) =>
     isSuperAdmin ? `/admin?module=${module}` : defaultPath;
-  
+
   const menuItems: MenuItem[] = [
     {
       path: getPath('dashboard', '/admin'),
@@ -84,7 +87,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       isActive: isSuperAdmin
         ? location.pathname === '/admin' && activeAdminModule === 'dashboard'
         : location.pathname === '/admin',
-      roles: ['super-admin']
+      roles: ['super-admin'],
     },
     {
       path: getPath('rsp', '/admin/rsp'),
@@ -94,7 +97,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       isActive: isSuperAdmin
         ? location.pathname === '/admin' && activeAdminModule === 'rsp'
         : location.pathname === '/admin/rsp' || location.pathname === '/admin/jobs' || location.pathname === '/admin/raters',
-      roles: ['super-admin', 'rsp']
+      roles: ['super-admin', 'rsp'],
     },
     {
       path: getPath('lnd', '/admin/lnd'),
@@ -104,7 +107,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       isActive: isSuperAdmin
         ? location.pathname === '/admin' && activeAdminModule === 'lnd'
         : location.pathname === '/admin/lnd' || location.pathname === '/admin/lnd/manage',
-      roles: ['super-admin', 'lnd']
+      roles: ['super-admin', 'lnd'],
     },
     {
       path: getPath('pm', '/admin/pm'),
@@ -114,15 +117,39 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       isActive: isSuperAdmin
         ? location.pathname === '/admin' && activeAdminModule === 'pm'
         : location.pathname === '/admin/pm' || location.pathname === '/admin/pm/manage',
-      roles: ['super-admin', 'pm']
+      roles: ['super-admin', 'pm'],
     },
     {
-      path: '/admin/users',
+      path: '/admin/system-admin',
+      icon: ShieldCheck,
+      label: 'System Administration',
+      sublabel: 'Offices, roles & cycle control',
+      isActive: location.pathname === '/admin/system-admin',
+      roles: ['super-admin'],
+    },
+    {
+      path: '/admin/ipcr',
+      icon: ClipboardCheck,
+      label: 'IPCR Management',
+      sublabel: 'Onboarding, targets & ratings',
+      isActive: location.pathname === '/admin/ipcr',
+      roles: ['super-admin'],
+    },
+    {
+      path: '/admin/competency',
+      icon: ListChecks,
+      label: 'Competency Framework',
+      sublabel: 'Position requirements & review',
+      isActive: location.pathname === '/admin/competency',
+      roles: ['super-admin', 'pm'],
+    },
+    {
+      path: '/admin/supervisors',
       icon: UserCog,
-      label: 'User Management',
-      sublabel: '',
-      isActive: location.pathname === '/admin/users',
-      roles: ['super-admin']
+      label: 'Supervisor Access',
+      sublabel: 'Accounts & password resets',
+      isActive: location.pathname === '/admin/supervisors' || location.pathname === '/admin/users',
+      roles: ['super-admin'],
     },
     {
       path: '/admin/reports',
@@ -130,7 +157,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       label: 'Reports',
       sublabel: '',
       isActive: location.pathname === '/admin/reports',
-      roles: ['super-admin']
+      roles: ['super-admin'],
     },
     {
       path: getPath('settings', '/admin/settings'),
@@ -140,8 +167,8 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       isActive: isSuperAdmin
         ? location.pathname === '/admin' && activeAdminModule === 'settings'
         : location.pathname === '/admin/settings',
-      roles: ['super-admin']
-    }
+      roles: ['super-admin'],
+    },
   ];
 
   const rspMenuItems: MenuItem[] = [
@@ -151,32 +178,37 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       label: 'Dashboard',
       sublabel: '',
       isActive: location.pathname === '/admin/rsp',
-      roles: ['rsp'] as AdminRole[],
+      roles: ['rsp'],
     },
     {
       path: '/admin/rsp/jobs',
-      icon: FileText,
+      icon: Briefcase,
       label: 'Job Posts',
       sublabel: 'Manage positions',
       isActive: location.pathname === '/admin/rsp/jobs',
-      roles: ['rsp'] as AdminRole[],
+      roles: ['rsp'],
     },
+    // ── Applicants (tabs live inside the Applications page) ───────────────
     {
-      path: '/admin/rsp/qualified',
-      icon: Users,
-      label: 'Qualified Applicants',
-      sublabel: 'Ready for interview',
-      isActive: location.pathname === '/admin/rsp/qualified',
-      roles: ['rsp'] as AdminRole[],
-      badge: qualifiedCount > 0 ? qualifiedCount.toString() : undefined,
+      path: '/admin/rsp/applications',
+      icon: ClipboardList,
+      label: 'Applicants',
+      sublabel: 'Applications & scoring',
+      isActive:
+        location.pathname === '/admin/rsp/applications' ||
+        location.pathname === '/admin/rsp/qualified' ||
+        location.pathname === '/admin/rsp/applicant-score' ||
+        location.pathname === '/admin/rsp/applicant-ranking',
+      roles: ['rsp'],
     },
+    // ── Other sections ────────────────────────────────────────────────────
     {
       path: '/admin/rsp/new-hired',
       icon: Users,
       label: 'Newly Hired',
       sublabel: 'Generate credentials',
       isActive: location.pathname === '/admin/rsp/new-hired',
-      roles: ['rsp'] as AdminRole[],
+      roles: ['rsp'],
     },
     {
       path: '/admin/rsp/raters',
@@ -184,31 +216,33 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       label: 'Rater Management',
       sublabel: 'Access control',
       isActive: location.pathname === '/admin/rsp/raters',
-      roles: ['rsp'] as AdminRole[],
+      roles: ['rsp'],
     },
     {
       path: '/admin/rsp/accounts',
       icon: Users,
-      label: 'Employee Accounts',
+      label: 'Office Directory',
       sublabel: 'All employees',
       isActive: location.pathname === '/admin/rsp/accounts',
-      roles: ['rsp'] as AdminRole[],
+      roles: ['rsp'],
     },
     {
       path: '/admin/rsp/succession',
       icon: Network,
       label: 'Succession Planning',
       sublabel: 'Backup employees per position',
-      isActive: location.pathname === '/admin/rsp/succession' || location.pathname.startsWith('/admin/rsp/succession/'),
-      roles: ['rsp'] as AdminRole[],
+      isActive:
+        location.pathname === '/admin/rsp/succession' ||
+        location.pathname.startsWith('/admin/rsp/succession/'),
+      roles: ['rsp'],
     },
     {
       path: '/admin/rsp/reports',
       icon: FileText,
-      label: 'Reports',
+      label: 'Archives',
       sublabel: '',
       isActive: location.pathname === '/admin/rsp/reports',
-      roles: ['rsp'] as AdminRole[],
+      roles: ['rsp'],
     },
     {
       path: '/admin/rsp/settings',
@@ -216,29 +250,27 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       label: 'Settings',
       sublabel: '',
       isActive: location.pathname === '/admin/rsp/settings',
-      roles: ['rsp'] as AdminRole[],
+      roles: ['rsp'],
     },
   ];
 
   const sourceMenu = isRspRole ? rspMenuItems : menuItems;
 
-  const filteredMenuItems = sourceMenu.filter(item => {
-    // If no role defined for the item, don't show it
+  const filteredMenuItems = sourceMenu.filter((item) => {
     if (!item.roles || item.roles.length === 0) return false;
-    // If user has no role, don't show anything
     if (!resolvedRole) return false;
-    // Check if user's role is in the allowed roles
-    const allowed = item.roles.includes(resolvedRole);
-    return allowed;
+    return item.roles.includes(resolvedRole);
   });
 
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
         <h2>HRIS Admin</h2>
-        {activeModule && <span className="sidebar-module">{activeModule}</span>}
+        {activeModule && (
+          <span className="sidebar-module">{ADMIN_MODULE_LABELS[activeModule] ?? activeModule}</span>
+        )}
       </div>
-      
+
       <nav className="sidebar-nav">
         {filteredMenuItems.map((item) => {
           const Icon = item.icon;
@@ -249,7 +281,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
               className={`sidebar-nav-item ${item.isActive ? 'active' : ''}`}
             >
               <Icon size={18} />
-              <div className="sidebar-nav-text flex-1 flex items-center justify-between">
+              <div className="sidebar-nav-text flex-1 flex items-start justify-between">
                 <div>
                   <span className="sidebar-nav-title">{item.label}</span>
                   {item.sublabel ? <span className="sidebar-nav-subtitle flex">{item.sublabel}</span> : null}
@@ -264,7 +296,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
           );
         })}
       </nav>
-      
+
       <div className="sidebar-footer">
         {session && (
           <div className="sidebar-user">

@@ -1,8 +1,10 @@
 import { Eye, EyeOff, Lock, Mail } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { scheduleTransientUiReset } from '../../utils/uiReset';
+import iloiloCitySeal from '../../assets/iloilo-city-seal.png';
+import abyanLogo from '../../assets/abyan-logo.png';
 
 type Role = 'super-admin' | 'rsp' | 'lnd' | 'pm';
 
@@ -31,15 +33,20 @@ interface LoginPageProps {
 
 // Mock credentials for development
 const MOCK_USERS: Record<string, { password: string; role: Role }> = {
+  'admin@abyan.gov.ph': { password: 'admin123', role: 'super-admin' },
+  'rsp@abyan.gov.ph': { password: 'rsp123', role: 'rsp' },
+  'lnd@abyan.gov.ph': { password: 'lnd123', role: 'lnd' },
+  'pm@abyan.gov.ph': { password: 'pm123', role: 'pm' },
+
   'admin@cictrix.gov.ph': { password: 'admin123', role: 'super-admin' },
   'rsp@cictrix.gov.ph': { password: 'rsp123', role: 'rsp' },
   'lnd@cictrix.gov.ph': { password: 'lnd123', role: 'lnd' },
   'pm@cictrix.gov.ph': { password: 'pm123', role: 'pm' },
 
-  'admin@cictrix.com': { password: 'Admin@123', role: 'super-admin' },
-  'rsp@cictrix.com': { password: 'RSP@123', role: 'rsp' },
-  'lnd@cictrix.com': { password: 'LND@123', role: 'lnd' },
-  'pm@cictrix.com': { password: 'PM@123', role: 'pm' },
+  'admin@abyan.com': { password: 'Admin@123', role: 'super-admin' },
+  'rsp@abyan.com': { password: 'RSP@123', role: 'rsp' },
+  'lnd@abyan.com': { password: 'LND@123', role: 'lnd' },
+  'pm@abyan.com': { password: 'PM@123', role: 'pm' },
 };
 
 const ROLES: { key: Role; label: string; sublabel: string }[] = [
@@ -59,6 +66,16 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
   const [selectedRole, setSelectedRole] = useState<Role>('rsp');
   const [rememberMe, setRememberMe] = useState(false);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  const navigateAfterLogin = (role: Role) => {
+    const returnTo = searchParams.get('returnTo');
+    if (returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//')) {
+      navigate(returnTo);
+    } else {
+      navigate(getRoleDefaultRoute(role));
+    }
+  };
 
   useEffect(() => {
     const cleanupUiReset = scheduleTransientUiReset({ dispatchOverlayClose: true });
@@ -80,11 +97,11 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
       const mockUser = MOCK_USERS[normalizedEmail];
       if (mockUser && mockUser.password === password) {
         if (mockUser.role !== selectedRole) {
-          alert(`This account is assigned to ${mockUser.role.toUpperCase()}. Please select the correct role.`);
-          return;
+          // Auto-select the correct role instead of failing
+          setSelectedRole(mockUser.role);
         }
         onLogin(normalizedEmail, mockUser.role);
-        navigate(getRoleDefaultRoute(mockUser.role));
+        navigateAfterLogin(mockUser.role);
         return;
       }
 
@@ -101,7 +118,7 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
       const { data: roleData, error: roleError } = await (supabase as any)
         .from('user_roles')
         .select('role')
-        .eq('id', authData.user.id)
+        .eq('user_id', authData.user.id)
         .single();
 
       if (roleError || !(roleData as any)?.role) {
@@ -116,13 +133,13 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
       }
 
       if (role !== selectedRole) {
-        alert(`Your account role is ${role.toUpperCase()}. Please select the matching role to continue.`);
-        return;
+        // Auto-select the correct role instead of failing
+        setSelectedRole(role as Role);
       }
 
       const resolvedEmail = authData.user.email ?? email;
       onLogin(resolvedEmail, role);
-      navigate(getRoleDefaultRoute(role));
+      navigateAfterLogin(role);
     } catch {
       alert('Login failed. Please try again.');
     } finally {
@@ -165,49 +182,35 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
 
           {/* Top-left wordmark */}
           <div className="relative z-10 flex w-full flex-col p-12">
-            <div className="flex items-center gap-3">
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-xl"
-                style={{
-                  backgroundColor: 'rgba(255,255,255,0.15)',
-                  boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.25)',
-                  backdropFilter: 'blur(8px)',
-                }}
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#FFFFFF"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="h-5 w-5"
-                  aria-hidden="true"
-                >
-                  <path d="M3 12l9-9 9 9" />
-                  <path d="M5 10v10h14V10" />
-                  <path d="M10 20v-6h4v6" />
-                </svg>
+            <a href="/" className="flex items-center gap-3">
+              <img
+                src={abyanLogo}
+                alt="Abyan Logo"
+                className="h-10 w-auto object-contain"
+                style={{ mixBlendMode: 'screen' }}
+              />
+              <div className="flex flex-col leading-tight">
+                <span className="text-base font-bold tracking-wide text-white">ABYAN HRIS</span>
+                <span className="text-xs font-medium" style={{ color: 'rgba(200,209,255,0.85)' }}>
+                  Human Resource Information System
+                </span>
               </div>
-              <span
-                className="text-sm font-semibold tracking-wide"
-                style={{ color: 'rgba(255,255,255,0.92)' }}
-              >
-                CICTrix
-              </span>
-            </div>
+            </a>
 
             {/* Centered hero block */}
             <div className="m-auto w-full max-w-md text-center">
-              <div
-                className="mx-auto mb-8 flex h-20 w-20 items-center justify-center rounded-3xl"
+              <div className="mx-auto mb-8 flex h-32 w-32 items-center justify-center rounded-full"
                 style={{
-                  backgroundColor: 'rgba(255,255,255,0.16)',
-                  boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.28)',
-                  backdropFilter: 'blur(8px)',
+                  backgroundColor: 'rgba(255,255,255,0.12)',
+                  boxShadow: 'inset 0 0 0 2px rgba(255,255,255,0.25)',
+                  padding: '12px',
                 }}
               >
-                <Lock className="h-9 w-9" strokeWidth={1.6} style={{ color: '#FFFFFF' }} />
+                <img
+                  src={iloiloCitySeal}
+                  alt="OCHRMO Seal"
+                  className="h-full w-full object-contain"
+                />
               </div>
               <h1
                 className="text-4xl font-bold tracking-tight"
@@ -221,31 +224,13 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
               >
                 Human Resource Information System
               </p>
-              <ul className="mt-10 space-y-3 text-left text-sm">
-                {['Recruitment & Selection', 'Learning & Development', 'Performance Management'].map(
-                  (item) => (
-                    <li
-                      key={item}
-                      className="flex items-center gap-3"
-                      style={{ color: 'rgba(255,255,255,0.88)' }}
-                    >
-                      <span
-                        className="h-1.5 w-1.5 rounded-full"
-                        style={{ backgroundColor: 'rgba(255,255,255,0.75)' }}
-                        aria-hidden="true"
-                      />
-                      {item}
-                    </li>
-                  ),
-                )}
-              </ul>
             </div>
 
             <p
               className="text-xs font-medium"
               style={{ color: 'rgba(255,255,255,0.55)' }}
             >
-              &copy; {new Date().getFullYear()} CICTrix Resorts. All rights reserved.
+              &copy; {new Date().getFullYear()} Abyan. All rights reserved.
             </p>
           </div>
         </aside>
@@ -258,7 +243,7 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#363EE8]">
                 <Lock className="h-4 w-4 text-white" strokeWidth={2} />
               </div>
-              <span className="text-sm font-semibold text-slate-900">CICTrix HRIS</span>
+              <span className="text-sm font-semibold text-slate-900">Abyan HRIS</span>
             </div>
 
             <div className="mb-8">
@@ -268,7 +253,6 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
               >
                 Welcome back
               </h1>
-              <p className="mt-2 text-sm text-slate-500">Please sign in to your account</p>
             </div>
 
             <form onSubmit={handleLogin} className="space-y-5">
@@ -401,9 +385,6 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
               </button>
             </form>
 
-            <p className="mt-10 text-center text-xs font-medium text-slate-400">
-              Protected by government security protocols
-            </p>
           </div>
         </main>
       </div>

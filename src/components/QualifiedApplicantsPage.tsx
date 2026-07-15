@@ -30,8 +30,10 @@ import {
     saveNewlyHired,
 } from '../lib/recruitmentData';
 import { sendEmail } from '../lib/email';
+import { createPassword, upsertEmployeePortalAccount } from '../lib/employeePortalData';
 import { runSingleFlight } from '../lib/singleFlight';
 import { ATTACHMENTS_BUCKET, isMockModeEnabled, supabase } from '../lib/supabase';
+import { buildDisqualificationActivityDescription, DISQUALIFICATION_REASON_OPTIONS } from '../lib/applicationActivity';
 import { Applicant, ApplicantStatus, JobPosting, NewlyHired } from '../types/recruitment.types';
 import { RecruitmentNavigationGuide } from './RecruitmentNavigationGuide';
 import { Sidebar } from './Sidebar';
@@ -124,6 +126,23 @@ const ATTACHMENTS_STORAGE_KEY = 'cictrix_attachments';
 const ATTACHMENT_PREVIEW_CACHE_KEY = 'cictrix_attachment_previews';
 const AUDIT_LOG_STORAGE_KEY = 'cictrix_recruitment_audit_log';
 
+// ── Document Review ────────────────────────────────────────────────────────────
+type DocReviewStatus = 'pending' | 'approved' | 'resubmission_requested';
+interface DocReview { status: DocReviewStatus; remarks: string; reviewedAt: string; }
+const DOC_REVIEW_KEY = 'cictrix_doc_reviews';
+const loadDocReviews = (): Record<string, DocReview> => {
+  try { return JSON.parse(localStorage.getItem(DOC_REVIEW_KEY) ?? '{}'); } catch { return {}; }
+};
+const RESUBMISSION_REASONS = [
+  'Blurred image',
+  'Missing page',
+  'Incomplete document',
+  'Invalid document',
+  'Document expired',
+  'Wrong document submitted',
+  'Low resolution / unreadable',
+];
+
 type RecruitmentAuditLog = {
   id: string;
   timestamp: string;
@@ -204,6 +223,8 @@ const STATUS_COLORS: Record<ApplicantStatus, string> = {
   'Recommended for Hiring': 'bg-green-100 text-green-800',
   'Not Qualified': 'bg-rose-100 text-rose-800',
   Rejected: 'bg-slate-200 text-slate-800',
+  'Document Verified': 'bg-emerald-100 text-emerald-800',
+  'Action Required': 'bg-amber-100 text-amber-800',
 };
 
 const normalizeText = (value: string) => String(value ?? '').trim().toLowerCase();
@@ -456,13 +477,27 @@ export const QualifiedApplicantsPage = () => {
   const [documentActionBusy, setDocumentActionBusy] = useState<string | null>(null);
   const [statusDecisionLocked, setStatusDecisionLocked] = useState(false);
   const [disqualifyReasonDraft, setDisqualifyReasonDraft] = useState('');
+  const [disqualificationCategory, setDisqualificationCategory] = useState('incomplete_documents');
   const [pendingStatusAction, setPendingStatusAction] = useState<null | {
     applicantId: string;
     action: 'qualify' | 'disqualify';
     nextStatus: ApplicantStatus;
   }>(null);
+  const [docReviews, setDocReviews] = useState<Record<string, DocReview>>(loadDocReviews);
+  const [reviewRemarksInputs, setReviewRemarksInputs] = useState<Record<string, string>>({});
+  const [reviewExpandedKeys, setReviewExpandedKeys] = useState<Set<string>>(new Set());
+  const [confirmApprove, setConfirmApprove] = useState<{ applicantId: string; fileUrl: string; docType: string; rawDocType: string } | null>(null);
   const [selectedHireApplicantIds, setSelectedHireApplicantIds] = useState<string[]>([]);
   const [showHireConfirmModal, setShowHireConfirmModal] = useState(false);
+  const [generatedCredentials, setGeneratedCredentials] = useState<Array<{
+    fullName: string;
+    email: string;
+    position: string;
+    department: string;
+    employeeId: string;
+    tempPassword: string;
+  }>>([]);
+  const [showCredentialsModal, setShowCredentialsModal] = useState(false);
 
   const loadQualifiedApplicantsData = async () => {
     ensureRecruitmentSeedData();
@@ -980,15 +1015,86 @@ export const QualifiedApplicantsPage = () => {
       const hiredIdSet = new Set<string>();
       const skippedRows: string[] = [];
       const nowIsoForLocalUpdate = new Date().toISOString();
+      const newCredentials: typeof generatedCredentials = [];
 
       // Proceed with new backend logic per applicant
       for (const row of selectedRows) {
+        const fullName = `${row.personalInfo.firstName} ${row.personalInfo.lastName}`.trim();
+        const job = jobMap.get(row.jobPostingId);
+        const position = job?.title ?? 'Unknown Position';
+        const department = job?.department ?? 'Unassigned';
+
         try {
-          await import('../lib/api/employeesApi').then((m) => m.hireApplicant(row.id));
+          const employeeRow = await hireApplicant(row.id);
           hiredIdSet.add(row.id);
+
+          // Generate a temp password and provision the portal account so the
+          // applicant can log in with the printed/emailed credentials.
+          const tempPassword = createPassword();
+          const employeeId = employeeRow?.employee_id ?? row.id;
+          upsertEmployeePortalAccount({
+            id: `portal-${employeeId}`,
+            username: employeeId,
+            password: tempPassword,
+            mustChangePassword: true,
+            employee: {
+              employeeId,
+              fullName,
+              email: row.personalInfo.email ?? '',
+              dateOfBirth: '',
+              age: 0,
+              gender: 'Other',
+              civilStatus: 'Single',
+              nationality: '',
+              mobileNumber: row.personalInfo.phone ?? '',
+              homeAddress: '',
+              emergencyContactName: '',
+              emergencyRelationship: '',
+              emergencyContactNumber: '',
+              sssNumber: '',
+              philhealthNumber: '',
+              pagibigNumber: '',
+              tinNumber: '',
+              currentPosition: position,
+              currentDepartment: department,
+              status: 'Active',
+              hireDate: nowIsoForLocalUpdate,
+            } as any,
+          });
+
+          newCredentials.push({
+            fullName,
+            email: row.personalInfo.email ?? '',
+            position,
+            department,
+            employeeId,
+            tempPassword,
+          });
+
+          // Send login credentials by email. Fire-and-forget: failure here
+          // shouldn't roll back the hire (HR can still use Print Credentials).
+          const recipient = (row.personalInfo.email ?? '').trim();
+          if (recipient) {
+            void sendEmail({
+              to: recipient,
+              subject: 'Your CICTrix HRIS account is ready',
+              body:
+                `Hello ${fullName},\n\n` +
+                `Your employee account has been created.\n\n` +
+                `Position: ${position}\n` +
+                `Department: ${department}\n\n` +
+                `Employee ID: ${employeeId}\n` +
+                `Temporary password: ${tempPassword}\n\n` +
+                `Log in to the employee portal and you will be prompted to set a new password before accessing any modules.\n\n` +
+                `If you did not expect this email, please contact HR.\n`,
+              employeeId,
+              template: 'employee_credentials',
+            }).catch((emailErr) => {
+              console.error('sendEmail (credentials) failed; Print Credentials still available', emailErr);
+            });
+          }
         } catch (err) {
           console.error(`Failed to hire applicant ${row.id}`, err);
-          const fullName = `${row.personalInfo.firstName} ${row.personalInfo.lastName}`.trim();
           skippedRows.push(fullName);
         }
       }
@@ -1015,7 +1121,12 @@ export const QualifiedApplicantsPage = () => {
 
       setSelectedHireApplicantIds([]);
       setShowHireConfirmModal(false);
-      
+
+      if (newCredentials.length > 0) {
+        setGeneratedCredentials(newCredentials);
+        setShowCredentialsModal(true);
+      }
+
       if (skippedRows.length > 0) {
         setToast(
           `Processed ${hiredIdSet.size} applicant(s). Failed to hire: ${skippedRows.join(', ')}.`
@@ -1057,23 +1168,26 @@ export const QualifiedApplicantsPage = () => {
     };
   }, [qualifiedBaseRows]);
 
-  const updateApplicantStatus = (ids: string[], nextStatus: ApplicantStatus, reason?: string) => {
-    console.log(`[QUALIFY] updateApplicantStatus called with:`, { ids, nextStatus, reason });
+  const updateApplicantStatus = (ids: string[], nextStatus: ApplicantStatus, reason?: string, reasonCategory?: string) => {
+    console.log(`[QUALIFY] updateApplicantStatus called with:`, { ids, nextStatus, reason, reasonCategory });
     const timestamp = new Date().toISOString();
     const trimmedReason = (reason ?? '').trim();
+    const formattedReason = trimmedReason
+      ? buildDisqualificationActivityDescription(reasonCategory, trimmedReason, true)
+      : '';
     const nextStatusLabel = toStatusDisplayLabel(nextStatus);
     const nextApplicants = applicants.map((applicant) => {
       if (!ids.includes(applicant.id)) return applicant;
       const currentNotes = Array.isArray(applicant.notes) ? applicant.notes : [];
       const currentTimeline = Array.isArray(applicant.timeline) ? applicant.timeline : [];
-      const eventLabel = trimmedReason
-        ? `Status Updated: ${nextStatusLabel} (Reason: ${trimmedReason})`
+      const eventLabel = formattedReason
+        ? `Status Updated: ${nextStatusLabel} (Reason: ${formattedReason})`
         : `Status Updated: ${nextStatusLabel}`;
       return {
         ...applicant,
         status: nextStatus,
-        notes: trimmedReason
-          ? [{ author: 'HR Admin', content: `Disqualification reason: ${trimmedReason}`, date: timestamp, pinned: false }, ...currentNotes]
+        notes: formattedReason
+          ? [{ author: 'HR Admin', content: `Disqualification reason: ${formattedReason}`, date: timestamp, pinned: false }, ...currentNotes]
           : currentNotes,
         timeline: [...currentTimeline, { event: eventLabel, date: timestamp, actor: 'HR Admin' }],
       };
@@ -1092,7 +1206,7 @@ export const QualifiedApplicantsPage = () => {
         action: 'QUALIFICATION_STATUS_UPDATED',
         applicantId,
         applicantName: target ? `${target.personalInfo.firstName} ${target.personalInfo.lastName}`.trim() : undefined,
-        details: trimmedReason ? `${nextStatusLabel} (${trimmedReason})` : nextStatusLabel,
+        details: formattedReason ? `${nextStatusLabel} (${formattedReason})` : nextStatusLabel,
         actor: 'HR Admin',
       });
 
@@ -1114,8 +1228,8 @@ export const QualifiedApplicantsPage = () => {
       };
       
       // Add disqualification reason if needed
-      if (trimmedReason && dbStatusValue === 'disqualified') {
-        dbUpdate.disqualification_reason = trimmedReason;
+      if (formattedReason && dbStatusValue === 'disqualified') {
+        dbUpdate.disqualification_reason = formattedReason;
       }
       
       console.log(`[QUALIFY] Updating ${applicantId} with DB status "${dbStatusValue}":`, dbUpdate);
@@ -1227,6 +1341,7 @@ export const QualifiedApplicantsPage = () => {
     }
     
     setDisqualifyReasonDraft('');
+    setDisqualificationCategory('incomplete_documents');
     setPendingStatusAction({
       applicantId,
       action: 'disqualify',
@@ -1248,6 +1363,7 @@ export const QualifiedApplicantsPage = () => {
     }
     
     setDisqualifyReasonDraft('');
+    setDisqualificationCategory('incomplete_documents');
     setPendingStatusAction({
       applicantId,
       action: 'qualify',
@@ -1261,6 +1377,104 @@ export const QualifiedApplicantsPage = () => {
     updateApplicantStatus([applicantId], 'Shortlisted');
   };
 
+  // ── Document Review helpers ────────────────────────────────────────────────
+
+  const getDocReviewKey = (applicantId: string, fileUrl: string) => `${applicantId}::${fileUrl}`;
+
+  const persistDocReview = (key: string, review: DocReview) => {
+    const updated = { ...docReviews, [key]: review };
+    setDocReviews(updated);
+    localStorage.setItem(DOC_REVIEW_KEY, JSON.stringify(updated));
+    return updated;
+  };
+
+  const addTimelineEntry = (applicantId: string, event: string) => {
+    const ts = new Date().toISOString();
+    setApplicants((prev) =>
+      prev.map((a) => {
+        if (a.id !== applicantId) return a;
+        const tl = Array.isArray(a.timeline) ? a.timeline : [];
+        return { ...a, timeline: [...tl, { event, date: ts, actor: 'RSP Admin' }] };
+      }),
+    );
+  };
+
+  const handleApproveDoc = (applicantId: string, fileUrl: string, docType: string, rawDocType?: string) => {
+    const key = getDocReviewKey(applicantId, fileUrl);
+    const review: DocReview = { status: 'approved', remarks: '', reviewedAt: new Date().toISOString() };
+    const updatedAll = persistDocReview(key, review);
+
+    // Persist validation to Supabase so the applicant portal can show "Verified".
+    // file_name stores the raw document_type (snake_case) for robust matching on the applicant side.
+    // file_path stores the original storage path as a secondary matching key.
+    void (supabase as any)
+      .from('applicant_attachments')
+      .insert({
+        applicant_id: applicantId,
+        file_name: rawDocType || docType,
+        file_path: fileUrl,
+        document_type: 'doc_validated',
+      })
+      .then(({ error }: { error: any }) => {
+        if (error) console.error('[handleApproveDoc] supabase insert failed:', error);
+      });
+
+    // Check if every doc for this applicant is now approved.
+    const docs = getModalDocuments();
+    const allApproved =
+      docs.length > 0 &&
+      docs.every((doc) => (updatedAll[getDocReviewKey(applicantId, doc.url)]?.status ?? 'pending') === 'approved');
+
+    if (allApproved) {
+      addTimelineEntry(applicantId, 'Document Verified: All documents reviewed and validated.');
+      setToast('All documents validated — applicant is ready to be qualified.');
+    } else {
+      addTimelineEntry(applicantId, `Document Validated: ${docType}.`);
+      setToast(`${docType} validated.`);
+    }
+  };
+
+  const handleRequestResubmission = (applicantId: string, fileUrl: string, docType: string, remarks: string) => {
+    if (!remarks.trim()) return;
+    const key = getDocReviewKey(applicantId, fileUrl);
+    const review: DocReview = { status: 'resubmission_requested', remarks: remarks.trim(), reviewedAt: new Date().toISOString() };
+    persistDocReview(key, review);
+    setReviewExpandedKeys((prev) => { const n = new Set(prev); n.delete(key); return n; });
+
+    // Persist to Supabase so the applicant portal (different device/browser) can
+    // detect the request. file_name format matches parseNotice() in ApplicationStatusPage.
+    void (supabase as any)
+      .from('applicant_attachments')
+      .insert({
+        applicant_id: applicantId,
+        file_name: `resubmission_request::${docType}::${remarks.trim()}`,
+        file_path: '—',
+        document_type: 'resubmission_request',
+      })
+      .then(({ error }: { error: any }) => {
+        if (error) console.error('[handleRequestResubmission] supabase insert failed:', error);
+      });
+
+    addTimelineEntry(applicantId, `Action Required: Resubmission requested for ${docType} — "${remarks.trim()}".`);
+    setToast('Resubmission requested.');
+  };
+
+  const isApplicantDocLocked = (applicant: { status: string } | null): boolean => {
+    if (!applicant) return false;
+    const s = normalizeText(applicant.status);
+    return s.includes('disqualif') || s.includes('not qualified') || s.includes('failed qualification');
+  };
+
+  const getDocReadiness = (applicantId: string) => {
+    const docs = getModalDocuments();
+    if (docs.length === 0) return { ready: false, reason: 'No documents uploaded yet' };
+    const hasUnreviewed = docs.some((doc) => (docReviews[getDocReviewKey(applicantId, doc.url)]?.status ?? 'pending') === 'pending');
+    const hasRejected   = docs.some((doc) => (docReviews[getDocReviewKey(applicantId, doc.url)]?.status ?? 'pending') === 'resubmission_requested');
+    if (hasRejected)   return { ready: false, reason: 'Some documents require resubmission' };
+    if (hasUnreviewed) return { ready: false, reason: 'All documents must be reviewed before qualifying' };
+    return { ready: true, reason: '' };
+  };
+
   const confirmPendingStatusAction = () => {
     if (!pendingStatusAction) return;
     const isDisqualifyAction = pendingStatusAction.action === 'disqualify';
@@ -1268,13 +1482,20 @@ export const QualifiedApplicantsPage = () => {
     if (isDisqualifyAction && trimmedReason.length === 0) return;
 
     setStatusDecisionLocked(true);
-    updateApplicantStatus([pendingStatusAction.applicantId], pendingStatusAction.nextStatus, isDisqualifyAction ? trimmedReason : undefined);
+    updateApplicantStatus(
+      [pendingStatusAction.applicantId],
+      pendingStatusAction.nextStatus,
+      isDisqualifyAction ? trimmedReason : undefined,
+      isDisqualifyAction ? disqualificationCategory : undefined,
+    );
     setDisqualifyReasonDraft('');
+    setDisqualificationCategory('incomplete_documents');
     setPendingStatusAction(null);
   };
 
   const cancelPendingStatusAction = () => {
     setDisqualifyReasonDraft('');
+    setDisqualificationCategory('incomplete_documents');
     setPendingStatusAction(null);
   };
 
@@ -1580,17 +1801,30 @@ export const QualifiedApplicantsPage = () => {
     setToast(`Started ${downloaded} document download${downloaded > 1 ? 's' : ''}.`);
   };
 
+  const META_DOC_TYPES = new Set(['resubmission_request', 'resubmission_resolved', 'doc_validated']);
+
   const getModalDocuments = () => {
-    if (!activeApplicant) return [] as Array<{ type: string; url: string; verified: boolean; uploadedAt?: string }>;
+    if (!activeApplicant) return [] as Array<{ type: string; rawType: string; url: string; verified: boolean; uploadedAt?: string }>;
 
     const liveRows = attachmentsByApplicant[activeApplicant.id] || [];
     if (liveRows.length > 0) {
-      return liveRows.map((row) => ({
-        type: toDocumentLabel(row.document_type || row.file_name || 'document'),
-        url: row.file_path || '#',
-        verified: false,
-        uploadedAt: row.created_at,
-      }));
+      // Rows are already sorted created_at DESC; keep only real docs, deduplicate to most-recent per type.
+      const seen = new Set<string>();
+      return liveRows
+        .filter((row) => !META_DOC_TYPES.has(row.document_type ?? ''))
+        .filter((row) => {
+          const key = row.document_type || row.file_name || '';
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .map((row) => ({
+          type: toDocumentLabel(row.document_type || row.file_name || 'document'),
+          rawType: row.document_type || row.file_name || '',
+          url: row.file_path || '#',
+          verified: false,
+          uploadedAt: row.created_at,
+        }));
     }
 
     return [];
@@ -1878,13 +2112,19 @@ export const QualifiedApplicantsPage = () => {
                   >
                     <Star className="h-4 w-4" /> Shortlist
                   </button>
-                  <button
-                    className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    onClick={() => handleQualifyAction(activeApplicant.id)}
-                    disabled={lockDecisionButtons}
-                  >
-                    <CheckCircle2 className="h-4 w-4" /> Qualify
-                  </button>
+                  {(() => {
+                    const docReady = getDocReadiness(activeApplicant.id);
+                    return (
+                      <button
+                        className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={() => handleQualifyAction(activeApplicant.id)}
+                        disabled={lockDecisionButtons || !docReady.ready}
+                        title={!lockDecisionButtons && !docReady.ready ? docReady.reason : undefined}
+                      >
+                        <CheckCircle2 className="h-4 w-4" /> Qualify
+                      </button>
+                    );
+                  })()}
                       </>
                     );
                   })()}
@@ -1967,44 +2207,240 @@ export const QualifiedApplicantsPage = () => {
                 {activeTab === 'Documents' && (
                   <article className="rounded-xl border border-slate-200">
                     <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-                      <h4 className="text-lg font-semibold text-slate-900">Submitted Documents</h4>
-                      <button className="inline-flex items-center gap-2 text-base font-medium text-blue-600" onClick={handleBulkDownload}>
-                        <Download className="h-5 w-5" /> Download All
-                      </button>
+                      <h4 className="text-lg font-semibold" style={{ color: '#363EE8' }}>Submitted Documents</h4>
+                      <div className="flex items-center gap-2">
+                        {(() => {
+                          const docReady = getDocReadiness(activeApplicant.id);
+                          const hasAnyDocs = getModalDocuments().length > 0;
+                          const allValidated = docReady.ready && hasAnyDocs;
+                          return (
+                            <button
+                              className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
+                              style={allValidated ? { borderColor: '#059669', color: '#059669' } : { borderColor: '#d1d5db', color: '#9ca3af' }}
+                              disabled={!allValidated}
+                              onClick={() => setToast('All documents have been validated.')}
+                              title={!allValidated ? (docReady.reason || 'Validate all documents first') : 'All documents are validated'}
+                            >
+                              <CheckCircle2 className="h-4 w-4" /> Validate Documents
+                            </button>
+                          );
+                        })()}
+                        <button className="inline-flex items-center gap-2 text-base font-medium text-blue-600" onClick={handleBulkDownload}>
+                          <Download className="h-5 w-5" /> Download All
+                        </button>
+                      </div>
                     </div>
+
+                    {isApplicantDocLocked(activeApplicant) && (
+                      <div className="mx-4 mt-4 flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+                        <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-rose-500" />
+                        <div>
+                          <p className="font-semibold text-rose-700">Application Closed</p>
+                          <p className="text-sm text-rose-600">This applicant has been disqualified or failed the qualification assessment. Document review and resubmission are locked.</p>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="space-y-3 p-4">
                       {attachmentsLoading ? (
                         <p className="text-slate-500">Loading uploaded documents...</p>
-                      ) : getModalDocuments().length > 0 ? getModalDocuments().map((doc) => (
-                        <article key={`${doc.type}-${doc.url}`} className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3">
-                          <div>
-                            <p className="text-lg font-semibold text-slate-900">{doc.type}</p>
-                            <p className="text-base text-slate-500">Uploaded {formatPHDate((doc as any).uploadedAt || activeApplicant.applicationDate)}</p>
-                          </div>
-                          <button className="text-base font-semibold text-blue-600" onClick={() => handlePreviewDocument({ type: doc.type, url: doc.url })} disabled={documentActionBusy !== null}>View</button>
-                        </article>
-                      )) : <p className="text-slate-500">No uploaded documents found for this applicant yet.</p>}
+                      ) : getModalDocuments().length === 0 ? (
+                        <p className="text-slate-500">No uploaded documents found for this applicant yet.</p>
+                      ) : getModalDocuments().map((doc) => {
+                        const reviewKey = getDocReviewKey(activeApplicant.id, doc.url);
+                        const review = docReviews[reviewKey];
+                        const status: DocReviewStatus = review?.status ?? 'pending';
+                        const isExpanded = reviewExpandedKeys.has(reviewKey);
+                        const remarksVal = reviewRemarksInputs[reviewKey] ?? '';
+                        const docLocked = isApplicantDocLocked(activeApplicant);
+
+                        const statusBadge = status === 'approved'
+                          ? <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">Validated</span>
+                          : status === 'resubmission_requested'
+                          ? <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Action Required</span>
+                          : <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">Under Review</span>;
+
+                        return (
+                          <article key={`${doc.type}-${doc.url}`} className={`rounded-xl border ${status === 'approved' ? 'border-emerald-300 bg-emerald-50' : status === 'resubmission_requested' ? 'border-amber-200 bg-amber-50/40' : 'border-blue-200 bg-blue-50/30'}`}>
+                            <div className="flex items-center justify-between px-4 py-3">
+                              <div className="flex flex-col gap-1">
+                                <p className="text-base font-semibold" style={{ color: '#040E6B' }}>{doc.type}</p>
+                                <p className="text-xs text-slate-500">Uploaded {formatPHDate((doc as any).uploadedAt || activeApplicant.applicationDate)}</p>
+                                <div className="mt-1">{statusBadge}</div>
+                                {status === 'resubmission_requested' && review?.remarks && (
+                                  <p className="mt-1 text-xs text-amber-700">Reason: {review.remarks}</p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  className="text-sm font-semibold text-blue-600 hover:underline"
+                                  onClick={() => handlePreviewDocument({ type: doc.type, url: doc.url })}
+                                  disabled={documentActionBusy !== null}
+                                >
+                                  View
+                                </button>
+                                {!docLocked && (
+                                  <>
+                                    <button
+                                      className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                      disabled={status === 'approved'}
+                                      onClick={() => setConfirmApprove({ applicantId: activeApplicant.id, fileUrl: doc.url, docType: doc.type, rawDocType: (doc as any).rawType ?? '' })}
+                                    >
+                                      Approve
+                                    </button>
+                                    <button
+                                      className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${isExpanded ? 'border-amber-400 bg-amber-50 text-amber-700' : 'border-amber-300 bg-white text-amber-700 hover:bg-amber-50'}`}
+                                      onClick={() => {
+                                        setReviewExpandedKeys((prev) => {
+                                          const next = new Set(prev);
+                                          if (next.has(reviewKey)) { next.delete(reviewKey); } else { next.add(reviewKey); }
+                                          return next;
+                                        });
+                                      }}
+                                    >
+                                      Request Resubmission
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+
+                            {isExpanded && !docLocked && (
+                              <div className="border-t border-amber-100 bg-amber-50 px-4 py-3 space-y-3">
+                                <p className="text-xs font-semibold text-amber-800">Select a reason (required):</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {RESUBMISSION_REASONS.map((reason) => (
+                                    <button
+                                      key={reason}
+                                      type="button"
+                                      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${remarksVal === reason ? 'border-amber-500 bg-amber-500 text-white' : 'border-amber-300 bg-white text-amber-700 hover:bg-amber-100'}`}
+                                      onClick={() => setReviewRemarksInputs((prev) => ({ ...prev, [reviewKey]: reason }))}
+                                    >
+                                      {reason}
+                                    </button>
+                                  ))}
+                                </div>
+                                <div className="flex gap-2">
+                                  <input
+                                    className="flex-1 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                    placeholder="Or type a custom reason..."
+                                    value={remarksVal}
+                                    onChange={(e) => setReviewRemarksInputs((prev) => ({ ...prev, [reviewKey]: e.target.value }))}
+                                  />
+                                  <button
+                                    className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                    disabled={!remarksVal.trim()}
+                                    onClick={() => handleRequestResubmission(activeApplicant.id, doc.url, doc.type, remarksVal)}
+                                  >
+                                    Submit
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </article>
+                        );
+                      })}
                     </div>
                   </article>
                 )}
 
-                {activeTab === 'Activity' && (
-                  <article className="rounded-xl border border-slate-200">
-                    <h4 className="border-b border-slate-200 px-4 py-3 text-lg font-semibold text-slate-900">Activity Timeline</h4>
-                    <div className="space-y-4 p-4">
-                      {activeApplicant.timeline.map((entry, index) => (
-                        <div key={`${entry.event}-${index}`} className="flex gap-3">
-                          <span className="mt-2 h-3 w-3 rounded-full bg-blue-600" />
-                          <div>
-                            <p className="text-lg font-semibold text-slate-900">{entry.event}</p>
-                            <p className="text-base text-slate-500">{formatPHDateTime(entry.date)} • {entry.actor}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </article>
-                )}
+                {activeTab === 'Activity' && (() => {
+                  // Derive persisted activity entries from Supabase attachment meta rows.
+                  const metaRows = (attachmentsByApplicant[activeApplicant.id] ?? []).filter(
+                    (row) => row.document_type === 'doc_validated' || row.document_type === 'resubmission_request' || row.document_type === 'resubmission_resolved',
+                  );
+                  const derivedEntries = metaRows.map((row) => {
+                    if (row.document_type === 'doc_validated') {
+                      return { event: `Document Validated: ${toDocumentLabel(row.file_name || 'document')}`, date: row.created_at || new Date().toISOString(), actor: 'RSP Admin' };
+                    }
+                    if (row.document_type === 'resubmission_request') {
+                      const parts = (row.file_name || '').split('::');
+                      const docLabel = toDocumentLabel(parts[1] || 'document');
+                      const reason = parts[2] || '';
+                      return { event: `Resubmission Requested: ${docLabel}${reason ? ` — "${reason}"` : ''}`, date: row.created_at || new Date().toISOString(), actor: 'RSP Admin' };
+                    }
+                    return { event: `Resubmission Resolved: ${toDocumentLabel(row.file_name || 'document')}`, date: row.created_at || new Date().toISOString(), actor: 'Applicant' };
+                  });
+
+                  const allEntries = [
+                    ...(activeApplicant.timeline ?? []),
+                    ...derivedEntries,
+                  ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+                  // Deduplicate same-event same-minute entries that may appear from both local state and DB.
+                  const seen = new Set<string>();
+                  const unique = allEntries.filter((entry) => {
+                    const key = `${entry.event}::${entry.date.slice(0, 16)}`;
+                    if (seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                  });
+
+                  const iconFor = (event: string) => {
+                    if (event.toLowerCase().includes('validated')) return <span className="mt-1 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 text-xs">✓</span>;
+                    if (event.toLowerCase().includes('resubmission')) return <span className="mt-1 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600 text-xs">↩</span>;
+                    if (event.toLowerCase().includes('status')) return <span className="mt-1 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 text-xs">⬆</span>;
+                    return <span className="mt-1 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 text-xs">•</span>;
+                  };
+
+                  return (
+                    <article className="rounded-xl border border-slate-200">
+                      <h4 className="border-b border-slate-200 px-4 py-3 text-lg font-semibold text-slate-900">Activity Timeline</h4>
+                      {unique.length === 0 ? (
+                        <p className="px-4 py-6 text-center text-sm text-slate-400">No activity recorded yet.</p>
+                      ) : (
+                        <ol className="relative px-4 py-4">
+                          {unique.map((entry, index) => (
+                            <li key={`${entry.event}-${index}`} className={`flex gap-3 pb-5 ${index < unique.length - 1 ? 'border-l-2 border-dashed border-slate-200 ml-3 pl-5 -ml-0' : ''}`}>
+                              {iconFor(entry.event)}
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold text-slate-900">{entry.event}</p>
+                                <p className="text-xs text-slate-500">{formatPHDateTime(entry.date)} · {entry.actor}</p>
+                              </div>
+                            </li>
+                          ))}
+                        </ol>
+                      )}
+                    </article>
+                  );
+                })()}
               </section>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Approve document confirmation modal */}
+      {confirmApprove && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-4" onClick={() => setConfirmApprove(null)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 pt-6 pb-4">
+              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100">
+                <CheckCircle2 size={24} className="text-emerald-600" />
+              </div>
+              <h3 className="text-base font-bold text-slate-900">Approve Document?</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                You are about to approve <span className="font-semibold text-slate-800">{confirmApprove.docType}</span>. This will mark the document as validated and cannot be undone easily.
+              </p>
+            </div>
+            <div className="flex gap-3 border-t border-slate-100 px-6 py-4">
+              <button
+                type="button"
+                className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                onClick={() => setConfirmApprove(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="flex-1 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                onClick={() => {
+                  handleApproveDoc(confirmApprove.applicantId, confirmApprove.fileUrl, confirmApprove.docType, confirmApprove.rawDocType);
+                  setConfirmApprove(null);
+                }}
+              >
+                Yes, Approve
+              </button>
             </div>
           </div>
         </div>
@@ -2121,20 +2557,36 @@ export const QualifiedApplicantsPage = () => {
                 This action will update the applicant status and lock the decision buttons.
               </p>
               {pendingStatusAction.action === 'disqualify' && (
-                <div>
-                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                    Reason for Disqualification <span className="text-rose-600">*</span>
-                  </label>
-                  <textarea
-                    rows={4}
-                    value={disqualifyReasonDraft}
-                    onChange={(event) => setDisqualifyReasonDraft(event.target.value)}
-                    placeholder="Enter the reason for disqualifying this applicant..."
-                    className="w-full resize-none rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-100"
-                  />
-                  {disqualifyReasonDraft.trim().length === 0 && (
-                    <p className="mt-1 text-xs text-rose-600">Disqualification reason is required.</p>
-                  )}
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">Reason Category</label>
+                    <select
+                      value={disqualificationCategory}
+                      onChange={(event) => setDisqualificationCategory(event.target.value)}
+                      className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-100"
+                    >
+                      {DISQUALIFICATION_REASON_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                      Additional Details <span className="text-rose-600">*</span>
+                    </label>
+                    <textarea
+                      rows={4}
+                      value={disqualifyReasonDraft}
+                      onChange={(event) => setDisqualifyReasonDraft(event.target.value)}
+                      placeholder="Add the note the applicant should see..."
+                      className="w-full resize-none rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-100"
+                    />
+                    {disqualifyReasonDraft.trim().length === 0 && (
+                      <p className="mt-1 text-xs text-rose-600">A brief note is required before disqualification can be confirmed.</p>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -2173,11 +2625,39 @@ export const QualifiedApplicantsPage = () => {
               <h3 className="text-xl font-semibold text-white">Confirm Hiring</h3>
             </div>
             <div className="space-y-3 px-6 py-5 text-slate-700">
-              <p className="text-base">Are you sure you want to hire the selected applicant(s)?</p>
-              <p className="text-sm text-slate-500">
-                This will mark them as hired and move them to employee onboarding records.
-                External applicants will proceed to Newly Hired for credential generation.
-              </p>
+              {selectedRowsForHiring.length === 1 ? (() => {
+                const row = selectedRowsForHiring[0];
+                const job = jobMap.get(row.jobPostingId);
+                const position = job?.title ?? 'this position';
+                const department = job?.department ?? 'this department';
+                return (
+                  <p className="text-base">
+                    Are you sure you want to hire this applicant for the position of{' '}
+                    <span className="font-semibold">{position}</span> under the{' '}
+                    <span className="font-semibold">{department}</span> department?
+                    This action will create an employee record and generate a system account.
+                  </p>
+                );
+              })() : (
+                <>
+                  <p className="text-base">
+                    Are you sure you want to hire the {selectedRowsForHiring.length} selected applicants?
+                    This action will create employee records and generate system accounts for each.
+                  </p>
+                  <ul className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 space-y-1 max-h-48 overflow-auto">
+                    {selectedRowsForHiring.map((row) => {
+                      const job = jobMap.get(row.jobPostingId);
+                      const fullName = `${row.personalInfo.firstName} ${row.personalInfo.lastName}`.trim();
+                      return (
+                        <li key={row.id}>
+                          <span className="font-semibold">{fullName}</span> · {job?.title ?? 'Unknown Position'} ·{' '}
+                          <span className="text-slate-500">{job?.department ?? 'Unassigned'}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </>
+              )}
               {selectedHiringMeta.promotions.length > 0 && (
                 <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
                   <p className="font-semibold">Promotion Confirmation</p>
@@ -2213,6 +2693,133 @@ export const QualifiedApplicantsPage = () => {
                 disabled={selectedHireApplicantIds.length === 0 || !canManageHiring}
               >
                 Confirm and Hire
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCredentialsModal && generatedCredentials.length > 0 && (
+        <div className="fixed inset-0 z-[150] bg-slate-900/70 p-4" onClick={() => setShowCredentialsModal(false)}>
+          <div
+            className="mx-auto mt-12 w-full max-w-2xl rounded-2xl bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="rounded-t-2xl bg-blue-600 px-6 py-4 text-white flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-semibold">Account Credentials</h3>
+                <p className="text-xs text-blue-100 mt-0.5">
+                  Share these with the new employee(s). They will be prompted to change the password on first login.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCredentialsModal(false)}
+                className="text-white/80 hover:text-white"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div id="credentials-print-area" className="max-h-[60vh] overflow-y-auto px-6 py-5 space-y-3">
+              {generatedCredentials.map((cred, idx) => (
+                <div key={idx} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div>
+                      <p className="font-semibold text-slate-900">{cred.fullName}</p>
+                      <p className="text-xs text-slate-500">
+                        {cred.position} · {cred.department}
+                      </p>
+                    </div>
+                    <span className="text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+                      Newly Hired
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Employee ID</p>
+                      <p className="font-mono font-semibold text-slate-900">{cred.employeeId}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Temporary Password</p>
+                      <p className="font-mono font-semibold text-slate-900">{cred.tempPassword}</p>
+                    </div>
+                    {cred.email && (
+                      <div className="sm:col-span-2">
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Sent to email</p>
+                        <p className="text-slate-700">{cred.email}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-200 px-6 py-4">
+              <button
+                type="button"
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                onClick={() => setShowCredentialsModal(false)}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 inline-flex items-center gap-2"
+                onClick={() => {
+                  const area = document.getElementById('credentials-print-area');
+                  if (!area) {
+                    window.print();
+                    return;
+                  }
+                  const printWindow = window.open('', '_blank', 'width=800,height=600');
+                  if (!printWindow) {
+                    window.print();
+                    return;
+                  }
+                  printWindow.document.write(`
+                    <html>
+                      <head>
+                        <title>Account Credentials</title>
+                        <style>
+                          body { font-family: system-ui, sans-serif; padding: 24px; color: #0f172a; }
+                          h1 { font-size: 18px; margin: 0 0 16px; }
+                          .credential { border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+                          .name { font-weight: 600; }
+                          .meta { color: #64748b; font-size: 12px; margin-top: 2px; }
+                          .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; font-size: 13px; }
+                          .label { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #64748b; }
+                          .value { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; }
+                        </style>
+                      </head>
+                      <body>
+                        <h1>Newly Hired — Account Credentials</h1>
+                        ${generatedCredentials.map((c) => `
+                          <div class="credential">
+                            <div class="name">${c.fullName}</div>
+                            <div class="meta">${c.position} · ${c.department}</div>
+                            <div class="grid">
+                              <div>
+                                <div class="label">Employee ID</div>
+                                <div class="value">${c.employeeId}</div>
+                              </div>
+                              <div>
+                                <div class="label">Temporary Password</div>
+                                <div class="value">${c.tempPassword}</div>
+                              </div>
+                            </div>
+                          </div>
+                        `).join('')}
+                      </body>
+                    </html>
+                  `);
+                  printWindow.document.close();
+                  printWindow.focus();
+                  printWindow.print();
+                }}
+              >
+                <FileText className="h-4 w-4" /> Print Credentials
               </button>
             </div>
           </div>

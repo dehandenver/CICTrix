@@ -24,6 +24,7 @@ import {
   HelpCircle,
   Info,
   LayoutDashboard,
+  Lock,
   Mail,
   MoreHorizontal,
   Palette,
@@ -77,8 +78,15 @@ import '../../styles/admin.css';
 
 type EmployeeOption = { id: string; name: string; position: string; department: string };
 
-import EmployeeDirectory from './EmployeeDirectory';
-import { SummaryOfRatings } from './pm/SummaryOfRatings';
+import { PMIPCRManagement } from './pm/PMIPCRManagement';
+import { PMCompetencyFramework } from './pm/PMCompetencyFramework';
+import { PMPromotionalApplications } from './pm/PMPromotionalApplications';
+import { PMReportsAnalytics } from './pm/PMReportsAnalytics';
+import {
+  getOfficeDirectory,
+  filterOfficeDirectory,
+  type OfficeDirectoryRow,
+} from '../../lib/api/officeDirectory';
 
 type EvaluationEmployeeRow = { name: string; position: string; status: string };
 type EvaluationGroup = {
@@ -121,8 +129,17 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<
-    'dashboard' | 'employees' | 'evaluation-status' | 'performance-reviews' | 'goals' | 'ipcr' | 'analytics' | 'reports' | 'settings'
+    'dashboard' | 'office-directory' | 'ipcr-management' | 'competency' | 'promotions' | 'analytics' | 'settings'
   >('dashboard');
+
+  // Office Directory state
+  const [officeDirectoryRows, setOfficeDirectoryRows] = useState<OfficeDirectoryRow[]>([]);
+  const [officeDirectoryLoading, setOfficeDirectoryLoading] = useState(false);
+  const [officeDirectoryError, setOfficeDirectoryError] = useState('');
+  const [officeDirectorySearch, setOfficeDirectorySearch] = useState('');
+  const [selectedOfficeRow, setSelectedOfficeRow] = useState<OfficeDirectoryRow | null>(null);
+  const [officeEmployees, setOfficeEmployees] = useState<any[]>([]);
+  const [officeEmployeesLoading, setOfficeEmployeesLoading] = useState(false);
   const [newCycle, setNewCycle] = useState<{
     title: string;
     start_date: string;
@@ -225,8 +242,8 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
         return {
           id: row.id,
           name,
-          position: row.current_position ?? '—',
-          department: row.department ?? '—',
+          position: row.current_position ?? 'â€”',
+          department: row.department ?? 'â€”',
         };
       });
       setActiveEmployees(mapped);
@@ -275,7 +292,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
       alert('Please fill in all required fields.');
       return;
     }
-    
+
     let targetEmployees: string[] = [];
     if (bulkSendTo === 'all') {
       targetEmployees = activeEmployees.map((e) => e.id);
@@ -299,7 +316,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     }
 
     const dueDateStr = bulkDueDate.toISOString().split('T')[0];
-    
+
     const results = await Promise.all(
       targetEmployees.map((id) =>
         createDocumentRequest({
@@ -364,10 +381,10 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const [reviewPage, setReviewPage] = useState(1);
   const [reviewRowsPerPage, setReviewRowsPerPage] = useState(20);
 
-  // ── Live PM data ─────────────────────────────────────────────────────────
+  // â”€â”€ Live PM data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Per Phase 2 of the data-migration plan: every dashboard widget reads from
   // these state slots; per-section useEffects below populate them. No mock
-  // fallbacks — empty arrays render the "No data" empty state in each widget.
+  // fallbacks â€” empty arrays render the "No data" empty state in each widget.
   const [evaluations, setEvaluations] = useState<PerformanceEvaluation[]>([]);
   const [evaluationsLoading, setEvaluationsLoading] = useState(false);
   const [statusCounts, setStatusCounts] = useState<Record<EvaluationStatus, number>>({
@@ -392,6 +409,18 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const [documentRequestsLoading, setDocumentRequestsLoading] = useState(false);
   const [reviewingRequest, setReviewingRequest] = useState<DocumentRequest | null>(null);
   const [reviewDecisionPending, setReviewDecisionPending] = useState<'Approved' | 'Rejected' | null>(null);
+
+  // States for Pending IPCR Submissions and Probationary Metrics
+  const [probationarySubmissionsCount, setProbationarySubmissionsCount] = useState(0);
+  const [regularSubmissionsCount, setRegularSubmissionsCount] = useState(0);
+  const [pendingSubmissions, setPendingSubmissions] = useState<any[]>([]);
+  const [probationaryMetrics, setProbationaryMetrics] = useState({
+    total: 0,
+    due: 0,
+    nextDue: '—'
+  });
+  const [ipcrLoading, setIpcrLoading] = useState(false);
+  const [ipcrSubmissionTab, setIpcrSubmissionTab] = useState<'pending' | 'recent'>('pending');
 
   const refreshDocumentRequests = async () => {
     const result = await getDocumentRequests({ source: 'PM' });
@@ -448,20 +477,20 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     .slice(0, 6)
     .map(e => ({
       name: e.employee_name ?? 'Unknown',
-      position: e.employee_position ?? '—',
+      position: e.employee_position ?? 'â€”',
       dept: e.department ?? 'Unassigned',
-      period: e.period ?? '—',
-      rating: e.final_score !== null ? e.final_score.toFixed(2) : '—',
+      period: e.period ?? 'â€”',
+      rating: e.final_score !== null ? e.final_score.toFixed(2) : 'â€”',
       status: e.status === 'Approved'
         ? 'Approved'
         : e.status === 'Supervisor Review'
-        ? 'Under Review'
-        : 'Submitted',
+          ? 'Under Review'
+          : 'Submitted',
       statusColor: e.status === 'Approved'
         ? 'bg-emerald-100 text-emerald-700'
         : e.status === 'Supervisor Review'
-        ? 'bg-orange-100 text-orange-700'
-        : 'bg-blue-100 text-blue-700',
+          ? 'bg-orange-100 text-orange-700'
+          : 'bg-blue-100 text-blue-700',
     }));
 
   // Department-grouped employees from the central employees table.
@@ -538,7 +567,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     };
   }, [evaluations]);
 
-  // ── Per-section data fetches ───────────────────────────────────────────────
+  // â”€â”€ Per-section data fetches â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Fetched once on mount because most widgets (Action Queue, Distribution,
   // IPCR Submissions, Reviews, Status Counts) all read from the evaluations
   // slice. activeCycleId scopes to the current cycle when one exists.
@@ -546,8 +575,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
   // Evaluations + derived status counts + distribution.
   useEffect(() => {
-    if (activeSection !== 'dashboard' && activeSection !== 'evaluation-status'
-        && activeSection !== 'performance-reviews' && activeSection !== 'goals') {
+    if (activeSection !== 'dashboard') {
       return;
     }
     let cancelled = false;
@@ -571,7 +599,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
   // Document requests (Action Queue on dashboard + Documents/Reports section).
   useEffect(() => {
-    if (activeSection !== 'dashboard' && activeSection !== 'reports') return;
+    if (activeSection !== 'dashboard') return;
     let cancelled = false;
     (async () => {
       setDocumentRequestsLoading(true);
@@ -579,6 +607,155 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
       if (cancelled) return;
       setDocumentRequests(result.data);
       setDocumentRequestsLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [activeSection]);
+
+  // Load IPCR submissions + probationary schedules to compute dashboard stats & list
+  useEffect(() => {
+    if (activeSection !== 'dashboard') return;
+    let cancelled = false;
+    (async () => {
+      setIpcrLoading(true);
+      try {
+        const [empResult, subRes, schedRes] = await Promise.all([
+          getAllEmployees({ status: 'Active' }),
+          (supabase as any).from('ipcr_submissions').select('*'),
+          (supabase as any).from('probationary_ipcr_schedules').select('*'),
+        ]);
+
+        if (cancelled) return;
+        if (!empResult.success) return;
+
+        const employees: Employee[] = empResult.data || [];
+        const submissions = subRes.error ? [] : (subRes.data ?? []);
+        const schedules = schedRes.error ? [] : (schedRes.data ?? []);
+
+        const getMonthsOfService = (hireDate: string) => {
+          const hired = new Date(hireDate);
+          const now = new Date();
+          return Math.max(
+            0,
+            (now.getFullYear() - hired.getFullYear()) * 12 + (now.getMonth() - hired.getMonth()),
+          );
+        };
+
+        const computeStageInfoLocal = (hireDate: string, schedules: any[]) => {
+          const hired = new Date(hireDate);
+          const months = getMonthsOfService(hireDate);
+
+          if (months < 6) {
+            const monthNames = [
+              'January', 'February', 'March', 'April', 'May', 'June',
+              'July', 'August', 'September', 'October', 'November', 'December'
+            ];
+            const hireMonthName = monthNames[hired.getMonth()];
+            const sched = schedules.find((s) => s.hired_month === hireMonthName);
+            
+            if (sched) {
+              const now = new Date();
+              const targetEnd = new Date(sched.target_end);
+              const accomplishmentEnd = new Date(sched.accomplishment_end);
+              if (now <= targetEnd) {
+                return { stage: 'Target Setting', phase: 'target', dueDate: targetEnd, periodLabel: sched.period_label };
+              } else {
+                return { stage: 'Accomplishment Rating', phase: 'rating', dueDate: accomplishmentEnd, periodLabel: sched.period_label };
+              }
+            }
+            if (months < 3) {
+              const due = new Date(hired);
+              due.setMonth(due.getMonth() + 3);
+              return { stage: 'Target Setting', phase: 'target', dueDate: due, periodLabel: 'Probationary — 1st 3 Months' };
+            }
+            const due = new Date(hired);
+            due.setMonth(due.getMonth() + 6);
+            return { stage: 'Accomplishment Rating', phase: 'rating', dueDate: due, periodLabel: 'Probationary — 2nd 3 Months' };
+          }
+
+          const regularStart = new Date(hired);
+          regularStart.setMonth(regularStart.getMonth() + 6);
+          const now = new Date();
+          const msSinceRegular = Math.max(
+            0,
+            (now.getFullYear() - regularStart.getFullYear()) * 12 + (now.getMonth() - regularStart.getMonth()),
+          );
+          const completedCycles = Math.floor(msSinceRegular / 12);
+          const posInCycle = msSinceRegular % 12;
+          const cycleStart = new Date(regularStart);
+          cycleStart.setMonth(cycleStart.getMonth() + completedCycles * 12);
+          const yr = cycleStart.getFullYear();
+          const halfLabel = cycleStart.getMonth() < 6 ? '1st Half' : '2nd Half';
+
+          if (posInCycle < 6) {
+            const due = new Date(cycleStart);
+            due.setMonth(due.getMonth() + 6);
+            return { stage: 'Target Setting', phase: 'target', dueDate: due, periodLabel: `${halfLabel} ${yr}` };
+          }
+          const due = new Date(cycleStart);
+          due.setMonth(due.getMonth() + 12);
+          return { stage: 'Accomplishment Rating', phase: 'rating', dueDate: due, periodLabel: `${halfLabel} ${yr}` };
+        };
+
+        const subMap = new Map<string, string>();
+        for (const s of submissions) {
+          subMap.set(`${s.employee_id}::${s.period}::${s.phase}`, s.stage);
+        }
+
+        let probTotal = 0;
+        let probDue = 0;
+        let nextDueDate: Date | null = null;
+        const pendingList: any[] = [];
+
+        for (const emp of employees) {
+          if (!emp.hire_date) continue;
+          const months = getMonthsOfService(emp.hire_date);
+          const isProb = months < 6;
+          const { stage, phase, dueDate, periodLabel } = computeStageInfoLocal(emp.hire_date, schedules);
+
+          const actualStage = subMap.get(`${emp.id}::${periodLabel}::${phase}`) || 'Not Started';
+          const isPending = actualStage !== 'Forwarded to PM';
+
+          if (isProb) {
+            probTotal++;
+            if (isPending) {
+              probDue++;
+              if (!nextDueDate || dueDate < nextDueDate) {
+                nextDueDate = dueDate;
+              }
+            }
+          }
+
+          if (isPending) {
+            pendingList.push({
+              name: emp.full_name,
+              position: emp.current_position || '—',
+              dept: emp.department || 'Unassigned',
+              type: isProb ? 'Probationary' : 'Regular',
+              period: periodLabel,
+              stage: actualStage,
+              dueDate: dueDate,
+            });
+          }
+        }
+
+        setProbationaryMetrics({
+          total: probTotal,
+          due: probDue,
+          nextDue: nextDueDate ? nextDueDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
+        });
+
+        const probPending = pendingList.filter(p => p.type === 'Probationary').length;
+        const regPending = pendingList.filter(p => p.type === 'Regular').length;
+        setProbationarySubmissionsCount(probPending);
+        setRegularSubmissionsCount(regPending);
+
+        pendingList.sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
+        setPendingSubmissions(pendingList);
+      } catch (err) {
+        console.error('Error calculating IPCR stats:', err);
+      } finally {
+        setIpcrLoading(false);
+      }
     })();
     return () => { cancelled = true; };
   }, [activeSection]);
@@ -622,7 +799,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
           const monthsAway = Math.max(0, Math.round((retirementDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24 * 30.4)));
           rows.push({
             name: emp.full_name ?? 'Unnamed',
-            role: emp.current_position ?? '—',
+            role: emp.current_position ?? 'â€”',
             date: retirementDate.toLocaleString('default', { month: 'short', year: 'numeric' }),
             monthsAway,
           });
@@ -727,16 +904,59 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     setShowCycleDialog(true);
   };
 
+  // Office Directory helpers
+  const filteredOfficeDirectoryRows = useMemo(
+    () => filterOfficeDirectory(officeDirectoryRows, officeDirectorySearch),
+    [officeDirectoryRows, officeDirectorySearch]
+  );
+
+  useEffect(() => {
+    if (activeSection !== 'office-directory' || officeDirectoryRows.length > 0) return;
+    setOfficeDirectoryLoading(true);
+    setOfficeDirectoryError('');
+    getOfficeDirectory().then((result) => {
+      if (result.ok) {
+        setOfficeDirectoryRows(result.data);
+      } else {
+        setOfficeDirectoryError((result as { ok: false; error: string }).error);
+      }
+      setOfficeDirectoryLoading(false);
+    });
+  }, [activeSection]);
+
+  const getOfficeDirInitials = (name: string): string => {
+    const parts = (name ?? '').trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '??';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+
+  const handleOfficeClick = (row: OfficeDirectoryRow) => {
+    setSelectedOfficeRow(row);
+    // Load the office's employees so the drill-down can group them by
+    // department → position (instead of a flat table).
+    setOfficeEmployees([]);
+    setOfficeEmployeesLoading(true);
+    (supabase as any)
+      .from('employees_with_department')
+      .select('id, full_name, current_position, department, status, email, mobile_number')
+      .eq('department', row.officeName)
+      .order('current_position', { ascending: true })
+      .order('full_name', { ascending: true })
+      .then(({ data }: { data: any[] | null }) => {
+        setOfficeEmployees(Array.isArray(data) ? data : []);
+        setOfficeEmployeesLoading(false);
+      });
+  };
+
   if (isDashboardView) {
     const sideNavItems = [
       { key: 'dashboard', label: 'Dashboard', subtitle: '', icon: LayoutDashboard },
-      { key: 'employees', label: 'Employees', subtitle: 'Employee Directory', icon: Users },
-      { key: 'evaluation-status', label: 'Employee Evaluation Status', subtitle: 'Track progress', icon: ClipboardList },
-      { key: 'performance-reviews', label: 'Performance Reviews', subtitle: 'Upcoming reviews', icon: CalendarCheck2 },
-      { key: 'goals', label: 'DPCR', subtitle: 'Individual performance', icon: FileCheck2 },
-      { key: 'ipcr', label: 'Summary of Ratings', subtitle: 'IPCR ratings per dept', icon: BarChart3 },
-      { key: 'reports', label: 'Documents', subtitle: 'Document submissions', icon: FileText },
-      { key: 'analytics', label: 'Analytics', subtitle: 'Performance insights', icon: TrendingUp },
+      { key: 'office-directory', label: 'Office Directory', subtitle: 'Offices, heads & employees', icon: Building2 },
+      { key: 'ipcr-management', label: 'IPCR Management', subtitle: 'Onboarding & Tracking', icon: ClipboardList },
+      { key: 'competency', label: 'Competency Framework', subtitle: 'Position Requirements', icon: BookOpen },
+      { key: 'promotions', label: 'Promotional Applications', subtitle: 'End-to-end Promotions', icon: TrendingUp },
+      { key: 'analytics', label: 'Reports & Analytics', subtitle: 'Insights & Exports', icon: TrendingUp },
       { key: 'settings', label: 'Settings', subtitle: '', icon: Settings },
     ] as const;
 
@@ -745,9 +965,9 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
         <header className="sticky top-0 z-40 border-b border-slate-200 bg-white shadow-sm print:hidden">
           <div className="flex items-center justify-between px-6 py-3">
             <div className="flex items-center gap-4">
-              <div className="h-10 w-10 rounded-xl bg-blue-600 text-white grid place-content-center text-lg font-bold">HR</div>
+              <div className="h-10 w-10 rounded-xl bg-[#363EE8] text-white grid place-content-center text-lg font-bold">AB</div>
               <div>
-                <h1 className="text-lg font-bold leading-none">Government HRIS</h1>
+                <h1 className="text-lg font-bold leading-none">Abyan HRIS</h1>
                 <p className="text-xs text-slate-500">Human Resource Information System</p>
               </div>
             </div>
@@ -802,9 +1022,247 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
           </aside>
 
           <main className="flex-1 p-6">
+
+            {activeSection === 'office-directory' && (
+              <div className="space-y-4">
+                {selectedOfficeRow ? (
+                  /* ── Divisions and Supervisors list for selected office ── */
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedOfficeRow(null)}
+                      className="flex items-center gap-1 text-blue-600 hover:text-blue-700 font-medium text-sm mb-4"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Office Directory
+                    </button>
+                    <h2 className="text-2xl font-bold text-slate-900 tracking-tight">{selectedOfficeRow.officeName}</h2>
+                    <p className="text-sm text-slate-500 mt-0.5 mb-6">
+                      {selectedOfficeRow.employeeCount} employee{selectedOfficeRow.employeeCount !== 1 ? 's' : ''}
+                    </p>
+
+                    {/* Department Head details */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 mb-6 flex items-center gap-4">
+                      <div className="h-12 w-12 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-lg">
+                        {selectedOfficeRow.deptHead ? getOfficeDirInitials(selectedOfficeRow.deptHead.name) : 'DH'}
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Department Head</p>
+                        {selectedOfficeRow.deptHead ? (
+                          <>
+                            <p className="text-base font-bold text-slate-800">{selectedOfficeRow.deptHead.name}</p>
+                            <p className="text-xs text-slate-500 mt-0.5">
+                              {selectedOfficeRow.deptHead.position} · {selectedOfficeRow.deptHead.contact}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-amber-600 font-semibold text-sm mt-0.5">Unassigned</p>
+                        )}
+                      </div>
+                      {selectedOfficeRow.deptHead && (
+                        <div className="ml-auto">
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                            selectedOfficeRow.deptHead.accountStatus.toLowerCase() === 'active'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                              : 'bg-slate-100 text-slate-600 border border-slate-200'
+                          }`}>
+                            {selectedOfficeRow.deptHead.accountStatus}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Employees grouped by department → then position */}
+                    <div className="mb-8">
+                      <h3 className="text-lg font-bold text-slate-800 mb-4">Employees by Department & Position</h3>
+                      {officeEmployeesLoading ? (
+                        <div className="text-sm text-slate-500 py-6">Loading employees…</div>
+                      ) : officeEmployees.length === 0 ? (
+                        <div className="text-sm text-slate-400 italic py-6">No employees assigned to this office.</div>
+                      ) : (
+                        (() => {
+                          const byDept = new Map<string, Map<string, any[]>>();
+                          for (const e of officeEmployees) {
+                            const dept = e.department || 'Unassigned';
+                            const pos = e.current_position || 'Unassigned Position';
+                            if (!byDept.has(dept)) byDept.set(dept, new Map());
+                            const posMap = byDept.get(dept)!;
+                            if (!posMap.has(pos)) posMap.set(pos, []);
+                            posMap.get(pos)!.push(e);
+                          }
+                          return Array.from(byDept.entries()).map(([dept, posMap]) => (
+                            <div key={dept} className="mb-6">
+                              <div className="flex items-center gap-2 mb-3">
+                                <Building2 className="h-4 w-4 text-blue-600" />
+                                <h4 className="font-bold text-slate-800 text-sm">{dept}</h4>
+                                <span className="text-xs text-slate-400">
+                                  {Array.from(posMap.values()).reduce((n, a) => n + a.length, 0)} employees
+                                </span>
+                              </div>
+                              <div className="space-y-4 pl-6 border-l-2 border-slate-100">
+                                {Array.from(posMap.entries()).map(([pos, emps]) => (
+                                  <div key={pos}>
+                                    <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                                      {pos} · {emps.length}
+                                    </p>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                      {emps.map((e: any) => {
+                                        const isActive = String(e.status ?? '').toLowerCase() === 'active';
+                                        return (
+                                          <div key={e.id} className="flex items-start gap-3 p-3 rounded-lg border border-slate-100 bg-slate-50/50">
+                                            <div className="h-8 w-8 rounded bg-blue-500 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                                              {getOfficeDirInitials(e.full_name || '')}
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                              <p className="font-semibold text-slate-800 text-xs truncate">{e.full_name}</p>
+                                              <p className="text-[10px] text-slate-500 truncate mt-0.5">{e.email || '—'}</p>
+                                              <span className={`inline-block mt-1.5 px-2 py-0.5 rounded-full text-[9px] font-semibold ${
+                                                isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                                              }`}>
+                                                {e.status || 'Active'}
+                                              </span>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ));
+                        })()
+                      )}
+                    </div>
+
+                    <h3 className="text-lg font-bold text-slate-800 mb-4">Divisions & Assigned Supervisors</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {selectedOfficeRow.divisions.map((div: any, idx: number) => (
+                        <div key={idx} className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
+                          <div>
+                            <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+                              <h4 className="font-bold text-slate-800 text-sm tracking-tight leading-snug">{div.name}</h4>
+                            </div>
+
+                            <div className="space-y-4">
+                              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Supervisors</p>
+                              {div.supervisors.length === 0 ? (
+                                <div className="rounded-lg bg-amber-50 border border-amber-100 p-3 text-amber-700 text-xs flex items-center gap-2">
+                                  <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                                  <span>No supervisors assigned to this division.</span>
+                                </div>
+                              ) : (
+                                div.supervisors.map((sup: any, sIdx: number) => {
+                                  const initials = getOfficeDirInitials(sup.name);
+                                  const isActive = sup.accountStatus.toLowerCase() === 'active';
+                                  return (
+                                    <div key={sIdx} className="flex items-start gap-3 p-2.5 rounded-lg border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                                      <div className="h-8 w-8 rounded bg-blue-500 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                                        {initials}
+                                      </div>
+                                      <div className="min-w-0 flex-1">
+                                        <p className="font-semibold text-slate-800 text-xs truncate">{sup.name}</p>
+                                        <p className="text-[10px] text-slate-400 truncate mt-0.5">{sup.position || 'Supervisor'}</p>
+                                        <p className="text-[10px] text-slate-500 font-mono mt-0.5 truncate">{sup.contact}</p>
+                                        <span className={`inline-block mt-2 px-2 py-0.5 rounded-full text-[9px] font-semibold ${
+                                          isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                                        }`}>
+                                          {sup.accountStatus}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  /* ── Office Directory table ── */
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Office Directory</h2>
+                        <p className="text-sm text-slate-500 mt-0.5">Click an office row to view all assigned employees and their accounts</p>
+                      </div>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                        <input
+                          type="text"
+                          value={officeDirectorySearch}
+                          onChange={(e) => setOfficeDirectorySearch(e.target.value)}
+                          placeholder="Search office or name…"
+                          className="rounded-lg border border-slate-300 pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 w-64"
+                        />
+                      </div>
+                    </div>
+                    {officeDirectoryError && (
+                      <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{officeDirectoryError}</div>
+                    )}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                      {officeDirectoryLoading ? (
+                        <div className="p-12 text-center text-slate-500">Loading offices…</div>
+                      ) : (
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-slate-50 text-left text-slate-500 text-xs font-semibold uppercase tracking-wider border-b border-slate-200">
+                              <th className="px-5 py-3">Office</th>
+                              <th className="px-5 py-3">Department Head</th>
+                              <th className="px-5 py-3 text-right">Employees</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {filteredOfficeDirectoryRows.length === 0 ? (
+                              <tr>
+                                <td colSpan={3} className="py-10 text-center text-slate-400 italic">
+                                  {officeDirectoryRows.length === 0 ? 'No offices found.' : 'No offices match your search.'}
+                                </td>
+                              </tr>
+                            ) : (
+                              filteredOfficeDirectoryRows.map((row) => (
+                                <tr
+                                  key={row.officeId}
+                                  className="hover:bg-blue-50 cursor-pointer transition-colors"
+                                  onClick={() => handleOfficeClick(row)}
+                                >
+                                  <td className="px-5 py-4">
+                                    <p className="font-semibold text-slate-800">{row.officeName}</p>
+                                    {row.code && <p className="text-xs text-slate-400 mt-0.5">{row.code}</p>}
+                                  </td>
+                                  <td className="px-5 py-4">
+                                    {row.deptHead ? (
+                                      <div>
+                                        <p className="font-medium text-slate-700">{row.deptHead.name}</p>
+                                        <p className="text-xs text-slate-400">{row.deptHead.contact}</p>
+                                      </div>
+                                    ) : (
+                                      <span className="text-amber-600 text-xs">Unassigned</span>
+                                    )}
+                                  </td>
+                                  <td className="px-5 py-4 text-right">
+                                    <div className="flex items-center justify-end gap-2">
+                                      <Users className="h-4 w-4 text-slate-400" />
+                                      <span className="font-semibold text-slate-800">{row.employeeCount}</span>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {activeSection === 'dashboard' && (
               <>
-                {/* ── Header Area ── */}
+                {/* â”€â”€ Header Area â”€â”€ */}
                 <div className="flex items-center justify-between mb-1">
                   <p className="text-sm text-blue-600 font-medium">Performance Management <span className="mx-1 text-slate-400">&gt;</span> <span className="text-slate-500">Dashboard</span></p>
                   <button type="button" className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition">
@@ -812,7 +1270,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   </button>
                 </div>
                 <h2 className="text-2xl font-bold text-slate-900 tracking-tight">PM Dashboard</h2>
-                <p className="text-sm text-slate-500 mt-0.5">Performance evaluation overview — FY 2025</p>
+                <p className="text-sm text-slate-500 mt-0.5">Performance evaluation overview â€” FY 2025</p>
 
                 {errorMessage && (
                   <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
@@ -820,7 +1278,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   </div>
                 )}
 
-                {/* ── KPI Cards Row ── */}
+                {/* â”€â”€ KPI Cards Row â”€â”€ */}
                 <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                   <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm relative overflow-hidden">
                     {evaluationsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
@@ -840,27 +1298,29 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                     <p className="text-3xl font-extrabold text-orange-500 leading-none">{statusCounts['Supervisor Review']}</p>
                     <p className="text-xs text-slate-400 mt-1">Awaiting validation</p>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm relative overflow-hidden">
+                    {ipcrLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
                     <div className="flex items-center gap-2 mb-1">
                       <AlertTriangle className="h-4 w-4 text-amber-500" />
-                      <p className="text-xs font-medium text-slate-500">Urgent Training Approvals</p>
+                      <p className="text-xs font-medium text-slate-500">Pending IPCR (Probationary)</p>
                     </div>
-                    <p className="text-3xl font-extrabold text-slate-900 leading-none">7</p>
-                    <p className="text-xs text-slate-400 mt-1">Due within 3 days</p>
+                    <p className="text-3xl font-extrabold text-amber-600 leading-none">{probationarySubmissionsCount}</p>
+                    <p className="text-xs text-slate-400 mt-1">Hired within 6 months</p>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm relative overflow-hidden">
+                    {ipcrLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
                     <div className="flex items-center gap-2 mb-1">
                       <Users className="h-4 w-4 text-blue-500" />
-                      <p className="text-xs font-medium text-slate-500">Expiring Certifications</p>
+                      <p className="text-xs font-medium text-slate-500">Pending IPCR (Regular)</p>
                     </div>
-                    <p className="text-3xl font-extrabold text-slate-900 leading-none">12</p>
-                    <p className="text-xs text-slate-400 mt-1">Next 30 days</p>
+                    <p className="text-3xl font-extrabold text-blue-600 leading-none">{regularSubmissionsCount}</p>
+                    <p className="text-xs text-slate-400 mt-1">Tenured &gt; 6 months</p>
                   </div>
                 </div>
 
-                {/* ── Middle Section (60/40) ── */}
+                {/* â”€â”€ Middle Section (60/40) â”€â”€ */}
                 <div className="mt-6 grid grid-cols-1 xl:grid-cols-5 gap-6">
-                  {/* Left – Action Required Queue (60%) */}
+                  {/* Left â€“ Action Required Queue (60%) */}
                   <section className="xl:col-span-3 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                     <header className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
@@ -902,7 +1362,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                     </div>
                   </section>
 
-                  {/* Right – Performance Distribution Donut (40%) */}
+                  {/* Right â€“ Performance Distribution Donut (40%) */}
                   <section className="xl:col-span-2 rounded-xl border border-slate-200 bg-white p-5 shadow-sm relative overflow-hidden">
                     {evaluationsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
                     <div className="flex items-center justify-between mb-4">
@@ -920,7 +1380,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                       const sPct = total > 0 ? (performanceDistribution['Satisfactory'] / total) * circ : 0;
                       const uPct = total > 0 ? (performanceDistribution['Unsatisfactory'] / total) * circ : 0;
                       const pPct = total > 0 ? (performanceDistribution['Poor'] / total) * circ : 0;
-                      
+
                       const oOff = 0;
                       const vsOff = oOff - oPct;
                       const sOff = vsOff - vsPct;
@@ -972,7 +1432,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   </section>
                 </div>
 
-                {/* ── Bottom Section (50/50) ── */}
+                {/* â”€â”€ Bottom Section (50/50) â”€â”€ */}
                 <div className="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-6">
                   <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                     <header className="px-5 py-3.5 border-b border-slate-100">
@@ -1025,845 +1485,161 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   </section>
 
                   <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                    <header className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <BookOpen className="h-4 w-4 text-slate-500" />
-                        <h3 className="text-sm font-bold text-slate-800">IPCR Submissions</h3>
+                    <header className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          <BookOpen className="h-4 w-4 text-slate-500" />
+                          <h3 className="text-sm font-bold text-slate-800">IPCR Submissions</h3>
+                        </div>
+                        <div className="flex bg-slate-100 rounded-lg p-0.5 text-[11px] font-semibold">
+                          <button
+                            type="button"
+                            onClick={() => setIpcrSubmissionTab('pending')}
+                            className={`px-2.5 py-1 rounded-md transition ${
+                              ipcrSubmissionTab === 'pending'
+                                ? 'bg-white text-slate-800 shadow-sm'
+                                : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                          >
+                            Pending ({pendingSubmissions.length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIpcrSubmissionTab('recent')}
+                            className={`px-2.5 py-1 rounded-md transition ${
+                              ipcrSubmissionTab === 'recent'
+                                ? 'bg-white text-slate-800 shadow-sm'
+                                : 'text-slate-500 hover:text-slate-800'
+                            }`}
+                          >
+                            Recent ({recentIPCRs.length})
+                          </button>
+                        </div>
                       </div>
-                      <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">{recentIPCRs.length} total</span>
+                      <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
+                        ipcrSubmissionTab === 'pending' ? 'bg-orange-100 text-orange-700' : 'bg-emerald-100 text-emerald-700'
+                      }`}>
+                        {ipcrSubmissionTab === 'pending' ? 'Action Required' : 'Completed'}
+                      </span>
                     </header>
                     <div className="overflow-x-auto relative min-h-[60px]">
-                      {evaluationsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="bg-slate-50/80 text-left">
-                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Employee</th>
-                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Dept.</th>
-                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Period</th>
-                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Rating</th>
-                            <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Status</th>
-                            <th className="px-4 py-2.5"></th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {recentIPCRs.length === 0 && !evaluationsLoading ? (
-                            <tr>
-                              <td colSpan={6} className="py-8 text-center text-slate-500 italic">No submissions yet</td>
-                            </tr>
-                          ) : (
-                            recentIPCRs.map((row, idx) => (
-                              <tr key={`${row.name}-${idx}`} className="hover:bg-slate-50/60 transition">
-                                <td className="px-4 py-3">
-                                  <p className="font-semibold text-slate-800">{row.name}</p>
-                                  <p className="text-slate-400">{row.position}</p>
-                                </td>
-                                <td className="px-4 py-3 text-slate-500">{row.dept}</td>
-                                <td className="px-4 py-3 text-slate-500">{row.period}</td>
-                                <td className="px-4 py-3">
-                                  {row.rating !== '—' ? (
-                                    <span className="inline-block rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">{row.rating}</span>
-                                  ) : <span className="text-slate-400">—</span>}
-                                </td>
-                                <td className="px-4 py-3">
-                                  <span className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${row.statusColor}`}>
-                                    {row.status}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 text-center">
-                                  <button type="button" className="rounded-md p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition" title="View">
-                                    <Eye className="h-4 w-4" />
-                                  </button>
-                                </td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </section>
-                </div>
-              </>
-            )}
-
-            {activeSection === 'employees' && (
-              <div className="relative">
-                <EmployeeDirectory />
-              </div>
-            )}
-
-            {activeSection === 'evaluation-status' && (
-              <>
-                {/* Header */}
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-sm text-blue-600 font-medium">Performance Management <span className="mx-1 text-slate-400">&gt;</span> <span className="text-slate-500">Employee Evaluation Status</span></p>
-                  <button type="button" className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition">
-                    <CalendarDays className="h-4 w-4" /> Jan – Jun 2025 (1st Semester) <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
-                  </button>
-                </div>
-                <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Employee Evaluation Status</h2>
-                <p className="text-sm text-slate-500 mt-0.5">Track the complete progress of performance evaluations across your organization</p>
-
-                {/* 5 KPI Cards */}
-                <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 relative">
-                  {evaluationsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
-                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-                    <p className="text-xs text-slate-500 mb-1">Overall Completion</p>
-                    <div className="flex items-center gap-2.5">
-                      <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-blue-100"><BarChart3 className="h-5 w-5 text-blue-600" /></span>
-                      <div>
-                        <p className="text-2xl font-extrabold text-slate-900 leading-none">
-                          {evaluationTotal > 0 ? Math.round((statusCounts.Approved / evaluationTotal) * 100) : 0}%
-                        </p>
-                        <p className="text-xs text-slate-400 mt-0.5">of {evaluationTotal} employees</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-                    <p className="text-xs text-slate-500 mb-1">Approved</p>
-                    <div className="flex items-center gap-2.5">
-                      <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-emerald-100"><CheckCircle2 className="h-5 w-5 text-emerald-600" /></span>
-                      <div><p className="text-2xl font-extrabold text-emerald-600 leading-none">{statusCounts.Approved}</p><p className="text-xs text-slate-400 mt-0.5">Fully completed</p></div>
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-                    <p className="text-xs text-slate-500 mb-1">In Progress</p>
-                    <div className="flex items-center gap-2.5">
-                      <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-orange-100"><Clock className="h-5 w-5 text-orange-500" /></span>
-                      <div><p className="text-2xl font-extrabold text-orange-500 leading-none">{statusCounts['Supervisor Review']}</p><p className="text-xs text-slate-400 mt-0.5">Under supervisor review</p></div>
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-                    <p className="text-xs text-slate-500 mb-1">Planning</p>
-                    <div className="flex items-center gap-2.5">
-                      <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-blue-100"><SlidersHorizontal className="h-5 w-5 text-blue-600" /></span>
-                      <div><p className="text-2xl font-extrabold text-slate-900 leading-none">{statusCounts.Planning}</p><p className="text-xs text-slate-400 mt-0.5">Self-evaluation stage</p></div>
-                    </div>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-                    <p className="text-xs text-slate-500 mb-1">Rejected</p>
-                    <div className="flex items-center gap-2.5">
-                      <span className="flex items-center justify-center h-9 w-9 rounded-lg bg-red-100"><XCircle className="h-5 w-5 text-red-500" /></span>
-                      <div><p className="text-2xl font-extrabold text-red-500 leading-none">{statusCounts.Rejected}</p><p className="text-xs text-slate-400 mt-0.5">Requires resubmission</p></div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Stacked Bar Chart */}
-                <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="flex items-center justify-between mb-5">
-                    <h3 className="text-sm font-bold text-slate-800">Evaluation Completion by Department</h3>
-                    <span className="text-xs text-slate-400">Jan – Jun 2025 (1st Semester)</span>
-                  </div>
-                  <svg viewBox="0 0 500 220" className="w-full" style={{ maxHeight: 260 }}>
-                    {/* Y-axis labels & gridlines */}
-                    {[0, 2, 4, 6, 8, 10].map((v) => {
-                      const y = 180 - (v / 10) * 170;
-                      return (
-                        <g key={v}>
-                          <text x="20" y={y + 3} textAnchor="end" fontSize="10" fill="#94a3b8">{v}</text>
-                          <line x1="28" y1={y} x2="490" y2={y} stroke="#e2e8f0" strokeWidth="0.5" />
-                        </g>
-                      );
-                    })}
-                    {/* Bars */}
-                    {dbEvaluationGroups.map((d, i) => {
-                      const x = 55 + i * 92;
-                      const bw = 42;
-                      const unitH = 17;
-                      const baseY = 180;
-                      let cy = baseY;
-                      const segments = [
-                        { val: d.approved, color: '#22c55e' },
-                        { val: d.review, color: '#fb923c' },
-                        { val: d.self, color: '#22d3ee' },
-                        { val: d.planning, color: '#2563eb' },
-                        { val: d.rejected || 0, color: '#ef4444' },
-                      ];
+                      {(evaluationsLoading || ipcrLoading) && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
                       
-                      const deptParts = d.dept.split(' ');
-                      const dept1 = deptParts[0];
-                      const dept2 = deptParts.slice(1).join(' ');
-
-                      return (
-                        <g key={d.dept}>
-                          {segments.map((seg, si) => {
-                            if (seg.val === 0) return null;
-                            const h = seg.val * unitH;
-                            cy -= h;
-                            return <rect key={si} x={x} y={cy} width={bw} height={h} fill={seg.color} rx={si === segments.length - 1 || (segments.slice(si + 1).every(s => s.val === 0)) ? 2 : 0} />;
-                          })}
-                          <text x={x + bw / 2} y={195} textAnchor="middle" fontSize="10" fill="#64748b">{dept1}</text>
-                          {dept2 && <text x={x + bw / 2} y={206} textAnchor="middle" fontSize="10" fill="#64748b">{dept2}</text>}
-                        </g>
-                      );
-                    })}
-                  </svg>
-                  {/* Legend */}
-                  <div className="flex items-center justify-center gap-5 mt-2 text-xs text-slate-600">
-                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500 inline-block" /> Approved</span>
-                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-orange-400 inline-block" /> Supervisor Review</span>
-                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-cyan-400 inline-block" /> Self Evaluation</span>
-                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-blue-600 inline-block" /> Planning</span>
-                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-red-500 inline-block" /> Rejected</span>
-                  </div>
-                </section>
-
-                {/* Employee Table */}
-                <section className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                  {/* Toolbar */}
-                  <div className="flex items-center gap-4 px-5 py-2.5 border-b border-slate-100">
-                    <div className="relative flex-1 max-w-sm">
-                      <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                      <input className="w-full rounded-lg border border-slate-300 pl-10 pr-4 py-1.5 text-sm" placeholder="Search by name or position..." />
-                    </div>
-                    <select className="rounded-lg border border-slate-300 px-4 py-1.5 text-sm text-slate-600"><option>All Departments</option></select>
-                    <select className="rounded-lg border border-slate-300 px-4 py-1.5 text-sm text-slate-600"><option>All Statuses</option></select>
-                    <div className="flex-1" />
-                    <button type="button" className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-slate-50 px-4 py-1.5 text-sm font-medium text-slate-400 cursor-default">Bulk Actions <ChevronDown className="h-3.5 w-3.5" /></button>
-                  </div>
-
-                  {/* Column headers */}
-                  <div className="grid grid-cols-12 items-center px-5 py-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                    <div className="col-span-1 flex items-center gap-2"><input type="checkbox" className="rounded border-slate-300 h-4 w-4" /><span className="text-blue-600 normal-case text-xs font-medium">Showing 1–10 of 35 employees</span></div>
-                    <div className="col-span-6 pl-10">Employee</div>
-                    <div className="col-span-3">Status</div>
-                    <div className="col-span-2 text-right">Actions</div>
-                  </div>
-
-                  {/* Department groups — uses live employees from the central
-                      employees table when present. */}
-                  {dbEvaluationGroups.length > 0 ? dbEvaluationGroups.map((group) => (
-                    <div key={group.dept} className="border-b border-slate-100">
-                      {/* Group header */}
-                      <div className="flex items-center gap-3 px-5 py-2.5 bg-slate-50/50 border-b border-slate-100">
-                        <input type="checkbox" className="rounded border-slate-300 h-4 w-4" />
-                        <span className="font-bold text-sm text-slate-800">{group.dept}</span>
-                        <span className="text-xs text-slate-400">{group.count} employees</span>
-                        <div className="flex-1 flex items-center gap-3 ml-4">
-                          <div className="w-24 h-2 rounded-full bg-slate-200 overflow-hidden"><div className="h-full rounded-full bg-amber-400" style={{ width: `${group.pct}%` }} /></div>
-                          <span className="text-xs font-semibold text-emerald-600">{group.pct}% Complete</span>
-                          <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">{group.approved} Approved</span>
-                          {group.review > 0 && <span className="rounded-full bg-orange-100 px-2.5 py-0.5 text-[11px] font-semibold text-orange-700">{group.review} Supervisor Review</span>}
-                          {group.self > 0 && <span className="rounded-full bg-cyan-100 px-2.5 py-0.5 text-[11px] font-semibold text-cyan-700">{group.self} Self Evaluation</span>}
-                          {group.planning > 0 && <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">{group.planning} Planning</span>}
-                        </div>
-                        <ChevronUp className="h-4 w-4 text-slate-400" />
-                      </div>
-                      {/* Employee rows */}
-                      {group.employees.map((emp) => {
-                        const statusColors: Record<string, string> = { 'Approved': 'bg-emerald-100 text-emerald-700', 'Supervisor Review': 'bg-orange-100 text-orange-700', 'Self Evaluation': 'bg-cyan-100 text-cyan-700', 'Planning': 'bg-blue-100 text-blue-700', 'Rejected': 'bg-red-100 text-red-700' };
-                        const dotColors: Record<string, string> = { 'Approved': 'bg-emerald-500', 'Supervisor Review': 'bg-orange-500', 'Self Evaluation': 'bg-cyan-500', 'Planning': 'bg-blue-600', 'Rejected': 'bg-red-500' };
-                        const initials = emp.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-
-                        return (
-                          <div key={emp.name} className="grid grid-cols-12 items-start px-5 py-2.5 text-sm hover:bg-slate-50/60 transition border-b border-slate-50 last:border-b-0">
-                            <div className="col-span-1 pt-2"><input type="checkbox" className="rounded border-slate-300 h-4 w-4" /></div>
-                            <div className="col-span-6 flex items-start gap-3 pl-2">
-                              <span className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-[11px] font-bold text-blue-600 shrink-0">
-                                {initials}
-                              </span>
-                              <div className="flex flex-col pt-1.5">
-                                <p className="font-semibold text-slate-800 leading-none">{emp.name}</p>
-                                <p className="text-[11px] text-slate-500 mt-1">{emp.position}</p>
-                              </div>
-                            </div>
-                            <div className="col-span-3 pt-1.5"><span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-0.5 text-xs font-semibold ${statusColors[emp.status] || 'bg-slate-100 text-slate-700'}`}><span className={`h-1.5 w-1.5 rounded-full ${dotColors[emp.status] || 'bg-slate-400'}`} />{emp.status}</span></div>
-                            <div className="col-span-2 flex items-center justify-end gap-2 pt-1.5">
-                              <button type="button" className="p-1 text-slate-400 hover:text-blue-600 transition" title="View"><Eye className="h-4 w-4" /></button>
-                              <button type="button" className="p-1 text-slate-400 hover:text-slate-600 transition"><MoreHorizontal className="h-4 w-4" /></button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )) : (
-                    <div className="px-5 py-12 text-center text-slate-500">
-                      <p>No evaluation records found for this period.</p>
-                    </div>
-                  )}
-
-                  {/* Footer */}
-                  <div className="px-5 py-2.5 border-t border-slate-100 flex items-center justify-between">
-                    <div className="flex items-center gap-4 text-xs text-slate-600">
-                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Approved: 18</span>
-                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-orange-400" /> Supervisor Review: 8</span>
-                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-cyan-400" /> Self Evaluation: 5</span>
-                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-blue-600" /> Planning: 3</span>
-                      <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-red-500" /> Rejected: 1</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-slate-500">
-                      <span>Rows per page:</span>
-                      <span className="flex items-center gap-1">{[10, 20, 30].map(n => <button key={n} type="button" className={`h-6 w-7 rounded ${n === 10 ? 'bg-blue-600 text-white font-semibold' : 'bg-slate-100 text-slate-600'} text-xs`}>{n}</button>)}</span>
-                      <span>1–10 of 35</span>
-                      <span className="flex items-center gap-1">
-                        {[1, 2, 3, 4].map(n => <button key={n} type="button" className={`h-6 w-6 rounded ${n === 1 ? 'bg-blue-600 text-white font-semibold' : 'bg-slate-100 text-slate-600'} text-xs`}>{n}</button>)}
-                        <button type="button" className="h-6 w-6 rounded bg-slate-100 text-slate-600 text-xs">&gt;</button>
-                      </span>
-                    </div>
-                  </div>
-                </section>
-              </>
-            )}
-
-            {activeSection === 'performance-reviews' && (
-              <>
-                {/* Header */}
-                <div className="mb-1">
-                  <p className="text-sm text-blue-600 font-medium">Performance Management <span className="mx-1 text-slate-400">&gt;</span> <span className="text-slate-500">Performance Reviews</span></p>
-                </div>
-                <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Completed Performance Reviews</h2>
-                <p className="text-sm text-slate-500 mt-0.5">Archive of all finalized evaluation records across the organization</p>
-
-                {/* Toolbar */}
-                <div className="mt-5 flex items-center gap-4">
-                  <div className="relative flex-1 max-w-lg">
-                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                    <input className="w-full rounded-lg border border-slate-300 pl-10 pr-4 py-2 text-sm" placeholder="Search employee by name, ID, or department..." />
-                  </div>
-                  <select className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600"><option>All Departments</option></select>
-                  <button type="button" className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition shadow-sm">
-                    <Download className="h-4 w-4" /> Export CSV / Excel
-                  </button>
-                </div>
-
-                {/* Table */}
-                <section className="mt-5 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                  {/* Record count */}
-                  <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
-                    <span className="text-sm text-slate-700"><span className="font-bold">{reviewsData.length}</span> Records Found</span>
-                    <span className="text-xs text-slate-400 italic">Jan 2024 – Feb 2025</span>
-                  </div>
-                  {/* Column headers */}
-                  <div className="grid grid-cols-12 items-center px-5 py-2.5 bg-slate-800 text-[11px] font-semibold text-white uppercase tracking-wider">
-                    <div className="col-span-2">Employee ↕</div>
-                    <div className="col-span-2">Position</div>
-                    <div className="col-span-2">Department ↕</div>
-                    <div className="col-span-2">Final Score (out of 5.0) ↕</div>
-                    <div className="col-span-2">Review Date ↓</div>
-                    <div className="col-span-2">Actions</div>
-                  </div>
-                  {/* Rows */}
-                  <div className="divide-y divide-slate-100 relative min-h-[120px]">
-                    {evaluationsLoading && (
-                      <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 flex items-center justify-center">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                      </div>
-                    )}
-                    {reviewPageData.length === 0 && !evaluationsLoading ? (
-                      <div className="py-12 flex flex-col items-center justify-center text-center">
-                        <CalendarCheck2 className="h-12 w-12 text-slate-300 mb-4" />
-                        <h3 className="text-lg font-bold text-slate-700">No performance reviews</h3>
-                        <p className="text-sm text-slate-500 mt-1">There are currently no approved performance reviews to display.</p>
-                      </div>
-                    ) : (
-                      reviewPageData.map((row) => {
-                        const score = row.final_score ?? 0;
-                        const rating = bucketForScore(score);
-                        const ratingColor = rating === 'Outstanding' ? 'text-emerald-600' : rating === 'Very Satisfactory' ? 'text-blue-600' : 'text-orange-500';
-                        return (
-                          <div key={row.id} className="grid grid-cols-12 items-center px-5 py-3.5 text-sm hover:bg-slate-50/60 transition">
-                            <div className="col-span-2">
-                              <p className="font-semibold text-slate-800">{row.employee_name ?? 'Unknown'}</p>
-                              <p className="text-xs text-slate-400">ID-{row.employee_id?.substring(0, 8).toUpperCase() ?? 'N/A'}</p>
-                            </div>
-                            <div className="col-span-2 text-slate-500">{row.employee_position ?? '—'}</div>
-                            <div className="col-span-2 text-slate-500">{row.department ?? 'Unassigned'}</div>
-                            <div className="col-span-2 flex items-center gap-2">
-                              <span className="font-bold text-slate-800">{score.toFixed(2)}</span>
-                              <span className={`text-xs font-medium ${ratingColor}`}>{rating}</span>
-                            </div>
-                            <div className="col-span-2 text-slate-500">{new Date(row.created_at).toLocaleDateString()}</div>
-                            <div className="col-span-2 flex items-center gap-3">
-                              <button type="button" className="text-xs font-semibold text-blue-600 hover:underline">View Review</button>
-                              <span className="text-slate-300">|</span>
-                              <button type="button" className="text-xs font-medium text-slate-400 hover:text-slate-600">Download IPCR</button>
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                  {/* Footer with functional pagination */}
-                  <div className="px-5 py-3.5 border-t border-slate-100 flex items-center justify-between">
-                    <span className="text-xs font-medium text-blue-600">
-                      Showing {reviewStartIdx + 1} – {Math.min(reviewStartIdx + reviewRowsPerPage, reviewsData.length)} of {reviewsData.length} records
-                    </span>
-                    <div className="flex items-center gap-3 text-xs text-slate-500">
-                      <span>Rows:</span>
-                      {[10, 20, 50].map(n => (
-                        <button key={n} type="button"
-                          onClick={() => { setReviewRowsPerPage(n); setReviewPage(1); }}
-                          className={`h-6 w-7 rounded ${n === reviewRowsPerPage ? 'bg-blue-600 text-white font-semibold' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'} text-xs transition`}
-                        >{n}</button>
-                      ))}
-                      <span className="ml-2 flex items-center gap-1">
-                        <button type="button" disabled={reviewPage === 1}
-                          onClick={() => setReviewPage(p => Math.max(1, p - 1))}
-                          className={`px-2 py-1 rounded border border-slate-200 text-xs transition ${reviewPage === 1 ? 'text-slate-300 cursor-default' : 'text-slate-600 hover:bg-slate-100'}`}
-                        >&lt; Previous</button>
-                        {Array.from({ length: reviewTotalPages }, (_, i) => i + 1).map(n => {
-                          if (reviewTotalPages <= 5 || n === 1 || n === reviewTotalPages || Math.abs(n - reviewPage) <= 1) {
-                            return (
-                              <button key={n} type="button" onClick={() => setReviewPage(n)}
-                                className={`h-6 w-6 rounded text-xs transition ${n === reviewPage ? 'bg-blue-600 text-white font-semibold' : 'border border-slate-200 text-slate-600 hover:bg-slate-100'}`}
-                              >{n}</button>
-                            );
-                          }
-                          if (n === 2 && reviewPage > 3) return <span key={n} className="text-slate-400">…</span>;
-                          if (n === reviewTotalPages - 1 && reviewPage < reviewTotalPages - 2) return <span key={n} className="text-slate-400">…</span>;
-                          return null;
-                        })}
-                        <button type="button" disabled={reviewPage === reviewTotalPages}
-                          onClick={() => setReviewPage(p => Math.min(reviewTotalPages, p + 1))}
-                          className={`px-2 py-1 rounded border border-slate-200 text-xs transition ${reviewPage === reviewTotalPages ? 'text-slate-300 cursor-default' : 'text-slate-600 hover:bg-slate-100'}`}
-                        >Next &gt;</button>
-                      </span>
-                    </div>
-                  </div>
-                </section>
-              </>
-            )}
-
-            {activeSection === 'goals' && (
-              <>
-                {/* Header */}
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <button type="button" className="p-1 text-slate-400 hover:text-slate-600 transition"><ChevronLeft className="h-5 w-5" /></button>
-                    <div>
-                      <h2 className="text-2xl font-bold text-slate-900 tracking-tight">DPCR System</h2>
-                      <p className="text-sm text-slate-500">Departmental Performance Commitment and Review</p>
-                    </div>
-                  </div>
-                  <button type="button" className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition shadow-sm">
-                    <Plus className="h-4 w-4" /> New IPCR
-                  </button>
-                </div>
-                <div className="h-1 w-full bg-gradient-to-r from-blue-500 to-blue-300 rounded-full mb-6" />
-
-                {/* Department IPCR Reports */}
-                <h3 className="text-base font-bold text-slate-800 mb-1">Department IPCR Reports</h3>
-                <p className="text-sm text-slate-500 mb-4">Click a department card to view its summary and individual employee IPCR forms</p>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-8">
-                  {dbEvaluationGroups.map((g) => {
-                    const deptEvals = evaluations.filter(e => e.department === g.dept && e.status === 'Approved');
-                    const hasData = deptEvals.length > 0;
-                    const avgScore = hasData ? deptEvals.reduce((sum, e) => sum + (e.final_score ?? 0), 0) / deptEvals.length : 0;
-                    const rating = hasData ? bucketForScore(avgScore) : '';
-
-                    return (
-                      <div key={g.dept} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm hover:border-blue-300 hover:shadow-md transition cursor-pointer">
-                        <div className="flex items-center gap-3 mb-3">
-                          <span className="flex items-center justify-center h-10 w-10 rounded-lg bg-blue-50"><FileText className="h-5 w-5 text-blue-500" /></span>
-                          <div>
-                            <p className="font-bold text-sm text-slate-800">{g.dept}</p>
-                            <p className="text-xs text-blue-500">{deptEvals.length} evaluated</p>
-                          </div>
-                        </div>
-                        {hasData ? (
-                          <>
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-xs text-slate-400">Avg. Score</span>
-                              <span className="text-2xl font-extrabold text-blue-600">{avgScore.toFixed(2)}</span>
-                            </div>
-                            <span className="inline-block rounded-full border border-blue-300 bg-blue-50 px-3 py-0.5 text-xs font-semibold text-blue-700 mb-3">{rating}</span>
-                          </>
-                        ) : (
-                          <p className="text-xs text-slate-400 italic mb-3">No completed IPCRs yet</p>
-                        )}
-                        <button type="button" className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:underline">
-                          <Eye className="h-3.5 w-3.5" /> View Department Report & IPCRs
-                        </button>
-                      </div>
-                    );
-                  })}
-                  {dbEvaluationGroups.length === 0 && (
-                    <div className="col-span-full py-12 text-center text-slate-500">
-                      No department reports available.
-                    </div>
-                  )}
-                </div>
-
-                {/* IPCR Submissions */}
-                <h3 className="text-base font-bold text-slate-800 mb-1">IPCR Submissions</h3>
-                <p className="text-sm text-slate-500 mb-4">All employee IPCR submissions — click "View IPCR" to open the full performance form</p>
-
-                <section className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                  {/* Toolbar */}
-                  <div className="flex items-center gap-4 px-5 py-3.5 border-b border-slate-100">
-                    <div className="relative flex-1 max-w-lg">
-                      <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                      <input className="w-full rounded-lg border border-slate-300 pl-10 pr-4 py-2 text-sm" placeholder="Search employee name, department..." />
-                    </div>
-                    <select className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600"><option>All Departments</option></select>
-                    <select className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600"><option>All Statuses</option></select>
-                    <span className="text-xs text-slate-400">6 of 6 records</span>
-                  </div>
-                  {/* Column headers */}
-                  <div className="grid grid-cols-12 items-center px-5 py-2.5 bg-slate-800 text-[11px] font-semibold text-white uppercase tracking-wider">
-                    <div className="col-span-2">Department</div>
-                    <div className="col-span-2">Employee Name</div>
-                    <div className="col-span-2">Date of Submission</div>
-                    <div className="col-span-2 text-center">Total Score</div>
-                    <div className="col-span-2 text-center">Status</div>
-                    <div className="col-span-2 text-right">Action</div>
-                  </div>
-                  {/* Rows */}
-                  <div className="divide-y divide-slate-100 relative min-h-[120px]">
-                    {evaluationsLoading && (
-                      <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 flex items-center justify-center">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                      </div>
-                    )}
-                    {(() => {
-                      const goalEvals = evaluations.filter(e => e.status === 'Self Evaluation' || e.status === 'Supervisor Review' || e.status === 'Approved');
-                      if (goalEvals.length === 0 && !evaluationsLoading) {
-                        return (
-                          <div className="py-12 flex flex-col items-center justify-center text-center">
-                            <FileCheck2 className="h-12 w-12 text-slate-300 mb-4" />
-                            <h3 className="text-lg font-bold text-slate-700">No IPCR Submissions</h3>
-                            <p className="text-sm text-slate-500 mt-1">There are no recent IPCR submissions to display.</p>
-                          </div>
-                        );
-                      }
-                      return goalEvals.map((e) => {
-                        const hasScore = e.final_score !== null;
-                        const score = e.final_score ?? 0;
-                        const rating = hasScore ? bucketForScore(score) : '';
-                        const initials = (e.employee_name ?? 'U').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-
-                        return (
-                          <div key={e.id} className="grid grid-cols-12 items-center px-5 py-4 text-sm hover:bg-slate-50/60 transition">
-                            <div className="col-span-2">
-                              <span className="inline-block rounded-full border px-3 py-0.5 text-[11px] font-semibold bg-slate-100 text-slate-700 border-slate-200">{e.department ?? 'Unassigned'}</span>
-                            </div>
-                            <div className="col-span-2 flex items-center gap-2.5">
-                              <span className="flex items-center justify-center h-8 w-8 rounded-full bg-slate-200 text-xs font-bold text-slate-600">{initials}</span>
-                              <div>
-                                <p className="font-semibold text-slate-800">{e.employee_name}</p>
-                                <p className="text-xs text-slate-400">{e.employee_position}</p>
-                              </div>
-                            </div>
-                            <div className="col-span-2 text-slate-500">{new Date(e.created_at).toLocaleDateString()}</div>
-                            <div className="col-span-2 text-center">
-                              {hasScore ? (
-                                <div>
-                                  <p className="text-lg font-extrabold text-blue-600">{score.toFixed(2)}</p>
-                                  <p className={`text-[11px] font-medium ${rating === 'Outstanding' ? 'text-emerald-600' : 'text-blue-500'}`}>{rating}</p>
-                                </div>
-                              ) : <span className="text-slate-400">—</span>}
-                            </div>
-                            <div className="col-span-2 text-center">
-                              {e.status === 'Approved' ? (
-                                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-0.5 text-[11px] font-semibold text-emerald-700"><CheckCircle2 className="h-3 w-3" /> Approved</span>
-                              ) : e.status === 'Self Evaluation' || e.status === 'Supervisor Review' ? (
-                                <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-0.5 text-[11px] font-semibold text-blue-700"><CheckCircle2 className="h-3 w-3" /> Submitted</span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-3 py-0.5 text-[11px] font-semibold text-orange-700"><Clock className="h-3 w-3" /> Monitoring Phase</span>
-                              )}
-                            </div>
-                            <div className="col-span-2 text-right">
-                              {hasScore ? (
-                                <button type="button" className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 transition">
-                                  <Eye className="h-3.5 w-3.5" /> View IPCR
-                                </button>
-                              ) : <span className="text-xs text-slate-400 italic">Not available</span>}
-                            </div>
-                          </div>
-                        );
-                      });
-                    })()}
-                  </div>
-                </section>
-              </>
-            )}
-
-            {activeSection === 'ipcr' && <SummaryOfRatings />}
-
-            {activeSection === 'analytics' && (
-              <>
-                <h2 className="text-3xl font-bold text-slate-900">Analytics</h2>
-                <p className="mt-1 text-slate-600">Comprehensive performance insights and trends</p>
-
-                <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-slate-600">Overall Avg Rating</p>
-                        <p className="text-3xl font-bold mt-2 text-slate-400">--</p>
-                      </div>
-                      <div className="h-12 w-12 rounded-lg bg-blue-100 grid place-content-center">
-                        <TrendingUp className="h-6 w-6 text-blue-600" />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-slate-600">Top Performers</p>
-                        <p className="text-3xl font-bold mt-2 text-slate-400">--</p>
-                      </div>
-                      <div className="h-12 w-12 rounded-lg bg-emerald-100 grid place-content-center">
-                        <TrendingUp className="h-6 w-6 text-emerald-600" />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm text-slate-600">Departments</p>
-                        <p className="text-3xl font-bold mt-2 text-slate-400">--</p>
-                      </div>
-                      <div className="h-12 w-12 rounded-lg bg-slate-100 grid place-content-center">
-                        <FileText className="h-6 w-6 text-slate-600" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-6">
-                  <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-semibold">Performance by Department</h3>
-                      <FileText className="h-5 w-5 text-slate-400" />
-                    </div>
-                    <div className="py-12 text-center text-sm text-slate-500">
-                      No department performance data available
-                    </div>
-                  </section>
-
-                  <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-semibold">Performance Distribution</h3>
-                      <BarChart3 className="h-5 w-5 text-slate-400" />
-                    </div>
-                    <div className="py-12 text-center text-sm text-slate-500">
-                      No performance distribution data available
+                      {ipcrSubmissionTab === 'pending' ? (
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="bg-slate-50/80 text-left">
+                              <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Employee</th>
+                              <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Dept.</th>
+                              <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Type</th>
+                              <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Period</th>
+                              <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Stage</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {pendingSubmissions.length === 0 && !ipcrLoading ? (
+                              <tr>
+                                <td colSpan={5} className="py-8 text-center text-slate-500 italic">No pending submissions</td>
+                              </tr>
+                            ) : (
+                              pendingSubmissions.map((row, idx) => {
+                                const stageColors: Record<string, string> = {
+                                  'Not Started': 'bg-slate-100 text-slate-600',
+                                  'In Draft': 'bg-amber-100 text-amber-800',
+                                  'Submitted to Office': 'bg-blue-100 text-blue-800',
+                                  'Returned for Revision': 'bg-rose-100 text-rose-800',
+                                  'Verified': 'bg-indigo-100 text-indigo-800',
+                                  'Forwarded to PM': 'bg-emerald-100 text-emerald-800'
+                                };
+                                const typeColors: Record<string, string> = {
+                                  'Probationary': 'bg-purple-100 text-purple-800',
+                                  'Regular': 'bg-sky-100 text-sky-800'
+                                };
+                                return (
+                                  <tr key={`${row.name}-${idx}`} className="hover:bg-slate-50/60 transition">
+                                    <td className="px-4 py-3">
+                                      <p className="font-semibold text-slate-800">{row.name}</p>
+                                      <p className="text-slate-400">{row.position}</p>
+                                    </td>
+                                    <td className="px-4 py-3 text-slate-500">{row.dept}</td>
+                                    <td className="px-4 py-3">
+                                      <span className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${typeColors[row.type] || 'bg-slate-100 text-slate-850'}`}>
+                                        {row.type}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 py-3 text-slate-500">{row.period}</td>
+                                    <td className="px-4 py-3">
+                                      <span className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${stageColors[row.stage] || 'bg-slate-100 text-slate-850'}`}>
+                                        {row.stage}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="bg-slate-50/80 text-left">
+                              <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Employee</th>
+                              <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Dept.</th>
+                              <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Period</th>
+                              <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Rating</th>
+                              <th className="px-4 py-2.5 font-semibold text-slate-400 uppercase tracking-wider">Status</th>
+                              <th className="px-4 py-2.5"></th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {recentIPCRs.length === 0 && !evaluationsLoading ? (
+                              <tr>
+                                <td colSpan={6} className="py-8 text-center text-slate-500 italic">No submissions yet</td>
+                              </tr>
+                            ) : (
+                              recentIPCRs.map((row, idx) => (
+                                <tr key={`${row.name}-${idx}`} className="hover:bg-slate-50/60 transition">
+                                  <td className="px-4 py-3">
+                                    <p className="font-semibold text-slate-800">{row.name}</p>
+                                    <p className="text-slate-400">{row.position}</p>
+                                  </td>
+                                  <td className="px-4 py-3 text-slate-500">{row.dept}</td>
+                                  <td className="px-4 py-3 text-slate-500">{row.period}</td>
+                                  <td className="px-4 py-3">
+                                    {row.rating !== '—' && row.rating !== 'â€”' ? (
+                                      <span className="inline-block rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-semibold text-blue-700">{row.rating}</span>
+                                    ) : <span className="text-slate-400">—</span>}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <span className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${row.statusColor}`}>
+                                      {row.status}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    <button type="button" className="rounded-md p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition" title="View">
+                                      <Eye className="h-4 w-4" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      )}
                     </div>
                   </section>
                 </div>
-
-                <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                  <h3 className="text-lg font-semibold mb-4">Quarterly Performance Trends</h3>
-                  <div className="py-12 text-center text-sm text-slate-500">
-                    No quarterly trend data available
-                  </div>
-                </section>
-
-                <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-lg font-semibold">Top Performers</h3>
-                    <select className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
-                      <option>All Departments</option>
-                    </select>
-                  </div>
-                  <div className="py-12 text-center text-sm text-slate-500">
-                    No top performer data available
-                  </div>
-                </section>
               </>
             )}
 
-            {activeSection === 'reports' && (
-              <>
-                {/* Header Area */}
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-sm text-blue-600 font-medium">Performance Management <span className="mx-1 text-slate-400">/</span> <span className="text-slate-500">Documents</span></p>
-                </div>
 
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h2 className="text-3xl font-bold text-slate-900 tracking-tight">Documents</h2>
-                    <p className="text-sm text-slate-500 mt-1">Request and track document submissions from employees, organized by department</p>
-                  </div>
-                  <button type="button" onClick={openBulkRequestModal} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition shadow-sm">
-                    <Plus className="h-4 w-4" /> New Request
-                  </button>
-                </div>
+            {activeSection === 'ipcr-management' && <PMIPCRManagement />}
 
-                {/* KPI Cards */}
-                {(() => {
-                  const reqSummary = summarizeRequests(documentRequests);
-                  return (
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm relative overflow-hidden">
-                        {documentRequestsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
-                        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Total Requests</p>
-                        <p className="text-3xl font-bold text-slate-900 leading-none">{reqSummary.total}</p>
-                      </div>
-                      <div className="rounded-xl border border-orange-300 bg-white p-4 shadow-sm relative overflow-hidden">
-                        {documentRequestsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
-                        <p className="text-[11px] font-semibold text-orange-500 uppercase tracking-wider mb-1.5">Pending</p>
-                        <p className="text-3xl font-bold text-orange-500 leading-none">{reqSummary.pending}</p>
-                      </div>
-                      <div className="rounded-xl border border-red-200 bg-white p-4 shadow-sm relative overflow-hidden">
-                        {documentRequestsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
-                        <p className="text-[11px] font-semibold text-red-500 uppercase tracking-wider mb-1.5">Overdue</p>
-                        <p className="text-3xl font-bold text-red-500 leading-none">{reqSummary.overdue}</p>
-                      </div>
-                      <div className="rounded-xl border border-emerald-200 bg-white p-4 shadow-sm relative overflow-hidden">
-                        {documentRequestsLoading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10" />}
-                        <p className="text-[11px] font-semibold text-emerald-500 uppercase tracking-wider mb-1.5">Approved</p>
-                        <p className="text-3xl font-bold text-emerald-500 leading-none">{reqSummary.approved}</p>
-                      </div>
-                    </div>
-                  );
-                })()}
+            {activeSection === 'competency' && <PMCompetencyFramework />}
 
-                {/* Filters */}
-                <div className="rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm flex items-center gap-3 mb-4">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                    <input className="w-full rounded-lg border border-slate-200 pl-9 pr-4 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" placeholder="Search employee or document..." />
-                  </div>
-                  <select className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-500 outline-none w-48">
-                    <option>All Status</option>
-                    <option>Pending</option>
-                    <option>Submitted</option>
-                    <option>Under Review</option>
-                    <option>Approved</option>
-                    <option>Overdue</option>
-                  </select>
-                  <select className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-500 outline-none w-56">
-                    <option>All Document Types</option>
-                    <option>IPCR</option>
-                    <option>Accomplishment Report</option>
-                    <option>Service Record</option>
-                    <option>Position Description Form</option>
-                  </select>
-                </div>
+            {activeSection === 'promotions' && <PMPromotionalApplications />}
 
-                {/* Table Section */}
-                {(() => {
-                  if (documentRequestsLoading) {
-                    return (
-                      <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-8 text-center animate-pulse">
-                        <div className="h-4 bg-slate-200 rounded w-1/4 mx-auto mb-4" />
-                        <div className="h-10 bg-slate-100 rounded mb-2" />
-                        <div className="h-10 bg-slate-100 rounded mb-2" />
-                        <div className="h-10 bg-slate-100 rounded" />
-                      </div>
-                    );
-                  }
-
-                  const grouped = groupRequestsByDepartment(documentRequests);
-                  const depts = Object.keys(grouped).sort();
-
-                  if (depts.length === 0) {
-                    return (
-                      <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-12 text-center flex flex-col items-center">
-                        <FileText className="h-12 w-12 text-slate-300 mb-4" />
-                        <h3 className="text-lg font-bold text-slate-700">No document requests</h3>
-                        <p className="text-sm text-slate-500 mt-1">There are currently no document requests to display.</p>
-                      </div>
-                    );
-                  }
-
-                  return depts.map(dept => {
-                    const reqs = grouped[dept];
-                    const pendingCount = reqs.filter(r => r.status === 'Pending').length;
-                    const submittedCount = reqs.filter(r => r.status === 'Submitted').length;
-                    const reviewCount = reqs.filter(r => r.status === 'Under Review').length;
-                    const approvedCount = reqs.filter(r => r.status === 'Approved').length;
-                    const overdueCount = reqs.filter(r => r.status === 'Overdue').length;
-
-                    return (
-                      <div key={dept} className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden mb-4">
-                        {/* Dark Header */}
-                        <div className="bg-[#1e293b] px-5 py-3 flex items-center justify-between text-white">
-                          <div className="flex items-center gap-4">
-                            <div>
-                              <h3 className="text-base font-bold leading-tight">{dept}</h3>
-                              <p className="text-xs text-slate-400">{reqs.length} requests</p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {pendingCount > 0 && <span className="inline-flex items-center rounded-full bg-orange-500 px-2.5 py-0.5 text-[11px] font-bold text-white">{pendingCount} Pending</span>}
-                              {submittedCount > 0 && <span className="inline-flex items-center rounded-full bg-blue-500 px-2.5 py-0.5 text-[11px] font-bold text-white">{submittedCount} Submitted</span>}
-                              {reviewCount > 0 && <span className="inline-flex items-center rounded-full bg-[#a855f7] px-2.5 py-0.5 text-[11px] font-bold text-white">{reviewCount} Under Review</span>}
-                              {approvedCount > 0 && <span className="inline-flex items-center rounded-full bg-emerald-500 px-2.5 py-0.5 text-[11px] font-bold text-white">{approvedCount} Approved</span>}
-                              {overdueCount > 0 && <span className="inline-flex items-center rounded-full bg-red-500 px-2.5 py-0.5 text-[11px] font-bold text-white">{overdueCount} Overdue</span>}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 cursor-pointer hover:text-slate-300">
-                            <ChevronUp className="h-4 w-4" />
-                          </div>
-                        </div>
-
-                        {/* Table Header */}
-                        <div className="grid grid-cols-12 items-center px-5 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-200">
-                          <div className="col-span-1">NO.</div>
-                          <div className="col-span-3">EMPLOYEE</div>
-                          <div className="col-span-2">DOCUMENT TYPE</div>
-                          <div className="col-span-2">DATE REQUESTED</div>
-                          <div className="col-span-2">DATE SUBMITTED</div>
-                          <div className="col-span-1 text-center">STATUS</div>
-                          <div className="col-span-1 text-right">ACTION</div>
-                        </div>
-
-                        {/* Rows */}
-                        <div className="divide-y divide-slate-100">
-                          {reqs.map((row, i) => {
-                            const statusConfig: Record<string, { class: string; action: string; actionClass: string; icon: any }> = {
-                              'Submitted': { class: 'border-blue-200 bg-blue-50 text-blue-600', action: 'View', actionClass: 'border-purple-200 text-purple-600 hover:bg-purple-50', icon: Eye },
-                              'Approved': { class: 'border-emerald-200 bg-emerald-50 text-emerald-600', action: 'Request', actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList },
-                              'Pending': { class: 'border-orange-200 bg-orange-50 text-orange-600', action: 'Request', actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList },
-                              'Under Review': { class: 'border-purple-200 bg-purple-50 text-purple-600', action: 'View', actionClass: 'border-purple-200 text-purple-600 hover:bg-purple-50', icon: Eye },
-                              'Overdue': { class: 'border-red-200 bg-red-50 text-red-600', action: 'Request', actionClass: 'bg-blue-600 text-white hover:bg-blue-700 border-transparent', icon: ClipboardList },
-                            };
-                            const config = statusConfig[row.status] || statusConfig['Pending'];
-                            const initials = (row.employee_name ?? 'U').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-                            const ActionIcon = config.icon;
-
-                            return (
-                              <div key={row.id} className="grid grid-cols-12 items-start px-5 py-3 text-sm hover:bg-slate-50/50 transition">
-                                <div className="col-span-1 text-slate-500 pt-1.5">{i + 1}</div>
-                                <div className="col-span-3 flex items-start gap-3">
-                                  <span className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-[11px] font-bold text-blue-600 shrink-0">
-                                    {initials}
-                                  </span>
-                                  <div className="flex flex-col pt-1.5">
-                                    <p className="font-semibold text-slate-800 leading-none">{row.employee_name}</p>
-                                    <p className="text-[11px] text-slate-400 mt-1">{row.department}</p>
-                                  </div>
-                                </div>
-                                <div className="col-span-2 flex items-center gap-2 text-slate-600 pt-1.5">
-                                  <FileText className="h-4 w-4 text-slate-400" />
-                                  {row.document_type}
-                                </div>
-                                <div className="col-span-2 text-slate-600 pt-1.5">{new Date(row.created_at).toLocaleDateString()}</div>
-                                <div className="col-span-2 text-slate-600 pt-1.5">{row.date_submitted ? new Date(row.date_submitted).toLocaleDateString() : '—'}</div>
-                                <div className="col-span-1 flex justify-center pt-1.5">
-                                  <span className={`inline-block rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${config.class}`}>
-                                    {row.status}
-                                  </span>
-                                </div>
-                                <div className="col-span-1 flex justify-end pt-1">
-                                  <button
-                                    type="button"
-                                    className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold transition border ${config.actionClass}`}
-                                    onClick={() => {
-                                      if (config.action === 'Request') {
-                                        openRequestModal({ id: row.employee_id, name: row.employee_name ?? '', role: '', dept: row.department ?? '', initials });
-                                      } else if (config.action === 'View') {
-                                        setReviewingRequest(row);
-                                      }
-                                    }}
-                                  >
-                                    <ActionIcon className="h-3.5 w-3.5" />
-                                    {config.action}
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  });
-                })()}
-              </>
-            )}
+            {activeSection === 'analytics' && <PMReportsAnalytics />}
 
             {activeSection === 'settings' && (
               <>
@@ -1959,7 +1735,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
               </>
             )}
 
-            {!['dashboard', 'employees', 'evaluation-status', 'performance-reviews', 'goals', 'ipcr', 'analytics', 'reports', 'settings'].includes(activeSection) && (
+            {!['dashboard', 'employees', 'evaluation-status', 'performance-reviews', 'goals', 'ipcr', 'ipcr-management', 'competency', 'analytics', 'reports', 'settings', 'registry'].includes(activeSection) && (
               <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
                 <h2 className="text-2xl font-bold text-slate-900 capitalize">{activeSection.replace('-', ' ')}</h2>
                 <p className="mt-2 text-slate-600">Section scaffold is ready. Share the next screenshots and I'll match this page exactly.</p>
@@ -2093,11 +1869,10 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                         key={type}
                         type="button"
                         onClick={() => setBulkDocName(type)}
-                        className={`flex items-center gap-2.5 rounded-lg border px-3.5 py-2.5 text-sm text-left transition ${
-                          bulkDocName === type
+                        className={`flex items-center gap-2.5 rounded-lg border px-3.5 py-2.5 text-sm text-left transition ${bulkDocName === type
                             ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium'
                             : 'border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'
-                        }`}
+                          }`}
                       >
                         <FileText className={`h-4 w-4 shrink-0 ${bulkDocName === type ? 'text-blue-500' : 'text-blue-400'}`} />
                         <span className="leading-snug">{type === 'SALN' ? 'SALN (Statement of Assets, Liabilities and Net Worth)' : type}</span>
@@ -2168,13 +1943,12 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                             type="button"
                             disabled={past}
                             onClick={() => setBulkDueDate(new Date(bulkCalendarYear, bulkCalendarMonth, day))}
-                            className={`py-1.5 rounded-full transition text-sm ${
-                              selected
+                            className={`py-1.5 rounded-full transition text-sm ${selected
                                 ? 'bg-blue-600 text-white font-semibold'
                                 : past
                                   ? 'text-slate-300 cursor-not-allowed'
                                   : 'text-slate-700 hover:bg-blue-50'
-                            }`}
+                              }`}
                           >
                             {day}
                           </button>
@@ -2207,9 +1981,8 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                     <button
                       type="button"
                       onClick={() => setBulkSendTo('all')}
-                      className={`w-full flex items-center gap-3 rounded-lg border p-3.5 text-left transition ${
-                        bulkSendTo === 'all' ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-slate-300'
-                      }`}
+                      className={`w-full flex items-center gap-3 rounded-lg border p-3.5 text-left transition ${bulkSendTo === 'all' ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-slate-300'
+                        }`}
                     >
                       <span className={`flex items-center justify-center h-10 w-10 rounded-full shrink-0 ${bulkSendTo === 'all' ? 'bg-blue-600' : 'bg-slate-100'}`}>
                         <Users className={`h-5 w-5 ${bulkSendTo === 'all' ? 'text-white' : 'text-slate-500'}`} />
@@ -2227,9 +2000,8 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                     <button
                       type="button"
                       onClick={() => setBulkSendTo('department')}
-                      className={`w-full flex items-center gap-3 rounded-lg border p-3.5 text-left transition ${
-                        bulkSendTo === 'department' ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-slate-300'
-                      }`}
+                      className={`w-full flex items-center gap-3 rounded-lg border p-3.5 text-left transition ${bulkSendTo === 'department' ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-slate-300'
+                        }`}
                     >
                       <span className={`flex items-center justify-center h-10 w-10 rounded-full shrink-0 ${bulkSendTo === 'department' ? 'bg-blue-600' : 'bg-slate-100'}`}>
                         <Building2 className={`h-5 w-5 ${bulkSendTo === 'department' ? 'text-white' : 'text-slate-500'}`} />
@@ -2259,9 +2031,8 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                     <button
                       type="button"
                       onClick={() => setBulkSendTo('selected')}
-                      className={`w-full flex items-center gap-3 rounded-lg border p-3.5 text-left transition ${
-                        bulkSendTo === 'selected' ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-slate-300'
-                      }`}
+                      className={`w-full flex items-center gap-3 rounded-lg border p-3.5 text-left transition ${bulkSendTo === 'selected' ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-slate-300'
+                        }`}
                     >
                       <span className={`flex items-center justify-center h-10 w-10 rounded-full shrink-0 ${bulkSendTo === 'selected' ? 'bg-blue-600' : 'bg-slate-100'}`}>
                         <UsersRound className={`h-5 w-5 ${bulkSendTo === 'selected' ? 'text-white' : 'text-slate-500'}`} />
@@ -2368,7 +2139,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
           title={reviewingRequest?.document_name ?? 'Review Document'}
           subtitle={
             reviewingRequest
-              ? `${reviewingRequest.employee_name ?? 'Employee'} • ${reviewingRequest.department ?? 'Unassigned'} • Status: ${reviewingRequest.status}`
+              ? `${reviewingRequest.employee_name ?? 'Employee'} â€¢ ${reviewingRequest.department ?? 'Unassigned'} â€¢ Status: ${reviewingRequest.status}`
               : undefined
           }
           onClose={() => { if (!reviewDecisionPending) setReviewingRequest(null); }}
@@ -2381,7 +2152,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   onClick={() => void handleReviewDecision('Rejected')}
                   className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
                 >
-                  {reviewDecisionPending === 'Rejected' ? 'Rejecting…' : 'Reject'}
+                  {reviewDecisionPending === 'Rejected' ? 'Rejectingâ€¦' : 'Reject'}
                 </button>
                 <button
                   type="button"
@@ -2389,7 +2160,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                   onClick={() => void handleReviewDecision('Approved')}
                   className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
                 >
-                  {reviewDecisionPending === 'Approved' ? 'Approving…' : 'Approve'}
+                  {reviewDecisionPending === 'Approved' ? 'Approvingâ€¦' : 'Approve'}
                 </button>
               </>
             ) : null

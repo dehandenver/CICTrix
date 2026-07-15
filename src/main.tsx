@@ -30,22 +30,24 @@ const purgeLegacyJobPostingLocalStorage = (): void => {
 };
 
 // Avoid split browser storage between localhost and 127.0.0.1 during local dev.
-const shouldRedirectToCanonicalHost = window.location.hostname === 'localhost';
+const shouldRedirectToCanonicalHost = typeof window !== 'undefined' && window.location.hostname === 'localhost';
 if (shouldRedirectToCanonicalHost) {
   const url = new URL(window.location.href);
   url.hostname = '127.0.0.1';
   window.location.replace(url.toString());
 }
 
-if (!shouldRedirectToCanonicalHost) {
+if (!shouldRedirectToCanonicalHost && typeof window !== 'undefined') {
   purgeLegacyJobPostingLocalStorage();
 
-  const renderApp = () => {
-    ReactDOM.createRoot(document.getElementById('root')!).render(
-      <React.StrictMode>
-        <App />
-      </React.StrictMode>,
-    );
+const renderApp = () => {
+    if (typeof document !== 'undefined') {
+      ReactDOM.createRoot(document.getElementById('root')!).render(
+        <React.StrictMode>
+          <App />
+        </React.StrictMode>,
+      );
+    }
   };
 
   // Kick off the Supabase fetch but do not block first paint — pages listen
