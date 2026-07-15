@@ -938,17 +938,43 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   };
 
   useEffect(() => {
-    if (activeSection !== 'office-directory' || officeDirectoryRows.length > 0) return;
-    setOfficeDirectoryLoading(true);
-    setOfficeDirectoryError('');
-    getOfficeDirectory().then((result) => {
-      if (result.ok) {
-        setOfficeDirectoryRows(result.data);
-      } else {
-        setOfficeDirectoryError((result as { ok: false; error: string }).error);
-      }
-      setOfficeDirectoryLoading(false);
-    });
+    if (activeSection !== 'office-directory') return;
+    let cancelled = false;
+
+    const loadDirectory = () => {
+      setOfficeDirectoryLoading(true);
+      setOfficeDirectoryError('');
+      getOfficeDirectory().then((result) => {
+        if (cancelled) return;
+        if (result.ok) {
+          setOfficeDirectoryRows(result.data);
+        } else {
+          setOfficeDirectoryError((result as { ok: false; error: string }).error);
+        }
+        setOfficeDirectoryLoading(false);
+      });
+    };
+
+    loadDirectory();
+
+    const reload = () => {
+      if (!cancelled) loadDirectory();
+    };
+
+    window.addEventListener('cictrix:applicants-updated', reload);
+    window.addEventListener('cictrix:newly-hired-updated', reload);
+    window.addEventListener('cictrix:employee-accounts-updated', reload);
+    window.addEventListener('cictrix:job-postings-updated', reload);
+    window.addEventListener('EMPLOYEE_DOCUMENTS_UPDATED', reload);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('cictrix:applicants-updated', reload);
+      window.removeEventListener('cictrix:newly-hired-updated', reload);
+      window.removeEventListener('cictrix:employee-accounts-updated', reload);
+      window.removeEventListener('cictrix:job-postings-updated', reload);
+      window.removeEventListener('EMPLOYEE_DOCUMENTS_UPDATED', reload);
+    };
   }, [activeSection]);
 
   const handleOfficeClick = (row: OfficeDirectoryRow) => {
