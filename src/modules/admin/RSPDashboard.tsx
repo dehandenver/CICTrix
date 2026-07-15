@@ -3113,7 +3113,12 @@ export const RSPDashboard = () => {
         const lastName = nameParts.length > 1 ? nameParts[nameParts.length - 1] : 'Applicant';
 
         return {
-          id: `hire-${row.id}-${now.getTime()}`,
+          // Stable, applicant-scoped id so this row and the credential-save
+          // path (which writes `hire-{applicantId}`) upsert onto the SAME
+          // newly_hired row. A timestamp suffix here created a second row per
+          // applicant, which also let credential generation re-run and mint a
+          // fresh employee number + portal account each time.
+          id: `hire-${row.id}`,
           applicantId: row.id,
           rankingRank: rankingMetaByApplicantId.get(row.id)?.rank ?? 0,
           rankingScore: rankingMetaByApplicantId.get(row.id)?.score ?? 0,

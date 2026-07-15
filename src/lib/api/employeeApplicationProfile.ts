@@ -79,8 +79,10 @@ const toApplicantAttainment = (level: string, graduated: boolean): string => {
   }
 };
 
-const joinAddress = (row: any): string =>
-  [
+const joinAddress = (row: any): string => {
+  // Backend migration 001 uses separate address parts;
+  // Supabase migration 20260510 uses a single home_address column.
+  const parts = [
     row?.current_address_street,
     row?.current_address_barangay,
     row?.current_address_city,
@@ -90,6 +92,10 @@ const joinAddress = (row: any): string =>
     .map((part) => String(part ?? '').trim())
     .filter(Boolean)
     .join(', ');
+
+  // Fall back to the single home_address column when the parts are all empty.
+  return parts || String(row?.home_address ?? '').trim();
+};
 
 /** Whole months between two dates, floored at 0. */
 const monthsBetween = (from: string, to: string | null, isPresent: boolean): number => {
@@ -163,6 +169,9 @@ async function fetchProfileFromNewlyHired(
 
 /**
  * Look up an employee by employee number and build the full application prefill.
+ * Handles both schema variants:
+ *   - Backend migration 001: employee_number, first_name, last_name, sex, phone, position, department, division
+ *   - Supabase migration 20260510: employee_id, full_name, gender, mobile_number, current_position, current_department, current_division
  * Prefers the canonical `employees` table; when there's no row there yet, falls
  * back to the RSP `newly_hired` roster. Returns null when neither has the number,
  * so the caller leaves the form blank rather than guessing.
@@ -175,17 +184,34 @@ export async function fetchEmployeeApplicationProfile(
 
   const client = supabase as any;
 
-  const { data: employeeRow, error: employeeError } = await client
+  // Try employee_number (backend migration 001) first.
+  let employeeRow: any = null;
+  const { data: byNumber, error: errByNumber } = await client
     .from('employees')
     .select('*')
     .eq('employee_number', number)
     .maybeSingle();
 
-  if (employeeError) {
-    console.warn('[employeeApplicationProfile] employees lookup failed:', employeeError);
+  if (errByNumber) {
+    console.warn('[employeeApplicationProfile] employees lookup by employee_number failed:', errByNumber);
   }
-  // No canonical employees row (common while employee data still lives in the
-  // RSP newly_hired roster). Fall back to that roster for the post + identity.
+  employeeRow = byNumber;
+
+  // Fall back to employee_id (Supabase migration 20260510) if no match.
+  if (!employeeRow) {
+    const { data: byId, error: errById } = await client
+      .from('employees')
+      .select('*')
+      .eq('employee_id', number)
+      .maybeSingle();
+
+    if (errById) {
+      console.warn('[employeeApplicationProfile] employees lookup by employee_id failed:', errById);
+    }
+    employeeRow = byId;
+  }
+
+  // No canonical employees row — fall back to the RSP newly_hired roster.
   if (!employeeRow) {
     return fetchProfileFromNewlyHired(client, number);
   }
@@ -200,10 +226,6 @@ export async function fetchEmployeeApplicationProfile(
   ]);
 
   // ── Highest educational attainment ──
-  // employees.highest_educational_attainment is already in the applicant-facing
-  // vocabulary and is what the HR dataset populates, so it wins. The
-  // employee_education detail rows fill in degree/school, and stand in for the
-  // attainment itself when the column is blank.
   let educationAttainment = String(employeeRow.highest_educational_attainment ?? '').trim();
   let educationDegree = '';
   let educationSchool = '';
@@ -265,33 +287,53 @@ export async function fetchEmployeeApplicationProfile(
     }
   }
 
-  // No prior-employment rows on file (common — the HR dataset records the
-  // employee's post and hire date, not a full CV). Their service in the agency
-  // is still real, relevant experience, so fall back to tenure since date_hired
-  // rather than prefilling zero years for a long-serving employee.
-  if (totalMonths === 0 && employeeRow.date_hired) {
-    totalMonths = monthsBetween(String(employeeRow.date_hired), null, true);
+  // Tenure fallback: if no work-experience rows exist, derive from date_hired/hire_date.
+  const hireDate = employeeRow.date_hired || employeeRow.hire_date;
+  if (totalMonths === 0 && hireDate) {
+    totalMonths = monthsBetween(String(hireDate), null, true);
   }
+
+  // Position fallback from the employee row itself.
+  const rowPosition = String(employeeRow.position ?? employeeRow.current_position ?? '').trim();
+  const rowDepartment = String(employeeRow.department ?? employeeRow.current_department ?? '').trim();
   if (!relevantExperiencePosition) {
-    relevantExperiencePosition = String(employeeRow.position ?? '').trim();
-    relevantExperienceCompany = String(employeeRow.department ?? '').trim();
+    relevantExperiencePosition = rowPosition;
+    relevantExperienceCompany = rowDepartment;
+  }
+
+  // Handle both schema variants for name fields:
+  // Backend migration 001: first_name, middle_name, last_name
+  // Supabase migration 20260510: full_name (single column)
+  let firstName = String(employeeRow.first_name ?? '').trim();
+  let middleName = String(employeeRow.middle_name ?? '').trim();
+  let lastName = String(employeeRow.last_name ?? '').trim();
+
+  // If no separate name columns, split from full_name
+  if (!firstName && !lastName && employeeRow.full_name) {
+    const parts = String(employeeRow.full_name).trim().split(/\s+/).filter(Boolean);
+    firstName = parts[0] ?? '';
+    lastName = parts.length > 1 ? parts[parts.length - 1] : '';
+    middleName = parts.length > 2 ? parts.slice(1, -1).join(' ') : '';
   }
 
   return {
     supabaseId: employeeId,
     employeeNumber: number,
 
-    firstName: String(employeeRow.first_name ?? '').trim(),
-    middleName: String(employeeRow.middle_name ?? '').trim(),
-    lastName: String(employeeRow.last_name ?? '').trim(),
-    sex: String(employeeRow.sex ?? '').trim(),
+    firstName,
+    middleName,
+    lastName,
+    // sex (backend 001) or gender (Supabase 20260510)
+    sex: String(employeeRow.sex ?? employeeRow.gender ?? '').trim(),
     address: joinAddress(employeeRow),
-    contactNumber: String(employeeRow.phone ?? '').trim(),
+    // phone (backend 001) or mobile_number (Supabase 20260510)
+    contactNumber: String(employeeRow.phone ?? employeeRow.mobile_number ?? '').trim(),
     email: String(employeeRow.email ?? '').trim(),
 
-    currentPosition: String(employeeRow.position ?? '').trim(),
-    currentDepartment: String(employeeRow.department ?? '').trim(),
-    currentDivision: String(employeeRow.division ?? '').trim(),
+    // position/department/division (backend 001) or current_* (Supabase 20260510)
+    currentPosition: rowPosition,
+    currentDepartment: rowDepartment,
+    currentDivision: String(employeeRow.division ?? employeeRow.current_division ?? '').trim(),
 
     educationAttainment,
     educationDegree,

@@ -69,11 +69,11 @@ export const NewlyHiredPage = () => {
         for (const row of (newlyHiredResult.data || []) as any[]) {
           const applicantKey = String(row?.applicant_id ?? '').trim();
           if (!applicantKey) continue;
-          // RSP-confirm-hire writes id=`hire-{appId}-{ts}`; the credential-save
-          // path writes id=`hire-{appId}` — so a single applicant can have two
-          // newly_hired rows. Don't overwrite a row that already carries an
-          // employee_id with one that doesn't, otherwise the Generate button
-          // unlocks after a reload.
+          // Both write paths now use id=`hire-{appId}`, but legacy data still
+          // holds rows from when confirm-hire wrote id=`hire-{appId}-{ts}`, so a
+          // single applicant can have two newly_hired rows. Don't overwrite a
+          // row that already carries an employee_id with one that doesn't,
+          // otherwise the Generate button unlocks after a reload.
           const existing = persistedByApplicantId.get(applicantKey);
           if (existing?.employee_id && !row?.employee_id) continue;
           persistedByApplicantId.set(applicantKey, {
@@ -239,10 +239,34 @@ export const NewlyHiredPage = () => {
 
     const existingAccounts = getEmployeePortalAccounts();
     const occupiedUsernames = new Set(existingAccounts.map((account) => account.username.toLowerCase()));
+    // Reuse an existing portal account when this person already has one (matched
+    // by email). Without this, re-running generation mints a fresh employee
+    // number + account each time, producing duplicate logins for one person.
+    const accountByEmail = new Map(
+      existingAccounts
+        .filter((account) => String(account.employee?.email ?? '').trim())
+        .map((account) => [String(account.employee.email).trim().toLowerCase(), account]),
+    );
 
     const credentials = selectedRows.map((row) => {
       const firstName = row.employeeInfo.firstName || 'employee';
       const lastName = row.employeeInfo.lastName || 'user';
+      const email = String(row.employeeInfo.email ?? '').trim().toLowerCase();
+      const existing = email ? accountByEmail.get(email) : undefined;
+
+      if (existing) {
+        // Already has credentials — surface those instead of a new duplicate.
+        return {
+          id: row.id,
+          fullName: `${firstName} ${lastName}`.trim(),
+          position: row.position,
+          rankLine: `Rank #${Math.max(1, Number(row.rankingRank ?? 1))} • Score: ${Number(row.rankingScore ?? 0).toFixed(2)}`,
+          employeeNumber: String(existing.employee?.employeeId ?? '').trim(),
+          username: existing.username,
+          password: existing.password,
+        };
+      }
+
       const employeeNumber = allocator.allocate();
       const username = createUniqueUsername(firstName, lastName, occupiedUsernames);
       occupiedUsernames.add(username.toLowerCase());
