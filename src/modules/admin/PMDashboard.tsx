@@ -4,6 +4,7 @@ import {
   BarChart3,
   Bell,
   BookOpen,
+  Briefcase,
   Building2,
   CalendarCheck2,
   CalendarDays,
@@ -26,6 +27,7 @@ import {
   LayoutDashboard,
   Lock,
   Mail,
+  MapPin,
   MoreHorizontal,
   Palette,
   Plus,
@@ -118,6 +120,8 @@ interface PerformanceStats {
 
 const FALLBACK_CYCLES: EvaluationCycle[] = [];
 
+const OFFICE_DIRECTORY_PER_PAGE = 6;
+
 export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: boolean }) => {
   const [stats, setStats] = useState<PerformanceStats>({
     activeCycle: 'None',
@@ -137,6 +141,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const [officeDirectoryLoading, setOfficeDirectoryLoading] = useState(false);
   const [officeDirectoryError, setOfficeDirectoryError] = useState('');
   const [officeDirectorySearch, setOfficeDirectorySearch] = useState('');
+  const [officeDirectoryPage, setOfficeDirectoryPage] = useState(0);
   const [selectedOfficeRow, setSelectedOfficeRow] = useState<OfficeDirectoryRow | null>(null);
   const [officeEmployees, setOfficeEmployees] = useState<any[]>([]);
   const [officeEmployeesLoading, setOfficeEmployeesLoading] = useState(false);
@@ -910,6 +915,28 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     [officeDirectoryRows, officeDirectorySearch]
   );
 
+  const officeDirectoryPageCount = Math.max(1, Math.ceil(filteredOfficeDirectoryRows.length / OFFICE_DIRECTORY_PER_PAGE));
+  const safeOfficeDirectoryPage = Math.min(officeDirectoryPage, officeDirectoryPageCount - 1);
+  const paginatedOfficeDirectoryRows = useMemo(
+    () =>
+      filteredOfficeDirectoryRows.slice(
+        safeOfficeDirectoryPage * OFFICE_DIRECTORY_PER_PAGE,
+        (safeOfficeDirectoryPage + 1) * OFFICE_DIRECTORY_PER_PAGE
+      ),
+    [filteredOfficeDirectoryRows, safeOfficeDirectoryPage]
+  );
+
+  useEffect(() => {
+    if (officeDirectoryPage > officeDirectoryPageCount - 1) {
+      setOfficeDirectoryPage(Math.max(0, officeDirectoryPageCount - 1));
+    }
+  }, [officeDirectoryPage, officeDirectoryPageCount]);
+
+  const clearOfficeDirectoryFilters = () => {
+    setOfficeDirectorySearch('');
+    setOfficeDirectoryPage(0);
+  };
+
   useEffect(() => {
     if (activeSection !== 'office-directory' || officeDirectoryRows.length > 0) return;
     setOfficeDirectoryLoading(true);
@@ -1181,80 +1208,126 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                     </div>
                   </div>
                 ) : (
-                  /* ── Office Directory table ── */
-                  <div>
+                  /* ── Office Directory table (mirrors RSP's Office Directory) ── */
+                  <div className="space-y-4">
                     <div className="flex items-center justify-between mb-4">
                       <div>
                         <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Office Directory</h2>
                         <p className="text-sm text-slate-500 mt-0.5">Click an office row to view all assigned employees and their accounts</p>
                       </div>
+                    </div>
+
+                    <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
                       <div className="relative">
-                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                        <Search size={20} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                         <input
                           type="text"
                           value={officeDirectorySearch}
-                          onChange={(e) => setOfficeDirectorySearch(e.target.value)}
-                          placeholder="Search office or name…"
-                          className="rounded-lg border border-slate-300 pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 w-64"
+                          onChange={(e) => {
+                            setOfficeDirectorySearch(e.target.value);
+                            setOfficeDirectoryPage(0);
+                          }}
+                          placeholder="Search by office or department head…"
+                          className="h-12 w-full rounded-lg border border-slate-300 pl-10 pr-3 text-base"
                         />
                       </div>
-                    </div>
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3 text-base text-slate-600">
+                        <p className="!mb-0">Showing {filteredOfficeDirectoryRows.length} office{filteredOfficeDirectoryRows.length === 1 ? '' : 's'}</p>
+                        <button type="button" className="text-sm font-medium text-blue-700" onClick={clearOfficeDirectoryFilters}>
+                          Clear Filters
+                        </button>
+                      </div>
+                    </section>
+
                     {officeDirectoryError && (
-                      <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{officeDirectoryError}</div>
+                      <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{officeDirectoryError}</div>
                     )}
-                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                      {officeDirectoryLoading ? (
-                        <div className="p-12 text-center text-slate-500">Loading offices…</div>
-                      ) : (
-                        <table className="w-full text-sm">
+
+                    <div className="flex items-center justify-center text-lg font-semibold text-slate-700">
+                      {filteredOfficeDirectoryRows.length === 0
+                        ? 'Office 0 to 0 of 0'
+                        : `Office ${safeOfficeDirectoryPage * OFFICE_DIRECTORY_PER_PAGE + 1} to ${Math.min((safeOfficeDirectoryPage + 1) * OFFICE_DIRECTORY_PER_PAGE, filteredOfficeDirectoryRows.length)} of ${filteredOfficeDirectoryRows.length}`}
+                    </div>
+
+                    <section>
+                      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                        <table className="w-full min-w-full">
                           <thead>
-                            <tr className="bg-slate-50 text-left text-slate-500 text-xs font-semibold uppercase tracking-wider border-b border-slate-200">
-                              <th className="px-5 py-3">Office</th>
-                              <th className="px-5 py-3">Department Head</th>
-                              <th className="px-5 py-3 text-right">Employees</th>
+                            <tr className="border-b border-slate-200 bg-slate-50">
+                              <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Office / Department</th>
+                              <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Department Head</th>
+                              <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Employees</th>
                             </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {filteredOfficeDirectoryRows.length === 0 ? (
+                          <tbody>
+                            {officeDirectoryLoading ? (
                               <tr>
-                                <td colSpan={3} className="py-10 text-center text-slate-400 italic">
-                                  {officeDirectoryRows.length === 0 ? 'No offices found.' : 'No offices match your search.'}
-                                </td>
+                                <td colSpan={3} className="px-5 py-12 text-center text-slate-500">Loading offices…</td>
                               </tr>
                             ) : (
-                              filteredOfficeDirectoryRows.map((row) => (
-                                <tr
-                                  key={row.officeId}
-                                  className="hover:bg-blue-50 cursor-pointer transition-colors"
-                                  onClick={() => handleOfficeClick(row)}
-                                >
-                                  <td className="px-5 py-4">
-                                    <p className="font-semibold text-slate-800">{row.officeName}</p>
-                                    {row.code && <p className="text-xs text-slate-400 mt-0.5">{row.code}</p>}
-                                  </td>
-                                  <td className="px-5 py-4">
-                                    {row.deptHead ? (
-                                      <div>
-                                        <p className="font-medium text-slate-700">{row.deptHead.name}</p>
-                                        <p className="text-xs text-slate-400">{row.deptHead.contact}</p>
-                                      </div>
-                                    ) : (
-                                      <span className="text-amber-600 text-xs">Unassigned</span>
-                                    )}
-                                  </td>
-                                  <td className="px-5 py-4 text-right">
-                                    <div className="flex items-center justify-end gap-2">
-                                      <Users className="h-4 w-4 text-slate-400" />
-                                      <span className="font-semibold text-slate-800">{row.employeeCount}</span>
-                                    </div>
-                                  </td>
-                                </tr>
-                              ))
+                              <>
+                                {paginatedOfficeDirectoryRows.map((row) => (
+                                  <tr
+                                    key={row.officeId}
+                                    className="border-b border-slate-100 hover:bg-slate-50 transition-colors last:border-0 cursor-pointer"
+                                    onClick={() => handleOfficeClick(row)}
+                                  >
+                                    <td className="px-5 py-4">
+                                      <span className="inline-flex items-center gap-1.5 font-semibold text-sm text-slate-900"><MapPin size={13} className="text-slate-400" /> {row.officeName}</span>
+                                      {row.code && <p className="!mb-0 mt-0.5 pl-[19px] text-xs text-slate-400">{row.code}</p>}
+                                    </td>
+                                    <td className="px-5 py-4 text-sm">
+                                      {row.deptHead ? (
+                                        <div>
+                                          <p className="!mb-0 font-medium text-slate-700">{row.deptHead.name}</p>
+                                          <p className="!mb-0 text-xs text-slate-400">{row.deptHead.contact}</p>
+                                        </div>
+                                      ) : (
+                                        <span className="text-amber-600 text-xs font-semibold">Unassigned</span>
+                                      )}
+                                    </td>
+                                    <td className="px-5 py-4 text-center">
+                                      <span className="font-bold text-slate-900 text-sm">{row.employeeCount}</span>
+                                    </td>
+                                  </tr>
+                                ))}
+                                {filteredOfficeDirectoryRows.length === 0 && (
+                                  <tr>
+                                    <td colSpan={3} className="px-5 py-12 text-center text-slate-500">
+                                      <Briefcase className="mx-auto mb-2 h-9 w-9 text-slate-300" />
+                                      <p className="font-medium">{officeDirectoryRows.length === 0 ? 'No offices found.' : 'No offices match your search.'}</p>
+                                    </td>
+                                  </tr>
+                                )}
+                              </>
                             )}
                           </tbody>
                         </table>
-                      )}
-                    </div>
+                      </div>
+                    </section>
+
+                    <footer className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                      <p className="!mb-0">
+                        Showing {filteredOfficeDirectoryRows.length === 0 ? 0 : safeOfficeDirectoryPage * OFFICE_DIRECTORY_PER_PAGE + 1}-{Math.min((safeOfficeDirectoryPage + 1) * OFFICE_DIRECTORY_PER_PAGE, filteredOfficeDirectoryRows.length)} of {filteredOfficeDirectoryRows.length} offices
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          className="rounded border border-slate-300 p-1 disabled:opacity-40"
+                          onClick={() => setOfficeDirectoryPage((current) => Math.max(0, current - 1))}
+                          disabled={safeOfficeDirectoryPage === 0 || filteredOfficeDirectoryRows.length === 0}
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </button>
+                        <span className="font-semibold text-slate-800">Page {safeOfficeDirectoryPage + 1} / {officeDirectoryPageCount}</span>
+                        <button
+                          className="rounded border border-slate-300 p-1 disabled:opacity-40"
+                          onClick={() => setOfficeDirectoryPage((current) => Math.min(officeDirectoryPageCount - 1, current + 1))}
+                          disabled={safeOfficeDirectoryPage >= officeDirectoryPageCount - 1 || filteredOfficeDirectoryRows.length === 0}
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </footer>
                   </div>
                 )}
               </div>
