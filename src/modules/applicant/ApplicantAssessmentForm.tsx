@@ -156,118 +156,87 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
   const isPromotion = applicationType === 'promotion';
 
   return (
-    <Card title="Applicant Assessment Form">
-      {/* Application Type — conditional per HRIS workflow:
-            - Verified employee: locked Promotional with explanatory sub-text.
-            - New applicant: required radio group (Original / Promotional).
-          Backend enforces that an employee record cannot submit an Original type. */}
+    <Card title="Applicant Assessment Form">      {/* Application Type — radio group for both Original and Promotional. */}
       <fieldset className="mb-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
         <legend className="px-2 text-sm font-semibold uppercase tracking-wide text-slate-700">
           Application Type
         </legend>
 
-        {isEmployee ? (
-          <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="10" />
-              </svg>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="!mb-0 text-base font-semibold text-slate-900">Promotional</p>
-              <p className="!mb-0 mt-0.5 text-sm text-slate-600">
-                As a current employee, your application is automatically categorized as Promotional.
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div role="radiogroup" aria-required className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {([
-              { value: 'job' as const, label: 'Original', description: 'Initial entry into the service.' },
-              { value: 'promotion' as const, label: 'Promotional', description: 'Higher position or specific eligibility.' },
-            ]).map((opt) => {
-              const checked = applicationType === opt.value;
-              return (
-                <label
-                  key={opt.value}
-                  className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
-                    checked
-                      ? 'border-blue-600 bg-blue-50'
-                      : 'border-slate-200 bg-white hover:border-slate-300'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="application_type"
-                    value={opt.value}
-                    checked={checked}
-                    onChange={() => onApplicationTypeChange?.(opt.value)}
-                    className="mt-1 h-4 w-4 shrink-0 accent-blue-600"
-                  />
-                  <span className="flex-1 min-w-0">
-                    <span className="block text-sm font-semibold text-slate-900">{opt.label}</span>
-                    <span className="block text-xs text-slate-600">{opt.description}</span>
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-        )}
+        <div role="radiogroup" aria-required className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {([
+            { value: 'job' as const, label: 'Original', description: 'Initial entry into the service.' },
+            { value: 'promotion' as const, label: 'Promotional', description: 'Higher position or specific eligibility.' },
+          ]).map((opt) => {
+            const checked = applicationType === opt.value;
+            return (
+              <label
+                key={opt.value}
+                className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors ${
+                  checked
+                    ? 'border-blue-600 bg-blue-50'
+                    : 'border-slate-200 bg-white hover:border-slate-300'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="application_type"
+                  value={opt.value}
+                  checked={checked}
+                  onChange={() => onApplicationTypeChange?.(opt.value)}
+                  className="mt-1 h-4 w-4 shrink-0 accent-blue-600"
+                />
+                <span className="flex-1 min-w-0">
+                  <span className="block text-sm font-semibold text-slate-900">{opt.label}</span>
+                  <span className="block text-xs text-slate-600">{opt.description}</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
       </fieldset>
 
       <div className="grid gap-md md:grid-cols-2">
         {isPromotion && (
           <>
-            {/* readOnly is gated on isEmployee. When the applicant came in
-                through the "I'm a current employee" auth flow these are
-                pre-filled from the verified portal account and locked.
-                When they pick Promotional without authenticating, we let
-                them fill the fields manually instead of leaving an empty
-                input that can't be edited. */}
             <Input
               label="Employee ID"
-              placeholder={isEmployee ? '' : 'Enter your employee ID'}
+              placeholder="Enter your employee ID"
               value={formData.employee_id}
-              onChange={isEmployee ? undefined : (e) => onChange('employee_id', e.target.value)}
+              onChange={(e) => onChange('employee_id', e.target.value)}
               error={errors.employee_id}
-              readOnly={isEmployee}
               required
             />
 
             <Input
               label="Employee Portal Username"
-              placeholder={isEmployee ? '' : 'Enter your portal username'}
+              placeholder="Enter your portal username"
               value={formData.employee_username}
-              onChange={isEmployee ? undefined : (e) => onChange('employee_username', e.target.value)}
-              readOnly={isEmployee}
+              onChange={(e) => onChange('employee_username', e.target.value)}
             />
 
             <Input
               label="Current Position"
-              placeholder={(isEmployee && !!formData.current_position) ? '' : 'Enter your current position'}
+              placeholder="Enter your current position"
               value={formData.current_position}
-              onChange={(isEmployee && !!formData.current_position) ? undefined : (e) => onChange('current_position', e.target.value)}
+              onChange={(e) => onChange('current_position', e.target.value)}
               error={errors.current_position}
-              readOnly={isEmployee && !!formData.current_position}
               required
             />
 
             <Input
               label="Current Department"
-              placeholder={(isEmployee && !!formData.current_department) ? '' : 'Enter your current department'}
+              placeholder="Enter your current department"
               value={formData.current_department}
-              onChange={(isEmployee && !!formData.current_department) ? undefined : (e) => onChange('current_department', e.target.value)}
+              onChange={(e) => onChange('current_department', e.target.value)}
               error={errors.current_department}
-              readOnly={isEmployee && !!formData.current_department}
               required
             />
 
             <Input
               label="Current Division"
-              placeholder={(isEmployee && !!formData.current_division) ? '' : 'Enter your current division (optional)'}
-              value={(isEmployee && !!formData.current_division) ? formData.current_division : (isEmployee && !formData.current_division ? '' : formData.current_division)}
-              onChange={(isEmployee && !!formData.current_division) ? undefined : (e) => onChange('current_division', e.target.value)}
-              readOnly={isEmployee && !!formData.current_division}
+              placeholder="Enter your current division (optional)"
+              value={formData.current_division}
+              onChange={(e) => onChange('current_division', e.target.value)}
             />
           </>
         )}
