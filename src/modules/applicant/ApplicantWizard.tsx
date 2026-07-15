@@ -19,6 +19,7 @@ import {
     type EmployeePortalAccount,
     findEmployeePortalAccount,
     getEmployeePortalAccounts,
+    findEmployeePortalAccountFromSupabase,
 } from '../../lib/employeePortalData';
 import { syncApplicantSubmissionToRecruitment, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
 import { fetchEmployeeApplicationProfile } from '../../lib/api/employeeApplicationProfile';
@@ -176,6 +177,7 @@ export const ApplicantWizard: React.FC = () => {
   const [activeJobs, setActiveJobs] = useState<JobPosting[]>([]);
   const [isLockedPosition, setIsLockedPosition] = useState(false);
   const isGeneratingItemNumberRef = useRef(false);
+  const lastPrefilledRef = useRef<{ employeeId: string; username: string } | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
   const landingJobAppliedRef = useRef(false);
@@ -280,6 +282,115 @@ export const ApplicantWizard: React.FC = () => {
       setFiles([]);
     }
   }, [location.state, location.search]);
+
+  useEffect(() => {
+    if (applicationType !== 'promotion') {
+      lastPrefilledRef.current = null;
+      return;
+    }
+
+    const enteredId = String(formData.employee_id || '').trim();
+    const enteredUsername = String(formData.employee_username || '').trim();
+
+    if (!enteredId || !enteredUsername) {
+      if (lastPrefilledRef.current) {
+        lastPrefilledRef.current = null;
+      }
+      return;
+    }
+
+    if (
+      lastPrefilledRef.current &&
+      normalizeAuthValue(lastPrefilledRef.current.employeeId) === normalizeAuthValue(enteredId) &&
+      normalizeAuthValue(lastPrefilledRef.current.username) === normalizeAuthValue(enteredUsername)
+    ) {
+      return;
+    }
+
+    const performPrefill = async () => {
+      setPrefillNotice('Loading your employee records...');
+      try {
+        let matchedAccount = getEmployeePortalAccounts().find((account) => {
+          const accountEmployeeId = normalizeAuthValue(String(account?.employee?.employeeId ?? ''));
+          const accountUsername = normalizeAuthValue(String(account?.username ?? ''));
+          return accountEmployeeId === normalizeAuthValue(enteredId) &&
+                 accountUsername === normalizeAuthValue(enteredUsername);
+        });
+
+        if (!matchedAccount) {
+          const supabaseAccount = await findEmployeePortalAccountFromSupabase(enteredUsername);
+          if (supabaseAccount) {
+            const accountEmployeeId = normalizeAuthValue(String(supabaseAccount?.employee?.employeeId ?? ''));
+            if (accountEmployeeId === normalizeAuthValue(enteredId)) {
+              matchedAccount = supabaseAccount;
+            }
+          }
+        }
+
+        if (matchedAccount) {
+          const matchedEmployeeNumber = String(matchedAccount?.employee?.employeeId ?? '').trim();
+          const profile = await fetchEmployeeApplicationProfile(matchedEmployeeNumber);
+
+          const [accountFirstName, ...remainingParts] = String(matchedAccount?.employee?.fullName ?? '')
+            .trim()
+            .split(/\s+/);
+          const accountLastName = remainingParts.length > 0 ? remainingParts[remainingParts.length - 1] : '';
+          const accountMiddleName = remainingParts.length > 1 ? remainingParts.slice(0, -1).join(' ') : '';
+
+          const currentDepartment = profile?.currentDepartment || matchedAccount?.employee?.currentDepartment || '';
+          const currentDivision = profile?.currentDivision || matchedAccount?.employee?.currentDivision || '';
+          const currentPosition = profile?.currentPosition || matchedAccount?.employee?.currentPosition || '';
+
+          setAuthenticatedEmployeeAccount(matchedAccount);
+          setFormData((prev) => ({
+            ...prev,
+            first_name: profile?.firstName || accountFirstName || prev.first_name,
+            middle_name: profile?.middleName || accountMiddleName || prev.middle_name,
+            last_name: profile?.lastName || accountLastName || prev.last_name,
+            gender:
+              profile?.sex ||
+              (matchedAccount?.employee?.gender === 'Prefer not to say'
+                ? ''
+                : String(matchedAccount?.employee?.gender ?? '')) ||
+              prev.gender,
+            address: profile?.address || matchedAccount?.employee?.homeAddress || prev.address,
+            contact_number: profile?.contactNumber || matchedAccount?.employee?.mobileNumber || prev.contact_number,
+            email: profile?.email || matchedAccount?.employee?.email || prev.email,
+
+            current_position: currentPosition || prev.current_position,
+            current_department: currentDepartment || prev.current_department,
+            current_division: currentDivision || prev.current_division,
+            office: currentDepartment || prev.office,
+
+            education_attainment: profile?.educationAttainment || prev.education_attainment,
+            education_degree: profile?.educationDegree || prev.education_degree,
+            education_school: profile?.educationSchool || prev.education_school,
+
+            work_experience_years: profile?.workExperienceYears || prev.work_experience_years,
+            work_experience_months: profile?.workExperienceMonths || prev.work_experience_months,
+            relevant_experience_position: profile?.relevantExperiencePosition || prev.relevant_experience_position,
+            relevant_experience_company: profile?.relevantExperienceCompany || prev.relevant_experience_company,
+            relevant_experience_duties: profile?.relevantExperienceDuties || prev.relevant_experience_duties,
+          }));
+
+          setPrefillNotice(
+            profile
+              ? 'We filled in your details from your employee record. Review each field and update anything that has changed.'
+              : "We couldn't find your employee record, so please fill in your details manually.",
+          );
+
+          lastPrefilledRef.current = { employeeId: enteredId, username: enteredUsername };
+        } else {
+          setPrefillNotice('Matching employee account not found for the entered ID and username.');
+        }
+      } catch (err) {
+        console.error('Error prefilling employee record:', err);
+        setPrefillNotice('Failed to load employee records. Please try entering details manually.');
+      }
+    };
+
+    performPrefill();
+  }, [applicationType, formData.employee_id, formData.employee_username]);
 
   const handleFormChange = (field: keyof ApplicantFormData, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
