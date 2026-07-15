@@ -389,11 +389,33 @@ export const ApplicantWizard: React.FC = () => {
             relevant_experience_duties: profile?.relevantExperienceDuties || prev.relevant_experience_duties,
           }));
 
-          setPrefillNotice(
-            profile
-              ? 'We filled in your details from your employee record. Review each field and update anything that has changed.'
-              : "We couldn't find your employee record, so please fill in your details manually.",
-          );
+          // List the fields our record didn't have a value for, so the applicant
+          // knows exactly what to complete by hand instead of wondering why some
+          // fields stayed blank. We only ever fill from stored data — nothing is
+          // guessed — so anything absent from the record is flagged here.
+          const resolvedGender =
+            profile?.sex ||
+            (matchedAccount?.employee?.gender === 'Prefer not to say'
+              ? ''
+              : String(matchedAccount?.employee?.gender ?? ''));
+          const notOnFile: string[] = [];
+          if (!resolvedGender) notOnFile.push('Gender');
+          if (!(profile?.contactNumber || matchedAccount?.employee?.mobileNumber)) notOnFile.push('Contact Number');
+          if (!(profile?.address || matchedAccount?.employee?.homeAddress)) notOnFile.push('Address');
+          if (!currentDivision) notOnFile.push('Current Division');
+          if (!profile?.educationAttainment) notOnFile.push('Highest Educational Attainment');
+          if (!profile?.relevantExperiencePosition) notOnFile.push('Position Held');
+          if (!profile?.relevantExperienceCompany) notOnFile.push('Company / Organization');
+          if (!profile?.relevantExperienceDuties) notOnFile.push('Description of Duties');
+
+          const baseNotice = profile
+            ? 'We filled in your details from your employee record. Review each field and update anything that has changed.'
+            : "We couldn't find your employee record, so please fill in your details manually.";
+          const blanksNotice =
+            notOnFile.length > 0
+              ? ` These weren't on file in your record, so please fill them in manually: ${notOnFile.join(', ')}.`
+              : '';
+          setPrefillNotice(baseNotice + blanksNotice);
 
           lastPrefilledRef.current = { employeeId: enteredId, username: enteredUsername };
         } else {
