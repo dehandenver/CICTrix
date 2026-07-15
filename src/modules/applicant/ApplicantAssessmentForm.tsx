@@ -244,30 +244,30 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
 
             <Input
               label="Current Position"
-              placeholder={isEmployee ? '' : 'Enter your current position'}
+              placeholder={(isEmployee && !!formData.current_position) ? '' : 'Enter your current position'}
               value={formData.current_position}
-              onChange={isEmployee ? undefined : (e) => onChange('current_position', e.target.value)}
+              onChange={(isEmployee && !!formData.current_position) ? undefined : (e) => onChange('current_position', e.target.value)}
               error={errors.current_position}
-              readOnly={isEmployee}
+              readOnly={isEmployee && !!formData.current_position}
               required
             />
 
             <Input
               label="Current Department"
-              placeholder={isEmployee ? '' : 'Enter your current department'}
+              placeholder={(isEmployee && !!formData.current_department) ? '' : 'Enter your current department'}
               value={formData.current_department}
-              onChange={isEmployee ? undefined : (e) => onChange('current_department', e.target.value)}
+              onChange={(isEmployee && !!formData.current_department) ? undefined : (e) => onChange('current_department', e.target.value)}
               error={errors.current_department}
-              readOnly={isEmployee}
+              readOnly={isEmployee && !!formData.current_department}
               required
             />
 
             <Input
               label="Current Division"
-              placeholder={isEmployee ? '' : 'Enter your current division (optional)'}
-              value={isEmployee ? (formData.current_division || 'Not specified') : formData.current_division}
-              onChange={isEmployee ? undefined : (e) => onChange('current_division', e.target.value)}
-              readOnly={isEmployee}
+              placeholder={(isEmployee && !!formData.current_division) ? '' : 'Enter your current division (optional)'}
+              value={(isEmployee && !!formData.current_division) ? formData.current_division : (isEmployee && !formData.current_division ? '' : formData.current_division)}
+              onChange={(isEmployee && !!formData.current_division) ? undefined : (e) => onChange('current_division', e.target.value)}
+              readOnly={isEmployee && !!formData.current_division}
             />
           </>
         )}
