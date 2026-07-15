@@ -951,17 +951,9 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     });
   }, [activeSection]);
 
-  const getOfficeDirInitials = (name: string): string => {
-    const parts = (name ?? '').trim().split(/\s+/).filter(Boolean);
-    if (parts.length === 0) return '??';
-    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-  };
-
   const handleOfficeClick = (row: OfficeDirectoryRow) => {
     setSelectedOfficeRow(row);
-    // Load the office's employees so the drill-down can group them by
-    // department → position (instead of a flat table).
+    // Load the office's employees for the drill-down table.
     setOfficeEmployees([]);
     setOfficeEmployeesLoading(true);
     (supabase as any)
@@ -1053,160 +1045,56 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
             {activeSection === 'office-directory' && (
               <div className="space-y-4">
                 {selectedOfficeRow ? (
-                  /* ── Divisions and Supervisors list for selected office ── */
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedOfficeRow(null)}
-                      className="flex items-center gap-1 text-blue-600 hover:text-blue-700 font-medium text-sm mb-4"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                      Office Directory
-                    </button>
-                    <h2 className="text-2xl font-bold text-slate-900 tracking-tight">{selectedOfficeRow.officeName}</h2>
-                    <p className="text-sm text-slate-500 mt-0.5 mb-6">
-                      {selectedOfficeRow.employeeCount} employee{selectedOfficeRow.employeeCount !== 1 ? 's' : ''}
-                    </p>
-
-                    {/* Department Head details */}
-                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 mb-6 flex items-center gap-4">
-                      <div className="h-12 w-12 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-lg">
-                        {selectedOfficeRow.deptHead ? getOfficeDirInitials(selectedOfficeRow.deptHead.name) : 'DH'}
+                  /* ── Office employee list for selected office (mirrors RSP's Office Directory drilldown) ── */
+                  <>
+                    <div>
+                      <div className="mb-1 flex items-center gap-1.5 text-sm">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedOfficeRow(null)}
+                          className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
+                        >
+                          <ChevronLeft size={13} /> Office Directory
+                        </button>
+                        <ChevronRight size={13} className="text-slate-400" />
+                        <span className="font-medium text-slate-700">{selectedOfficeRow.officeName}</span>
                       </div>
-                      <div>
-                        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Department Head</p>
-                        {selectedOfficeRow.deptHead ? (
-                          <>
-                            <p className="text-base font-bold text-slate-800">{selectedOfficeRow.deptHead.name}</p>
-                            <p className="text-xs text-slate-500 mt-0.5">
-                              {selectedOfficeRow.deptHead.position} · {selectedOfficeRow.deptHead.contact}
-                            </p>
-                          </>
-                        ) : (
-                          <p className="text-amber-600 font-semibold text-sm mt-0.5">Unassigned</p>
-                        )}
-                      </div>
-                      {selectedOfficeRow.deptHead && (
-                        <div className="ml-auto">
-                          <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                            selectedOfficeRow.deptHead.accountStatus.toLowerCase() === 'active'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                              : 'bg-slate-100 text-slate-600 border border-slate-200'
-                          }`}>
-                            {selectedOfficeRow.deptHead.accountStatus}
-                          </span>
-                        </div>
-                      )}
+                      <h2 className="!mb-0.5 text-xl font-bold text-slate-900">{selectedOfficeRow.officeName}</h2>
+                      <p className="!mb-0 text-sm text-slate-500">{officeEmployees.length} employee{officeEmployees.length === 1 ? '' : 's'}</p>
                     </div>
 
-                    {/* Employees grouped by department → then position */}
-                    <div className="mb-8">
-                      <h3 className="text-lg font-bold text-slate-800 mb-4">Employees by Department & Position</h3>
-                      {officeEmployeesLoading ? (
-                        <div className="text-sm text-slate-500 py-6">Loading employees…</div>
-                      ) : officeEmployees.length === 0 ? (
-                        <div className="text-sm text-slate-400 italic py-6">No employees assigned to this office.</div>
-                      ) : (
-                        (() => {
-                          const byDept = new Map<string, Map<string, any[]>>();
-                          for (const e of officeEmployees) {
-                            const dept = e.department || 'Unassigned';
-                            const pos = e.current_position || 'Unassigned Position';
-                            if (!byDept.has(dept)) byDept.set(dept, new Map());
-                            const posMap = byDept.get(dept)!;
-                            if (!posMap.has(pos)) posMap.set(pos, []);
-                            posMap.get(pos)!.push(e);
-                          }
-                          return Array.from(byDept.entries()).map(([dept, posMap]) => (
-                            <div key={dept} className="mb-6">
-                              <div className="flex items-center gap-2 mb-3">
-                                <Building2 className="h-4 w-4 text-blue-600" />
-                                <h4 className="font-bold text-slate-800 text-sm">{dept}</h4>
-                                <span className="text-xs text-slate-400">
-                                  {Array.from(posMap.values()).reduce((n, a) => n + a.length, 0)} employees
-                                </span>
-                              </div>
-                              <div className="space-y-4 pl-6 border-l-2 border-slate-100">
-                                {Array.from(posMap.entries()).map(([pos, emps]) => (
-                                  <div key={pos}>
-                                    <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                                      {pos} · {emps.length}
-                                    </p>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                      {emps.map((e: any) => {
-                                        const isActive = String(e.status ?? '').toLowerCase() === 'active';
-                                        return (
-                                          <div key={e.id} className="flex items-start gap-3 p-3 rounded-lg border border-slate-100 bg-slate-50/50">
-                                            <div className="h-8 w-8 rounded bg-blue-500 text-white font-bold text-xs flex items-center justify-center shrink-0">
-                                              {getOfficeDirInitials(e.full_name || '')}
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                              <p className="font-semibold text-slate-800 text-xs truncate">{e.full_name}</p>
-                                              <p className="text-[10px] text-slate-500 truncate mt-0.5">{e.email || '—'}</p>
-                                              <span className={`inline-block mt-1.5 px-2 py-0.5 rounded-full text-[9px] font-semibold ${
-                                                isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
-                                              }`}>
-                                                {e.status || 'Active'}
-                                              </span>
-                                            </div>
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ));
-                        })()
-                      )}
-                    </div>
-
-                    <h3 className="text-lg font-bold text-slate-800 mb-4">Divisions & Assigned Supervisors</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      {selectedOfficeRow.divisions.map((div: any, idx: number) => (
-                        <div key={idx} className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between">
-                          <div>
-                            <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
-                              <h4 className="font-bold text-slate-800 text-sm tracking-tight leading-snug">{div.name}</h4>
-                            </div>
-
-                            <div className="space-y-4">
-                              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Supervisors</p>
-                              {div.supervisors.length === 0 ? (
-                                <div className="rounded-lg bg-amber-50 border border-amber-100 p-3 text-amber-700 text-xs flex items-center gap-2">
-                                  <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
-                                  <span>No supervisors assigned to this division.</span>
-                                </div>
-                              ) : (
-                                div.supervisors.map((sup: any, sIdx: number) => {
-                                  const initials = getOfficeDirInitials(sup.name);
-                                  const isActive = sup.accountStatus.toLowerCase() === 'active';
-                                  return (
-                                    <div key={sIdx} className="flex items-start gap-3 p-2.5 rounded-lg border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors">
-                                      <div className="h-8 w-8 rounded bg-blue-500 text-white font-bold text-xs flex items-center justify-center shrink-0">
-                                        {initials}
-                                      </div>
-                                      <div className="min-w-0 flex-1">
-                                        <p className="font-semibold text-slate-800 text-xs truncate">{sup.name}</p>
-                                        <p className="text-[10px] text-slate-400 truncate mt-0.5">{sup.position || 'Supervisor'}</p>
-                                        <p className="text-[10px] text-slate-500 font-mono mt-0.5 truncate">{sup.contact}</p>
-                                        <span className={`inline-block mt-2 px-2 py-0.5 rounded-full text-[9px] font-semibold ${
-                                          isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
-                                        }`}>
-                                          {sup.accountStatus}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  );
-                                })
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                      <table className="w-full border-collapse text-sm">
+                        <thead className="bg-slate-50 text-left">
+                          <tr>
+                            <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Employee</th>
+                            <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {officeEmployeesLoading ? (
+                            <tr>
+                              <td colSpan={2} className="px-5 py-8 text-center text-sm text-slate-400">Loading employees…</td>
+                            </tr>
+                          ) : officeEmployees.length === 0 ? (
+                            <tr>
+                              <td colSpan={2} className="px-5 py-8 text-center text-sm text-slate-400">No employees found for this office.</td>
+                            </tr>
+                          ) : (
+                            officeEmployees.map((employee: any) => (
+                              <tr key={employee.id} className="hover:bg-slate-50 transition-colors">
+                                <td className="px-5 py-3.5">
+                                  <p className="!mb-0 font-semibold" style={{ color: '#040E6B' }}>{employee.full_name}</p>
+                                  <p className="!mb-0 mt-0.5 text-xs text-slate-400">{employee.email || '--'}</p>
+                                </td>
+                                <td className="px-5 py-3.5 text-slate-600">{employee.current_position || '--'}</td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </section>
+                  </>
                 ) : (
                   /* ── Office Directory table (mirrors RSP's Office Directory) ── */
                   <div className="space-y-4">
