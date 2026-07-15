@@ -120,14 +120,32 @@ const monthsBetween = (from: string, to: string | null, isPresent: boolean): num
 async function fetchProfileFromNewlyHired(
   client: any,
   employeeNumber: string,
+  email?: string,
 ): Promise<EmployeeApplicationProfile | null> {
-  const { data, error } = await client
+  // Match by employee_id first. The RSP duplication bug could file a person's
+  // hire record under a different generated id than the one on their portal
+  // login, so fall back to matching by email — the stable identifier shared
+  // across a person's records — when the id doesn't resolve.
+  let data: any = null;
+  const byId = await client
     .from('newly_hired')
     .select('*')
     .eq('employee_id', employeeNumber)
     .maybeSingle();
+  data = byId.data ?? null;
 
-  if (error || !data) return null;
+  const normalizedEmail = String(email ?? '').trim();
+  if (!data && normalizedEmail) {
+    const byEmail = await client
+      .from('newly_hired')
+      .select('*')
+      .ilike('email', normalizedEmail)
+      .order('date_hired', { ascending: false })
+      .limit(1);
+    data = Array.isArray(byEmail.data) && byEmail.data.length > 0 ? byEmail.data[0] : null;
+  }
+
+  if (!data) return null;
 
   // The original application record holds the personal fields newly_hired
   // doesn't (gender, contact, address, tenure). Pull it when linked.
@@ -202,6 +220,7 @@ async function fetchProfileFromNewlyHired(
  */
 export async function fetchEmployeeApplicationProfile(
   employeeNumber: string,
+  email?: string,
 ): Promise<EmployeeApplicationProfile | null> {
   const number = String(employeeNumber ?? '').trim();
   if (!number) return null;
@@ -235,9 +254,10 @@ export async function fetchEmployeeApplicationProfile(
     employeeRow = byId;
   }
 
-  // No canonical employees row — fall back to the RSP newly_hired roster.
+  // No canonical employees row — fall back to the RSP newly_hired roster,
+  // matching by email too so a mismatched employee_id still resolves.
   if (!employeeRow) {
-    return fetchProfileFromNewlyHired(client, number);
+    return fetchProfileFromNewlyHired(client, number, email);
   }
 
   const employeeId = String(employeeRow.id ?? '');

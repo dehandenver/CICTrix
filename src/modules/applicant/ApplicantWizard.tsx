@@ -338,8 +338,11 @@ export const ApplicantWizard: React.FC = () => {
 
         // The employees table is the authoritative source. Look it up by the
         // entered Employee ID directly so the auto-fill works even when there's
-        // no portal-account row yet.
-        const profile = await fetchEmployeeApplicationProfile(enteredId);
+        // no portal-account row yet. Pass the matched account's email so a
+        // person whose hire record is filed under a different generated ID
+        // (a leftover of the old duplication bug) still resolves by email.
+        const lookupEmail = matchedAccount?.employee?.email || formData.email;
+        const profile = await fetchEmployeeApplicationProfile(enteredId, lookupEmail);
 
         if (profile || matchedAccount) {
           const [accountFirstName, ...remainingParts] = String(matchedAccount?.employee?.fullName ?? '')
