@@ -10,6 +10,8 @@
 //   employees                 — identity, contact, address, current post
 //   employee_education        — highest attainment, degree, school
 //   employee_work_experience  — total years/months, most recent post
+//   newly_hired               — fallback for RSP-hired employees not yet in
+//                               `employees`: identity + current post only
 //
 // Any table that's missing or empty degrades to blank fields, never to an
 // invented value — a blank field the applicant fills in is fine; a wrong
@@ -101,9 +103,69 @@ const monthsBetween = (from: string, to: string | null, isPresent: boolean): num
 };
 
 /**
- * Look up an employee by employee number and build the full application
- * prefill. Returns null when there's no employees row for that number — the
- * caller must then leave the form blank rather than guessing.
+ * Build a prefill from the RSP `newly_hired` roster. Employees hired through the
+ * RSP flow keep their post + department here until their record is migrated into
+ * the canonical `employees` table, so this is the only Supabase source for a
+ * newly-hired promotional applicant's current position. Returns null when
+ * there's no matching row. Only identity + current post are available here;
+ * education/work-experience stay blank for the applicant to fill in.
+ */
+async function fetchProfileFromNewlyHired(
+  client: any,
+  employeeNumber: string,
+): Promise<EmployeeApplicationProfile | null> {
+  const { data, error } = await client
+    .from('newly_hired')
+    .select('*')
+    .eq('employee_id', employeeNumber)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  // newly_hired stores the given name in first_name and dumps the rest into
+  // last_name; recombine and re-split so middle/last land in the right fields.
+  const fullName = [data.first_name, data.last_name]
+    .map((part: any) => String(part ?? '').trim())
+    .filter(Boolean)
+    .join(' ');
+  const parts = fullName.split(/\s+/).filter(Boolean);
+  const firstName = parts[0] ?? '';
+  const lastName = parts.length > 1 ? parts[parts.length - 1] : '';
+  const middleName = parts.length > 2 ? parts.slice(1, -1).join(' ') : '';
+
+  return {
+    supabaseId: String(data.id ?? ''),
+    employeeNumber,
+
+    firstName,
+    middleName,
+    lastName,
+    sex: '',
+    address: '',
+    contactNumber: String(data.phone ?? '').trim(),
+    email: String(data.email ?? '').trim(),
+
+    currentPosition: String(data.position ?? '').trim(),
+    currentDepartment: String(data.department ?? '').trim(),
+    currentDivision: String(data.division ?? '').trim(),
+
+    educationAttainment: '',
+    educationDegree: '',
+    educationSchool: '',
+
+    workExperienceYears: '',
+    workExperienceMonths: '',
+    relevantExperiencePosition: '',
+    relevantExperienceCompany: '',
+    relevantExperienceDuties: '',
+  };
+}
+
+/**
+ * Look up an employee by employee number and build the full application prefill.
+ * Prefers the canonical `employees` table; when there's no row there yet, falls
+ * back to the RSP `newly_hired` roster. Returns null when neither has the number,
+ * so the caller leaves the form blank rather than guessing.
  */
 export async function fetchEmployeeApplicationProfile(
   employeeNumber: string,
@@ -121,9 +183,12 @@ export async function fetchEmployeeApplicationProfile(
 
   if (employeeError) {
     console.warn('[employeeApplicationProfile] employees lookup failed:', employeeError);
-    return null;
   }
-  if (!employeeRow) return null;
+  // No canonical employees row (common while employee data still lives in the
+  // RSP newly_hired roster). Fall back to that roster for the post + identity.
+  if (!employeeRow) {
+    return fetchProfileFromNewlyHired(client, number);
+  }
 
   const employeeId = String(employeeRow.id ?? '');
 
