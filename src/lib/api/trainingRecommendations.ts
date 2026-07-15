@@ -49,15 +49,19 @@ const ROLE_KEYWORDS: Record<string, string[] | null> = {
 /**
  * Employee → the competencies their development should target.
  *
- * Authoritative source is ipcr_competency_matches (the AI matcher output). When
- * that table is empty/undeployed, fall back to the job-title keyword heuristic
- * above — the SAME logic the seeder uses — so live regeneration never silently
- * no-ops just because the AI matcher hasn't run. Matches always win when present.
+ * Resolved PER EMPLOYEE, so authoritative and fallback data coexist:
+ *   - An employee WITH rows in ipcr_competency_matches (the AI matcher output)
+ *     always uses those — the heuristic never overrides real matcher data.
+ *   - An employee the matcher has NO rows for falls back to the job-title
+ *     keyword heuristic (same logic as the seeder).
+ * So during a partial matcher rollout, matched employees use real data while the
+ * rest still get heuristic coverage; once every employee is matched, the
+ * heuristic stops firing entirely. This never silently no-ops.
  */
 async function loadCompetenciesByEmployee(): Promise<Map<string, Set<string>>> {
   const byEmployee = new Map<string, Set<string>>();
 
-  // Authoritative: AI matcher output.
+  // 1. Authoritative: AI matcher output. Keyed per employee.
   const { data: matches } = await supabase
     .from('ipcr_competency_matches')
     .select('employee_id, competency')
@@ -69,21 +73,24 @@ async function loadCompetenciesByEmployee(): Promise<Map<string, Set<string>>> {
     set.add(r.competency);
     byEmployee.set(key, set);
   }
-  if (byEmployee.size) return byEmployee; // matcher present → authoritative
 
-  // Fallback: job-title heuristic against active employees (anon-readable view).
+  // 2. Fallback: job-title heuristic, applied ONLY to employees the matcher has
+  //    no rows for. Employees already covered above are skipped, so better data
+  //    always wins and the heuristic only fills genuine gaps.
   const { data: emps } = await supabase
     .from('employees_with_department')
     .select('id, current_position, status')
     .eq('status', 'Active');
   for (const e of (emps ?? []) as any[]) {
+    const id = String(e.id);
+    if (byEmployee.has(id)) continue; // matcher already covers this employee
     const pos = String(e.current_position ?? '').toLowerCase();
     const set = new Set<string>();
     for (const competency of COMPETENCIES as readonly string[]) {
       const kws = ROLE_KEYWORDS[competency];
       if (kws === null || kws.some((k) => pos.includes(k))) set.add(competency);
     }
-    if (set.size) byEmployee.set(String(e.id), set);
+    if (set.size) byEmployee.set(id, set);
   }
   return byEmployee;
 }
@@ -96,8 +103,13 @@ export type GapType = 'LOW_SCORE' | 'DECLINING_TREND' | 'KRA_ALIGNED';
 export type Priority = 'HIGH' | 'MEDIUM' | 'LOW';
 export type RecommendationStatus = 'SUGGESTED' | 'ACCEPTED' | 'ENROLLED' | 'DISMISSED';
 
-/** The gap threshold: an overall IPCR score at or below this flags a development need. */
-const GAP_THRESHOLD = 3.5;
+/**
+ * The gap threshold: an overall IPCR score at or below this flags a development
+ * need. Set to 4.0 so "Satisfactory" performers are caught as development
+ * candidates (realistic training-needs identification), not just near-failing
+ * ones. Keep in sync with scripts/seed-training-recommendations.mjs.
+ */
+const GAP_THRESHOLD = 4.0;
 /** Cap recommendations per employee (spec §2.3 TOP_N). */
 const MAX_GAPS_PER_EMPLOYEE = 3;
 
