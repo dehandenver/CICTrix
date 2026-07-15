@@ -19,7 +19,6 @@ import {
     type EmployeePortalAccount,
     findEmployeePortalAccount,
     getEmployeePortalAccounts,
-    findEmployeePortalAccountByCredentials,
     findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail,
 } from '../../lib/employeePortalData';
 import { syncApplicantSubmissionToRecruitment, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
@@ -318,22 +317,17 @@ export const ApplicantWizard: React.FC = () => {
       setIsLoadingPrefill(true);
       setPrefillNotice('Loading your employee records...');
       try {
-        // Match the portal account by Employee ID. When a username was also
-        // entered it must match too; otherwise the ID alone is enough.
-        let matchedAccount = getEmployeePortalAccounts().find((account) => {
-          const accountEmployeeId = normalizeAuthValue(String(account?.employee?.employeeId ?? ''));
-          if (accountEmployeeId !== normalizeAuthValue(enteredId)) return false;
-          if (!enteredUsername) return true;
-          const accountUsername = normalizeAuthValue(String(account?.username ?? ''));
-          return accountUsername === normalizeAuthValue(enteredUsername);
-        });
+        // Match the portal account by Employee ID alone. The username field is
+        // an OUTPUT we auto-fill from the matched account — never a filter — so
+        // a stale value typed there can't block the correct account (and its
+        // real username) from resolving.
+        let matchedAccount = getEmployeePortalAccounts().find(
+          (account) =>
+            normalizeAuthValue(String(account?.employee?.employeeId ?? '')) === normalizeAuthValue(enteredId),
+        );
 
         if (!matchedAccount) {
-          matchedAccount = enteredUsername
-            // Username supplied → single query filtering by BOTH id and username.
-            ? await findEmployeePortalAccountByCredentials(enteredId, enteredUsername)
-            // ID only → look the account up by employee_id alone.
-            : await findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail(enteredId);
+          matchedAccount = await findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail(enteredId);
         }
 
         // The employees table is the authoritative source. Look it up by the
@@ -358,8 +352,10 @@ export const ApplicantWizard: React.FC = () => {
           if (matchedAccount) setAuthenticatedEmployeeAccount(matchedAccount);
           setFormData((prev) => ({
             ...prev,
-            // Auto-fill portal username from the matched account if available
-            employee_username: matchedAccount?.username || prev.employee_username,
+            // Portal username is derived from the matched account. Clear it when
+            // no account matches this Employee ID so a value left over from a
+            // previous lookup can't linger and look like this employee's.
+            employee_username: matchedAccount?.username || '',
             first_name: profile?.firstName || accountFirstName || prev.first_name,
             middle_name: profile?.middleName || accountMiddleName || prev.middle_name,
             last_name: profile?.lastName || accountLastName || prev.last_name,
@@ -417,7 +413,10 @@ export const ApplicantWizard: React.FC = () => {
               : '';
           setPrefillNotice(baseNotice + blanksNotice);
 
-          lastPrefilledRef.current = { employeeId: enteredId, username: enteredUsername };
+          // Record the resolved username (what we just wrote into the field) so
+          // the effect that re-fires on that change matches and returns early
+          // instead of looking the same employee up again.
+          lastPrefilledRef.current = { employeeId: enteredId, username: matchedAccount?.username || '' };
         } else {
           // No employee record or portal account for the entered ID. Keep every
           // field empty but fully editable and show the manual-entry warning.
