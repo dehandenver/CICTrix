@@ -21,6 +21,8 @@ export type CalendarEvent = {
   id: string;
   title: string;
   category: string | null;
+  /** One of the 12 canonical competencies (the recommendation join key), or null. */
+  competency: string | null;
   /** ISO timestamp of the first day. */
   startDate: string;
   /** ISO timestamp of the last day; null for single-day events. */
@@ -42,6 +44,7 @@ type EventRow = {
   id: string;
   title: string;
   category: string | null;
+  competency: string | null;
   scheduled_date: string;
   end_date: string | null;
   instructor_name: string | null;
@@ -58,43 +61,52 @@ type EnrollmentRow = {
   employee_id: string;
   enrollment_status: EnrollmentStatus;
   attendance_status: AttendanceStatus | null;
-  employees?: {
-    first_name: string | null;
-    last_name: string | null;
-    position: string | null;
-    department: string | null;
-  } | null;
 };
 
-const EVENT_SELECT = `
+/** Resolved identity, keyed by employee_id, from employees_with_department. */
+type EmployeeIdentity = { name: string; position: string; department: string };
+
+// The base `employees` table blocks anon SELECT (RLS gated on a role claim no
+// anon user carries) and has column-name drift, so a PostgREST embed of it comes
+// back null — which is why every attendee used to render "Unknown employee".
+// Identity is resolved separately against the anon-readable, normalised
+// `employees_with_department` view instead (the same pattern succession.ts uses).
+// `competency` only exists after migration 20260724. Kept separate from the base
+// select so the calendar can degrade gracefully (fetch without it) if the
+// frontend is ever live before that migration is applied — a missing column must
+// never blank the whole calendar.
+const EVENT_SELECT_BASE = `
   id, title, category, scheduled_date, end_date, instructor_name, location,
   objectives, status, capacity, roster_finalized_at,
   training_enrollments (
-    id, employee_id, enrollment_status, attendance_status,
-    employees ( first_name, last_name, position, department )
+    id, employee_id, enrollment_status, attendance_status
   )
 `;
+const EVENT_SELECT = `id, title, category, competency, scheduled_date, end_date, instructor_name, location,
+  objectives, status, capacity, roster_finalized_at,
+  training_enrollments ( id, employee_id, enrollment_status, attendance_status )`;
 
-const mapAttendee = (row: EnrollmentRow): CalendarAttendee => {
-  const name = [row.employees?.first_name, row.employees?.last_name]
-    .filter(Boolean)
-    .join(' ')
-    .trim();
+const mapAttendee = (
+  row: EnrollmentRow,
+  identities: Map<string, EmployeeIdentity>,
+): CalendarAttendee => {
+  const identity = identities.get(String(row.employee_id));
   return {
     enrollmentId: row.id,
     employeeId: row.employee_id,
-    name: name || 'Unknown employee',
-    position: row.employees?.position ?? '—',
-    department: row.employees?.department ?? '—',
+    name: identity?.name || 'Unknown employee',
+    position: identity?.position || '—',
+    department: identity?.department || '—',
     enrollmentStatus: row.enrollment_status,
     attendanceStatus: row.attendance_status,
   };
 };
 
-const mapEvent = (row: EventRow): CalendarEvent => ({
+const mapEvent = (row: EventRow, identities: Map<string, EmployeeIdentity>): CalendarEvent => ({
   id: row.id,
   title: row.title,
   category: row.category,
+  competency: row.competency ?? null,
   startDate: row.scheduled_date,
   endDate: row.end_date,
   speaker: row.instructor_name,
@@ -104,9 +116,40 @@ const mapEvent = (row: EventRow): CalendarEvent => ({
   capacity: row.capacity ?? 0,
   rosterFinalizedAt: row.roster_finalized_at,
   attendees: (row.training_enrollments ?? [])
-    .map(mapAttendee)
+    .map((e) => mapAttendee(e, identities))
     .sort((a, b) => a.name.localeCompare(b.name)),
 });
+
+/** Resolve enrolled employees' names/positions/departments in one round-trip. */
+async function resolveIdentities(rows: EventRow[]): Promise<Map<string, EmployeeIdentity>> {
+  const ids = [
+    ...new Set(
+      rows
+        .flatMap((r) => r.training_enrollments ?? [])
+        .map((e) => String(e.employee_id))
+        .filter(Boolean),
+    ),
+  ];
+  const map = new Map<string, EmployeeIdentity>();
+  if (!ids.length) return map;
+
+  const { data, error } = await supabase
+    .from('employees_with_department')
+    .select('id, full_name, current_position, department')
+    .in('id', ids);
+  if (error) {
+    console.error('Error resolving attendee identities:', error);
+    return map;
+  }
+  for (const e of (data ?? []) as any[]) {
+    map.set(String(e.id), {
+      name: String(e.full_name ?? '').trim(),
+      position: e.current_position ?? '—',
+      department: e.department ?? '—',
+    });
+  }
+  return map;
+}
 
 /**
  * All training events overlapping the given calendar year, with their rosters.
@@ -118,21 +161,34 @@ export async function listCalendarEvents(year: number): Promise<CalendarEvent[]>
   const yearStart = new Date(Date.UTC(year, 0, 1)).toISOString();
   const yearEnd = new Date(Date.UTC(year + 1, 0, 1)).toISOString();
 
-  const { data, error } = await supabase
-    .from('training_sessions')
-    .select(EVENT_SELECT)
-    // Starts before the year ends, AND (ends after the year starts OR is a
-    // single-day event that starts within the year).
-    .lt('scheduled_date', yearEnd)
-    .or(`end_date.gte.${yearStart},and(end_date.is.null,scheduled_date.gte.${yearStart})`)
-    .order('scheduled_date', { ascending: true });
+  // Same filter chain for both attempts; only the select column list differs.
+  const run = (select: string) =>
+    supabase
+      .from('training_sessions')
+      .select(select)
+      // Starts before the year ends, AND (ends after the year starts OR is a
+      // single-day event that starts within the year).
+      .lt('scheduled_date', yearEnd)
+      .or(`end_date.gte.${yearStart},and(end_date.is.null,scheduled_date.gte.${yearStart})`)
+      .order('scheduled_date', { ascending: true });
+
+  let { data, error } = await run(EVENT_SELECT);
+  // PostgREST error 42703 = undefined column: the competency column isn't there
+  // yet (migration 20260724 not applied). Retry without it rather than blanking
+  // the calendar; events simply have no competency until the migration lands.
+  if (error && ((error as any).code === '42703' || /competency/i.test(error.message ?? ''))) {
+    console.warn('training_sessions.competency missing — retrying without it (apply migration 20260724).');
+    ({ data, error } = await run(EVENT_SELECT_BASE));
+  }
 
   if (error) {
     console.error('Error fetching calendar events:', error);
     return [];
   }
 
-  return (data ?? []).map(mapEvent);
+  const rows = (data ?? []) as EventRow[];
+  const identities = await resolveIdentities(rows);
+  return rows.map((row) => mapEvent(row, identities));
 }
 
 /**

@@ -8,6 +8,7 @@ import {
   Pencil,
   Plus,
   Rows3,
+  Sparkles,
   Target,
   User,
   X,
@@ -25,6 +26,8 @@ import {
   type CalendarEventInput,
   type CalendarEventStatus,
 } from '../../lib/api/trainingCalendar';
+import { countRecommendedByCourse, generateRecommendations } from '../../lib/api/trainingRecommendations';
+import { RecommendedEmployees } from './RecommendedEmployees';
 import { TRAINING_CATEGORIES, categoryColor, type TrainingCategory } from './trainingCategories';
 
 const EVENT_STATUSES: CalendarEventStatus[] = ['Scheduled', 'Ongoing', 'Completed', 'Cancelled'];
@@ -272,12 +275,14 @@ const EventFormModal = ({ initialDate, event, onClose, onSaved }: EventFormProps
 
 type DetailProps = {
   event: CalendarEvent;
+  recommendedCount: number;
   onClose: () => void;
   onEdit: () => void;
   onChanged: () => void;
+  onViewRecommended: () => void;
 };
 
-const EventDetailPanel = ({ event, onClose, onEdit, onChanged }: DetailProps) => {
+const EventDetailPanel = ({ event, recommendedCount, onClose, onEdit, onChanged, onViewRecommended }: DetailProps) => {
   const [busyEnrollmentId, setBusyEnrollmentId] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const color = categoryColor(event.category);
@@ -386,6 +391,34 @@ const EventDetailPanel = ({ event, onClose, onEdit, onChanged }: DetailProps) =>
             )}
           </section>
 
+          {/* IPCR-driven recommendations — the admin counterpart to the roster.
+              Only shown for competency-tagged, still-active courses. */}
+          {event.competency && event.status !== 'Cancelled' && event.status !== 'Completed' && (
+            <section className="rounded-xl border border-blue-200 bg-blue-50/50 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-blue-700">
+                    <Sparkles className="h-3.5 w-3.5" /> IPCR Recommendations
+                  </h3>
+                  <p className="mt-1 text-sm text-gray-600">
+                    {recommendedCount > 0
+                      ? `${recommendedCount} employee${recommendedCount === 1 ? '' : 's'} recommended for `
+                      : 'No pending recommendations for '}
+                    <span className="font-medium text-gray-800">{event.competency}</span>
+                    {recommendedCount > 0 ? ', based on finalized IPCR competency gaps.' : '.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onViewRecommended}
+                  className="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 transition"
+                >
+                  View Recommended{recommendedCount > 0 ? ` (${recommendedCount})` : ''}
+                </button>
+              </div>
+            </section>
+          )}
+
           {/* Roster — read-only membership, editable attendance. */}
           <section>
             <div className="flex items-center justify-between mb-3">
@@ -479,17 +512,36 @@ export const TrainingCalendar = () => {
   const [month, setMonth] = useState(new Date().getMonth());
   const [view, setView] = useState<'calendar' | 'list'>('calendar');
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [viewRecommendedId, setViewRecommendedId] = useState<string | null>(null);
+  const [recommendedCounts, setRecommendedCounts] = useState<Map<string, number>>(new Map());
+  const [regenerating, setRegenerating] = useState(false);
   const [formState, setFormState] = useState<{ event?: CalendarEvent; initialDate?: Date } | null>(null);
 
   const refresh = useCallback(async () => {
     const data = await listCalendarEvents(currentYear);
     setEvents(data);
     setLoading(false);
+    // Recommendation counts feed the "N recommended" badge in the detail panel.
+    setRecommendedCounts(await countRecommendedByCourse(data.map((e) => e.id)));
   }, [currentYear]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const handleRegenerate = async () => {
+    setRegenerating(true);
+    const result = await generateRecommendations();
+    setRegenerating(false);
+    if (!result.ok) {
+      alert(`Could not regenerate recommendations: ${result.error}`);
+      return;
+    }
+    await refresh();
+    alert(
+      `Recommendations updated — ${result.upserted ?? 0} match(es) across ${result.employeesConsidered ?? 0} employee(s) with finalized-IPCR development gaps.`,
+    );
+  };
 
   // Read the selected event out of `events` rather than snapshotting it, so a
   // roster change upstream is reflected in the open panel instead of going stale.
@@ -549,6 +601,15 @@ export const TrainingCalendar = () => {
               <Rows3 className="h-3.5 w-3.5" /> List
             </button>
           </div>
+          <button
+            type="button"
+            onClick={handleRegenerate}
+            disabled={regenerating}
+            title="Recompute training recommendations from the latest finalized IPCR data"
+            className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-60 transition"
+          >
+            <Sparkles className="h-4 w-4" /> {regenerating ? 'Regenerating…' : 'Regenerate recommendations'}
+          </button>
           <button
             type="button"
             onClick={() => setFormState({})}
@@ -732,9 +793,20 @@ export const TrainingCalendar = () => {
       {selectedEvent && (
         <EventDetailPanel
           event={selectedEvent}
+          recommendedCount={recommendedCounts.get(selectedEvent.id) ?? 0}
           onClose={() => setSelectedEventId(null)}
           onEdit={() => setFormState({ event: selectedEvent })}
           onChanged={() => void refresh()}
+          onViewRecommended={() => setViewRecommendedId(selectedEvent.id)}
+        />
+      )}
+
+      {viewRecommendedId && selectedEvent && (
+        <RecommendedEmployees
+          sessionId={viewRecommendedId}
+          courseTitle={selectedEvent.title}
+          onChanged={() => void refresh()}
+          onClose={() => setViewRecommendedId(null)}
         />
       )}
 

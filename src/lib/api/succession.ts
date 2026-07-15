@@ -82,6 +82,8 @@ export interface EmployeeScore {
   overallScore: number | null;
   adjectival: string | null;
   period: string | null;
+  /** performance_cycles.id the score is drawn from (for downstream source_cycle_id). */
+  cycleId: number | null;
 }
 
 /** cycle_id → title, for the period label shown next to each score. */
@@ -182,6 +184,7 @@ export async function getLatestOverallScores(
       overallScore: overall,
       adjectival: bucketForScore(overall),
       period: titles.get(setting.cycle_id) ?? null,
+      cycleId: setting.cycle_id != null ? Number(setting.cycle_id) : null,
     });
   }
   return result;

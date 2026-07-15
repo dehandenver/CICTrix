@@ -1,6 +1,7 @@
 import {
   Award,
   BarChart2,
+  Sparkles,
   BookOpen,
   Building2,
   CalendarClock,
@@ -85,11 +86,13 @@ import { createDocumentRequest } from '../../lib/employeeDocuments';
 import { listTrainingRequestsDetailed, type TrainingRequest } from '../../lib/api/trainingRequests';
 import EmployeeDirectory from './EmployeeDirectory';
 import { LndSummaryOfRatings } from './LndSummaryOfRatings';
+import { LndCompetencyAnalysis } from './LndCompetencyAnalysis';
 import { OfficeRoles } from './OfficeRoles';
 
 type MenuId =
   | 'dashboard'
   | 'summary-of-ratings'
+  | 'competency-analysis'
   | 'training-calendar'
   | 'training-plan'
   | 'training-courses'
@@ -122,6 +125,7 @@ type StatCardProps = {
 const LND_MENU: MenuItem[] = [
   { id: 'dashboard', label: 'Dashboard', sublabel: 'Overview and KPIs', icon: LayoutDashboard },
   { id: 'summary-of-ratings', label: 'Summary of Ratings', sublabel: 'IPCR performance data', icon: BarChart2 },
+  { id: 'competency-analysis', label: 'Competency Analysis', sublabel: 'Map IPCR targets to competencies', icon: Sparkles },
   { id: 'training-calendar', label: 'Training Calendar', sublabel: 'This year’s trainings', icon: CalendarDays },
   { id: 'training-plan', label: 'Training Plan', sublabel: 'Next year’s plan', icon: CalendarClock },
   { id: 'training-courses', label: 'Training Courses', sublabel: 'Courses and sessions', icon: BookOpen },
@@ -1667,6 +1671,8 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
             <LndDashboardContent />
           ) : activeModule === 'summary-of-ratings' ? (
             <LndSummaryOfRatings />
+          ) : activeModule === 'competency-analysis' ? (
+            <LndCompetencyAnalysis />
           ) : activeModule === 'training-calendar' ? (
             <TrainingCalendar />
           ) : activeModule === 'training-plan' ? (

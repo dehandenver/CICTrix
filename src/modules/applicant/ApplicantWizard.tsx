@@ -19,7 +19,8 @@ import {
     type EmployeePortalAccount,
     findEmployeePortalAccount,
     getEmployeePortalAccounts,
-    findEmployeePortalAccountFromSupabase,
+    findEmployeePortalAccountByCredentials,
+    findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail,
 } from '../../lib/employeePortalData';
 import { syncApplicantSubmissionToRecruitment, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
 import { fetchEmployeeApplicationProfile } from '../../lib/api/employeeApplicationProfile';
@@ -176,6 +177,7 @@ export const ApplicantWizard: React.FC = () => {
   );
   const [activeJobs, setActiveJobs] = useState<JobPosting[]>([]);
   const [isLockedPosition, setIsLockedPosition] = useState(false);
+  const [isLoadingPrefill, setIsLoadingPrefill] = useState(false);
   const isGeneratingItemNumberRef = useRef(false);
   const lastPrefilledRef = useRef<{ employeeId: string; username: string } | null>(null);
   const location = useLocation();
@@ -286,16 +288,21 @@ export const ApplicantWizard: React.FC = () => {
   useEffect(() => {
     if (applicationType !== 'promotion') {
       lastPrefilledRef.current = null;
+      setPrefillNotice('');
+      setIsLoadingPrefill(false);
       return;
     }
 
     const enteredId = String(formData.employee_id || '').trim();
     const enteredUsername = String(formData.employee_username || '').trim();
 
-    if (!enteredId || !enteredUsername) {
+    // The Employee ID alone triggers the lookup. The portal username is
+    // optional — when supplied it just tightens the account match.
+    if (!enteredId) {
       if (lastPrefilledRef.current) {
         lastPrefilledRef.current = null;
       }
+      setIsLoadingPrefill(false);
       return;
     }
 
@@ -308,29 +315,33 @@ export const ApplicantWizard: React.FC = () => {
     }
 
     const performPrefill = async () => {
+      setIsLoadingPrefill(true);
       setPrefillNotice('Loading your employee records...');
       try {
+        // Match the portal account by Employee ID. When a username was also
+        // entered it must match too; otherwise the ID alone is enough.
         let matchedAccount = getEmployeePortalAccounts().find((account) => {
           const accountEmployeeId = normalizeAuthValue(String(account?.employee?.employeeId ?? ''));
+          if (accountEmployeeId !== normalizeAuthValue(enteredId)) return false;
+          if (!enteredUsername) return true;
           const accountUsername = normalizeAuthValue(String(account?.username ?? ''));
-          return accountEmployeeId === normalizeAuthValue(enteredId) &&
-                 accountUsername === normalizeAuthValue(enteredUsername);
+          return accountUsername === normalizeAuthValue(enteredUsername);
         });
 
         if (!matchedAccount) {
-          const supabaseAccount = await findEmployeePortalAccountFromSupabase(enteredUsername);
-          if (supabaseAccount) {
-            const accountEmployeeId = normalizeAuthValue(String(supabaseAccount?.employee?.employeeId ?? ''));
-            if (accountEmployeeId === normalizeAuthValue(enteredId)) {
-              matchedAccount = supabaseAccount;
-            }
-          }
+          matchedAccount = enteredUsername
+            // Username supplied → single query filtering by BOTH id and username.
+            ? await findEmployeePortalAccountByCredentials(enteredId, enteredUsername)
+            // ID only → look the account up by employee_id alone.
+            : await findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail(enteredId);
         }
 
-        if (matchedAccount) {
-          const matchedEmployeeNumber = String(matchedAccount?.employee?.employeeId ?? '').trim();
-          const profile = await fetchEmployeeApplicationProfile(matchedEmployeeNumber);
+        // The employees table is the authoritative source. Look it up by the
+        // entered Employee ID directly so the auto-fill works even when there's
+        // no portal-account row yet.
+        const profile = await fetchEmployeeApplicationProfile(enteredId);
 
+        if (profile || matchedAccount) {
           const [accountFirstName, ...remainingParts] = String(matchedAccount?.employee?.fullName ?? '')
             .trim()
             .split(/\s+/);
@@ -341,7 +352,7 @@ export const ApplicantWizard: React.FC = () => {
           const currentDivision = profile?.currentDivision || matchedAccount?.employee?.currentDivision || '';
           const currentPosition = profile?.currentPosition || matchedAccount?.employee?.currentPosition || '';
 
-          setAuthenticatedEmployeeAccount(matchedAccount);
+          if (matchedAccount) setAuthenticatedEmployeeAccount(matchedAccount);
           setFormData((prev) => ({
             ...prev,
             first_name: profile?.firstName || accountFirstName || prev.first_name,
@@ -381,15 +392,22 @@ export const ApplicantWizard: React.FC = () => {
 
           lastPrefilledRef.current = { employeeId: enteredId, username: enteredUsername };
         } else {
-          setPrefillNotice('Matching employee account not found for the entered ID and username.');
+          // No employee record or portal account for the entered ID. Keep every
+          // field empty but fully editable and show the manual-entry warning.
+          setPrefillNotice("We couldn't find your employee record, so please fill in your details manually.");
+          lastPrefilledRef.current = { employeeId: enteredId, username: enteredUsername };
         }
       } catch (err) {
         console.error('Error prefilling employee record:', err);
         setPrefillNotice('Failed to load employee records. Please try entering details manually.');
+      } finally {
+        setIsLoadingPrefill(false);
       }
     };
 
-    performPrefill();
+    // Debounce: wait 700ms after the last keystroke before firing the lookup
+    const timerId = setTimeout(performPrefill, 700);
+    return () => clearTimeout(timerId);
   }, [applicationType, formData.employee_id, formData.employee_username]);
 
   const handleFormChange = (field: keyof ApplicantFormData, value: string | boolean) => {
@@ -1067,12 +1085,24 @@ const handleNextToReview = () => {
                       onChange={handleFormChange}
                       applicationType={applicationType}
                       isEmployee={Boolean(authenticatedEmployeeAccount?.employee?.employeeId)}
+                      isLoadingPrefill={isLoadingPrefill}
                       onApplicationTypeChange={(next) => {
-                        // Guard: an authenticated employee may never switch to Original.
-                        // (UI also hides the radio group in that case, but defense-in-depth.)
-                        if (authenticatedEmployeeAccount?.employee?.employeeId && next === 'job') return;
                         setApplicationType(next);
                         handleFormChange('application_type', next);
+                        if (next === 'job') {
+                          // Clear promotional-specific fields when switching to Original
+                          setFormData((prev) => ({
+                            ...prev,
+                            employee_id: '',
+                            employee_username: '',
+                            current_position: '',
+                            current_department: '',
+                            current_division: '',
+                          }));
+                          setPrefillNotice('');
+                          setAuthenticatedEmployeeAccount(null);
+                          lastPrefilledRef.current = null;
+                        }
                       }}
                       lockedPosition={isLockedPosition}
                     />
