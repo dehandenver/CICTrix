@@ -17,6 +17,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DEPARTMENTS, COMPETENCIES, EDUCATION_LEVELS } from '../constants/positions';
 import { getPreferredDataSourceMode } from '../lib/dataSourceMode';
+import { getDepartmentOptions } from '../lib/api/departments';
 import { mockDatabase } from '../lib/mockDatabase';
 import {
     archiveDeletedJobPosting,
@@ -138,6 +139,16 @@ export const JobPostingsPage = () => {
   const navigate = useNavigate();
   const modalBodyRef = useRef<HTMLDivElement | null>(null);
   const [jobs, setJobs] = useState<JobPosting[]>([]);
+  const [departmentsList, setDepartmentsList] = useState<string[]>([]);
+  useEffect(() => {
+    getDepartmentOptions().then((opts) => {
+      if (opts.length > 0) {
+        setDepartmentsList(opts.map((o) => o.value));
+      } else {
+        setDepartmentsList([...DEPARTMENTS]);
+      }
+    });
+  }, []);
   const [liveApplicants, setLiveApplicants] = useState<ReturnType<typeof getApplicants>>([]);
   // Raw applicant rows straight from Supabase — the single source of truth for
   // both card counts and the View Applicants list. Skips findJobIdFromRow so no rows
@@ -1334,7 +1345,7 @@ export const JobPostingsPage = () => {
                       onChange={(event) => setForm((prev) => ({ ...prev, department: event.target.value }))}
                     >
                       <option value="">Select Office</option>
-                      {DEPARTMENTS.map((office) => (
+                      {departmentsList.map((office) => (
                         <option key={office} value={office}>{office}</option>
                       ))}
                     </select>

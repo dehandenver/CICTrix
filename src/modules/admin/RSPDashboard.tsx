@@ -61,6 +61,7 @@ import {
     saveDeletedJobReports,
     saveJobPostings,
     saveNewlyHired,
+    resolveDepartmentForPosition,
     type DeletedJobReport,
 } from '../../lib/recruitmentData';
 import { runSingleFlight, invalidateCacheKey } from '../../lib/singleFlight';
@@ -278,28 +279,43 @@ const SETTINGS_TABS = [
 ] as const;
 
 const EMPLOYEE_DIRECTORY_DEPARTMENTS = [
-  'IT Department',
-  'HR Department',
-  'Finance Department',
-  'General Services',
-  'Legal Department',
+  'Human Resources',
+  'Finance',
+  'Information Technology',
   'Operations',
+  'Sales & Marketing',
+  'Customer Support',
+  'Product Management',
 ];
 
 const EMPLOYEE_DIRECTORY_POSITIONS_BY_DEPARTMENT: Record<string, string[]> = {
-  'IT Department': [
+  'Information Technology': [
     'Information Technology Officer I',
     'Information Technology Officer II',
     'Information Technology Officer III',
     'Senior IT Officer',
     'IT Manager',
   ],
-  'HR Department': ['HR Officer I', 'HR Officer II', 'Senior HR Officer'],
-  'Finance Department': ['Accountant I', 'Accountant II', 'Finance Officer'],
-  'General Services': ['Administrative Assistant', 'Operations Assistant'],
-  'Legal Department': ['Legal Officer I', 'Legal Officer II'],
-  Operations: ['Operations Officer I', 'Operations Officer II'],
+  'Human Resources': ['HR Officer I', 'HR Officer II', 'Senior HR Officer'],
+  'Finance': ['Accountant I', 'Accountant II', 'Finance Officer'],
+  'Operations': ['Administrative Assistant', 'Operations Assistant', 'Operations Manager', 'Project Coordinator'],
+  'Sales & Marketing': [],
+  'Customer Support': [],
+  'Product Management': [],
 };
+
+const ALL_EMPLOYEE_POSITIONS = Array.from(
+  new Set([
+    ...Object.values(EMPLOYEE_DIRECTORY_POSITIONS_BY_DEPARTMENT).flat(),
+    'Administrative Officer',
+    'Human Resource Specialist',
+    'IT Specialist',
+    'Accountant',
+    'Budget Officer',
+    'Project Coordinator',
+    'Data Analyst',
+  ])
+).sort();
 
 const resolveSection = (pathname: string, search: string): Section => {
   if (pathname === '/admin/rsp/jobs' || pathname === '/admin/rsp/applications') return 'jobs';
@@ -4305,36 +4321,36 @@ export const RSPDashboard = () => {
 
                           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
                             <div>
-                              <label className="mb-1 block text-xl font-semibold text-[var(--text-primary)]">New Department <span className="text-red-500">*</span></label>
+                              <label className="mb-1 block text-xl font-semibold text-[var(--text-primary)]">New Position <span className="text-red-500">*</span></label>
                               <select
-                                value={positionChangeForm.newDepartment}
+                                value={positionChangeForm.newPosition}
                                 onChange={(event) => {
-                                  const nextDepartment = event.target.value;
-                                  const firstPosition = EMPLOYEE_DIRECTORY_POSITIONS_BY_DEPARTMENT[nextDepartment]?.[0] || '';
+                                  const nextPosition = event.target.value;
+                                  const nextDept = resolveDepartmentForPosition(nextPosition);
                                   setPositionChangeForm((prev) => ({
                                     ...prev,
-                                    newDepartment: nextDepartment,
-                                    newPosition: firstPosition,
+                                    newPosition: nextPosition,
+                                    newDepartment: nextDept,
                                   }));
                                 }}
                                 className="w-full rounded-xl border border-[var(--border-color)] px-4 py-3 text-xl"
                               >
-                                {EMPLOYEE_DIRECTORY_DEPARTMENTS.map((department) => (
-                                  <option key={department} value={department}>{department}</option>
+                                <option value="">Select a position</option>
+                                {ALL_EMPLOYEE_POSITIONS.map((position) => (
+                                  <option key={position} value={position}>{position}</option>
                                 ))}
                               </select>
                             </div>
 
                             <div>
-                              <label className="mb-1 block text-xl font-semibold text-[var(--text-primary)]">New Position <span className="text-red-500">*</span></label>
+                              <label className="mb-1 block text-xl font-semibold text-[var(--text-primary)]">New Department <span className="text-red-500">*</span></label>
                               <select
-                                value={positionChangeForm.newPosition}
-                                onChange={(event) => setPositionChangeForm((prev) => ({ ...prev, newPosition: event.target.value }))}
-                                className="w-full rounded-xl border border-[var(--border-color)] px-4 py-3 text-xl"
+                                value={positionChangeForm.newDepartment}
+                                disabled
+                                className="w-full rounded-xl border border-[var(--border-color)] bg-slate-100 px-4 py-3 text-xl cursor-not-allowed"
                               >
-                                <option value="">Select a position</option>
-                                {(EMPLOYEE_DIRECTORY_POSITIONS_BY_DEPARTMENT[positionChangeForm.newDepartment] || []).map((position) => (
-                                  <option key={position} value={position}>{position}</option>
+                                {EMPLOYEE_DIRECTORY_DEPARTMENTS.map((department) => (
+                                  <option key={department} value={department}>{department}</option>
                                 ))}
                               </select>
                             </div>

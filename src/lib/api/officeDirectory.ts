@@ -78,10 +78,6 @@ const OFFICE_DIVISIONS_MAP: Record<string, string[]> = {
     'Helpdesk & Customer Relations',
     'Technical Support'
   ],
-  'Legal': [
-    'Litigation & Advisory',
-    'Contracts & Legal Review'
-  ],
   'Product Management': [
     'Product Design',
     'Product Engineering'

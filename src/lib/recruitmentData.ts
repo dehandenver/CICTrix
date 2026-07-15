@@ -7,6 +7,7 @@ import {
     RaterAssignment,
 } from '../types/recruitment.types';
 import { supabase } from './supabase';
+import { POSITION_TO_DEPARTMENT_MAP } from '../constants/positions';
 
 const APPLICANTS_KEY = 'cictrix_qualified_applicants';
 const DELETED_JOB_REPORTS_KEY = 'cictrix_deleted_job_reports';
@@ -1242,4 +1243,38 @@ const backfillPortalApplicantsToRecruitment = () => {
       attachments,
     }, { skipEnsure: true });
   }
+};
+
+export const resolveDepartmentForPosition = (positionTitle: string): string => {
+  if (!positionTitle) return 'Operations';
+  
+  // 1. Check Job Postings as the single source of truth
+  const postings = getJobPostings();
+  const matchedJob = postings.find(
+    (job) => job.title.trim().toLowerCase() === positionTitle.trim().toLowerCase()
+  );
+  if (matchedJob && matchedJob.department) {
+    return matchedJob.department;
+  }
+  
+  // 2. Fallback to POSITION_TO_DEPARTMENT_MAP
+  const normalizedTitle = positionTitle.trim();
+  const matchedStatic = Object.entries(POSITION_TO_DEPARTMENT_MAP).find(
+    ([pos]) => pos.toLowerCase() === normalizedTitle.toLowerCase()
+  );
+  if (matchedStatic) {
+    return matchedStatic[1];
+  }
+
+  // 3. Substring match fallback
+  const lowerTitle = normalizedTitle.toLowerCase();
+  if (lowerTitle.includes('hr') || lowerTitle.includes('resource')) return 'Human Resources';
+  if (lowerTitle.includes('finance') || lowerTitle.includes('account') || lowerTitle.includes('budget')) return 'Finance';
+  if (lowerTitle.includes('it') || lowerTitle.includes('information') || lowerTitle.includes('developer') || lowerTitle.includes('software')) return 'Information Technology';
+  if (lowerTitle.includes('legal') || lowerTitle.includes('law')) return 'Legal';
+  if (lowerTitle.includes('sales') || lowerTitle.includes('market')) return 'Sales & Marketing';
+  if (lowerTitle.includes('support') || lowerTitle.includes('helpdesk')) return 'Customer Support';
+  if (lowerTitle.includes('product') || lowerTitle.includes('designer')) return 'Product Management';
+
+  return 'Operations';
 };

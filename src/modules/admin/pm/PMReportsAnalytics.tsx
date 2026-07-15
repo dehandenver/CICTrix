@@ -84,7 +84,7 @@ const fmtDate = (iso: string | null) => {
 };
 
 // Seed evaluations — shown when Supabase returns empty or is unreachable
-const OFFICES = ['HR Department', 'Health Office', 'Treasury Department', 'IT Division'];
+const OFFICES = ['Human Resources', 'Finance', 'Information Technology', 'Operations', 'Sales & Marketing', 'Customer Support', 'Product Management'];
 
 const makeSeedEvals = (): PerformanceEvaluation[] => {
   const seeds: PerformanceEvaluation[] = [];

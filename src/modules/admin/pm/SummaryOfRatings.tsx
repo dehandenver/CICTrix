@@ -268,9 +268,9 @@ export const SummaryOfRatings = () => {
           onChange={(e) => setSelectedDept(e.target.value)}
           className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-500 outline-none w-48"
         >
-          <option>All Departments</option>
-          <option>IT Department</option>
-          <option>Finance Department</option>
+          {deptOptions.map((dept) => (
+            <option key={dept} value={dept}>{dept}</option>
+          ))}
         </select>
         <select className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-500 outline-none w-48">
           <option>January–June 2025</option>

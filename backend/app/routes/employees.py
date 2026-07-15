@@ -110,8 +110,55 @@ async def hire_from_applicant(
     app_type = app_data.get("application_type", "job")
     
     today_str = date.today().isoformat()
-    department_name = app_data.get("office") or app_data.get("current_department") or "Operations"
     position_name = app_data.get("position") or app_data.get("current_position") or "Staff"
+    
+    # Determine department name using Job Postings as the single source of truth
+    job_res = client.table("job_postings").select("department").ilike("title", position_name).execute()
+    if job_res.data and job_res.data[0].get("department"):
+        department_name = job_res.data[0]["department"]
+    else:
+        department_name = app_data.get("office") or app_data.get("current_department") or "Operations"
+        pos_to_dept = {
+            'Administrative Officer': 'Operations',
+            'Human Resource Specialist': 'Human Resources',
+            'IT Specialist': 'Information Technology',
+            'Accountant': 'Finance',
+            'Budget Officer': 'Finance',
+            'Legal Officer': 'Legal',
+            'Project Coordinator': 'Operations',
+            'Data Analyst': 'Product Management',
+        }
+        department_name = pos_to_dept.get(position_name, department_name)
+
+    # Normalize to canonical department names
+    legacy_map = {
+        'Human Resource Management Office': 'Human Resources',
+        'Information Technology Office': 'Information Technology',
+        'City Planning and Development Office': 'Operations',
+        'City Health Office': 'Operations',
+        'City Engineering Office': 'Operations',
+        "Treasurer's Office": 'Finance',
+        'Budget Office': 'Finance',
+        'General Services Office': 'Operations',
+        'Office of the City Engineer': 'Operations',
+        'Office of the City Accountant': 'Finance',
+        'Office of the City Social Welfare and Development': 'Operations',
+        'IT Department': 'Information Technology',
+        'HR Department': 'Human Resources',
+        'Finance Department': 'Finance',
+        'Legal Department': 'Legal',
+        'IT Division': 'Information Technology',
+        'Health Office': 'Operations',
+        'Treasury Department': 'Finance'
+    }
+    if department_name in legacy_map:
+        department_name = legacy_map[department_name]
+
+    # Resolve department_name to department_id UUID
+    dept_id = None
+    dept_res = client.table("departments").select("id").eq("name", department_name).execute()
+    if dept_res.data:
+        dept_id = dept_res.data[0]["id"]
 
     if app_type == "promotion" and app_data.get("employee_id"):
         # Promotion: Update existing employee (Schema C uses employee_number)
@@ -119,6 +166,7 @@ async def hire_from_applicant(
         update_data = {
             "position": position_name,
             "department": department_name,
+            "department_id": dept_id
         }
         
         emp_res = client.table("employees").update(update_data).eq("employee_number", emp_id).execute()
@@ -150,6 +198,7 @@ async def hire_from_applicant(
             "sex": app_data.get("gender"),
             "position": position_name,
             "department": department_name,
+            "department_id": dept_id,
             "employment_status": "Regular",
             "date_hired": today_str,
             "status": "Active",

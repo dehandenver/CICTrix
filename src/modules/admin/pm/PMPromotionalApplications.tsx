@@ -17,6 +17,8 @@ import {
 import { supabase as supabaseClient } from '../../../lib/supabase';
 import { listRequirements, type Requirement } from '../../../lib/api/competencyFramework';
 import { getCurrentAdminEmail } from '../moduleUi';
+import { DEPARTMENTS } from '../../../constants/positions';
+import { resolveDepartmentForPosition } from '../../../lib/recruitmentData';
 
 const supabase = supabaseClient as any;
 
@@ -94,12 +96,7 @@ const REQUIRED_DOCS = [
   'Certificate of Eligibility / CSC Rating',
 ];
 
-const DEPARTMENTS = [
-  'HR Department',
-  'Health Office',
-  'Treasury Department',
-  'IT Division',
-];
+// DEPARTMENTS imported from constants/positions
 
 // ── Seed data (shown when Supabase tables are empty or unavailable) ─────────────
 
@@ -110,7 +107,7 @@ const SEED_APPS: PromoApp[] = [
     employee_name: 'Maria Santos',
     current_position: 'Administrative Assistant II',
     target_position: 'Administrative Officer',
-    department: 'HR Department',
+    department: 'Human Resources',
     stage: 'Document Review',
     current_owner: 'RSP Staff',
     notes: null,
@@ -124,7 +121,7 @@ const SEED_APPS: PromoApp[] = [
     employee_name: 'Juan dela Cruz',
     current_position: 'IT Technician I',
     target_position: 'IT Specialist',
-    department: 'IT Division',
+    department: 'Information Technology',
     stage: 'Dept Head Endorsement',
     current_owner: 'Department Head',
     notes: 'Excellent IPCR scores for 3 consecutive periods.',
@@ -138,7 +135,7 @@ const SEED_APPS: PromoApp[] = [
     employee_name: 'Lourdes Reyes',
     current_position: 'Accountant I',
     target_position: 'Accountant',
-    department: 'Treasury Department',
+    department: 'Finance',
     stage: 'PM Final Review',
     current_owner: 'PM Admin',
     notes: null,
@@ -152,7 +149,7 @@ const SEED_APPS: PromoApp[] = [
     employee_name: 'Robert Bautista',
     current_position: 'Health Aide',
     target_position: 'Human Resource Specialist',
-    department: 'Health Office',
+    department: 'Operations',
     stage: 'Submitted',
     current_owner: 'HR Office',
     notes: null,
@@ -166,7 +163,7 @@ const SEED_APPS: PromoApp[] = [
     employee_name: 'Ana Villanueva',
     current_position: 'Budget Officer I',
     target_position: 'Budget Officer',
-    department: 'Treasury Department',
+    department: 'Finance',
     stage: 'Approved',
     current_owner: '—',
     notes: 'All requirements met. Endorsed by Department Head.',
@@ -263,7 +260,7 @@ export function PMPromotionalApplications() {
 
   // New application modal
   const [showNewModal, setShowNewModal] = useState(false);
-  const [newApp, setNewApp] = useState({ employee_name: '', current_position: '', target_position: '', department: DEPARTMENTS[0] });
+  const [newApp, setNewApp] = useState({ employee_name: '', current_position: '', target_position: '', department: DEPARTMENTS[0] as string });
   const [saving, setSaving] = useState(false);
 
   // Stage advance modal
@@ -1083,7 +1080,11 @@ export function PMPromotionalApplications() {
                 <input
                   type="text"
                   value={newApp.target_position}
-                  onChange={(e) => setNewApp((p) => ({ ...p, target_position: e.target.value }))}
+                  onChange={(e) => {
+                    const pos = e.target.value;
+                    const dept = resolveDepartmentForPosition(pos);
+                    setNewApp((p) => ({ ...p, target_position: pos, department: dept }));
+                  }}
                   placeholder="e.g. Administrative Officer"
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[#363EE8]"
                 />
@@ -1092,8 +1093,8 @@ export function PMPromotionalApplications() {
                 <label className="block font-semibold text-slate-700">Department / Office</label>
                 <select
                   value={newApp.department}
-                  onChange={(e) => setNewApp((p) => ({ ...p, department: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 focus:outline-none focus:ring-1 focus:ring-[#363EE8]"
+                  disabled
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-500 cursor-not-allowed focus:outline-none"
                 >
                   {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
                 </select>

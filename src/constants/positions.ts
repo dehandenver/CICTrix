@@ -30,11 +30,13 @@ export const POSITION_OPTIONS = POSITIONS.map(pos => ({
  * portal. Scoped to the five offices in the project's MVP scope.
  */
 export const DEPARTMENTS = [
-  'Office of the City Engineer',
-  'Office of the City Accountant',
-  'City Health Office',
-  'Office of the City Social Welfare and Development',
-  'General Services Office',
+  'Human Resources',
+  'Finance',
+  'Information Technology',
+  'Operations',
+  'Sales & Marketing',
+  'Customer Support',
+  'Product Management',
 ] as const;
 
 /**

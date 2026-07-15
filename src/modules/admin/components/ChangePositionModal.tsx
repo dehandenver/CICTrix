@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { X, AlertCircle } from 'lucide-react';
 import { supabase as supabaseClient } from '../../../lib/supabase';
 import { listDepartments, getDepartmentIdByName } from '../../../lib/api/departments';
+import { resolveDepartmentForPosition } from '../../../lib/recruitmentData';
+import { POSITIONS } from '../../../constants/positions';
 
 // Bypass auto-generated Supabase types resolving to `never`. Same escape hatch
 // used by the rest of the codebase (see RSPDashboard.tsx, employeeDocuments.ts).
@@ -40,12 +42,6 @@ export default function ChangePositionModal({ employee, onClose, onSuccess }: Pr
     fetchPositions();
   }, []);
 
-  useEffect(() => {
-    if (newDepartment !== employee.department) {
-      fetchPositions();
-    }
-  }, [newDepartment]);
-
   const fetchDepartments = async () => {
     try {
       const result = await listDepartments(false);
@@ -59,32 +55,28 @@ export default function ChangePositionModal({ employee, onClose, onSuccess }: Pr
   const fetchPositions = async () => {
     try {
       // Get positions from both employees (via department-aware view) and applicants
-      // for the selected department.
+      // across all departments.
       const [empData, appData] = await Promise.all([
         supabase
           .from('employees_with_department')
           .select('current_position')
-          .eq('department', newDepartment)
-          .eq('status', 'Active')
           .neq('current_position', null)
           .catch(() => ({ data: [] })),
         supabase
           .from('applicants')
           .select('position')
-          .eq('office', newDepartment)
-          .eq('status', 'Hired')
           .neq('position', null)
           .catch(() => ({ data: [] })),
       ]);
 
       const allPositions = [
+        ...POSITIONS,
         ...(empData?.data?.map((e) => e.current_position) || []),
         ...(appData?.data?.map((a) => a.position) || []),
       ];
       
-      const uniquePositions = Array.from(new Set(allPositions)).sort();
+      const uniquePositions = Array.from(new Set(allPositions.map(p => String(p).trim()))).filter(Boolean).sort();
       setPositions(uniquePositions);
-      setNewPosition('');
     } catch (error) {
       console.error('Error fetching positions:', error);
     }
@@ -274,8 +266,8 @@ export default function ChangePositionModal({ employee, onClose, onSuccess }: Pr
             <select
               id="department"
               value={newDepartment}
-              onChange={(e) => setNewDepartment(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              disabled
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed focus:outline-none"
             >
               {departments.map((dept) => (
                 <option key={dept} value={dept}>
@@ -293,7 +285,14 @@ export default function ChangePositionModal({ employee, onClose, onSuccess }: Pr
             <select
               id="position"
               value={newPosition}
-              onChange={(e) => setNewPosition(e.target.value)}
+              onChange={(e) => {
+                const pos = e.target.value;
+                setNewPosition(pos);
+                if (pos) {
+                  const dept = resolveDepartmentForPosition(pos);
+                  setNewDepartment(dept);
+                }
+              }}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">Select a position</option>
