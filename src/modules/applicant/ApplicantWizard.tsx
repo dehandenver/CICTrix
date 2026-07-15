@@ -355,6 +355,8 @@ export const ApplicantWizard: React.FC = () => {
           if (matchedAccount) setAuthenticatedEmployeeAccount(matchedAccount);
           setFormData((prev) => ({
             ...prev,
+            // Auto-fill portal username from the matched account if available
+            employee_username: matchedAccount?.username || prev.employee_username,
             first_name: profile?.firstName || accountFirstName || prev.first_name,
             middle_name: profile?.middleName || accountMiddleName || prev.middle_name,
             last_name: profile?.lastName || accountLastName || prev.last_name,
