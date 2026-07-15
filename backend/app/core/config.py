@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_HOURS: int = 24
 
+    # Anthropic (IPCR competency matching). Key is optional at import time so the
+    # rest of the API boots without it; the competency-matching route returns a
+    # clear 503 if it's unset when called.
+    ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_MODEL: str = "claude-opus-4-8"
+
     # SMTP (Email Configuration)
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
