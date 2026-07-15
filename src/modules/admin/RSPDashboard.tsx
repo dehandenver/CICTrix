@@ -67,6 +67,7 @@ import { runSingleFlight, invalidateCacheKey } from '../../lib/singleFlight';
 import { mergeLocalSchedules } from '../../lib/applicantSchedule';
 import { isMockModeEnabled, supabase } from '../../lib/supabase';
 import { hireApplicant } from '../../lib/api/employeesApi';
+import { getOfficeDirectory, filterOfficeDirectory, type OfficeDirectoryRow } from '../../lib/api/officeDirectory';
 import {
     EMPLOYEE_DOCUMENTS_UPDATED_EVENT,
     downloadEmployeeDocument,
@@ -83,9 +84,7 @@ type JobStatus = 'Open' | 'Reviewing' | 'Closed';
 type Section = 'dashboard' | 'jobs' | 'qualified' | 'applicant-score' | 'new-hired' | 'raters' | 'accounts' | 'succession' | 'reports' | 'settings';
 type BulkRecipientMode = 'all' | 'department' | 'selected';
 type EmployeeDocumentTemplateId = (typeof BULK_REQUEST_TEMPLATES)[number]['id'];
-type EmployeeDirectoryCardStatus = 'Active' | 'Inactive' | 'Mixed';
-
-const EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE = 6;
+const EMPLOYEE_DIRECTORY_OFFICES_PER_PAGE = 6;
 
 const ADMIN_SESSION_KEY = 'cictrix_admin_session';
 
@@ -877,12 +876,13 @@ export const RSPDashboard = () => {
   const [raterSearch, setRaterSearch] = useState('');
   const [raterStatus, setRaterStatus] = useState('all');
   const [raterAssignedPositionsByEmail, setRaterAssignedPositionsByEmail] = useState<Record<string, string[]>>({});
-  const [accountsView, setAccountsView] = useState<'directory' | 'position' | 'details'>('directory');
+  const [accountsView, setAccountsView] = useState<'directory' | 'office' | 'details'>('directory');
   const [employeeDirectorySearch, setEmployeeDirectorySearch] = useState('');
-  const [employeeDirectoryStatusFilter, setEmployeeDirectoryStatusFilter] = useState<'all' | EmployeeDirectoryCardStatus>('all');
-  const [employeeDirectoryOfficeFilter, setEmployeeDirectoryOfficeFilter] = useState('all');
   const [employeeDirectoryPage, setEmployeeDirectoryPage] = useState(0);
-  const [selectedDirectoryCard, setSelectedDirectoryCard] = useState<{ position: string; office: string } | null>(null);
+  const [officeDirectoryRows, setOfficeDirectoryRows] = useState<OfficeDirectoryRow[]>([]);
+  const [officeDirectoryLoading, setOfficeDirectoryLoading] = useState(false);
+  const [officeDirectoryError, setOfficeDirectoryError] = useState('');
+  const [selectedDirectoryCard, setSelectedDirectoryCard] = useState<{ office: string } | null>(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [employeeDetailsTab, setEmployeeDetailsTab] = useState<'personal' | 'documents'>('personal');
   const [showPositionChangeModal, setShowPositionChangeModal] = useState(false);
@@ -2350,95 +2350,42 @@ export const RSPDashboard = () => {
     [applicants, credentialedApplicantDirectorySource, fallbackEmployeeDirectorySource, hireDateByKey]
   );
 
-  const employeeDirectoryCards = useMemo(() => {
-    const source = directoryEmployeesSource;
-    const searchTerm = employeeDirectorySearch.trim().toLowerCase();
-    const grouped = new Map<string, { position: string; office: string; count: number; activeCount: number; inactiveCount: number; newlyHiredCount: number; status: EmployeeDirectoryCardStatus }>();
-
-    source.forEach((employee) => {
-      // Skip placeholder/unassigned positions
-      const position = employee.position || 'Unassigned Position';
-      if (position === 'Employee' || position === 'Unassigned Position' || !position.trim()) {
-        return;
-      }
-
-      const office = employee.office || 'Unassigned Office';
-      const isInactive = employee.status.toLowerCase().includes('inactive');
-      const newHire = isNewlyHired(employee.hire_date);
-      const key = `${position}__${office}`;
-      const existing = grouped.get(key);
-
-      if (existing) {
-        existing.count += 1;
-        if (isInactive) {
-          existing.inactiveCount += 1;
-        } else {
-          existing.activeCount += 1;
-        }
-        if (newHire) existing.newlyHiredCount += 1;
+  // Office Directory: same fetch (getOfficeDirectory) and Office / Department
+  // Head / Employees shape used by the PM division, so both divisions read
+  // identical department-head and headcount data.
+  useEffect(() => {
+    if (section !== 'accounts' || officeDirectoryRows.length > 0) return;
+    setOfficeDirectoryLoading(true);
+    setOfficeDirectoryError('');
+    getOfficeDirectory().then((result) => {
+      if (result.ok) {
+        setOfficeDirectoryRows(result.data);
       } else {
-        grouped.set(key, {
-          position,
-          office,
-          count: 1,
-          activeCount: isInactive ? 0 : 1,
-          inactiveCount: isInactive ? 1 : 0,
-          newlyHiredCount: newHire ? 1 : 0,
-          status: isInactive ? 'Inactive' : 'Active',
-        });
+        setOfficeDirectoryError(result.error);
       }
+      setOfficeDirectoryLoading(false);
     });
+  }, [section, officeDirectoryRows.length]);
 
-    let cards = Array.from(grouped.values())
-      .map((card) => ({
-        ...card,
-        status:
-          card.activeCount > 0 && card.inactiveCount > 0
-            ? 'Mixed'
-            : card.inactiveCount > 0
-              ? 'Inactive'
-              : 'Active',
-      }))
-      .sort((a, b) => a.position.localeCompare(b.position));
-
-    if (searchTerm) {
-      cards = cards.filter((card) =>
-        card.position.toLowerCase().includes(searchTerm) || card.office.toLowerCase().includes(searchTerm)
-      );
-    }
-
-    if (employeeDirectoryStatusFilter !== 'all') {
-      cards = cards.filter((card) => card.status === employeeDirectoryStatusFilter);
-    }
-
-    if (employeeDirectoryOfficeFilter !== 'all') {
-      cards = cards.filter((card) => card.office === employeeDirectoryOfficeFilter);
-    }
-
-    return {
-      cards,
-      totalEmployees: source.length,
-      totalPositions: grouped.size,
-    };
-  }, [directoryEmployeesSource, employeeDirectoryOfficeFilter, employeeDirectorySearch, employeeDirectoryStatusFilter]);
-
-  const employeeDirectoryOfficeOptions = useMemo(
-    () =>
-      Array.from(new Set(directoryEmployeesSource.map((employee) => employee.office || 'Unassigned Office'))).sort((a, b) =>
-        a.localeCompare(b)
-      ),
-    [directoryEmployeesSource]
+  const filteredOfficeDirectoryRows = useMemo(
+    () => filterOfficeDirectory(officeDirectoryRows, employeeDirectorySearch),
+    [officeDirectoryRows, employeeDirectorySearch]
   );
 
-  const employeeDirectoryPageCount = Math.max(1, Math.ceil(employeeDirectoryCards.cards.length / EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE));
+  const officeDirectoryTotalEmployees = useMemo(
+    () => officeDirectoryRows.reduce((sum, row) => sum + row.employeeCount, 0),
+    [officeDirectoryRows]
+  );
+
+  const employeeDirectoryPageCount = Math.max(1, Math.ceil(filteredOfficeDirectoryRows.length / EMPLOYEE_DIRECTORY_OFFICES_PER_PAGE));
   const safeEmployeeDirectoryPage = Math.min(employeeDirectoryPage, employeeDirectoryPageCount - 1);
-  const paginatedEmployeeDirectoryCards = useMemo(
+  const paginatedOfficeDirectoryRows = useMemo(
     () =>
-      employeeDirectoryCards.cards.slice(
-        safeEmployeeDirectoryPage * EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE,
-        (safeEmployeeDirectoryPage + 1) * EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE
+      filteredOfficeDirectoryRows.slice(
+        safeEmployeeDirectoryPage * EMPLOYEE_DIRECTORY_OFFICES_PER_PAGE,
+        (safeEmployeeDirectoryPage + 1) * EMPLOYEE_DIRECTORY_OFFICES_PER_PAGE
       ),
-    [employeeDirectoryCards.cards, safeEmployeeDirectoryPage]
+    [filteredOfficeDirectoryRows, safeEmployeeDirectoryPage]
   );
 
   useEffect(() => {
@@ -2466,11 +2413,9 @@ export const RSPDashboard = () => {
     return employeeNumberMap;
   }, [directoryEmployeesSource, employeeNumberFromNewlyHired]);
 
-  const selectedPositionEmployees = useMemo(() => {
+  const selectedOfficeEmployees = useMemo(() => {
     if (!selectedDirectoryCard) return [];
-    return directoryEmployeesSource.filter(
-      (employee) => employee.position === selectedDirectoryCard.position && employee.office === selectedDirectoryCard.office
-    );
+    return directoryEmployeesSource.filter((employee) => employee.office === selectedDirectoryCard.office);
   }, [directoryEmployeesSource, selectedDirectoryCard]);
 
   const selectedEmployeeDetails = useMemo(
@@ -3297,16 +3242,14 @@ export const RSPDashboard = () => {
     setShowBulkRequestDialog(true);
   };
 
-  const openPositionEmployees = (position: string, office: string) => {
-    setSelectedDirectoryCard({ position, office });
+  const openOfficeEmployees = (office: string) => {
+    setSelectedDirectoryCard({ office });
     setSelectedEmployeeId(null);
-    setAccountsView('position');
+    setAccountsView('office');
   };
 
   const clearEmployeeDirectoryFilters = () => {
     setEmployeeDirectorySearch('');
-    setEmployeeDirectoryStatusFilter('all');
-    setEmployeeDirectoryOfficeFilter('all');
     setEmployeeDirectoryPage(0);
   };
 
@@ -3938,14 +3881,14 @@ export const RSPDashboard = () => {
               {accountsView === 'directory' ? (
                 <>
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm text-slate-500">{employeeDirectoryCards.totalEmployees} total employees</p>
+                    <p className="text-sm text-slate-500">{officeDirectoryTotalEmployees} total employees</p>
                     <Button type="button" onClick={openBulkRequestDialog}>
                       <FileText size={16} /> Bulk Document Request
                     </Button>
                   </div>
 
                   <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.3fr)_280px_280px]">
+                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.3fr)]">
                       <div className="relative">
                         <Search size={20} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                         <input
@@ -3954,52 +3897,28 @@ export const RSPDashboard = () => {
                             setEmployeeDirectorySearch(e.target.value);
                             setEmployeeDirectoryPage(0);
                           }}
-                          placeholder="Search by position or office..."
+                          placeholder="Search by office or department head..."
                           className="h-12 w-full rounded-lg border border-slate-300 pl-10 pr-3 text-base"
                         />
                       </div>
-
-                      <select
-                        className="h-12 rounded-lg border border-slate-300 px-3 text-base"
-                        value={employeeDirectoryStatusFilter}
-                        onChange={(e) => {
-                          setEmployeeDirectoryStatusFilter(e.target.value as 'all' | EmployeeDirectoryCardStatus);
-                          setEmployeeDirectoryPage(0);
-                        }}
-                      >
-                        <option value="all">All Status</option>
-                        <option value="Active">Active</option>
-                        <option value="Mixed">Mixed</option>
-                        <option value="Inactive">Inactive</option>
-                      </select>
-
-                      <select
-                        className="h-12 rounded-lg border border-slate-300 px-3 text-base"
-                        value={employeeDirectoryOfficeFilter}
-                        onChange={(e) => {
-                          setEmployeeDirectoryOfficeFilter(e.target.value);
-                          setEmployeeDirectoryPage(0);
-                        }}
-                      >
-                        <option value="all">All Offices</option>
-                        {employeeDirectoryOfficeOptions.map((office) => (
-                          <option key={office} value={office}>{office}</option>
-                        ))}
-                      </select>
                     </div>
 
                     <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3 text-base text-slate-600">
-                      <p className="!mb-0">Showing {employeeDirectoryCards.cards.length} position{employeeDirectoryCards.cards.length === 1 ? '' : 's'}</p>
+                      <p className="!mb-0">Showing {filteredOfficeDirectoryRows.length} office{filteredOfficeDirectoryRows.length === 1 ? '' : 's'}</p>
                       <button type="button" className="text-sm font-medium text-blue-700" onClick={clearEmployeeDirectoryFilters}>
                         Clear Filters
                       </button>
                     </div>
                   </section>
 
+                  {officeDirectoryError && (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{officeDirectoryError}</div>
+                  )}
+
                   <div className="flex items-center justify-center text-lg font-semibold text-slate-700">
-                    {employeeDirectoryCards.cards.length === 0
-                      ? 'Position 0 to 0 of 0'
-                      : `Position ${safeEmployeeDirectoryPage * EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE + 1} to ${Math.min((safeEmployeeDirectoryPage + 1) * EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE, employeeDirectoryCards.cards.length)} of ${employeeDirectoryCards.cards.length}`}
+                    {filteredOfficeDirectoryRows.length === 0
+                      ? 'Office 0 to 0 of 0'
+                      : `Office ${safeEmployeeDirectoryPage * EMPLOYEE_DIRECTORY_OFFICES_PER_PAGE + 1} to ${Math.min((safeEmployeeDirectoryPage + 1) * EMPLOYEE_DIRECTORY_OFFICES_PER_PAGE, filteredOfficeDirectoryRows.length)} of ${filteredOfficeDirectoryRows.length}`}
                   </div>
 
                   <section>
@@ -4007,58 +3926,51 @@ export const RSPDashboard = () => {
                       <table className="w-full min-w-full">
                         <thead>
                           <tr className="border-b border-slate-200 bg-slate-50">
-                            <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
                             <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Office / Department</th>
+                            <th className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">Department Head</th>
                             <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Employees</th>
-                            <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Active</th>
-                            <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Inactive</th>
-                            <th className="px-5 py-3 text-center text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {paginatedEmployeeDirectoryCards.map((card) => (
-                            <tr
-                              key={`${card.position}-${card.office}`}
-                              className="border-b border-slate-100 hover:bg-slate-50 transition-colors last:border-0 cursor-pointer"
-                              onClick={() => openPositionEmployees(card.position, card.office)}
-                            >
-                              <td className="px-5 py-4">
-                                <span className="font-semibold text-sm text-slate-900">{card.position}</span>
-                                {card.newlyHiredCount > 0 && (
-                                  <span
-                                    className="ml-2 inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-emerald-700"
-                                    title={`${card.newlyHiredCount} employee(s) hired in the last ${NEWLY_HIRED_BADGE_DAYS} days`}
-                                  >
-                                    {card.newlyHiredCount > 1 ? `${card.newlyHiredCount} Newly Hired` : 'Newly Hired'}
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-5 py-4 text-sm text-slate-600">
-                                <span className="inline-flex items-center gap-1.5"><MapPin size={13} className="text-slate-400" /> {card.office}</span>
-                              </td>
-                              <td className="px-5 py-4 text-center">
-                                <span className="font-bold text-slate-900 text-sm">{card.count}</span>
-                              </td>
-                              <td className="px-5 py-4 text-center">
-                                <span className="text-sm text-emerald-700 font-semibold">{card.activeCount}</span>
-                              </td>
-                              <td className="px-5 py-4 text-center">
-                                <span className="text-sm text-slate-500 font-semibold">{card.inactiveCount}</span>
-                              </td>
-                              <td className="px-5 py-4 text-center">
-                                <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${card.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : card.status === 'Inactive' ? 'bg-slate-200 text-slate-700' : 'bg-blue-100 text-blue-700'}`}>
-                                  {card.status}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
-                          {employeeDirectoryCards.cards.length === 0 && (
+                          {officeDirectoryLoading ? (
                             <tr>
-                              <td colSpan={6} className="px-5 py-12 text-center text-slate-500">
-                                <Briefcase className="mx-auto mb-2 h-9 w-9 text-slate-300" />
-                                <p className="font-medium">No positions found for the selected filters.</p>
-                              </td>
+                              <td colSpan={3} className="px-5 py-12 text-center text-slate-500">Loading offices…</td>
                             </tr>
+                          ) : (
+                            <>
+                              {paginatedOfficeDirectoryRows.map((row) => (
+                                <tr
+                                  key={row.officeId}
+                                  className="border-b border-slate-100 hover:bg-slate-50 transition-colors last:border-0 cursor-pointer"
+                                  onClick={() => openOfficeEmployees(row.officeName)}
+                                >
+                                  <td className="px-5 py-4">
+                                    <span className="inline-flex items-center gap-1.5 font-semibold text-sm text-slate-900"><MapPin size={13} className="text-slate-400" /> {row.officeName}</span>
+                                  </td>
+                                  <td className="px-5 py-4 text-sm">
+                                    {row.deptHead ? (
+                                      <div>
+                                        <p className="!mb-0 font-medium text-slate-700">{row.deptHead.name}</p>
+                                        <p className="!mb-0 text-xs text-slate-400">{row.deptHead.contact}</p>
+                                      </div>
+                                    ) : (
+                                      <span className="text-amber-600 text-xs font-semibold">Unassigned</span>
+                                    )}
+                                  </td>
+                                  <td className="px-5 py-4 text-center">
+                                    <span className="font-bold text-slate-900 text-sm">{row.employeeCount}</span>
+                                  </td>
+                                </tr>
+                              ))}
+                              {filteredOfficeDirectoryRows.length === 0 && (
+                                <tr>
+                                  <td colSpan={3} className="px-5 py-12 text-center text-slate-500">
+                                    <Briefcase className="mx-auto mb-2 h-9 w-9 text-slate-300" />
+                                    <p className="font-medium">No offices found for the selected filters.</p>
+                                  </td>
+                                </tr>
+                              )}
+                            </>
                           )}
                         </tbody>
                       </table>
@@ -4067,13 +3979,13 @@ export const RSPDashboard = () => {
 
                   <footer className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
                     <p className="!mb-0">
-                      Showing {employeeDirectoryCards.cards.length === 0 ? 0 : safeEmployeeDirectoryPage * EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE + 1}-{Math.min((safeEmployeeDirectoryPage + 1) * EMPLOYEE_DIRECTORY_POSITIONS_PER_PAGE, employeeDirectoryCards.cards.length)} of {employeeDirectoryCards.cards.length} positions
+                      Showing {filteredOfficeDirectoryRows.length === 0 ? 0 : safeEmployeeDirectoryPage * EMPLOYEE_DIRECTORY_OFFICES_PER_PAGE + 1}-{Math.min((safeEmployeeDirectoryPage + 1) * EMPLOYEE_DIRECTORY_OFFICES_PER_PAGE, filteredOfficeDirectoryRows.length)} of {filteredOfficeDirectoryRows.length} offices
                     </p>
                     <div className="flex items-center gap-2">
                       <button
                         className="rounded border border-slate-300 p-1 disabled:opacity-40"
                         onClick={() => setEmployeeDirectoryPage((current) => Math.max(0, current - 1))}
-                        disabled={safeEmployeeDirectoryPage === 0 || employeeDirectoryCards.cards.length === 0}
+                        disabled={safeEmployeeDirectoryPage === 0 || filteredOfficeDirectoryRows.length === 0}
                       >
                         <ChevronLeft className="h-4 w-4" />
                       </button>
@@ -4081,14 +3993,14 @@ export const RSPDashboard = () => {
                       <button
                         className="rounded border border-slate-300 p-1 disabled:opacity-40"
                         onClick={() => setEmployeeDirectoryPage((current) => Math.min(employeeDirectoryPageCount - 1, current + 1))}
-                        disabled={safeEmployeeDirectoryPage >= employeeDirectoryPageCount - 1 || employeeDirectoryCards.cards.length === 0}
+                        disabled={safeEmployeeDirectoryPage >= employeeDirectoryPageCount - 1 || filteredOfficeDirectoryRows.length === 0}
                       >
                         <ChevronRight className="h-4 w-4" />
                       </button>
                     </div>
                   </footer>
                 </>
-              ) : accountsView === 'position' ? (
+              ) : accountsView === 'office' ? (
                 <>
                   <div>
                     <div className="mb-1 flex items-center gap-1.5 text-sm">
@@ -4100,25 +4012,22 @@ export const RSPDashboard = () => {
                         <ChevronLeft size={13} /> Office Directory
                       </button>
                       <ChevronRight size={13} className="text-slate-400" />
-                      <span className="font-medium text-slate-700">{selectedDirectoryCard?.position ?? 'Position'}</span>
+                      <span className="font-medium text-slate-700">{selectedDirectoryCard?.office ?? 'Office'}</span>
                     </div>
-                    <h2 className="!mb-0.5 text-xl font-bold text-[var(--text-primary)]">{selectedDirectoryCard?.position ?? 'Position'}</h2>
-                    <p className="!mb-0 text-sm text-[var(--text-secondary)]">{selectedPositionEmployees.length} employee{selectedPositionEmployees.length === 1 ? '' : 's'}</p>
+                    <h2 className="!mb-0.5 text-xl font-bold text-[var(--text-primary)]">{selectedDirectoryCard?.office ?? 'Office'}</h2>
+                    <p className="!mb-0 text-sm text-[var(--text-secondary)]">{selectedOfficeEmployees.length} employee{selectedOfficeEmployees.length === 1 ? '' : 's'}</p>
                   </div>
 
                   <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
                     <table className="w-full border-collapse text-sm">
                       <thead className="bg-slate-50 text-left">
                         <tr>
-                          <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Employee Name</th>
+                          <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Employee</th>
                           <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
-                          <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Department</th>
-                          <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {selectedPositionEmployees.map((employee) => {
-                          const statusLabel = employee.status.toLowerCase().includes('inactive') ? 'Inactive' : 'Active';
+                        {selectedOfficeEmployees.map((employee) => {
                           const empNum = employeeNumberById.get(employee.id) ?? '';
                           const newHire = isNewlyHired(employee.hire_date);
                           return (
@@ -4139,18 +4048,12 @@ export const RSPDashboard = () => {
                                 <p className="!mb-0 mt-0.5 text-xs text-slate-400">{employee.email || '--'}</p>
                               </td>
                               <td className="px-5 py-3.5 text-slate-600">{employee.position || '--'}</td>
-                              <td className="px-5 py-3.5 text-slate-600">{employee.office || '--'}</td>
-                              <td className="px-5 py-3.5">
-                                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusLabel === 'Active' ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-700'}`}>
-                                  {statusLabel}
-                                </span>
-                              </td>
                             </tr>
                           );
                         })}
-                        {selectedPositionEmployees.length === 0 && (
+                        {selectedOfficeEmployees.length === 0 && (
                           <tr>
-                            <td colSpan={4} className="px-5 py-8 text-center text-sm text-slate-400">No employees found for this position.</td>
+                            <td colSpan={2} className="px-5 py-8 text-center text-sm text-slate-400">No employees found for this office.</td>
                           </tr>
                         )}
                       </tbody>
@@ -4163,10 +4066,10 @@ export const RSPDashboard = () => {
                   <div className="flex items-center gap-1.5 text-sm">
                     <button
                       type="button"
-                      onClick={() => setAccountsView('position')}
+                      onClick={() => setAccountsView('office')}
                       className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
                     >
-                      <ChevronLeft size={13} /> {selectedDirectoryCard?.position ?? 'Position'}
+                      <ChevronLeft size={13} /> {selectedDirectoryCard?.office ?? 'Office'}
                     </button>
                     <ChevronRight size={13} className="text-slate-400" />
                     <span className="font-medium text-slate-700">{selectedEmployeeDetails?.full_name ?? 'Employee'}</span>
