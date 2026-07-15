@@ -1068,9 +1068,6 @@ const handleNextToReview = () => {
                       applicationType={applicationType}
                       isEmployee={Boolean(authenticatedEmployeeAccount?.employee?.employeeId)}
                       onApplicationTypeChange={(next) => {
-                        // Guard: an authenticated employee may never switch to Original.
-                        // (UI also hides the radio group in that case, but defense-in-depth.)
-                        if (authenticatedEmployeeAccount?.employee?.employeeId && next === 'job') return;
                         setApplicationType(next);
                         handleFormChange('application_type', next);
                       }}
