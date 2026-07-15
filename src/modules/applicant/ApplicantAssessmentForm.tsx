@@ -11,6 +11,8 @@ interface ApplicantAssessmentFormProps {
   applicationType?: 'job' | 'promotion';
   /** True when the user is verified as a current employee (active session or employee_id). */
   isEmployee?: boolean;
+  /** True while the debounced auto-lookup is fetching employee data. */
+  isLoadingPrefill?: boolean;
   /** Called when a non-employee toggles the application type radio group. Ignored when isEmployee. */
   onApplicationTypeChange?: (next: 'job' | 'promotion') => void;
   /** When true the position/department were prefilled from a job click and should be locked */
@@ -23,6 +25,7 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
   onChange,
   applicationType = 'job',
   isEmployee = false,
+  isLoadingPrefill = false,
   onApplicationTypeChange,
   lockedPosition = false,
 }) => {
@@ -212,6 +215,13 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
               placeholder="Enter your portal username"
               value={formData.employee_username}
               onChange={(e) => onChange('employee_username', e.target.value)}
+              helperText={isLoadingPrefill ? 'Looking up your records...' : undefined}
+              icon={isLoadingPrefill ? (
+                <svg className="animate-spin h-4 w-4 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              ) : undefined}
             />
 
             <Input

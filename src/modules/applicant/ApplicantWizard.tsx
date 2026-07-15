@@ -19,7 +19,7 @@ import {
     type EmployeePortalAccount,
     findEmployeePortalAccount,
     getEmployeePortalAccounts,
-    findEmployeePortalAccountFromSupabase,
+    findEmployeePortalAccountByCredentials,
 } from '../../lib/employeePortalData';
 import { syncApplicantSubmissionToRecruitment, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
 import { fetchEmployeeApplicationProfile } from '../../lib/api/employeeApplicationProfile';
@@ -176,6 +176,7 @@ export const ApplicantWizard: React.FC = () => {
   );
   const [activeJobs, setActiveJobs] = useState<JobPosting[]>([]);
   const [isLockedPosition, setIsLockedPosition] = useState(false);
+  const [isLoadingPrefill, setIsLoadingPrefill] = useState(false);
   const isGeneratingItemNumberRef = useRef(false);
   const lastPrefilledRef = useRef<{ employeeId: string; username: string } | null>(null);
   const location = useLocation();
@@ -286,6 +287,8 @@ export const ApplicantWizard: React.FC = () => {
   useEffect(() => {
     if (applicationType !== 'promotion') {
       lastPrefilledRef.current = null;
+      setPrefillNotice('');
+      setIsLoadingPrefill(false);
       return;
     }
 
@@ -296,6 +299,7 @@ export const ApplicantWizard: React.FC = () => {
       if (lastPrefilledRef.current) {
         lastPrefilledRef.current = null;
       }
+      setIsLoadingPrefill(false);
       return;
     }
 
@@ -308,6 +312,7 @@ export const ApplicantWizard: React.FC = () => {
     }
 
     const performPrefill = async () => {
+      setIsLoadingPrefill(true);
       setPrefillNotice('Loading your employee records...');
       try {
         let matchedAccount = getEmployeePortalAccounts().find((account) => {
@@ -318,13 +323,9 @@ export const ApplicantWizard: React.FC = () => {
         });
 
         if (!matchedAccount) {
-          const supabaseAccount = await findEmployeePortalAccountFromSupabase(enteredUsername);
-          if (supabaseAccount) {
-            const accountEmployeeId = normalizeAuthValue(String(supabaseAccount?.employee?.employeeId ?? ''));
-            if (accountEmployeeId === normalizeAuthValue(enteredId)) {
-              matchedAccount = supabaseAccount;
-            }
-          }
+          // Single Supabase query filtering by BOTH employee_id and username —
+          // only matches when the pair belongs to the same portal account.
+          matchedAccount = await findEmployeePortalAccountByCredentials(enteredId, enteredUsername);
         }
 
         if (matchedAccount) {
@@ -381,15 +382,22 @@ export const ApplicantWizard: React.FC = () => {
 
           lastPrefilledRef.current = { employeeId: enteredId, username: enteredUsername };
         } else {
-          setPrefillNotice('Matching employee account not found for the entered ID and username.');
+          // No account matched the entered ID + username pair. Keep every field
+          // empty but fully editable and show the standard manual-entry warning.
+          setPrefillNotice("We couldn't find your employee record, so please fill in your details manually.");
+          lastPrefilledRef.current = { employeeId: enteredId, username: enteredUsername };
         }
       } catch (err) {
         console.error('Error prefilling employee record:', err);
         setPrefillNotice('Failed to load employee records. Please try entering details manually.');
+      } finally {
+        setIsLoadingPrefill(false);
       }
     };
 
-    performPrefill();
+    // Debounce: wait 700ms after the last keystroke before firing the lookup
+    const timerId = setTimeout(performPrefill, 700);
+    return () => clearTimeout(timerId);
   }, [applicationType, formData.employee_id, formData.employee_username]);
 
   const handleFormChange = (field: keyof ApplicantFormData, value: string | boolean) => {
@@ -1067,9 +1075,24 @@ const handleNextToReview = () => {
                       onChange={handleFormChange}
                       applicationType={applicationType}
                       isEmployee={Boolean(authenticatedEmployeeAccount?.employee?.employeeId)}
+                      isLoadingPrefill={isLoadingPrefill}
                       onApplicationTypeChange={(next) => {
                         setApplicationType(next);
                         handleFormChange('application_type', next);
+                        if (next === 'job') {
+                          // Clear promotional-specific fields when switching to Original
+                          setFormData((prev) => ({
+                            ...prev,
+                            employee_id: '',
+                            employee_username: '',
+                            current_position: '',
+                            current_department: '',
+                            current_division: '',
+                          }));
+                          setPrefillNotice('');
+                          setAuthenticatedEmployeeAccount(null);
+                          lastPrefilledRef.current = null;
+                        }
                       }}
                       lockedPosition={isLockedPosition}
                     />
