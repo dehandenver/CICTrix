@@ -2253,8 +2253,6 @@ export const RSPDashboard = () => {
     [applicants, credentialedApplicantIds, employeeNumberFromNewlyHired, hireDateByKey]
   );
 
-  // Loaded from Supabase employees table on mount. Used as the fallback
-  // source for the employee directory when no portal account is found.
   const [supabaseEmployeeRecords, setSupabaseEmployeeRecords] = useState<EmployeeRecord[]>([]);
   useEffect(() => {
     let cancelled = false;
@@ -2573,17 +2571,21 @@ export const RSPDashboard = () => {
     (bulkRequestForm.recipientMode === 'department' && !bulkRequestForm.department);
 
   const departmentsSummary = useMemo(() => {
-    const map = new Map<string, { hires: number; pending: number }>();
-    newlyHiredApplicants.forEach((applicant) => {
-      const current = map.get(applicant.office) ?? { hires: 0, pending: 0 };
-      current.hires += 1;
-      if (!completedEvaluationIds.has(applicant.id)) {
-        current.pending += 1;
-      }
-      map.set(applicant.office, current);
+    const activeDepts = Array.from(new Set(jobs.map((j) => String(j.department || '').trim()).filter(Boolean)));
+    const depts = activeDepts.length > 0
+      ? activeDepts
+      : Array.from(new Set(newlyHiredApplicants.map((a) => a.office).filter(Boolean)));
+
+    return depts.map((dept) => {
+      const hiresInDept = newlyHiredApplicants.filter((a) => a.office === dept);
+      const pendingInDept = hiresInDept.filter((a) => !completedEvaluationIds.has(a.id));
+      return {
+        department: dept,
+        hires: hiresInDept.length,
+        pending: pendingInDept.length,
+      };
     });
-    return Array.from(map.entries()).map(([department, value]) => ({ department, ...value }));
-  }, [newlyHiredApplicants, completedEvaluationIds]);
+  }, [jobs, newlyHiredApplicants, completedEvaluationIds]);
 
   const filteredRaters = useMemo(() => {
     return raters.filter((rater) => {

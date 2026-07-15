@@ -155,7 +155,7 @@ export async function getOfficeDirectory(): Promise<
   { ok: true; data: OfficeDirectoryRow[] } | { ok: false; error: string }
 > {
   try {
-    const [deptRes, empRes, supRes, assignRes] = await Promise.all([
+    const [deptRes, empRes, supRes, assignRes, jobsRes] = await Promise.all([
       supabase.from('departments').select('*').order('name'),
       supabase
         .from('employees_with_department')
@@ -164,16 +164,34 @@ export async function getOfficeDirectory(): Promise<
       // Active office-role assignments (Phase 2). Missing table (not migrated
       // yet) is tolerated — the directory still renders from the other sources.
       supabase.from('office_role_assignments').select('*').eq('status', 'Active'),
+      supabase.from('job_postings').select('department')
     ]);
 
     if (deptRes.error) {
       return { ok: false, error: deptRes.error.message ?? 'Failed to load offices.' };
     }
 
-    const departments: any[] = deptRes.data ?? [];
+    const departmentsFromDb: any[] = deptRes.data ?? [];
     const employees: any[] = empRes.error ? [] : empRes.data ?? [];
     const dbSupervisors: any[] = supRes.error ? [] : supRes.data ?? [];
     const assignments: any[] = assignRes?.error ? [] : assignRes?.data ?? [];
+    const jobsData: any[] = jobsRes?.error ? [] : jobsRes?.data ?? [];
+
+    const jobDepts = Array.from(new Set(jobsData.map((j: any) => String(j.department || '').trim()).filter(Boolean)));
+    const departments = jobDepts.length > 0
+      ? jobDepts.map((deptName) => {
+          const dbDept = departmentsFromDb.find((d: any) => d.name.trim().toLowerCase() === deptName.toLowerCase());
+          return dbDept || {
+            id: `dynamic-${deptName.toLowerCase().replace(/\s+/g, '-')}`,
+            name: deptName,
+            code: deptName.split(/\s+/).map((w: string) => w[0]).join('').toUpperCase().slice(0, 4),
+            head_employee_id: null,
+            parent_department_id: null,
+            is_active: true,
+            created_at: new Date().toISOString()
+          };
+        })
+      : departmentsFromDb;
 
     // Group active assignments by office id and by office name (fallback join key).
     const assignmentPerson = (a: any): OfficePerson => ({

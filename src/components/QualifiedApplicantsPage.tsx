@@ -2092,6 +2092,7 @@ export const QualifiedApplicantsPage = () => {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {(() => {
+                    const isAlreadyQualified = ['qualified', 'recommended for hiring', 'hired', 'deployed', 'accepted'].includes(normalizeText(activeApplicant.status));
                     const lockDecisionButtons = statusDecisionLocked;
                     return (
                       <>
@@ -2101,14 +2102,14 @@ export const QualifiedApplicantsPage = () => {
                   <button
                     className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-white px-4 py-2 text-base font-medium text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
                     onClick={() => handleDisqualifyAction(activeApplicant.id)}
-                    disabled={lockDecisionButtons}
+                    disabled={lockDecisionButtons || isAlreadyQualified}
                   >
                     <AlertCircle className="h-4 w-4" /> Disqualify
                   </button>
                   <button
                     className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                     onClick={() => handleShortlistAction(activeApplicant.id)}
-                    disabled={lockDecisionButtons}
+                    disabled={lockDecisionButtons || isAlreadyQualified}
                   >
                     <Star className="h-4 w-4" /> Shortlist
                   </button>
@@ -2118,8 +2119,8 @@ export const QualifiedApplicantsPage = () => {
                       <button
                         className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={() => handleQualifyAction(activeApplicant.id)}
-                        disabled={lockDecisionButtons || !docReady.ready}
-                        title={!lockDecisionButtons && !docReady.ready ? docReady.reason : undefined}
+                        disabled={lockDecisionButtons || !docReady.ready || isAlreadyQualified}
+                        title={isAlreadyQualified ? 'This applicant is already qualified' : !lockDecisionButtons && !docReady.ready ? docReady.reason : undefined}
                       >
                         <CheckCircle2 className="h-4 w-4" /> Qualify
                       </button>

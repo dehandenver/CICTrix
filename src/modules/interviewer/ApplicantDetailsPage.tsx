@@ -1815,7 +1815,9 @@ export function ApplicantDetailsPage() {
                   <button
                     type="button"
                     onClick={() => { setConfirmAction('disqualify'); setConfirmReason(''); }}
-                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm ${
+                    disabled={isApplicantQualified || isApplicantDisqualified}
+                    title={isApplicantQualified ? 'This applicant is already qualified' : undefined}
+                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
                       isApplicantDisqualified
                         ? 'border-rose-500 bg-rose-500 text-white'
                         : 'border-rose-400 bg-white text-rose-600 hover:bg-rose-50'
@@ -1827,9 +1829,11 @@ export function ApplicantDetailsPage() {
                     type="button"
                     // Once documents are validated the applicant has moved past the
                     // "needs more documents" step, so shortlisting no longer applies.
-                    disabled={isApplicantDisqualified || (docsValidatedEffective && !isApplicantShortlisted)}
+                    disabled={isApplicantDisqualified || isApplicantQualified || (docsValidatedEffective && !isApplicantShortlisted)}
                     title={
-                      docsValidatedEffective && !isApplicantShortlisted
+                      isApplicantQualified
+                        ? 'This applicant is already qualified'
+                        : docsValidatedEffective && !isApplicantShortlisted
                         ? 'Documents are already validated — this applicant can no longer be shortlisted'
                         : undefined
                     }
@@ -1851,8 +1855,8 @@ export function ApplicantDetailsPage() {
                   <button
                     type="button"
                     onClick={() => { if (!qualifyLocked) setConfirmAction('qualified'); }}
-                    disabled={qualifyLocked}
-                    title={qualifyTitle}
+                    disabled={qualifyLocked || isApplicantQualified}
+                    title={isApplicantQualified ? 'This applicant is already qualified' : qualifyTitle}
                     className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
                       isApplicantQualified
                         ? 'border-emerald-600 bg-emerald-600 text-white'
