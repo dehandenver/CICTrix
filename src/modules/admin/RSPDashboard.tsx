@@ -2361,7 +2361,7 @@ export const RSPDashboard = () => {
       if (result.ok) {
         setOfficeDirectoryRows(result.data);
       } else {
-        setOfficeDirectoryError(result.error);
+        setOfficeDirectoryError((result as { ok: false; error: string }).error);
       }
       setOfficeDirectoryLoading(false);
     });
