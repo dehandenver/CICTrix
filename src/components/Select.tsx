@@ -4,7 +4,7 @@ import '../styles/components.css';
 interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   label?: string;
   error?: string;
-  options: { value: string; label: string }[];
+  options: { value: string; label: string; disabled?: boolean }[];
 }
 
 export const Select: React.FC<SelectProps> = ({ 
@@ -23,7 +23,12 @@ export const Select: React.FC<SelectProps> = ({
       >
         <option value="">Select an option...</option>
         {options.map((option) => (
-          <option key={option.value} value={option.value}>
+          <option 
+            key={option.value} 
+            value={option.value} 
+            disabled={option.disabled}
+            style={option.disabled ? { color: '#9ca3af' } : undefined}
+          >
             {option.label}
           </option>
         ))}

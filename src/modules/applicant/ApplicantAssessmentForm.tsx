@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Card, Input, Select } from '../../components';
-import { DEPARTMENT_OPTIONS, POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
+import { DEPARTMENT_OPTIONS, POSITION_TO_DEPARTMENT_MAP, POSITIONS } from '../../constants/positions';
 import { ensureRecruitmentSeedData, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
 import type { ApplicantFormData, ValidationErrors } from '../../types/applicant.types';
 
@@ -26,7 +26,7 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
   onApplicationTypeChange,
   lockedPosition = false,
 }) => {
-  const [dynamicPositionOptions, setDynamicPositionOptions] = useState<Array<{ value: string; label: string }>>([]);
+  const [dynamicPositionOptions, setDynamicPositionOptions] = useState<Array<{ value: string; label: string; disabled?: boolean }>>([]);
   const [positionDepartmentMap, setPositionDepartmentMap] = useState<Record<string, string>>({});
   const hasLoadedPositionsRef = useRef(false);
 
@@ -37,52 +37,68 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
       (row) => String(row?.status ?? '').trim().toLowerCase() === 'active'
     );
 
-    if (activeRows.length === 0) {
-      setPositionDepartmentMap({});
-      // If there are no authoritative job rows yet, preserve any
-      // prefilled position coming from the landing page so the user
-      // doesn't lose the selection while the background loader runs.
-      if (currentSelectedPosition) {
-        setDynamicPositionOptions([{ value: currentSelectedPosition, label: currentSelectedPosition }]);
-        // Keep existing office value — do not clear it here.
-      } else {
-        setDynamicPositionOptions([]);
-      }
-
-      return;
-    }
-
     hasLoadedPositionsRef.current = true;
 
-    const seen = new Set<string>();
-    const nextOptions: Array<{ value: string; label: string }> = [];
+    const nextOptions: Array<{ value: string; label: string; disabled?: boolean }> = [];
     const nextDepartmentMap: Record<string, string> = {};
 
+    // 1. Get titles of all active job postings (normalized)
+    const activePositionTitles = new Set(
+      activeRows.map((row) => String(row?.title ?? '').trim().toLowerCase())
+    );
+
+    // 2. Populate nextDepartmentMap from active rows
     activeRows.forEach((row) => {
       const title = String(row?.title ?? '').trim();
       const department = String(row?.department ?? '').trim();
-      if (!title) return;
-
-      const normalized = title.toLowerCase();
-      if (!seen.has(normalized)) {
-        seen.add(normalized);
-        nextOptions.push({ value: title, label: title });
-      }
-
-      if (department && !nextDepartmentMap[title]) {
+      if (title && department && !nextDepartmentMap[title]) {
         nextDepartmentMap[title] = department;
       }
     });
 
-    setPositionDepartmentMap(nextDepartmentMap);
+    // 3. Add all standard POSITIONS first
+    const seen = new Set<string>();
+    POSITIONS.forEach((pos) => {
+      const normalized = pos.toLowerCase();
+      seen.add(normalized);
+      const hasPosting = activePositionTitles.has(normalized);
+      nextOptions.push({
+        value: pos,
+        label: pos,
+        disabled: !hasPosting,
+      });
+    });
+
+    // 4. Add any other active postings that are not in standard POSITIONS
+    activeRows.forEach((row) => {
+      const title = String(row?.title ?? '').trim();
+      if (!title) return;
+      const normalized = title.toLowerCase();
+      if (!seen.has(normalized)) {
+        seen.add(normalized);
+        nextOptions.push({
+          value: title,
+          label: title,
+          disabled: false,
+        });
+      }
+    });
+
     // If the current selected position came from a landing/page click and
-    // isn't present in the active job options, make sure the dropdown still
-    // contains it so the prefilled value remains visible and selectable.
-    if (currentSelectedPosition && !nextOptions.some((option) => option.value === currentSelectedPosition)) {
-      const fallbackDept = POSITION_TO_DEPARTMENT_MAP[currentSelectedPosition] || '';
-      nextOptions.unshift({ value: currentSelectedPosition, label: currentSelectedPosition });
-      if (fallbackDept && !nextDepartmentMap[currentSelectedPosition]) {
-        nextDepartmentMap[currentSelectedPosition] = fallbackDept;
+    // isn't present in the active job options or options list, make sure it is in the list
+    if (currentSelectedPosition) {
+      const normalizedCurrent = currentSelectedPosition.toLowerCase();
+      const existingOpt = nextOptions.find((opt) => opt.value.toLowerCase() === normalizedCurrent);
+      if (!existingOpt) {
+        const fallbackDept = POSITION_TO_DEPARTMENT_MAP[currentSelectedPosition] || '';
+        // Unshift/add it as enabled since the user clicked it or it was prefilled
+        nextOptions.unshift({ value: currentSelectedPosition, label: currentSelectedPosition, disabled: false });
+        if (fallbackDept && !nextDepartmentMap[currentSelectedPosition]) {
+          nextDepartmentMap[currentSelectedPosition] = fallbackDept;
+        }
+      } else {
+        // If it exists but is disabled, enable it if it's currently selected/prefilled
+        existingOpt.disabled = false;
       }
     }
 
