@@ -130,7 +130,7 @@ async function main() {
   // 1) Active competency-tagged courses, grouped by competency.
   const { data: sessions, error: sErr } = await db
     .from('training_sessions')
-    .select('id, competency, status, objectives')
+    .select('id, status, objectives')
     .in('status', ['Scheduled', 'Ongoing']);
   if (sErr) die('load training_sessions failed', sErr);
 

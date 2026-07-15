@@ -1,7 +1,26 @@
 import { supabase as supabaseClient } from '../supabase';
 import type { TrainingCategory } from '../../modules/admin/trainingCategories';
+import { COMPETENCIES } from '../../constants/positions';
 
 const supabase = supabaseClient as any;
+
+const COMPETENCY_SET = new Set<string>(COMPETENCIES as readonly string[]);
+
+/**
+ * A course's competency lives inside the `objectives` text[] as a
+ * "Competency: <name>" line (there is no competency column — see the seeders).
+ * Parse it and validate against the 12 canonical competencies. Returns null when
+ * absent or not one of the 12.
+ */
+export const competencyFromObjectives = (objectives: string[] | null | undefined): string | null => {
+  for (const line of objectives ?? []) {
+    if (typeof line === 'string' && line.startsWith('Competency: ')) {
+      const value = line.slice('Competency: '.length).trim();
+      if (COMPETENCY_SET.has(value)) return value;
+    }
+  }
+  return null;
+};
 
 export type CalendarEventStatus = 'Scheduled' | 'Ongoing' | 'Completed' | 'Cancelled';
 export type AttendanceStatus = 'Present' | 'Absent' | 'Excused';
@@ -44,7 +63,6 @@ type EventRow = {
   id: string;
   title: string;
   category: string | null;
-  competency: string | null;
   scheduled_date: string;
   end_date: string | null;
   instructor_name: string | null;
@@ -71,20 +89,15 @@ type EmployeeIdentity = { name: string; position: string; department: string };
 // back null — which is why every attendee used to render "Unknown employee".
 // Identity is resolved separately against the anon-readable, normalised
 // `employees_with_department` view instead (the same pattern succession.ts uses).
-// `competency` only exists after migration 20260724. Kept separate from the base
-// select so the calendar can degrade gracefully (fetch without it) if the
-// frontend is ever live before that migration is applied — a missing column must
-// never blank the whole calendar.
-const EVENT_SELECT_BASE = `
+// competency is NOT a column — it's derived from the objectives text[] (see
+// competencyFromObjectives), so the select never has to know about it.
+const EVENT_SELECT = `
   id, title, category, scheduled_date, end_date, instructor_name, location,
   objectives, status, capacity, roster_finalized_at,
   training_enrollments (
     id, employee_id, enrollment_status, attendance_status
   )
 `;
-const EVENT_SELECT = `id, title, category, competency, scheduled_date, end_date, instructor_name, location,
-  objectives, status, capacity, roster_finalized_at,
-  training_enrollments ( id, employee_id, enrollment_status, attendance_status )`;
 
 const mapAttendee = (
   row: EnrollmentRow,
@@ -106,7 +119,7 @@ const mapEvent = (row: EventRow, identities: Map<string, EmployeeIdentity>): Cal
   id: row.id,
   title: row.title,
   category: row.category,
-  competency: row.competency ?? null,
+  competency: competencyFromObjectives(row.objectives),
   startDate: row.scheduled_date,
   endDate: row.end_date,
   speaker: row.instructor_name,
@@ -161,25 +174,14 @@ export async function listCalendarEvents(year: number): Promise<CalendarEvent[]>
   const yearStart = new Date(Date.UTC(year, 0, 1)).toISOString();
   const yearEnd = new Date(Date.UTC(year + 1, 0, 1)).toISOString();
 
-  // Same filter chain for both attempts; only the select column list differs.
-  const run = (select: string) =>
-    supabase
-      .from('training_sessions')
-      .select(select)
-      // Starts before the year ends, AND (ends after the year starts OR is a
-      // single-day event that starts within the year).
-      .lt('scheduled_date', yearEnd)
-      .or(`end_date.gte.${yearStart},and(end_date.is.null,scheduled_date.gte.${yearStart})`)
-      .order('scheduled_date', { ascending: true });
-
-  let { data, error } = await run(EVENT_SELECT);
-  // PostgREST error 42703 = undefined column: the competency column isn't there
-  // yet (migration 20260724 not applied). Retry without it rather than blanking
-  // the calendar; events simply have no competency until the migration lands.
-  if (error && ((error as any).code === '42703' || /competency/i.test(error.message ?? ''))) {
-    console.warn('training_sessions.competency missing — retrying without it (apply migration 20260724).');
-    ({ data, error } = await run(EVENT_SELECT_BASE));
-  }
+  const { data, error } = await supabase
+    .from('training_sessions')
+    .select(EVENT_SELECT)
+    // Starts before the year ends, AND (ends after the year starts OR is a
+    // single-day event that starts within the year).
+    .lt('scheduled_date', yearEnd)
+    .or(`end_date.gte.${yearStart},and(end_date.is.null,scheduled_date.gte.${yearStart})`)
+    .order('scheduled_date', { ascending: true });
 
   if (error) {
     console.error('Error fetching calendar events:', error);

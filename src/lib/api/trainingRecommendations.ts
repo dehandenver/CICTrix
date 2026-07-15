@@ -20,6 +20,7 @@
 
 import { supabase as supabaseClient } from '../supabase';
 import { getLatestOverallScores } from './succession';
+import { competencyFromObjectives } from './trainingCalendar';
 
 const supabase = supabaseClient as any;
 
@@ -91,19 +92,22 @@ const scoreLabel = (score: number | null): string =>
  */
 export async function generateRecommendations(): Promise<GenerateResult> {
   try {
-    // 1. Active competency-tagged courses, grouped by competency.
+    // 1. Active courses, grouped by competency. Competency is parsed from the
+    // objectives text[] (there is no competency column) and validated against
+    // the 12 canonical competencies.
     const { data: sessions, error: sErr } = await supabase
       .from('training_sessions')
-      .select('id, competency, status, capacity')
-      .not('competency', 'is', null)
+      .select('id, objectives, status, capacity')
       .in('status', ['Scheduled', 'Ongoing']);
     if (sErr) return { ok: false, error: sErr.message };
 
     const coursesByCompetency = new Map<string, string[]>();
     for (const s of (sessions ?? []) as any[]) {
-      const list = coursesByCompetency.get(s.competency) ?? [];
+      const competency = competencyFromObjectives(s.objectives);
+      if (!competency) continue;
+      const list = coursesByCompetency.get(competency) ?? [];
       list.push(String(s.id));
-      coursesByCompetency.set(s.competency, list);
+      coursesByCompetency.set(competency, list);
     }
     if (!coursesByCompetency.size) return { ok: true, upserted: 0, employeesConsidered: 0 };
 

@@ -8,15 +8,15 @@
 -- training courses tagged with that competency. L&D Admins read these back per
 -- course to see exactly who is recommended and why.
 --
--- Two parts:
---   1. training_sessions.competency — the real join key. Until now a course's
---      governance competency lived only as a "Competency: X" line inside the
---      objectives text[]. This promotes it to a first-class, constrained column
---      (one of the 12 canonical competencies from src/constants/positions.ts),
---      backfilled from that objectives line.
---   2. training_recommendations — one system-generated row per
---      (employee, course/session, source finalized cycle). UNIQUE on that triple
---      so re-running the generator upserts rather than duplicates.
+-- A course's competency is NOT a column: it's parsed from the "Competency: X"
+-- line inside training_sessions.objectives (the shape the seeders already write),
+-- via competencyFromObjectives() in src/lib/api/trainingCalendar.ts. So this
+-- migration only needs the recommendations table itself.
+--
+--   training_recommendations — one system-generated row per
+--   (employee, course/session, source finalized cycle). UNIQUE on that triple
+--   so re-running the generator upserts rather than duplicates. Its `competency`
+--   column stores which of the 12 competencies triggered the recommendation.
 --
 -- Access: same anon-open posture as the other IPCR/RSP/L&D tables (RLS disabled,
 -- grants to anon+authenticated). The management UI lives inside the access-gated
@@ -28,65 +28,7 @@
 
 BEGIN;
 
--- ── 1. training_sessions.competency — the join key ──────────────────────────
-ALTER TABLE training_sessions
-  ADD COLUMN IF NOT EXISTS competency text;
-
--- One of the 12 canonical competencies, or NULL for events with no competency
--- (e.g. a mandatory all-staff session). Matches src/constants/positions.ts
--- exactly so course.competency ↔ ipcr_competency_matches.competency joins 1:1.
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'training_sessions_competency_check'
-  ) THEN
-    ALTER TABLE training_sessions
-      ADD CONSTRAINT training_sessions_competency_check
-      CHECK (competency IS NULL OR competency IN (
-        'Knowledge of Local Governance',
-        'Public Administration Principles',
-        'Community Engagement Skills',
-        'Project Management in a Public Setting',
-        'Fiscal Management / Budgeting for LGU',
-        'Transparency and Accountability Practices',
-        'Disaster Risk Reduction and Management',
-        'Digital Literacy for Government Services',
-        'Ethical Conduct and Public Service Standards',
-        'Technical Writing for Government Documents',
-        'Data and Records Management and Organization',
-        'Public Communication Skills'
-      ));
-  END IF;
-END;
-$$;
-
--- Backfill from the "Competency: X" objectives line the seeder writes. Only
--- fills rows still NULL, so a manually-set competency is never overwritten.
-UPDATE training_sessions ts
-SET competency = trim(substring(x.obj FROM 'Competency: (.*)'))
-FROM (SELECT id, unnest(objectives) AS obj FROM training_sessions) x
-WHERE ts.id = x.id
-  AND x.obj LIKE 'Competency: %'
-  AND ts.competency IS NULL
-  AND trim(substring(x.obj FROM 'Competency: (.*)')) IN (
-    'Knowledge of Local Governance',
-    'Public Administration Principles',
-    'Community Engagement Skills',
-    'Project Management in a Public Setting',
-    'Fiscal Management / Budgeting for LGU',
-    'Transparency and Accountability Practices',
-    'Disaster Risk Reduction and Management',
-    'Digital Literacy for Government Services',
-    'Ethical Conduct and Public Service Standards',
-    'Technical Writing for Government Documents',
-    'Data and Records Management and Organization',
-    'Public Communication Skills'
-  );
-
-CREATE INDEX IF NOT EXISTS training_sessions_competency_idx
-  ON training_sessions (competency);
-
--- ── 2. training_recommendations — system-generated matches ──────────────────
+-- ── training_recommendations — system-generated matches ─────────────────────
 CREATE TABLE IF NOT EXISTS training_recommendations (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   employee_id     uuid    NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
@@ -120,7 +62,7 @@ CREATE INDEX IF NOT EXISTS training_recommendations_employee_idx
 CREATE INDEX IF NOT EXISTS training_recommendations_status_idx
   ON training_recommendations (status);
 
--- ── 3. Access — app-layer enforcement, consistent with the other IPCR tables ─
+-- ── Access — app-layer enforcement, consistent with the other IPCR tables ────
 ALTER TABLE training_recommendations DISABLE ROW LEVEL SECURITY;
 GRANT SELECT, INSERT, UPDATE, DELETE ON training_recommendations TO anon, authenticated;
 
