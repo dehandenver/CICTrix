@@ -6,6 +6,7 @@ import {
   Calendar,
   CalendarDays,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
@@ -15,6 +16,7 @@ import {
   Users,
 } from 'lucide-react';
 import { Dialog } from '../../../components/Dialog';
+import { useDepartmentNames } from '../../../hooks/useDepartmentOptions';
 import { IPCR_STAGES, type IpcrStage, stagePillStyle } from '../../../lib/api/ipcrStages';
 import { type IpcrPhase, sendNotification } from '../../../lib/api/ipcrSubmissions';
 import { getAllEmployees, type Employee } from '../../../lib/api/employees';
@@ -858,19 +860,32 @@ const ProbationaryPanel = ({
   onSelectEmployee: (emp: EnrichedEmployee) => void;
 }) => {
   const [search, setSearch] = useState('');
+  const [officeFilter, setOfficeFilter] = useState('');
   const [showSchedule, setShowSchedule] = useState(false);
   const [currentPeriod, setCurrentPeriod] = useState('');
 
+  // Offices come from the canonical departments table, same as every other
+  // screen. Any office actually present on these employees is unioned in so a
+  // record whose office predates the table can still be filtered to.
+  const departmentNames = useDepartmentNames();
+  const officeOptions = useMemo(() => {
+    const present = employees.map((e) => String(e.department ?? '').trim()).filter(Boolean);
+    return Array.from(new Set([...departmentNames, ...present])).sort((a, b) => a.localeCompare(b));
+  }, [departmentNames, employees]);
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return employees.filter(
-      (e) =>
+    const office = officeFilter.trim().toLowerCase();
+    return employees.filter((e) => {
+      const matchesSearch =
         !q ||
         e.full_name.toLowerCase().includes(q) ||
         (e.department ?? '').toLowerCase().includes(q) ||
-        (e.current_position ?? '').toLowerCase().includes(q),
-    );
-  }, [employees, search]);
+        (e.current_position ?? '').toLowerCase().includes(q);
+      const matchesOffice = !office || String(e.department ?? '').trim().toLowerCase() === office;
+      return matchesSearch && matchesOffice;
+    });
+  }, [employees, search, officeFilter]);
 
   const dueCount = useMemo(
     () =>
@@ -921,16 +936,47 @@ const ProbationaryPanel = ({
         </div>
       )}
 
-      {/* Search */}
-      <div className="relative">
-        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input
-          type="text"
-          placeholder="Search by employee, office, or position…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30"
-        />
+      {/* Search + office filter */}
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="relative flex-1">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Search by employee, office, or position…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30"
+          />
+        </div>
+        <div className="relative sm:w-64">
+          <Building2 size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          <select
+            aria-label="Filter by office"
+            value={officeFilter}
+            onChange={(e) => setOfficeFilter(e.target.value)}
+            className="w-full appearance-none pl-8 pr-8 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30"
+          >
+            <option value="">All Offices</option>
+            {officeOptions.map((office) => (
+              <option key={office} value={office}>
+                {office}
+              </option>
+            ))}
+          </select>
+          <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+        </div>
+        {(search || officeFilter) && (
+          <button
+            type="button"
+            onClick={() => {
+              setSearch('');
+              setOfficeFilter('');
+            }}
+            className="px-3 py-2 text-sm font-medium text-[#363EE8] hover:underline whitespace-nowrap"
+          >
+            Clear Filters
+          </button>
+        )}
       </div>
 
       {/* Table */}
@@ -943,7 +989,11 @@ const ProbationaryPanel = ({
           <div className="flex flex-col items-center justify-center h-40 text-slate-400">
             <Users size={28} className="mb-2 text-slate-300" />
             <p className="text-sm">
-              {search ? 'No results for your search.' : 'No probationary employees found.'}
+              {officeFilter && !search
+                ? `No probationary employees in ${officeFilter}.`
+                : search || officeFilter
+                  ? 'No results for your filters.'
+                  : 'No probationary employees found.'}
             </p>
           </div>
         ) : (

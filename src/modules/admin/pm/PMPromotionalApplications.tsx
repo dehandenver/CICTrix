@@ -17,7 +17,7 @@ import {
 import { supabase as supabaseClient } from '../../../lib/supabase';
 import { listRequirements, type Requirement } from '../../../lib/api/competencyFramework';
 import { getCurrentAdminEmail } from '../moduleUi';
-import { DEPARTMENTS } from '../../../constants/positions';
+import { useDepartmentNames } from '../../../hooks/useDepartmentOptions';
 import { resolveDepartmentForPosition } from '../../../lib/recruitmentData';
 
 const supabase = supabaseClient as any;
@@ -96,7 +96,7 @@ const REQUIRED_DOCS = [
   'Certificate of Eligibility / CSC Rating',
 ];
 
-// DEPARTMENTS imported from constants/positions
+// Departments come from the canonical Supabase table via useDepartmentNames().
 
 // ── Seed data (shown when Supabase tables are empty or unavailable) ─────────────
 
@@ -258,9 +258,12 @@ export function PMPromotionalApplications() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
+  // Departments come from the canonical Supabase table, shared system-wide.
+  const departmentNames = useDepartmentNames();
+
   // New application modal
   const [showNewModal, setShowNewModal] = useState(false);
-  const [newApp, setNewApp] = useState({ employee_name: '', current_position: '', target_position: '', department: DEPARTMENTS[0] as string });
+  const [newApp, setNewApp] = useState({ employee_name: '', current_position: '', target_position: '', department: '' as string });
   const [saving, setSaving] = useState(false);
 
   // Stage advance modal
@@ -346,7 +349,7 @@ export function PMPromotionalApplications() {
     } finally {
       setSaving(false);
       setShowNewModal(false);
-      setNewApp({ employee_name: '', current_position: '', target_position: '', department: DEPARTMENTS[0] });
+      setNewApp({ employee_name: '', current_position: '', target_position: '', department: '' });
     }
   };
 
@@ -1096,7 +1099,12 @@ export function PMPromotionalApplications() {
                   disabled
                   className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-500 cursor-not-allowed focus:outline-none"
                 >
-                  {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+                  {(newApp.department && !departmentNames.includes(newApp.department)
+                    // Keep a legacy department not in the table visible rather
+                    // than rendering this display-only select blank.
+                    ? [newApp.department, ...departmentNames]
+                    : departmentNames
+                  ).map((d) => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
               <div className="rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-[11px] text-blue-700">

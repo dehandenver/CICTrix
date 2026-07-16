@@ -104,6 +104,25 @@ export async function createTrainingRequest(input: {
   return error ? { ok: false, error: error.message } : { ok: true };
 }
 
+/**
+ * LND admin decision on a submitted request. The DB status vocabulary is the
+ * three-value {pending, approved, rejected}; the Page 5 UI labels `pending` as
+ * "Under review" and `rejected` as "Declined". `decided_at` stamps the audit
+ * trail; `decided_by` is left null because the anon-open app has no auth.users
+ * id to reference.
+ */
+export async function updateTrainingRequestStatus(
+  id: string,
+  status: 'approved' | 'rejected'
+): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await supabase
+    .from('training_requests')
+    .update({ status, decided_at: new Date().toISOString() })
+    .eq('id', id);
+
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
 export async function logPostTrainingProficiency(
   id: string,
   score: number

@@ -15,9 +15,9 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { DEPARTMENTS, COMPETENCIES, EDUCATION_LEVELS } from '../constants/positions';
+import { COMPETENCIES, EDUCATION_LEVELS, formatOfficeLabel } from '../constants/positions';
+import { useDepartmentNames } from '../hooks/useDepartmentOptions';
 import { getPreferredDataSourceMode } from '../lib/dataSourceMode';
-import { getDepartmentOptions } from '../lib/api/departments';
 import { mockDatabase } from '../lib/mockDatabase';
 import {
     archiveDeletedJobPosting,
@@ -139,16 +139,8 @@ export const JobPostingsPage = () => {
   const navigate = useNavigate();
   const modalBodyRef = useRef<HTMLDivElement | null>(null);
   const [jobs, setJobs] = useState<JobPosting[]>([]);
-  const [departmentsList, setDepartmentsList] = useState<string[]>([]);
-  useEffect(() => {
-    getDepartmentOptions().then((opts) => {
-      if (opts.length > 0) {
-        setDepartmentsList(opts.map((o) => o.value));
-      } else {
-        setDepartmentsList([...DEPARTMENTS]);
-      }
-    });
-  }, []);
+  // Departments come from the canonical Supabase table, shared system-wide.
+  const departmentsList = useDepartmentNames();
   const [liveApplicants, setLiveApplicants] = useState<ReturnType<typeof getApplicants>>([]);
   // Raw applicant rows straight from Supabase — the single source of truth for
   // both card counts and the View Applicants list. Skips findJobIdFromRow so no rows
@@ -702,14 +694,14 @@ export const JobPostingsPage = () => {
       const query = `${job.title} ${job.jobCode} ${job.summary}`.toLowerCase();
       const matchesSearch = !search || query.includes(search.toLowerCase());
       const matchesStatus = statusFilter === 'all' || job.status === statusFilter;
-      const office = job.division || `${job.department} Department`;
+      const office = formatOfficeLabel(job.department, job.division);
       const matchesOffice = officeFilter === 'all' || office === officeFilter;
       return matchesSearch && matchesStatus && matchesOffice;
     });
   }, [jobs, officeFilter, search, statusFilter]);
 
   const officeOptions = useMemo(
-    () => Array.from(new Set(jobs.map((job) => job.division || `${job.department} Department`))).sort((a, b) => a.localeCompare(b)),
+    () => Array.from(new Set(jobs.map((job) => formatOfficeLabel(job.department, job.division)))).sort((a, b) => a.localeCompare(b)),
     [jobs]
   );
 
@@ -1066,7 +1058,7 @@ export const JobPostingsPage = () => {
                   </p>
                   <h2 className="!mb-0.5 text-xl font-bold text-slate-900">{job.title}</h2>
                   <p className="!mb-0 text-sm text-slate-600">
-                    {job.division || `${job.department} Department`} · Item No. {job.jobCode} · {totalMatched} matched · {totalInDb} in database
+                    {formatOfficeLabel(job.department, job.division)} · Item No. {job.jobCode} · {totalMatched} matched · {totalInDb} in database
                   </p>
                 </div>
                 <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${STATUS_COLORS[job.status]}`}>
@@ -1206,7 +1198,7 @@ export const JobPostingsPage = () => {
               <tbody>
                 {currentPageJobs.map((job) => {
                   const liveCount = applicantCountsByJob.get(job.id) ?? { applicants: 0, qualified: 0 };
-                  const officeLabel = job.division || `${job.department} Department`;
+                  const officeLabel = formatOfficeLabel(job.department, job.division);
                   const statusLabel = STATUS_LABELS[job.status];
                   return (
                     <tr key={job.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors last:border-0">

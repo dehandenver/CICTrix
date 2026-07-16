@@ -112,32 +112,74 @@ const monthsBetween = (from: string, to: string | null, isPresent: boolean): num
  * Build a prefill from the RSP `newly_hired` roster. Employees hired through the
  * RSP flow keep their post + department here until their record is migrated into
  * the canonical `employees` table, so this is the only Supabase source for a
- * newly-hired promotional applicant's current position. Returns null when
- * there's no matching row. Only identity + current post are available here;
- * education/work-experience stay blank for the applicant to fill in.
+ * newly-hired promotional applicant's current position. The linked `applicants`
+ * row (via applicant_id) carries the personal details newly_hired lacks — sex,
+ * contact number, address, tenure — so those get merged in. Returns null when
+ * there's no matching row.
  */
 async function fetchProfileFromNewlyHired(
   client: any,
   employeeNumber: string,
+  email?: string,
 ): Promise<EmployeeApplicationProfile | null> {
-  const { data, error } = await client
+  // Match by employee_id first. The RSP duplication bug could file a person's
+  // hire record under a different generated id than the one on their portal
+  // login, so fall back to matching by email — the stable identifier shared
+  // across a person's records — when the id doesn't resolve.
+  let data: any = null;
+  const byId = await client
     .from('newly_hired')
     .select('*')
     .eq('employee_id', employeeNumber)
     .maybeSingle();
+  data = byId.data ?? null;
 
-  if (error || !data) return null;
+  const normalizedEmail = String(email ?? '').trim();
+  if (!data && normalizedEmail) {
+    const byEmail = await client
+      .from('newly_hired')
+      .select('*')
+      .ilike('email', normalizedEmail)
+      .order('date_hired', { ascending: false })
+      .limit(1);
+    data = Array.isArray(byEmail.data) && byEmail.data.length > 0 ? byEmail.data[0] : null;
+  }
 
-  // newly_hired stores the given name in first_name and dumps the rest into
-  // last_name; recombine and re-split so middle/last land in the right fields.
+  if (!data) return null;
+
+  // The original application record holds the personal fields newly_hired
+  // doesn't (gender, contact, address, tenure). Pull it when linked.
+  let applicant: any = null;
+  const applicantId = String(data.applicant_id ?? '').trim();
+  if (applicantId) {
+    const { data: appRow } = await client
+      .from('applicants')
+      .select('*')
+      .eq('id', applicantId)
+      .maybeSingle();
+    applicant = appRow ?? null;
+  }
+
+  // Prefer the applicant record's split name fields (first/middle/last are
+  // stored cleanly there); otherwise recombine newly_hired's first_name +
+  // last_name (which dumps middle+last into last_name) and re-split.
   const fullName = [data.first_name, data.last_name]
     .map((part: any) => String(part ?? '').trim())
     .filter(Boolean)
     .join(' ');
   const parts = fullName.split(/\s+/).filter(Boolean);
-  const firstName = parts[0] ?? '';
-  const lastName = parts.length > 1 ? parts[parts.length - 1] : '';
-  const middleName = parts.length > 2 ? parts.slice(1, -1).join(' ') : '';
+  const firstName = String(applicant?.first_name ?? '').trim() || (parts[0] ?? '');
+  const lastName =
+    String(applicant?.last_name ?? '').trim() || (parts.length > 1 ? parts[parts.length - 1] : '');
+  const middleName =
+    String(applicant?.middle_name ?? '').trim() ||
+    (parts.length > 2 ? parts.slice(1, -1).join(' ') : '');
+
+  // Applicants store total tenure as a decimal year (e.g. 1.08); split it back
+  // into whole years + months for the two form fields.
+  const tenureYearsFloat = Number(applicant?.years_of_experience) || 0;
+  const tenureYears = Math.floor(tenureYearsFloat);
+  const tenureMonths = Math.round((tenureYearsFloat - tenureYears) * 12);
 
   return {
     supabaseId: String(data.id ?? ''),
@@ -146,21 +188,21 @@ async function fetchProfileFromNewlyHired(
     firstName,
     middleName,
     lastName,
-    sex: '',
-    address: '',
-    contactNumber: String(data.phone ?? '').trim(),
-    email: String(data.email ?? '').trim(),
+    sex: String(applicant?.gender ?? '').trim(),
+    address: String(applicant?.address ?? '').trim(),
+    contactNumber: String(applicant?.contact_number ?? data.phone ?? '').trim(),
+    email: String(applicant?.email ?? data.email ?? '').trim(),
 
     currentPosition: String(data.position ?? '').trim(),
     currentDepartment: String(data.department ?? '').trim(),
     currentDivision: String(data.division ?? '').trim(),
 
-    educationAttainment: '',
+    educationAttainment: String(applicant?.education_level ?? '').trim(),
     educationDegree: '',
     educationSchool: '',
 
-    workExperienceYears: '',
-    workExperienceMonths: '',
+    workExperienceYears: tenureYears > 0 ? String(tenureYears) : '',
+    workExperienceMonths: tenureMonths > 0 ? String(tenureMonths) : '',
     relevantExperiencePosition: '',
     relevantExperienceCompany: '',
     relevantExperienceDuties: '',
@@ -178,6 +220,7 @@ async function fetchProfileFromNewlyHired(
  */
 export async function fetchEmployeeApplicationProfile(
   employeeNumber: string,
+  email?: string,
 ): Promise<EmployeeApplicationProfile | null> {
   const number = String(employeeNumber ?? '').trim();
   if (!number) return null;
@@ -211,9 +254,10 @@ export async function fetchEmployeeApplicationProfile(
     employeeRow = byId;
   }
 
-  // No canonical employees row — fall back to the RSP newly_hired roster.
+  // No canonical employees row — fall back to the RSP newly_hired roster,
+  // matching by email too so a mismatched employee_id still resolves.
   if (!employeeRow) {
-    return fetchProfileFromNewlyHired(client, number);
+    return fetchProfileFromNewlyHired(client, number, email);
   }
 
   const employeeId = String(employeeRow.id ?? '');

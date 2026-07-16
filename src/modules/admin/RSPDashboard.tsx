@@ -36,6 +36,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { AdminHeader } from '../../components/AdminHeader';
 import { Button } from '../../components/Button';
 import { Sidebar } from '../../components/Sidebar';
+import { useDepartmentNames } from '../../hooks/useDepartmentOptions';
 import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import {
   createPassword,
@@ -278,15 +279,12 @@ const SETTINGS_TABS = [
   { id: 'localization', label: 'Localization', icon: Building2 },
 ] as const;
 
-const EMPLOYEE_DIRECTORY_DEPARTMENTS = [
-  'Human Resources',
-  'Finance',
-  'Information Technology',
-  'Operations',
-  'Sales & Marketing',
-  'Customer Support',
-  'Product Management',
-];
+/**
+ * Office names are compared across sources that don't agree on casing/spacing
+ * (departments table vs. the office stored on an applicant), so match on a
+ * normalized form rather than a raw ===.
+ */
+const normalizeOfficeName = (value: unknown): string => String(value ?? '').trim().toLowerCase();
 
 const EMPLOYEE_DIRECTORY_POSITIONS_BY_DEPARTMENT: Record<string, string[]> = {
   'Information Technology': [
@@ -842,6 +840,9 @@ export const RSPDashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const section = resolveSection(location.pathname, location.search);
+
+  // Departments come from the canonical Supabase table, shared system-wide.
+  const employeeDirectoryDepartments = useDepartmentNames();
 
   const [jobs, setJobs] = useState<JobRecord[]>([]);
   const [applicants, setApplicants] = useState<ApplicantRecord[]>([]);
@@ -2383,6 +2384,8 @@ export const RSPDashboard = () => {
     });
   }, [section, officeDirectoryRows.length]);
 
+  // Headcount comes from getOfficeDirectory() so this page, PM and System
+  // Administration all report the same numbers from one query.
   const filteredOfficeDirectoryRows = useMemo(
     () => filterOfficeDirectory(officeDirectoryRows, employeeDirectorySearch),
     [officeDirectoryRows, employeeDirectorySearch]
@@ -2431,7 +2434,9 @@ export const RSPDashboard = () => {
 
   const selectedOfficeEmployees = useMemo(() => {
     if (!selectedDirectoryCard) return [];
-    return directoryEmployeesSource.filter((employee) => employee.office === selectedDirectoryCard.office);
+    return directoryEmployeesSource.filter(
+      (employee) => normalizeOfficeName(employee.office) === normalizeOfficeName(selectedDirectoryCard.office),
+    );
   }, [directoryEmployeesSource, selectedDirectoryCard]);
 
   const selectedEmployeeDetails = useMemo(
@@ -2524,7 +2529,7 @@ export const RSPDashboard = () => {
     const currentPosition = selectedEmployeeDetails.position || '';
     setPositionChangeForm((prev) => ({
       ...prev,
-      newDepartment: EMPLOYEE_DIRECTORY_DEPARTMENTS.includes(currentDepartment)
+      newDepartment: employeeDirectoryDepartments.includes(currentDepartment)
         ? currentDepartment
         : 'IT Department',
       newPosition: currentPosition,
@@ -3937,7 +3942,130 @@ export const RSPDashboard = () => {
                         : `Office ${safeEmployeeDirectoryPage * EMPLOYEE_DIRECTORY_OFFICES_PER_PAGE + 1} to ${Math.min((safeEmployeeDirectoryPage + 1) * EMPLOYEE_DIRECTORY_OFFICES_PER_PAGE, filteredOfficeDirectoryRows.length)} of ${filteredOfficeDirectoryRows.length}`}
                     </div>
 
-                    <section>
+{showPositionChangeModal && selectedEmployeeDetails && (
+                    <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/50 p-4" onClick={() => setShowPositionChangeModal(false)}>
+                      <div className="w-full max-w-4xl rounded-2xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+                        <div className="flex items-start justify-between border-b border-[var(--border-color)] px-6 py-5">
+                          <div>
+                            <h3 className="!mb-1 text-3xl font-bold text-[var(--text-primary)]">Change Position</h3>
+                            <p className="!mb-0 text-lg text-[var(--text-secondary)]">Update position for {selectedEmployeeDetails.full_name}</p>
+                          </div>
+                          <button type="button" className="rounded-lg p-2 text-[var(--text-muted)] hover:bg-slate-100" onClick={() => setShowPositionChangeModal(false)}>
+                            <X size={26} />
+                          </button>
+                        </div>
+
+                        <div className="max-h-[65vh] space-y-4 overflow-y-auto px-6 py-5">
+                          <div className="grid grid-cols-1 gap-4 rounded-xl bg-slate-50 p-4 xl:grid-cols-2">
+                            <div>
+                              <p className="!mb-1 text-lg text-[var(--text-secondary)]">Current Position</p>
+                              <p className="!mb-0 text-xl font-semibold text-[var(--text-primary)]">{selectedEmployeeDetails.position || '--'}</p>
+                            </div>
+                            <div>
+                              <p className="!mb-1 text-lg text-[var(--text-secondary)]">Current Department</p>
+                              <p className="!mb-0 text-xl font-semibold text-[var(--text-primary)]">{selectedEmployeeDetails.office || '--'}</p>
+                            </div>
+                          </div>
+
+                          <div>
+                            <p className="!mb-2 text-xl font-semibold text-[var(--text-primary)]">Change Type <span className="text-red-500">*</span></p>
+                            <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+                              {[
+                                { id: 'promotion', label: 'Promotion' },
+                                { id: 'succession', label: 'Succession' },
+                                { id: 'transfer', label: 'Transfer' },
+                              ].map((option) => (
+                                <button
+                                  key={option.id}
+                                  type="button"
+                                  onClick={() => setPositionChangeForm((prev) => ({ ...prev, changeType: option.id as 'promotion' | 'succession' | 'transfer' }))}
+                                  className={`rounded-xl border px-4 py-3 text-lg font-semibold ${positionChangeForm.changeType === option.id ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-[var(--border-color)] text-[var(--text-secondary)]'}`}
+                                >
+                                  {option.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                            <div>
+                              <label className="mb-1 block text-xl font-semibold text-[var(--text-primary)]">New Position <span className="text-red-500">*</span></label>
+                              <select
+                                value={positionChangeForm.newPosition}
+                                onChange={(event) => {
+                                  const nextPosition = event.target.value;
+                                  const nextDept = resolveDepartmentForPosition(nextPosition);
+                                  setPositionChangeForm((prev) => ({
+                                    ...prev,
+                                    newPosition: nextPosition,
+                                    newDepartment: nextDept,
+                                  }));
+                                }}
+                                className="w-full rounded-xl border border-[var(--border-color)] px-4 py-3 text-xl"
+                              >
+                                <option value="">Select a position</option>
+                                {ALL_EMPLOYEE_POSITIONS.map((position) => (
+                                  <option key={position} value={position}>{position}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="mb-1 block text-xl font-semibold text-[var(--text-primary)]">New Department <span className="text-red-500">*</span></label>
+                              <select
+                                value={positionChangeForm.newDepartment}
+                                disabled
+                                className="w-full rounded-xl border border-[var(--border-color)] bg-slate-100 px-4 py-3 text-xl cursor-not-allowed"
+                              >
+                                {employeeDirectoryDepartments.map((department) => (
+                                  <option key={department} value={department}>{department}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="mb-1 block text-xl font-semibold text-[var(--text-primary)]">Effective Date <span className="text-red-500">*</span></label>
+                            <input
+                              type="date"
+                              value={positionChangeForm.effectiveDate}
+                              onChange={(event) => setPositionChangeForm((prev) => ({ ...prev, effectiveDate: event.target.value }))}
+                              className="w-full rounded-xl border border-[var(--border-color)] px-4 py-3 text-xl"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="mb-1 block text-xl font-semibold text-[var(--text-primary)]">Notes / Justification</label>
+                            <textarea
+                              rows={4}
+                              value={positionChangeForm.notes}
+                              onChange={(event) => setPositionChangeForm((prev) => ({ ...prev, notes: event.target.value }))}
+                              placeholder="Enter any additional notes or justification for this position change..."
+                              className="w-full rounded-xl border border-[var(--border-color)] px-4 py-3 text-xl"
+                            />
+                          </div>
+
+                          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-base text-amber-800">
+                            <strong>Note:</strong> This action will update the employee's position and department. All related records will be updated accordingly.
+                          </div>
+                        </div>
+
+                        <div className="flex justify-end gap-3 border-t border-[var(--border-color)] px-6 py-4">
+                          <button type="button" className="rounded-xl border border-[var(--border-color)] px-5 py-2 text-base" onClick={() => setShowPositionChangeModal(false)}>
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-xl bg-blue-600 px-6 py-2 text-base font-semibold text-white"
+                            onClick={() => setShowPositionChangeModal(false)}
+                          >
+                            Apply Position Change
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                <section>
                       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
                         <table className="w-full min-w-full">
                           <thead>

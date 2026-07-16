@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
+import { formatOfficeLabel } from '../constants/positions';
 import {
   createEmployeeNumberAllocator,
   saveNewlyHired,
@@ -192,8 +193,14 @@ export const NewlyHiredPage = () => {
     });
 
     return Array.from(grouped.entries())
-      .map(([department, stats]) => ({ department, ...stats }))
-      .sort((a, b) => a.department.localeCompare(b.department));
+      // `department` stays the raw stored value (the grouping/filter key);
+      // `label` is what the user reads, matching the Job Posts page.
+      .map(([department, stats]) => ({
+        department,
+        label: formatOfficeLabel(department),
+        ...stats,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
   }, [rows]);
 
   const selectedDepartmentRows = useMemo(() => {
@@ -426,7 +433,7 @@ export const NewlyHiredPage = () => {
                           <td className="px-5 py-4">
                             <div className="flex items-center gap-3">
                               <div className="shrink-0 rounded-xl bg-blue-100 p-2 text-blue-600"><UserPlus size={16} /></div>
-                              <span className="font-semibold text-sm text-slate-900">{card.department}</span>
+                              <span className="font-semibold text-sm text-slate-900">{card.label}</span>
                             </div>
                           </td>
                           <td className="px-5 py-4 text-center">
@@ -469,7 +476,7 @@ export const NewlyHiredPage = () => {
                   <button type="button" onClick={closeDepartment} className="mb-2 inline-flex items-center gap-2 text-slate-500 hover:text-slate-700">
                     <ArrowLeft size={20} /> Back
                   </button>
-                  <h1 className="mb-1 text-2xl font-bold text-slate-900">{selectedDepartment}</h1>
+                  <h1 className="mb-1 text-2xl font-bold text-slate-900">{formatOfficeLabel(selectedDepartment)}</h1>
                   <p className="text-sm text-slate-500">{selectedDepartmentRows.length} newly hired employees</p>
                 </div>
 
@@ -556,7 +563,7 @@ export const NewlyHiredPage = () => {
                 </div>
                 <div>
                   <h2 className="text-4xl font-bold text-slate-900">Generated Employee Credentials</h2>
-                  <p className="text-lg text-slate-500">{selectedDepartment} • {generatedCredentials.length} credential set</p>
+                  <p className="text-lg text-slate-500">{formatOfficeLabel(selectedDepartment)} • {generatedCredentials.length} credential set</p>
                 </div>
               </div>
 

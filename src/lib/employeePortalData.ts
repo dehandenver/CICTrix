@@ -113,41 +113,6 @@ export const findEmployeePortalAccountFromSupabase = async (
   }
 };
 
-// Promotional-application lookup: a single query that filters by BOTH the
-// employee ID and the portal username, so we only match when the two belong to
-// the same account. Returns null (→ manual-entry fallback) when there's no
-// exact match for the pair.
-export const findEmployeePortalAccountByCredentials = async (
-  employeeId: string,
-  username: string,
-): Promise<EmployeePortalAccount | null> => {
-  const idKey = String(employeeId ?? '').trim();
-  const usernameKey = String(username ?? '').trim().toLowerCase();
-  if (!idKey || !usernameKey) return null;
-
-  try {
-    const { data, error } = await (supabase as any)
-      .from('employee_portal_accounts')
-      .select('*')
-      .eq('employee_id', idKey)
-      .ilike('username', usernameKey);
-    if (error) {
-      console.error('[employeePortalData] Supabase credential lookup failed:', error);
-      return null;
-    }
-    const rows = Array.isArray(data) ? (data as PortalAccountRow[]) : [];
-    const matched = rows.find(
-      (row) =>
-        String(row.employee_id ?? '').trim() === idKey &&
-        String(row.username ?? '').trim().toLowerCase() === usernameKey,
-    );
-    return matched ? portalAccountFromRow(matched) : null;
-  } catch (err) {
-    console.error('[employeePortalData] Supabase credential lookup threw:', err);
-    return null;
-  }
-};
-
 export const findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail = async (
   employeeId?: string,
   email?: string,

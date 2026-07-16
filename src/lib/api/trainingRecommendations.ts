@@ -20,8 +20,80 @@
 
 import { supabase as supabaseClient } from '../supabase';
 import { getLatestOverallScores } from './succession';
+import { competencyFromObjectives } from './trainingCalendar';
+import { COMPETENCIES } from '../../constants/positions';
 
 const supabase = supabaseClient as any;
+
+// Job-title → competency relevance, used ONLY as a fallback when the AI matcher
+// (ipcr_competency_matches) has produced nothing yet. Kept identical to
+// scripts/seed-training-recommendations.mjs so the in-app Regenerate button and
+// the seeder produce the same results. `null` = the competency applies to
+// everyone (foundational governance/ethics). Keyed by the 12 canonical strings
+// in src/constants/positions.ts.
+const ROLE_KEYWORDS: Record<string, string[] | null> = {
+  'Knowledge of Local Governance': null,
+  'Public Administration Principles': ['admin', 'officer', 'supervis', 'head', 'manager'],
+  'Community Engagement Skills': ['health', 'midwife', 'dentist', 'social', 'admin', 'security'],
+  'Project Management in a Public Setting': ['project', 'manager', 'engineer', 'coordinat'],
+  'Fiscal Management / Budgeting for LGU': ['account', 'budget', 'treasur', 'finance'],
+  'Transparency and Accountability Practices': ['account', 'admin', 'legal', 'officer', 'budget'],
+  'Disaster Risk Reduction and Management': ['engineer', 'security', 'health', 'midwife', 'guard'],
+  'Digital Literacy for Government Services': ['it ', 'information technology', 'computer', 'data', 'analyst', 'admin'],
+  'Ethical Conduct and Public Service Standards': null,
+  'Technical Writing for Government Documents': ['admin', 'officer', 'legal', 'human resource', 'account'],
+  'Data and Records Management and Organization': ['it ', 'information technology', 'computer', 'data', 'admin', 'record', 'officer'],
+  'Public Communication Skills': ['admin', 'human resource', 'information', 'officer', 'supervis'],
+};
+
+/**
+ * Employee → the competencies their development should target.
+ *
+ * Resolved PER EMPLOYEE, so authoritative and fallback data coexist:
+ *   - An employee WITH rows in ipcr_competency_matches (the AI matcher output)
+ *     always uses those — the heuristic never overrides real matcher data.
+ *   - An employee the matcher has NO rows for falls back to the job-title
+ *     keyword heuristic (same logic as the seeder).
+ * So during a partial matcher rollout, matched employees use real data while the
+ * rest still get heuristic coverage; once every employee is matched, the
+ * heuristic stops firing entirely. This never silently no-ops.
+ */
+async function loadCompetenciesByEmployee(): Promise<Map<string, Set<string>>> {
+  const byEmployee = new Map<string, Set<string>>();
+
+  // 1. Authoritative: AI matcher output. Keyed per employee.
+  const { data: matches } = await supabase
+    .from('ipcr_competency_matches')
+    .select('employee_id, competency')
+    .not('employee_id', 'is', null)
+    .not('competency', 'is', null);
+  for (const r of (matches ?? []) as any[]) {
+    const key = String(r.employee_id);
+    const set = byEmployee.get(key) ?? new Set<string>();
+    set.add(r.competency);
+    byEmployee.set(key, set);
+  }
+
+  // 2. Fallback: job-title heuristic, applied ONLY to employees the matcher has
+  //    no rows for. Employees already covered above are skipped, so better data
+  //    always wins and the heuristic only fills genuine gaps.
+  const { data: emps } = await supabase
+    .from('employees_with_department')
+    .select('id, current_position, status')
+    .eq('status', 'Active');
+  for (const e of (emps ?? []) as any[]) {
+    const id = String(e.id);
+    if (byEmployee.has(id)) continue; // matcher already covers this employee
+    const pos = String(e.current_position ?? '').toLowerCase();
+    const set = new Set<string>();
+    for (const competency of COMPETENCIES as readonly string[]) {
+      const kws = ROLE_KEYWORDS[competency];
+      if (kws === null || kws.some((k) => pos.includes(k))) set.add(competency);
+    }
+    if (set.size) byEmployee.set(id, set);
+  }
+  return byEmployee;
+}
 
 // Flat result shape — discriminated unions don't narrow under this project's
 // strict:false config (see other api/ modules).
@@ -31,8 +103,13 @@ export type GapType = 'LOW_SCORE' | 'DECLINING_TREND' | 'KRA_ALIGNED';
 export type Priority = 'HIGH' | 'MEDIUM' | 'LOW';
 export type RecommendationStatus = 'SUGGESTED' | 'ACCEPTED' | 'ENROLLED' | 'DISMISSED';
 
-/** The gap threshold: an overall IPCR score at or below this flags a development need. */
-const GAP_THRESHOLD = 3.5;
+/**
+ * The gap threshold: an overall IPCR score at or below this flags a development
+ * need. Set to 4.0 so "Satisfactory" performers are caught as development
+ * candidates (realistic training-needs identification), not just near-failing
+ * ones. Keep in sync with scripts/seed-training-recommendations.mjs.
+ */
+const GAP_THRESHOLD = 4.0;
 /** Cap recommendations per employee (spec §2.3 TOP_N). */
 const MAX_GAPS_PER_EMPLOYEE = 3;
 
@@ -91,37 +168,29 @@ const scoreLabel = (score: number | null): string =>
  */
 export async function generateRecommendations(): Promise<GenerateResult> {
   try {
-    // 1. Active competency-tagged courses, grouped by competency.
+    // 1. Active courses, grouped by competency. Competency is parsed from the
+    // objectives text[] (there is no competency column) and validated against
+    // the 12 canonical competencies.
     const { data: sessions, error: sErr } = await supabase
       .from('training_sessions')
-      .select('id, competency, status, capacity')
-      .not('competency', 'is', null)
+      .select('id, objectives, status, capacity')
       .in('status', ['Scheduled', 'Ongoing']);
     if (sErr) return { ok: false, error: sErr.message };
 
     const coursesByCompetency = new Map<string, string[]>();
     for (const s of (sessions ?? []) as any[]) {
-      const list = coursesByCompetency.get(s.competency) ?? [];
+      const competency = competencyFromObjectives(s.objectives);
+      if (!competency) continue;
+      const list = coursesByCompetency.get(competency) ?? [];
       list.push(String(s.id));
-      coursesByCompetency.set(s.competency, list);
+      coursesByCompetency.set(competency, list);
     }
     if (!coursesByCompetency.size) return { ok: true, upserted: 0, employeesConsidered: 0 };
 
-    // 2. Employee → matched competencies (finalized targets), from the AI matcher.
-    const { data: matches, error: mErr } = await supabase
-      .from('ipcr_competency_matches')
-      .select('employee_id, competency')
-      .not('employee_id', 'is', null)
-      .not('competency', 'is', null);
-    if (mErr) return { ok: false, error: mErr.message };
-
-    const competenciesByEmployee = new Map<string, Set<string>>();
-    for (const r of (matches ?? []) as any[]) {
-      const key = String(r.employee_id);
-      const set = competenciesByEmployee.get(key) ?? new Set<string>();
-      set.add(r.competency);
-      competenciesByEmployee.set(key, set);
-    }
+    // 2. Employee → competencies. Authoritative source is ipcr_competency_matches
+    //    (AI matcher); falls back to the job-title heuristic (identical to the
+    //    seeder) so live regeneration works even before the matcher has run.
+    const competenciesByEmployee = await loadCompetenciesByEmployee();
     if (!competenciesByEmployee.size) return { ok: true, upserted: 0, employeesConsidered: 0 };
 
     // 3. Latest finalized overall score per employee (live roll-up).

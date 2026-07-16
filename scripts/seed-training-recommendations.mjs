@@ -24,7 +24,7 @@ const env = loadEnv();
 const db = serviceClient(env);
 const nowIso = () => new Date().toISOString();
 
-const GAP_THRESHOLD = 3.5;
+const GAP_THRESHOLD = 4.0; // keep in sync with src/lib/api/trainingRecommendations.ts
 const MAX_GAPS_PER_EMPLOYEE = 3;
 
 const COMPETENCIES = [
@@ -103,15 +103,16 @@ async function loadScores() {
   return scores;
 }
 
-// ── Employee → competencies (authoritative AI matches, else null) ────────────
-async function loadCompetenciesByEmployee() {
+// ── Employee → competencies from the AI matcher (authoritative), keyed per
+//    employee. Returns an empty Map when the table is empty/undeployed. ────────
+async function loadMatchedCompetencies() {
   const { data, error } = await db
     .from('ipcr_competency_matches')
     .select('employee_id, competency')
     .not('employee_id', 'is', null)
     .not('competency', 'is', null);
-  if (error || !data || !data.length) return null; // signal fallback
   const byEmp = new Map();
+  if (error || !data) return byEmp;
   for (const r of data) {
     const set = byEmp.get(String(r.employee_id)) ?? new Set();
     set.add(r.competency);
@@ -130,7 +131,7 @@ async function main() {
   // 1) Active competency-tagged courses, grouped by competency.
   const { data: sessions, error: sErr } = await db
     .from('training_sessions')
-    .select('id, competency, status, objectives')
+    .select('id, status, objectives')
     .in('status', ['Scheduled', 'Ongoing']);
   if (sErr) die('load training_sessions failed', sErr);
 
@@ -149,23 +150,26 @@ async function main() {
   const scores = await loadScores();
   console.log(`▶ ${scores.size} employee(s) with a finalized IPCR score.`);
 
-  let byEmp = await loadCompetenciesByEmployee();
-  if (!byEmp) {
-    console.log('⚠ ipcr_competency_matches empty/undeployed → job-role HEURISTIC fallback.');
-    const { data: emps } = await db.from('employees').select('*');
-    byEmp = new Map();
-    for (const e of emps ?? []) {
-      const pos = String(e.position ?? e.current_position ?? '').toLowerCase();
-      const set = new Set();
-      for (const comp of COMPETENCIES) {
-        const kws = ROLE_KEYWORDS[comp];
-        if (kws === null || kws.some((k) => pos.includes(k))) set.add(comp);
-      }
-      byEmp.set(String(e.id), set);
+  // Per employee: AI matches win where they exist; the job-role heuristic fills
+  // only the employees the matcher has no rows for (matches are never overridden).
+  const byEmp = await loadMatchedCompetencies();
+  const matchedCount = byEmp.size;
+  const { data: emps } = await db.from('employees').select('*').eq('status', 'Active');
+  let heuristicCount = 0;
+  for (const e of emps ?? []) {
+    const id = String(e.id);
+    if (byEmp.has(id)) continue; // matcher already covers this employee
+    const pos = String(e.position ?? e.current_position ?? '').toLowerCase();
+    const set = new Set();
+    for (const comp of COMPETENCIES) {
+      const kws = ROLE_KEYWORDS[comp];
+      if (kws === null || kws.some((k) => pos.includes(k))) set.add(comp);
     }
-  } else {
-    console.log('▶ Competency link: ipcr_competency_matches (AUTHORITATIVE / AI matcher).');
+    if (set.size) { byEmp.set(id, set); heuristicCount++; }
   }
+  console.log(matchedCount
+    ? `▶ Competency link: ${matchedCount} employee(s) from ipcr_competency_matches (AUTHORITATIVE), ${heuristicCount} from job-role heuristic.`
+    : `⚠ ipcr_competency_matches empty → ${heuristicCount} employee(s) via job-role HEURISTIC fallback.`);
 
   // 3) Build gap rows.
   const now = nowIso();

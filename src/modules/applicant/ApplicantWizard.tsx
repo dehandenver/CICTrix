@@ -19,7 +19,6 @@ import {
     type EmployeePortalAccount,
     findEmployeePortalAccount,
     getEmployeePortalAccounts,
-    findEmployeePortalAccountByCredentials,
     findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail,
 } from '../../lib/employeePortalData';
 import { syncApplicantSubmissionToRecruitment, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
@@ -318,28 +317,26 @@ export const ApplicantWizard: React.FC = () => {
       setIsLoadingPrefill(true);
       setPrefillNotice('Loading your employee records...');
       try {
-        // Match the portal account by Employee ID. When a username was also
-        // entered it must match too; otherwise the ID alone is enough.
-        let matchedAccount = getEmployeePortalAccounts().find((account) => {
-          const accountEmployeeId = normalizeAuthValue(String(account?.employee?.employeeId ?? ''));
-          if (accountEmployeeId !== normalizeAuthValue(enteredId)) return false;
-          if (!enteredUsername) return true;
-          const accountUsername = normalizeAuthValue(String(account?.username ?? ''));
-          return accountUsername === normalizeAuthValue(enteredUsername);
-        });
+        // Match the portal account by Employee ID alone. The username field is
+        // an OUTPUT we auto-fill from the matched account — never a filter — so
+        // a stale value typed there can't block the correct account (and its
+        // real username) from resolving.
+        let matchedAccount = getEmployeePortalAccounts().find(
+          (account) =>
+            normalizeAuthValue(String(account?.employee?.employeeId ?? '')) === normalizeAuthValue(enteredId),
+        );
 
         if (!matchedAccount) {
-          matchedAccount = enteredUsername
-            // Username supplied → single query filtering by BOTH id and username.
-            ? await findEmployeePortalAccountByCredentials(enteredId, enteredUsername)
-            // ID only → look the account up by employee_id alone.
-            : await findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail(enteredId);
+          matchedAccount = await findEmployeePortalAccountFromSupabaseByEmployeeIdOrEmail(enteredId);
         }
 
         // The employees table is the authoritative source. Look it up by the
         // entered Employee ID directly so the auto-fill works even when there's
-        // no portal-account row yet.
-        const profile = await fetchEmployeeApplicationProfile(enteredId);
+        // no portal-account row yet. Pass the matched account's email so a
+        // person whose hire record is filed under a different generated ID
+        // (a leftover of the old duplication bug) still resolves by email.
+        const lookupEmail = matchedAccount?.employee?.email || formData.email;
+        const profile = await fetchEmployeeApplicationProfile(enteredId, lookupEmail);
 
         if (profile || matchedAccount) {
           const [accountFirstName, ...remainingParts] = String(matchedAccount?.employee?.fullName ?? '')
@@ -355,8 +352,10 @@ export const ApplicantWizard: React.FC = () => {
           if (matchedAccount) setAuthenticatedEmployeeAccount(matchedAccount);
           setFormData((prev) => ({
             ...prev,
-            // Auto-fill portal username from the matched account if available
-            employee_username: matchedAccount?.username || prev.employee_username,
+            // Portal username is derived from the matched account. Clear it when
+            // no account matches this Employee ID so a value left over from a
+            // previous lookup can't linger and look like this employee's.
+            employee_username: matchedAccount?.username || '',
             first_name: profile?.firstName || accountFirstName || prev.first_name,
             middle_name: profile?.middleName || accountMiddleName || prev.middle_name,
             last_name: profile?.lastName || accountLastName || prev.last_name,
@@ -386,13 +385,38 @@ export const ApplicantWizard: React.FC = () => {
             relevant_experience_duties: profile?.relevantExperienceDuties || prev.relevant_experience_duties,
           }));
 
-          setPrefillNotice(
-            profile
-              ? 'We filled in your details from your employee record. Review each field and update anything that has changed.'
-              : "We couldn't find your employee record, so please fill in your details manually.",
-          );
+          // List the fields our record didn't have a value for, so the applicant
+          // knows exactly what to complete by hand instead of wondering why some
+          // fields stayed blank. We only ever fill from stored data — nothing is
+          // guessed — so anything absent from the record is flagged here.
+          const resolvedGender =
+            profile?.sex ||
+            (matchedAccount?.employee?.gender === 'Prefer not to say'
+              ? ''
+              : String(matchedAccount?.employee?.gender ?? ''));
+          const notOnFile: string[] = [];
+          if (!resolvedGender) notOnFile.push('Gender');
+          if (!(profile?.contactNumber || matchedAccount?.employee?.mobileNumber)) notOnFile.push('Contact Number');
+          if (!(profile?.address || matchedAccount?.employee?.homeAddress)) notOnFile.push('Address');
+          if (!currentDivision) notOnFile.push('Current Division');
+          if (!profile?.educationAttainment) notOnFile.push('Highest Educational Attainment');
+          if (!profile?.relevantExperiencePosition) notOnFile.push('Position Held');
+          if (!profile?.relevantExperienceCompany) notOnFile.push('Company / Organization');
+          if (!profile?.relevantExperienceDuties) notOnFile.push('Description of Duties');
 
-          lastPrefilledRef.current = { employeeId: enteredId, username: enteredUsername };
+          const baseNotice = profile
+            ? 'We filled in your details from your employee record. Review each field and update anything that has changed.'
+            : "We couldn't find your employee record, so please fill in your details manually.";
+          const blanksNotice =
+            notOnFile.length > 0
+              ? ` These weren't on file in your record, so please fill them in manually: ${notOnFile.join(', ')}.`
+              : '';
+          setPrefillNotice(baseNotice + blanksNotice);
+
+          // Record the resolved username (what we just wrote into the field) so
+          // the effect that re-fires on that change matches and returns early
+          // instead of looking the same employee up again.
+          lastPrefilledRef.current = { employeeId: enteredId, username: matchedAccount?.username || '' };
         } else {
           // No employee record or portal account for the entered ID. Keep every
           // field empty but fully editable and show the manual-entry warning.

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Card, Input, Select } from '../../components';
-import { DEPARTMENT_OPTIONS, POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
+import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
+import { useDepartmentOptions } from '../../hooks/useDepartmentOptions';
 import { ensureRecruitmentSeedData, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
 import type { ApplicantFormData, ValidationErrors } from '../../types/applicant.types';
 
@@ -29,6 +30,9 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
   onApplicationTypeChange,
   lockedPosition = false,
 }) => {
+  // Departments come from the canonical Supabase table, shared with every other
+  // screen — never a list local to this form.
+  const departmentOptions = useDepartmentOptions();
   const [dynamicPositionOptions, setDynamicPositionOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [positionDepartmentMap, setPositionDepartmentMap] = useState<Record<string, string>>({});
   const hasLoadedPositionsRef = useRef(false);
@@ -354,9 +358,8 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
         />
 
         {
-          // Ensure the department dropdown contains the prefilled office
-          // (e.g., 'Human Resource Management Office') when it doesn't
-          // exactly match the static `DEPARTMENT_OPTIONS` list.
+          // Ensure the department dropdown contains the prefilled office when it
+          // isn't in the canonical departments table (e.g. a legacy value).
         }
         {lockedPosition ? (
           <Input
@@ -366,7 +369,7 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
           />
         ) : (
           (() => {
-            const deptOpts: Array<{ value: string; label: string }> = [...DEPARTMENT_OPTIONS];
+            const deptOpts: Array<{ value: string; label: string }> = [...departmentOptions];
             if (formData.office && !deptOpts.some((d) => d.value === formData.office)) {
               deptOpts.unshift({ value: formData.office, label: formData.office });
             }
