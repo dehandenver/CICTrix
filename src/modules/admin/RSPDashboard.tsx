@@ -279,6 +279,13 @@ const SETTINGS_TABS = [
   { id: 'localization', label: 'Localization', icon: Building2 },
 ] as const;
 
+/**
+ * Office names are compared across sources that don't agree on casing/spacing
+ * (departments table vs. the office stored on an applicant), so match on a
+ * normalized form rather than a raw ===.
+ */
+const normalizeOfficeName = (value: unknown): string => String(value ?? '').trim().toLowerCase();
+
 const EMPLOYEE_DIRECTORY_POSITIONS_BY_DEPARTMENT: Record<string, string[]> = {
   'Information Technology': [
     'Information Technology Officer I',
@@ -2401,14 +2408,39 @@ export const RSPDashboard = () => {
     };
   }, [section]);
 
+  // Headcount has to come from the same list the office drill-down renders
+  // (directoryEmployeesSource — hired/credentialed applicants merged with any
+  // employee records). getOfficeDirectory() counts `employees_with_department`,
+  // which is empty while employee data still lives in the recruitment tables —
+  // so the column read 0 for every office even though clicking through listed
+  // people. Deriving both from one source keeps the number and the list honest.
+  const directoryHeadcountByOffice = useMemo(() => {
+    const counts = new Map<string, number>();
+    directoryEmployeesSource.forEach((employee) => {
+      const key = normalizeOfficeName(employee.office);
+      if (!key) return;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    });
+    return counts;
+  }, [directoryEmployeesSource]);
+
+  const officeDirectoryRowsWithCounts = useMemo(
+    () =>
+      officeDirectoryRows.map((row) => ({
+        ...row,
+        employeeCount: directoryHeadcountByOffice.get(normalizeOfficeName(row.officeName)) ?? 0,
+      })),
+    [officeDirectoryRows, directoryHeadcountByOffice]
+  );
+
   const filteredOfficeDirectoryRows = useMemo(
-    () => filterOfficeDirectory(officeDirectoryRows, employeeDirectorySearch),
-    [officeDirectoryRows, employeeDirectorySearch]
+    () => filterOfficeDirectory(officeDirectoryRowsWithCounts, employeeDirectorySearch),
+    [officeDirectoryRowsWithCounts, employeeDirectorySearch]
   );
 
   const officeDirectoryTotalEmployees = useMemo(
-    () => officeDirectoryRows.reduce((sum, row) => sum + row.employeeCount, 0),
-    [officeDirectoryRows]
+    () => officeDirectoryRowsWithCounts.reduce((sum, row) => sum + row.employeeCount, 0),
+    [officeDirectoryRowsWithCounts]
   );
 
   const employeeDirectoryPageCount = Math.max(1, Math.ceil(filteredOfficeDirectoryRows.length / EMPLOYEE_DIRECTORY_OFFICES_PER_PAGE));
@@ -2449,7 +2481,9 @@ export const RSPDashboard = () => {
 
   const selectedOfficeEmployees = useMemo(() => {
     if (!selectedDirectoryCard) return [];
-    return directoryEmployeesSource.filter((employee) => employee.office === selectedDirectoryCard.office);
+    return directoryEmployeesSource.filter(
+      (employee) => normalizeOfficeName(employee.office) === normalizeOfficeName(selectedDirectoryCard.office),
+    );
   }, [directoryEmployeesSource, selectedDirectoryCard]);
 
   const selectedEmployeeDetails = useMemo(

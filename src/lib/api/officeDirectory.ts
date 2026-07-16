@@ -177,21 +177,26 @@ export async function getOfficeDirectory(): Promise<
     const assignments: any[] = assignRes?.error ? [] : assignRes?.data ?? [];
     const jobsData: any[] = jobsRes?.error ? [] : jobsRes?.data ?? [];
 
+    // The canonical `departments` table is the source of truth for offices — the
+    // same list every other screen reads. Deriving the office list from
+    // job_postings instead made this directory show only the handful of offices
+    // that happened to have a posting, disagreeing with the rest of the system.
+    // A posting whose department isn't in the table yet is appended so its
+    // office still can't silently disappear.
     const jobDepts = Array.from(new Set(jobsData.map((j: any) => String(j.department || '').trim()).filter(Boolean)));
-    const departments = jobDepts.length > 0
-      ? jobDepts.map((deptName) => {
-          const dbDept = departmentsFromDb.find((d: any) => d.name.trim().toLowerCase() === deptName.toLowerCase());
-          return dbDept || {
-            id: `dynamic-${deptName.toLowerCase().replace(/\s+/g, '-')}`,
-            name: deptName,
-            code: deptName.split(/\s+/).map((w: string) => w[0]).join('').toUpperCase().slice(0, 4),
-            head_employee_id: null,
-            parent_department_id: null,
-            is_active: true,
-            created_at: new Date().toISOString()
-          };
-        })
-      : departmentsFromDb;
+    const knownDeptNames = new Set(departmentsFromDb.map((d: any) => norm(d.name)));
+    const orphanDepts = jobDepts
+      .filter((deptName) => !knownDeptNames.has(norm(deptName)))
+      .map((deptName) => ({
+        id: `dynamic-${deptName.toLowerCase().replace(/\s+/g, '-')}`,
+        name: deptName,
+        code: deptName.split(/\s+/).map((w: string) => w[0]).join('').toUpperCase().slice(0, 4),
+        head_employee_id: null,
+        parent_department_id: null,
+        is_active: true,
+        created_at: new Date().toISOString()
+      }));
+    const departments = [...departmentsFromDb, ...orphanDepts];
 
     // Group active assignments by office id and by office name (fallback join key).
     const assignmentPerson = (a: any): OfficePerson => ({
