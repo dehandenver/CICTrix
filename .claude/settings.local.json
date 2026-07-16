@@ -7,7 +7,8 @@
       "Bash(git -C \"c:\\\\Users\\\\ajcbu\\\\Documents\\\\GitHub\\\\CICTrix\" diff HEAD -- src/lib/api/documentRequests.ts src/lib/employeeDocuments.ts)",
       "Bash(grep -nE \"employee_id:.*req|return \\\\{$|^          \\\\};\" \"c:\\\\Users\\\\ajcbu\\\\Documents\\\\GitHub\\\\CICTrix\\\\src\\\\modules\\\\admin\\\\LNDDashboard.tsx\")",
       "Bash(git pull *)",
-      "Bash(awk 'NR>=230 && NR<=320' src/modules/admin/pm/PMIPCRManagement.tsx)"
+      "Bash(awk 'NR>=230 && NR<=320' src/modules/admin/pm/PMIPCRManagement.tsx)",
+      "PowerShell(npx tsc --noEmit)"
     ]
   }
 }

@@ -127,6 +127,28 @@ export const syncNewlyHiredToEmployees = async (): Promise<void> => {
       return;
     }
 
+    // newly_hired doesn't carry middle_name, but the source applicant row does.
+    // Look it up so the employees insert keeps the full split name (the live
+    // employees table stores first_name/middle_name/last_name, not full_name).
+    const middleNameByApplicantId = new Map<string, string>();
+    {
+      const missingIds = missingHires
+        .map((h) => String(h.applicant_id ?? '').trim())
+        .filter(Boolean);
+      const { data: applicantRows, error: appErr } = await (supabase as any)
+        .from('applicants')
+        .select('id, middle_name')
+        .in('id', missingIds);
+      if (appErr) {
+        console.warn('[hiredApplicantSync] applicants middle_name lookup failed:', appErr);
+      } else {
+        for (const a of (applicantRows ?? []) as any[]) {
+          const middle = String(a?.middle_name ?? '').trim();
+          if (middle) middleNameByApplicantId.set(String(a.id), middle);
+        }
+      }
+    }
+
     // 3. Construct and insert the missing employees
     const toInsert = [];
     for (const h of missingHires) {
@@ -148,6 +170,7 @@ export const syncNewlyHiredToEmployees = async (): Promise<void> => {
         id: h.applicant_id,
         employee_number: h.employee_id,
         first_name: firstName,
+        middle_name: middleNameByApplicantId.get(String(h.applicant_id ?? '').trim()) ?? null,
         last_name: lastName,
         email,
         phone: h.phone ? String(h.phone).trim() : null,

@@ -76,16 +76,75 @@ export const OfficeDirectorySection: React.FC<OfficeDirectorySectionProps> = ({
     setSelectedOfficeRow(row);
     setOfficeEmployees([]);
     setOfficeEmployeesLoading(true);
-    (supabase as any)
-      .from('employees_with_department')
-      .select('id, full_name, current_position, department, status, email, mobile_number')
-      .eq('department', row.officeName)
-      .order('current_position', { ascending: true })
-      .order('full_name', { ascending: true })
-      .then(({ data }: { data: any[] | null }) => {
-        setOfficeEmployees(Array.isArray(data) ? data : []);
-        setOfficeEmployeesLoading(false);
-      });
+
+    // Mirrors the headcount rules in getOfficeDirectory (officeDirectory.ts):
+    // same normalization, same status filter, same email dedup — so the list
+    // length always equals the count shown on the directory table.
+    const norm = (v: unknown) => String(v ?? '').trim().toLowerCase();
+
+    Promise.all([
+      // All employees (unfiltered): office membership is decided client-side
+      // with the same normalized department/current_department key the
+      // headcount uses, and the full set doubles as the email dedup index.
+      (supabase as any)
+        .from('employees_with_department')
+        .select('id, first_name, middle_name, last_name, current_position, department, current_department, status, email, mobile_number'),
+      (supabase as any)
+        .from('applicants')
+        .select('id, first_name, middle_name, last_name, email, contact_number, position, office, status')
+        .eq('status', 'Hired'),
+    ]).then(([empRes, appRes]: [{ data: any[] | null }, { data: any[] | null }]) => {
+      const allEmployees = Array.isArray(empRes?.data) ? empRes.data : [];
+      const hiredApplicants = Array.isArray(appRes?.data) ? appRes.data : [];
+      const officeKey = norm(row.officeName);
+
+      const employeeEmails = new Set<string>();
+      for (const emp of allEmployees) {
+        const email = norm(emp?.email);
+        if (email) employeeEmails.add(email);
+      }
+
+      const officeEmps = allEmployees.filter(
+        (emp) => (norm(emp?.department) || norm(emp?.current_department)) === officeKey
+      );
+
+      const officeApplicants = hiredApplicants
+        .filter((applicant) => {
+          if (norm(applicant?.office) !== officeKey) return false;
+          const email = norm(applicant?.email);
+          return !email || !employeeEmails.has(email);
+        })
+        .map((applicant) => ({
+          id: applicant.id,
+          first_name: applicant.first_name,
+          middle_name: applicant.middle_name,
+          last_name: applicant.last_name,
+          current_position: applicant.position,
+          email: applicant.email,
+          mobile_number: applicant.contact_number,
+          status: 'Hired',
+        }));
+
+      const compareText = (a: string, b: string) =>
+        a.localeCompare(b, undefined, { sensitivity: 'base' });
+
+      const byPositionThenName = (a: any, b: any) => {
+        const posA = String(a?.current_position ?? '').trim();
+        const posB = String(b?.current_position ?? '').trim();
+        if (posA !== posB) {
+          if (!posA) return 1;
+          if (!posB) return -1;
+          const cmp = compareText(posA, posB);
+          if (cmp !== 0) return cmp;
+        }
+        const lastCmp = compareText(String(a?.last_name ?? ''), String(b?.last_name ?? ''));
+        if (lastCmp !== 0) return lastCmp;
+        return compareText(String(a?.first_name ?? ''), String(b?.first_name ?? ''));
+      };
+
+      setOfficeEmployees([...officeEmps, ...officeApplicants].sort(byPositionThenName));
+      setOfficeEmployeesLoading(false);
+    });
   };
 
   const filteredOfficeDirectoryRows = useMemo(
@@ -140,26 +199,30 @@ export const OfficeDirectorySection: React.FC<OfficeDirectorySectionProps> = ({
             <table className="w-full border-collapse text-sm">
               <thead className="bg-slate-50 text-left">
                 <tr>
-                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Employee</th>
+                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">First Name</th>
+                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Middle Name</th>
+                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Last Name</th>
                   <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {officeEmployeesLoading ? (
                   <tr>
-                    <td colSpan={2} className="px-5 py-8 text-center text-sm text-slate-400">Loading employees...</td>
+                    <td colSpan={4} className="px-5 py-8 text-center text-sm text-slate-400">Loading employees...</td>
                   </tr>
                 ) : officeEmployees.length === 0 ? (
                   <tr>
-                    <td colSpan={2} className="px-5 py-8 text-center text-sm text-slate-400">No employees found for this office.</td>
+                    <td colSpan={4} className="px-5 py-8 text-center text-sm text-slate-400">No employees found for this office.</td>
                   </tr>
                 ) : (
                   officeEmployees.map((employee: any) => (
                     <tr key={employee.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-5 py-3.5">
-                        <p className="!mb-0 font-semibold" style={{ color: '#040E6B' }}>{employee.full_name}</p>
+                        <p className="!mb-0 font-semibold" style={{ color: '#040E6B' }}>{employee.first_name || '--'}</p>
                         <p className="!mb-0 mt-0.5 text-xs text-slate-400">{employee.email || '--'}</p>
                       </td>
+                      <td className="px-5 py-3.5 font-semibold" style={{ color: '#040E6B' }}>{employee.middle_name || '--'}</td>
+                      <td className="px-5 py-3.5 font-semibold" style={{ color: '#040E6B' }}>{employee.last_name || '--'}</td>
                       <td className="px-5 py-3.5 text-slate-600">{employee.current_position || '--'}</td>
                     </tr>
                   ))
