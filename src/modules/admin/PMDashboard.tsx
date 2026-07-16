@@ -85,11 +85,6 @@ import { PMIPCRManagement } from './pm/PMIPCRManagement';
 import { PMCompetencyFramework } from './pm/PMCompetencyFramework';
 import { PMPromotionalApplications } from './pm/PMPromotionalApplications';
 import { PMReportsAnalytics } from './pm/PMReportsAnalytics';
-import {
-  getOfficeDirectory,
-  filterOfficeDirectory,
-  type OfficeDirectoryRow,
-} from '../../lib/api/officeDirectory';
 
 type EvaluationEmployeeRow = { name: string; position: string; status: string };
 type EvaluationGroup = {
@@ -121,8 +116,6 @@ interface PerformanceStats {
 
 const FALLBACK_CYCLES: EvaluationCycle[] = [];
 
-const OFFICE_DIRECTORY_PER_PAGE = 6;
-
 export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: boolean }) => {
   const [stats, setStats] = useState<PerformanceStats>({
     activeCycle: 'None',
@@ -137,15 +130,6 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     'dashboard' | 'office-directory' | 'ipcr-management' | 'competency' | 'promotions' | 'analytics' | 'settings'
   >('dashboard');
 
-  // Office Directory state
-  const [officeDirectoryRows, setOfficeDirectoryRows] = useState<OfficeDirectoryRow[]>([]);
-  const [officeDirectoryLoading, setOfficeDirectoryLoading] = useState(false);
-  const [officeDirectoryError, setOfficeDirectoryError] = useState('');
-  const [officeDirectorySearch, setOfficeDirectorySearch] = useState('');
-  const [officeDirectoryPage, setOfficeDirectoryPage] = useState(0);
-  const [selectedOfficeRow, setSelectedOfficeRow] = useState<OfficeDirectoryRow | null>(null);
-  const [officeEmployees, setOfficeEmployees] = useState<any[]>([]);
-  const [officeEmployeesLoading, setOfficeEmployeesLoading] = useState(false);
   const [newCycle, setNewCycle] = useState<{
     title: string;
     start_date: string;
@@ -910,90 +894,6 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     setShowCycleDialog(true);
   };
 
-  // Office Directory helpers
-  const filteredOfficeDirectoryRows = useMemo(
-    () => filterOfficeDirectory(officeDirectoryRows, officeDirectorySearch),
-    [officeDirectoryRows, officeDirectorySearch]
-  );
-
-  const officeDirectoryPageCount = Math.max(1, Math.ceil(filteredOfficeDirectoryRows.length / OFFICE_DIRECTORY_PER_PAGE));
-  const safeOfficeDirectoryPage = Math.min(officeDirectoryPage, officeDirectoryPageCount - 1);
-  const paginatedOfficeDirectoryRows = useMemo(
-    () =>
-      filteredOfficeDirectoryRows.slice(
-        safeOfficeDirectoryPage * OFFICE_DIRECTORY_PER_PAGE,
-        (safeOfficeDirectoryPage + 1) * OFFICE_DIRECTORY_PER_PAGE
-      ),
-    [filteredOfficeDirectoryRows, safeOfficeDirectoryPage]
-  );
-
-  useEffect(() => {
-    if (officeDirectoryPage > officeDirectoryPageCount - 1) {
-      setOfficeDirectoryPage(Math.max(0, officeDirectoryPageCount - 1));
-    }
-  }, [officeDirectoryPage, officeDirectoryPageCount]);
-
-  const clearOfficeDirectoryFilters = () => {
-    setOfficeDirectorySearch('');
-    setOfficeDirectoryPage(0);
-  };
-
-  useEffect(() => {
-    if (activeSection !== 'office-directory') return;
-    let cancelled = false;
-
-    const loadDirectory = () => {
-      setOfficeDirectoryLoading(true);
-      setOfficeDirectoryError('');
-      getOfficeDirectory().then((result) => {
-        if (cancelled) return;
-        if (result.ok) {
-          setOfficeDirectoryRows(result.data);
-        } else {
-          setOfficeDirectoryError((result as { ok: false; error: string }).error);
-        }
-        setOfficeDirectoryLoading(false);
-      });
-    };
-
-    loadDirectory();
-
-    const reload = () => {
-      if (!cancelled) loadDirectory();
-    };
-
-    window.addEventListener('cictrix:applicants-updated', reload);
-    window.addEventListener('cictrix:newly-hired-updated', reload);
-    window.addEventListener('cictrix:employee-accounts-updated', reload);
-    window.addEventListener('cictrix:job-postings-updated', reload);
-    window.addEventListener('EMPLOYEE_DOCUMENTS_UPDATED', reload);
-
-    return () => {
-      cancelled = true;
-      window.removeEventListener('cictrix:applicants-updated', reload);
-      window.removeEventListener('cictrix:newly-hired-updated', reload);
-      window.removeEventListener('cictrix:employee-accounts-updated', reload);
-      window.removeEventListener('cictrix:job-postings-updated', reload);
-      window.removeEventListener('EMPLOYEE_DOCUMENTS_UPDATED', reload);
-    };
-  }, [activeSection]);
-
-  const handleOfficeClick = (row: OfficeDirectoryRow) => {
-    setSelectedOfficeRow(row);
-    // Load the office's employees for the drill-down table.
-    setOfficeEmployees([]);
-    setOfficeEmployeesLoading(true);
-    (supabase as any)
-      .from('employees_with_department')
-      .select('id, full_name, current_position, department, status, email, mobile_number')
-      .eq('department', row.officeName)
-      .order('current_position', { ascending: true })
-      .order('full_name', { ascending: true })
-      .then(({ data }: { data: any[] | null }) => {
-        setOfficeEmployees(Array.isArray(data) ? data : []);
-        setOfficeEmployeesLoading(false);
-      });
-  };
 
   if (isDashboardView) {
     const sideNavItems = [
