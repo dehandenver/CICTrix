@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { getAdminEmail } from '../lib/adminSession';
 import {
   Building2,
   ChevronRight,
@@ -36,16 +37,7 @@ import {
 // access-gated to the RSP admin. Management actions therefore key off "am I in
 // this portal"; the acting admin's email (for created_by / added_by audit) comes
 // from the same admin session the rest of RSPDashboard reads.
-const getCurrentAdmin = (): string => {
-  try {
-    const raw = localStorage.getItem('cictrix_admin_session');
-    if (!raw) return 'rsp-admin';
-    const parsed = JSON.parse(raw) as { email?: string };
-    return parsed?.email || 'rsp-admin';
-  } catch {
-    return 'rsp-admin';
-  }
-};
+const getCurrentAdmin = (): string => getAdminEmail('rsp-admin');
 
 const adjectivalTone = (adj: string | null): string => {
   switch (adj) {

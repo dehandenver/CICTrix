@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import { getAdminEmail } from '../../lib/adminSession';
 import { AlertCircle, Archive, Building2, CalendarClock, Check, CheckCircle2, ChevronDown, ChevronLeft, ClipboardList, Copy, History, Lock, Search, ShieldCheck, UserMinus, UserPlus, Users, X } from 'lucide-react';
 import { getAllEmployees, type Employee } from '../../lib/api/employees';
 import { AdminHeader } from '../../components/AdminHeader';
@@ -57,17 +58,8 @@ import {
 } from '../../lib/api/officeRoles';
 import '../../styles/admin.css';
 
-const ADMIN_SESSION_KEY = 'cictrix_admin_session';
-const getCurrentAdminEmail = (): string => {
-  try {
-    const raw = localStorage.getItem(ADMIN_SESSION_KEY);
-    if (!raw) return 'super-admin';
-    const parsed = JSON.parse(raw) as { email?: string };
-    return parsed?.email || 'super-admin';
-  } catch {
-    return 'super-admin';
-  }
-};
+// Session lives in the shared per-tab module so every screen reads one identity.
+const getCurrentAdminEmail = (): string => getAdminEmail();
 
 // ── Tab / subtab definition (Module 1: System Administration) ────────────────
 interface SubtabDef {

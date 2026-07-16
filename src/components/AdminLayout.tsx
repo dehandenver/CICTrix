@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import { readAdminSession } from '../lib/adminSession';
 import { AdminHeader } from './AdminHeader';
 import { Sidebar } from './Sidebar';
 import { useLocation } from 'react-router-dom';
@@ -25,9 +26,8 @@ export const AdminLayout = ({ children, customSidebar, userName = 'Admin', divis
   let division: any = undefined;
   
   try {
-    const sessionRaw = localStorage.getItem('cictrix_admin_session');
-    if (sessionRaw) {
-      const parsed = JSON.parse(sessionRaw);
+    const parsed = readAdminSession();
+    if (parsed) {
       if (parsed.email) {
         // Just use email prefix as name if not available
         sessionName = parsed.email.split('@')[0];

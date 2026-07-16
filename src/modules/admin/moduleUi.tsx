@@ -6,19 +6,10 @@
 
 import type { CSSProperties, ReactNode } from 'react';
 
-const ADMIN_SESSION_KEY = 'cictrix_admin_session';
+import { getAdminEmail } from '../../lib/adminSession';
 
 /** Identifier (email) of the signed-in admin, for audit/attribution fields. */
-export const getCurrentAdminEmail = (): string => {
-  try {
-    const raw = localStorage.getItem(ADMIN_SESSION_KEY);
-    if (!raw) return 'super-admin';
-    const parsed = JSON.parse(raw) as { email?: string };
-    return parsed?.email || 'super-admin';
-  } catch {
-    return 'super-admin';
-  }
-};
+export const getCurrentAdminEmail = (): string => getAdminEmail();
 
 export const ui = {
   card: {
