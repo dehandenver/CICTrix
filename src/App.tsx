@@ -33,7 +33,6 @@ import { ApplicationStatusPage } from './modules/applicant/ApplicationStatusPage
 import { LandingPage } from './components/LandingPage';
 import { AboutPage } from './components/AboutPage';
 import { JobPortalPage } from './components/JobPortalPage';
-import { UnauthorizedPage } from './components/UnauthorizedPage';
 import { SessionExpiredPage } from './components/SessionExpiredPage';
 import { EmployeeLoginPage, EmployeePage, SetInitialPasswordPage } from './modules/employee';
 import { ApplicantDetailsPage } from './modules/interviewer/ApplicantDetailsPage.tsx';
@@ -171,7 +170,13 @@ const AdminRoute = ({
   }
 
   if (allowedRoles && !allowedRoles.includes(session.role)) {
-    return <Navigate to="/unauthorized" replace />;
+    // Land them on their own module instead of an Access Denied page. The admin
+    // session is shared across tabs via localStorage, so the last login wins —
+    // returning to an older tab (or one Chrome reloaded in the background) could
+    // leave a role sitting on another module's route and dead-end the user on a
+    // dialog they can't act on. Each role's default route allows that role, so
+    // this can't bounce in a loop.
+    return <Navigate to={getRoleDefaultRoute(session.role)} replace />;
   }
 
   return children;
@@ -505,7 +510,6 @@ function AppContent() {
           <Route path="/apply" element={<ApplicantWizard />} />
           <Route path="/track" element={<ApplicationStatusPage />} />
           <Route path="/job-portal" element={<JobPortalPage />} />
-          <Route path="/unauthorized" element={<UnauthorizedPage />} />
           <Route path="/session-expired" element={<SessionExpiredPage />} />
           <Route path="/succession" element={<SuccessionReadinessEngine />} />
           
