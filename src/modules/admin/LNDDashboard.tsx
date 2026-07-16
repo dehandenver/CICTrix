@@ -88,6 +88,7 @@ import EmployeeDirectory from './EmployeeDirectory';
 import { LndSummaryOfRatings } from './LndSummaryOfRatings';
 import { LndCompetencyAnalysis } from './LndCompetencyAnalysis';
 import { LndTrainingRequests } from './LndTrainingRequests';
+import { LndTrainingEvaluation } from './LndTrainingEvaluation';
 import { OfficeRoles } from './OfficeRoles';
 
 type MenuId =
@@ -99,6 +100,7 @@ type MenuId =
   | 'training-requests'
   | 'training-courses'
   | 'seminar-enrollment'
+  | 'training-evaluation'
   | 'employee-progress'
   | 'documents'
   | 'employees'
@@ -133,6 +135,7 @@ const LND_MENU: MenuItem[] = [
   { id: 'training-requests', label: 'Training Requests', sublabel: 'Department head submissions', icon: ClipboardList },
   { id: 'training-courses', label: 'Training Courses', sublabel: 'Courses and sessions', icon: BookOpen },
   { id: 'seminar-enrollment', label: 'Seminar Enrollment', sublabel: 'Registrations and slots', icon: ClipboardCheck },
+  { id: 'training-evaluation', label: 'Training Evaluation', sublabel: 'Pre/post-test results', icon: TrendingUp },
   { id: 'employee-progress', label: 'Employee Development', sublabel: 'Employees and ratings', icon: Users },
   { id: 'documents', label: 'Documents', sublabel: 'Document submissions', icon: FileText },
   { id: 'employees', label: 'Employees', sublabel: 'Directory and profiles', icon: UsersRound },
@@ -1686,6 +1689,8 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
             <TrainingCourses />
           ) : activeModule === 'seminar-enrollment' ? (
             <SeminarEnrollment />
+          ) : activeModule === 'training-evaluation' ? (
+            <LndTrainingEvaluation />
           ) : activeModule === 'employee-progress' ? (
             <EmployeeDevelopment />
           ) : activeModule === 'documents' ? (
