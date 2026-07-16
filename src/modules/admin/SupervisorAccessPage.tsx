@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { getAdminEmail } from '../../lib/adminSession';
 import { AlertCircle, Check, Copy, KeyRound, ShieldCheck, Users } from 'lucide-react';
 import { AdminHeader } from '../../components/AdminHeader';
 import { Dialog } from '../../components/Dialog';
@@ -11,18 +12,8 @@ import {
 } from '../../lib/api/supervisors';
 import '../../styles/admin.css';
 
-const ADMIN_SESSION_KEY = 'cictrix_admin_session';
-
-const getCurrentAdminEmail = (): string => {
-  try {
-    const raw = localStorage.getItem(ADMIN_SESSION_KEY);
-    if (!raw) return 'super-admin';
-    const parsed = JSON.parse(raw) as { email?: string };
-    return parsed?.email || 'super-admin';
-  } catch {
-    return 'super-admin';
-  }
-};
+// Session lives in the shared per-tab module so every screen reads one identity.
+const getCurrentAdminEmail = (): string => getAdminEmail();
 
 export const SupervisorAccessPage = () => {
   const [supervisors, setSupervisors] = useState<Supervisor[]>([]);

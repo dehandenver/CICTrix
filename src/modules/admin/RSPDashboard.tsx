@@ -30,6 +30,7 @@ import {
   X,
 } from 'lucide-react';
 import { QualifiedApplicantsSection } from '../../components/QualifiedApplicantsSection';
+import { getAdminEmail } from '../../lib/adminSession';
 import { SuccessionPlanningPage } from '../../components/SuccessionPlanningPage';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -88,18 +89,8 @@ type BulkRecipientMode = 'all' | 'department' | 'selected';
 type EmployeeDocumentTemplateId = (typeof BULK_REQUEST_TEMPLATES)[number]['id'];
 const EMPLOYEE_DIRECTORY_OFFICES_PER_PAGE = 6;
 
-const ADMIN_SESSION_KEY = 'cictrix_admin_session';
-
-const getCurrentAdminEmail = (): string => {
-  try {
-    const raw = localStorage.getItem(ADMIN_SESSION_KEY);
-    if (!raw) return 'super-admin';
-    const parsed = JSON.parse(raw) as { email?: string };
-    return parsed?.email || 'super-admin';
-  } catch {
-    return 'super-admin';
-  }
-};
+// Session lives in the shared per-tab module so every screen reads one identity.
+const getCurrentAdminEmail = (): string => getAdminEmail();
 
 interface JobRecord {
   id: number | string;

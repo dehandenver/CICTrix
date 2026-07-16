@@ -13,6 +13,7 @@ import { RaterManagementPage } from './components/RaterManagementPage';
 import SuccessionReadinessEngine from './components/SuccessionReadinessEngine';
 import { findEmployeePortalAccount, findEmployeePortalAccountFromSupabase } from './lib/employeePortalData';
 import { fetchPortalEmployeeByNumber } from './lib/api/employeePortal';
+import { clearAdminSession, readAdminSession, writeAdminSession } from './lib/adminSession';
 import { supabase } from './lib/supabase';
 import { syncThemeWithRoute } from './lib/theme';
 import { LNDDashboard } from './modules/admin/LNDDashboard';
@@ -48,7 +49,6 @@ type Role = 'super-admin' | 'rsp' | 'lnd' | 'pm';
 type InterviewerSession = { email: string; name: string };
 type AdminModule = 'dashboard' | 'rsp' | 'lnd' | 'pm' | 'settings';
 const RATER_ACCESS_STATE_KEY = 'cictrix_rater_access_state_map';
-const ADMIN_SESSION_KEY = 'cictrix_admin_session';
 const INTERVIEWER_SESSION_KEY = 'cictrix_interviewer_session';
 const EMPLOYEE_SESSION_KEY = 'cictrix_employee_session';
 
@@ -100,22 +100,16 @@ const getRoleDefaultRoute = (role: Role): string => {
 };
 
 const loadAdminSession = (): { email: string; role: Role } | null => {
-  try {
-    const stored = localStorage.getItem(ADMIN_SESSION_KEY);
-    if (!stored) return null;
+  const parsed = readAdminSession();
+  if (!parsed) return null;
 
-    const parsed = JSON.parse(stored) as { email: string; role: string };
-    const normalizedRole = normalizeAdminRole(parsed?.role);
-    if (parsed?.email && normalizedRole) {
-      return { email: parsed.email, role: normalizedRole };
-    }
-
-    localStorage.removeItem(ADMIN_SESSION_KEY);
-    return null;
-  } catch {
-    localStorage.removeItem(ADMIN_SESSION_KEY);
-    return null;
+  const normalizedRole = normalizeAdminRole(parsed.role);
+  if (parsed.email && normalizedRole) {
+    return { email: parsed.email, role: normalizedRole };
   }
+
+  clearAdminSession();
+  return null;
 };
 
 const loadInterviewerSession = (): InterviewerSession | null => {
@@ -170,12 +164,9 @@ const AdminRoute = ({
   }
 
   if (allowedRoles && !allowedRoles.includes(session.role)) {
-    // Land them on their own module instead of an Access Denied page. The admin
-    // session is shared across tabs via localStorage, so the last login wins —
-    // returning to an older tab (or one Chrome reloaded in the background) could
-    // leave a role sitting on another module's route and dead-end the user on a
-    // dialog they can't act on. Each role's default route allows that role, so
-    // this can't bounce in a loop.
+    // Land them on their own module rather than an Access Denied dead-end they
+    // can't act on. Each role's default route permits that role, so this can't
+    // bounce in a loop.
     return <Navigate to={getRoleDefaultRoute(session.role)} replace />;
   }
 
@@ -386,7 +377,7 @@ function AppContent() {
   const handleLogin = (email: string, role: Role) => {
     const session = { email, role };
     setAdminSession(session);
-    localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(session));
+    writeAdminSession(session);
   };
 
   const handleInterviewerLogin = (email: string, name: string) => {

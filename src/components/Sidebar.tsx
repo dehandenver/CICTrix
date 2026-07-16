@@ -1,4 +1,5 @@
 import { BookOpen, Briefcase, ClipboardCheck, ClipboardList, FileText, LayoutDashboard, ListChecks, Network, Settings, ShieldCheck, TrendingUp, UserCheck, UserCog, Users } from 'lucide-react';
+import { readAdminSession } from '../lib/adminSession';
 import { Link, useLocation } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { getApplicantsFromSupabase, getApplicants } from '../lib/recruitmentData';
@@ -63,13 +64,9 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
     return () => window.removeEventListener('cictrix:applicants-updated', updateQualifiedCount);
   }, []);
 
-  const sessionRaw = localStorage.getItem('cictrix_admin_session');
-  let session: { email: string; role: AdminRole } | null = null;
-  try {
-    session = sessionRaw ? (JSON.parse(sessionRaw) as { email: string; role: AdminRole }) : null;
-  } catch {
-    session = null;
-  }
+  // Per-tab session: reading localStorage directly here is what made an RSP tab
+  // render as PM the moment another tab signed in.
+  const session = readAdminSession() as { email: string; role: AdminRole } | null;
   const resolvedRole = userRole ?? session?.role;
   const activeAdminModule = new URLSearchParams(location.search).get('module') ?? 'dashboard';
   const isSuperAdmin = resolvedRole === 'super-admin';

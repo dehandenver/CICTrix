@@ -1,9 +1,9 @@
 import { LogOut } from 'lucide-react';
+import { clearAdminSession } from '../lib/adminSession';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
-const ADMIN_SESSION_KEY = 'cictrix_admin_session';
 
 interface LogoutConfirmPopoverProps {
   /** Extra classes applied to the outer wrapper */
@@ -61,7 +61,7 @@ export const LogoutConfirmPopover = ({
   }, [open]);
 
   const handleConfirmLogout = async () => {
-    localStorage.removeItem(ADMIN_SESSION_KEY);
+    clearAdminSession();
     try {
       await supabase.auth.signOut();
     } catch {
