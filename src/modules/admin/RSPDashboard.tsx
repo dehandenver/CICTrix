@@ -4477,7 +4477,7 @@ export const RSPDashboard = () => {
                                   disabled
                                   className="w-full rounded-xl border border-[var(--border-color)] bg-slate-100 px-4 py-3 text-xl cursor-not-allowed"
                                 >
-                                  {EMPLOYEE_DIRECTORY_DEPARTMENTS.map((department) => (
+                                  {employeeDirectoryDepartments.map((department) => (
                                     <option key={department} value={department}>{department}</option>
                                   ))}
                                 </select>

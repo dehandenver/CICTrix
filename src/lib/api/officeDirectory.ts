@@ -177,7 +177,7 @@ export async function getOfficeDirectory(): Promise<
       return { ok: false, error: deptRes.error.message ?? 'Failed to load offices.' };
     }
 
-    const departments: any[] = deptRes.data ?? [];
+    const departmentsFromDb: any[] = deptRes.data ?? [];
     const employees: any[] = empRes.error ? [] : empRes.data ?? [];
     const dbSupervisors: any[] = supRes.error ? [] : supRes.data ?? [];
     const assignments: any[] = assignRes?.error ? [] : assignRes?.data ?? [];

@@ -238,19 +238,13 @@ const IPCRDetailPage = ({
   onClose: () => void;
   onStageUpdate: (id: string, stage: IpcrStage) => void;
 }) => {
-  const [newStage, setNewStage] = useState<IpcrStage>(employee.actualStage);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState('');
+
 
   const [ipcrRows, setIpcrRows] = useState<IPCRRowDraft[]>([]);
   const [ipcrLoading, setIpcrLoading] = useState(true);
   const [ipcrError, setIpcrError] = useState('');
 
-  // Synchronize newStage state when remote updates change the employee stage
-  useEffect(() => {
-    setNewStage(employee.actualStage);
-  }, [employee.actualStage]);
+
 
   useEffect(() => {
     let active = true;
@@ -282,34 +276,7 @@ const IPCRDetailPage = ({
     };
   }, [employee.id, employee.employee_id, employee.periodLabel]);
 
-  const handleSave = async () => {
-    if (newStage === employee.actualStage) {
-      return;
-    }
-    setSaving(true);
-    setError('');
-    const { setSubmissionStage } = await import('../../../lib/api/ipcrSubmissions');
-    const res = await setSubmissionStage({
-      employeeId: employee.id,
-      employeeName: employee.full_name,
-      officeId: employee.department_id ?? null,
-      officeName: employee.department ?? null,
-      period: employee.periodLabel,
-      phase: employee.computedPhase,
-      stage: newStage,
-      updatedBy: getCurrentAdminEmail(),
-    });
-    setSaving(false);
-    if (!res.ok) {
-      setError((res as { ok: false; error: string }).error);
-      return;
-    }
-    onStageUpdate(employee.id, newStage);
-    setSaved(true);
-    setTimeout(() => {
-      setSaved(false);
-    }, 2000);
-  };
+
 
   const monthsText =
     employee.monthsOfService < 1
@@ -333,7 +300,7 @@ const IPCRDetailPage = ({
       <div className="flex items-center justify-between border-b border-slate-200 pb-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 tracking-tight">IPCR — {employee.full_name}</h2>
-          <p className="text-xs text-slate-500 mt-1">Review targets, accomplishments, and update submission stage.</p>
+          <p className="text-xs text-slate-500 mt-1">Review targets and accomplishments.</p>
         </div>
       </div>
 
@@ -426,51 +393,7 @@ const IPCRDetailPage = ({
             </div>
           </div>
 
-          {/* Stage Control */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-            <h3 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">Submission Stage</h3>
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-xs text-slate-500">Current Stage:</span>
-              <span style={stagePillStyle(employee.actualStage)}>{employee.actualStage}</span>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Update Stage To</label>
-                <select
-                  value={newStage}
-                  onChange={(e) => setNewStage(e.target.value as IpcrStage)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30 bg-white"
-                >
-                  {IPCR_STAGES.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {error && (
-                <p className="text-[11px] text-red-650 flex items-center gap-1">
-                  <AlertCircle size={11} /> {error}
-                </p>
-              )}
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving || saved || newStage === employee.actualStage}
-                className="w-full py-2 text-xs font-bold bg-[#363EE8] text-white rounded-lg hover:bg-[#2931c5] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm transition-colors"
-              >
-                {saved ? (
-                  <>
-                    <Check size={12} /> Saved!
-                  </>
-                ) : saving ? (
-                  'Saving…'
-                ) : (
-                  'Save Stage'
-                )}
-              </button>
-            </div>
-          </div>
+
         </div>
 
         {/* Right Column: IPCR Sheet Details */}
