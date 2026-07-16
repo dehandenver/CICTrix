@@ -82,6 +82,26 @@ export const DEPARTMENT_OPTIONS = DEPARTMENTS.map(dept => ({
 }));
 
 /**
+ * Display label for an office/department. A specific division wins when set;
+ * otherwise the stored short department name (e.g. "Information Technology") is
+ * suffixed to read as an office ("Information Technology Department").
+ *
+ * Shared so every screen that shows an office — Job Posts, Newly Hired — reads
+ * identically instead of some showing the raw stored value and others the
+ * suffixed one.
+ */
+export const formatOfficeLabel = (
+  department?: string | null,
+  division?: string | null,
+): string => {
+  const divisionName = String(division ?? '').trim();
+  if (divisionName) return divisionName;
+
+  const departmentName = String(department ?? '').trim();
+  return departmentName ? `${departmentName} Department` : 'Unassigned Department';
+};
+
+/**
  * Position to Department mapping
  * Automatically assigns department based on selected position
  */
