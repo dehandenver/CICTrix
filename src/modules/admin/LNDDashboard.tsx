@@ -87,6 +87,7 @@ import { listTrainingRequestsDetailed, type TrainingRequest } from '../../lib/ap
 import EmployeeDirectory from './EmployeeDirectory';
 import { LndSummaryOfRatings } from './LndSummaryOfRatings';
 import { LndCompetencyAnalysis } from './LndCompetencyAnalysis';
+import { LndTrainingRequests } from './LndTrainingRequests';
 import { OfficeRoles } from './OfficeRoles';
 
 type MenuId =
@@ -95,6 +96,7 @@ type MenuId =
   | 'competency-analysis'
   | 'training-calendar'
   | 'training-plan'
+  | 'training-requests'
   | 'training-courses'
   | 'seminar-enrollment'
   | 'employee-progress'
@@ -128,6 +130,7 @@ const LND_MENU: MenuItem[] = [
   { id: 'competency-analysis', label: 'Competency Analysis', sublabel: 'Map IPCR targets to competencies', icon: Sparkles },
   { id: 'training-calendar', label: 'Training Calendar', sublabel: 'This year’s trainings', icon: CalendarDays },
   { id: 'training-plan', label: 'Training Plan', sublabel: 'Next year’s plan', icon: CalendarClock },
+  { id: 'training-requests', label: 'Training Requests', sublabel: 'Department head submissions', icon: ClipboardList },
   { id: 'training-courses', label: 'Training Courses', sublabel: 'Courses and sessions', icon: BookOpen },
   { id: 'seminar-enrollment', label: 'Seminar Enrollment', sublabel: 'Registrations and slots', icon: ClipboardCheck },
   { id: 'employee-progress', label: 'Employee Development', sublabel: 'Employees and ratings', icon: Users },
@@ -1677,6 +1680,8 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
             <TrainingCalendar />
           ) : activeModule === 'training-plan' ? (
             <TrainingPlan />
+          ) : activeModule === 'training-requests' ? (
+            <LndTrainingRequests />
           ) : activeModule === 'training-courses' ? (
             <TrainingCourses />
           ) : activeModule === 'seminar-enrollment' ? (
