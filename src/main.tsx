@@ -2,7 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { loadJobPostings } from './lib/recruitmentData';
-import { syncHiredApplicantStatus, syncNewlyHiredToEmployees } from './lib/hiredApplicantSync';
+import { syncHiredApplicantStatus, syncNewlyHiredToEmployees, repairDefaultedEmployeeRecords } from './lib/hiredApplicantSync';
 import { initTheme } from './lib/theme';
 import './styles/interviewer.css';
 
@@ -60,6 +60,7 @@ const renderApp = () => {
   // it doesn't run on every navigation.
   void syncHiredApplicantStatus();
   void syncNewlyHiredToEmployees();
+  void repairDefaultedEmployeeRecords();
 
   renderApp();
 }

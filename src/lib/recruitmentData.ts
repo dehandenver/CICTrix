@@ -760,19 +760,40 @@ export const getNewlyHiredFromSupabase = async (): Promise<NewlyHired[]> => {
 
 export const saveNewlyHired = async (rows: NewlyHired[]) => {
   // Source of truth: Supabase newly_hired table. No localStorage.
+
+  // Hire records built from stale UI rows can arrive with blank position/
+  // department/names, which downstream turns into 'Staff'/'Operations'
+  // defaults on the employees table. Fill gaps from the authoritative
+  // applicants record before persisting. Best-effort: a failed lookup just
+  // means the row is saved as provided.
+  const applicantById = new Map<string, any>();
+  const idsToResolve = rows
+    .filter((r) => r.applicantId && (!r.position?.trim() || !r.department?.trim() || !r.employeeInfo.firstName?.trim() || !r.employeeInfo.lastName?.trim() || !r.employeeInfo.phone?.trim()))
+    .map((r) => String(r.applicantId));
+  if (idsToResolve.length > 0) {
+    try {
+      const { data } = await (supabase as any)
+        .from('applicants')
+        .select('id, first_name, last_name, position, office, contact_number')
+        .in('id', idsToResolve);
+      for (const a of (data ?? []) as any[]) applicantById.set(String(a.id), a);
+    } catch { /* save rows as provided */ }
+  }
+
   for (const hired of rows) {
     const { id, applicantId, employeeInfo, position, department, division, employmentType, dateHired, expectedStartDate, supervisor, status, onboardingProgress, deployedDate, employeeId } = hired;
+    const applicant = applicantId ? applicantById.get(String(applicantId)) : undefined;
     try {
       const result = await (supabase as any).from('newly_hired').upsert([
         {
           id,
           applicant_id: applicantId,
-          first_name: employeeInfo.firstName,
-          last_name: employeeInfo.lastName,
+          first_name: employeeInfo.firstName?.trim() || String(applicant?.first_name ?? '').trim(),
+          last_name: employeeInfo.lastName?.trim() || String(applicant?.last_name ?? '').trim(),
           email: employeeInfo.email,
-          phone: employeeInfo.phone,
-          position,
-          department,
+          phone: employeeInfo.phone?.trim() || String(applicant?.contact_number ?? '').trim(),
+          position: position?.trim() || String(applicant?.position ?? '').trim(),
+          department: department?.trim() || String(applicant?.office ?? '').trim(),
           division,
           employment_type: employmentType,
           date_hired: dateHired,

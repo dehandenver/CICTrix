@@ -217,7 +217,9 @@ async def hire_from_applicant(
         new_emp_raw = emp_res.data[0]
         
     # 3. Update applicant
-    client.table("applicants").update({"status": "hired"}).eq("id", applicant_id).execute()
+    # Case matters: every consumer (Office Directory headcount, drill-down,
+    # frontend backfills) filters on the exact string 'Hired'.
+    client.table("applicants").update({"status": "Hired"}).eq("id", applicant_id).execute()
     
     # 4. Fetch the row through the compatibility view to return Schema B (EmployeeResponse) format
     view_res = client.table("employees_with_department").select("*").eq("id", new_emp_raw["id"]).execute()
