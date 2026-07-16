@@ -155,16 +155,22 @@ export async function getOfficeDirectory(): Promise<
   { ok: true; data: OfficeDirectoryRow[] } | { ok: false; error: string }
 > {
   try {
-    const [deptRes, empRes, supRes, assignRes, jobsRes] = await Promise.all([
+    const [deptRes, empRes, supRes, assignRes, jobsRes, hiredRes] = await Promise.all([
       supabase.from('departments').select('*').order('name'),
+      // NOTE: the view exposes no `department_id` — selecting it made this query
+      // fail with 42703, and the error was swallowed into an empty list, which
+      // is why every office reported a headcount of 0. Join on the name instead.
       supabase
         .from('employees_with_department')
-        .select('id, full_name, email, mobile_number, current_position, department, department_id, status'),
+        .select('id, employee_id, full_name, email, mobile_number, current_position, department, current_department, status'),
       supabase.from('supervisors').select('*'),
       // Active office-role assignments (Phase 2). Missing table (not migrated
       // yet) is tolerated — the directory still renders from the other sources.
       supabase.from('office_role_assignments').select('*').eq('status', 'Active'),
-      supabase.from('job_postings').select('department')
+      supabase.from('job_postings').select('department'),
+      // Hired applicants — the agency's actual staff until employee records are
+      // migrated into `employees`. Counted toward each office's headcount below.
+      supabase.from('applicants').select('id, email, office, status').eq('status', 'Hired')
     ]);
 
     if (deptRes.error) {
@@ -176,6 +182,7 @@ export async function getOfficeDirectory(): Promise<
     const dbSupervisors: any[] = supRes.error ? [] : supRes.data ?? [];
     const assignments: any[] = assignRes?.error ? [] : assignRes?.data ?? [];
     const jobsData: any[] = jobsRes?.error ? [] : jobsRes?.data ?? [];
+    const hiredApplicants: any[] = hiredRes?.error ? [] : hiredRes?.data ?? [];
 
     // The canonical `departments` table is the source of truth for offices — the
     // same list every other screen reads. Deriving the office list from
@@ -221,15 +228,29 @@ export async function getOfficeDirectory(): Promise<
 
     // Index employees by id (for dept-head lookup) and count per department.
     const employeeById = new Map<string, any>();
-    const headcountByDeptId = new Map<string, number>();
     const headcountByDeptName = new Map<string, number>();
+    // People already counted, keyed by email, so someone present as both an
+    // employee record and a hired applicant isn't counted twice.
+    const countedPeople = new Set<string>();
+
     for (const emp of employees) {
       if (emp?.id) employeeById.set(String(emp.id), emp);
-      if (emp?.department_id) {
-        const key = String(emp.department_id);
-        headcountByDeptId.set(key, (headcountByDeptId.get(key) ?? 0) + 1);
-      }
-      const nameKey = norm(emp?.department);
+      const email = norm(emp?.email);
+      if (email) countedPeople.add(email);
+      const nameKey = norm(emp?.department) || norm(emp?.current_department);
+      if (nameKey) headcountByDeptName.set(nameKey, (headcountByDeptName.get(nameKey) ?? 0) + 1);
+    }
+
+    // Hired applicants are the agency's actual staff while employee records still
+    // live in the recruitment tables — `employees_with_department` is empty, so
+    // counting it alone reported 0 for every office even though the drill-down
+    // listed people. Fold them in here (rather than in one dashboard) so RSP, PM
+    // and System Administration all read the same headcount.
+    for (const applicant of hiredApplicants) {
+      const email = norm(applicant?.email);
+      if (email && countedPeople.has(email)) continue;
+      if (email) countedPeople.add(email);
+      const nameKey = norm(applicant?.office);
       if (nameKey) headcountByDeptName.set(nameKey, (headcountByDeptName.get(nameKey) ?? 0) + 1);
     }
 
@@ -270,10 +291,7 @@ export async function getOfficeDirectory(): Promise<
         ...(supervisorAssignsByOfficeId.get(officeIdKey) ?? []),
       ];
 
-      const employeeCount =
-        headcountByDeptId.get(officeIdKey) ??
-        headcountByDeptName.get(norm(officeName)) ??
-        0;
+      const employeeCount = headcountByDeptName.get(norm(officeName)) ?? 0;
 
       // Divisions resolution (dynamic from DB if available, else static fallback)
       const dbDivisions = departments

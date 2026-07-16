@@ -2408,39 +2408,16 @@ export const RSPDashboard = () => {
     };
   }, [section]);
 
-  // Headcount has to come from the same list the office drill-down renders
-  // (directoryEmployeesSource — hired/credentialed applicants merged with any
-  // employee records). getOfficeDirectory() counts `employees_with_department`,
-  // which is empty while employee data still lives in the recruitment tables —
-  // so the column read 0 for every office even though clicking through listed
-  // people. Deriving both from one source keeps the number and the list honest.
-  const directoryHeadcountByOffice = useMemo(() => {
-    const counts = new Map<string, number>();
-    directoryEmployeesSource.forEach((employee) => {
-      const key = normalizeOfficeName(employee.office);
-      if (!key) return;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    });
-    return counts;
-  }, [directoryEmployeesSource]);
-
-  const officeDirectoryRowsWithCounts = useMemo(
-    () =>
-      officeDirectoryRows.map((row) => ({
-        ...row,
-        employeeCount: directoryHeadcountByOffice.get(normalizeOfficeName(row.officeName)) ?? 0,
-      })),
-    [officeDirectoryRows, directoryHeadcountByOffice]
-  );
-
+  // Headcount comes from getOfficeDirectory() so this page, PM and System
+  // Administration all report the same numbers from one query.
   const filteredOfficeDirectoryRows = useMemo(
-    () => filterOfficeDirectory(officeDirectoryRowsWithCounts, employeeDirectorySearch),
-    [officeDirectoryRowsWithCounts, employeeDirectorySearch]
+    () => filterOfficeDirectory(officeDirectoryRows, employeeDirectorySearch),
+    [officeDirectoryRows, employeeDirectorySearch]
   );
 
   const officeDirectoryTotalEmployees = useMemo(
-    () => officeDirectoryRowsWithCounts.reduce((sum, row) => sum + row.employeeCount, 0),
-    [officeDirectoryRowsWithCounts]
+    () => officeDirectoryRows.reduce((sum, row) => sum + row.employeeCount, 0),
+    [officeDirectoryRows]
   );
 
   const employeeDirectoryPageCount = Math.max(1, Math.ceil(filteredOfficeDirectoryRows.length / EMPLOYEE_DIRECTORY_OFFICES_PER_PAGE));
