@@ -1,20 +1,20 @@
 import {
-    Activity as ActivityIcon,
-    ArrowLeft,
-    CheckCircle2,
-    ChevronLeft,
-    ChevronRight,
-    CircleX,
-    Eye,
-    FileText,
-    Lock,
-    Mail,
-    MessageSquare,
-    Send,
-    Star,
-    User,
-    Users,
-    X
+  Activity as ActivityIcon,
+  ArrowLeft,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  CircleX,
+  Eye,
+  FileText,
+  Lock,
+  Mail,
+  MessageSquare,
+  Send,
+  Star,
+  User,
+  Users,
+  X
 } from 'lucide-react';
 import { AdminHeader } from '../../components/AdminHeader';
 import { Sidebar } from '../../components/Sidebar';
@@ -129,16 +129,16 @@ const EDUCATION_ATTAINMENT_OPTIONS: Array<{
   label: string;
   points: number;
 }> = [
-  { value: '', label: 'Select Educational Attainment', points: 0 },
-  { value: 'elementary_level', label: 'Elementary Level (10 pts)', points: 10 },
-  { value: 'elementary_graduate', label: 'Elementary Graduate (11 pts)', points: 11 },
-  { value: 'high_school_level', label: 'High School Level (12 pts)', points: 12 },
-  { value: 'high_school_graduate', label: 'High School Graduate (13 pts)', points: 13 },
-  { value: 'college_level', label: 'College Level (14 pts)', points: 14 },
-  { value: 'college_graduate', label: 'College Graduate (16 pts)', points: 16 },
-  { value: 'masteral_units', label: 'Masteral Units (18 pts)', points: 18 },
-  { value: 'graduate_school', label: 'Graduate School (20 pts)', points: 20 },
-];
+    { value: '', label: 'Select Educational Attainment', points: 0 },
+    { value: 'elementary_level', label: 'Elementary Level (10 pts)', points: 10 },
+    { value: 'elementary_graduate', label: 'Elementary Graduate (11 pts)', points: 11 },
+    { value: 'high_school_level', label: 'High School Level (12 pts)', points: 12 },
+    { value: 'high_school_graduate', label: 'High School Graduate (13 pts)', points: 13 },
+    { value: 'college_level', label: 'College Level (14 pts)', points: 14 },
+    { value: 'college_graduate', label: 'College Graduate (16 pts)', points: 16 },
+    { value: 'masteral_units', label: 'Masteral Units (18 pts)', points: 18 },
+    { value: 'graduate_school', label: 'Graduate School (20 pts)', points: 20 },
+  ];
 
 const experienceYearsToPoints = (years: number): number => {
   if (years <= 0) return 0;
@@ -556,7 +556,7 @@ const saveStoredExperienceYears = (applicantId: string, years: string) => {
     const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
     parsed[applicantId] = years;
     localStorage.setItem(SCORE_EXPERIENCE_STORAGE_KEY, JSON.stringify(parsed));
-  } catch {}
+  } catch { }
 };
 
 const isPromotionalSource = (
@@ -586,7 +586,7 @@ const saveStoredWrittenScore = (applicantId: string, written: string) => {
     const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
     parsed[applicantId] = written;
     localStorage.setItem(SCORE_WRITTEN_STORAGE_KEY, JSON.stringify(parsed));
-  } catch {}
+  } catch { }
 };
 
 const getStoredFinalizedState = (applicantId: string): boolean => {
@@ -660,28 +660,28 @@ const getStoredInterviewerScoreSnapshot = (
 };
 
 const DOCUMENT_SLOTS = [
-  { type: 'application_letter',            label: 'Application Letter',                       required: true  },
-  { type: 'pds_with_photo',               label: 'Personal Data Sheet',                      required: true  },
-  { type: 'curriculum_vitae',             label: 'Curriculum Vitae',                         required: true  },
-  { type: 'eligibility_proof',            label: 'Proof of Eligibility Rating/License',      required: true  },
-  { type: 'training_certificate',         label: 'Certificate of Relevant Training/Seminars', required: true  },
-  { type: 'transcript_of_records',        label: 'Transcript of Records',                    required: true  },
-  { type: 'previous_employer_certificate',label: 'Certificate from Previous Employer',       required: false },
-  { type: 'drug_test',                    label: 'Drug Test Result',                         required: true  },
-  { type: 'other',                        label: 'Other Supporting Documents',               required: false },
+  { type: 'application_letter', label: 'Application Letter', required: true },
+  { type: 'pds_with_photo', label: 'Personal Data Sheet', required: true },
+  { type: 'curriculum_vitae', label: 'Curriculum Vitae', required: true },
+  { type: 'eligibility_proof', label: 'Proof of Eligibility Rating/License', required: true },
+  { type: 'training_certificate', label: 'Certificate of Relevant Training/Seminars', required: true },
+  { type: 'transcript_of_records', label: 'Transcript of Records', required: true },
+  { type: 'previous_employer_certificate', label: 'Certificate from Previous Employer', required: false },
+  { type: 'drug_test', label: 'Drug Test Result', required: true },
+  { type: 'other', label: 'Other Supporting Documents', required: false },
 ] as const;
 
 // Labelize'd file_name aliases → slot type (for attachments without document_type)
 const FILE_NAME_TO_TYPE: Record<string, string> = {
   'Application Letter': 'application_letter',
-  'Pds With Photo':     'pds_with_photo',
-  'Curriculum Vitae':   'curriculum_vitae',
-  'Eligibility Proof':  'eligibility_proof',
+  'Pds With Photo': 'pds_with_photo',
+  'Curriculum Vitae': 'curriculum_vitae',
+  'Eligibility Proof': 'eligibility_proof',
   'Training Certificate': 'training_certificate',
   'Transcript Of Records': 'transcript_of_records',
   'Previous Employer Certificate': 'previous_employer_certificate',
-  'Drug Test':          'drug_test',
-  'Other':              'other',
+  'Drug Test': 'drug_test',
+  'Other': 'other',
 };
 
 export function ApplicantDetailsPage() {
@@ -773,7 +773,7 @@ export function ApplicantDetailsPage() {
     if (synced) {
       void (supabase as any).from('applicants').update({ updated_at: new Date().toISOString() }).eq('id', applicant.id);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applicant?.id, attachments, docReviews]);
 
   // Validation state is derived from the durable doc_validated rows, not from
@@ -786,8 +786,8 @@ export function ApplicantDetailsPage() {
 
   const realDocs = attachments.filter(
     (a) => a.document_type !== 'resubmission_request' &&
-           a.document_type !== 'resubmission_resolved' &&
-           a.document_type !== 'doc_validated',
+      a.document_type !== 'resubmission_resolved' &&
+      a.document_type !== 'doc_validated',
   );
   const validatedDocTypes = new Set(
     attachments.filter((a) => a.document_type === 'doc_validated').map((a) => a.file_name),
@@ -1095,8 +1095,8 @@ export function ApplicantDetailsPage() {
   const backTo = routeState?.from || (isRspAdmin ? '/admin/rsp/applications' : '/admin/rsp/qualified');
   const backLabel = backTo.includes('qualified') ? 'Qualified Applicants'
     : backTo.includes('applicant-score') ? 'Applicant Score'
-    : backTo.includes('for-hiring') ? 'For Hiring'
-    : 'Applications';
+      : backTo.includes('for-hiring') ? 'For Hiring'
+        : 'Applications';
   const showViewScoresButton = false;
   const showJobPostActionButtons = true;
   const scoreActionLabel = isScoreFinalized ? 'View Score' : 'Update Score';
@@ -1162,13 +1162,13 @@ export function ApplicantDetailsPage() {
   const modalAdjective = adjectiveFromScore(modalTotalScore);
   const scoringResponsibilityText = isPromotionalAppointment
     ? {
-        rsp: 'Education, Experience, Performance Rating, Potential',
-        interviewer: 'PCPT (Physical Characteristics & Personality Traits)',
-      }
+      rsp: 'Education, Experience, Performance Rating, Potential',
+      interviewer: 'PCPT (Physical Characteristics & Personality Traits)',
+    }
     : {
-        rsp: 'Education, Experience, Written Examination',
-        interviewer: 'PCPT, Oral Examination',
-      };
+      rsp: 'Education, Experience, Written Examination',
+      interviewer: 'PCPT, Oral Examination',
+    };
 
   useEffect(() => {
     if (!id) return;
@@ -1336,9 +1336,9 @@ export function ApplicantDetailsPage() {
     // or the visibility toggle would be meaningless.
     const reason = action === 'disqualify' && disqualifyDetails
       ? buildDisqualificationActivityDescription(
-          disqualifyDetails.reasonCategory,
-          disqualifyDetails.messageVisible ? disqualifyDetails.message : '',
-        )
+        disqualifyDetails.reasonCategory,
+        disqualifyDetails.messageVisible ? disqualifyDetails.message : '',
+      )
       : null;
 
     // Go straight to Supabase — this is the single source of truth the public
@@ -1428,27 +1428,27 @@ export function ApplicantDetailsPage() {
     const updated: Applicant = recruitmentApplicant
       ? { ...recruitmentApplicant, status: nextStatus, notes: nextNotes, timeline: nextTimeline }
       : {
-          id: applicant.id,
-          jobPostingId: '',
-          personalInfo: {
-            firstName: '',
-            lastName: '',
-            email: applicant.email ?? '',
-            phone: applicant.contact_number ?? '',
-            address: applicant.address ?? '',
-            dateOfBirth: new Date('1995-01-01T00:00:00+08:00').toISOString(),
-          },
-          qualificationScore: 0,
-          status: nextStatus,
-          education: [],
-          experience: [],
-          skills: [],
-          certifications: [],
-          documents: [],
-          applicationDate: applicant.created_at ?? now,
-          notes: nextNotes,
-          timeline: nextTimeline,
-        };
+        id: applicant.id,
+        jobPostingId: '',
+        personalInfo: {
+          firstName: '',
+          lastName: '',
+          email: applicant.email ?? '',
+          phone: applicant.contact_number ?? '',
+          address: applicant.address ?? '',
+          dateOfBirth: new Date('1995-01-01T00:00:00+08:00').toISOString(),
+        },
+        qualificationScore: 0,
+        status: nextStatus,
+        education: [],
+        experience: [],
+        skills: [],
+        certifications: [],
+        documents: [],
+        applicationDate: applicant.created_at ?? now,
+        notes: nextNotes,
+        timeline: nextTimeline,
+      };
 
     // Mirror to localStorage.
     const currentLocal = getApplicants();
@@ -1585,8 +1585,8 @@ export function ApplicantDetailsPage() {
     if (!id || !applicant?.id) return;
     const realDocs = attachments.filter(
       (a) => a.document_type !== 'resubmission_request' &&
-             a.document_type !== 'resubmission_resolved' &&
-             a.document_type !== 'doc_validated',
+        a.document_type !== 'resubmission_resolved' &&
+        a.document_type !== 'doc_validated',
     );
     const existingValidatedTypes = new Set(
       attachments.filter((a) => a.document_type === 'doc_validated').map((a) => a.file_name),
@@ -1629,8 +1629,8 @@ export function ApplicantDetailsPage() {
     const normalizedStatus = String(resolvedStatus ?? '').toLowerCase();
     const nextStatus: Applicant['status'] =
       normalizedStatus.includes('recommend') ||
-      normalizedStatus.includes('qualified') ||
-      normalizedStatus.includes('hired')
+        normalizedStatus.includes('qualified') ||
+        normalizedStatus.includes('hired')
         ? 'Recommended for Hiring'
         : 'Shortlisted';
 
@@ -1724,1022 +1724,996 @@ export function ApplicantDetailsPage() {
       {isRspAdmin && <AdminHeader userName="RSP Admin" divisionLabel="RSP Division" />}
       <div className={isRspAdmin ? 'admin-layout' : ''}>
         {isRspAdmin && <Sidebar activeModule="RSP" userRole="rsp" />}
-      <main className={isRspAdmin ? 'admin-content bg-white !p-0' : 'bg-slate-100 !p-0'}>
-        <header className="border-b border-slate-200 bg-white px-6 py-4">
-          {/* Breadcrumb */}
-          <div className="mb-3 flex items-center gap-1.5 text-xs">
-            <button type="button" onClick={() => navigate(backTo)} className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline">
-              <ChevronLeft size={12} /> {backLabel}
-            </button>
-            <ChevronRight size={12} className="text-slate-400" />
-            <span className="text-slate-500">{fullName}</span>
-          </div>
+        <main className={isRspAdmin ? 'admin-content bg-white !p-0' : 'bg-slate-100 !p-0'}>
+          <header className="border-b border-slate-200 bg-white px-6 py-4">
+            {/* Breadcrumb */}
+            <div className="mb-3 flex items-center gap-1.5 text-xs">
+              <button type="button" onClick={() => navigate(backTo)} className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline">
+                <ChevronLeft size={12} /> {backLabel}
+              </button>
+              <ChevronRight size={12} className="text-slate-400" />
+              <span className="text-slate-500">{fullName}</span>
+            </div>
 
-          <div className="flex items-start justify-between gap-4">
-            {/* Profile card inline */}
-            <div className="flex items-center gap-4">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
-                <User size={28} />
-              </div>
-              <div>
-                <h1 className="!mb-0 text-xl font-bold text-slate-900">{fullName}</h1>
-                <p className="text-sm text-slate-500">{applicant.position || applicant.office || 'Applicant'}</p>
-                <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                  <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${normalizeText(resolvedStatus ?? '').includes('pending') || !resolvedStatus ? 'border-amber-300 bg-amber-100 text-amber-700' : badge.className}`}>
-                    {(normalizeText(resolvedStatus ?? '').includes('pending') || !resolvedStatus) ? 'Under Review' : badge.label}
-                  </span>
-                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-600">
-                    {applicant.item_number || applicant.id}
-                  </span>
-                  {applicant.office && (
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-600">{applicant.office}</span>
-                  )}
+            <div className="flex items-start justify-between gap-4">
+              {/* Profile card inline */}
+              <div className="flex items-center gap-4">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
+                  <User size={28} />
+                </div>
+                <div>
+                  <h1 className="!mb-0 text-xl font-bold text-slate-900">{fullName}</h1>
+                  <p className="text-sm text-slate-500">{applicant.position || applicant.office || 'Applicant'}</p>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                    <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${normalizeText(resolvedStatus ?? '').includes('pending') || !resolvedStatus ? 'border-amber-300 bg-amber-100 text-amber-700' : badge.className}`}>
+                      {(normalizeText(resolvedStatus ?? '').includes('pending') || !resolvedStatus) ? 'Under Review' : badge.label}
+                    </span>
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                      {applicant.item_number || applicant.id}
+                    </span>
+                    {applicant.office && (
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-medium text-slate-600">{applicant.office}</span>
+                    )}
+                  </div>
                 </div>
               </div>
+
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {showViewScoresButton && (
+                  <button
+                    type="button"
+                    onClick={() => setShowScoresModal(true)}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm"
+                  >
+                    <Eye size={14} /> {scoreActionLabel}
+                  </button>
+                )}
+
+                {showJobPostActionButtons && (() => {
+                  const submittedFilePaths = DOCUMENT_SLOTS
+                    .map((s) => attachments.find((a) => (a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other') === s.type))
+                    .filter(Boolean)
+                    .map((a) => a!.file_path);
+                  const allDocsOpened = submittedFilePaths.length > 0 && submittedFilePaths.every((fp) => openedDocFilePaths.has(fp));
+                  const hasResubmissionPending = attachments.some((a) => (docReviews[getDocReviewKey(a.file_path)]?.status ?? 'pending') === 'resubmission_requested');
+
+                  // Spec (Qualification Verification Requirement → Document
+                  // Completion Validation): the Qualify button must remain
+                  // disabled until every required document has been uploaded,
+                  // reviewed, AND approved. Auto-derive these so the lock is
+                  // automatic, not dependent on the manual "Validate Documents"
+                  // click.
+                  const requiredSlotTypes = DOCUMENT_SLOTS.filter((s) => s.required).map((s) => s.type);
+                  const requiredAttachments = requiredSlotTypes.map((type) =>
+                    attachments.find((a) => (a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other') === type)
+                  );
+                  const allRequiredUploaded = requiredAttachments.every(Boolean);
+                  const allRequiredReviewed = requiredAttachments.every((a) => {
+                    if (!a) return false;
+                    const review = docReviews[getDocReviewKey(a.file_path)];
+                    return review?.status === 'approved' || review?.status === 'resubmission_requested';
+                  });
+                  const allRequiredApproved = requiredAttachments.every((a) => {
+                    if (!a) return false;
+                    return docReviews[getDocReviewKey(a.file_path)]?.status === 'approved';
+                  });
+                  const autoDocsCleared = allRequiredUploaded && allRequiredReviewed && allRequiredApproved;
+
+                  const qualifyLocked = !(docsValidatedEffective || autoDocsCleared) || hasResubmissionPending;
+                  const qualifyTitle =
+                    hasResubmissionPending
+                      ? 'Some documents require resubmission'
+                      : !allRequiredUploaded
+                        ? 'All required documents must be uploaded before qualification.'
+                        : !allRequiredReviewed
+                          ? 'All required documents must be reviewed before qualification.'
+                          : !allRequiredApproved
+                            ? 'All required documents must be approved before qualification.'
+                            : undefined;
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => { setConfirmAction('disqualify'); setConfirmReason(''); }}
+                        className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm ${isApplicantDisqualified
+                            ? 'border-rose-500 bg-rose-500 text-white'
+                            : 'border-rose-400 bg-white text-rose-600 hover:bg-rose-50'
+                          }`}
+                      >
+                        <CircleX size={14} /> Disqualify
+                      </button>
+                      <button
+                        type="button"
+                        // Once documents are validated the applicant has moved past the
+                        // "needs more documents" step, so shortlisting no longer applies.
+                        disabled={isApplicantDisqualified || (docsValidatedEffective && !isApplicantShortlisted)}
+                        title={
+                          docsValidatedEffective && !isApplicantShortlisted
+                            ? 'Documents are already validated — this applicant can no longer be shortlisted'
+                            : undefined
+                        }
+                        onClick={() => {
+                          if (isApplicantShortlisted) {
+                            void persistStatus('unshortlist');
+                          } else {
+                            openResubmitModal();
+                          }
+                        }}
+                        className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${isApplicantShortlisted
+                            ? 'border-[#363EE8] bg-[#363EE8] text-white'
+                            : 'border-[#363EE8] bg-white text-[#363EE8] hover:bg-blue-50'
+                          }`}
+                      >
+                        <Star size={14} /> {isApplicantShortlisted ? 'Undo Shortlist' : 'Shortlist'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { if (!qualifyLocked) setConfirmAction('qualified'); }}
+                        disabled={qualifyLocked}
+                        title={qualifyTitle}
+                        className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${isApplicantQualified
+                            ? 'border-emerald-600 bg-emerald-600 text-white'
+                            : 'border-emerald-500 bg-white text-emerald-600 hover:bg-emerald-50'
+                          }`}
+                      >
+                        <CheckCircle2 size={14} /> Qualify
+                      </button>
+                    </>
+                  );
+                })()}
+              </div>
             </div>
+          </header>
 
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              {showViewScoresButton && (
-                <button
-                  type="button"
-                  onClick={() => setShowScoresModal(true)}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm"
-                >
-                  <Eye size={14} /> {scoreActionLabel}
-                </button>
-              )}
-
-              {showJobPostActionButtons && (() => {
-                const submittedFilePaths = DOCUMENT_SLOTS
-                  .map((s) => attachments.find((a) => (a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other') === s.type))
-                  .filter(Boolean)
-                  .map((a) => a!.file_path);
-                const allDocsOpened = submittedFilePaths.length > 0 && submittedFilePaths.every((fp) => openedDocFilePaths.has(fp));
-                const hasResubmissionPending = attachments.some((a) => (docReviews[getDocReviewKey(a.file_path)]?.status ?? 'pending') === 'resubmission_requested');
-
-                // Spec (Qualification Verification Requirement → Document
-                // Completion Validation): the Qualify button must remain
-                // disabled until every required document has been uploaded,
-                // reviewed, AND approved. Auto-derive these so the lock is
-                // automatic, not dependent on the manual "Validate Documents"
-                // click.
-                const requiredSlotTypes = DOCUMENT_SLOTS.filter((s) => s.required).map((s) => s.type);
-                const requiredAttachments = requiredSlotTypes.map((type) =>
-                  attachments.find((a) => (a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other') === type)
-                );
-                const allRequiredUploaded = requiredAttachments.every(Boolean);
-                const allRequiredReviewed = requiredAttachments.every((a) => {
-                  if (!a) return false;
-                  const review = docReviews[getDocReviewKey(a.file_path)];
-                  return review?.status === 'approved' || review?.status === 'resubmission_requested';
-                });
-                const allRequiredApproved = requiredAttachments.every((a) => {
-                  if (!a) return false;
-                  return docReviews[getDocReviewKey(a.file_path)]?.status === 'approved';
-                });
-                const autoDocsCleared = allRequiredUploaded && allRequiredReviewed && allRequiredApproved;
-
-                const qualifyLocked = !(docsValidatedEffective || autoDocsCleared) || hasResubmissionPending;
-                const qualifyTitle =
-                  hasResubmissionPending
-                    ? 'Some documents require resubmission'
-                    : !allRequiredUploaded
-                      ? 'All required documents must be uploaded before qualification.'
-                      : !allRequiredReviewed
-                        ? 'All required documents must be reviewed before qualification.'
-                        : !allRequiredApproved
-                          ? 'All required documents must be approved before qualification.'
-                          : undefined;
+          <div className="border-b border-slate-200 bg-white px-4">
+            <div className="flex items-center gap-4 text-sm">
+              {[
+                { key: 'overview', label: 'Overview', icon: User },
+                { key: 'documents', label: 'Documents', icon: FileText },
+              ].map((tab) => {
+                const Icon = tab.icon;
                 return (
-                <>
                   <button
+                    key={tab.key}
                     type="button"
-                    onClick={() => { setConfirmAction('disqualify'); setConfirmReason(''); }}
-                    disabled={isApplicantQualified || isApplicantDisqualified}
-                    title={isApplicantQualified ? 'This applicant is already qualified' : undefined}
-                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
-                      isApplicantDisqualified
-                        ? 'border-rose-500 bg-rose-500 text-white'
-                        : 'border-rose-400 bg-white text-rose-600 hover:bg-rose-50'
-                    }`}
+                    className={`inline-flex items-center gap-1.5 border-b-2 pb-2 pt-2.5 font-semibold ${activeTab === tab.key ? 'border-[#363EE8] text-[#363EE8]' : 'border-transparent text-slate-600 hover:text-slate-900'}`}
+                    onClick={() => setActiveTab(tab.key as TabKey)}
                   >
-                    <CircleX size={14} /> Disqualify
+                    <Icon className="h-3.5 w-3.5" /> {tab.label}
                   </button>
-                  <button
-                    type="button"
-                    // Once documents are validated the applicant has moved past the
-                    // "needs more documents" step, so shortlisting no longer applies.
-                    disabled={isApplicantDisqualified || isApplicantQualified || (docsValidatedEffective && !isApplicantShortlisted)}
-                    title={
-                      isApplicantQualified
-                        ? 'This applicant is already qualified'
-                        : docsValidatedEffective && !isApplicantShortlisted
-                        ? 'Documents are already validated — this applicant can no longer be shortlisted'
-                        : undefined
-                    }
-                    onClick={() => {
-                      if (isApplicantShortlisted) {
-                        void persistStatus('unshortlist');
-                      } else {
-                        openResubmitModal();
-                      }
-                    }}
-                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
-                      isApplicantShortlisted
-                        ? 'border-[#363EE8] bg-[#363EE8] text-white'
-                        : 'border-[#363EE8] bg-white text-[#363EE8] hover:bg-blue-50'
-                    }`}
-                  >
-                    <Star size={14} /> {isApplicantShortlisted ? 'Undo Shortlist' : 'Shortlist'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { if (!qualifyLocked) setConfirmAction('qualified'); }}
-                    disabled={qualifyLocked || isApplicantQualified}
-                    title={isApplicantQualified ? 'This applicant is already qualified' : qualifyTitle}
-                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${
-                      isApplicantQualified
-                        ? 'border-emerald-600 bg-emerald-600 text-white'
-                        : 'border-emerald-500 bg-white text-emerald-600 hover:bg-emerald-50'
-                    }`}
-                  >
-                    <CheckCircle2 size={14} /> Qualify
-                  </button>
-                </>
                 );
-              })()}
+              })}
             </div>
           </div>
-        </header>
 
-        <div className="border-b border-slate-200 bg-white px-4">
-          <div className="flex items-center gap-4 text-sm">
-            {[
-              { key: 'overview', label: 'Overview', icon: User },
-              { key: 'documents', label: 'Documents', icon: FileText },
-            ].map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  className={`inline-flex items-center gap-1.5 border-b-2 pb-2 pt-2.5 font-semibold ${activeTab === tab.key ? 'border-[#363EE8] text-[#363EE8]' : 'border-transparent text-slate-600 hover:text-slate-900'}`}
-                  onClick={() => setActiveTab(tab.key as TabKey)}
-                >
-                  <Icon className="h-3.5 w-3.5" /> {tab.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
+          <section className="p-3">
+            <div className="h-[calc(100vh-165px)] overflow-hidden">
+              <section className="h-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-4">
+                {activeTab === 'overview' && (
+                  <div className="space-y-3">
+                    <article className="rounded-xl border border-slate-200">
+                      <h3 className="border-b border-slate-200 px-4 py-2.5 text-sm font-bold uppercase tracking-wide text-slate-500">Personal Information</h3>
+                      <div className="divide-y divide-slate-100 px-4">
+                        <div className="flex items-start justify-between py-2.5"><span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Full Name</span><span className="text-sm text-slate-800 text-right">{fullName}</span></div>
+                        <div className="flex items-start justify-between py-2.5"><span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Email Address</span><span className="text-sm text-slate-800 text-right">{applicant.email || '--'}</span></div>
+                        <div className="flex items-start justify-between py-2.5"><span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Phone Number</span><span className="text-sm text-slate-800 text-right">{applicant.contact_number || '--'}</span></div>
+                        <div className="flex items-start justify-between py-2.5"><span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Address</span><span className="text-sm text-slate-800 text-right">{applicant.address || '--'}</span></div>
+                        <div className="flex items-start justify-between py-2.5"><span className="text-xs font-semibold text-slate-500 w-36 shrink-0">PWD Status</span><span className="text-sm text-slate-800 text-right">{applicant.is_pwd === true ? <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">PWD</span> : 'Not a PWD'}</span></div>
+                      </div>
+                    </article>
 
-        <section className="p-3">
-          <div className="h-[calc(100vh-165px)] overflow-hidden">
-            <section className="h-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-4">
-              {activeTab === 'overview' && (
-                <div className="space-y-3">
+                    <article className="rounded-xl border border-slate-200">
+                      <h3 className="border-b border-slate-200 px-4 py-2.5 text-sm font-bold uppercase tracking-wide text-slate-500">Qualifications</h3>
+                      <div className="divide-y divide-slate-100 px-4">
+                        <div className="flex items-start justify-between py-2.5">
+                          <span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Education</span>
+                          <span className="text-sm text-slate-800 text-right">
+                            {(() => {
+                              const row = applicant as any;
+                              const attainment = String(row?.education_attainment ?? '').trim();
+                              const degree = String(row?.education_degree ?? '').trim();
+                              const school = String(row?.education_school ?? '').trim();
+                              const parts = [attainment, degree, school].filter(Boolean);
+                              if (parts.length > 0) return parts.join(' · ');
+                              if (primaryEducation) return [primaryEducation.degree, primaryEducation.school].filter(Boolean).join(', ') || '--';
+                              return '--';
+                            })()}
+                          </span>
+                        </div>
+                        <div className="flex items-start justify-between py-2.5">
+                          <span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Work Experience</span>
+                          <span className="text-sm text-slate-800 text-right">
+                            {(() => {
+                              const row = applicant as any;
+                              const totalYearsRaw = row?.work_experience_years ?? row?.years_of_experience ?? primaryExperience?.years ?? null;
+                              const monthsRaw = row?.work_experience_months;
+                              const totalYears = totalYearsRaw == null ? null : Number(totalYearsRaw);
+                              if (totalYears == null || !Number.isFinite(totalYears) || totalYears < 0) return '--';
+                              const wholeYears = Math.floor(totalYears);
+                              const derivedMonths = Math.round((totalYears - wholeYears) * 12);
+                              const months = monthsRaw != null && Number.isFinite(Number(monthsRaw)) ? Number(monthsRaw) : derivedMonths;
+                              const segments: string[] = [];
+                              if (wholeYears > 0) segments.push(`${wholeYears} year${wholeYears === 1 ? '' : 's'}`);
+                              if (months > 0) segments.push(`${months} month${months === 1 ? '' : 's'}`);
+                              return segments.length > 0 ? segments.join(' ') : '0 months';
+                            })()}
+                          </span>
+                        </div>
+                        <div className="flex items-start justify-between py-2.5">
+                          <span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Application Date</span>
+                          <span className="text-sm text-slate-800 text-right">{formatDate(applicant.created_at)}</span>
+                        </div>
+                      </div>
+                    </article>
+
+                    <article className="rounded-xl border border-slate-200">
+                      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
+                        <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Internal Notes</h3>
+                        <button type="button" className="text-xs font-semibold text-blue-600 hover:underline" onClick={() => setShowNoteEditor(true)}>Add Note</button>
+                      </div>
+                      {!notes.trim() && !showNoteEditor ? (
+                        <div className="px-4 py-3 text-sm text-slate-400">
+                          <p className="inline-flex items-center gap-2"><MessageSquare className="h-3.5 w-3.5" /> No notes yet.</p>
+                        </div>
+                      ) : (
+                        <div className="px-4 py-3">
+                          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Add internal comments..." className="min-h-20 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                          <div className="mt-2 flex gap-2">
+                            <button type="button" onClick={handleSaveNotes} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white">Save Note</button>
+                            <button type="button" onClick={() => setShowNoteEditor(false)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Cancel</button>
+                          </div>
+                        </div>
+                      )}
+                    </article>
+                  </div>
+                )}
+
+                {activeTab === 'documents' && (
                   <article className="rounded-xl border border-slate-200">
-                    <h3 className="border-b border-slate-200 px-4 py-2.5 text-sm font-bold uppercase tracking-wide text-slate-500">Personal Information</h3>
-                    <div className="divide-y divide-slate-100 px-4">
-                      <div className="flex items-start justify-between py-2.5"><span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Full Name</span><span className="text-sm text-slate-800 text-right">{fullName}</span></div>
-                      <div className="flex items-start justify-between py-2.5"><span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Email Address</span><span className="text-sm text-slate-800 text-right">{applicant.email || '--'}</span></div>
-                      <div className="flex items-start justify-between py-2.5"><span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Phone Number</span><span className="text-sm text-slate-800 text-right">{applicant.contact_number || '--'}</span></div>
-                      <div className="flex items-start justify-between py-2.5"><span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Address</span><span className="text-sm text-slate-800 text-right">{applicant.address || '--'}</span></div>
-                      <div className="flex items-start justify-between py-2.5"><span className="text-xs font-semibold text-slate-500 w-36 shrink-0">PWD Status</span><span className="text-sm text-slate-800 text-right">{applicant.is_pwd === true ? <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">PWD</span> : 'Not a PWD'}</span></div>
-                    </div>
-                  </article>
+                    {(() => {
+                      const realAttachments = attachments.filter(
+                        (a) => a.document_type !== 'resubmission_request' && a.document_type !== 'resubmission_resolved' && a.document_type !== 'doc_validated',
+                      );
+                      return (
+                        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                          <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Submitted Documents</h3>
+                          {!isDocLocked() && realAttachments.length > 0 && (
+                            <div className="flex items-center gap-2">
+                              {docsValidatedEffective ? (
+                                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                                  <CheckCircle2 size={12} /> Validated
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => void handleValidateAllDocs()}
+                                  disabled={docsAwaitingValidation.length === 0}
+                                  title={
+                                    docsAwaitingValidation.length === 0
+                                      ? 'No submitted documents are awaiting validation'
+                                      : `Validate all ${docsAwaitingValidation.length} submitted document(s)`
+                                  }
+                                  className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
+                                  style={{ borderColor: '#059669', color: '#059669', backgroundColor: '#f0fdf4' }}
+                                >
+                                  <CheckCircle2 size={12} /> Validate Documents
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
-                  <article className="rounded-xl border border-slate-200">
-                    <h3 className="border-b border-slate-200 px-4 py-2.5 text-sm font-bold uppercase tracking-wide text-slate-500">Qualifications</h3>
-                    <div className="divide-y divide-slate-100 px-4">
-                      <div className="flex items-start justify-between py-2.5">
-                        <span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Education</span>
-                        <span className="text-sm text-slate-800 text-right">
-                          {(() => {
-                            const row = applicant as any;
-                            const attainment = String(row?.education_attainment ?? '').trim();
-                            const degree = String(row?.education_degree ?? '').trim();
-                            const school = String(row?.education_school ?? '').trim();
-                            const parts = [attainment, degree, school].filter(Boolean);
-                            if (parts.length > 0) return parts.join(' · ');
-                            if (primaryEducation) return [primaryEducation.degree, primaryEducation.school].filter(Boolean).join(', ') || '--';
-                            return '--';
-                          })()}
-                        </span>
-                      </div>
-                      <div className="flex items-start justify-between py-2.5">
-                        <span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Work Experience</span>
-                        <span className="text-sm text-slate-800 text-right">
-                          {(() => {
-                            const row = applicant as any;
-                            const totalYearsRaw = row?.work_experience_years ?? row?.years_of_experience ?? primaryExperience?.years ?? null;
-                            const monthsRaw = row?.work_experience_months;
-                            const totalYears = totalYearsRaw == null ? null : Number(totalYearsRaw);
-                            if (totalYears == null || !Number.isFinite(totalYears) || totalYears < 0) return '--';
-                            const wholeYears = Math.floor(totalYears);
-                            const derivedMonths = Math.round((totalYears - wholeYears) * 12);
-                            const months = monthsRaw != null && Number.isFinite(Number(monthsRaw)) ? Number(monthsRaw) : derivedMonths;
-                            const segments: string[] = [];
-                            if (wholeYears > 0) segments.push(`${wholeYears} year${wholeYears === 1 ? '' : 's'}`);
-                            if (months > 0) segments.push(`${months} month${months === 1 ? '' : 's'}`);
-                            return segments.length > 0 ? segments.join(' ') : '0 months';
-                          })()}
-                        </span>
-                      </div>
-                      <div className="flex items-start justify-between py-2.5">
-                        <span className="text-xs font-semibold text-slate-500 w-36 shrink-0">Application Date</span>
-                        <span className="text-sm text-slate-800 text-right">{formatDate(applicant.created_at)}</span>
-                      </div>
-                    </div>
-                  </article>
-
-                  <article className="rounded-xl border border-slate-200">
-                    <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
-                      <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Internal Notes</h3>
-                      <button type="button" className="text-xs font-semibold text-blue-600 hover:underline" onClick={() => setShowNoteEditor(true)}>Add Note</button>
-                    </div>
-                    {!notes.trim() && !showNoteEditor ? (
-                      <div className="px-4 py-3 text-sm text-slate-400">
-                        <p className="inline-flex items-center gap-2"><MessageSquare className="h-3.5 w-3.5" /> No notes yet.</p>
-                      </div>
-                    ) : (
-                      <div className="px-4 py-3">
-                        <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Add internal comments..." className="min-h-20 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-                        <div className="mt-2 flex gap-2">
-                          <button type="button" onClick={handleSaveNotes} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white">Save Note</button>
-                          <button type="button" onClick={() => setShowNoteEditor(false)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700">Cancel</button>
+                    {isDocLocked() && (
+                      <div className="mx-4 mt-4 flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+                        <Lock className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" />
+                        <div>
+                          <p className="text-sm font-semibold text-rose-700">Application Closed</p>
+                          <p className="text-xs text-rose-600">This applicant has been disqualified or failed. Document review and resubmission are locked.</p>
                         </div>
                       </div>
                     )}
-                  </article>
-                </div>
-              )}
 
-              {activeTab === 'documents' && (
-                <article className="rounded-xl border border-slate-200">
-                  {(() => {
-                    const realAttachments = attachments.filter(
-                      (a) => a.document_type !== 'resubmission_request' && a.document_type !== 'resubmission_resolved' && a.document_type !== 'doc_validated',
-                    );
-                    return (
-                      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-                        <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Submitted Documents</h3>
-                        {!isDocLocked() && realAttachments.length > 0 && (
-                          <div className="flex items-center gap-2">
-                            {docsValidatedEffective ? (
-                              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-                                <CheckCircle2 size={12} /> Validated
+                    <div className="space-y-2 p-4">
+                      {DOCUMENT_SLOTS.map((slot, idx) => {
+                        // All real submissions for this slot, oldest first
+                        const matched = attachments
+                          .filter(a => {
+                            const resolvedType = a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other';
+                            return resolvedType === slot.type && a.document_type !== 'resubmission_request' && a.document_type !== 'resubmission_resolved';
+                          })
+                          .sort((x, y) => new Date(x.created_at ?? '').getTime() - new Date(y.created_at ?? '').getTime());
+
+                        // Resubmission notice for this slot from Supabase
+                        const slotNotice = attachments.find(a =>
+                          a.document_type === 'resubmission_request' &&
+                          a.file_name.split('::')[1] === slot.label
+                        );
+
+                        const isSubmitted = matched.length > 0;
+                        const hasSupabaseResubmissionRequest = Boolean(slotNotice);
+                        const latestDoc = matched[matched.length - 1];
+                        const latestApproved = latestDoc ? docReviews[getDocReviewKey(latestDoc.file_path)]?.status === 'approved' : false;
+
+                        return (
+                          <article key={slot.type} className={`rounded-xl border ${hasSupabaseResubmissionRequest ? 'border-amber-300 bg-amber-50/30' : latestApproved ? 'border-emerald-300 bg-emerald-50/40' : isSubmitted ? 'border-blue-200 bg-blue-50/20' : 'border-dashed border-slate-200 bg-slate-50/50'}`}>
+                            <div className="flex items-start gap-2.5 px-3 py-3">
+                              <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-bold ${hasSupabaseResubmissionRequest ? 'bg-amber-100 text-amber-700' : isSubmitted ? 'bg-[#363EE8]/10 text-[#363EE8]' : 'bg-slate-100 text-slate-400'}`}>
+                                {idx + 1}
                               </span>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => void handleValidateAllDocs()}
-                                disabled={docsAwaitingValidation.length === 0}
-                                title={
-                                  docsAwaitingValidation.length === 0
-                                    ? 'No submitted documents are awaiting validation'
-                                    : `Validate all ${docsAwaitingValidation.length} submitted document(s)`
-                                }
-                                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
-                                style={{ borderColor: '#059669', color: '#059669', backgroundColor: '#f0fdf4' }}
-                              >
-                                <CheckCircle2 size={12} /> Validate Documents
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center justify-between gap-1.5">
+                                  <span className="text-sm font-semibold" style={{ color: '#040E6B' }}>{slot.label}</span>
+                                  {hasSupabaseResubmissionRequest && (
+                                    <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Resubmission Requested</span>
+                                  )}
+                                </div>
 
-                  {isDocLocked() && (
-                    <div className="mx-4 mt-4 flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
-                      <Lock className="mt-0.5 h-4 w-4 shrink-0 text-rose-500" />
-                      <div>
-                        <p className="text-sm font-semibold text-rose-700">Application Closed</p>
-                        <p className="text-xs text-rose-600">This applicant has been disqualified or failed. Document review and resubmission are locked.</p>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="space-y-2 p-4">
-                    {DOCUMENT_SLOTS.map((slot, idx) => {
-                      // All real submissions for this slot, oldest first
-                      const matched = attachments
-                        .filter(a => {
-                          const resolvedType = a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other';
-                          return resolvedType === slot.type && a.document_type !== 'resubmission_request' && a.document_type !== 'resubmission_resolved';
-                        })
-                        .sort((x, y) => new Date(x.created_at ?? '').getTime() - new Date(y.created_at ?? '').getTime());
-
-                      // Resubmission notice for this slot from Supabase
-                      const slotNotice = attachments.find(a =>
-                        a.document_type === 'resubmission_request' &&
-                        a.file_name.split('::')[1] === slot.label
-                      );
-
-                      const isSubmitted = matched.length > 0;
-                      const hasSupabaseResubmissionRequest = Boolean(slotNotice);
-                      const latestDoc = matched[matched.length - 1];
-                      const latestApproved = latestDoc ? docReviews[getDocReviewKey(latestDoc.file_path)]?.status === 'approved' : false;
-
-                      return (
-                        <article key={slot.type} className={`rounded-xl border ${hasSupabaseResubmissionRequest ? 'border-amber-300 bg-amber-50/30' : latestApproved ? 'border-emerald-300 bg-emerald-50/40' : isSubmitted ? 'border-blue-200 bg-blue-50/20' : 'border-dashed border-slate-200 bg-slate-50/50'}`}>
-                          <div className="flex items-start gap-2.5 px-3 py-3">
-                            <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-xs font-bold ${hasSupabaseResubmissionRequest ? 'bg-amber-100 text-amber-700' : isSubmitted ? 'bg-[#363EE8]/10 text-[#363EE8]' : 'bg-slate-100 text-slate-400'}`}>
-                              {idx + 1}
-                            </span>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center justify-between gap-1.5">
-                                <span className="text-sm font-semibold" style={{ color: '#040E6B' }}>{slot.label}</span>
-                                {hasSupabaseResubmissionRequest && (
-                                  <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Resubmission Requested</span>
-                                )}
-                              </div>
-
-                              {/* Resubmission notice detail */}
-                              {slotNotice && (() => {
-                                const parts = slotNotice.file_name.split('::');
-                                const reason = parts[2] ?? '';
-                                const notes = slotNotice.file_path === '—' ? '' : slotNotice.file_path;
-                                return (
-                                  <div className="mt-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs">
-                                    {reason && <p className="text-amber-800"><span className="font-semibold">Reason:</span> {reason}</p>}
-                                    {notes && <p className="mt-0.5 text-amber-700"><span className="font-semibold">RSP Note:</span> {notes}</p>}
-                                    <p className="mt-0.5 text-amber-500">Sent: {formatDate(slotNotice.created_at)}</p>
-                                  </div>
-                                );
-                              })()}
-
-                              {!isSubmitted && (
-                                <p className="mt-1 text-xs italic text-slate-400">Not yet submitted</p>
-                              )}
-
-                              {/* All versions of this document */}
-                              {matched.map((doc, versionIdx) => {
-                                const reviewKey = getDocReviewKey(doc.file_path);
-                                const review = docReviews[reviewKey];
-                                const localStatus: DocReviewStatus = review?.status ?? 'pending';
-                                const isLatest = versionIdx === matched.length - 1;
-                                const isResubmission = versionIdx > 0;
-
-                                const versionLabel = isResubmission
-                                  ? `Resubmission #${versionIdx}`
-                                  : 'Original Submission';
-
-                                return (
-                                  <div key={doc.id} className={`mt-2 rounded-lg border px-3 py-2 ${isResubmission ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-100 bg-slate-50'}`}>
-                                    <div className="flex items-start justify-between gap-4">
-                                      <button className="flex-1 text-left" onClick={() => void handleOpenDocument(doc.file_path)}>
-                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${isResubmission ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
-                                            {versionLabel}
-                                          </span>
-                                          {isLatest && (
-                                            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">Current</span>
-                                          )}
-                                          {localStatus === 'approved' && (
-                                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">✓ Approved</span>
-                                          )}
-                                          {localStatus === 'resubmission_requested' && (
-                                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">⚠ Resubmission</span>
-                                          )}
-                                        </div>
-                                        <p className="mt-1 truncate text-xs text-slate-500">{doc.file_name}</p>
-                                        <p className="text-xs text-slate-400">Uploaded {formatDate(doc.created_at || applicant.created_at)}</p>
-                                        {localStatus === 'resubmission_requested' && review?.remarks && (
-                                          <p className="mt-0.5 text-xs text-amber-700 font-medium">Reason: {review.remarks}</p>
-                                        )}
-                                      </button>
-                                      
+                                {/* Resubmission notice detail */}
+                                {slotNotice && (() => {
+                                  const parts = slotNotice.file_name.split('::');
+                                  const reason = parts[2] ?? '';
+                                  const notes = slotNotice.file_path === '—' ? '' : slotNotice.file_path;
+                                  return (
+                                    <div className="mt-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs">
+                                      {reason && <p className="text-amber-800"><span className="font-semibold">Reason:</span> {reason}</p>}
+                                      {notes && <p className="mt-0.5 text-amber-700"><span className="font-semibold">RSP Note:</span> {notes}</p>}
+                                      <p className="mt-0.5 text-amber-500">Sent: {formatDate(slotNotice.created_at)}</p>
                                     </div>
-                                  </div>
-                                );
-                              })}
+                                  );
+                                })()}
+
+                                {!isSubmitted && (
+                                  <p className="mt-1 text-xs italic text-slate-400">Not yet submitted</p>
+                                )}
+
+                                {/* All versions of this document */}
+                                {matched.map((doc, versionIdx) => {
+                                  const reviewKey = getDocReviewKey(doc.file_path);
+                                  const review = docReviews[reviewKey];
+                                  const localStatus: DocReviewStatus = review?.status ?? 'pending';
+                                  const isLatest = versionIdx === matched.length - 1;
+                                  const isResubmission = versionIdx > 0;
+
+                                  const versionLabel = isResubmission
+                                    ? `Resubmission #${versionIdx}`
+                                    : 'Original Submission';
+
+                                  return (
+                                    <div key={doc.id} className={`mt-2 rounded-lg border px-3 py-2 ${isResubmission ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-100 bg-slate-50'}`}>
+                                      <div className="flex items-start justify-between gap-4">
+                                        <button className="flex-1 text-left" onClick={() => void handleOpenDocument(doc.file_path)}>
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${isResubmission ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                                              {versionLabel}
+                                            </span>
+                                            {isLatest && (
+                                              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">Current</span>
+                                            )}
+                                            {localStatus === 'approved' && (
+                                              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">✓ Approved</span>
+                                            )}
+                                            {localStatus === 'resubmission_requested' && (
+                                              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">⚠ Resubmission</span>
+                                            )}
+                                          </div>
+                                          <p className="mt-1 truncate text-xs text-slate-500">{doc.file_name}</p>
+                                          <p className="text-xs text-slate-400">Uploaded {formatDate(doc.created_at || applicant.created_at)}</p>
+                                          {localStatus === 'resubmission_requested' && review?.remarks && (
+                                            <p className="mt-0.5 text-xs text-amber-700 font-medium">Reason: {review.remarks}</p>
+                                          )}
+                                        </button>
+
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
-                          </div>
-                        </article>
-                      );
-                    })}
-                  </div>
-                </article>
-              )}
-            </section>
-          </div>
-        </section>
-      </main>
-
-      {showSendEmailModal && (
-        <div className="fixed inset-0 z-[270] flex items-center justify-center bg-black/60 p-4" onClick={() => setShowSendEmailModal(false)}>
-          <div className="flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" style={{ maxHeight: '90vh' }} onClick={(e) => e.stopPropagation()}>
-            {/* Blue header */}
-            <div className="flex items-center gap-4 bg-blue-600 px-6 py-5">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/20">
-                <Mail size={24} className="text-white" />
-              </div>
-              <div className="flex-1">
-                <h2 className="text-lg font-bold text-white">Send Email to Applicant</h2>
-                <p className="text-sm text-blue-100">Notify applicant about their application</p>
-              </div>
-              <button type="button" onClick={() => setShowSendEmailModal(false)} className="rounded-lg p-2 text-white/80 hover:bg-white/10">
-                <X size={20} />
-              </button>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </article>
+                )}
+              </section>
             </div>
+          </section>
+        </main>
 
-            {/* Scrollable body */}
-            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-              {/* Recipient row */}
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-4 grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">TO:</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-800">{applicant?.email || '—'}</p>
+        {showSendEmailModal && (
+          <div className="fixed inset-0 z-[270] flex items-center justify-center bg-black/60 p-4" onClick={() => setShowSendEmailModal(false)}>
+            <div className="flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" style={{ maxHeight: '90vh' }} onClick={(e) => e.stopPropagation()}>
+              {/* Blue header */}
+              <div className="flex items-center gap-4 bg-blue-600 px-6 py-5">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/20">
+                  <Mail size={24} className="text-white" />
                 </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">APPLICANT NAME:</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-800">{fullName || '—'}</p>
+                <div className="flex-1">
+                  <h2 className="text-lg font-bold text-white">Send Email to Applicant</h2>
+                  <p className="text-sm text-blue-100">Notify applicant about their application</p>
                 </div>
+                <button type="button" onClick={() => setShowSendEmailModal(false)} className="rounded-lg p-2 text-white/80 hover:bg-white/10">
+                  <X size={20} />
+                </button>
               </div>
 
-              {/* Template selector */}
-              <div>
-                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Message Template <span className="font-normal text-slate-400">(Optional)</span></label>
-                <select
-                  value={emailTemplate}
-                  onChange={(e) => handleEmailTemplateChange(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                >
-                  <option value="">Select a template...</option>
-                  <option value="missing_documents">Missing Documents</option>
-                  <option value="incorrect_format">Incorrect File Format</option>
-                  <option value="invalid_information">Invalid Information</option>
-                  <option value="schedule_interview">Schedule Interview</option>
-                  <option value="custom">Custom Message</option>
-                </select>
-                <p className="mt-1 text-xs text-slate-400">Choose a pre-written template or write a custom message</p>
-              </div>
-
-              {/* Subject line */}
-              <div>
-                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Subject Line <span className="text-rose-500">*</span></label>
-                <input
-                  type="text"
-                  value={emailSubject}
-                  onChange={(e) => setEmailSubject(e.target.value)}
-                  placeholder="e.g., Incomplete Requirements for Your Application"
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                />
-              </div>
-
-              {/* Message body */}
-              <div>
-                <label className="mb-1.5 block text-sm font-semibold text-slate-700">Message <span className="text-rose-500">*</span></label>
-                <textarea
-                  rows={7}
-                  value={emailBody}
-                  onChange={(e) => setEmailBody(e.target.value)}
-                  placeholder="Write your message here..."
-                  className="w-full resize-none rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                />
-                <p className="mt-1 text-xs text-slate-400">Be clear and professional in your communication</p>
-              </div>
-
-              {/* Additional Notes from RSP Admin */}
-              <div>
-                <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                  Additional Notes from RSP Admin <span className="font-normal text-slate-400">(Optional)</span>
-                </label>
-                <textarea
-                  rows={3}
-                  value={emailNotes}
-                  onChange={(e) => setEmailNotes(e.target.value)}
-                  placeholder="Add any internal notes or specific instructions for the applicant..."
-                  className="w-full resize-none rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-                />
-                <p className="mt-1 text-xs text-slate-400">These notes will be appended to the email message</p>
-              </div>
-
-              {/* Applicant Documents Summary */}
-              <div>
-                <p className="mb-3 text-sm font-bold text-slate-700">Applicant Documents Summary</p>
-                <div className="grid grid-cols-2 gap-3">
-                  {/* Submitted */}
-                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                    <div className="mb-2 flex items-center gap-2">
-                      <FileText size={16} className="text-emerald-600" />
-                      <span className="text-sm font-bold text-emerald-700">Submitted Documents</span>
-                    </div>
-                    {attachments.length > 0 ? (
-                      <ul className="space-y-1">
-                        {attachments.map((att) => (
-                          <li key={att.id} className="flex items-center gap-1.5 text-xs text-emerald-700">
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                            {att.file_name}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="text-xs text-emerald-600">No documents submitted</p>
-                    )}
+              {/* Scrollable body */}
+              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+                {/* Recipient row */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-4 grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">TO:</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-800">{applicant?.email || '—'}</p>
                   </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">APPLICANT NAME:</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-800">{fullName || '—'}</p>
+                  </div>
+                </div>
 
-                  {/* Missing */}
-                  <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
-                    <div className="mb-2 flex items-center gap-2">
-                      <FileText size={16} className="text-rose-600" />
-                      <span className="text-sm font-bold text-rose-700">Missing Documents</span>
-                    </div>
-                    {(() => {
-                      const REQUIRED = ['Application Letter', 'Resume', 'Transcript of Records', 'Certifications', 'Personal Data Sheet'];
-                      const submitted = attachments.map((a) => a.file_name.toLowerCase());
-                      const missing = REQUIRED.filter((req) => !submitted.some((s) => s.includes(req.toLowerCase().split(' ')[0])));
-                      return missing.length === 0 ? (
-                        <p className="text-xs text-rose-600">All documents submitted</p>
-                      ) : (
+                {/* Template selector */}
+                <div>
+                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">Message Template <span className="font-normal text-slate-400">(Optional)</span></label>
+                  <select
+                    value={emailTemplate}
+                    onChange={(e) => handleEmailTemplateChange(e.target.value)}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  >
+                    <option value="">Select a template...</option>
+                    <option value="missing_documents">Missing Documents</option>
+                    <option value="incorrect_format">Incorrect File Format</option>
+                    <option value="invalid_information">Invalid Information</option>
+                    <option value="schedule_interview">Schedule Interview</option>
+                    <option value="custom">Custom Message</option>
+                  </select>
+                  <p className="mt-1 text-xs text-slate-400">Choose a pre-written template or write a custom message</p>
+                </div>
+
+                {/* Subject line */}
+                <div>
+                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">Subject Line <span className="text-rose-500">*</span></label>
+                  <input
+                    type="text"
+                    value={emailSubject}
+                    onChange={(e) => setEmailSubject(e.target.value)}
+                    placeholder="e.g., Incomplete Requirements for Your Application"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  />
+                </div>
+
+                {/* Message body */}
+                <div>
+                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">Message <span className="text-rose-500">*</span></label>
+                  <textarea
+                    rows={7}
+                    value={emailBody}
+                    onChange={(e) => setEmailBody(e.target.value)}
+                    placeholder="Write your message here..."
+                    className="w-full resize-none rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  />
+                  <p className="mt-1 text-xs text-slate-400">Be clear and professional in your communication</p>
+                </div>
+
+                {/* Additional Notes from RSP Admin */}
+                <div>
+                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                    Additional Notes from RSP Admin <span className="font-normal text-slate-400">(Optional)</span>
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={emailNotes}
+                    onChange={(e) => setEmailNotes(e.target.value)}
+                    placeholder="Add any internal notes or specific instructions for the applicant..."
+                    className="w-full resize-none rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  />
+                  <p className="mt-1 text-xs text-slate-400">These notes will be appended to the email message</p>
+                </div>
+
+                {/* Applicant Documents Summary */}
+                <div>
+                  <p className="mb-3 text-sm font-bold text-slate-700">Applicant Documents Summary</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Submitted */}
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                      <div className="mb-2 flex items-center gap-2">
+                        <FileText size={16} className="text-emerald-600" />
+                        <span className="text-sm font-bold text-emerald-700">Submitted Documents</span>
+                      </div>
+                      {attachments.length > 0 ? (
                         <ul className="space-y-1">
-                          {missing.map((doc) => (
-                            <li key={doc} className="flex items-center gap-1.5 text-xs text-rose-700">
-                              <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
-                              {doc}
+                          {attachments.map((att) => (
+                            <li key={att.id} className="flex items-center gap-1.5 text-xs text-emerald-700">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                              {att.file_name}
                             </li>
                           ))}
                         </ul>
-                      );
-                    })()}
+                      ) : (
+                        <p className="text-xs text-emerald-600">No documents submitted</p>
+                      )}
+                    </div>
+
+                    {/* Missing */}
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
+                      <div className="mb-2 flex items-center gap-2">
+                        <FileText size={16} className="text-rose-600" />
+                        <span className="text-sm font-bold text-rose-700">Missing Documents</span>
+                      </div>
+                      {(() => {
+                        const REQUIRED = ['Application Letter', 'Resume', 'Transcript of Records', 'Certifications', 'Personal Data Sheet'];
+                        const submitted = attachments.map((a) => a.file_name.toLowerCase());
+                        const missing = REQUIRED.filter((req) => !submitted.some((s) => s.includes(req.toLowerCase().split(' ')[0])));
+                        return missing.length === 0 ? (
+                          <p className="text-xs text-rose-600">All documents submitted</p>
+                        ) : (
+                          <ul className="space-y-1">
+                            {missing.map((doc) => (
+                              <li key={doc} className="flex items-center gap-1.5 text-xs text-rose-700">
+                                <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+                                {doc}
+                              </li>
+                            ))}
+                          </ul>
+                        );
+                      })()}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Footer */}
-            <div className="border-t border-slate-200 bg-white px-6 py-4">
-              {emailError && (
-                <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                  {emailError}
-                </p>
-              )}
-              {emailSuccess && (
-                <p className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                  {emailSuccess}
-                </p>
-              )}
-              <div className="flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => { setShowSendEmailModal(false); setEmailError(null); setEmailSuccess(null); setEmailNotes(''); }}
-                  disabled={emailSending}
-                  className="rounded-2xl border border-slate-300 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSendEmail}
-                  disabled={!emailSubject.trim() || !emailBody.trim() || emailSending}
-                  className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Send size={15} /> {emailSending ? 'Sending…' : 'Send Email'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Notice of Resubmission modal */}
-      {showResubmitModal && (
-        <div className="fixed inset-0 z-[270] flex items-center justify-center bg-black/60 p-4" onClick={() => setShowResubmitModal(false)}>
-          <div className="flex w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" style={{ fontFamily: 'Poppins, sans-serif', maxHeight: '90vh' }} onClick={(e) => e.stopPropagation()}>
-
-            {/* Header — brand gradient */}
-            <div className="flex items-center gap-3 px-6 py-4" style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)' }}>
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15">
-                <Mail size={20} className="text-white" />
-              </div>
-              <h2 className="flex-1 text-base font-bold text-white">Notice of Resubmission</h2>
-              <button type="button" onClick={() => setShowResubmitModal(false)} className="rounded-lg p-1.5 text-white/70 hover:bg-white/10">
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Body */}
-            <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-
-              {/* Recipient row */}
-              <div className="grid grid-cols-2 gap-3 rounded-xl px-4 py-3" style={{ backgroundColor: '#EEF0FD' }}>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#363EE8' }}>TO:</p>
-                  <p className="mt-0.5 truncate text-sm font-semibold" style={{ color: '#040E6B' }}>{applicant?.email || '—'}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#363EE8' }}>APPLICANT NAME:</p>
-                  <p className="mt-0.5 text-sm font-semibold" style={{ color: '#040E6B' }}>{fullName || '—'}</p>
-                </div>
-              </div>
-
-              {/* Document selector — multi-select pill buttons */}
-              <div>
-                <label className="mb-1.5 block text-sm font-semibold" style={{ color: '#040E6B' }}>
-                  Document for Resubmission <span className="text-rose-500">*</span>
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {DOCUMENT_SLOTS.filter((s) => attachments.some((a) => (a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other') === s.type)).map((s) => {
-                    const isSelected = resubmitSelectedSlots.includes(s.label);
-                    return (
-                      <button
-                        key={s.type}
-                        type="button"
-                        onClick={() => setResubmitSelectedSlots((prev) =>
-                          isSelected ? prev.filter((x) => x !== s.label) : [...prev, s.label]
-                        )}
-                        className="rounded-full border px-3 py-1 text-xs font-semibold transition-all"
-                        style={isSelected
-                          ? { backgroundColor: '#363EE8', borderColor: '#363EE8', color: '#ffffff' }
-                          : { backgroundColor: '#ffffff', borderColor: '#C8D1FF', color: '#040E6B' }
-                        }
-                      >{s.label}</button>
-                    );
-                  })}
-                </div>
-                {resubmitSelectedSlots.length > 0 && (
-                  <p className="mt-2 rounded-lg px-3 py-1.5 text-xs font-medium" style={{ backgroundColor: '#EEF0FD', color: '#363EE8' }}>
-                    Selected: {resubmitSelectedSlots.join(', ')}
+              {/* Footer */}
+              <div className="border-t border-slate-200 bg-white px-6 py-4">
+                {emailError && (
+                  <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {emailError}
                   </p>
                 )}
-              </div>
-
-              {/* Reason chips */}
-              <div>
-                <label className="mb-2 block text-sm font-semibold" style={{ color: '#040E6B' }}>
-                  Reason for Resubmission <span className="text-rose-500">*</span>
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {RESUBMISSION_REASONS.map((r) => {
-                    const selected = resubmitReason === r;
-                    return (
-                      <button
-                        key={r}
-                        type="button"
-                        onClick={() => setResubmitReason(r)}
-                        className="rounded-full border px-3 py-1 text-xs font-semibold transition-all"
-                        style={selected
-                          ? { backgroundColor: '#363EE8', borderColor: '#363EE8', color: '#ffffff' }
-                          : { backgroundColor: '#ffffff', borderColor: '#C8D1FF', color: '#040E6B' }
-                        }
-                      >{r}</button>
-                    );
-                  })}
-                </div>
-                {resubmitReason && (
-                  <p className="mt-2 rounded-lg px-3 py-1.5 text-xs font-medium" style={{ backgroundColor: '#EEF0FD', color: '#363EE8' }}>
-                    Selected: {resubmitReason}
+                {emailSuccess && (
+                  <p className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                    {emailSuccess}
                   </p>
                 )}
-              </div>
-
-              {/* Message / Additional Notes */}
-              <div>
-                <label className="mb-1.5 block text-sm font-semibold" style={{ color: '#040E6B' }}>
-                  Message <span className="font-normal text-slate-400">(Optional)</span>
-                </label>
-                <textarea
-                  rows={3}
-                  value={resubmitNotes}
-                  onChange={(e) => setResubmitNotes(e.target.value)}
-                  placeholder="Add specific instructions or details for the applicant regarding this resubmission..."
-                  className="w-full resize-none rounded-xl border px-4 py-3 text-sm outline-none focus:ring-2"
-                  style={{ borderColor: '#C8D1FF', color: '#040E6B' }}
-                />
-                <p className="mt-1 text-xs" style={{ color: '#363EE8' }}>This message will be included in the email and shown in the applicant's tracker.</p>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="border-t px-6 py-4" style={{ borderColor: '#C8D1FF' }}>
-              {resubmitError && (
-                <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{resubmitError}</p>
-              )}
-              {resubmitSuccess && (
-                <p className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{resubmitSuccess}</p>
-              )}
-              <div className="flex justify-end gap-3">
-                <div className="flex gap-3">
+                <div className="flex justify-end gap-3">
                   <button
                     type="button"
-                    onClick={() => { setShowResubmitModal(false); setResubmitNotes(''); setResubmitReason(''); setResubmitSelectedSlots([]); setResubmitError(null); setResubmitSuccess(null); }}
-                    disabled={resubmitSending}
-                    className="rounded-xl border px-5 py-2 text-sm font-semibold disabled:opacity-50"
-                    style={{ borderColor: '#C8D1FF', color: '#040E6B' }}
+                    onClick={() => { setShowSendEmailModal(false); setEmailError(null); setEmailSuccess(null); setEmailNotes(''); }}
+                    disabled={emailSending}
+                    className="rounded-2xl border border-slate-300 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                   >
                     Cancel
                   </button>
-                  {!resubmitSuccess && (
-                    <button
-                      type="button"
-                      onClick={() => void handleSubmitResubmission()}
-                      disabled={resubmitSelectedSlots.length === 0 || !resubmitReason.trim() || resubmitSending}
-                      className="inline-flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                      style={{ backgroundColor: '#363EE8' }}
-                    >
-                      <Send size={14} /> {resubmitSending ? 'Sending…' : 'Send Notice'}
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={handleSendEmail}
+                    disabled={!emailSubject.trim() || !emailBody.trim() || emailSending}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-6 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Send size={15} /> {emailSending ? 'Sending…' : 'Send Email'}
+                  </button>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {showScoresModal && (
-        <div className="fixed inset-0 z-[260] bg-black/80 p-4" onClick={() => setShowScoresModal(false)}>
-          <div className="mx-auto h-[96vh] w-full max-w-[1450px] overflow-y-auto rounded-2xl bg-white" onClick={(event) => event.stopPropagation()}>
-            <div className="sticky top-0 z-10 flex items-center justify-between px-8 py-5 text-white" style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', fontFamily: 'Poppins, sans-serif' }}>
-              <div>
-                <h2 className="scoring-modal-title text-3xl font-bold text-white">Applicant Evaluation & Scoring</h2>
-                <p className="scoring-modal-subtitle text-lg" style={{ color: 'rgba(255,255,255,0.9)' }}>{fullName} — {applicant.position || '--'}</p>
+        {/* Notice of Resubmission modal */}
+        {showResubmitModal && (
+          <div className="fixed inset-0 z-[270] flex items-center justify-center bg-black/60 p-4" onClick={() => setShowResubmitModal(false)}>
+            <div className="flex w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" style={{ fontFamily: 'Poppins, sans-serif', maxHeight: '90vh' }} onClick={(e) => e.stopPropagation()}>
+
+              {/* Header — brand gradient */}
+              <div className="flex items-center gap-3 px-6 py-4" style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)' }}>
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/15">
+                  <Mail size={20} className="text-white" />
+                </div>
+                <h2 className="flex-1 text-base font-bold text-white">Notice of Resubmission</h2>
+                <button type="button" onClick={() => setShowResubmitModal(false)} className="rounded-lg p-1.5 text-white/70 hover:bg-white/10">
+                  <X size={18} />
+                </button>
               </div>
-              <button type="button" onClick={() => setShowScoresModal(false)} className="rounded-lg p-2 text-white/90 hover:bg-white/10">
-                <X size={36} />
-              </button>
-            </div>
 
-            <div className="space-y-6 p-8">
-              {isScoreDraft && !isScoreFinalized && (
-                <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5">
-                  <p className="text-xl font-semibold text-amber-800">Draft Saved</p>
-                  <p className="text-base text-amber-700">
-                    This evaluation is saved as draft. You can continue editing and finalize later.
-                  </p>
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+
+                {/* Recipient row */}
+                <div className="grid grid-cols-2 gap-3 rounded-xl px-4 py-3" style={{ backgroundColor: '#EEF0FD' }}>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#363EE8' }}>TO:</p>
+                    <p className="mt-0.5 truncate text-sm font-semibold" style={{ color: '#040E6B' }}>{applicant?.email || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#363EE8' }}>APPLICANT NAME:</p>
+                    <p className="mt-0.5 text-sm font-semibold" style={{ color: '#040E6B' }}>{fullName || '—'}</p>
+                  </div>
                 </div>
-              )}
 
-              {isScoreFinalized && (
-                <div className="rounded-2xl border border-emerald-300 bg-emerald-50 p-5">
-                  <p className="text-xl font-semibold text-emerald-800">Score Finalized - View Only Mode</p>
-                  <p className="text-base text-emerald-700">
-                    This applicant's evaluation has been finalized and submitted. All fields are read-only and cannot be edited.
-                  </p>
+                {/* Document selector — multi-select pill buttons */}
+                <div>
+                  <label className="mb-1.5 block text-sm font-semibold" style={{ color: '#040E6B' }}>
+                    Document for Resubmission <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {DOCUMENT_SLOTS.filter((s) => attachments.some((a) => (a.document_type || FILE_NAME_TO_TYPE[a.file_name] || 'other') === s.type)).map((s) => {
+                      const isSelected = resubmitSelectedSlots.includes(s.label);
+                      return (
+                        <button
+                          key={s.type}
+                          type="button"
+                          onClick={() => setResubmitSelectedSlots((prev) =>
+                            isSelected ? prev.filter((x) => x !== s.label) : [...prev, s.label]
+                          )}
+                          className="rounded-full border px-3 py-1 text-xs font-semibold transition-all"
+                          style={isSelected
+                            ? { backgroundColor: '#363EE8', borderColor: '#363EE8', color: '#ffffff' }
+                            : { backgroundColor: '#ffffff', borderColor: '#C8D1FF', color: '#040E6B' }
+                          }
+                        >{s.label}</button>
+                      );
+                    })}
+                  </div>
+                  {resubmitSelectedSlots.length > 0 && (
+                    <p className="mt-2 rounded-lg px-3 py-1.5 text-xs font-medium" style={{ backgroundColor: '#EEF0FD', color: '#363EE8' }}>
+                      Selected: {resubmitSelectedSlots.join(', ')}
+                    </p>
+                  )}
                 </div>
-              )}
 
-              <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
-                <p className="mb-3 text-xl font-semibold text-slate-800">Select Appointment Type</p>
-                {isForcedPromotionalAppointment && (
-                  <p className="mb-3 rounded-xl border border-blue-300 bg-blue-100 px-4 py-3 text-sm font-semibold text-blue-800">
-                    Promotional Appointment is auto-selected for internal promotional applicants.
-                  </p>
+                {/* Reason chips */}
+                <div>
+                  <label className="mb-2 block text-sm font-semibold" style={{ color: '#040E6B' }}>
+                    Reason for Resubmission <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {RESUBMISSION_REASONS.map((r) => {
+                      const selected = resubmitReason === r;
+                      return (
+                        <button
+                          key={r}
+                          type="button"
+                          onClick={() => setResubmitReason(r)}
+                          className="rounded-full border px-3 py-1 text-xs font-semibold transition-all"
+                          style={selected
+                            ? { backgroundColor: '#363EE8', borderColor: '#363EE8', color: '#ffffff' }
+                            : { backgroundColor: '#ffffff', borderColor: '#C8D1FF', color: '#040E6B' }
+                          }
+                        >{r}</button>
+                      );
+                    })}
+                  </div>
+                  {resubmitReason && (
+                    <p className="mt-2 rounded-lg px-3 py-1.5 text-xs font-medium" style={{ backgroundColor: '#EEF0FD', color: '#363EE8' }}>
+                      Selected: {resubmitReason}
+                    </p>
+                  )}
+                </div>
+
+                {/* Message / Additional Notes */}
+                <div>
+                  <label className="mb-1.5 block text-sm font-semibold" style={{ color: '#040E6B' }}>
+                    Message <span className="font-normal text-slate-400">(Optional)</span>
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={resubmitNotes}
+                    onChange={(e) => setResubmitNotes(e.target.value)}
+                    placeholder="Add specific instructions or details for the applicant regarding this resubmission..."
+                    className="w-full resize-none rounded-xl border px-4 py-3 text-sm outline-none focus:ring-2"
+                    style={{ borderColor: '#C8D1FF', color: '#040E6B' }}
+                  />
+                  <p className="mt-1 text-xs" style={{ color: '#363EE8' }}>This message will be included in the email and shown in the applicant's tracker.</p>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="border-t px-6 py-4" style={{ borderColor: '#C8D1FF' }}>
+                {resubmitError && (
+                  <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{resubmitError}</p>
                 )}
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => !isScoreFinalized && !isForcedPromotionalAppointment && setAppointmentType('original')}
-                    disabled={isScoreFinalized || isForcedPromotionalAppointment}
-                    className={`rounded-2xl border p-4 text-center transition ${
-                      appointmentType === 'original'
-                        ? 'border-2 border-blue-400 bg-white shadow-sm'
-                        : 'border border-slate-300 bg-slate-100'
-                    } ${(isScoreFinalized || isForcedPromotionalAppointment) ? 'cursor-not-allowed opacity-80' : ''}`}
-                  >
-                    <p className={`text-xl font-semibold ${appointmentType === 'original' ? 'text-blue-700' : 'text-slate-500'}`}>Original Appointment</p>
-                    <p className="text-base text-slate-500">Education • Experience • Written Exam • Oral Exam* • PCPT*</p>
-                    <p className="text-sm text-slate-500">*Interviewer-provided</p>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => !isScoreFinalized && setAppointmentType('promotional')}
-                    disabled={isScoreFinalized || isForcedPromotionalAppointment}
-                    className={`rounded-2xl border p-4 text-center transition ${
-                      appointmentType === 'promotional'
-                        ? 'border-2 border-blue-400 bg-white shadow-sm'
-                        : 'border border-slate-300 bg-slate-100'
-                    } ${(isScoreFinalized || isForcedPromotionalAppointment) ? 'cursor-not-allowed opacity-80' : ''}`}
-                  >
-                    <p className={`text-xl font-semibold ${appointmentType === 'promotional' ? 'text-blue-700' : 'text-slate-500'}`}>Promotional Appointment</p>
-                    <p className="text-base text-slate-500">Education • Experience • Performance • PCPT* • Potential</p>
-                    <p className="text-sm text-slate-500">*Interviewer-provided</p>
-                  </button>
-                </div>
-              </section>
-
-              {!isPromotionalAppointment && (
-                <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
-                  <p className="mb-3 text-lg font-semibold text-slate-800">Position Type (for Written Exam scoring)</p>
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                {resubmitSuccess && (
+                  <p className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{resubmitSuccess}</p>
+                )}
+                <div className="flex justify-end gap-3">
+                  <div className="flex gap-3">
                     <button
                       type="button"
-                      onClick={() => !isScoreFinalized && setPositionType('rank-file')}
-                      disabled={isScoreFinalized}
-                      className={`rounded-2xl border px-6 py-4 text-center text-base font-semibold transition ${
-                        positionType === 'rank-file'
-                          ? 'border-2 border-blue-500 bg-blue-600 text-white'
-                          : 'border border-slate-300 bg-white text-slate-700'
-                      } ${isScoreFinalized ? 'cursor-not-allowed opacity-70' : ''}`}
+                      onClick={() => { setShowResubmitModal(false); setResubmitNotes(''); setResubmitReason(''); setResubmitSelectedSlots([]); setResubmitError(null); setResubmitSuccess(null); }}
+                      disabled={resubmitSending}
+                      className="rounded-xl border px-5 py-2 text-sm font-semibold disabled:opacity-50"
+                      style={{ borderColor: '#C8D1FF', color: '#040E6B' }}
                     >
-                      Rank and File
+                      Cancel
+                    </button>
+                    {!resubmitSuccess && (
+                      <button
+                        type="button"
+                        onClick={() => void handleSubmitResubmission()}
+                        disabled={resubmitSelectedSlots.length === 0 || !resubmitReason.trim() || resubmitSending}
+                        className="inline-flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        style={{ backgroundColor: '#363EE8' }}
+                      >
+                        <Send size={14} /> {resubmitSending ? 'Sending…' : 'Send Notice'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showScoresModal && (
+          <div className="fixed inset-0 z-[260] bg-black/80 p-4" onClick={() => setShowScoresModal(false)}>
+            <div className="mx-auto h-[96vh] w-full max-w-[1450px] overflow-y-auto rounded-2xl bg-white" onClick={(event) => event.stopPropagation()}>
+              <div className="sticky top-0 z-10 flex items-center justify-between px-8 py-5 text-white" style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', fontFamily: 'Poppins, sans-serif' }}>
+                <div>
+                  <h2 className="scoring-modal-title text-3xl font-bold text-white">Applicant Evaluation & Scoring</h2>
+                  <p className="scoring-modal-subtitle text-lg" style={{ color: 'rgba(255,255,255,0.9)' }}>{fullName} — {applicant.position || '--'}</p>
+                </div>
+                <button type="button" onClick={() => setShowScoresModal(false)} className="rounded-lg p-2 text-white/90 hover:bg-white/10">
+                  <X size={36} />
+                </button>
+              </div>
+
+              <div className="space-y-6 p-8">
+                {isScoreDraft && !isScoreFinalized && (
+                  <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5">
+                    <p className="text-xl font-semibold text-amber-800">Draft Saved</p>
+                    <p className="text-base text-amber-700">
+                      This evaluation is saved as draft. You can continue editing and finalize later.
+                    </p>
+                  </div>
+                )}
+
+                {isScoreFinalized && (
+                  <div className="rounded-2xl border border-emerald-300 bg-emerald-50 p-5">
+                    <p className="text-xl font-semibold text-emerald-800">Score Finalized - View Only Mode</p>
+                    <p className="text-base text-emerald-700">
+                      This applicant's evaluation has been finalized and submitted. All fields are read-only and cannot be edited.
+                    </p>
+                  </div>
+                )}
+
+                <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
+                  <p className="mb-3 text-xl font-semibold text-slate-800">Select Appointment Type</p>
+                  {isForcedPromotionalAppointment && (
+                    <p className="mb-3 rounded-xl border border-blue-300 bg-blue-100 px-4 py-3 text-sm font-semibold text-blue-800">
+                      Promotional Appointment is auto-selected for internal promotional applicants.
+                    </p>
+                  )}
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => !isScoreFinalized && !isForcedPromotionalAppointment && setAppointmentType('original')}
+                      disabled={isScoreFinalized || isForcedPromotionalAppointment}
+                      className={`rounded-2xl border p-4 text-center transition ${appointmentType === 'original'
+                          ? 'border-2 border-blue-400 bg-white shadow-sm'
+                          : 'border border-slate-300 bg-slate-100'
+                        } ${(isScoreFinalized || isForcedPromotionalAppointment) ? 'cursor-not-allowed opacity-80' : ''}`}
+                    >
+                      <p className={`text-xl font-semibold ${appointmentType === 'original' ? 'text-blue-700' : 'text-slate-500'}`}>Original Appointment</p>
+                      <p className="text-base text-slate-500">Education • Experience • Written Exam • Oral Exam* • PCPT*</p>
+                      <p className="text-sm text-slate-500">*Interviewer-provided</p>
                     </button>
                     <button
                       type="button"
-                      onClick={() => !isScoreFinalized && setPositionType('executive')}
-                      disabled={isScoreFinalized}
-                      className={`rounded-2xl border px-6 py-4 text-center text-base font-semibold transition ${
-                        positionType === 'executive'
-                          ? 'border-2 border-blue-500 bg-blue-600 text-white'
-                          : 'border border-slate-300 bg-white text-slate-700'
-                      } ${isScoreFinalized ? 'cursor-not-allowed opacity-70' : ''}`}
+                      onClick={() => !isScoreFinalized && setAppointmentType('promotional')}
+                      disabled={isScoreFinalized || isForcedPromotionalAppointment}
+                      className={`rounded-2xl border p-4 text-center transition ${appointmentType === 'promotional'
+                          ? 'border-2 border-blue-400 bg-white shadow-sm'
+                          : 'border border-slate-300 bg-slate-100'
+                        } ${(isScoreFinalized || isForcedPromotionalAppointment) ? 'cursor-not-allowed opacity-80' : ''}`}
                     >
-                      Executive / Managerial
+                      <p className={`text-xl font-semibold ${appointmentType === 'promotional' ? 'text-blue-700' : 'text-slate-500'}`}>Promotional Appointment</p>
+                      <p className="text-base text-slate-500">Education • Experience • Performance • PCPT* • Potential</p>
+                      <p className="text-sm text-slate-500">*Interviewer-provided</p>
                     </button>
                   </div>
                 </section>
-              )}
 
-              <section className="rounded-2xl border border-emerald-300 bg-emerald-50 p-5">
-                <div className="flex items-end justify-between">
-                  <div>
-                    <p className="text-lg text-slate-600">Final Numerical Score</p>
-                    <p className="text-4xl font-bold text-slate-900">{modalTotalScore.toFixed(2)}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-lg text-slate-600">Adjectival Rating</p>
-                    <p className="text-4xl font-bold text-emerald-700">{modalAdjective}</p>
-                  </div>
-                </div>
-              </section>
-
-              <section className="rounded-2xl border border-amber-300 bg-amber-50 p-5 text-base text-amber-900">
-                <p className="font-semibold">Scoring Responsibility:</p>
-                <p><strong>RSP enters:</strong> {scoringResponsibilityText.rsp}</p>
-                <p><strong>Interviewer provides:</strong> {scoringResponsibilityText.interviewer}</p>
-              </section>
-
-              <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <div className="mb-2 flex items-center justify-between">
-                    <p className="text-xl font-semibold text-slate-800">I Education (20%)</p>
-                    {educationAttainment && (
-                      <span className="rounded-full px-2 py-0.5 text-xs font-semibold" style={{ backgroundColor: '#EEF0FD', color: '#363EE8' }}>
-                        Auto-filled · Editable
-                      </span>
-                    )}
-                  </div>
-                  <select
-                    value={educationAttainment}
-                    onChange={(event) => setEducationAttainment(event.target.value as EducationAttainmentValue)}
-                    disabled={isScoreFinalized}
-                    className="w-full rounded-xl border border-slate-300 p-3 text-base disabled:cursor-not-allowed disabled:bg-slate-100"
-                  >
-                    {EDUCATION_ATTAINMENT_OPTIONS.map((option) => (
-                      <option key={option.value || 'placeholder'} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-blue-700">{modalEducationScore}</span></p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <div className="mb-2 flex items-center justify-between">
-                    <p className="text-xl font-semibold text-slate-800">II Experience (20%)</p>
-                    {experienceYears && (
-                      <span className="rounded-full px-2 py-0.5 text-xs font-semibold" style={{ backgroundColor: '#EEF0FD', color: '#363EE8' }}>
-                        Auto-filled · Editable
-                      </span>
-                    )}
-                  </div>
-                  <input
-                    type="number"
-                    min={0}
-                    max={50}
-                    value={experienceYears}
-                    onChange={(event) => setExperienceYears(event.target.value)}
-                    disabled={isScoreFinalized}
-                    placeholder="Enter years of experience"
-                    className="w-full rounded-xl border border-slate-300 p-3 text-base disabled:cursor-not-allowed disabled:bg-slate-100"
-                  />
-                  <p className="mt-1 text-sm text-slate-400">1-5 yrs = 12 pts | 6-10 yrs = 14 pts | 11-15 yrs = 16 pts</p>
-                  <p className="text-sm text-slate-400">16-20 yrs = 18 pts | 21+ yrs = 18 pts</p>
-                  <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-blue-700">{modalExperienceScore}</span></p>
-                  {(() => {
-                    const experienceDocs = attachments.filter((a) => {
-                      const type = String(a.document_type ?? FILE_NAME_TO_TYPE[a.file_name] ?? '').toLowerCase();
-                      const name = String(a.file_name ?? '').toLowerCase();
-                      return (
-                        type === 'curriculum_vitae' ||
-                        name.includes('cv') ||
-                        name.includes('resume') ||
-                        name.includes('experience')
-                      );
-                    });
-                    return (
+                {!isPromotionalAppointment && (
+                  <section className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
+                    <p className="mb-3 text-lg font-semibold text-slate-800">Position Type (for Written Exam scoring)</p>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <button
                         type="button"
-                        onClick={() => experienceDocs.forEach((doc) => void openDocument(doc.file_path))}
-                        disabled={experienceDocs.length === 0}
-                        className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:text-blue-800 disabled:cursor-not-allowed disabled:text-slate-400"
+                        onClick={() => !isScoreFinalized && setPositionType('rank-file')}
+                        disabled={isScoreFinalized}
+                        className={`rounded-2xl border px-6 py-4 text-center text-base font-semibold transition ${positionType === 'rank-file'
+                            ? 'border-2 border-blue-500 bg-blue-600 text-white'
+                            : 'border border-slate-300 bg-white text-slate-700'
+                          } ${isScoreFinalized ? 'cursor-not-allowed opacity-70' : ''}`}
                       >
-                        <FileText size={14} /> View Experience Documents ({experienceDocs.length} {experienceDocs.length === 1 ? 'file' : 'files'}) ↗
+                        Rank and File
                       </button>
-                    );
-                  })()}
-                </div>
-                {isPromotionalAppointment ? (
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                    <p className="mb-2 text-xl font-semibold text-slate-800">III Performance Rating (20%)</p>
+                      <button
+                        type="button"
+                        onClick={() => !isScoreFinalized && setPositionType('executive')}
+                        disabled={isScoreFinalized}
+                        className={`rounded-2xl border px-6 py-4 text-center text-base font-semibold transition ${positionType === 'executive'
+                            ? 'border-2 border-blue-500 bg-blue-600 text-white'
+                            : 'border border-slate-300 bg-white text-slate-700'
+                          } ${isScoreFinalized ? 'cursor-not-allowed opacity-70' : ''}`}
+                      >
+                        Executive / Managerial
+                      </button>
+                    </div>
+                  </section>
+                )}
+
+                <section className="rounded-2xl border border-emerald-300 bg-emerald-50 p-5">
+                  <div className="flex items-end justify-between">
+                    <div>
+                      <p className="text-lg text-slate-600">Final Numerical Score</p>
+                      <p className="text-4xl font-bold text-slate-900">{modalTotalScore.toFixed(2)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg text-slate-600">Adjectival Rating</p>
+                      <p className="text-4xl font-bold text-emerald-700">{modalAdjective}</p>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-amber-300 bg-amber-50 p-5 text-base text-amber-900">
+                  <p className="font-semibold">Scoring Responsibility:</p>
+                  <p><strong>RSP enters:</strong> {scoringResponsibilityText.rsp}</p>
+                  <p><strong>Interviewer provides:</strong> {scoringResponsibilityText.interviewer}</p>
+                </section>
+
+                <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="mb-2 flex items-center justify-between">
+                      <p className="text-xl font-semibold text-slate-800">I Education (20%)</p>
+                      {educationAttainment && (
+                        <span className="rounded-full px-2 py-0.5 text-xs font-semibold" style={{ backgroundColor: '#EEF0FD', color: '#363EE8' }}>
+                          Auto-filled · Editable
+                        </span>
+                      )}
+                    </div>
                     <select
-                      value={writtenScore}
-                      onChange={(event) => setWrittenScore(event.target.value)}
+                      value={educationAttainment}
+                      onChange={(event) => setEducationAttainment(event.target.value as EducationAttainmentValue)}
                       disabled={isScoreFinalized}
                       className="w-full rounded-xl border border-slate-300 p-3 text-base disabled:cursor-not-allowed disabled:bg-slate-100"
                     >
-                      <option value="">Select Performance Rating</option>
-                      <option value="12">Needs Improvement (12)</option>
-                      <option value="14">Fair (14)</option>
-                      <option value="16">Good (16)</option>
-                      <option value="18">Very Good (18)</option>
-                      <option value="20">Excellent (20)</option>
+                      {EDUCATION_ATTAINMENT_OPTIONS.map((option) => (
+                        <option key={option.value || 'placeholder'} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
                     </select>
-                    <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-amber-700">{modalWrittenScore}</span></p>
+                    <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-blue-700">{modalEducationScore}</span></p>
                   </div>
-                ) : (
-                  <div className="rounded-2xl border border-green-200 bg-green-50 p-4">
-                    <p className="mb-2 text-xl font-semibold text-slate-800">III Written Examination (20%)</p>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="mb-2 flex items-center justify-between">
+                      <p className="text-xl font-semibold text-slate-800">II Experience (20%)</p>
+                      {experienceYears && (
+                        <span className="rounded-full px-2 py-0.5 text-xs font-semibold" style={{ backgroundColor: '#EEF0FD', color: '#363EE8' }}>
+                          Auto-filled · Editable
+                        </span>
+                      )}
+                    </div>
                     <input
                       type="number"
                       min={0}
-                      max={30}
-                      value={writtenScore}
-                      onChange={(event) => setWrittenScore(event.target.value)}
+                      max={50}
+                      value={experienceYears}
+                      onChange={(event) => setExperienceYears(event.target.value)}
                       disabled={isScoreFinalized}
-                      placeholder="Enter score (0-30)"
+                      placeholder="Enter years of experience"
                       className="w-full rounded-xl border border-slate-300 p-3 text-base disabled:cursor-not-allowed disabled:bg-slate-100"
                     />
-                    <p className="mt-1 text-sm text-slate-400">10↓ = 12 pts | 11-15 = 14 pts | 16-20 = 16 pts | 21-25 = 18 pts | 26-30 = 20 pts</p>
-                    <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-green-700">{modalWrittenScore}</span></p>
+                    <p className="mt-1 text-sm text-slate-400">1-5 yrs = 12 pts | 6-10 yrs = 14 pts | 11-15 yrs = 16 pts</p>
+                    <p className="text-sm text-slate-400">16-20 yrs = 18 pts | 21+ yrs = 18 pts</p>
+                    <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-blue-700">{modalExperienceScore}</span></p>
+                    {(() => {
+                      const experienceDocs = attachments.filter((a) => {
+                        const type = String(a.document_type ?? FILE_NAME_TO_TYPE[a.file_name] ?? '').toLowerCase();
+                        const name = String(a.file_name ?? '').toLowerCase();
+                        return (
+                          type === 'curriculum_vitae' ||
+                          name.includes('cv') ||
+                          name.includes('resume') ||
+                          name.includes('experience')
+                        );
+                      });
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => experienceDocs.forEach((doc) => void openDocument(doc.file_path))}
+                          disabled={experienceDocs.length === 0}
+                          className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:text-blue-800 disabled:cursor-not-allowed disabled:text-slate-400"
+                        >
+                          <FileText size={14} /> View Experience Documents ({experienceDocs.length} {experienceDocs.length === 1 ? 'file' : 'files'}) ↗
+                        </button>
+                      );
+                    })()}
                   </div>
-                )}
-                {isPromotionalAppointment && (
-                  <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4">
-                    <p className="mb-2 text-xl font-semibold text-slate-800">V Potential (20%)</p>
-                    <div className="mb-3 rounded-xl border border-blue-300 bg-blue-50 p-3">
-                      <p className="text-base font-semibold text-blue-700">Auto-Fill Available</p>
-                      <p className="text-base text-blue-700">Last Original Appointment Score: <span className="font-bold">{lastOriginalAppointmentScore}</span></p>
-                      <button
-                        type="button"
-                        onClick={() => setPotentialScore(String(lastOriginalAppointmentScore))}
-                        className="mt-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
+                  {isPromotionalAppointment ? (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                      <p className="mb-2 text-xl font-semibold text-slate-800">III Performance Rating (20%)</p>
+                      <select
+                        value={writtenScore}
+                        onChange={(event) => setWrittenScore(event.target.value)}
+                        disabled={isScoreFinalized}
+                        className="w-full rounded-xl border border-slate-300 p-3 text-base disabled:cursor-not-allowed disabled:bg-slate-100"
                       >
-                        Use This Score
-                      </button>
+                        <option value="">Select Performance Rating</option>
+                        <option value="12">Needs Improvement (12)</option>
+                        <option value="14">Fair (14)</option>
+                        <option value="16">Good (16)</option>
+                        <option value="18">Very Good (18)</option>
+                        <option value="20">Excellent (20)</option>
+                      </select>
+                      <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-amber-700">{modalWrittenScore}</span></p>
                     </div>
-                    <input
-                      type="number"
-                      min={51}
-                      max={100}
-                      value={potentialScore}
-                      onChange={(event) => setPotentialScore(event.target.value)}
-                      disabled={isScoreFinalized}
-                      placeholder="Enter potential score (51-100)"
-                      className="w-full rounded-xl border border-slate-300 p-3 text-base disabled:cursor-not-allowed disabled:bg-slate-100"
-                    />
-                    <p className="mt-1 text-sm text-slate-500">51-60 = 12 pts | 61-70 = 14 pts | 71-80 = 16 pts</p>
-                    <p className="text-sm text-slate-500">81-90 = 18 pts | 91-100 = 20 pts</p>
-                    <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-orange-700">{modalPotentialScore}</span></p>
-                  </div>
-                )}
-              </section>
+                  ) : (
+                    <div className="rounded-2xl border border-green-200 bg-green-50 p-4">
+                      <p className="mb-2 text-xl font-semibold text-slate-800">III Written Examination (20%)</p>
+                      <input
+                        type="number"
+                        min={0}
+                        max={30}
+                        value={writtenScore}
+                        onChange={(event) => setWrittenScore(event.target.value)}
+                        disabled={isScoreFinalized}
+                        placeholder="Enter score (0-30)"
+                        className="w-full rounded-xl border border-slate-300 p-3 text-base disabled:cursor-not-allowed disabled:bg-slate-100"
+                      />
+                      <p className="mt-1 text-sm text-slate-400">10↓ = 12 pts | 11-15 = 14 pts | 16-20 = 16 pts | 21-25 = 18 pts | 26-30 = 20 pts</p>
+                      <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-green-700">{modalWrittenScore}</span></p>
+                    </div>
+                  )}
+                  {isPromotionalAppointment && (
+                    <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4">
+                      <p className="mb-2 text-xl font-semibold text-slate-800">V Potential (20%)</p>
+                      <div className="mb-3 rounded-xl border border-blue-300 bg-blue-50 p-3">
+                        <p className="text-base font-semibold text-blue-700">Auto-Fill Available</p>
+                        <p className="text-base text-blue-700">Last Original Appointment Score: <span className="font-bold">{lastOriginalAppointmentScore}</span></p>
+                        <button
+                          type="button"
+                          onClick={() => setPotentialScore(String(lastOriginalAppointmentScore))}
+                          className="mt-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white"
+                        >
+                          Use This Score
+                        </button>
+                      </div>
+                      <input
+                        type="number"
+                        min={51}
+                        max={100}
+                        value={potentialScore}
+                        onChange={(event) => setPotentialScore(event.target.value)}
+                        disabled={isScoreFinalized}
+                        placeholder="Enter potential score (51-100)"
+                        className="w-full rounded-xl border border-slate-300 p-3 text-base disabled:cursor-not-allowed disabled:bg-slate-100"
+                      />
+                      <p className="mt-1 text-sm text-slate-500">51-60 = 12 pts | 61-70 = 14 pts | 71-80 = 16 pts</p>
+                      <p className="text-sm text-slate-500">81-90 = 18 pts | 91-100 = 20 pts</p>
+                      <p className="mt-2 text-base text-slate-600">Score: <span className="font-semibold text-orange-700">{modalPotentialScore}</span></p>
+                    </div>
+                  )}
+                </section>
 
-              <section className="rounded-2xl border border-purple-300 bg-purple-50 p-5">
-                <div className="mb-3 flex items-center gap-2">
-                  <Users size={22} className="text-purple-600" />
-                  <p className="text-xl font-semibold text-slate-800">Interviewer-Provided Scores (Auto-Generated by System)</p>
-                </div>
-                <div className="mb-3 rounded-2xl border border-purple-200 bg-white p-4">
-                  <div className="flex items-center gap-2">
-                    <Lock size={16} className="text-purple-600" />
-                    <p className="text-base font-semibold text-purple-700">RSP Cannot Edit These Scores</p>
+                <section className="rounded-2xl border border-purple-300 bg-purple-50 p-5">
+                  <div className="mb-3 flex items-center gap-2">
+                    <Users size={22} className="text-purple-600" />
+                    <p className="text-xl font-semibold text-slate-800">Interviewer-Provided Scores (Auto-Generated by System)</p>
                   </div>
-                  <p className="mt-1 text-base text-slate-700">
-                    The following scores are automatically provided by the interview panel and cannot be manually entered by RSP staff. These values are generated through the interview assessment module.
-                  </p>
-                </div>
-                {isPromotionalAppointment ? (
-                  <div className="rounded-2xl border border-purple-200 bg-white p-4">
-                    <div className="mb-2 flex items-center gap-2">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-purple-600 text-sm font-bold text-white">IV</span>
-                      <p className="text-xl font-semibold text-slate-800">PCPT (20%)</p>
+                  <div className="mb-3 rounded-2xl border border-purple-200 bg-white p-4">
+                    <div className="flex items-center gap-2">
+                      <Lock size={16} className="text-purple-600" />
+                      <p className="text-base font-semibold text-purple-700">RSP Cannot Edit These Scores</p>
                     </div>
-                    <div className="rounded-xl border border-purple-300 bg-purple-50 p-3">
-                      <span className="text-base text-slate-600">Raw Score:</span>
-                      <span className="float-right text-2xl font-bold text-purple-700">{score.rawPcpt > 0 ? score.rawPcpt : (hasSavedEvaluation ? 0 : 'Pending Interview')}</span>
-                    </div>
-                    <p className="mt-2 text-sm text-slate-500">20-25 = 10 pts | 23-25 = 12 pts | 26-28 = 14 pts</p>
-                    <p className="text-sm text-slate-500">29-31 = 16 pts | 32-34 = 18 pts | 35 = 20 pts</p>
-                    <p className="mt-2 text-base font-semibold text-purple-700">Converted Score: {score.pcpt} / 20</p>
+                    <p className="mt-1 text-base text-slate-700">
+                      The following scores are automatically provided by the interview panel and cannot be manually entered by RSP staff. These values are generated through the interview assessment module.
+                    </p>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {isPromotionalAppointment ? (
                     <div className="rounded-2xl border border-purple-200 bg-white p-4">
                       <div className="mb-2 flex items-center gap-2">
-                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-purple-600 text-sm font-bold text-white">V</span>
+                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-purple-600 text-sm font-bold text-white">IV</span>
                         <p className="text-xl font-semibold text-slate-800">PCPT (20%)</p>
                       </div>
                       <div className="rounded-xl border border-purple-300 bg-purple-50 p-3">
@@ -2750,183 +2724,196 @@ export function ApplicantDetailsPage() {
                       <p className="text-sm text-slate-500">29-31 = 16 pts | 32-34 = 18 pts | 35 = 20 pts</p>
                       <p className="mt-2 text-base font-semibold text-purple-700">Converted Score: {score.pcpt} / 20</p>
                     </div>
-                    <div className="rounded-2xl border border-blue-200 bg-white p-4">
-                      <div className="mb-2 flex items-center gap-2">
-                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white">IV</span>
-                        <p className="text-xl font-semibold text-slate-800">Oral Examination (20%)</p>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <div className="rounded-2xl border border-purple-200 bg-white p-4">
+                        <div className="mb-2 flex items-center gap-2">
+                          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-purple-600 text-sm font-bold text-white">V</span>
+                          <p className="text-xl font-semibold text-slate-800">PCPT (20%)</p>
+                        </div>
+                        <div className="rounded-xl border border-purple-300 bg-purple-50 p-3">
+                          <span className="text-base text-slate-600">Raw Score:</span>
+                          <span className="float-right text-2xl font-bold text-purple-700">{score.rawPcpt > 0 ? score.rawPcpt : (hasSavedEvaluation ? 0 : 'Pending Interview')}</span>
+                        </div>
+                        <p className="mt-2 text-sm text-slate-500">20-25 = 10 pts | 23-25 = 12 pts | 26-28 = 14 pts</p>
+                        <p className="text-sm text-slate-500">29-31 = 16 pts | 32-34 = 18 pts | 35 = 20 pts</p>
+                        <p className="mt-2 text-base font-semibold text-purple-700">Converted Score: {score.pcpt} / 20</p>
                       </div>
-                      <div className="rounded-xl border border-blue-300 bg-blue-50 p-3">
-                        <span className="text-base text-slate-600">Raw Score:</span>
-                        <span className="float-right text-2xl font-bold text-blue-700">{score.oral > 0 ? score.oral : (hasSavedEvaluation ? 0 : 'Pending Interview')}</span>
+                      <div className="rounded-2xl border border-blue-200 bg-white p-4">
+                        <div className="mb-2 flex items-center gap-2">
+                          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white">IV</span>
+                          <p className="text-xl font-semibold text-slate-800">Oral Examination (20%)</p>
+                        </div>
+                        <div className="rounded-xl border border-blue-300 bg-blue-50 p-3">
+                          <span className="text-base text-slate-600">Raw Score:</span>
+                          <span className="float-right text-2xl font-bold text-blue-700">{score.oral > 0 ? score.oral : (hasSavedEvaluation ? 0 : 'Pending Interview')}</span>
+                        </div>
+                        <p className="mt-2 text-sm text-slate-500">75↓ = 10 | 76-80 = 12 | 81-85 = 14 | 86-90 = 16</p>
+                        <p className="text-sm text-slate-500">91-95 = 18 | 96-100 = 20</p>
+                        <p className="mt-2 text-base font-semibold text-blue-700">Converted Score: {score.oral} / 20</p>
                       </div>
-                      <p className="mt-2 text-sm text-slate-500">75↓ = 10 | 76-80 = 12 | 81-85 = 14 | 86-90 = 16</p>
-                      <p className="text-sm text-slate-500">91-95 = 18 | 96-100 = 20</p>
-                      <p className="mt-2 text-base font-semibold text-blue-700">Converted Score: {score.oral} / 20</p>
                     </div>
+                  )}
+                </section>
+
+                <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="mb-3 text-xl font-semibold text-slate-800">Adjectival Rating Reference</p>
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                    {[
+                      ['90 - 100', 'Excellent', 'text-green-700'],
+                      ['77 - 89', 'Very Good', 'text-blue-700'],
+                      ['64 - 76', 'Good', 'text-amber-700'],
+                      ['51 - 63', 'Average', 'text-orange-700'],
+                    ].map(([range, label, color]) => (
+                      <div key={range} className="rounded-xl border border-slate-200 bg-white p-3">
+                        <p className={`text-base font-semibold ${color}`}>{range}</p>
+                        <p className="text-base text-slate-600">{label}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                <div className="flex justify-end gap-3 border-t border-slate-200 pt-5">
+                  <button type="button" onClick={() => setShowScoresModal(false)} className="rounded-2xl border border-slate-300 bg-white px-8 py-3 text-base text-slate-700">
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveScoreDraft}
+                    disabled={isScoreFinalized}
+                    className="rounded-2xl border border-blue-300 bg-white px-8 py-3 text-base font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Save Draft
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveScoreSetup}
+                    disabled={isScoreFinalized}
+                    className="rounded-2xl bg-blue-600 px-8 py-3 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isScoreFinalized ? 'View Only' : 'Save Evaluation'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {confirmAction && (() => {
+          const isDisqualify = confirmAction === 'disqualify';
+          const canConfirm = !confirmSubmitting && (!isDisqualify || confirmReasonCategory.trim().length > 0);
+          return (
+            <div
+              className="fixed inset-0 z-[250] flex items-center justify-center bg-black/50 p-4"
+              onClick={() => !confirmSubmitting && setConfirmAction(null)}
+            >
+              <div
+                className="w-full max-w-md rounded-2xl bg-white shadow-2xl"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-start gap-3 px-6 pt-6">
+                  <div
+                    className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${isDisqualify ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'
+                      }`}
+                  >
+                    {isDisqualify ? <CircleX size={22} /> : <CheckCircle2 size={22} />}
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="!mb-1 text-lg font-bold text-slate-900">
+                      {isDisqualify ? 'Confirm Disqualification' : 'Qualify this applicant?'}
+                    </h3>
+                    <p className="!mb-0 text-sm text-slate-600">
+                      {isDisqualify
+                        ? `This action is final and cannot be undone. ${fullName} will be notified and cannot proceed further in this application.`
+                        : `This will recommend ${fullName} for hiring. This action cannot be undone from this screen.`}
+                    </p>
+                  </div>
+                </div>
+
+                {isDisqualify && (
+                  <div className="space-y-3 px-6 pt-4">
+                    <div>
+                      <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                        Reason for disqualification <span className="text-rose-500">*</span>
+                      </label>
+                      <select
+                        value={confirmReasonCategory}
+                        onChange={(event) => setConfirmReasonCategory(event.target.value)}
+                        className="w-full rounded-xl border border-rose-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-100"
+                      >
+                        <option value="">Select a reason…</option>
+                        {DISQUALIFICATION_REASON_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1.5 block text-sm font-semibold text-slate-700">
+                        Message to applicant <span className="text-slate-400 font-normal">(optional)</span>
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={confirmReason}
+                        onChange={(event) => setConfirmReason(event.target.value)}
+                        placeholder="Add any additional detail…"
+                        className="w-full resize-none rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-100"
+                      />
+                    </div>
+                    <label className="flex items-start gap-2 text-xs text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={confirmMessageVisible}
+                        onChange={(event) => setConfirmMessageVisible(event.target.checked)}
+                        className="mt-0.5"
+                      />
+                      <span>
+                        Show this message to the applicant on the public tracker. If left unchecked, only the reason
+                        category is shown — the message stays internal to RSP.
+                      </span>
+                    </label>
                   </div>
                 )}
-              </section>
 
-              <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="mb-3 text-xl font-semibold text-slate-800">Adjectival Rating Reference</p>
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                  {[
-                    ['90 - 100', 'Excellent', 'text-green-700'],
-                    ['77 - 89', 'Very Good', 'text-blue-700'],
-                    ['64 - 76', 'Good', 'text-amber-700'],
-                    ['51 - 63', 'Average', 'text-orange-700'],
-                  ].map(([range, label, color]) => (
-                    <div key={range} className="rounded-xl border border-slate-200 bg-white p-3">
-                      <p className={`text-base font-semibold ${color}`}>{range}</p>
-                      <p className="text-base text-slate-600">{label}</p>
-                    </div>
-                  ))}
+                <div className="flex justify-end gap-2 px-6 pb-6 pt-5">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmAction(null)}
+                    disabled={confirmSubmitting}
+                    className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!canConfirm) return;
+                      setConfirmSubmitting(true);
+                      try {
+                        await persistStatus(
+                          confirmAction,
+                          isDisqualify
+                            ? { reasonCategory: confirmReasonCategory, message: confirmReason, messageVisible: confirmMessageVisible }
+                            : undefined,
+                        );
+                        setConfirmAction(null);
+                        setConfirmReason('');
+                        setConfirmReasonCategory('');
+                        setConfirmMessageVisible(false);
+                      } finally {
+                        setConfirmSubmitting(false);
+                      }
+                    }}
+                    disabled={!canConfirm}
+                    className={`rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50 ${isDisqualify ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                      }`}
+                  >
+                    {confirmSubmitting ? 'Saving…' : isDisqualify ? 'Confirm Disqualification' : 'OK'}
+                  </button>
                 </div>
-              </section>
-
-              <div className="flex justify-end gap-3 border-t border-slate-200 pt-5">
-                <button type="button" onClick={() => setShowScoresModal(false)} className="rounded-2xl border border-slate-300 bg-white px-8 py-3 text-base text-slate-700">
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveScoreDraft}
-                  disabled={isScoreFinalized}
-                  className="rounded-2xl border border-blue-300 bg-white px-8 py-3 text-base font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Save Draft
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveScoreSetup}
-                  disabled={isScoreFinalized}
-                  className="rounded-2xl bg-blue-600 px-8 py-3 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isScoreFinalized ? 'View Only' : 'Save Evaluation'}
-                </button>
               </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {confirmAction && (() => {
-        const isDisqualify = confirmAction === 'disqualify';
-        const canConfirm = !confirmSubmitting && (!isDisqualify || confirmReasonCategory.trim().length > 0);
-        return (
-          <div
-            className="fixed inset-0 z-[250] flex items-center justify-center bg-black/50 p-4"
-            onClick={() => !confirmSubmitting && setConfirmAction(null)}
-          >
-            <div
-              className="w-full max-w-md rounded-2xl bg-white shadow-2xl"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="flex items-start gap-3 px-6 pt-6">
-                <div
-                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${
-                    isDisqualify ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'
-                  }`}
-                >
-                  {isDisqualify ? <CircleX size={22} /> : <CheckCircle2 size={22} />}
-                </div>
-                <div className="flex-1">
-                  <h3 className="!mb-1 text-lg font-bold text-slate-900">
-                    {isDisqualify ? 'Confirm Disqualification' : 'Qualify this applicant?'}
-                  </h3>
-                  <p className="!mb-0 text-sm text-slate-600">
-                    {isDisqualify
-                      ? `This action is final and cannot be undone. ${fullName} will be notified and cannot proceed further in this application.`
-                      : `This will recommend ${fullName} for hiring. This action cannot be undone from this screen.`}
-                  </p>
-                </div>
-              </div>
-
-              {isDisqualify && (
-                <div className="space-y-3 px-6 pt-4">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                      Reason for disqualification <span className="text-rose-500">*</span>
-                    </label>
-                    <select
-                      value={confirmReasonCategory}
-                      onChange={(event) => setConfirmReasonCategory(event.target.value)}
-                      className="w-full rounded-xl border border-rose-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-100"
-                    >
-                      <option value="">Select a reason…</option>
-                      {DISQUALIFICATION_REASON_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                      Message to applicant <span className="text-slate-400 font-normal">(optional)</span>
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={confirmReason}
-                      onChange={(event) => setConfirmReason(event.target.value)}
-                      placeholder="Add any additional detail…"
-                      className="w-full resize-none rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-100"
-                    />
-                  </div>
-                  <label className="flex items-start gap-2 text-xs text-slate-600">
-                    <input
-                      type="checkbox"
-                      checked={confirmMessageVisible}
-                      onChange={(event) => setConfirmMessageVisible(event.target.checked)}
-                      className="mt-0.5"
-                    />
-                    <span>
-                      Show this message to the applicant on the public tracker. If left unchecked, only the reason
-                      category is shown — the message stays internal to RSP.
-                    </span>
-                  </label>
-                </div>
-              )}
-
-              <div className="flex justify-end gap-2 px-6 pb-6 pt-5">
-                <button
-                  type="button"
-                  onClick={() => setConfirmAction(null)}
-                  disabled={confirmSubmitting}
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (!canConfirm) return;
-                    setConfirmSubmitting(true);
-                    try {
-                      await persistStatus(
-                        confirmAction,
-                        isDisqualify
-                          ? { reasonCategory: confirmReasonCategory, message: confirmReason, messageVisible: confirmMessageVisible }
-                          : undefined,
-                      );
-                      setConfirmAction(null);
-                      setConfirmReason('');
-                      setConfirmReasonCategory('');
-                      setConfirmMessageVisible(false);
-                    } finally {
-                      setConfirmSubmitting(false);
-                    }
-                  }}
-                  disabled={!canConfirm}
-                  className={`rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50 ${
-                    isDisqualify ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
-                  }`}
-                >
-                  {confirmSubmitting ? 'Saving…' : isDisqualify ? 'Confirm Disqualification' : 'OK'}
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+          );
+        })()}
       </div>{/* /admin-layout wrapper */}
     </div>
   );

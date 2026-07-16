@@ -1,18 +1,18 @@
 import {
-    Activity as ActivityIcon,
-    AlertCircle,
-    ArrowLeft,
-    CheckCircle2,
-    Download,
-    FileText,
-    Mail,
-    MessageSquare,
-    Plane,
-    Search,
-    Star,
-    User,
-    UserCheck,
-    X
+  Activity as ActivityIcon,
+  AlertCircle,
+  ArrowLeft,
+  CheckCircle2,
+  Download,
+  FileText,
+  Mail,
+  MessageSquare,
+  Plane,
+  Search,
+  Star,
+  User,
+  UserCheck,
+  X
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -20,14 +20,14 @@ import { getPreferredDataSourceMode } from '../lib/dataSourceMode';
 import { hireApplicant } from '../lib/api/employeesApi';
 import { mockDatabase } from '../lib/mockDatabase';
 import {
-    ensureRecruitmentSeedData,
-    formatPHDate,
-    createEmployeeNumberAllocator,
-    formatPHDateTime,
-    getApplicants,
-    getAuthoritativeJobPostings,
-    saveApplicants,
-    saveNewlyHired,
+  ensureRecruitmentSeedData,
+  formatPHDate,
+  createEmployeeNumberAllocator,
+  formatPHDateTime,
+  getApplicants,
+  getAuthoritativeJobPostings,
+  saveApplicants,
+  saveNewlyHired,
 } from '../lib/recruitmentData';
 import { sendEmail } from '../lib/email';
 import { createPassword, upsertEmployeePortalAccount } from '../lib/employeePortalData';
@@ -640,31 +640,31 @@ export const QualifiedApplicantsPage = () => {
     const jobsSource: JobPosting[] = canonicalJobs.length > 0
       ? canonicalJobs
       : dbJobPostings
-          .map((row: any, index: number) => ({
-            id: String(row?.id ?? `db-job-${index + 1}`),
-            jobCode: String(row?.job_code ?? row?.item_number ?? `DB-${index + 1}`),
-            title: String(row?.title ?? ''),
-            department: String(row?.department ?? row?.office ?? 'Unassigned'),
-            division: String(row?.division ?? ''),
-            positionType: 'Civil Service' as const,
-            numberOfPositions: 1,
-            employmentStatus: 'Permanent' as const,
-            summary: String(row?.description ?? ''),
-            responsibilities: [],
-            qualifications: {
-              education: "Bachelor's Degree",
-              experience: { years: 0, field: 'General' },
-              skills: [],
-              certifications: [],
-            },
-            requiredDocuments: [],
-            applicationDeadline: new Date().toISOString(),
-            status: normalizeText(String(row?.status ?? '')) === 'closed' ? 'Closed' : 'Active',
-            postedDate: String(row?.created_at ?? new Date().toISOString()),
-            postedBy: 'System',
-            applicantCount: Number(row?.applicant_count ?? 0),
-            qualifiedCount: Number(row?.qualified_count ?? 0),
-          }));
+        .map((row: any, index: number) => ({
+          id: String(row?.id ?? `db-job-${index + 1}`),
+          jobCode: String(row?.job_code ?? row?.item_number ?? `DB-${index + 1}`),
+          title: String(row?.title ?? ''),
+          department: String(row?.department ?? row?.office ?? 'Unassigned'),
+          division: String(row?.division ?? ''),
+          positionType: 'Civil Service' as const,
+          numberOfPositions: 1,
+          employmentStatus: 'Permanent' as const,
+          summary: String(row?.description ?? ''),
+          responsibilities: [],
+          qualifications: {
+            education: "Bachelor's Degree",
+            experience: { years: 0, field: 'General' },
+            skills: [],
+            certifications: [],
+          },
+          requiredDocuments: [],
+          applicationDeadline: new Date().toISOString(),
+          status: normalizeText(String(row?.status ?? '')) === 'closed' ? 'Closed' : 'Active',
+          postedDate: String(row?.created_at ?? new Date().toISOString()),
+          postedBy: 'System',
+          applicantCount: Number(row?.applicant_count ?? 0),
+          qualifiedCount: Number(row?.qualified_count ?? 0),
+        }));
 
     const knownTitleSet = new Set(
       jobsSource
@@ -674,55 +674,55 @@ export const QualifiedApplicantsPage = () => {
 
     const mappedApplicants: Applicant[] = dbApplicants
       .map((row: any) => {
-      const applicantId = String(row?.id ?? crypto.randomUUID());
-      const position = String(row?.position ?? '');
-      const rowJobId = String(row?.job_posting_id ?? '').trim();
-      const matchedJob =
-        jobsSource.find((job: JobPosting) => normalizeText(job.title) === normalizeText(position)) ||
-        jobsSource.find((job: JobPosting) => String(job.id) === rowJobId);
-      const resolvedJobPostingId =
-        matchedJob?.id ??
-        (rowJobId || (knownTitleSet.has(normalizeText(position)) ? normalizeText(position) : 'unposted'));
-      const evalSnapshot = evaluationMap.get(applicantId);
-      const persistedScore = typeof row?.total_score === 'number' ? row.total_score : 0;
-      const qualificationScore = evalSnapshot ? Math.max(persistedScore, evalSnapshot.score) : persistedScore;
-      const mappedStatus = toApplicantStatus(String(row?.status ?? 'New Application'), Boolean(evalSnapshot?.completed));
-      const docs = (attachmentMap.get(applicantId) ?? []).map((doc: any) => ({
-        type: String(doc?.document_type ?? doc?.file_name ?? 'Document'),
-        url: String(doc?.file_path ?? '#'),
-        verified: Boolean(doc?.verified ?? false),
-      }));
+        const applicantId = String(row?.id ?? crypto.randomUUID());
+        const position = String(row?.position ?? '');
+        const rowJobId = String(row?.job_posting_id ?? '').trim();
+        const matchedJob =
+          jobsSource.find((job: JobPosting) => normalizeText(job.title) === normalizeText(position)) ||
+          jobsSource.find((job: JobPosting) => String(job.id) === rowJobId);
+        const resolvedJobPostingId =
+          matchedJob?.id ??
+          (rowJobId || (knownTitleSet.has(normalizeText(position)) ? normalizeText(position) : 'unposted'));
+        const evalSnapshot = evaluationMap.get(applicantId);
+        const persistedScore = typeof row?.total_score === 'number' ? row.total_score : 0;
+        const qualificationScore = evalSnapshot ? Math.max(persistedScore, evalSnapshot.score) : persistedScore;
+        const mappedStatus = toApplicantStatus(String(row?.status ?? 'New Application'), Boolean(evalSnapshot?.completed));
+        const docs = (attachmentMap.get(applicantId) ?? []).map((doc: any) => ({
+          type: String(doc?.document_type ?? doc?.file_name ?? 'Document'),
+          url: String(doc?.file_path ?? '#'),
+          verified: Boolean(doc?.verified ?? false),
+        }));
 
-      return {
-        id: applicantId,
-        jobPostingId: resolvedJobPostingId,
-        personalInfo: {
-          firstName: String(row?.first_name ?? ''),
-          lastName: String(row?.last_name ?? ''),
-          itemNumber: String(row?.item_number ?? ''),
-          email: String(row?.email ?? ''),
-          phone: String(row?.contact_number ?? ''),
-          address: String(row?.address ?? ''),
-          dateOfBirth: String(row?.date_of_birth ?? new Date('1995-01-01').toISOString()),
-        },
-        qualificationScore,
-        status: mappedStatus,
-        education: [],
-        experience: [],
-        skills: [],
-        certifications: [],
-        documents: docs,
-        applicationDate: String(row?.created_at ?? new Date().toISOString()),
-        notes: [],
-        timeline: [
-          {
-            event: evalSnapshot?.completed ? 'Evaluation Completed' : 'Application Received',
-            date: evalSnapshot?.updatedAt ?? String(row?.created_at ?? new Date().toISOString()),
-            actor: evalSnapshot?.completed ? 'Interviewer' : 'System',
+        return {
+          id: applicantId,
+          jobPostingId: resolvedJobPostingId,
+          personalInfo: {
+            firstName: String(row?.first_name ?? ''),
+            lastName: String(row?.last_name ?? ''),
+            itemNumber: String(row?.item_number ?? ''),
+            email: String(row?.email ?? ''),
+            phone: String(row?.contact_number ?? ''),
+            address: String(row?.address ?? ''),
+            dateOfBirth: String(row?.date_of_birth ?? new Date('1995-01-01').toISOString()),
           },
-        ],
-      };
-    });
+          qualificationScore,
+          status: mappedStatus,
+          education: [],
+          experience: [],
+          skills: [],
+          certifications: [],
+          documents: docs,
+          applicationDate: String(row?.created_at ?? new Date().toISOString()),
+          notes: [],
+          timeline: [
+            {
+              event: evalSnapshot?.completed ? 'Evaluation Completed' : 'Application Received',
+              date: evalSnapshot?.updatedAt ?? String(row?.created_at ?? new Date().toISOString()),
+              actor: evalSnapshot?.completed ? 'Interviewer' : 'System',
+            },
+          ],
+        };
+      });
 
     const storedApplicants = getApplicants();
 
@@ -1193,14 +1193,14 @@ export const QualifiedApplicantsPage = () => {
       };
     });
     setApplicants(nextApplicants);
-    
+
     // CRITICAL: Persist status updates to Supabase DIRECTLY
     // (Skip backend API since it requires Docker - go straight to DB per golden rule)
     const persistPromises: Promise<any>[] = [];
-    
+
     ids.forEach((applicantId) => {
       const target = nextApplicants.find((entry) => entry.id === applicantId);
-      
+
       // Audit log
       appendRecruitmentAuditLog({
         action: 'QUALIFICATION_STATUS_UPDATED',
@@ -1222,46 +1222,46 @@ export const QualifiedApplicantsPage = () => {
       } else if ((nextStatus as string) === 'Hired') {
         dbStatusValue = 'hired';
       }
-      
-      const dbUpdate: Record<string, any> = { 
+
+      const dbUpdate: Record<string, any> = {
         status: dbStatusValue  // Use backend format, not UI format
       };
-      
+
       // Add disqualification reason if needed
       if (formattedReason && dbStatusValue === 'disqualified') {
         dbUpdate.disqualification_reason = formattedReason;
       }
-      
+
       console.log(`[QUALIFY] Updating ${applicantId} with DB status "${dbStatusValue}":`, dbUpdate);
       console.log(`[QUALIFY] Full update object:`, JSON.stringify(dbUpdate, null, 2));
-      
+
       const persistPromise = Promise.resolve(
         (supabase as any)
           .from('applicants')
           .update(dbUpdate)
           .eq('id', applicantId)
       ).then((result: any) => {
-          console.log(`[QUALIFY] Supabase returned:`, {
-            error: result.error,
-            data: result.data,
-            count: result.count,
-            status: result.status,
-            statusText: result.statusText,
+        console.log(`[QUALIFY] Supabase returned:`, {
+          error: result.error,
+          data: result.data,
+          count: result.count,
+          status: result.status,
+          statusText: result.statusText,
+        });
+
+        if (result.error) {
+          console.error(`✗ Supabase error for ${applicantId}:`, {
+            code: result.error.code,
+            message: result.error.message,
+            details: result.error.details,
+            hint: result.error.hint,
+            full: JSON.stringify(result.error, null, 2),
           });
-          
-          if (result.error) {
-            console.error(`✗ Supabase error for ${applicantId}:`, {
-              code: result.error.code,
-              message: result.error.message,
-              details: result.error.details,
-              hint: result.error.hint,
-              full: JSON.stringify(result.error, null, 2),
-            });
-            throw new Error(`[${result.error.code}] ${result.error.message}: ${result.error.details || result.error.hint || ''}`);
-          }
-          console.log(`✓ Supabase persisted status for ${applicantId}:`, result.data);
-          return result;
-        })
+          throw new Error(`[${result.error.code}] ${result.error.message}: ${result.error.details || result.error.hint || ''}`);
+        }
+        console.log(`✓ Supabase persisted status for ${applicantId}:`, result.data);
+        return result;
+      })
         .catch((error) => {
           console.error(`✗ FAILED to persist ${applicantId}:`, {
             message: error?.message,
@@ -1271,13 +1271,13 @@ export const QualifiedApplicantsPage = () => {
           });
           throw error;
         });
-      
+
       persistPromises.push(persistPromise);
     });
 
     // Update local state immediately to show the change
     setApplicants(nextApplicants);
-    
+
     // Update active applicant immediately so buttons disable right away
     if (activeApplicant && ids.includes(activeApplicant.id)) {
       const updated = nextApplicants.find((item) => item.id === activeApplicant.id) ?? null;
@@ -1298,7 +1298,7 @@ export const QualifiedApplicantsPage = () => {
       });
 
     setToast(`Status updated to ${nextStatusLabel}.`);
-    
+
     // FORCE button lock immediately (don't wait for useEffect)
     const normalizedStatus = nextStatus.toLowerCase();
     const shouldLockButtons =
@@ -1307,7 +1307,7 @@ export const QualifiedApplicantsPage = () => {
       normalizedStatus.includes('recommended for hiring') ||
       normalizedStatus.includes('qualified') ||
       normalizedStatus.includes('hired');
-    
+
     if (shouldLockButtons) {
       setStatusDecisionLocked(true);
       console.log(`[QUALIFY] Status locked buttons for status: ${nextStatus}`);
@@ -1339,7 +1339,7 @@ export const QualifiedApplicantsPage = () => {
       setToast('Applicant is already marked as not qualified.');
       return;
     }
-    
+
     setDisqualifyReasonDraft('');
     setDisqualificationCategory('incomplete_documents');
     setPendingStatusAction({
@@ -1361,7 +1361,7 @@ export const QualifiedApplicantsPage = () => {
       setToast('Applicant is already qualified or hired.');
       return;
     }
-    
+
     setDisqualifyReasonDraft('');
     setDisqualificationCategory('incomplete_documents');
     setPendingStatusAction({
@@ -1469,8 +1469,8 @@ export const QualifiedApplicantsPage = () => {
     const docs = getModalDocuments();
     if (docs.length === 0) return { ready: false, reason: 'No documents uploaded yet' };
     const hasUnreviewed = docs.some((doc) => (docReviews[getDocReviewKey(applicantId, doc.url)]?.status ?? 'pending') === 'pending');
-    const hasRejected   = docs.some((doc) => (docReviews[getDocReviewKey(applicantId, doc.url)]?.status ?? 'pending') === 'resubmission_requested');
-    if (hasRejected)   return { ready: false, reason: 'Some documents require resubmission' };
+    const hasRejected = docs.some((doc) => (docReviews[getDocReviewKey(applicantId, doc.url)]?.status ?? 'pending') === 'resubmission_requested');
+    if (hasRejected) return { ready: false, reason: 'Some documents require resubmission' };
     if (hasUnreviewed) return { ready: false, reason: 'All documents must be reviewed before qualifying' };
     return { ready: true, reason: '' };
   };
@@ -1529,9 +1529,9 @@ export const QualifiedApplicantsPage = () => {
     // CRITICAL FIX: Always use the current applicant from state, not the stale copy passed in
     // This ensures status updates are reflected when re-opening an applicant
     const currentApplicant = applicants.find((a) => a.id === applicant.id) ?? applicant;
-    
+
     setActiveApplicant(currentApplicant);
-    
+
     // FORCE re-evaluate lock state when opening
     const normalizedStatus = currentApplicant.status.toLowerCase();
     const shouldLock =
@@ -1541,7 +1541,7 @@ export const QualifiedApplicantsPage = () => {
       normalizedStatus.includes('qualified') ||
       normalizedStatus.includes('hired');
     setStatusDecisionLocked(shouldLock);
-    
+
     setActiveTab('Overview');
     setShowMessageDialog(false);
     setEmailTemplate('none');
@@ -1576,16 +1576,16 @@ export const QualifiedApplicantsPage = () => {
     const nextApplicants = applicants.map((applicant) =>
       applicant.id === activeApplicant.id
         ? {
-            ...applicant,
-            notes: [
-              { author: 'HR Admin', content: noteDraft.trim(), date: now, pinned: false },
-              ...(Array.isArray(applicant.notes) ? applicant.notes : []),
-            ],
-            timeline: [
-              ...(Array.isArray(applicant.timeline) ? applicant.timeline : []),
-              { event: 'Note Added', date: now, actor: 'HR Admin' },
-            ],
-          }
+          ...applicant,
+          notes: [
+            { author: 'HR Admin', content: noteDraft.trim(), date: now, pinned: false },
+            ...(Array.isArray(applicant.notes) ? applicant.notes : []),
+          ],
+          timeline: [
+            ...(Array.isArray(applicant.timeline) ? applicant.timeline : []),
+            { event: 'Note Added', date: now, actor: 'HR Admin' },
+          ],
+        }
         : applicant
     );
     setApplicants(nextApplicants);
@@ -2092,40 +2092,39 @@ export const QualifiedApplicantsPage = () => {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {(() => {
-                    const isAlreadyQualified = ['qualified', 'recommended for hiring', 'hired', 'deployed', 'accepted'].includes(normalizeText(activeApplicant.status));
                     const lockDecisionButtons = statusDecisionLocked;
                     return (
                       <>
-                  <button className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-base font-medium text-slate-700" onClick={() => setShowMessageDialog(true)}>
-                    <Plane className="h-4 w-4" /> Send Message
-                  </button>
-                  <button
-                    className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-white px-4 py-2 text-base font-medium text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
-                    onClick={() => handleDisqualifyAction(activeApplicant.id)}
-                    disabled={lockDecisionButtons || isAlreadyQualified}
-                  >
-                    <AlertCircle className="h-4 w-4" /> Disqualify
-                  </button>
-                  <button
-                    className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                    onClick={() => handleShortlistAction(activeApplicant.id)}
-                    disabled={lockDecisionButtons || isAlreadyQualified}
-                  >
-                    <Star className="h-4 w-4" /> Shortlist
-                  </button>
-                  {(() => {
-                    const docReady = getDocReadiness(activeApplicant.id);
-                    return (
-                      <button
-                        className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                        onClick={() => handleQualifyAction(activeApplicant.id)}
-                        disabled={lockDecisionButtons || !docReady.ready || isAlreadyQualified}
-                        title={isAlreadyQualified ? 'This applicant is already qualified' : !lockDecisionButtons && !docReady.ready ? docReady.reason : undefined}
-                      >
-                        <CheckCircle2 className="h-4 w-4" /> Qualify
-                      </button>
-                    );
-                  })()}
+                        <button className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-base font-medium text-slate-700" onClick={() => setShowMessageDialog(true)}>
+                          <Plane className="h-4 w-4" /> Send Message
+                        </button>
+                        <button
+                          className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-white px-4 py-2 text-base font-medium text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+                          onClick={() => handleDisqualifyAction(activeApplicant.id)}
+                          disabled={lockDecisionButtons}
+                        >
+                          <AlertCircle className="h-4 w-4" /> Disqualify
+                        </button>
+                        <button
+                          className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          onClick={() => handleShortlistAction(activeApplicant.id)}
+                          disabled={lockDecisionButtons}
+                        >
+                          <Star className="h-4 w-4" /> Shortlist
+                        </button>
+                        {(() => {
+                          const docReady = getDocReadiness(activeApplicant.id);
+                          return (
+                            <button
+                              className="inline-flex items-center gap-2 rounded-xl bg-green-600 px-4 py-2 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                              onClick={() => handleQualifyAction(activeApplicant.id)}
+                              disabled={lockDecisionButtons || !docReady.ready}
+                              title={!lockDecisionButtons && !docReady.ready ? docReady.reason : undefined}
+                            >
+                              <CheckCircle2 className="h-4 w-4" /> Qualify
+                            </button>
+                          );
+                        })()}
                       </>
                     );
                   })()}
@@ -2140,14 +2139,14 @@ export const QualifiedApplicantsPage = () => {
                 ].map((tab) => {
                   const TabIcon = tab.icon;
                   return (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    className={`border-b-2 pb-2 font-semibold ${activeTab === tab.key ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-600'}`}
-                    onClick={() => setActiveTab(tab.key as 'Overview' | 'Documents' | 'Activity')}
-                  >
-                    <span className="inline-flex items-center gap-2"><TabIcon className="h-4 w-4" /> {tab.key}</span>
-                  </button>
+                    <button
+                      key={tab.key}
+                      type="button"
+                      className={`border-b-2 pb-2 font-semibold ${activeTab === tab.key ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-600'}`}
+                      onClick={() => setActiveTab(tab.key as 'Overview' | 'Documents' | 'Activity')}
+                    >
+                      <span className="inline-flex items-center gap-2"><TabIcon className="h-4 w-4" /> {tab.key}</span>
+                    </button>
                   );
                 })}
               </div>
@@ -2258,8 +2257,8 @@ export const QualifiedApplicantsPage = () => {
                         const statusBadge = status === 'approved'
                           ? <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">Validated</span>
                           : status === 'resubmission_requested'
-                          ? <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Action Required</span>
-                          : <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">Under Review</span>;
+                            ? <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Action Required</span>
+                            : <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">Under Review</span>;
 
                         return (
                           <article key={`${doc.type}-${doc.url}`} className={`rounded-xl border ${status === 'approved' ? 'border-emerald-300 bg-emerald-50' : status === 'resubmission_requested' ? 'border-amber-200 bg-amber-50/40' : 'border-blue-200 bg-blue-50/30'}`}>

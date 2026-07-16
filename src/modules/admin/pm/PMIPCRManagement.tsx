@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   Bell,
@@ -245,6 +245,11 @@ const IPCRDetailPage = ({
   const [ipcrLoading, setIpcrLoading] = useState(true);
   const [ipcrError, setIpcrError] = useState('');
 
+  // Synchronize newStage state when remote updates change the employee stage
+  useEffect(() => {
+    setNewStage(employee.actualStage);
+  }, [employee.actualStage]);
+
   useEffect(() => {
     let active = true;
     (async () => {
@@ -273,7 +278,7 @@ const IPCRDetailPage = ({
     return () => {
       active = false;
     };
-  }, [employee]);
+  }, [employee.id, employee.employee_id, employee.periodLabel]);
 
   const handleSave = async () => {
     if (newStage === employee.actualStage) {
@@ -1250,9 +1255,14 @@ export const PMIPCRManagement = () => {
   const [loadError, setLoadError] = useState('');
   const [selectedEmployee, setSelectedEmployee] = useState<EnrichedEmployee | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setLoadError('');
+  const latestLoadId = useRef<number>(0);
+
+  const load = useCallback(async (isBackground = false) => {
+    const loadId = ++latestLoadId.current;
+    if (!isBackground) {
+      setLoading(true);
+      setLoadError('');
+    }
     try {
       const [empResult, subRes, schedRes] = await Promise.all([
         getAllEmployees({ status: 'Active' }),
@@ -1260,8 +1270,14 @@ export const PMIPCRManagement = () => {
         supabase.from('probationary_ipcr_schedules').select('*'),
       ]);
 
+      if (loadId !== latestLoadId.current) return;
+
       if (!empResult.success) {
-        setLoadError('Failed to load employees.');
+        if (!isBackground) {
+          setLoadError('Failed to load employees.');
+        } else {
+          console.warn('[PMIPCRManagement] Silent background reload failed:', empResult.error);
+        }
         return;
       }
 
@@ -1294,17 +1310,69 @@ export const PMIPCRManagement = () => {
         });
       }
 
-      setAllProbationary(enriched.filter((e) => e.monthsOfService < 6));
-      setAllRegular(enriched.filter((e) => e.monthsOfService >= 6));
+      const probationaryList = enriched.filter((e) => e.monthsOfService < 6);
+      const regularList = enriched.filter((e) => e.monthsOfService >= 6);
+
+      setAllProbationary(probationaryList);
+      setAllRegular(regularList);
+
+      // Keep open detail page synchronized
+      setSelectedEmployee((prev) => {
+        if (!prev) return null;
+        const updated = enriched.find((e) => e.id === prev.id);
+        return updated || prev;
+      });
+
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : String(err));
+      if (loadId !== latestLoadId.current) return;
+      if (!isBackground) {
+        setLoadError(err instanceof Error ? err.message : String(err));
+      } else {
+        console.error('[PMIPCRManagement] Silent background reload exception:', err);
+      }
     } finally {
-      setLoading(false);
+      if (loadId === latestLoadId.current && !isBackground) {
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
+    // 1. Initial load
     void load();
+
+    // 2. Setup debounced realtime updates
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const triggerReload = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        void load(true);
+      }, 400);
+    };
+
+    const channel = (supabase as any)
+      .channel('pm-ipcr-management-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'employees' },
+        triggerReload
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ipcr_submissions' },
+        triggerReload
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'probationary_ipcr_schedules' },
+        triggerReload
+      )
+      .subscribe();
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      void (supabase as any).removeChannel(channel);
+    };
   }, [load]);
 
   const handleStageUpdate = useCallback((id: string, stage: IpcrStage) => {

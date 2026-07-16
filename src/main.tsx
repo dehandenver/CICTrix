@@ -2,7 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { loadJobPostings } from './lib/recruitmentData';
-import { syncHiredApplicantStatus } from './lib/hiredApplicantSync';
+import { syncHiredApplicantStatus, syncNewlyHiredToEmployees } from './lib/hiredApplicantSync';
 import { initTheme } from './lib/theme';
 import './styles/interviewer.css';
 
@@ -59,6 +59,7 @@ const renderApp = () => {
   // Supabase status-flip fallback landed. Gated to once per tab session so
   // it doesn't run on every navigation.
   void syncHiredApplicantStatus();
+  void syncNewlyHiredToEmployees();
 
   renderApp();
 }
