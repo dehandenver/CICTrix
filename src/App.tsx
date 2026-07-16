@@ -22,6 +22,7 @@ import { RSPDashboard } from './modules/admin/RSPDashboard.tsx';
 import { SettingsPage } from './modules/admin/SettingsPage';
 import { SuperAdminDashboard } from './modules/admin/SuperAdminDashboard';
 import { OfficeAccountConsole } from './modules/admin/pm/OfficeAccountConsole';
+import { DemoRoot } from './modules/admin/pm/demo/DemoRoot';
 import { TrainingCoursesPrototype } from './modules/admin/prototypes/TrainingCoursesPrototype';
 import { SupervisorAccessPage } from './modules/admin/SupervisorAccessPage';
 import { SystemAdministrationPage } from './modules/admin/SystemAdministrationPage';
@@ -539,6 +540,9 @@ function AppContent() {
           <Route path="/dashboard" element={<Navigate to="/interviewer/dashboard" replace />} />
           <Route path="/evaluate/:id" element={<Navigate to="/interviewer/evaluate/:id" replace />} />
           
+          {/* IPCR Demo (self-contained: own login against accounts table) */}
+          <Route path="/pm-demo" element={<DemoRoot />} />
+
           {/* Employee Portal Routes */}
           <Route
             path="/employee"
