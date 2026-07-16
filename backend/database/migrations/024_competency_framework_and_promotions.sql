@@ -1,5 +1,5 @@
 -- ============================================================================
--- 023: Module 3 (Competency Framework) + Module 4 (Promotional Applications)
+-- 024: Module 3 (Competency Framework) + Module 4 (Promotional Applications)
 -- ============================================================================
 -- Module 3 · two subtabs: Position Requirements, Competency Map
 --   competency_standards              — the 12 LGU competency standards (seeded)
