@@ -26,8 +26,14 @@ export const POSITION_OPTIONS = POSITIONS.map(pos => ({
 }));
 
 /**
- * Place of Assignation options used in CREATE JOB and across the recruitment
- * portal. Scoped to the five offices in the project's MVP scope.
+ * OFFLINE FALLBACK ONLY — do not read this directly in a screen.
+ *
+ * The canonical department list lives in the Supabase `departments` table; read
+ * it through `useDepartmentOptions()` / `useDepartmentNames()` so every screen
+ * shows the same offices. This copy exists only so a dropdown still renders
+ * something when that table can't be reached, and it will be missing any office
+ * added since (e.g. the city offices), which is exactly why reading it directly
+ * caused screens to disagree.
  */
 export const DEPARTMENTS = [
   'Human Resources',

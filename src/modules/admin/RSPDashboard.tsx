@@ -36,6 +36,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { AdminHeader } from '../../components/AdminHeader';
 import { Button } from '../../components/Button';
 import { Sidebar } from '../../components/Sidebar';
+import { useDepartmentNames } from '../../hooks/useDepartmentOptions';
 import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import {
     createPassword,
@@ -277,16 +278,6 @@ const SETTINGS_TABS = [
   { id: 'appearance', label: 'Appearance', icon: Briefcase },
   { id: 'localization', label: 'Localization', icon: Building2 },
 ] as const;
-
-const EMPLOYEE_DIRECTORY_DEPARTMENTS = [
-  'Human Resources',
-  'Finance',
-  'Information Technology',
-  'Operations',
-  'Sales & Marketing',
-  'Customer Support',
-  'Product Management',
-];
 
 const EMPLOYEE_DIRECTORY_POSITIONS_BY_DEPARTMENT: Record<string, string[]> = {
   'Information Technology': [
@@ -842,6 +833,9 @@ export const RSPDashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const section = resolveSection(location.pathname, location.search);
+
+  // Departments come from the canonical Supabase table, shared system-wide.
+  const employeeDirectoryDepartments = useDepartmentNames();
 
   const [jobs, setJobs] = useState<JobRecord[]>([]);
   const [applicants, setApplicants] = useState<ApplicantRecord[]>([]);
@@ -2548,7 +2542,7 @@ export const RSPDashboard = () => {
     const currentPosition = selectedEmployeeDetails.position || '';
     setPositionChangeForm((prev) => ({
       ...prev,
-      newDepartment: EMPLOYEE_DIRECTORY_DEPARTMENTS.includes(currentDepartment)
+      newDepartment: employeeDirectoryDepartments.includes(currentDepartment)
         ? currentDepartment
         : 'IT Department',
       newPosition: currentPosition,
@@ -4382,7 +4376,7 @@ export const RSPDashboard = () => {
                                 disabled
                                 className="w-full rounded-xl border border-[var(--border-color)] bg-slate-100 px-4 py-3 text-xl cursor-not-allowed"
                               >
-                                {EMPLOYEE_DIRECTORY_DEPARTMENTS.map((department) => (
+                                {employeeDirectoryDepartments.map((department) => (
                                   <option key={department} value={department}>{department}</option>
                                 ))}
                               </select>
