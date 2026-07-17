@@ -19,15 +19,14 @@ import {
   cancelCalendarEvent,
   createCalendarEvent,
   listCalendarEvents,
-  setAttendance,
   updateCalendarEvent,
-  type AttendanceStatus,
   type CalendarEvent,
   type CalendarEventInput,
   type CalendarEventStatus,
 } from '../../lib/api/trainingCalendar';
 import { countRecommendedByCourse, generateRecommendations } from '../../lib/api/trainingRecommendations';
 import { RecommendedEmployees } from './RecommendedEmployees';
+import { AttendanceGrid } from './AttendanceGrid';
 import { TRAINING_CATEGORIES, categoryColor, type TrainingCategory } from './trainingCategories';
 import { lifecycleStatus, type LifecycleStatus } from '../../lib/api/trainingLifecycle';
 
@@ -50,7 +49,6 @@ const LIFECYCLE_BADGE: Record<LifecycleStatus, string> = {
 };
 
 const EVENT_STATUSES: CalendarEventStatus[] = ['Scheduled', 'Ongoing', 'Completed', 'Cancelled'];
-const ATTENDANCE_OPTIONS: AttendanceStatus[] = ['Present', 'Absent', 'Excused'];
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 const STATUS_BADGE: Record<CalendarEventStatus, string> = {
@@ -58,12 +56,6 @@ const STATUS_BADGE: Record<CalendarEventStatus, string> = {
   Ongoing: 'bg-amber-100 text-amber-700',
   Completed: 'bg-emerald-100 text-emerald-700',
   Cancelled: 'bg-red-100 text-red-700',
-};
-
-const ATTENDANCE_BADGE: Record<AttendanceStatus, string> = {
-  Present: 'bg-emerald-600 text-white',
-  Absent: 'bg-red-600 text-white',
-  Excused: 'bg-amber-500 text-white',
 };
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
@@ -406,22 +398,18 @@ type DetailProps = {
 };
 
 const EventDetailPanel = ({ event, recommendedCount, onClose, onEdit, onChanged, onViewRecommended }: DetailProps) => {
-  const [busyEnrollmentId, setBusyEnrollmentId] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const color = categoryColor(event.category);
   const status = eventLifecycle(event);
   const locked = status === 'locked';
-
-  const handleAttendance = async (enrollmentId: string, next: AttendanceStatus | null) => {
-    setBusyEnrollmentId(enrollmentId);
-    const result = await setAttendance(enrollmentId, next);
-    setBusyEnrollmentId(null);
-    if (!result.ok) {
-      alert(`Could not update attendance: ${result.error}`);
-      return;
-    }
-    onChanged();
-  };
+  // Date-based attendance rules (§5), relative to the 2026-07-21 cutover.
+  const startMs = new Date(event.startDate).getTime();
+  const attendanceRuleNote =
+    startMs < new Date('2026-07-21T00:00:00').getTime()
+      ? 'Held before the Jul 21 cutover — mark each training day’s attendance below.'
+      : startMs < new Date('2026-08-01T00:00:00').getTime()
+      ? 'Attendee list finalized under the pre-cutover process (Jul 21–31); attendance is markable once each day passes.'
+      : 'From August onward, attendees are set via the recommendation → approval → enrollment flow. Mark attendance once each day passes.';
 
   const handleCancelTraining = async () => {
     if (!window.confirm(`Cancel "${event.title}"? The training and its roster are kept, but it will show as Cancelled.`)) return;
@@ -580,58 +568,10 @@ const EventDetailPanel = ({ event, recommendedCount, onClose, onEdit, onChanged,
                 <p className="mt-1 text-xs text-gray-400">The roster was finalized with no employees enrolled.</p>
               </div>
             ) : (
-              <div className="overflow-hidden rounded-xl border border-gray-200">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 border-b border-gray-200">
-                    <tr>
-                      <th className="px-4 py-2.5 font-semibold">Employee</th>
-                      <th className="px-4 py-2.5 font-semibold">Department</th>
-                      <th className="px-4 py-2.5 font-semibold">Enrollment</th>
-                      <th className="px-4 py-2.5 font-semibold text-right">Attendance</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {event.attendees.map((attendee) => (
-                      <tr key={attendee.enrollmentId} className="hover:bg-gray-50/50 transition">
-                        <td className="px-4 py-3">
-                          <p className="font-semibold text-gray-900">{attendee.name}</p>
-                          <p className="text-xs text-gray-500">{attendee.position}</p>
-                        </td>
-                        <td className="px-4 py-3 text-gray-700">{attendee.department}</td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                            attendee.enrollmentStatus === 'Confirmed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                          }`}>
-                            {attendee.enrollmentStatus}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center justify-end gap-1">
-                            {ATTENDANCE_OPTIONS.map((option) => {
-                              const active = attendee.attendanceStatus === option;
-                              return (
-                                <button
-                                  key={option}
-                                  type="button"
-                                  disabled={busyEnrollmentId === attendee.enrollmentId}
-                                  // Clicking the active option clears it back to unmarked.
-                                  onClick={() => handleAttendance(attendee.enrollmentId, active ? null : option)}
-                                  className={[
-                                    'rounded-md px-2.5 py-1 text-xs font-semibold transition disabled:opacity-50',
-                                    active ? ATTENDANCE_BADGE[option] : 'bg-gray-100 text-gray-500 hover:bg-gray-200',
-                                  ].join(' ')}
-                                >
-                                  {option}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <>
+                <p className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">{attendanceRuleNote}</p>
+                <AttendanceGrid startDate={event.startDate} endDate={event.endDate} attendees={event.attendees} />
+              </>
             )}
           </section>
         </div>
