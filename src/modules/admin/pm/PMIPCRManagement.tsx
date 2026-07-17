@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Dialog } from '../../../components/Dialog';
 import { useDepartmentNames } from '../../../hooks/useDepartmentOptions';
+import { useRealtimeRefresh } from '../../../hooks/useRealtimeRefresh';
 import { IPCR_STAGES, type IpcrStage, stagePillStyle } from '../../../lib/api/ipcrStages';
 import { type IpcrPhase, sendNotification } from '../../../lib/api/ipcrSubmissions';
 import { getAllEmployees, type Employee } from '../../../lib/api/employees';
@@ -1311,42 +1312,14 @@ export const PMIPCRManagement = () => {
   }, []);
 
   useEffect(() => {
-    // 1. Initial load
     void load();
-
-    // 2. Setup debounced realtime updates
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    const triggerReload = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        void load(true);
-      }, 400);
-    };
-
-    const channel = (supabase as any)
-      .channel('pm-ipcr-management-realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'employees' },
-        triggerReload
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'ipcr_submissions' },
-        triggerReload
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'probationary_ipcr_schedules' },
-        triggerReload
-      )
-      .subscribe();
-
-    return () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      void (supabase as any).removeChannel(channel);
-    };
   }, [load]);
+
+  useRealtimeRefresh({
+    channel: 'pm-ipcr-management-realtime',
+    tables: ['employees', 'ipcr_submissions', 'probationary_ipcr_schedules'],
+    onChange: useCallback(() => void load(true), [load]),
+  });
 
   const handleStageUpdate = useCallback((id: string, stage: IpcrStage) => {
     const update = (list: EnrichedEmployee[]) =>

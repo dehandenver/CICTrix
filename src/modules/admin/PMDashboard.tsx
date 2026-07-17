@@ -46,7 +46,8 @@ import {
   X,
   XCircle
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { Button } from '../../components/Button';
 import { Dialog } from '../../components/Dialog';
 import { Input } from '../../components/Input';
@@ -601,154 +602,169 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     return () => { cancelled = true; };
   }, [activeSection]);
 
-  // Load IPCR submissions + probationary schedules to compute dashboard stats & list
-  useEffect(() => {
-    if (activeSection !== 'dashboard') return;
-    let cancelled = false;
-    (async () => {
+  const latestIpcrLoadId = useRef(0);
+
+  const loadIpcrStats = useCallback(async (isSilent = false) => {
+    const loadId = ++latestIpcrLoadId.current;
+    if (!isSilent) {
       setIpcrLoading(true);
-      try {
-        const [empResult, subRes, schedRes] = await Promise.all([
-          getAllEmployees({ status: 'Active' }),
-          (supabase as any).from('ipcr_submissions').select('*'),
-          (supabase as any).from('probationary_ipcr_schedules').select('*'),
-        ]);
+    }
+    try {
+      const [empResult, subRes, schedRes] = await Promise.all([
+        getAllEmployees({ status: 'Active' }),
+        (supabase as any).from('ipcr_submissions').select('*'),
+        (supabase as any).from('probationary_ipcr_schedules').select('*'),
+      ]);
 
-        if (cancelled) return;
-        if (!empResult.success) return;
+      if (loadId !== latestIpcrLoadId.current) return;
+      if (!empResult.success) return;
 
-        const employees: Employee[] = empResult.data || [];
-        const submissions = subRes.error ? [] : (subRes.data ?? []);
-        const schedules = schedRes.error ? [] : (schedRes.data ?? []);
+      const employees: Employee[] = empResult.data || [];
+      const submissions = subRes.error ? [] : (subRes.data ?? []);
+      const schedules = schedRes.error ? [] : (schedRes.data ?? []);
 
-        const getMonthsOfService = (hireDate: string) => {
-          const hired = new Date(hireDate);
-          const now = new Date();
-          return Math.max(
-            0,
-            (now.getFullYear() - hired.getFullYear()) * 12 + (now.getMonth() - hired.getMonth()),
-          );
-        };
+      const getMonthsOfService = (hireDate: string) => {
+        const hired = new Date(hireDate);
+        const now = new Date();
+        return Math.max(
+          0,
+          (now.getFullYear() - hired.getFullYear()) * 12 + (now.getMonth() - hired.getMonth()),
+        );
+      };
 
-        const computeStageInfoLocal = (hireDate: string, schedules: any[]) => {
-          const hired = new Date(hireDate);
-          const months = getMonthsOfService(hireDate);
+      const computeStageInfoLocal = (hireDate: string, schedules: any[]) => {
+        const hired = new Date(hireDate);
+        const months = getMonthsOfService(hireDate);
 
-          if (months < 6) {
-            const monthNames = [
-              'January', 'February', 'March', 'April', 'May', 'June',
-              'July', 'August', 'September', 'October', 'November', 'December'
-            ];
-            const hireMonthName = monthNames[hired.getMonth()];
-            const sched = schedules.find((s) => s.hired_month === hireMonthName);
-            
-            if (sched) {
-              const now = new Date();
-              const targetEnd = new Date(sched.target_end);
-              const accomplishmentEnd = new Date(sched.accomplishment_end);
-              if (now <= targetEnd) {
-                return { stage: 'Target Setting', phase: 'target', dueDate: targetEnd, periodLabel: sched.period_label };
-              } else {
-                return { stage: 'Accomplishment Rating', phase: 'rating', dueDate: accomplishmentEnd, periodLabel: sched.period_label };
-              }
+        if (months < 6) {
+          const monthNames = [
+            'January', 'February', 'March', 'April', 'May', 'June',
+            'July', 'August', 'September', 'October', 'November', 'December'
+          ];
+          const hireMonthName = monthNames[hired.getMonth()];
+          const sched = schedules.find((s) => s.hired_month === hireMonthName);
+          
+          if (sched) {
+            const now = new Date();
+            const targetEnd = new Date(sched.target_end);
+            const accomplishmentEnd = new Date(sched.accomplishment_end);
+            if (now <= targetEnd) {
+              return { stage: 'Target Setting', phase: 'target', dueDate: targetEnd, periodLabel: sched.period_label };
+            } else {
+              return { stage: 'Accomplishment Rating', phase: 'rating', dueDate: accomplishmentEnd, periodLabel: sched.period_label };
             }
-            if (months < 3) {
-              const due = new Date(hired);
-              due.setMonth(due.getMonth() + 3);
-              return { stage: 'Target Setting', phase: 'target', dueDate: due, periodLabel: 'Probationary — 1st 3 Months' };
-            }
+          }
+          if (months < 3) {
             const due = new Date(hired);
-            due.setMonth(due.getMonth() + 6);
-            return { stage: 'Accomplishment Rating', phase: 'rating', dueDate: due, periodLabel: 'Probationary — 2nd 3 Months' };
+            due.setMonth(due.getMonth() + 3);
+            return { stage: 'Target Setting', phase: 'target', dueDate: due, periodLabel: 'Probationary — 1st 3 Months' };
           }
-
-          const regularStart = new Date(hired);
-          regularStart.setMonth(regularStart.getMonth() + 6);
-          const now = new Date();
-          const msSinceRegular = Math.max(
-            0,
-            (now.getFullYear() - regularStart.getFullYear()) * 12 + (now.getMonth() - regularStart.getMonth()),
-          );
-          const completedCycles = Math.floor(msSinceRegular / 12);
-          const posInCycle = msSinceRegular % 12;
-          const cycleStart = new Date(regularStart);
-          cycleStart.setMonth(cycleStart.getMonth() + completedCycles * 12);
-          const yr = cycleStart.getFullYear();
-          const halfLabel = cycleStart.getMonth() < 6 ? '1st Half' : '2nd Half';
-
-          if (posInCycle < 6) {
-            const due = new Date(cycleStart);
-            due.setMonth(due.getMonth() + 6);
-            return { stage: 'Target Setting', phase: 'target', dueDate: due, periodLabel: `${halfLabel} ${yr}` };
-          }
-          const due = new Date(cycleStart);
-          due.setMonth(due.getMonth() + 12);
-          return { stage: 'Accomplishment Rating', phase: 'rating', dueDate: due, periodLabel: `${halfLabel} ${yr}` };
-        };
-
-        const subMap = new Map<string, string>();
-        for (const s of submissions) {
-          subMap.set(`${s.employee_id}::${s.period}::${s.phase}`, s.stage);
+          const due = new Date(hired);
+          due.setMonth(due.getMonth() + 6);
+          return { stage: 'Accomplishment Rating', phase: 'rating', dueDate: due, periodLabel: 'Probationary — 2nd 3 Months' };
         }
 
-        let probTotal = 0;
-        let probDue = 0;
-        let nextDueDate: Date | null = null;
-        const pendingList: any[] = [];
+        const regularStart = new Date(hired);
+        regularStart.setMonth(regularStart.getMonth() + 6);
+        const now = new Date();
+        const msSinceRegular = Math.max(
+          0,
+          (now.getFullYear() - regularStart.getFullYear()) * 12 + (now.getMonth() - regularStart.getMonth()),
+        );
+        const completedCycles = Math.floor(msSinceRegular / 12);
+        const posInCycle = msSinceRegular % 12;
+        const cycleStart = new Date(regularStart);
+        cycleStart.setMonth(cycleStart.getMonth() + completedCycles * 12);
+        const yr = cycleStart.getFullYear();
+        const halfLabel = cycleStart.getMonth() < 6 ? '1st Half' : '2nd Half';
 
-        for (const emp of employees) {
-          if (!emp.hire_date) continue;
-          const months = getMonthsOfService(emp.hire_date);
-          const isProb = months < 6;
-          const { stage, phase, dueDate, periodLabel } = computeStageInfoLocal(emp.hire_date, schedules);
+        if (posInCycle < 6) {
+          const due = new Date(cycleStart);
+          due.setMonth(due.getMonth() + 6);
+          return { stage: 'Target Setting', phase: 'target', dueDate: due, periodLabel: `${halfLabel} ${yr}` };
+        }
+        const due = new Date(cycleStart);
+        due.setMonth(due.getMonth() + 12);
+        return { stage: 'Accomplishment Rating', phase: 'rating', dueDate: due, periodLabel: `${halfLabel} ${yr}` };
+      };
 
-          const actualStage = subMap.get(`${emp.id}::${periodLabel}::${phase}`) || 'Not Started';
-          const isPending = actualStage !== 'Forwarded to PM';
+      const subMap = new Map<string, string>();
+      for (const s of submissions) {
+        subMap.set(`${s.employee_id}::${s.period}::${s.phase}`, s.stage);
+      }
 
-          if (isProb) {
-            probTotal++;
-            if (isPending) {
-              probDue++;
-              if (!nextDueDate || dueDate < nextDueDate) {
-                nextDueDate = dueDate;
-              }
+      let probTotal = 0;
+      let probDue = 0;
+      let nextDueDate: Date | null = null;
+      const pendingList: any[] = [];
+
+      for (const emp of employees) {
+        if (!emp.hire_date) continue;
+        const months = getMonthsOfService(emp.hire_date);
+        const isProb = months < 6;
+        const { stage, phase, dueDate, periodLabel } = computeStageInfoLocal(emp.hire_date, schedules);
+
+        const actualStage = subMap.get(`${emp.id}::${periodLabel}::${phase}`) || 'Not Started';
+        const isPending = actualStage !== 'Forwarded to PM';
+
+        if (isProb) {
+          probTotal++;
+          if (isPending) {
+            probDue++;
+            if (!nextDueDate || dueDate < nextDueDate) {
+              nextDueDate = dueDate;
             }
           }
-
-          if (isPending) {
-            pendingList.push({
-              name: emp.full_name,
-              position: emp.current_position || '—',
-              dept: emp.department || 'Unassigned',
-              type: isProb ? 'Probationary' : 'Regular',
-              period: periodLabel,
-              stage: actualStage,
-              dueDate: dueDate,
-            });
-          }
         }
 
-        setProbationaryMetrics({
-          total: probTotal,
-          due: probDue,
-          nextDue: nextDueDate ? nextDueDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
-        });
+        if (isPending) {
+          pendingList.push({
+            name: emp.full_name,
+            position: emp.current_position || '—',
+            dept: emp.department || 'Unassigned',
+            type: isProb ? 'Probationary' : 'Regular',
+            period: periodLabel,
+            stage: actualStage,
+            dueDate: dueDate,
+          });
+        }
+      }
 
-        const probPending = pendingList.filter(p => p.type === 'Probationary').length;
-        const regPending = pendingList.filter(p => p.type === 'Regular').length;
-        setProbationarySubmissionsCount(probPending);
-        setRegularSubmissionsCount(regPending);
+      setProbationaryMetrics({
+        total: probTotal,
+        due: probDue,
+        nextDue: nextDueDate ? nextDueDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
+      });
 
-        pendingList.sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
-        setPendingSubmissions(pendingList);
-      } catch (err) {
-        console.error('Error calculating IPCR stats:', err);
-      } finally {
+      const probPending = pendingList.filter(p => p.type === 'Probationary').length;
+      const regPending = pendingList.filter(p => p.type === 'Regular').length;
+      setProbationarySubmissionsCount(probPending);
+      setRegularSubmissionsCount(regPending);
+
+      pendingList.sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
+      setPendingSubmissions(pendingList);
+    } catch (err) {
+      console.error('Error calculating IPCR stats:', err);
+    } finally {
+      if (loadId === latestIpcrLoadId.current) {
         setIpcrLoading(false);
       }
-    })();
-    return () => { cancelled = true; };
-  }, [activeSection]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeSection !== 'dashboard') return;
+    void loadIpcrStats();
+  }, [activeSection, loadIpcrStats]);
+
+  useRealtimeRefresh({
+    channel: 'pm-dashboard-ipcr',
+    tables: ['ipcr_submissions', 'probationary_ipcr_schedules', 'employees'],
+    onChange: useCallback(() => {
+      void loadIpcrStats(true);
+    }, [loadIpcrStats]),
+    enabled: activeSection === 'dashboard',
+  });
 
   // Competency / skill-gap data + upcoming retirements (dashboard only).
   useEffect(() => {

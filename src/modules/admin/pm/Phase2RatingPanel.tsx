@@ -8,8 +8,9 @@
  *
  * Backed by src/lib/api/ipcrRatings.ts.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle, Lock, Loader2, Star } from 'lucide-react';
+import { useRealtimeRefresh } from '../../../hooks/useRealtimeRefresh';
 import {
   listRatableTargets,
   loadRatingSheet,
@@ -48,7 +49,6 @@ const statusChip = (s: string) => {
   };
   return { cls: map[s] ?? map.not_started, text: label[s] ?? s };
 };
-
 export const Phase2RatingPanel: React.FC<{ currentEmployeeId: string | null }> = ({ currentEmployeeId }) => {
   const [targets, setTargets] = useState<RatableTarget[]>([]);
   const [loadingList, setLoadingList] = useState(false);
@@ -59,23 +59,40 @@ export const Phase2RatingPanel: React.FC<{ currentEmployeeId: string | null }> =
   const [opening, setOpening] = useState(false);
   const [closing, setClosing] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
+  const [hasNewerData, setHasNewerData] = useState(false);
 
-  const refreshList = async () => {
-    setLoadingList(true);
+  const isDirty = useMemo(() => {
+    if (!sheet) return false;
+    for (const m of sheet.mfos) {
+      for (const si of m.indicators) {
+        const s = scores[si.successIndicatorId];
+        if (!s) continue;
+        if (
+          (s.quality ?? null) !== (si.quality ?? null) ||
+          (s.efficiency ?? null) !== (si.efficiency ?? null) ||
+          (s.timeliness ?? null) !== (si.timeliness ?? null)
+        ) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }, [sheet, scores]);
+
+  const refreshList = useCallback(async (isSilent = false) => {
+    if (!isSilent) setLoadingList(true);
     const res = await listRatableTargets();
-    setLoadingList(false);
+    if (!isSilent) setLoadingList(false);
     if (res.ok === false) { setNotice({ tone: 'err', text: res.error }); return; }
     setTargets(res.data);
-  };
+  }, []);
 
-  useEffect(() => { void refreshList(); }, []);
+  useEffect(() => { void refreshList(); }, [refreshList]);
 
-  const openSheet = async (t: RatableTarget) => {
-    setNotice(null);
-    setLoadingSheet(true);
-    setSheet(null);
-    const res = await loadRatingSheet(t.targetSettingId);
-    setLoadingSheet(false);
+  const loadCurrentSheet = useCallback(async (targetSettingId: string, isSilent = false) => {
+    if (!isSilent) setLoadingSheet(true);
+    const res = await loadRatingSheet(targetSettingId);
+    if (!isSilent) setLoadingSheet(false);
     if (res.ok === false) { setNotice({ tone: 'err', text: res.error }); return; }
     setSheet(res.data);
     const initial: Record<string, LocalScore> = {};
@@ -83,7 +100,29 @@ export const Phase2RatingPanel: React.FC<{ currentEmployeeId: string | null }> =
       for (const si of m.indicators)
         initial[si.successIndicatorId] = { quality: si.quality, efficiency: si.efficiency, timeliness: si.timeliness };
     setScores(initial);
+  }, []);
+
+  const openSheet = async (t: RatableTarget) => {
+    setNotice(null);
+    setHasNewerData(false);
+    setSheet(null);
+    void loadCurrentSheet(t.targetSettingId, false);
   };
+
+  useRealtimeRefresh({
+    channel: 'pm-phase2-rating-panel',
+    tables: ['target_settings', 'success_indicator_ratings', 'ipcr_workspace'],
+    onChange: useCallback(() => {
+      void refreshList(true);
+      if (sheet) {
+        if (isDirty) {
+          setHasNewerData(true);
+        } else {
+          void loadCurrentSheet(sheet.targetSettingId, true);
+        }
+      }
+    }, [isDirty, refreshList, sheet, loadCurrentSheet]),
+  });
 
   const isOwn = !!sheet && !!currentEmployeeId && sheet.employeeId === currentEmployeeId;
 
@@ -122,6 +161,8 @@ export const Phase2RatingPanel: React.FC<{ currentEmployeeId: string | null }> =
         : 'Progress saved.',
     });
     setSheet({ ...sheet, phase2Status: res.data.phase2Status });
+    setHasNewerData(false);
+    void loadCurrentSheet(sheet.targetSettingId, true);
     void refreshList();
   };
 
@@ -254,6 +295,21 @@ export const Phase2RatingPanel: React.FC<{ currentEmployeeId: string | null }> =
                 </div>
                 <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${statusChip(sheet.phase2Status).cls}`}>{statusChip(sheet.phase2Status).text}</span>
               </div>
+
+              {hasNewerData && (
+                <div className="m-4 flex items-center justify-between rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs">
+                  <span className="text-indigo-900 font-medium">Newer data is available on the server.</span>
+                  <button
+                    onClick={() => {
+                      setHasNewerData(false);
+                      void loadCurrentSheet(sheet.targetSettingId, false);
+                    }}
+                    className="rounded bg-indigo-600 px-2 py-1 text-[10px] font-bold text-white hover:bg-indigo-700"
+                  >
+                    Refresh
+                  </button>
+                </div>
+              )}
 
               {isOwn ? (
                 <div className="m-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">

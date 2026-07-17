@@ -11,8 +11,9 @@
  * Backed by loadEmployeeRatingSheet / saveEmployeeRatings (ipcrRatings.ts),
  * which unify on success_indicator_ratings (accomplishment + Q/E/T, rated_by).
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Lock, CheckCircle, Loader2, Info } from 'lucide-react';
+import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import {
   loadEmployeeRatingSheet,
   saveEmployeeRatings,
@@ -51,14 +52,34 @@ export const EmployeePhase2: React.FC<{ employeeId: string | null }> = ({ employ
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!employeeId) { setLoading(false); return; }
+  const [hasNewerData, setHasNewerData] = useState(false);
+
+  const isDirty = useMemo(() => {
+    if (!sheet) return false;
+    for (const m of sheet.mfos) {
+      for (const si of m.indicators) {
+        const e = entries[si.successIndicatorId];
+        if (!e) continue;
+        if (
+          (e.accomplishment ?? '') !== (si.accomplishment ?? '') ||
+          (e.quality ?? null) !== (si.quality ?? null) ||
+          (e.efficiency ?? null) !== (si.efficiency ?? null) ||
+          (e.timeliness ?? null) !== (si.timeliness ?? null)
+        ) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }, [sheet, entries]);
+
+  const loadSheet = useCallback(async (isSilent = false) => {
+    if (!employeeId) { setLoading(false); return; }
+    if (!isSilent) {
       setLoading(true);
+    }
+    try {
       const res = await loadEmployeeRatingSheet(employeeId);
-      if (cancelled) return;
-      setLoading(false);
       if (res.ok === false) { setNotice({ tone: 'err', text: res.error }); return; }
       const s = res.data;
       setSheet(s);
@@ -71,9 +92,31 @@ export const EmployeePhase2: React.FC<{ employeeId: string | null }> = ({ employ
       }
       // Opening Phase 2 clears the "self-rating opened" notification badge.
       void markEmployeeNotificationsRead(employeeId);
-    })();
-    return () => { cancelled = true; };
+    } catch (err) {
+      console.error('Failed to load rating sheet:', err);
+    } finally {
+      if (!isSilent) {
+        setLoading(false);
+      }
+    }
   }, [employeeId]);
+
+  useEffect(() => {
+    void loadSheet();
+  }, [loadSheet]);
+
+  useRealtimeRefresh({
+    channel: `employee-phase2-${employeeId || 'anon'}`,
+    tables: ['target_settings', 'success_indicator_ratings', 'ipcr_workspace'],
+    onChange: useCallback(() => {
+      if (isDirty) {
+        setHasNewerData(true);
+      } else {
+        void loadSheet(true);
+      }
+    }, [isDirty, loadSheet]),
+    enabled: !!employeeId,
+  });
 
   const allIds = useMemo(
     () => (sheet ? sheet.mfos.flatMap((m) => m.indicators.map((si) => si.successIndicatorId)) : []),
@@ -139,6 +182,8 @@ export const EmployeePhase2: React.FC<{ employeeId: string | null }> = ({ employ
       tone: 'ok',
       text: submit ? `Submitted. Overall rating: ${res.data.overallScore ?? '—'} (${res.data.adjectival ?? '—'}).` : 'Draft saved.',
     });
+    setHasNewerData(false);
+    void loadSheet(true);
   };
 
   if (loading) {
@@ -157,6 +202,21 @@ export const EmployeePhase2: React.FC<{ employeeId: string | null }> = ({ employ
   // gating is on the SUBMIT action + the locked/closed notices below.
   return (
     <div className="space-y-4">
+      {hasNewerData && (
+        <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs flex items-center justify-between">
+          <span className="text-indigo-900 font-medium">Newer data is available on the server.</span>
+          <button
+            onClick={() => {
+              setHasNewerData(false);
+              void loadSheet(false);
+            }}
+            className="rounded bg-indigo-600 px-2 py-1 text-[10px] font-bold text-white hover:bg-indigo-700"
+          >
+            Refresh
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="flex items-center gap-1.5 text-sm font-bold text-slate-800">

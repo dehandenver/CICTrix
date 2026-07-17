@@ -23,7 +23,8 @@ import {
   Info,
   Download
 } from 'lucide-react';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import abyanLogo from '../../assets/abyan-logo.png';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
@@ -249,6 +250,7 @@ const EditableInput: React.FC<EditableInputProps> = ({ label, value, onChange, t
 
 export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUsername, onLogout }) => {
   const navigate = useNavigate();
+  const [profile, setProfile] = useState<Employee>(currentUser);
   const [showSwitchModal, setShowSwitchModal] = useState(false);
   const [hasOfficeRole, setHasOfficeRole] = useState(false);
   const location = useLocation();
@@ -373,12 +375,18 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
     return Number((sum / ratings.length).toFixed(2));
   };
 
-  const loadIPCRData = async () => {
+  const latestEmployeeIpcrLoadId = useRef(0);
+
+  const loadIPCRData = useCallback(async (isSilent = false) => {
     if (!currentUser.supabaseId) return;
-    setIpcrLoading(true);
+    const loadId = ++latestEmployeeIpcrLoadId.current;
+    if (!isSilent) {
+      setIpcrLoading(true);
+    }
     setIpcrError(null);
     try {
       const rawDetailsRes = await getEmployeeRawDetails(currentUser.supabaseId);
+      if (loadId !== latestEmployeeIpcrLoadId.current) return;
       let employeeNum = currentUser.employeeId;
       let rawData = null;
       if (rawDetailsRes.success && rawDetailsRes.data) {
@@ -405,6 +413,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
+        if (loadId !== latestEmployeeIpcrLoadId.current) return;
         if (schedData) {
           activeProbationarySchedule = schedData;
         }
@@ -412,6 +421,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       setProbationarySchedule(activeProbationarySchedule);
 
       const cycleRes = await getActivePerformanceCycle();
+      if (loadId !== latestEmployeeIpcrLoadId.current) return;
       let cycle = null;
       if (cycleRes.success && cycleRes.data) {
         cycle = cycleRes.data;
@@ -419,6 +429,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       }
 
       const compRes = await getCompetenciesList();
+      if (loadId !== latestEmployeeIpcrLoadId.current) return;
       if (compRes.success && compRes.data) {
         setCompetencies(compRes.data);
       }
@@ -428,6 +439,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
         employeeNum,
         cycle ? cycle.id : null
       );
+      if (loadId !== latestEmployeeIpcrLoadId.current) return;
       let resolvedPeriod: string;
       if (ipcrRes.success && ipcrRes.data) {
         setIpcrRows(ipcrRes.data.rows);
@@ -443,6 +455,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       setIpcrRatingPeriod(resolvedPeriod);
 
       const evalsRes = await getEmployeeEvaluations(currentUser.supabaseId);
+      if (loadId !== latestEmployeeIpcrLoadId.current) return;
       if (evalsRes.success) {
         setEmployeeEvaluations(evalsRes.data);
       }
@@ -454,6 +467,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
           .from('phase_schedules')
           .select('*')
           .eq('scope', 'system');
+        if (loadId !== latestEmployeeIpcrLoadId.current) return;
         const rows: any[] = Array.isArray(schedRows) ? schedRows : [];
         setSystemSchedules({
           target: rows.find((r) => r.phase === 'target_setting') ?? null,
@@ -468,6 +482,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       // RLS) fall back to loading the employee's frozen targets directly, so the
       // "Frozen Targets" panel still renders instead of "No target configured".
       const activeCycleRes = await getActiveCycle();
+      if (loadId !== latestEmployeeIpcrLoadId.current) return;
       let tsRes;
       if (activeCycleRes.ok && activeCycleRes.data) {
         setActiveCycleId(activeCycleRes.data.id);
@@ -475,6 +490,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       } else {
         tsRes = await loadLatestTargetSetting(currentUser.supabaseId);
       }
+      if (loadId !== latestEmployeeIpcrLoadId.current) return;
       if (tsRes.ok) {
         setTargetRows(tsRes.data.targets);
         setTargetStatus(tsRes.data.setting?.status ?? 'draft');
@@ -483,6 +499,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
 
       // Load the "My IPCR Workspace" row for this period and hydrate the form.
       const ws = await getWorkspace(currentUser.supabaseId, resolvedPeriod);
+      if (loadId !== latestEmployeeIpcrLoadId.current) return;
       setWorkspaceRow(ws);
       if (ws) {
         setEmployeeTargets({
@@ -530,9 +547,11 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       console.error('Failed to load IPCR data:', err);
       setIpcrError('Failed to load IPCR performance data. Please try again.');
     } finally {
-      setIpcrLoading(false);
+      if (loadId === latestEmployeeIpcrLoadId.current) {
+        setIpcrLoading(false);
+      }
     }
-  };
+  }, [currentUser.supabaseId, currentUser.employeeId, profile.employmentStatus, profile.dateHired]);
 
   // ── My IPCR Workspace (Phase 1 targets / Phase 2 accomplishments) ──────────
   const workspaceIdentity = () => ({
@@ -985,7 +1004,6 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       text: 'Password updated. Use the new password the next time you log in.',
     });
   };
-  const [profile, setProfile] = useState<Employee>(currentUser);
   const [editingSection, setEditingSection] = useState<EditableSection>(null);
   const [contactDraft, setContactDraft] = useState<ContactDraft>(getContactDraft(currentUser));
   const [emergencyDraft, setEmergencyDraft] = useState<EmergencyDraft>(getEmergencyDraft(currentUser));
@@ -1137,6 +1155,15 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       void loadIPCRData();
     }
   }, [activeTab, currentUser?.supabaseId]);
+
+  useRealtimeRefresh({
+    channel: 'employee-page-ipcr',
+    tables: ['probationary_ipcr_schedules', 'phase_schedules', 'ipcr_submissions'],
+    onChange: useCallback(() => {
+      void loadIPCRData(true);
+    }, [loadIPCRData]),
+    enabled: activeTab === 'ipcr-workspace' || activeTab === 'submission',
+  });
 
   // Re-lock the Account & Security tab whenever the user navigates away.
   // Coming back forces another password confirmation.

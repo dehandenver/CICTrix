@@ -1,4 +1,5 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { AlertCircle, Bell, Check, ChevronDown, ClipboardCheck, GraduationCap, Lock, Pencil, Search, Send, Trash2, TrendingUp, UserPlus } from 'lucide-react';
 import { AdminHeader } from '../../components/AdminHeader';
 import { Dialog } from '../../components/Dialog';
@@ -147,19 +148,41 @@ const NewEntrantOnboarding = () => {
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<NewEntrant | 'new' | null>(null);
 
-  const reload = async () => {
-    setLoading(true);
+  const latestReloadId = useRef(0);
+
+  const reload = useCallback(async (isSilent = false) => {
+    const loadId = ++latestReloadId.current;
+    if (!isSilent) {
+      setLoading(true);
+    }
     setError('');
-    const [res, emps, deps] = await Promise.all([listNewEntrants(), listEmployeeOptions(), listDepartments(true)]);
-    if (res.ok) setEntrants(res.data);
-    else if ('error' in res) setError(res.error);
-    setEmployees(emps);
-    setDepartments(deps.success ? deps.data : []);
-    setLoading(false);
-  };
+    try {
+      const [res, emps, deps] = await Promise.all([listNewEntrants(), listEmployeeOptions(), listDepartments(true)]);
+      if (loadId !== latestReloadId.current) return;
+      if (res.ok) setEntrants(res.data);
+      else if ('error' in res) setError(res.error);
+      setEmployees(emps);
+      setDepartments(deps.success ? deps.data : []);
+    } catch (err) {
+      console.error('Error reloading new entrants:', err);
+    } finally {
+      if (loadId === latestReloadId.current && !isSilent) {
+        setLoading(false);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     void reload();
-  }, []);
+  }, [reload]);
+
+  useRealtimeRefresh({
+    channel: 'pm-new-entrant-onboarding',
+    tables: ['new_entrant_onboarding', 'employees'],
+    onChange: useCallback(() => {
+      void reload(true);
+    }, [reload]),
+  });
 
   const flash = (m: string) => {
     setBanner(m);

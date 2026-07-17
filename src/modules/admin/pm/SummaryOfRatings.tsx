@@ -1,6 +1,7 @@
 import { AlertCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronUp, Info, Printer, Search, Send, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getIPCRRecordsFromGapView } from '../../../lib/api/competencyGapAnalysis';
+import { useRealtimeRefresh } from '../../../hooks/useRealtimeRefresh';
 import { supabase as supabaseClient } from '../../../lib/supabase';
 
 // Bypass auto-generated Supabase types resolving to `never`.
@@ -103,19 +104,46 @@ export const SummaryOfRatings = () => {
   const [deptOptions, setDeptOptions] = useState<string[]>(['All Departments']);
   const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({});
 
-  useEffect(() => {
-    getIPCRRecordsFromGapView(REPORT_PERIOD)
-      .then(data => {
-        setRecords(data);
-        const depts = Array.from(new Set(data.map(r => r.department)));
-        setDeptOptions(['All Departments', ...depts]);
-        const initialExpanded: Record<string, boolean> = {};
-        depts.forEach(d => initialExpanded[d] = true);
-        setExpandedDepts(initialExpanded);
-      })
-      .catch(err => console.error("Error loading PM records:", err))
-      .finally(() => setIsLoading(false));
+  const latestLoadId = useRef(0);
+
+  const loadData = useCallback(async (isSilent = false) => {
+    const loadId = ++latestLoadId.current;
+    if (!isSilent) {
+      setIsLoading(true);
+    }
+    try {
+      const data = await getIPCRRecordsFromGapView(REPORT_PERIOD);
+      if (loadId !== latestLoadId.current) return;
+      setRecords(data);
+      const depts = Array.from(new Set(data.map(r => r.department)));
+      setDeptOptions(['All Departments', ...depts]);
+      setExpandedDepts(prev => {
+        const next = { ...prev };
+        depts.forEach(d => {
+          if (next[d] === undefined) next[d] = true;
+        });
+        return next;
+      });
+    } catch (err) {
+      console.error("Error loading PM records:", err);
+    } finally {
+      if (loadId === latestLoadId.current && !isSilent) {
+        setIsLoading(false);
+      }
+    }
   }, []);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
+
+  useRealtimeRefresh({
+    channel: 'pm-summary-of-ratings',
+    tables: ['success_indicator_ratings', 'ipcr_competency_matches'],
+    onChange: useCallback(() => {
+      void loadData(true);
+    }, [loadData]),
+  });
 
   // Pagination states keyed by department
   const [pages, setPages] = useState<Record<string, number>>({});

@@ -1,5 +1,6 @@
 import { ArrowLeft, ArrowUpDown, Building2, ChevronRight, RefreshCw, Search } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { EmptyState } from '../../components/EmptyState';
 import { getIPCRRecordsFromGapView } from '../../lib/api/competencyGapAnalysis';
 import { REPORT_PERIOD, getAdjectival, groupByDept, type IPCRRatingRecord } from './pm/SummaryOfRatings';
@@ -27,22 +28,36 @@ export const LndSummaryOfRatings = () => {
   // null → department landing view; a department name → drilled-in employee view
   const [activeDept, setActiveDept] = useState<string | null>(null);
 
-  const fetchRecords = async () => {
-    setLoading(true);
+  const latestLoadId = useRef(0);
+
+  const fetchRecords = useCallback(async (isSilent = false) => {
+    const loadId = ++latestLoadId.current;
+    if (!isSilent) setLoading(true);
     try {
       const data = await getIPCRRecordsFromGapView(REPORT_PERIOD);
+      if (loadId !== latestLoadId.current) return;
       setRecords(data);
       setLastSynced(new Date());
     } catch (err) {
       console.error('Error loading IPCR records:', err);
     } finally {
-      setLoading(false);
+      if (loadId === latestLoadId.current && !isSilent) {
+        setLoading(false);
+      }
     }
-  };
+  }, []);
 
   useEffect(() => {
     void fetchRecords();
-  }, []);
+  }, [fetchRecords]);
+
+  useRealtimeRefresh({
+    channel: 'lnd-summary-of-ratings',
+    tables: ['success_indicator_ratings', 'ipcr_competency_matches'],
+    onChange: useCallback(() => {
+      void fetchRecords(true);
+    }, [fetchRecords]),
+  });
 
   // Department landing rows — grouped, with avg rating and low-performer counts.
   const deptRows = useMemo(() => {
