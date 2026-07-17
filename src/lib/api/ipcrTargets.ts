@@ -9,6 +9,7 @@
  * flattened summary of the MFOs here. See flattenForWorkspace().
  */
 import { supabase } from '../supabase';
+import { listSchedules, effectiveState } from './phaseSchedules';
 
 export type FunctionType = 'core' | 'strategic' | 'support';
 // Matches the target_settings.status check in 20260715_ipcr_phase1_workflow_phase2.sql.
@@ -212,6 +213,53 @@ export async function saveTargetSetting(params: {
 
   if (submit && !hasSubmittableTarget(targets)) {
     return { ok: false, error: 'Add at least one MFO with a success indicator before submitting.' };
+  }
+
+  // Submit guard: Check if Phase 1 is open or if employee has probationary window
+  if (submit) {
+    try {
+      const { data: emp } = await (supabase as any)
+        .from('employees')
+        .select('employment_status, date_hired')
+        .eq('id', employeeId)
+        .maybeSingle();
+        
+      let hasProbationaryWindow = false;
+      if (emp && emp.employment_status === 'Probationary' && emp.date_hired) {
+        const monthNames = [
+          'January', 'February', 'March', 'April', 'May', 'June',
+          'July', 'August', 'September', 'October', 'November', 'December'
+        ];
+        const hireMonth = monthNames[new Date(emp.date_hired).getMonth()];
+        const { data: schedData } = await (supabase as any)
+          .from('probationary_ipcr_schedules')
+          .select('*')
+          .eq('hired_month', hireMonth)
+          .maybeSingle();
+        if (schedData) {
+          const nowStr = new Date().toISOString().slice(0, 10);
+          if (nowStr >= schedData.target_start && nowStr <= schedData.target_end) {
+            hasProbationaryWindow = true;
+          }
+        }
+      }
+
+      if (!hasProbationaryWindow) {
+        const { data: systemSched } = await (supabase as any)
+          .from('phase_schedules')
+          .select('*')
+          .eq('scope', 'system')
+          .eq('phase', 'target_setting')
+          .maybeSingle();
+        
+        const isOpen = systemSched ? effectiveState(systemSched) === 'Open' : false;
+        if (!isOpen) {
+          return { ok: false, error: 'Phase 1 (Target Setting) is not currently open. The PM Division will notify you when it opens.' };
+        }
+      }
+    } catch (err) {
+      console.warn('[ipcrTargets] submit guard check failed:', err);
+    }
   }
 
   try {

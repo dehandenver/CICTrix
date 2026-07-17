@@ -21,6 +21,8 @@ import { supabase as supabaseClient } from '../supabase';
 import { categoryAverage, computeOverallScore } from './ipcrWorkspace';
 import { bucketForScore } from './performanceEvaluations';
 import type { FunctionType } from './ipcrTargets';
+import { setSubmissionStage, resolveTargetSettingMeta } from './ipcrSubmissions';
+import { createNotifications } from './employeeNotifications';
 
 const supabase = supabaseClient as any;
 
@@ -293,6 +295,39 @@ export async function saveRatings(params: {
       .eq('id', targetSettingId);
     if (stErr) return { ok: false, error: stErr.message };
 
+    if (complete) {
+      try {
+        const meta = await resolveTargetSettingMeta(targetSettingId);
+        if (meta) {
+          await setSubmissionStage({
+            employeeId: meta.employeeId,
+            employeeName: meta.employeeName,
+            officeId: meta.officeId,
+            officeName: meta.officeName,
+            period: meta.period,
+            phase: 'rating',
+            stage: 'Forwarded to PM',
+            updatedBy: raterEmployeeId || 'office_account',
+          });
+        }
+      } catch (err) {
+        console.warn('[ipcrRatings] saveRatings pm tracker sync failed:', err);
+      }
+      try {
+        await createNotifications([
+          {
+            employeeId: setting.employee_id,
+            type: 'ipcr_rated',
+            title: 'Your IPCR has been rated',
+            message: 'Your supervisor / Department Head has rated your accomplishments and finalized your IPCR for this period.',
+            link: '/employee/ipcr-workspace',
+          },
+        ]);
+      } catch (err) {
+        console.warn('[ipcrRatings] saveRatings notification failed:', err);
+      }
+    }
+
     const { overallScore, adjectival } = await rollUpToWorkspace(targetSettingId, setting, complete).catch(() => ({
       overallScore: null,
       adjectival: null,
@@ -494,6 +529,26 @@ export async function saveEmployeeRatings(params: {
       })
       .eq('id', targetSettingId);
     if (stErr) return { ok: false, error: stErr.message };
+
+    if (submit) {
+      try {
+        const meta = await resolveTargetSettingMeta(targetSettingId);
+        if (meta) {
+          await setSubmissionStage({
+            employeeId: meta.employeeId,
+            employeeName: meta.employeeName,
+            officeId: meta.officeId,
+            officeName: meta.officeName,
+            period: meta.period,
+            phase: 'rating',
+            stage: 'Submitted to Office',
+            updatedBy: employeeId,
+          });
+        }
+      } catch (err) {
+        console.warn('[ipcrRatings] saveEmployeeRatings pm tracker sync failed:', err);
+      }
+    }
 
     const { overallScore, adjectival } = await rollUpToWorkspace(targetSettingId, setting, submit).catch(() => ({
       overallScore: null,

@@ -198,3 +198,42 @@ export async function setSubmissionStage(input: {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+/** Resolve target_settings.id to employee and department info for tracker syncing. */
+export async function resolveTargetSettingMeta(targetSettingId: string): Promise<{
+  employeeId: string;
+  employeeName: string;
+  officeId: string | null;
+  officeName: string | null;
+  period: string;
+} | null> {
+  try {
+    const { data: setting } = await supabase
+      .from('target_settings')
+      .select('employee_id, cycle_id')
+      .eq('id', targetSettingId)
+      .maybeSingle();
+    if (!setting) return null;
+
+    const empId = setting.employee_id;
+    const [empRes, cycleRes] = await Promise.all([
+      supabase.from('employees_with_department').select('full_name, department_id, department').eq('id', empId).maybeSingle(),
+      supabase.from('performance_cycles').select('title').eq('id', setting.cycle_id).maybeSingle(),
+    ]);
+
+    const emp = empRes.data;
+    const cycle = cycleRes.data;
+    if (!emp) return null;
+
+    return {
+      employeeId: empId,
+      employeeName: emp.full_name || '—',
+      officeId: emp.department_id ? String(emp.department_id) : null,
+      officeName: emp.department || null,
+      period: cycle?.title || '—',
+    };
+  } catch (err) {
+    console.warn('[ipcrSubmissions] resolveTargetSettingMeta failed:', err);
+    return null;
+  }
+}

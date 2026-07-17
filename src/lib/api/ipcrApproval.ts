@@ -13,6 +13,7 @@
  */
 import { supabase } from '../supabase';
 import { createNotifications } from './employeeNotifications';
+import { setSubmissionStage, resolveTargetSettingMeta } from './ipcrSubmissions';
 
 export interface PendingIndicator {
   id: string;
@@ -145,6 +146,23 @@ export async function approveTargets(p: {
       performed_by: p.approverEmployeeId,
       performed_by_role: 'office_account',
     });
+    try {
+      const meta = await resolveTargetSettingMeta(p.targetSettingId);
+      if (meta) {
+        await setSubmissionStage({
+          employeeId: meta.employeeId,
+          employeeName: meta.employeeName,
+          officeId: meta.officeId,
+          officeName: meta.officeName,
+          period: meta.period,
+          phase: 'target',
+          stage: 'Forwarded to PM',
+          updatedBy: p.approverEmployeeId || 'office_account',
+        });
+      }
+    } catch (err) {
+      console.warn('[ipcrApproval] pm tracker sync failed:', err);
+    }
     // Notify the employee their IPCR is validated + locked (distinct from open).
     await createNotifications([
       {
@@ -239,6 +257,32 @@ export async function returnForRevision(p: {
       performed_by_role: 'office_account',
       reason: p.comment?.trim() || null,
     });
+    try {
+      const meta = await resolveTargetSettingMeta(p.targetSettingId);
+      if (meta) {
+        await setSubmissionStage({
+          employeeId: meta.employeeId,
+          employeeName: meta.employeeName,
+          officeId: meta.officeId,
+          officeName: meta.officeName,
+          period: meta.period,
+          phase: 'target',
+          stage: 'Returned for Revision',
+          updatedBy: p.approverEmployeeId || 'office_account',
+        });
+      }
+    } catch (err) {
+      console.warn('[ipcrApproval] pm tracker sync failed:', err);
+    }
+    await createNotifications([
+      {
+        employeeId: p.submitterEmployeeId,
+        type: 'ipcr_returned',
+        title: 'IPCR returned for revision',
+        message: `Your IPCR has been returned for revision. Reason: ${p.comment?.trim() || 'No reason specified'}`,
+        link: '/employee/ipcr-workspace',
+      },
+    ]);
     return { ok: true, data: null };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Return failed.' };
