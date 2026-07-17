@@ -284,19 +284,23 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   });
 
   const isTargetSettingActive = useMemo(() => {
+    const systemOpen = isPhaseScheduleOpen(systemSchedules.target);
     if (probationarySchedule) {
       const nowStr = new Date().toISOString().slice(0, 10);
-      return nowStr >= probationarySchedule.target_start && nowStr <= probationarySchedule.target_end;
+      const probOpen = nowStr >= probationarySchedule.target_start && nowStr <= probationarySchedule.target_end;
+      return systemOpen || probOpen;
     }
-    return isPhaseScheduleOpen(systemSchedules.target);
+    return systemOpen;
   }, [probationarySchedule, systemSchedules]);
 
   const isAccomplishmentRatingActive = useMemo(() => {
+    const systemOpen = isPhaseScheduleOpen(systemSchedules.rating);
     if (probationarySchedule) {
       const nowStr = new Date().toISOString().slice(0, 10);
-      return nowStr >= probationarySchedule.accomplishment_start && nowStr <= probationarySchedule.accomplishment_end;
+      const probOpen = nowStr >= probationarySchedule.accomplishment_start && nowStr <= probationarySchedule.accomplishment_end;
+      return systemOpen || probOpen;
     }
-    return isPhaseScheduleOpen(systemSchedules.rating);
+    return systemOpen;
   }, [probationarySchedule, systemSchedules]);
 
   // Module 3 IPCR Workspace & New Entrants State
