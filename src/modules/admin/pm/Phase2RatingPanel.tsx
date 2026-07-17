@@ -157,7 +157,7 @@ export const Phase2RatingPanel: React.FC<{ currentEmployeeId: string | null }> =
     setNotice({
       tone: 'ok',
       text: complete
-        ? `Rating completed. Overall: ${res.data.overallScore ?? '—'} (${res.data.adjectival ?? '—'}).`
+        ? `Rating completed and forwarded to PM Division. Overall: ${res.data.overallScore ?? '—'} (${res.data.adjectival ?? '—'}).`
         : 'Progress saved.',
     });
     setSheet({ ...sheet, phase2Status: res.data.phase2Status });

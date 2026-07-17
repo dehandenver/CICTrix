@@ -83,7 +83,7 @@ import { supabase as supabaseClient } from '../../lib/supabase';
  * A missing row means the PM hasn't configured it yet — don't block the employee.
  */
 function isPhaseScheduleOpen(row: any | null): boolean {
-  if (!row) return true;
+  if (!row) return false;
   if (row.mode === 'Open') return true;
   if (row.mode === 'Closed') return false;
   const today = new Date().toISOString().slice(0, 10);
@@ -1158,7 +1158,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
 
   useRealtimeRefresh({
     channel: 'employee-page-ipcr',
-    tables: ['probationary_ipcr_schedules', 'phase_schedules', 'ipcr_submissions'],
+    tables: ['probationary_ipcr_schedules', 'phase_schedules', 'ipcr_submissions', 'employee_notifications'],
     onChange: useCallback(() => {
       void loadIPCRData(true);
     }, [loadIPCRData]),
@@ -2914,6 +2914,11 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                     ⚠️ Target setting is currently closed. The scheduled period was from {new Date(probationarySchedule.target_start).toLocaleDateString()} to {new Date(probationarySchedule.target_end).toLocaleDateString()}.
                   </div>
                 )}
+                {!isTargetSettingActive && !probationarySchedule && (
+                  <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-xs font-semibold mb-4">
+                    ⚠️ Phase 1 (Target Setting) is not yet open. The PM Division will notify you when it opens.
+                  </div>
+                )}
                 
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                   <div>
@@ -3065,7 +3070,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
             )}
 
             {ipcrSubtab === 'phase2' && (
-              <EmployeePhase2 employeeId={currentUser.supabaseId ?? null} />
+              <EmployeePhase2 employeeId={currentUser.supabaseId ?? null} phaseOpen={isAccomplishmentRatingActive} />
             )}
 
             {/* Legacy per-group Phase 2 — superseded by EmployeePhase2 (per-indicator + gating). */}

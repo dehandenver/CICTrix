@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   FileText,
@@ -44,6 +44,8 @@ import {
   adminEditTargets,
   type PendingApproval,
 } from '../../../lib/api/ipcrApproval';
+import { listNotifications, type IpcrNotification } from '../../../lib/api/ipcrSubmissions';
+import { useRealtimeRefresh } from '../../../hooks/useRealtimeRefresh';
 import {
   listTrainingRequestsDetailed,
   createTrainingRequest,
@@ -137,6 +139,60 @@ export const OfficeAccountConsole: React.FC = () => {
   /** Derived from office_role_assignments, never from the employee's job title. */
   const [officeRole, setOfficeRole] = useState<ActiveOfficeRole | null>(null);
   const [officeRoleLoading, setOfficeRoleLoading] = useState(true);
+
+  const [bellNotifications, setBellNotifications] = useState<IpcrNotification[]>([]);
+  const [showBellDropdown, setShowBellDropdown] = useState(false);
+  const [bellSeenAt, setBellSeenAt] = useState<string>('');
+
+  const loadBellNotifications = useCallback(async () => {
+    try {
+      const [tNotifs, rNotifs] = await Promise.all([
+        listNotifications('target'),
+        listNotifications('rating'),
+      ]);
+      const combined = [...tNotifs, ...rNotifs];
+      combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      
+      const officeId = officeRole?.officeId;
+      const filtered = combined.filter(n => n.office_id === null || (officeId && n.office_id === officeId));
+      setBellNotifications(filtered);
+    } catch (err) {
+      console.warn('Failed to load bell notifications:', err);
+    }
+  }, [officeRole]);
+
+  useEffect(() => {
+    if (officeRole?.officeId) {
+      const seen = localStorage.getItem(`office_bell_seen_at:${officeRole.officeId}`) || '';
+      setBellSeenAt(seen);
+      void loadBellNotifications();
+    }
+  }, [officeRole, loadBellNotifications]);
+
+  const unreadCount = useMemo(() => {
+    if (!bellSeenAt) return bellNotifications.length;
+    return bellNotifications.filter(n => n.created_at > bellSeenAt).length;
+  }, [bellNotifications, bellSeenAt]);
+
+  const handleToggleBell = () => {
+    const next = !showBellDropdown;
+    setShowBellDropdown(next);
+    if (next && officeRole?.officeId) {
+      const nowStr = new Date().toISOString();
+      localStorage.setItem(`office_bell_seen_at:${officeRole.officeId}`, nowStr);
+      setBellSeenAt(nowStr);
+    }
+  };
+
+  useRealtimeRefresh({
+    channel: 'office-console-ipcr',
+    tables: ['ipcr_notifications', 'target_settings'],
+    onChange: useCallback(() => {
+      void loadBellNotifications();
+      void refreshPendingApprovals();
+    }, [loadBellNotifications]),
+    enabled: !!officeRole,
+  });
 
   // Real IPCR submissions awaiting this office's approval.
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
@@ -618,10 +674,68 @@ export const OfficeAccountConsole: React.FC = () => {
           </div>
           <div className="flex items-center gap-4 text-slate-500">
             <button className="rounded-full p-2 hover:bg-slate-100" type="button"><HelpCircle className="h-5 w-5" /></button>
-            <button className="rounded-full p-2 hover:bg-slate-100 relative" type="button">
-              <Bell className="h-5 w-5" />
-              <span className="absolute right-2 top-1 inline-block h-2 w-2 rounded-full bg-indigo-500" />
-            </button>
+            <div className="relative">
+              <button 
+                className="rounded-full p-2 hover:bg-indigo-600/10 text-white relative transition" 
+                type="button"
+                onClick={handleToggleBell}
+              >
+                <Bell className="h-5 w-5" />
+                {unreadCount > 0 && (
+                  <span className="absolute right-1.5 top-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-extrabold text-white">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {showBellDropdown && (
+                <div 
+                  className="absolute right-0 mt-2 w-80 rounded-xl bg-white text-slate-800 shadow-xl border border-slate-100 py-2 z-50 animate-fade-in"
+                  style={{ maxHeight: '350px', overflowY: 'auto' }}
+                >
+                  <div className="px-4 py-2 border-b border-slate-100 flex items-center justify-between">
+                    <span className="font-bold text-xs text-slate-700">Notifications</span>
+                    {unreadCount > 0 && (
+                      <span className="text-[10px] bg-indigo-50 text-indigo-650 px-2 py-0.5 rounded-full font-bold">
+                        {unreadCount} new
+                      </span>
+                    )}
+                  </div>
+                  {bellNotifications.length === 0 ? (
+                    <div className="px-4 py-6 text-center text-xs text-slate-400">
+                      No notifications yet
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-50">
+                      {bellNotifications.map((n) => {
+                        const isUnread = !bellSeenAt || n.created_at > bellSeenAt;
+                        return (
+                          <div 
+                            key={n.id} 
+                            className={`px-4 py-3 flex gap-3 hover:bg-slate-50 transition ${isUnread ? 'bg-indigo-50/20' : ''}`}
+                          >
+                            <Bell className={`h-4 w-4 mt-0.5 shrink-0 ${n.phase === 'target' ? 'text-indigo-600' : 'text-emerald-600'}`} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-bold text-slate-700">
+                                {n.phase === 'target' ? 'Targets Needed' : 'Ratings Needed'}
+                              </p>
+                              {n.message && (
+                                <p className="text-[11px] text-slate-600 mt-0.5 break-words line-clamp-3">
+                                  {n.message}
+                                </p>
+                              )}
+                              <p className="text-[9px] text-slate-400 mt-1">
+                                {new Date(n.created_at).toLocaleString()}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             <div className="h-8 w-px bg-slate-200" />
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">

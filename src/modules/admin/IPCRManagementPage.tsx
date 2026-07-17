@@ -19,6 +19,8 @@ import {
   sendNotification,
   setSubmissionStage,
 } from '../../lib/api/ipcrSubmissions';
+import { getSystemPhaseStates, openPhase, closePhase } from '../../lib/api/ipcrPhaseControl';
+import type { EffectiveState } from '../../lib/api/phaseSchedules';
 import {
   type NewEntrant,
   type NewEntrantInput,
@@ -529,6 +531,10 @@ const SubmissionPhasePanel = ({
   const [stageFilter, setStageFilter] = useState<'' | IpcrStage>('');
   const [savingId, setSavingId] = useState('');
   const [showNotify, setShowNotify] = useState(false);
+  const [systemPhaseState, setSystemPhaseState] = useState<EffectiveState>('Closed');
+  const [showConfirmOpen, setShowConfirmOpen] = useState(false);
+  const [showConfirmClose, setShowConfirmClose] = useState(false);
+  const [actionBusy, setActionBusy] = useState(false);
 
   const colCount = showLockedTargets ? 6 : 5;
 
@@ -537,6 +543,9 @@ const SubmissionPhasePanel = ({
     setError('');
     const { period: p } = await getActiveCyclePeriod();
     setPeriod(p);
+    const states = await getSystemPhaseStates();
+    const phaseState = phase === 'target' ? states.target_setting : states.rating;
+    setSystemPhaseState(phaseState);
     const [trackRes, notifs, deps] = await Promise.all([
       getSubmissionTracker({ period: p, phase, excludeNewEntrants: phase === 'target' }),
       listNotifications(phase),
@@ -630,9 +639,112 @@ const SubmissionPhasePanel = ({
         </div>
       )}
 
-      <p style={{ fontSize: '13px', color: '#6b7280', margin: '0 0 16px' }}>
-        Period: <strong style={{ color: '#374151' }}>{period || '—'}</strong>
-      </p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '0 0 16px', flexWrap: 'wrap' }}>
+        <p style={{ fontSize: '13px', color: '#6b7280', margin: 0 }}>
+          Period: <strong style={{ color: '#374151' }}>{period || '—'}</strong>
+        </p>
+        <span
+          style={{
+            padding: '3px 10px',
+            borderRadius: '999px',
+            fontSize: '11px',
+            fontWeight: 700,
+            background: systemPhaseState === 'Open' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+            color: systemPhaseState === 'Open' ? '#10b981' : '#ef4444',
+            border: `1px solid ${systemPhaseState === 'Open' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`,
+          }}
+        >
+          Phase Status: {systemPhaseState}
+        </span>
+        
+        {systemPhaseState === 'Closed' ? (
+          <button
+            type="button"
+            onClick={() => setShowConfirmOpen(true)}
+            style={{ ...ui.primaryBtn, padding: '5px 12px', fontSize: '12px' }}
+          >
+            Open Phase {phase === 'target' ? '1' : '2'}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowConfirmClose(true)}
+            style={{ ...ui.secondaryBtn, padding: '5px 12px', fontSize: '12px', borderColor: '#ef4444', color: '#ef4444' }}
+          >
+            Close Phase {phase === 'target' ? '1' : '2'}
+          </button>
+        )}
+      </div>
+
+      {showConfirmOpen && (
+        <Dialog open onClose={() => setShowConfirmOpen(false)} title={`Open Phase ${phase === 'target' ? '1' : '2'}`}>
+          <div style={{ color: 'var(--text-primary)', fontSize: '14px' }}>
+            <p>Are you sure you want to open Phase {phase === 'target' ? '1 (Target Setting)' : '2 (Accomplishment Rating)'} system-wide?</p>
+            <p style={{ color: '#6b7280', fontSize: '12px', marginTop: '8px' }}>
+              This will notify all Office Accounts and allow employees to prepare/submit their {phase === 'target' ? 'targets' : 'self-ratings'}.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
+              <button type="button" onClick={() => setShowConfirmOpen(false)} disabled={actionBusy} style={ui.secondaryBtn}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setActionBusy(true);
+                  const res = await openPhase({ phase: phase === 'target' ? 'phase1' : 'phase2', openedBy: getCurrentAdminEmail() });
+                  setActionBusy(false);
+                  setShowConfirmOpen(false);
+                  if (res.ok) {
+                    flash(`✓ Phase ${phase === 'target' ? '1' : '2'} opened successfully.`);
+                    void reload();
+                  } else {
+                    setError('error' in res ? res.error : 'Failed to open phase');
+                  }
+                }}
+                disabled={actionBusy}
+                style={ui.primaryBtn}
+              >
+                {actionBusy ? 'Opening…' : 'Confirm Open'}
+              </button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+
+      {showConfirmClose && (
+        <Dialog open onClose={() => setShowConfirmClose(false)} title={`Close Phase ${phase === 'target' ? '1' : '2'}`}>
+          <div style={{ color: 'var(--text-primary)', fontSize: '14px' }}>
+            <p>Are you sure you want to close Phase {phase === 'target' ? '1 (Target Setting)' : '2 (Accomplishment Rating)'} system-wide?</p>
+            <p style={{ color: '#ef4444', fontSize: '12px', marginTop: '8px', fontWeight: 600 }}>
+              This will lock the submission window for all regular employees.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
+              <button type="button" onClick={() => setShowConfirmClose(false)} disabled={actionBusy} style={ui.secondaryBtn}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setActionBusy(true);
+                  const res = await closePhase({ phase: phase === 'target' ? 'phase1' : 'phase2', closedBy: getCurrentAdminEmail() });
+                  setActionBusy(false);
+                  setShowConfirmClose(false);
+                  if (res.ok) {
+                    flash(`✓ Phase ${phase === 'target' ? '1' : '2'} closed successfully.`);
+                    void reload();
+                  } else {
+                    setError('error' in res ? res.error : 'Failed to close phase');
+                  }
+                }}
+                disabled={actionBusy}
+                style={{ ...ui.primaryBtn, background: '#ef4444', borderColor: '#ef4444' }}
+              >
+                {actionBusy ? 'Closing…' : 'Confirm Close'}
+              </button>
+            </div>
+          </div>
+        </Dialog>
+      )}
 
       {extra}
 

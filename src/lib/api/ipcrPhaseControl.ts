@@ -51,7 +51,7 @@ export async function openPhase(input: {
       deadlineDate: null,
       updatedBy: input.openedBy,
     });
-    if (!upsertRes.ok) return { ok: false, error: upsertRes.error };
+    if (upsertRes.ok === false) return { ok: false, error: upsertRes.error };
 
     // 2. Get active cycle and period label
     const cycleInfo = await getActiveCyclePeriod();
@@ -78,7 +78,7 @@ export async function openPhase(input: {
       message: msg,
       triggeredBy: input.openedBy,
     });
-    if (!notifRes.ok) return { ok: false, error: notifRes.error };
+    if (notifRes.ok === false) return { ok: false, error: notifRes.error };
 
     // 4. Handle Phase 2 specifics (openSelfRatingPeriod)
     let ratingEmpIds: string[] = [];
@@ -87,7 +87,7 @@ export async function openPhase(input: {
         cycleId: cycleId ?? undefined,
         openedBy: input.openedBy,
       });
-      if (!ratingRes.ok) return { ok: false, error: ratingRes.error };
+      if (ratingRes.ok === false) return { ok: false, error: ratingRes.error };
       ratingEmpIds = ratingRes.data.employeeIds;
     }
 
@@ -142,7 +142,7 @@ export async function closePhase(input: {
       deadlineDate: today,
       updatedBy: input.closedBy,
     });
-    if (!upsertRes.ok) return { ok: false, error: upsertRes.error };
+    if (upsertRes.ok === false) return { ok: false, error: upsertRes.error };
 
     // 2. Handle Phase 2 specifics (closeSelfRatingPeriod)
     if (!isPhase1) {
@@ -151,7 +151,7 @@ export async function closePhase(input: {
         cycleId: cycleInfo.cycleId ?? undefined,
         closedBy: input.closedBy,
       });
-      if (!ratingRes.ok) return { ok: false, error: ratingRes.error };
+      if (ratingRes.ok === false) return { ok: false, error: ratingRes.error };
     }
 
     return { ok: true };

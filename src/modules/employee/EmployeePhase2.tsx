@@ -44,7 +44,7 @@ const avgOf = (nums: Array<number | null>): number | null => {
   return f.length ? Number((f.reduce((a, b) => a + b, 0) / f.length).toFixed(2)) : null;
 };
 
-export const EmployeePhase2: React.FC<{ employeeId: string | null }> = ({ employeeId }) => {
+export const EmployeePhase2: React.FC<{ employeeId: string | null; phaseOpen?: boolean }> = ({ employeeId, phaseOpen }) => {
   const [loading, setLoading] = useState(true);
   const [sheet, setSheet] = useState<EmployeeRatingSheet | null>(null);
   const [status, setStatus] = useState<Phase2Status>('locked');
@@ -123,11 +123,11 @@ export const EmployeePhase2: React.FC<{ employeeId: string | null }> = ({ employ
     [sheet],
   );
   const isLocked = status === 'locked' || status === 'not_started';
-  const readOnly = status === 'completed' || status === 'closed';
+  const readOnly = status === 'completed' || status === 'closed' || phaseOpen === false;
   // Locked, open and in_progress can all be typed into (prepared). Only open /
   // in_progress can SUBMIT — submission is gated to the rating period.
   const editable = !readOnly;
-  const canSubmit = status === 'open' || status === 'in_progress';
+  const canSubmit = (status === 'open' || status === 'in_progress') && phaseOpen !== false;
   const expectedOpen = sheet?.phase2OpenTargetDate
     ? new Date(sheet.phase2OpenTargetDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
     : null;
@@ -245,7 +245,20 @@ export const EmployeePhase2: React.FC<{ employeeId: string | null }> = ({ employ
         </div>
       )}
 
-      {isLocked && (
+      {phaseOpen === false && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+          <div className="flex items-start gap-2">
+            <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <div>
+              <p className="text-[11px] font-semibold leading-relaxed text-amber-900 font-bold">
+                ⚠️ Phase 2 (Accomplishment Rating) is not yet open. The PM Division will notify you when it opens.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {phaseOpen !== false && isLocked && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
           <div className="flex items-start gap-2">
             <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
@@ -259,7 +272,7 @@ export const EmployeePhase2: React.FC<{ employeeId: string | null }> = ({ employ
         </div>
       )}
 
-      {status === 'closed' && (
+      {phaseOpen !== false && status === 'closed' && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
           <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <p className="text-[11px] font-semibold text-amber-800">{CLOSED_NOTICE}</p>
