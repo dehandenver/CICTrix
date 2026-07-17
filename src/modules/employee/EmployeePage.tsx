@@ -76,6 +76,7 @@ import {
 import { generateIpcrPdf } from '../../lib/ipcrPdf';
 import { EmployeePhase2 } from './EmployeePhase2';
 import { supabase as supabaseClient } from '../../lib/supabase';
+import { listEmployeeNotifications, markEmployeeNotificationsRead, type EmployeeNotification } from '../../lib/api/employeeNotifications';
 
 /**
  * Whether a system-scope phase_schedules row is currently "open".
@@ -1156,13 +1157,41 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
     }
   }, [activeTab, currentUser?.supabaseId]);
 
+  const [bellNotifications, setBellNotifications] = useState<EmployeeNotification[]>([]);
+  const [showBellDropdown, setShowBellDropdown] = useState(false);
+
+  const loadNotifications = useCallback(async () => {
+    if (!currentUser.supabaseId) return;
+    const list = await listEmployeeNotifications(currentUser.supabaseId);
+    setBellNotifications(list);
+  }, [currentUser.supabaseId]);
+
+  useEffect(() => {
+    void loadNotifications();
+  }, [loadNotifications]);
+
+  const unreadCount = useMemo(() => {
+    return bellNotifications.filter(n => !n.is_read).length;
+  }, [bellNotifications]);
+
+  const handleToggleBell = async () => {
+    const next = !showBellDropdown;
+    setShowBellDropdown(next);
+    if (next && currentUser.supabaseId) {
+      await markEmployeeNotificationsRead(currentUser.supabaseId);
+      const list = await listEmployeeNotifications(currentUser.supabaseId);
+      setBellNotifications(list);
+    }
+  };
+
   useRealtimeRefresh({
     channel: 'employee-page-ipcr',
     tables: ['probationary_ipcr_schedules', 'phase_schedules', 'ipcr_submissions', 'employee_notifications'],
     onChange: useCallback(() => {
       void loadIPCRData(true);
-    }, [loadIPCRData]),
-    enabled: activeTab === 'ipcr-workspace' || activeTab === 'submission',
+      void loadNotifications();
+    }, [loadIPCRData, loadNotifications]),
+    enabled: true,
   });
 
   // Re-lock the Account & Security tab whenever the user navigates away.
@@ -1432,7 +1461,70 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
+            {/* Realtime Notification Bell */}
+            {currentUser.supabaseId && (
+              <div className="relative">
+                <button 
+                  className="rounded-full p-2 hover:bg-white/10 text-white relative transition" 
+                  type="button"
+                  onClick={handleToggleBell}
+                >
+                  <Bell className="h-5 w-5" />
+                  {unreadCount > 0 && (
+                    <span className="absolute right-1.5 top-1.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-extrabold text-white">
+                      {unreadCount}
+                    </span>
+                  )}
+                </button>
+
+                {showBellDropdown && (
+                  <div 
+                    className="absolute right-0 mt-2 w-80 rounded-xl bg-white text-slate-800 shadow-xl border border-slate-100 py-2 z-50 animate-fade-in"
+                    style={{ maxHeight: '350px', overflowY: 'auto' }}
+                  >
+                    <div className="px-4 py-2 border-b border-slate-100 flex items-center justify-between">
+                      <span className="font-bold text-xs text-slate-700">Notifications</span>
+                      {unreadCount > 0 && (
+                        <span className="text-[10px] bg-indigo-50 text-indigo-650 px-2 py-0.5 rounded-full font-bold">
+                          {unreadCount} new
+                        </span>
+                      )}
+                    </div>
+                    {bellNotifications.length === 0 ? (
+                      <div className="px-4 py-6 text-center text-xs text-slate-400">
+                        No notifications yet
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-slate-50">
+                        {bellNotifications.map((n) => (
+                          <div 
+                            key={n.id} 
+                            className={`px-4 py-3 flex gap-3 hover:bg-slate-50 transition ${!n.is_read ? 'bg-indigo-50/20' : ''}`}
+                          >
+                            <Bell className={`h-4 w-4 mt-0.5 shrink-0 ${n.type?.includes('returned') ? 'text-rose-500' : 'text-indigo-600'}`} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-bold text-slate-700">
+                                {n.title}
+                              </p>
+                              {n.message && (
+                                <p className="text-[11px] text-slate-600 mt-0.5 break-words line-clamp-3">
+                                  {n.message}
+                                </p>
+                              )}
+                              <p className="text-[9px] text-slate-400 mt-1">
+                                {new Date(n.created_at).toLocaleString()}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex items-center gap-2">
               <div className="hidden text-right sm:block">
                 <p style={{ margin: 0, fontSize: '0.875rem', fontWeight: 700, color: '#ffffff' }}>Welcome, {currentUser.fullName}</p>
