@@ -130,7 +130,7 @@ export const Sidebar = ({ activeModule, userRole }: SidebarProps) => {
       label: 'IPCR Management',
       sublabel: 'Onboarding, targets & ratings',
       isActive: location.pathname === '/admin/ipcr',
-      roles: ['super-admin'],
+      roles: ['super-admin', 'pm'],
     },
     {
       path: '/admin/competency',
