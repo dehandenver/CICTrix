@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BookOpen, Check, Grid3x3, Loader2, RefreshCw } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { BookOpen, Check, Grid3x3, Loader2, RefreshCw, Search, X } from 'lucide-react';
 
 import {
   listAllRequirements,
@@ -48,6 +48,155 @@ const STREAM_STYLE: Record<string, string> = {
   'EMPLOYEE DEVELOPMENT': 'bg-emerald-50 text-emerald-700',
   TECHNICAL: 'bg-sky-50 text-sky-700',
   'CULTURAL TRANSFORMATION': 'bg-amber-50 text-amber-700',
+};
+
+// ── Position search ──────────────────────────────────────────────────────────
+
+/**
+ * Type-ahead for choosing a position.
+ *
+ * Only positions that already exist in the system are selectable: free text is
+ * never committed, so a typo can't create requirements against a position that
+ * doesn't exist. Typed text that matches nothing simply reverts on blur/Escape.
+ */
+const PositionSearchInput = ({
+  positions,
+  value,
+  onChange,
+}: {
+  positions: string[];
+  value: string;
+  onChange: (position: string) => void;
+}) => {
+  const [query, setQuery] = useState(value);
+  const [open, setOpen] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Track a selection changed from outside (e.g. cleared).
+  useEffect(() => {
+    setQuery(value);
+  }, [value]);
+
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    // An empty query lists everything, so the field is browsable as well as
+    // searchable — it replaces a dropdown, after all.
+    const list = q ? positions.filter((p) => p.toLowerCase().includes(q)) : positions;
+    return list.slice(0, 50);
+  }, [positions, query]);
+
+  useEffect(() => {
+    setHighlight(0);
+  }, [query, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+        setQuery(value); // Discard uncommitted text — only real positions stick.
+      }
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [open, value]);
+
+  const commit = (position: string) => {
+    onChange(position);
+    setQuery(position);
+    setOpen(false);
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setOpen(true);
+      setHighlight((h) => Math.min(h + 1, Math.max(matches.length - 1, 0)));
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setHighlight((h) => Math.max(h - 1, 0));
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      if (open && matches[highlight]) commit(matches[highlight]);
+    } else if (event.key === 'Escape') {
+      setOpen(false);
+      setQuery(value);
+    }
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <label htmlFor="position-search" className="mb-1.5 block text-sm font-medium text-slate-700">
+        Select Position
+      </label>
+      <div className="relative">
+        <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input
+          id="position-search"
+          type="text"
+          role="combobox"
+          aria-expanded={open}
+          aria-autocomplete="list"
+          autoComplete="off"
+          value={query}
+          placeholder="Search a position…"
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={handleKeyDown}
+          className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30"
+        />
+        {(query || value) && (
+          <button
+            type="button"
+            aria-label="Clear position"
+            onClick={() => {
+              onChange('');
+              setQuery('');
+              setOpen(false);
+            }}
+            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:text-slate-600"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <ul
+          role="listbox"
+          className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+        >
+          {matches.length === 0 ? (
+            <li className="px-3 py-2 text-sm text-slate-400">
+              No position matches “{query.trim()}”.
+            </li>
+          ) : (
+            matches.map((p, index) => (
+              <li key={p}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={p === value}
+                  onMouseEnter={() => setHighlight(index)}
+                  onClick={() => commit(p)}
+                  className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors ${
+                    index === highlight ? 'bg-[#363EE8]/8 text-slate-900' : 'text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  <span>{p}</span>
+                  {p === value && <Check size={14} className="text-[#363EE8]" />}
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </div>
+  );
 };
 
 // ── Subtab 1: Position Requirements ──────────────────────────────────────────
@@ -151,23 +300,8 @@ const PositionRequirementsPanel = ({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="min-w-[280px]">
-          <label htmlFor="position-select" className="mb-1.5 block text-sm font-medium text-slate-700">
-            Select Position
-          </label>
-          <select
-            id="position-select"
-            value={position}
-            onChange={(e) => setPosition(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30"
-          >
-            <option value="">Select a position…</option>
-            {positions.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
+        <div className="w-full min-w-[280px] sm:w-80">
+          <PositionSearchInput positions={positions} value={position} onChange={setPosition} />
         </div>
         {position && (
           <p className="text-sm text-slate-500">
