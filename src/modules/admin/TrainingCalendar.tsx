@@ -29,6 +29,25 @@ import {
 import { countRecommendedByCourse, generateRecommendations } from '../../lib/api/trainingRecommendations';
 import { RecommendedEmployees } from './RecommendedEmployees';
 import { TRAINING_CATEGORIES, categoryColor, type TrainingCategory } from './trainingCategories';
+import { lifecycleStatus, type LifecycleStatus } from '../../lib/api/trainingLifecycle';
+
+/** Derived planning / published / locked status for a calendar event. */
+const eventLifecycle = (e: CalendarEvent): LifecycleStatus =>
+  lifecycleStatus({
+    startDate: e.startDate,
+    objectives: e.objectives,
+    instructorName: e.speaker,
+    location: e.location,
+    description: e.description,
+    materials: e.materials,
+    prerequisites: e.prerequisites,
+  });
+
+const LIFECYCLE_BADGE: Record<LifecycleStatus, string> = {
+  planning: 'bg-gray-100 text-gray-600 border border-dashed border-gray-400',
+  published: 'bg-emerald-100 text-emerald-700',
+  locked: 'bg-slate-200 text-slate-700',
+};
 
 const EVENT_STATUSES: CalendarEventStatus[] = ['Scheduled', 'Ongoing', 'Completed', 'Cancelled'];
 const ATTENDANCE_OPTIONS: AttendanceStatus[] = ['Present', 'Absent', 'Excused'];
@@ -103,6 +122,82 @@ const monthGrid = (year: number, month: number): (Date | null)[] => {
   return cells;
 };
 
+// ── Spanning-bar layout ───────────────────────────────────────────────────────
+// Multi-day trainings render as one continuous bar spanning their day cells,
+// wrapping to a new segment at each week boundary. Single-day trainings stay as
+// chips inside the cell.
+
+const MAX_BAR_LANES = 2;
+const MAX_SINGLE_CHIPS = 2;
+const BAR_H = 22;
+const BAR_GAP = 3;
+const DAY_NUM_H = 30;
+
+const isMultiDay = (e: CalendarEvent): boolean =>
+  !!e.endDate && dayKey(new Date(e.startDate)) !== dayKey(new Date(e.endDate));
+
+type BarSeg = {
+  event: CalendarEvent;
+  start: number; // 0–6 column where the bar starts this week
+  span: number;  // number of columns it covers this week
+  lane: number;
+  isStart: boolean; // the event actually begins within this week
+};
+
+/**
+ * Pack a week's multi-day events into non-overlapping lanes. A segment is
+ * clamped to the week's columns, so an event crossing a week boundary produces
+ * one segment per week (the wrap). Overflow beyond MAX_BAR_LANES is counted per
+ * column so each cell can show "+N more".
+ */
+function layoutWeek(
+  week: (Date | null)[],
+  multiDay: CalendarEvent[]
+): { segs: BarSeg[]; laneCount: number; overflow: number[] } {
+  const colKey = week.map((d) => (d ? dayKey(d) : null));
+  const raw: { event: CalendarEvent; start: number; span: number; isStart: boolean }[] = [];
+  for (const e of multiDay) {
+    const keys = new Set(eventDayKeys(e));
+    let start = -1;
+    let end = -1;
+    for (let c = 0; c < 7; c++) {
+      if (colKey[c] && keys.has(colKey[c] as string)) {
+        if (start === -1) start = c;
+        end = c;
+      }
+    }
+    if (start === -1) continue;
+    raw.push({ event: e, start, span: end - start + 1, isStart: colKey[start] === dayKey(new Date(e.startDate)) });
+  }
+  raw.sort((a, b) => a.start - b.start || b.span - a.span);
+
+  const laneEnd: number[] = [];
+  const segs: BarSeg[] = [];
+  const overflow = Array(7).fill(0);
+  for (const r of raw) {
+    let lane = 0;
+    while (lane < laneEnd.length && laneEnd[lane] >= r.start) lane++;
+    if (lane >= MAX_BAR_LANES) {
+      for (let c = r.start; c < r.start + r.span; c++) overflow[c]++;
+      continue;
+    }
+    if (lane === laneEnd.length) laneEnd.push(r.start + r.span - 1);
+    else laneEnd[lane] = r.start + r.span - 1;
+    segs.push({ event: r.event, start: r.start, span: r.span, lane, isStart: r.isStart });
+  }
+  return { segs, laneCount: laneEnd.length, overflow };
+}
+
+type Visual = { background: string; color: string; border: string };
+
+/** Bar / chip fill per lifecycle state. Cancelled overrides everything. */
+function visualFor(color: string, status: LifecycleStatus, cancelled: boolean): Visual {
+  if (cancelled) return { background: '#f1f5f9', color: '#94a3b8', border: '1px solid #e2e8f0' };
+  if (status === 'planning') return { background: `${color}22`, color, border: `1px dashed ${color}` };
+  // published & locked are both a solid category fill; locked adds a lock icon.
+  return { background: color, color: '#ffffff', border: '1px solid transparent' };
+}
+
 // ── Event form modal ──────────────────────────────────────────────────────────
 
 type EventFormProps = {
@@ -137,6 +232,9 @@ const EventFormModal = ({ initialDate, event, onClose, onSaved }: EventFormProps
   const [objectives, setObjectives] = useState((event?.objectives ?? []).join('\n'));
   const [status, setStatus] = useState<CalendarEventStatus>(event?.status ?? 'Scheduled');
   const [capacity, setCapacity] = useState(event?.capacity ? String(event.capacity) : '');
+  const [description, setDescription] = useState(event?.description ?? '');
+  const [materials, setMaterials] = useState(event?.materials ?? '');
+  const [prerequisites, setPrerequisites] = useState(event?.prerequisites ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -157,6 +255,9 @@ const EventFormModal = ({ initialDate, event, onClose, onSaved }: EventFormProps
       speaker: speaker.trim(),
       location: location.trim(),
       objectives: objectives.split('\n'),
+      description,
+      materials,
+      prerequisites,
       status,
       capacity: Number(capacity) || 0,
     };
@@ -253,6 +354,28 @@ const EventFormModal = ({ initialDate, event, onClose, onSaved }: EventFormProps
             <p className="mt-1 text-xs text-gray-400">One goal per line. Blank lines are ignored.</p>
           </div>
 
+          {/* Detail fields — filling all of these (plus facilitator + venue) moves
+              a training from "planning" to "published". */}
+          <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-4 space-y-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              Detail fields <span className="font-normal normal-case text-gray-400">— complete these (with facilitator &amp; venue) to publish</span>
+            </p>
+            <div>
+              <label className={labelClass}>Description</label>
+              <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What this training covers and who it's for" className={inputClass} />
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className={labelClass}>Materials</label>
+                <input type="text" value={materials} onChange={(e) => setMaterials(e.target.value)} placeholder="e.g. Workbook; laptops" className={inputClass} />
+              </div>
+              <div>
+                <label className={labelClass}>Prerequisites</label>
+                <input type="text" value={prerequisites} onChange={(e) => setPrerequisites(e.target.value)} placeholder="e.g. None" className={inputClass} />
+              </div>
+            </div>
+          </div>
+
           {error && (
             <p className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">{error}</p>
           )}
@@ -286,6 +409,8 @@ const EventDetailPanel = ({ event, recommendedCount, onClose, onEdit, onChanged,
   const [busyEnrollmentId, setBusyEnrollmentId] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const color = categoryColor(event.category);
+  const status = eventLifecycle(event);
+  const locked = status === 'locked';
 
   const handleAttendance = async (enrollmentId: string, next: AttendanceStatus | null) => {
     setBusyEnrollmentId(enrollmentId);
@@ -328,14 +453,26 @@ const EventDetailPanel = ({ event, recommendedCount, onClose, onEdit, onChanged,
                 <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_BADGE[event.status]}`}>
                   {event.status}
                 </span>
+                <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${LIFECYCLE_BADGE[status]}`}>
+                  {locked && <Lock className="h-3 w-3" />}{status}
+                </span>
               </div>
               <h2 className="text-xl font-bold text-gray-900">{event.title}</h2>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <button type="button" onClick={onEdit} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition">
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </button>
-              {event.status !== 'Cancelled' && (
+              {locked ? (
+                <span
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-500"
+                  title="Editing closes 3 days before a training starts — this training is locked."
+                >
+                  <Lock className="h-3.5 w-3.5" /> Locked
+                </span>
+              ) : (
+                <button type="button" onClick={onEdit} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition">
+                  <Pencil className="h-3.5 w-3.5" /> Edit
+                </button>
+              )}
+              {!locked && event.status !== 'Cancelled' && (
                 <button type="button" onClick={handleCancelTraining} disabled={cancelling} className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60 transition">
                   {cancelling ? 'Cancelling…' : 'Cancel training'}
                 </button>
@@ -563,6 +700,16 @@ export const TrainingCalendar = () => {
   }, [events]);
 
   const cells = useMemo(() => monthGrid(currentYear, month), [currentYear, month]);
+  const weeks = useMemo(() => {
+    const w: (Date | null)[][] = [];
+    for (let i = 0; i < cells.length; i += 7) {
+      const wk = cells.slice(i, i + 7);
+      while (wk.length < 7) wk.push(null);
+      w.push(wk);
+    }
+    return w;
+  }, [cells]);
+  const multiDayEvents = useMemo(() => events.filter(isMultiDay), [events]);
   const monthEvents = useMemo(
     () => events.filter((e) => new Date(e.startDate).getMonth() === month),
     [events, month]
@@ -630,6 +777,13 @@ export const TrainingCalendar = () => {
         ))}
       </div>
 
+      {/* Lifecycle-state legend — how the bars read (§1). */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-gray-500">
+        <span className="inline-flex items-center gap-1.5"><span className="h-3 w-5 rounded-sm bg-gray-500" /> Published (solid)</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-3 w-5 rounded-sm border border-dashed border-gray-400 bg-gray-100" /> Planning (dashed)</span>
+        <span className="inline-flex items-center gap-1.5"><Lock className="h-3 w-3" /> Locked — editing closed 3 days before start</span>
+      </div>
+
       {view === 'calendar' ? (
         <section className="rounded-2xl border border-gray-200 bg-white p-5 relative">
           {loading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
@@ -655,66 +809,124 @@ export const TrainingCalendar = () => {
             </button>
           </div>
 
-          <div className="grid grid-cols-7 gap-px bg-gray-200 rounded-xl overflow-hidden border border-gray-200">
-            {WEEKDAYS.map((day) => (
-              <div key={day} className="bg-gray-50 px-2 py-2 text-center text-xs font-semibold text-gray-500">
-                {day}
-              </div>
-            ))}
+          <div className="overflow-hidden rounded-xl border border-gray-200">
+            {/* Weekday header */}
+            <div className="grid grid-cols-7 border-b border-gray-200 bg-gray-50">
+              {WEEKDAYS.map((day) => (
+                <div key={day} className="px-2 py-2 text-center text-xs font-semibold text-gray-500">
+                  {day}
+                </div>
+              ))}
+            </div>
 
-            {cells.map((date, i) => {
-              if (!date) return <div key={`blank-${i}`} className="bg-gray-50/50 min-h-[110px]" />;
-              const key = dayKey(date);
-              const dayEvents = eventsByDay.get(key) ?? [];
-              const isToday = key === todayKey;
-
+            {weeks.map((week, wi) => {
+              const { segs, laneCount, overflow } = layoutWeek(week, multiDayEvents);
+              const barsAreaH = laneCount > 0 ? laneCount * BAR_H + (laneCount - 1) * BAR_GAP : 0;
               return (
-                <div
-                  key={key}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setFormState({ initialDate: date })}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      setFormState({ initialDate: date });
-                    }
-                  }}
-                  className="bg-white min-h-[110px] p-1.5 text-left align-top hover:bg-blue-50/40 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 transition cursor-pointer"
-                >
-                  <span className={[
-                    'inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold',
-                    isToday ? 'bg-blue-600 text-white' : 'text-gray-600',
-                  ].join(' ')}>
-                    {date.getDate()}
-                  </span>
+                <div key={wi} className="relative border-b border-gray-200 last:border-b-0">
+                  {/* Day cells */}
+                  <div className="grid grid-cols-7">
+                    {week.map((date, ci) => {
+                      if (!date) return <div key={`blank-${wi}-${ci}`} className="min-h-[120px] border-r border-gray-200 last:border-r-0 bg-gray-50/40" />;
+                      const key = dayKey(date);
+                      const isToday = key === todayKey;
+                      const singles = (eventsByDay.get(key) ?? []).filter((e) => !isMultiDay(e));
+                      const shownSingles = singles.slice(0, MAX_SINGLE_CHIPS);
+                      const moreCount = (singles.length - shownSingles.length) + (overflow[ci] ?? 0);
 
-                  <div className="mt-1 space-y-1">
-                    {dayEvents.map((event) => {
-                      const color = categoryColor(event.category);
-                      const cancelled = event.status === 'Cancelled';
                       return (
-                        <button
-                          key={event.id}
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedEventId(event.id);
+                        <div
+                          key={key}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setFormState({ initialDate: date })}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setFormState({ initialDate: date });
+                            }
                           }}
-                          title={`${event.title} — ${event.category ?? 'Uncategorized'}`}
-                          className="block w-full truncate rounded px-1.5 py-1 text-left text-[11px] font-medium transition hover:brightness-95"
-                          style={{
-                            backgroundColor: `${color}1f`,
-                            color,
-                            textDecoration: cancelled ? 'line-through' : undefined,
-                            opacity: cancelled ? 0.6 : 1,
-                          }}
+                          className="min-h-[120px] border-r border-gray-200 last:border-r-0 bg-white p-1.5 text-left align-top hover:bg-blue-50/40 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 transition cursor-pointer"
                         >
-                          {event.title}
-                        </button>
+                          <span className={[
+                            'inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold',
+                            isToday ? 'bg-blue-600 text-white' : 'text-gray-600',
+                          ].join(' ')}>
+                            {date.getDate()}
+                          </span>
+
+                          {/* Reserve vertical room for the spanning-bar overlay above the chips. */}
+                          {barsAreaH > 0 && <div style={{ height: barsAreaH + BAR_GAP }} />}
+
+                          <div className="mt-1 space-y-1">
+                            {shownSingles.map((event) => {
+                              const color = categoryColor(event.category);
+                              const status = eventLifecycle(event);
+                              const cancelled = event.status === 'Cancelled';
+                              const v = visualFor(color, status, cancelled);
+                              return (
+                                <button
+                                  key={event.id}
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); setSelectedEventId(event.id); }}
+                                  title={`${event.title} — ${event.category ?? 'Uncategorized'} · ${status}`}
+                                  className="flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-[11px] font-medium transition hover:brightness-95"
+                                  style={{ backgroundColor: v.background, color: v.color, border: v.border, textDecoration: cancelled ? 'line-through' : undefined }}
+                                >
+                                  {status === 'locked' && <Lock className="h-3 w-3 shrink-0" />}
+                                  <span className="truncate">{event.title}</span>
+                                </button>
+                              );
+                            })}
+                            {moreCount > 0 && (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setView('list'); }}
+                                title="Switch to list view to see all"
+                                className="block w-full px-1.5 text-left text-[10px] font-semibold text-gray-400 hover:text-gray-600"
+                              >
+                                +{moreCount} more
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       );
                     })}
                   </div>
+
+                  {/* Spanning bars overlay — multi-day trainings as continuous bars. */}
+                  {segs.length > 0 && (
+                    <div className="pointer-events-none absolute inset-x-0 grid grid-cols-7" style={{ top: DAY_NUM_H, rowGap: BAR_GAP }}>
+                      {segs.map((seg) => {
+                        const event = seg.event;
+                        const color = categoryColor(event.category);
+                        const status = eventLifecycle(event);
+                        const cancelled = event.status === 'Cancelled';
+                        const v = visualFor(color, status, cancelled);
+                        return (
+                          <button
+                            key={`${event.id}-${seg.start}`}
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setSelectedEventId(event.id); }}
+                            title={`${event.title} — ${event.category ?? 'Uncategorized'} · ${status}`}
+                            className="pointer-events-auto mx-1 flex items-center gap-1 overflow-hidden rounded px-1.5 text-left text-[11px] font-semibold transition hover:brightness-95"
+                            style={{
+                              gridColumn: `${seg.start + 1} / span ${seg.span}`,
+                              gridRow: seg.lane + 1,
+                              height: BAR_H,
+                              backgroundColor: v.background,
+                              color: v.color,
+                              border: v.border,
+                              textDecoration: cancelled ? 'line-through' : undefined,
+                            }}
+                          >
+                            {status === 'locked' && <Lock className="h-3 w-3 shrink-0" />}
+                            <span className={['truncate', seg.isStart ? '' : 'italic opacity-80'].join(' ')}>{event.title}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             })}

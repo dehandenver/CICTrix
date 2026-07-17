@@ -49,6 +49,10 @@ export type CalendarEvent = {
   speaker: string | null;
   location: string | null;
   objectives: string[];
+  /** Detail fields — filled state drives planning → published (see trainingLifecycle). */
+  description: string | null;
+  materials: string | null;
+  prerequisites: string | null;
   status: CalendarEventStatus;
   capacity: number;
   /**
@@ -68,6 +72,9 @@ type EventRow = {
   instructor_name: string | null;
   location: string | null;
   objectives: string[] | null;
+  description: string | null;
+  materials: string | null;
+  prerequisites: string | null;
   status: CalendarEventStatus;
   capacity: number | null;
   roster_finalized_at: string | null;
@@ -93,7 +100,7 @@ type EmployeeIdentity = { name: string; position: string; department: string };
 // competencyFromObjectives), so the select never has to know about it.
 const EVENT_SELECT = `
   id, title, category, scheduled_date, end_date, instructor_name, location,
-  objectives, status, capacity, roster_finalized_at,
+  objectives, description, materials, prerequisites, status, capacity, roster_finalized_at,
   training_enrollments (
     id, employee_id, enrollment_status, attendance_status
   )
@@ -125,6 +132,9 @@ const mapEvent = (row: EventRow, identities: Map<string, EmployeeIdentity>): Cal
   speaker: row.instructor_name,
   location: row.location,
   objectives: row.objectives ?? [],
+  description: row.description ?? null,
+  materials: row.materials ?? null,
+  prerequisites: row.prerequisites ?? null,
   status: row.status,
   capacity: row.capacity ?? 0,
   rosterFinalizedAt: row.roster_finalized_at,
@@ -210,6 +220,9 @@ export type CalendarEventInput = {
   speaker: string;
   location: string;
   objectives: string[];
+  description?: string;
+  materials?: string;
+  prerequisites?: string;
   status: CalendarEventStatus;
   capacity?: number;
 };
@@ -223,6 +236,9 @@ const toRow = (input: CalendarEventInput) => ({
   location: input.location || null,
   // Drop blank bullets so an empty textarea line never becomes an objective.
   objectives: input.objectives.map((o) => o.trim()).filter(Boolean),
+  description: input.description?.trim() || null,
+  materials: input.materials?.trim() || null,
+  prerequisites: input.prerequisites?.trim() || null,
   status: input.status,
   capacity: input.capacity ?? 0,
 });
