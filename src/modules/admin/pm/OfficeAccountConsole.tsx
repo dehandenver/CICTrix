@@ -53,6 +53,7 @@ import {
   type TrainingRequest
 } from '../../../lib/api/trainingRequests';
 import { Phase2RatingPanel } from './Phase2RatingPanel';
+import { OfficeTrainingCourses } from './OfficeTrainingCourses';
 
 type Pillar = 'Cultural Transformation' | 'Employee Development' | 'Leadership' | 'Technical';
 
@@ -276,7 +277,7 @@ export const OfficeAccountConsole: React.FC = () => {
   };
   const switchEnabled = officeRole !== null;
   // Navigation tabs: 'targets' | 'ratings' | 'training-requests'
-  const [activeTab, setActiveTab] = useState<'targets' | 'ratings' | 'training-requests'>('targets');
+  const [activeTab, setActiveTab] = useState<'targets' | 'ratings' | 'training-requests' | 'training-courses'>('targets');
 
   // Subtabs
   const [targetsSubtab, setTargetsSubtab] = useState<'verify' | 'transmittal'>('verify');
@@ -886,6 +887,22 @@ export const OfficeAccountConsole: React.FC = () => {
                 </p>
               </div>
             </button>
+            <button
+              onClick={() => setActiveTab('training-courses')}
+              className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${
+                activeTab === 'training-courses' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
+              }`}
+            >
+              <BookOpen className={`h-5 w-5 ${activeTab === 'training-courses' ? 'text-white' : 'text-black'}`} />
+              <div>
+                <p className={`text-sm font-semibold leading-tight ${activeTab === 'training-courses' ? 'text-white' : 'text-black'}`}>
+                  Training Courses
+                </p>
+                <p className={`text-[11px] mt-0.5 ${activeTab === 'training-courses' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
+                  All trainings (read-only)
+                </p>
+              </div>
+            </button>
           </nav>
         </aside>
 
@@ -906,6 +923,11 @@ export const OfficeAccountConsole: React.FC = () => {
                     <Sliders className="h-7 w-7 text-indigo-600" />
                     Phase 2: Ratings Validation & Cascading Summaries
                   </>
+                ) : activeTab === 'training-courses' ? (
+                  <>
+                    <BookOpen className="h-7 w-7 text-indigo-600" />
+                    Training Courses
+                  </>
                 ) : (
                   <>
                     <GraduationCap className="h-7 w-7 text-indigo-600" />
@@ -918,6 +940,8 @@ export const OfficeAccountConsole: React.FC = () => {
                   ? 'Audit and direct-edit employee target submissions before transmitting them to the central PM registrar.'
                   : activeTab === 'ratings'
                   ? 'Verify accomplishments at the 6-month mark, apply rating overrides, and generate automated DPCR/OPCR summaries.'
+                  : activeTab === 'training-courses'
+                  ? 'Browse every training in the system. Read-only — trainings are managed by L&D.'
                   : 'Submit structured training requests for employees, evaluated using a Weighted Sum Model (WSM) for prioritization.'}
               </p>
             </div>
@@ -937,7 +961,9 @@ export const OfficeAccountConsole: React.FC = () => {
 
           {/* Main Panel Card */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden min-h-[450px]">
-            
+
+            {activeTab === 'training-courses' && <OfficeTrainingCourses />}
+
             {/* 📥 TAB 2.1: TARGET INTERCEPTION */}
             {activeTab === 'targets' && (
               <div>

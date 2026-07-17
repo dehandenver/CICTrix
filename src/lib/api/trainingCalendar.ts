@@ -264,7 +264,12 @@ export async function updateCalendarEvent(
   id: string,
   input: CalendarEventInput
 ): Promise<MutationResult> {
-  const { error } = await supabase.from('training_sessions').update(toRow(input)).eq('id', id);
+  // Stamp updated_at so the Office Account view can flag "Updated by L&D". Only
+  // this genuine-edit path bumps it — roster/attendance churn does not.
+  const { error } = await supabase
+    .from('training_sessions')
+    .update({ ...toRow(input), updated_at: new Date().toISOString() })
+    .eq('id', id);
   return error ? { ok: false, error: error.message } : { ok: true };
 }
 
