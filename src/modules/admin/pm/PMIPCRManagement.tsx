@@ -790,6 +790,34 @@ const ProbationaryPanel = ({
   const [showSchedule, setShowSchedule] = useState(false);
   const [currentPeriod, setCurrentPeriod] = useState('');
 
+  const [systemStates, setSystemStates] = useState<{ target_setting: EffectiveState; rating: EffectiveState }>({
+    target_setting: 'Closed',
+    rating: 'Closed',
+  });
+  const [showConfirmOpen1, setShowConfirmOpen1] = useState(false);
+  const [showConfirmClose1, setShowConfirmClose1] = useState(false);
+  const [showConfirmOpen2, setShowConfirmOpen2] = useState(false);
+  const [showConfirmClose2, setShowConfirmClose2] = useState(false);
+  const [actionBusy, setActionBusy] = useState(false);
+
+  const loadSystemStates = useCallback(async () => {
+    try {
+      const states = await getSystemPhaseStates();
+      setSystemStates(states);
+    } catch (err) {
+      console.warn('Failed to load system phase states:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadSystemStates();
+  }, [loadSystemStates]);
+
+  const handleRefresh = async () => {
+    onRefresh();
+    await loadSystemStates();
+  };
+
   // Offices come from the canonical departments table, same as every other
   // screen. Any office actually present on these employees is unioned in so a
   // record whose office predates the table can still be filtered to.
@@ -840,7 +868,7 @@ const ProbationaryPanel = ({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={onRefresh}
+            onClick={handleRefresh}
             title="Refresh"
             className="p-2 rounded-lg hover:bg-slate-100 text-slate-500"
           >
@@ -856,11 +884,77 @@ const ProbationaryPanel = ({
           </button>
         </div>
       </div>
-      {currentPeriod && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-sm text-blue-700 mb-4">
-          Current Evaluation Period: <strong>{currentPeriod}</strong>
+
+      <div className="flex flex-wrap gap-4 items-center justify-between bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+        <div className="space-y-1">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Evaluation Period</p>
+          <p className="text-sm font-bold text-slate-800">{currentPeriod || 'No active period'}</p>
         </div>
-      )}
+        
+        <div className="flex flex-wrap gap-3 items-center">
+          {/* Phase 1 Gating */}
+          <div className="flex items-center gap-2 border-r border-slate-100 pr-3">
+            <span className="text-xs text-slate-500 font-medium">Phase 1 (Target):</span>
+            <span
+              className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                systemStates.target_setting === 'Open'
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                  : 'bg-rose-50 text-rose-700 border border-rose-200'
+              }`}
+            >
+              {systemStates.target_setting}
+            </span>
+            {systemStates.target_setting === 'Closed' ? (
+              <button
+                type="button"
+                onClick={() => setShowConfirmOpen1(true)}
+                className="px-3 py-1 text-xs font-bold bg-[#363EE8] text-white rounded-lg hover:bg-[#2931c5] transition"
+              >
+                Open Phase 1
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowConfirmClose1(true)}
+                className="px-3 py-1 text-xs font-bold border border-rose-200 text-rose-700 rounded-lg hover:bg-rose-50 transition"
+              >
+                Close Phase 1
+              </button>
+            )}
+          </div>
+
+          {/* Phase 2 Gating */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 font-medium">Phase 2 (Rating):</span>
+            <span
+              className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                systemStates.rating === 'Open'
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                  : 'bg-rose-50 text-rose-700 border border-rose-200'
+              }`}
+            >
+              {systemStates.rating}
+            </span>
+            {systemStates.rating === 'Closed' ? (
+              <button
+                type="button"
+                onClick={() => setShowConfirmOpen2(true)}
+                className="px-3 py-1 text-xs font-bold bg-[#363EE8] text-white rounded-lg hover:bg-[#2931c5] transition"
+              >
+                Open Phase 2
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowConfirmClose2(true)}
+                className="px-3 py-1 text-xs font-bold border border-rose-200 text-rose-700 rounded-lg hover:bg-rose-50 transition"
+              >
+                Close Phase 2
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* Search + office filter */}
       <div className="flex flex-col gap-2 sm:flex-row">
@@ -981,6 +1075,142 @@ const ProbationaryPanel = ({
           onClose={() => setShowSchedule(false)}
           onScheduled={(p) => setCurrentPeriod(p)}
         />
+      )}
+
+      {showConfirmOpen1 && (
+        <Dialog open onClose={() => setShowConfirmOpen1(false)} title="Open Phase 1 (Target Setting)">
+          <div className="text-slate-800 text-sm space-y-2.5">
+            <p>Are you sure you want to open Phase 1 (Target Setting) system-wide?</p>
+            <p className="text-xs text-slate-500">
+              This will notify all Office Accounts and allow employees to prepare/submit their targets.
+            </p>
+            <div className="flex justify-end gap-2 pt-4">
+              <button type="button" onClick={() => setShowConfirmOpen1(false)} disabled={actionBusy} className="px-4 py-2 text-xs font-bold border border-slate-200 text-slate-650 rounded-lg hover:bg-slate-50">
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setActionBusy(true);
+                  const res = await openPhase({ phase: 'phase1', openedBy: getCurrentAdminEmail() });
+                  setActionBusy(false);
+                  setShowConfirmOpen1(false);
+                  if (res.ok) {
+                    void loadSystemStates();
+                  } else {
+                    alert('error' in res ? res.error : 'Failed to open phase');
+                  }
+                }}
+                disabled={actionBusy}
+                className="px-4 py-2 text-xs font-bold bg-[#363EE8] text-white rounded-lg hover:bg-[#2931c5]"
+              >
+                {actionBusy ? 'Opening…' : 'Confirm Open'}
+              </button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+
+      {showConfirmClose1 && (
+        <Dialog open onClose={() => setShowConfirmClose1(false)} title="Close Phase 1 (Target Setting)">
+          <div className="text-slate-800 text-sm space-y-2.5">
+            <p>Are you sure you want to close Phase 1 (Target Setting) system-wide?</p>
+            <p className="text-xs text-rose-600 font-semibold">
+              This will lock the target submission window for all regular and probationary employees.
+            </p>
+            <div className="flex justify-end gap-2 pt-4">
+              <button type="button" onClick={() => setShowConfirmClose1(false)} disabled={actionBusy} className="px-4 py-2 text-xs font-bold border border-slate-200 text-slate-650 rounded-lg hover:bg-slate-50">
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setActionBusy(true);
+                  const res = await closePhase({ phase: 'phase1', closedBy: getCurrentAdminEmail() });
+                  setActionBusy(false);
+                  setShowConfirmClose1(false);
+                  if (res.ok) {
+                    void loadSystemStates();
+                  } else {
+                    alert('error' in res ? res.error : 'Failed to close phase');
+                  }
+                }}
+                disabled={actionBusy}
+                className="px-4 py-2 text-xs font-bold bg-rose-600 text-white rounded-lg hover:bg-rose-700"
+              >
+                {actionBusy ? 'Closing…' : 'Confirm Close'}
+              </button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+
+      {showConfirmOpen2 && (
+        <Dialog open onClose={() => setShowConfirmOpen2(false)} title="Open Phase 2 (Accomplishment Rating)">
+          <div className="text-slate-800 text-sm space-y-2.5">
+            <p>Are you sure you want to open Phase 2 (Accomplishment Rating) system-wide?</p>
+            <p className="text-xs text-slate-500">
+              This will notify all Office Accounts and allow employees to prepare/submit their self-ratings.
+            </p>
+            <div className="flex justify-end gap-2 pt-4">
+              <button type="button" onClick={() => setShowConfirmOpen2(false)} disabled={actionBusy} className="px-4 py-2 text-xs font-bold border border-slate-200 text-slate-650 rounded-lg hover:bg-slate-50">
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setActionBusy(true);
+                  const res = await openPhase({ phase: 'phase2', openedBy: getCurrentAdminEmail() });
+                  setActionBusy(false);
+                  setShowConfirmOpen2(false);
+                  if (res.ok) {
+                    void loadSystemStates();
+                  } else {
+                    alert('error' in res ? res.error : 'Failed to open phase');
+                  }
+                }}
+                disabled={actionBusy}
+                className="px-4 py-2 text-xs font-bold bg-[#363EE8] text-white rounded-lg hover:bg-[#2931c5]"
+              >
+                {actionBusy ? 'Opening…' : 'Confirm Open'}
+              </button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+
+      {showConfirmClose2 && (
+        <Dialog open onClose={() => setShowConfirmClose2(false)} title="Close Phase 2 (Accomplishment Rating)">
+          <div className="text-slate-800 text-sm space-y-2.5">
+            <p>Are you sure you want to close Phase 2 (Accomplishment Rating) system-wide?</p>
+            <p className="text-xs text-rose-600 font-semibold">
+              This will lock the accomplishment rating submission window for all regular and probationary employees.
+            </p>
+            <div className="flex justify-end gap-2 pt-4">
+              <button type="button" onClick={() => setShowConfirmClose2(false)} disabled={actionBusy} className="px-4 py-2 text-xs font-bold border border-slate-200 text-slate-650 rounded-lg hover:bg-slate-50">
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setActionBusy(true);
+                  const res = await closePhase({ phase: 'phase2', closedBy: getCurrentAdminEmail() });
+                  setActionBusy(false);
+                  setShowConfirmClose2(false);
+                  if (res.ok) {
+                    void loadSystemStates();
+                  } else {
+                    alert('error' in res ? res.error : 'Failed to close phase');
+                  }
+                }}
+                disabled={actionBusy}
+                className="px-4 py-2 text-xs font-bold bg-rose-600 text-white rounded-lg hover:bg-rose-700"
+              >
+                {actionBusy ? 'Closing…' : 'Confirm Close'}
+              </button>
+            </div>
+          </div>
+        </Dialog>
       )}
     </div>
   );
