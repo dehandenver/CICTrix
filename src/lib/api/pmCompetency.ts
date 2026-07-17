@@ -152,6 +152,37 @@ export async function removeRequirement(input: {
 }
 
 /**
+ * Which department(s) each position sits in, from the real employee records.
+ *
+ * Deliberately a list, not a single value: requirements are keyed by position
+ * alone, but a position can be held in more than one office (e.g. Admin Officer
+ * III exists under both Customer Support and Legal). Collapsing that to one
+ * department would quietly misattribute the requirement.
+ */
+export async function listPositionDepartments(): Promise<Result<Record<string, string[]>>> {
+  try {
+    const { data, error } = await supabase
+      .from('employees_with_department')
+      .select('current_position, department');
+    if (error) return fail('listPositionDepartments', error);
+
+    const byPosition: Record<string, string[]> = {};
+    (data ?? []).forEach((row: any) => {
+      const position = String(row?.current_position ?? '').trim();
+      const department = String(row?.department ?? '').trim();
+      if (!position || !department) return;
+      if (!byPosition[position]) byPosition[position] = [];
+      if (!byPosition[position].includes(department)) byPosition[position].push(department);
+    });
+    Object.values(byPosition).forEach((list) => list.sort((a, b) => a.localeCompare(b)));
+
+    return { ok: true, data: byPosition };
+  } catch (err) {
+    return fail('listPositionDepartments', err);
+  }
+}
+
+/**
  * Positions to choose from: every distinct current_position on an employee,
  * unioned with any position that already has requirements saved (so a position
  * stays selectable even if nobody currently holds it).

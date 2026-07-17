@@ -663,6 +663,17 @@ const CompetencyMap = () => {
     );
   }, [reqs, positionFilter, levelFilter, search]);
 
+  // Group by position for the consolidated view
+  const groupedByPosition = useMemo(() => {
+    const map = new Map<string, Requirement[]>();
+    view.forEach((r) => {
+      const existing = map.get(r.position);
+      if (existing) existing.push(r);
+      else map.set(r.position, [r]);
+    });
+    return Array.from(map.entries()); // [position, Requirement[]][]
+  }, [view]);
+
   return (
     <div>
       {error && (
@@ -698,32 +709,53 @@ const CompetencyMap = () => {
         <div style={ui.cardHeader}>
           <Grid3x3 size={18} />
           Competency Map
-          <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: '#6b7280' }}>{loading ? '' : `${view.length} rows`}</span>
+          <span style={{ marginLeft: 'auto', fontSize: '13px', fontWeight: 500, color: '#6b7280' }}>
+            {loading ? '' : `${groupedByPosition.length} position${groupedByPosition.length === 1 ? '' : 's'}`}
+          </span>
         </div>
         {loading ? (
           <div style={ui.emptyBox}>Loading…</div>
-        ) : view.length === 0 ? (
+        ) : groupedByPosition.length === 0 ? (
           <div style={ui.emptyBox}>No requirements match the current filters.</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
               <thead>
                 <tr style={{ background: '#f9fafb', textAlign: 'left', color: '#6b7280' }}>
-                  <th style={ui.th}>Position</th>
-                  <th style={ui.th}>Competency</th>
-                  <th style={ui.th}>Level</th>
-                  <th style={ui.th}>Description</th>
+                  <th style={{ ...ui.th, width: '220px' }}>Position</th>
+                  <th style={ui.th}>Competency Standards</th>
                 </tr>
               </thead>
               <tbody>
-                {view.map((r) => (
-                  <tr key={r.id} style={{ borderTop: '1px solid #f0f0f0' }}>
-                    <td style={{ ...ui.td, fontWeight: 600, color: '#1f2937' }}>{r.position}</td>
-                    <td style={ui.td}>{r.competency_name}</td>
-                    <td style={ui.td}>
-                      <span style={levelPill(r.proficiency_level)}>{r.proficiency_level}</span>
+                {groupedByPosition.map(([pos, posReqs]) => (
+                  <tr key={pos} style={{ borderTop: '1px solid #f0f0f0', verticalAlign: 'top' }}>
+                    <td style={{ ...ui.td, fontWeight: 600, color: '#1f2937' }}>{pos}</td>
+                    <td style={{ ...ui.td, padding: '8px 12px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        {posReqs.map((r) => (
+                          <div
+                            key={r.id}
+                            style={{
+                              display: 'flex',
+                              flexWrap: 'wrap',
+                              alignItems: 'center',
+                              gap: '8px',
+                              fontSize: '12px',
+                              padding: '4px 8px',
+                              borderRadius: '6px',
+                              border: '1px solid #f0f0f0',
+                              background: '#fafafa',
+                            }}
+                          >
+                            <span style={{ fontWeight: 600, color: '#1f2937' }}>{r.competency_name}</span>
+                            <span style={levelPill(r.proficiency_level)}>{r.proficiency_level}</span>
+                            {r.description && (
+                              <span style={{ color: '#6b7280', fontSize: '11px' }}>— {r.description}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </td>
-                    <td style={{ ...ui.td, color: '#6b7280' }}>{r.description || '—'}</td>
                   </tr>
                 ))}
               </tbody>
