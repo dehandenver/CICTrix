@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   Award,
   BarChart2,
   Sparkles,
@@ -53,6 +54,7 @@ import { CATEGORY_COLORS, TRAINING_CATEGORIES } from './trainingCategories';
 
 import { EmptyState } from '../../components/EmptyState';
 import { listTrainingRequestsDetailed, type TrainingRequest } from '../../lib/api/trainingRequests';
+import { listIncompleteLockedTrainings, type IncompleteLockedTraining } from '../../lib/api/trainingLifecycle';
 import EmployeeDirectory from './EmployeeDirectory';
 import { LndSummaryOfRatings } from './LndSummaryOfRatings';
 import { LndTrainingRequests } from './LndTrainingRequests';
@@ -223,14 +225,19 @@ const LndDashboardContent = () => {
   const [requests, setRequests] = useState<TrainingRequest[]>([]);
   const [selectedRadarDept, setSelectedRadarDept] = useState('');
   const [viewDeptDetails, setViewDeptDetails] = useState<string | null>(null);
+  const [incompleteLocked, setIncompleteLocked] = useState<IncompleteLockedTraining[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const data = await listTrainingRequestsDetailed();
+        const [data, locked] = await Promise.all([
+          listTrainingRequestsDetailed(),
+          listIncompleteLockedTrainings(),
+        ]);
         if (cancelled) return;
         setRequests(data);
+        setIncompleteLocked(locked);
         const depts = Array.from(new Set(data.map((r: TrainingRequest) => r.employees?.department).filter(Boolean)));
         if (depts.length > 0) setSelectedRadarDept(depts[0] as string);
       } catch (err) {
@@ -342,6 +349,32 @@ const LndDashboardContent = () => {
         <h1 className="mt-1 text-3xl font-bold text-gray-900">Dashboard & Analytics</h1>
         <p className="mt-1 text-sm text-gray-500">Training volume, category demand, and competency gaps at a glance.</p>
       </section>
+
+      {/* "Went live incomplete" warning — trainings that locked while still in planning */}
+      {incompleteLocked.length > 0 && (
+        <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-amber-800">
+                {incompleteLocked.length} training{incompleteLocked.length === 1 ? '' : 's'} went live incomplete
+              </p>
+              <p className="mt-0.5 text-xs text-amber-700">
+                These locked within 3 days of their start while still in planning — the detail fields were never completed. Complete trainings before the cutoff next time.
+              </p>
+              <ul className="mt-2 space-y-1">
+                {incompleteLocked.map((t) => (
+                  <li key={t.id} className="text-xs text-amber-800">
+                    <span className="font-medium">{t.title}</span>
+                    {t.category ? <span className="text-amber-600"> · {t.category}</span> : null}
+                    <span className="text-amber-600"> · starts {new Date(t.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Metric Cards */}
       <section className="grid grid-cols-1 gap-6 md:grid-cols-3 relative">
