@@ -544,6 +544,17 @@ const CompetencyMapPanel = ({
   const selectClass =
     'rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#363EE8]/30';
 
+  // Group filtered rows by position for the consolidated view
+  const groupedByPosition = useMemo(() => {
+    const map = new Map<string, MapRow[]>();
+    rows.forEach((row) => {
+      const existing = map.get(row.positionTitle);
+      if (existing) existing.push(row);
+      else map.set(row.positionTitle, [row]);
+    });
+    return Array.from(map.entries()); // [positionTitle, MapRow[]][]
+  }, [rows]);
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-slate-500">
@@ -615,8 +626,9 @@ const CompetencyMapPanel = ({
       )}
 
       <p className="text-sm text-slate-500">
-        Showing <span className="font-semibold text-slate-700">{rows.length}</span> of {allRows.length} record
-        {allRows.length === 1 ? '' : 's'}
+        Showing <span className="font-semibold text-slate-700">{groupedByPosition.length}</span> position
+        {groupedByPosition.length === 1 ? '' : 's'}{' '}
+        <span className="text-slate-400">({rows.length} competency record{rows.length === 1 ? '' : 's'})</span>
       </p>
 
       {loading ? (
@@ -639,48 +651,53 @@ const CompetencyMapPanel = ({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50 text-left">
-                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Department</th>
-                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Position</th>
-                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Competency Standard</th>
-                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Training Stream</th>
-                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Required Level</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Action</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-[200px]">Position</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500 w-[180px]">Department</th>
+                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">Competency Standards</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {rows.map((row) => (
-                  <tr key={row.requirementId} className="hover:bg-slate-50/60 transition-colors">
+                {groupedByPosition.map(([posTitle, posRows]) => (
+                  <tr key={posTitle} className="hover:bg-slate-50/60 transition-colors align-top">
+                    <td className="px-4 py-3 font-medium text-slate-800">{posTitle}</td>
                     <td className="px-4 py-3 text-slate-600">
-                      {row.departments.length > 0 ? row.departments.join(', ') : <span className="text-slate-300">—</span>}
+                      {posRows[0].departments.length > 0
+                        ? posRows[0].departments.join(', ')
+                        : <span className="text-slate-300">—</span>}
                     </td>
-                    <td className="px-4 py-3 font-medium text-slate-800">{row.positionTitle}</td>
-                    <td className="px-4 py-3 text-slate-800">{row.competencyName}</td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                          STREAM_STYLE[row.trainingStream] ?? 'bg-slate-100 text-slate-600'
-                        }`}
-                      >
-                        {row.trainingStream || '—'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center gap-1.5 text-slate-700">
-                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#363EE8]/10 text-xs font-bold text-[#363EE8]">
-                          {PROFICIENCY_CODE[row.level]}
-                        </span>
-                        {row.level}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setPendingDelete(row)}
-                        aria-label={`Delete ${row.competencyName} from ${row.positionTitle}`}
-                        className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 transition"
-                      >
-                        <Trash2 size={13} /> Delete
-                      </button>
+                    <td className="px-4 py-2">
+                      <div className="space-y-1">
+                        {posRows.map((row) => (
+                          <div
+                            key={row.requirementId}
+                            className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md border border-slate-100 bg-slate-50/50 px-2.5 py-1.5"
+                            style={{ fontSize: '12px' }}
+                          >
+                            <span className="font-semibold text-slate-800 mr-1">{row.competencyName}</span>
+                            <span
+                              className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                STREAM_STYLE[row.trainingStream] ?? 'bg-slate-100 text-slate-600'
+                              }`}
+                            >
+                              {row.trainingStream || '—'}
+                            </span>
+                            <span className="inline-flex items-center gap-1 text-slate-700">
+                              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#363EE8]/10 text-[10px] font-bold text-[#363EE8]">
+                                {PROFICIENCY_CODE[row.level]}
+                              </span>
+                              <span className="text-[11px]">{row.level}</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setPendingDelete(row)}
+                              aria-label={`Delete ${row.competencyName} from ${row.positionTitle}`}
+                              className="ml-auto inline-flex items-center gap-0.5 rounded border border-red-200 px-1.5 py-0.5 text-[10px] font-semibold text-red-600 hover:bg-red-50 transition"
+                            >
+                              <Trash2 size={10} /> Delete
+                            </button>
+                          </div>
+                        ))}
+                      </div>
                     </td>
                   </tr>
                 ))}
