@@ -17,8 +17,20 @@ const supabase = supabaseClient as any;
 
 // Supabase/PostgREST errors are plain objects with a `message` property, not
 // Error instances — String(e) on them renders "[object Object]" in the UI.
-const errMsg = (e: unknown): string =>
-  e instanceof Error ? e.message : (e as any)?.message ?? String(e);
+const errMsg = (e: unknown): string => {
+  if (e instanceof Error) return e.message;
+  if (!e) return 'Unknown error';
+  if (typeof e === 'string') return e;
+  const obj = e as any;
+  if (obj.message) return String(obj.message);
+  if (obj.error) return typeof obj.error === 'string' ? obj.error : errMsg(obj.error);
+  if (obj.error_description) return String(obj.error_description);
+  try {
+    return JSON.stringify(obj);
+  } catch {
+    return String(e);
+  }
+};
 
 export const PROFICIENCY_LEVELS = ['Basic', 'Intermediate', 'Advanced'] as const;
 export type ProficiencyLevel = (typeof PROFICIENCY_LEVELS)[number];

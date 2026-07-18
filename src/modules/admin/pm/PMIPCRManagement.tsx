@@ -22,7 +22,7 @@ import { IPCR_STAGES, type IpcrStage, stagePillStyle } from '../../../lib/api/ip
 import { type IpcrPhase, sendNotification } from '../../../lib/api/ipcrSubmissions';
 import { getAllEmployees, type Employee } from '../../../lib/api/employees';
 import { upsertSchedule } from '../../../lib/api/phaseSchedules';
-import { getEmployeeIPCR, type IPCRRowDraft } from '../../../lib/api/performanceEvaluations';
+import { getEmployeeIPCR, type IPCRRowDraft, bucketForScore } from '../../../lib/api/performanceEvaluations';
 import { loadEmployeeIpcrForReview } from '../../../lib/api/ipcrApproval';
 import { getCurrentAdminEmail } from '../moduleUi';
 import { supabase as supabaseClient } from '../../../lib/supabase';
@@ -310,6 +310,90 @@ const IPCRDetailPage = ({
 
   const LEGACY_WITHOUT_EVALUATION_IS_VISIBLE = true;
 
+  const splitTarget = (targetText: string) => {
+    const delimiter = ' — ';
+    const index = targetText.indexOf(delimiter);
+    if (index !== -1) {
+      return {
+        mfoTitle: targetText.substring(0, index),
+        siDescription: targetText.substring(index + delimiter.length),
+      };
+    }
+    return {
+      mfoTitle: 'Untitled MFO',
+      siDescription: targetText,
+    };
+  };
+
+  const groupedRows = useMemo(() => {
+    const groups: Record<string, { functionType: string; indicators: any[] }> = {};
+    for (const row of ipcrRows) {
+      const { mfoTitle, siDescription } = splitTarget(row.target_text || '');
+      if (!groups[mfoTitle]) {
+        groups[mfoTitle] = {
+          functionType: row.function_type,
+          indicators: [],
+        };
+      }
+      groups[mfoTitle].indicators.push({
+        ...row,
+        siDescription,
+      });
+    }
+    return groups;
+  }, [ipcrRows]);
+
+  const computedScores = useMemo(() => {
+    const acc: Record<string, { q: number[]; e: number[]; t: number[] }> = {
+      core: { q: [], e: [], t: [] },
+      strategic: { q: [], e: [], t: [] },
+      support: { q: [], e: [], t: [] },
+    };
+
+    for (const row of ipcrRows) {
+      const fn = (row.function_type || '').toLowerCase();
+      if (!acc[fn]) {
+        acc[fn] = { q: [], e: [], t: [] };
+      }
+      if (row.q_rating != null) acc[fn].q.push(row.q_rating);
+      if (row.e_rating != null) acc[fn].e.push(row.e_rating);
+      if (row.t_rating != null) acc[fn].t.push(row.t_rating);
+    }
+
+    const mean = (xs: number[]): number | null =>
+      xs.length ? Number((xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(2)) : null;
+
+    const catAvg = (fn: string) => {
+      const q = mean(acc[fn].q);
+      const e = mean(acc[fn].e);
+      const t = mean(acc[fn].t);
+      const filled = [q, e, t].filter((r): r is number => r !== null && !Number.isNaN(r));
+      if (filled.length === 0) return null;
+      return Number((filled.reduce((a, b) => a + b, 0) / filled.length).toFixed(2));
+    };
+
+    const coreAvg = catAvg('core');
+    const strategicAvg = catAvg('strategic');
+    const supportAvg = catAvg('support');
+
+    const filledAverages = [coreAvg, strategicAvg, supportAvg].filter(
+      (avg): avg is number => avg !== null && !Number.isNaN(avg)
+    );
+
+    let overallScore: number | null = null;
+    if (filledAverages.length > 0) {
+      const meanOverall = filledAverages.reduce((s, p) => s + p, 0) / filledAverages.length;
+      overallScore = Number(meanOverall.toFixed(2));
+    }
+
+    return {
+      coreAvg,
+      strategicAvg,
+      supportAvg,
+      overallScore,
+    };
+  }, [ipcrRows]);
+
   const isApproved =
     relationalStatus === 'approved' ||
     legacyEvaluationStatus === 'Approved' ||
@@ -455,9 +539,19 @@ const IPCRDetailPage = ({
 
       <div className="w-full space-y-4">
         <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-          <h3 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">
-            Employee IPCR Sheet
-          </h3>
+          <div className="flex flex-wrap items-center justify-between border-b border-slate-100 pb-3 mb-4 gap-2">
+            <h3 className="text-sm font-bold text-slate-800">
+              Employee IPCR Sheet
+            </h3>
+            {employee.computedPhase === 'rating' && computedScores.overallScore !== null && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500 font-medium">Overall Rating:</span>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  {computedScores.overallScore.toFixed(2)} — {bucketForScore(computedScores.overallScore)}
+                </span>
+              </div>
+            )}
+          </div>
 
           {ipcrLoading ? (
             <div className="p-12 text-center text-sm text-slate-400">
@@ -480,65 +574,131 @@ const IPCRDetailPage = ({
               <span className="text-xs text-slate-500">The employee has not encoded targets for the rating period {employee.periodLabel}.</span>
             </div>
           ) : (
-            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
-                    <th className="px-3 py-3 w-16">Type</th>
-                    <th className="px-3 py-3">M.F.O. / Target Description</th>
-                    {employee.computedPhase === 'rating' && (
-                      <>
-                        <th className="px-3 py-3">Accomplishment</th>
-                        <th className="px-3 py-3 w-28">Ratings (Q/E/T/Ave)</th>
-                      </>
-                    )}
-                    <th className="px-3 py-3 w-28">Remarks</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-slate-700">
-                  {ipcrRows.map((row, idx) => {
-                    const isCore = row.function_type === 'CORE';
-                    return (
-                      <tr key={row.id || idx} className="hover:bg-slate-50/40 transition-colors">
-                        <td className="px-3 py-3.5 align-top">
-                          <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                            isCore ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' : 'bg-slate-100 text-slate-700'
-                          }`}>
-                            {row.function_type}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3.5 align-top whitespace-pre-wrap leading-relaxed text-slate-800">
-                          {row.target_text || '—'}
-                        </td>
-                        {employee.computedPhase === 'rating' && (
-                          <>
-                            <td className="px-3 py-3.5 align-top whitespace-pre-wrap leading-relaxed text-slate-800">
-                              {row.accomplishment_text || '—'}
-                            </td>
-                            <td className="px-3 py-3.5 align-top">
-                              {row.ave_rating ? (
-                                <div className="space-y-0.5">
-                                  <div className="font-bold text-slate-800 text-sm">
-                                    {row.ave_rating.toFixed(2)}
-                                  </div>
-                                  <div className="text-[10px] text-slate-400 font-mono">
-                                    Q:{row.q_rating ?? '—'} E:{row.e_rating ?? '—'} T:{row.t_rating ?? '—'}
+            <div className="space-y-6">
+              {Object.entries(groupedRows).map(([mfoTitle, group]) => (
+                <div key={mfoTitle} className="bg-slate-50/40 rounded-xl border border-slate-200 p-4 space-y-4">
+                  {/* MFO Header */}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-indigo-600 tracking-wide uppercase bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded">
+                        M.F.O. / P.A.P.
+                      </span>
+                      <h4 className="text-xs font-bold text-slate-800">
+                        {mfoTitle}
+                      </h4>
+                    </div>
+                    <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                      group.functionType === 'CORE' 
+                        ? 'bg-indigo-100/50 text-indigo-800 border border-indigo-200/40' 
+                        : 'bg-slate-200/60 text-slate-700'
+                    }`}>
+                      {group.functionType}
+                    </span>
+                  </div>
+
+                  {/* Visual Divider Separator */}
+                  <div className="border-t border-slate-200 my-2"></div>
+
+                  {/* Success Indicators List */}
+                  <div className="space-y-4">
+                    {group.indicators.map((si, siIdx) => {
+                      const selfAvg = [si.q_rating, si.e_rating, si.t_rating].filter((v) => v !== null).length
+                        ? Number(([si.q_rating, si.e_rating, si.t_rating].filter((v) => v !== null).reduce((a, b) => a + b, 0) / [si.q_rating, si.e_rating, si.t_rating].filter((v) => v !== null).length).toFixed(2))
+                        : null;
+
+                      return (
+                        <div key={si.id || siIdx} className="bg-white rounded-xl border border-slate-200 p-4 space-y-4 shadow-sm">
+                          {/* Success Indicator Target */}
+                          <div>
+                            <span className="text-[9px] font-extrabold uppercase text-slate-400 block tracking-wider mb-1">
+                              Success Indicator (Phase 1 Target)
+                            </span>
+                            <p className="text-slate-800 font-semibold text-xs leading-relaxed">
+                              {si.siDescription || 'No indicator target description encoded.'}
+                            </p>
+                          </div>
+
+                          {employee.computedPhase === 'rating' && (
+                            <>
+                              {/* Accomplishment Achievement */}
+                              <div>
+                                <span className="text-[9px] font-extrabold uppercase text-[#363EE8] block tracking-wider mb-1">
+                                  Employee Achievement (Phase 2 Accomplishment)
+                                </span>
+                                <p className="text-slate-700 italic text-xs bg-slate-50/50 p-2.5 rounded-lg border border-slate-100 leading-relaxed">
+                                  {si.accomplishment_text || 'No accomplishments encoded.'}
+                                </p>
+                              </div>
+
+                              {/* Ratings Footer */}
+                              <div className="pt-3 flex flex-wrap items-center justify-between gap-4 border-t border-slate-100">
+                                {/* Left Side: Self-Rating */}
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] font-bold text-slate-400">Self-Rating:</span>
+                                  <div className="flex gap-1.5">
+                                    <span className="text-[10px] text-slate-650 bg-slate-100 px-1.5 py-0.5 rounded font-semibold">
+                                      Q: <strong className="text-slate-800">{si.q_rating ?? '—'}</strong>
+                                    </span>
+                                    <span className="text-[10px] text-slate-650 bg-slate-100 px-1.5 py-0.5 rounded font-semibold">
+                                      E: <strong className="text-slate-800">{si.e_rating ?? '—'}</strong>
+                                    </span>
+                                    <span className="text-[10px] text-slate-650 bg-slate-100 px-1.5 py-0.5 rounded font-semibold">
+                                      T: <strong className="text-slate-800">{si.t_rating ?? '—'}</strong>
+                                    </span>
+                                    <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded font-bold">
+                                      A: {selfAvg !== null ? selfAvg.toFixed(2) : '—'}
+                                    </span>
                                   </div>
                                 </div>
-                              ) : (
-                                <span className="text-slate-400 italic">Not rated</span>
-                              )}
-                            </td>
-                          </>
-                        )}
-                        <td className="px-3 py-3.5 align-top whitespace-pre-wrap text-slate-500 italic">
-                          {row.remarks || '—'}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+
+                                {/* Right Side: Final Rating */}
+                                <div className="flex items-center gap-3">
+                                  <span className="text-[10px] font-bold text-indigo-600">Final Rating:</span>
+                                  <div className="flex gap-2 items-center">
+                                    <div className="flex gap-1.5">
+                                      <label className="flex items-center gap-1">
+                                        <span className="text-[10px] font-bold text-slate-500">Q</span>
+                                        <div className="flex items-center gap-1 rounded border border-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700 bg-white shadow-sm h-6">
+                                          <span>{si.q_rating ?? '—'}</span>
+                                          <ChevronDown size={10} className="text-slate-400" />
+                                        </div>
+                                      </label>
+                                      <label className="flex items-center gap-1">
+                                        <span className="text-[10px] font-bold text-slate-500">E</span>
+                                        <div className="flex items-center gap-1 rounded border border-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700 bg-white shadow-sm h-6">
+                                          <span>{si.e_rating ?? '—'}</span>
+                                          <ChevronDown size={10} className="text-slate-400" />
+                                        </div>
+                                      </label>
+                                      <label className="flex items-center gap-1">
+                                        <span className="text-[10px] font-bold text-slate-500">T</span>
+                                        <div className="flex items-center gap-1 rounded border border-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700 bg-white shadow-sm h-6">
+                                          <span>{si.t_rating ?? '—'}</span>
+                                          <ChevronDown size={10} className="text-slate-400" />
+                                        </div>
+                                      </label>
+                                    </div>
+                                    <span className="text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded font-bold">
+                                      Final A: {si.ave_rating ? si.ave_rating.toFixed(2) : '—'}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </>
+                          )}
+
+                          {/* Remarks */}
+                          {si.remarks && (
+                            <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 italic">
+                              Remarks: {si.remarks}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
