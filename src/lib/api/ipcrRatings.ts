@@ -66,6 +66,9 @@ export interface RatingSheet {
   period: string;
   phase2Status: Phase2Status;
   mfos: RatingMfo[];
+  department?: string | null;
+  position?: string | null;
+  reviewComment?: string | null;
 }
 
 export interface RatingInput {
@@ -164,7 +167,7 @@ export async function loadRatingSheet(targetSettingId: string): Promise<Result<R
   try {
     const { data: setting, error: sErr } = await supabase
       .from('target_settings')
-      .select('id, employee_id, cycle_id, status, phase2_status')
+      .select('id, employee_id, cycle_id, status, phase2_status, review_comment')
       .eq('id', targetSettingId)
       .maybeSingle();
     if (sErr) return { ok: false, error: sErr.message };
@@ -227,6 +230,7 @@ export async function loadRatingSheet(targetSettingId: string): Promise<Result<R
         employeeName: (emp.data?.full_name ?? '(unknown employee)').trim(),
         period: titles.get(setting.cycle_id) ?? '—',
         phase2Status: (setting.phase2_status ?? 'not_started') as Phase2Status,
+        reviewComment: setting.review_comment ?? null,
         mfos,
       },
     };
@@ -650,5 +654,229 @@ export async function closeSelfRatingPeriod(params: {
     return { ok: true, data: { employeeIds: rows.map((r) => String(r.employee_id)) } };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Failed to close the self-rating period.' };
+  }
+}
+
+/**
+ * List Phase 2 submissions currently awaiting approval (stage = 'Submitted to Office').
+ */
+export async function listPendingRatingApprovals(
+  scope?: OfficeScope | null,
+): Promise<Result<RatingSheet[]>> {
+  try {
+    // 1. Fetch settings in status approved with phase2_status completed
+    const { data: settings, error } = await supabase
+      .from('target_settings')
+      .select('id, employee_id, cycle_id, phase2_status, review_comment')
+      .eq('status', 'approved')
+      .eq('phase2_status', 'completed');
+    if (error) return { ok: false, error: error.message };
+    if (!settings?.length) return { ok: true, data: [] };
+
+    // 2. Fetch submission pipeline stage to filter only those in 'Submitted to Office'
+    const { data: pipeline } = await supabase
+      .from('ipcr_submissions')
+      .select('employee_id, period, stage')
+      .eq('phase', 'rating')
+      .eq('stage', 'Submitted to Office');
+    const pipelineMap = new Map((pipeline ?? []).map((p: any) => [`${p.employee_id}::${p.period}`, p.stage]));
+
+    const empIds = [...new Set(settings.map((s: any) => s.employee_id))];
+    const [emps, titles] = await Promise.all([
+      supabase.from('employees_with_department').select('id, full_name, current_department, current_position').in('id', empIds),
+      cycleTitles(settings.map((s: any) => s.cycle_id)),
+    ]);
+    const empMap = new Map<string, any>((emps.data ?? []).map((e: any) => [e.id, e]));
+
+    // Filter and map
+    const settingIdsToLoad: string[] = [];
+    for (const s of settings as any[]) {
+      const periodLabel = titles.get(s.cycle_id) ?? '—';
+      const submissionStage = pipelineMap.get(`${s.employee_id}::${periodLabel}`);
+
+      if (submissionStage === 'Submitted to Office') {
+        settingIdsToLoad.push(s.id);
+      }
+    }
+
+    if (!settingIdsToLoad.length) return { ok: true, data: [] };
+
+    // 3. Load MFOs and success indicator ratings for these selected settings
+    const { data: mfoRows, error: mErr } = await supabase
+      .from('mfos')
+      .select('id, target_setting_id, function_type, title, sort_order, success_indicators(id, description, sort_order)')
+      .in('target_setting_id', settingIdsToLoad)
+      .order('sort_order', { ascending: true });
+    if (mErr) return { ok: false, error: mErr.message };
+
+    const siIds: string[] = [];
+    for (const m of (mfoRows ?? []) as any[])
+      for (const si of (m.success_indicators ?? []) as any[]) siIds.push(si.id);
+
+    const ratingBySi = new Map<string, any>();
+    if (siIds.length) {
+      const { data: ratings } = await supabase
+        .from('success_indicator_ratings')
+        .select('*')
+        .in('success_indicator_id', siIds);
+      for (const r of (ratings ?? []) as any[]) ratingBySi.set(r.success_indicator_id, r);
+    }
+
+    const bySettingId = new Map<string, RatingSheet>();
+    for (const s of settings as any[]) {
+      if (!settingIdsToLoad.includes(s.id)) continue;
+      const e = empMap.get(s.employee_id);
+      bySettingId.set(s.id, {
+        targetSettingId: s.id,
+        employeeId: s.employee_id,
+        employeeName: (e?.full_name ?? '(unknown employee)').trim(),
+        department: e?.current_department ?? null,
+        position: e?.current_position ?? null,
+        period: titles.get(s.cycle_id) ?? '—',
+        phase2Status: s.phase2_status as Phase2Status,
+        reviewComment: s.review_comment ?? null,
+        mfos: [],
+      });
+    }
+
+    for (const m of (mfoRows ?? []) as any[]) {
+      const p = bySettingId.get(m.target_setting_id);
+      if (!p) continue;
+      p.mfos.push({
+        id: m.id,
+        functionType: m.function_type as FunctionType,
+        title: m.title ?? '',
+        indicators: ((m.success_indicators ?? []) as any[])
+          .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+          .map((si) => {
+            const r = ratingBySi.get(si.id);
+            return {
+              successIndicatorId: si.id,
+              description: si.description ?? '',
+              accomplishment: r?.accomplishment ?? '',
+              quality: r?.quality ?? null,
+              efficiency: r?.efficiency ?? null,
+              timeliness: r?.timeliness ?? null,
+              overriddenByOffice: !!r?.overridden_by,
+            };
+          }),
+      });
+    }
+
+    const acceptedNames = await getAcceptedOfficeNames(scope);
+    let resultList = [...bySettingId.values()];
+    if (acceptedNames) {
+      resultList = resultList.filter((t: any) => {
+        const dept = norm(t.department);
+        return dept && acceptedNames.has(dept);
+      });
+    }
+
+    return { ok: true, data: resultList };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Failed to load pending rating approvals.' };
+  }
+}
+
+/**
+ * Return Phase 2 accomplishments & self-ratings to the employee for revision.
+ */
+export async function returnPhase2ForRevision(p: {
+  targetSettingId: string;
+  approverEmployeeId: string | null;
+  submitterEmployeeId: string;
+  comment: string;
+}): Promise<Result<null>> {
+  try {
+    const { error } = await supabase
+      .from('target_settings')
+      .update({
+        phase2_status: 'in_progress', // revert to in_progress so employee can edit
+        review_comment: p.comment?.trim() || null,
+        updated_at: nowIso(),
+      })
+      .eq('id', p.targetSettingId);
+    if (error) return { ok: false, error: error.message };
+
+    await supabase.from('ipcr_audit_log').insert({
+      target_setting_id: p.targetSettingId,
+      action: 'return_phase2',
+      performed_by: p.approverEmployeeId,
+      performed_by_role: 'office_account',
+      reason: p.comment?.trim() || null,
+    });
+
+    const meta = await resolveTargetSettingMeta(p.targetSettingId);
+    if (meta) {
+      await setSubmissionStage({
+        employeeId: meta.employeeId,
+        employeeName: meta.employeeName,
+        officeId: meta.officeId,
+        officeName: meta.officeName,
+        period: meta.period,
+        phase: 'rating',
+        stage: 'Returned for Revision',
+        updatedBy: p.approverEmployeeId || 'office_account',
+      });
+    }
+
+    await createNotifications([
+      {
+        employeeId: p.submitterEmployeeId,
+        type: 'ipcr_returned_phase2',
+        title: 'IPCR accomplishments returned for revision',
+        message: `Your accomplishments and self-ratings have been returned for revision. Reason: ${p.comment?.trim() || 'No reason specified'}`,
+        link: '/employee/ipcr-workspace',
+      },
+    ]);
+
+    return { ok: true, data: null };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Return failed.' };
+  }
+}
+
+/**
+ * Edit MFO titles, Success Indicator descriptions, and Accomplishment texts inline during Phase 2 review.
+ */
+export async function adminEditRatings(p: {
+  targetSettingId: string;
+  approverEmployeeId: string | null;
+  submitterEmployeeId: string;
+  mfos: Array<{ id: string; title: string }>;
+  indicators: Array<{ id: string; description: string }>;
+  accomplishments: Array<{ successIndicatorId: string; accomplishment: string }>;
+}): Promise<Result<null>> {
+  try {
+    // 1. Edit MFOs
+    for (const m of p.mfos) {
+      const { error } = await supabase.from('mfos').update({ title: m.title }).eq('id', m.id);
+      if (error) return { ok: false, error: error.message };
+    }
+    // 2. Edit Success Indicators
+    for (const si of p.indicators) {
+      const { error } = await supabase.from('success_indicators').update({ description: si.description }).eq('id', si.id);
+      if (error) return { ok: false, error: error.message };
+    }
+    // 3. Edit Accomplishments
+    for (const acc of p.accomplishments) {
+      const { error } = await supabase
+        .from('success_indicator_ratings')
+        .update({ accomplishment: acc.accomplishment })
+        .eq('success_indicator_id', acc.successIndicatorId);
+      if (error) return { ok: false, error: error.message };
+    }
+
+    await supabase.from('ipcr_audit_log').insert({
+      target_setting_id: p.targetSettingId,
+      action: 'admin_edit_ratings',
+      performed_by: p.approverEmployeeId,
+      performed_by_role: 'office_account',
+      reason: 'Office Account edited ratings/accomplishments before approval',
+    });
+
+    return { ok: true, data: null };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Edit failed.' };
   }
 }

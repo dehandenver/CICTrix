@@ -245,6 +245,18 @@ export const EmployeePhase2: React.FC<{ employeeId: string | null; phaseOpen?: b
         </div>
       )}
 
+      {status === 'in_progress' && sheet?.reviewComment && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+          <div className="flex items-start gap-2">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <div>
+              <p className="text-[11px] font-bold text-amber-900">Revision Requested by Supervisor:</p>
+              <p className="mt-0.5 text-[11px] font-semibold text-amber-800 italic">“{sheet.reviewComment}”</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {phaseOpen === false && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
           <div className="flex items-start gap-2">

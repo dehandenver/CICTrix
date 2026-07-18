@@ -1,25 +1,16 @@
-/**
- * Phase 2 · Per-Success-Indicator QET rating panel (Office Account Console).
- *
- * Lists every APPROVED / frozen Phase 1 record and lets the rater score each
- * Success Indicator on Quality / Efficiency / Timeliness (1–5). The frozen MFO +
- * Success Indicator text is shown read-only as context. Supports partial saves
- * (in_progress) and completion, and blocks a rater from scoring their own IPCR.
- *
- * Backed by src/lib/api/ipcrRatings.ts.
- */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle, Lock, Loader2, Star, ChevronDown } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { CheckCircle, Lock, Loader2, Star, ChevronDown, Edit3, X, Info } from 'lucide-react';
 import { useRealtimeRefresh } from '../../../hooks/useRealtimeRefresh';
 import { type OfficeScope } from '../../../lib/api/officeScope';
 import {
-  listRatableTargets,
-  loadRatingSheet,
+  listPendingRatingApprovals,
   saveRatings,
+  returnPhase2ForRevision,
+  adminEditRatings,
   openSelfRatingPeriod,
   closeSelfRatingPeriod,
-  type RatableTarget,
   type RatingSheet,
+  type Phase2Status,
 } from '../../../lib/api/ipcrRatings';
 import { createNotifications } from '../../../lib/api/employeeNotifications';
 
@@ -37,181 +28,207 @@ const DIMENSIONS = [
 
 type LocalScore = { quality: number | null; efficiency: number | null; timeliness: number | null };
 
-const statusChip = (s: string) => {
-  const map: Record<string, string> = {
-    not_started: 'bg-slate-100 text-slate-600',
-    in_progress: 'bg-amber-50 text-amber-800',
-    completed: 'bg-emerald-50 text-emerald-800',
-  };
-  const label: Record<string, string> = {
-    not_started: 'Not started',
-    in_progress: 'In progress',
-    completed: 'Completed',
-  };
-  return { cls: map[s] ?? map.not_started, text: label[s] ?? s };
-};
 export const Phase2RatingPanel: React.FC<{
   currentEmployeeId: string | null;
   officeScope?: OfficeScope | null;
 }> = ({ currentEmployeeId, officeScope }) => {
-  const [targets, setTargets] = useState<RatableTarget[]>([]);
+  const [submissions, setSubmissions] = useState<RatingSheet[]>([]);
   const [collapsedPositions, setCollapsedPositions] = useState<Set<string>>(new Set());
+  const [loadingList, setLoadingList] = useState(false);
+  
+  // Rating inputs state
+  const [scores, setScores] = useState<Record<string, LocalScore>>({});
+  
+  // Edit mode state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editMfo, setEditMfo] = useState<Record<string, string>>({}); // mfoId -> title
+  const [editSi, setEditSi] = useState<Record<string, string>>({});   // siId -> description
+  const [editAccomplishment, setEditAccomplishment] = useState<Record<string, string>>({}); // siId -> accomplishment
+  const [savingEdits, setSavingEdits] = useState(false);
+
+  // Return state
+  const [returnDraftId, setReturnDraftId] = useState<string | null>(null);
+  const [returnComment, setReturnComment] = useState('');
+
+  const [saving, setSaving] = useState(false);
+  const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
+  const [opening, setOpening] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [notice, setNotice] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
 
   const togglePositionCollapse = (pos: string) => {
     setCollapsedPositions((prev) => {
       const next = new Set(prev);
-      if (next.has(pos)) {
-        next.delete(pos);
-      } else {
-        next.add(pos);
-      }
+      if (next.has(pos)) next.delete(pos);
+      else next.add(pos);
       return next;
     });
   };
 
-  const groupedTargets = useMemo(() => {
-    const groups: Record<string, RatableTarget[]> = {};
-    for (const t of targets) {
-      const pos = t.position || 'Other Positions';
+  const refreshList = useCallback(async (isSilent = false) => {
+    if (!isSilent) setLoadingList(true);
+    const res = await listPendingRatingApprovals(officeScope);
+    if (!isSilent) setLoadingList(false);
+    if (res.ok === false) {
+      setNotice({ tone: 'err', text: res.error });
+      return;
+    }
+    setSubmissions(res.data);
+
+    // Initialize scores with what the employee self-rated
+    const initScores: Record<string, LocalScore> = {};
+    for (const sheet of res.data) {
+      for (const m of sheet.mfos) {
+        for (const si of m.indicators) {
+          initScores[si.successIndicatorId] = {
+            quality: si.quality,
+            efficiency: si.efficiency,
+            timeliness: si.timeliness
+          };
+        }
+      }
+    }
+    setScores(prev => ({ ...initScores, ...prev })); // merge preserving local edits
+  }, [officeScope]);
+
+  useEffect(() => {
+    void refreshList();
+  }, [refreshList]);
+
+  useRealtimeRefresh({
+    channel: 'pm-phase2-rating-panel-console',
+    tables: ['target_settings', 'success_indicator_ratings', 'ipcr_workspace', 'ipcr_submissions'],
+    onChange: useCallback(() => {
+      void refreshList(true);
+    }, [refreshList]),
+  });
+
+  const groupedSubmissions = useMemo(() => {
+    const groups: Record<string, RatingSheet[]> = {};
+    for (const s of submissions) {
+      const pos = s.position || 'Other Positions';
       if (!groups[pos]) groups[pos] = [];
-      groups[pos].push(t);
+      groups[pos].push(s);
     }
     return Object.entries(groups).sort(([a], [b]) => {
       if (a === 'Other Positions') return 1;
       if (b === 'Other Positions') return -1;
       return a.localeCompare(b);
     });
-  }, [targets]);
+  }, [submissions]);
 
-  const [loadingList, setLoadingList] = useState(false);
-  const [sheet, setSheet] = useState<RatingSheet | null>(null);
-  const [loadingSheet, setLoadingSheet] = useState(false);
-  const [scores, setScores] = useState<Record<string, LocalScore>>({});
-  const [saving, setSaving] = useState(false);
-  const [opening, setOpening] = useState(false);
-  const [closing, setClosing] = useState(false);
-  const [notice, setNotice] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
-  const [hasNewerData, setHasNewerData] = useState(false);
-
-  // Keep the currently-selected target's group auto-expanded
-  useEffect(() => {
-    if (sheet?.targetSettingId) {
-      const currentTarget = targets.find(t => t.targetSettingId === sheet.targetSettingId);
-      if (currentTarget) {
-        const pos = currentTarget.position || 'Other Positions';
-        if (collapsedPositions.has(pos)) {
-          setCollapsedPositions((prev) => {
-            const next = new Set(prev);
-            next.delete(pos);
-            return next;
-          });
-        }
-      }
-    }
-  }, [sheet?.targetSettingId, targets]);
-
-  const isDirty = useMemo(() => {
-    if (!sheet) return false;
-    for (const m of sheet.mfos) {
-      for (const si of m.indicators) {
-        const s = scores[si.successIndicatorId];
-        if (!s) continue;
-        if (
-          (s.quality ?? null) !== (si.quality ?? null) ||
-          (s.efficiency ?? null) !== (si.efficiency ?? null) ||
-          (s.timeliness ?? null) !== (si.timeliness ?? null)
-        ) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }, [sheet, scores]);
-
-  const refreshList = useCallback(async (isSilent = false) => {
-    if (!isSilent) setLoadingList(true);
-    const res = await listRatableTargets(officeScope);
-    if (!isSilent) setLoadingList(false);
-    if (res.ok === false) { setNotice({ tone: 'err', text: res.error }); return; }
-    setTargets(res.data);
-  }, [officeScope]);
-
-  useEffect(() => { void refreshList(); }, [refreshList]);
-
-  const loadCurrentSheet = useCallback(async (targetSettingId: string, isSilent = false) => {
-    if (!isSilent) setLoadingSheet(true);
-    const res = await loadRatingSheet(targetSettingId);
-    if (!isSilent) setLoadingSheet(false);
-    if (res.ok === false) { setNotice({ tone: 'err', text: res.error }); return; }
-    setSheet(res.data);
-    const initial: Record<string, LocalScore> = {};
-    for (const m of res.data.mfos)
-      for (const si of m.indicators)
-        initial[si.successIndicatorId] = { quality: si.quality, efficiency: si.efficiency, timeliness: si.timeliness };
-    setScores(initial);
-  }, []);
-
-  const openSheet = async (t: RatableTarget) => {
-    setNotice(null);
-    setHasNewerData(false);
-    setSheet(null);
-    void loadCurrentSheet(t.targetSettingId, false);
+  const setScore = (siId: string, dim: keyof LocalScore, value: number | null) => {
+    setScores((prev) => ({
+      ...prev,
+      [siId]: { ...prev[siId], [dim]: value },
+    }));
   };
 
-  useRealtimeRefresh({
-    channel: 'pm-phase2-rating-panel',
-    tables: ['target_settings', 'success_indicator_ratings', 'ipcr_workspace'],
-    onChange: useCallback(() => {
-      void refreshList(true);
-      if (sheet) {
-        if (isDirty) {
-          setHasNewerData(true);
-        } else {
-          void loadCurrentSheet(sheet.targetSettingId, true);
-        }
-      }
-    }, [isDirty, refreshList, sheet, loadCurrentSheet]),
-  });
+  const handleApproveRating = async (sheet: RatingSheet) => {
+    setApprovalBusyId(sheet.targetSettingId);
+    setNotice(null);
 
-  const isOwn = !!sheet && !!currentEmployeeId && sheet.employeeId === currentEmployeeId;
-
-  const allIndicatorIds = sheet ? sheet.mfos.flatMap((m) => m.indicators.map((si) => si.successIndicatorId)) : [];
-  const isComplete =
-    allIndicatorIds.length > 0 &&
-    allIndicatorIds.every((id) => {
+    const indicatorIds = sheet.mfos.flatMap(m => m.indicators.map(si => si.successIndicatorId));
+    
+    // Check if all scored
+    const incomplete = indicatorIds.some(id => {
       const s = scores[id];
-      return s && s.quality != null && s.efficiency != null && s.timeliness != null;
+      return !s || s.quality == null || s.efficiency == null || s.timeliness == null;
     });
 
-  const setScore = (siId: string, dim: keyof LocalScore, value: number | null) =>
-    setScores((prev) => ({ ...prev, [siId]: { ...prev[siId], [dim]: value } }));
+    if (incomplete) {
+      alert('Please score every indicator on Quality, Efficiency, and Timeliness before completing.');
+      setApprovalBusyId(null);
+      return;
+    }
 
-  const persist = async (complete: boolean) => {
-    if (!sheet) return;
-    setSaving(true);
-    setNotice(null);
     const res = await saveRatings({
       targetSettingId: sheet.targetSettingId,
       raterEmployeeId: currentEmployeeId,
-      ratings: allIndicatorIds.map((id) => ({
+      ratings: indicatorIds.map(id => ({
         successIndicatorId: id,
         quality: scores[id]?.quality ?? null,
         efficiency: scores[id]?.efficiency ?? null,
         timeliness: scores[id]?.timeliness ?? null,
       })),
-      complete,
+      complete: true,
     });
-    setSaving(false);
-    if (res.ok === false) { setNotice({ tone: 'err', text: res.error }); return; }
+
+    setApprovalBusyId(null);
+    if (res.ok === false) {
+      setNotice({ tone: 'err', text: res.error });
+      return;
+    }
     setNotice({
       tone: 'ok',
-      text: complete
-        ? `Rating completed and forwarded to PM Division. Overall: ${res.data.overallScore ?? '—'} (${res.data.adjectival ?? '—'}).`
-        : 'Progress saved.',
+      text: `Approved ratings and finalized IPCR for ${sheet.employeeName}. Overall Score: ${res.data.overallScore?.toFixed(2) ?? '—'}.`,
     });
-    setSheet({ ...sheet, phase2Status: res.data.phase2Status });
-    setHasNewerData(false);
-    void loadCurrentSheet(sheet.targetSettingId, true);
+    void refreshList();
+  };
+
+  const handleReturn = async (sheet: RatingSheet) => {
+    setApprovalBusyId(sheet.targetSettingId);
+    setNotice(null);
+    const res = await returnPhase2ForRevision({
+      targetSettingId: sheet.targetSettingId,
+      approverEmployeeId: currentEmployeeId,
+      submitterEmployeeId: sheet.employeeId,
+      comment: returnComment,
+    });
+    setApprovalBusyId(null);
+    if (res.ok === false) {
+      setNotice({ tone: 'err', text: res.error });
+      return;
+    }
+    setNotice({
+      tone: 'ok',
+      text: `Returned IPCR accomplishments of ${sheet.employeeName} for revision.`,
+    });
+    setReturnDraftId(null);
+    setReturnComment('');
+    void refreshList();
+  };
+
+  const startEdit = (sheet: RatingSheet) => {
+    setEditingId(sheet.targetSettingId);
+    
+    const mfoTitles: Record<string, string> = {};
+    const siDescs: Record<string, string> = {};
+    const accomplishments: Record<string, string> = {};
+
+    for (const m of sheet.mfos) {
+      mfoTitles[m.id] = m.title;
+      for (const si of m.indicators) {
+        siDescs[si.successIndicatorId] = si.description;
+        accomplishments[si.successIndicatorId] = si.accomplishment;
+      }
+    }
+
+    setEditMfo(mfoTitles);
+    setEditSi(siDescs);
+    setEditAccomplishment(accomplishments);
+  };
+
+  const saveEdits = async (sheet: RatingSheet) => {
+    setSavingEdits(true);
+    setNotice(null);
+
+    const res = await adminEditRatings({
+      targetSettingId: sheet.targetSettingId,
+      approverEmployeeId: currentEmployeeId,
+      submitterEmployeeId: sheet.employeeId,
+      mfos: sheet.mfos.map(m => ({ id: m.id, title: editMfo[m.id] ?? m.title })),
+      indicators: sheet.mfos.flatMap(m => m.indicators.map(si => ({ id: si.successIndicatorId, description: editSi[si.successIndicatorId] ?? si.description }))),
+      accomplishments: sheet.mfos.flatMap(m => m.indicators.map(si => ({ successIndicatorId: si.successIndicatorId, accomplishment: editAccomplishment[si.successIndicatorId] ?? si.accomplishment }))),
+    });
+
+    setSavingEdits(false);
+    if (res.ok === false) {
+      setNotice({ tone: 'err', text: res.error });
+      return;
+    }
+    setNotice({ tone: 'ok', text: `Saved overrides to ${sheet.employeeName}'s IPCR.` });
+    setEditingId(null);
     void refreshList();
   };
 
@@ -257,14 +274,19 @@ export const Phase2RatingPanel: React.FC<{
     void refreshList();
   };
 
+  const avgOf = (nums: Array<number | null>): number | null => {
+    const f = nums.filter((n): n is number => typeof n === 'number' && !Number.isNaN(n));
+    return f.length ? Number((f.reduce((a, b) => a + b, 0) / f.length).toFixed(2)) : null;
+  };
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
+      {/* Title block */}
+      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-200 pb-3">
         <div>
-          <h3 className="text-sm font-bold text-slate-800">Phase 2 · QET Rating (per Success Indicator)</h3>
+          <h3 className="text-sm font-bold text-slate-800">IPCR Ratings & Accomplishments Awaiting Approval</h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Score each Success Indicator of a frozen IPCR on Quality, Efficiency, and Timeliness (1–5). Save progress
-            any time; complete once every indicator is fully scored.
+            Review submitted accomplishments and self-ratings, enter supervisor scores (Quality, Efficiency, Timeliness), and approve or return for revision.
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
@@ -291,201 +313,259 @@ export const Phase2RatingPanel: React.FC<{
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-4">
-        {/* Record list */}
-        <div className="rounded-xl border border-slate-200 bg-white">
-          <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
-            <span className="text-xs font-bold text-slate-700">Frozen IPCRs</span>
-            <button onClick={() => void refreshList()} className="text-[11px] font-semibold text-indigo-600 hover:underline">Refresh</button>
-          </div>
-          <div className="max-h-[520px] overflow-y-auto divide-y divide-slate-100">
-            {loadingList ? (
-              <p className="px-3 py-6 text-center text-xs text-slate-500">Loading…</p>
-            ) : targets.length === 0 ? (
-              <p className="px-3 py-6 text-center text-xs text-slate-400">No approved IPCRs to rate yet.</p>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {groupedTargets.map(([pos, items]) => {
-                  const isCollapsed = collapsedPositions.has(pos);
-                  return (
-                    <div key={pos} className="bg-white">
-                      <button
-                        type="button"
-                        onClick={() => togglePositionCollapse(pos)}
-                        className="flex w-full items-center justify-between px-3 py-2 text-left bg-slate-50/50 hover:bg-slate-50/80 transition"
-                      >
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="text-[11px] font-bold text-slate-700 truncate tracking-tight">{pos}</span>
-                          <span className="shrink-0 rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] font-bold text-slate-600">
-                            {items.length}
-                          </span>
-                        </div>
-                        <ChevronDown
-                          size={12}
-                          className={`text-slate-400 shrink-0 transition-transform duration-200 ${
-                            isCollapsed ? '-rotate-90' : ''
-                          }`}
-                        />
-                      </button>
-
-                      {!isCollapsed && (
-                        <div className="divide-y divide-slate-100">
-                          {items.map((t) => {
-                            const chip = statusChip(t.phase2Status);
-                            const active = sheet?.targetSettingId === t.targetSettingId;
-                            const progressPercent = t.indicatorCount > 0
-                              ? Math.round((t.ratedCount / t.indicatorCount) * 100)
-                              : 0;
-                            return (
-                              <button
-                                key={t.targetSettingId}
-                                onClick={() => void openSheet(t)}
-                                className={`w-full px-3 py-2.5 text-left transition ${
-                                  active ? 'bg-indigo-50/85' : 'hover:bg-slate-50/50'
-                                }`}
-                              >
-                                <div className="flex items-center justify-between gap-2 min-w-0">
-                                  <p className="text-xs font-bold text-slate-800 truncate">{t.employeeName}</p>
-                                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold ${chip.cls}`}>{chip.text}</span>
-                                </div>
-                                <p className="text-[10px] text-slate-500 mt-0.5 truncate">{t.period}</p>
-                                
-                                <div className="mt-2 space-y-1">
-                                  <div className="flex items-center justify-between text-[9px] text-slate-400">
-                                    <span>Progress</span>
-                                    <span>{t.ratedCount}/{t.indicatorCount} ({progressPercent}%)</span>
-                                  </div>
-                                  <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
-                                    <div
-                                      className="h-full bg-indigo-600 transition-all duration-300"
-                                      style={{ width: `${progressPercent}%` }}
-                                    />
-                                  </div>
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+      {loadingList ? (
+        <p className="text-xs text-slate-500">Loading submissions…</p>
+      ) : submissions.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 px-4 py-8 text-center">
+          <p className="text-sm font-semibold text-slate-600">No Phase 2 submissions are awaiting approval.</p>
+          <p className="text-xs text-slate-400 mt-1">Submissions appear here once employees submit their accomplishments and self-ratings.</p>
         </div>
+      ) : (
+        <div className="space-y-6">
+          {groupedSubmissions.map(([pos, items]) => {
+            const isCollapsed = collapsedPositions.has(pos);
+            return (
+              <div key={pos} className="space-y-3">
+                <button
+                  type="button"
+                  onClick={() => togglePositionCollapse(pos)}
+                  className="flex w-full items-center justify-between border-b border-slate-200 pb-2 text-left transition hover:opacity-85"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-slate-800 tracking-tight">{pos}</span>
+                    <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700">
+                      {items.length} pending
+                    </span>
+                  </div>
+                  <ChevronDown
+                    size={16}
+                    className={`text-slate-400 transition-transform duration-200 ${isCollapsed ? '-rotate-90' : ''}`}
+                  />
+                </button>
 
-        {/* Rating sheet */}
-        <div className="rounded-xl border border-slate-200 bg-white min-h-[520px]">
-          {loadingSheet ? (
-            <div className="flex h-full items-center justify-center py-20 text-slate-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
-          ) : !sheet ? (
-            <div className="flex h-full flex-col items-center justify-center py-20 text-center text-slate-400">
-              <Star className="h-8 w-8 mb-2 text-slate-300" />
-              <p className="text-xs font-semibold">Select a frozen IPCR to begin rating.</p>
-            </div>
-          ) : (
-            <div className="flex h-full flex-col">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
-                <div>
-                  <p className="text-sm font-bold text-slate-800">{sheet.employeeName}</p>
-                  <p className="text-[11px] text-slate-500">{sheet.period}</p>
-                </div>
-                <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold ${statusChip(sheet.phase2Status).cls}`}>{statusChip(sheet.phase2Status).text}</span>
-              </div>
+                {!isCollapsed && (
+                  <div className="space-y-4 pl-1">
+                    {items.map((sheet) => {
+                      const isOwn = !!currentEmployeeId && currentEmployeeId === sheet.employeeId;
+                      const busy = approvalBusyId === sheet.targetSettingId;
+                      const editing = editingId === sheet.targetSettingId;
 
-              {hasNewerData && (
-                <div className="m-4 flex items-center justify-between rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs">
-                  <span className="text-indigo-900 font-medium">Newer data is available on the server.</span>
-                  <button
-                    onClick={() => {
-                      setHasNewerData(false);
-                      void loadCurrentSheet(sheet.targetSettingId, false);
-                    }}
-                    className="rounded bg-indigo-600 px-2 py-1 text-[10px] font-bold text-white hover:bg-indigo-700"
-                  >
-                    Refresh
-                  </button>
-                </div>
-              )}
-
-              {isOwn ? (
-                <div className="m-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
-                  <Lock className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
-                  <p className="text-[11px] font-semibold text-amber-800">This is your own IPCR. It must be rated by another Office Account, not by you.</p>
-                </div>
-              ) : (
-                <>
-                  <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-                    {(['core', 'strategic', 'support'] as const).map((ft) => {
-                      const group = sheet.mfos.filter((m) => m.functionType === ft);
-                      if (group.length === 0) return null;
                       return (
-                        <div key={ft}>
-                          <p className="text-[11px] font-bold uppercase tracking-wide text-indigo-600">{FUNCTION_LABEL[ft]}</p>
-                          <div className="mt-1.5 space-y-2">
-                            {group.map((m) => (
-                              <div key={m.id} className="rounded-lg border border-slate-150 bg-slate-50/50 p-3">
-                                <p className="text-xs font-bold text-slate-800">{m.title || '(untitled MFO)'}</p>
-                                <div className="mt-2 space-y-2">
-                                  {m.indicators.map((si) => (
-                                    <div key={si.successIndicatorId} className="rounded-md bg-white border border-slate-150 px-3 py-2">
-                                      <p className="text-[11px] text-slate-700">{si.description}</p>
-                                      <div className="mt-2 flex flex-wrap gap-3">
-                                        {DIMENSIONS.map((d) => (
-                                          <label key={d.key} className="flex items-center gap-1.5">
-                                            <span className="text-[10px] font-bold text-slate-500" title={d.full}>{d.label}</span>
-                                            <select
-                                              value={scores[si.successIndicatorId]?.[d.key] ?? ''}
-                                              onChange={(e) => setScore(si.successIndicatorId, d.key, e.target.value === '' ? null : Number(e.target.value))}
-                                              className="rounded border border-slate-300 px-1.5 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                            >
-                                              <option value="">—</option>
-                                              {[1, 2, 3, 4, 5].map((n) => (<option key={n} value={n}>{n}</option>))}
-                                            </select>
-                                          </label>
-                                        ))}
-                                        {si.overriddenByOffice && (
-                                          <span className="text-[9px] font-bold text-indigo-600 self-center">edited by office</span>
+                        <div key={sheet.targetSettingId} className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3 bg-slate-50/40">
+                            <div>
+                              <p className="text-sm font-bold text-slate-800">{sheet.employeeName}</p>
+                              <p className="text-[11px] text-slate-500">
+                                {[sheet.position, sheet.department].filter(Boolean).join(' · ') || '—'}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-bold text-amber-800">
+                                Accomplishments Submitted
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="px-4 py-4 space-y-4">
+                            {(['core', 'strategic', 'support'] as const).map((ft) => {
+                              const group = sheet.mfos.filter((m) => m.functionType === ft);
+                              if (group.length === 0) return null;
+                              return (
+                                <div key={ft} className="space-y-2">
+                                  <p className="text-[11px] font-bold uppercase tracking-wide text-indigo-600">{FUNCTION_LABEL[ft]}</p>
+                                  <div className="space-y-3">
+                                    {group.map((m) => (
+                                      <div key={m.id} className="rounded-lg bg-slate-50/50 border border-slate-100 p-3">
+                                        {editing ? (
+                                          <input
+                                            value={editMfo[m.id] ?? ''}
+                                            onChange={(e) => setEditMfo((prev) => ({ ...prev, [m.id]: e.target.value }))}
+                                            className="w-full mb-2 rounded border border-indigo-200 bg-white px-2 py-1 text-xs font-semibold text-slate-850 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                          />
+                                        ) : (
+                                          <p className="text-xs font-bold text-slate-800 mb-2">{m.title || '(untitled MFO)'}</p>
                                         )}
+
+                                        <div className="space-y-2.5">
+                                          {m.indicators.map((si) => {
+                                            const selfAvg = avgOf([si.quality, si.efficiency, si.timeliness]);
+                                            const supervisorScore = scores[si.successIndicatorId] ?? { quality: null, efficiency: null, timeliness: null };
+                                            const supervisorAvg = avgOf([supervisorScore.quality, supervisorScore.efficiency, supervisorScore.timeliness]);
+
+                                            return (
+                                              <div key={si.successIndicatorId} className="bg-white rounded-lg border border-slate-150 p-3 text-xs space-y-2">
+                                                {/* Target Indicator */}
+                                                <div>
+                                                  <span className="text-[10px] font-extrabold uppercase text-slate-400 block tracking-wider">Success Indicator (Phase 1 Target)</span>
+                                                  {editing ? (
+                                                    <input
+                                                      value={editSi[si.successIndicatorId] ?? ''}
+                                                      onChange={(e) => setEditSi((prev) => ({ ...prev, [si.successIndicatorId]: e.target.value }))}
+                                                      className="w-full mt-1 rounded border border-indigo-200 bg-white px-2 py-1 text-xs text-slate-750 focus:outline-none"
+                                                    />
+                                                  ) : (
+                                                    <p className="text-slate-800 font-medium mt-0.5">{si.description}</p>
+                                                  )}
+                                                </div>
+
+                                                {/* Accomplishment */}
+                                                <div>
+                                                  <span className="text-[10px] font-extrabold uppercase text-indigo-500 block tracking-wider">Employee Achievement (Phase 2 Accomplishment)</span>
+                                                  {editing ? (
+                                                    <textarea
+                                                      rows={2}
+                                                      value={editAccomplishment[si.successIndicatorId] ?? ''}
+                                                      onChange={(e) => setEditAccomplishment((prev) => ({ ...prev, [si.successIndicatorId]: e.target.value }))}
+                                                      className="w-full mt-1 rounded border border-indigo-200 bg-white px-2 py-1 text-xs text-slate-750 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                                    />
+                                                  ) : (
+                                                    <p className="text-slate-700 italic mt-0.5 bg-slate-50 p-2 rounded border border-slate-100">
+                                                      {si.accomplishment || 'No accomplishments encoded.'}
+                                                    </p>
+                                                  )}
+                                                </div>
+
+                                                {/* Ratings Section */}
+                                                <div className="pt-1 flex flex-wrap items-center justify-between gap-4 border-t border-slate-100 mt-2">
+                                                  {/* Employee Self-Ratings */}
+                                                  <div className="flex items-center gap-2">
+                                                    <span className="text-[10px] font-bold text-slate-400">Self-Rating:</span>
+                                                    <div className="flex gap-2">
+                                                      {DIMENSIONS.map((d) => (
+                                                        <span key={d.key} className="text-[10px] text-slate-650 bg-slate-100 px-1.5 py-0.5 rounded font-semibold">
+                                                          {d.label}: <strong className="text-slate-800">{si[d.key] ?? '—'}</strong>
+                                                        </span>
+                                                      ))}
+                                                      <span className="text-[10px] text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded font-bold">
+                                                        A: {selfAvg != null ? selfAvg.toFixed(2) : '—'}
+                                                      </span>
+                                                    </div>
+                                                  </div>
+
+                                                  {/* Supervisor Rating Selectors */}
+                                                  <div className="flex items-center gap-3">
+                                                    <span className="text-[10px] font-bold text-indigo-600">Final Rating:</span>
+                                                    <div className="flex gap-2">
+                                                      {DIMENSIONS.map((d) => (
+                                                        <label key={d.key} className="flex items-center gap-1">
+                                                          <span className="text-[10px] font-extrabold text-slate-500" title={d.full}>{d.label}</span>
+                                                          <select
+                                                            disabled={isOwn || editing}
+                                                            value={supervisorScore[d.key] ?? ''}
+                                                            onChange={(e) => setScore(si.successIndicatorId, d.key, e.target.value === '' ? null : Number(e.target.value))}
+                                                            className="rounded border border-slate-300 px-1 py-0.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                                                          >
+                                                            <option value="">—</option>
+                                                            {[1, 2, 3, 4, 5].map((n) => (<option key={n} value={n}>{n}</option>))}
+                                                          </select>
+                                                        </label>
+                                                      ))}
+                                                      <span className="text-[10px] text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded font-bold self-center">
+                                                        Final A: {supervisorAvg != null ? supervisorAvg.toFixed(2) : '—'}
+                                                      </span>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
                                       </div>
-                                    </div>
-                                  ))}
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Footer Actions */}
+                          <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-3 bg-slate-50/20">
+                            {isOwn ? (
+                              <p className="text-[11px] font-semibold text-slate-500">
+                                This is your own IPCR — it must be rated by another Office Account.
+                              </p>
+                            ) : editing ? (
+                              <div className="flex flex-1 flex-wrap items-center justify-between gap-2">
+                                <span className="text-[11px] font-semibold text-indigo-600">
+                                  Editing Mode — modify MFO, indicator text, or accomplishments.
+                                </span>
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => void saveEdits(sheet)}
+                                    disabled={savingEdits}
+                                    className="rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                                  >
+                                    {savingEdits ? 'Saving…' : 'Save Edits'}
+                                  </button>
+                                  <button
+                                    onClick={() => setEditingId(null)}
+                                    disabled={savingEdits}
+                                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600"
+                                  >
+                                    Cancel
+                                  </button>
                                 </div>
                               </div>
-                            ))}
+                            ) : returnDraftId === sheet.targetSettingId ? (
+                              <div className="flex flex-1 flex-wrap items-center gap-2">
+                                <input
+                                  type="text"
+                                  value={returnComment}
+                                  onChange={(e) => setReturnComment(e.target.value)}
+                                  placeholder="Reason for returning accomplishments for revision (optional)"
+                                  className="flex-1 min-w-[200px] rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                />
+                                <button
+                                  onClick={() => void handleReturn(sheet)}
+                                  disabled={busy}
+                                  className="rounded-lg bg-amber-600 hover:bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                                >
+                                  Confirm Return
+                                </button>
+                                <button
+                                  onClick={() => { setReturnDraftId(null); setReturnComment(''); }}
+                                  disabled={busy}
+                                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => void handleApproveRating(sheet)}
+                                  disabled={busy}
+                                  className="rounded-lg bg-emerald-600 hover:bg-emerald-700 px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                                >
+                                  {busy ? 'Working…' : 'Approve & Complete Rating'}
+                                </button>
+                                <button
+                                  onClick={() => startEdit(sheet)}
+                                  disabled={busy}
+                                  className="rounded-lg border border-indigo-300 bg-white hover:bg-indigo-50 px-4 py-1.5 text-xs font-semibold text-indigo-700 disabled:opacity-50"
+                                >
+                                  Edit / Override
+                                </button>
+                                <button
+                                  onClick={() => { setReturnDraftId(sheet.targetSettingId); setReturnComment(''); }}
+                                  disabled={busy}
+                                  className="rounded-lg border border-amber-300 bg-white hover:bg-amber-50 px-4 py-1.5 text-xs font-semibold text-amber-700 disabled:opacity-50"
+                                >
+                                  Return for Revision
+                                </button>
+                              </>
+                            )}
                           </div>
                         </div>
                       );
                     })}
                   </div>
-
-                  <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-4 py-3">
-                    <p className="text-[10px] text-slate-400">Q = Quality · E = Efficiency · T = Timeliness (1–5)</p>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => void persist(false)}
-                        disabled={saving}
-                        className="rounded-lg border border-slate-300 bg-white hover:bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-50"
-                      >
-                        {saving ? 'Saving…' : 'Save Progress'}
-                      </button>
-                      <button
-                        onClick={() => void persist(true)}
-                        disabled={saving || !isComplete}
-                        title={isComplete ? '' : 'Score every indicator on all three dimensions first.'}
-                        className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
-                      >
-                        <CheckCircle className="h-3.5 w-3.5" /> Complete Rating
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
+                )}
+              </div>
+            );
+          })}
         </div>
-      </div>
+      )}
     </div>
   );
 };
