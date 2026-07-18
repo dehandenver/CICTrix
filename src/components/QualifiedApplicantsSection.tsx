@@ -846,7 +846,11 @@ const ApplicantScoringModal = ({ applicant, savedScores, allApplicants, evaluati
                 </div>
                 <div style={{ background: '#ffffff', border: '1px solid #C8D1FF', borderRadius: 8, padding: '0.65rem 0.85rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.82rem', color: '#5B65F0' }}>Oral Exam Score (from original appointment):</span>
-                  <span style={{ fontSize: '1rem', fontWeight: 700, color: '#363EE8' }}>{liveEvaluation.oralRawScore}</span>
+                  {/* Average of the six interview criteria, so round for display
+                      rather than showing a raw 4.6667. */}
+                  <span style={{ fontSize: '1rem', fontWeight: 700, color: '#363EE8' }}>
+                    {liveEvaluation.oralRawScore.toFixed(2)} <span style={{ fontWeight: 500, color: '#5B65F0' }}>/ 5</span>
+                  </span>
                 </div>
                 <p style={{ margin: '0.4rem 0 0', fontSize: '0.73rem', color: '#A5ACEE' }}>
                   This score reflects the original appointment evaluation. It is read-only and cannot be edited.
