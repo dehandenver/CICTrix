@@ -699,10 +699,10 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
       const pendingList: any[] = [];
 
       for (const emp of employees) {
-        if (!emp.hire_date) continue;
-        const months = getMonthsOfService(emp.hire_date);
+        const hireDateToUse = emp.hire_date || emp.created_at || new Date().toISOString();
+        const months = getMonthsOfService(hireDateToUse);
         const isProb = months < 6;
-        const { stage, phase, dueDate, periodLabel } = computeStageInfoLocal(emp.hire_date, schedules);
+        const { stage, phase, dueDate, periodLabel } = computeStageInfoLocal(hireDateToUse, schedules);
 
         const actualStage = subMap.get(`${emp.id}::${periodLabel}::${phase}`) || 'Not Started';
         const isPending = actualStage !== 'Forwarded to PM';

@@ -41,6 +41,7 @@ async function run() {
       nationality: 'Filipino',
       account_status: 'Active',
       email: 'jean.pierre@cityhall.gov.ph',
+      date_hired: '2026-07-17',
       created_by: '00000000-0000-0000-0000-000000000000',
     });
   if (e1) {

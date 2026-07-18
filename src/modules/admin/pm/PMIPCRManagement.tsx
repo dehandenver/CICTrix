@@ -1752,9 +1752,9 @@ export const PMIPCRManagement = () => {
 
       const enriched: EnrichedEmployee[] = [];
       for (const emp of empResult.data as Employee[]) {
-        if (!emp.hire_date) continue;
-        const months = getMonthsOfService(emp.hire_date);
-        const { stage, phase, dueDate, periodLabel } = computeStageInfo(emp.hire_date, schedules);
+        const hireDateToUse = emp.hire_date || emp.created_at || new Date().toISOString();
+        const months = getMonthsOfService(hireDateToUse);
+        const { stage, phase, dueDate, periodLabel } = computeStageInfo(hireDateToUse, schedules);
         const k = `${emp.id}::${periodLabel}::${phase}`;
         const sub = subMap.get(k);
         const actualStage: IpcrStage = sub?.stage ?? 'Not Started';
