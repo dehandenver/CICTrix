@@ -374,6 +374,43 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       });
   }, [currentUser.supabaseId]);
 
+  const lastLoadedSnapshot = useRef<null | {
+    targetRowsJson: string;
+    employeeTargets: { core: string; strategic: string; support: string };
+    accomplishmentsJson: string;
+    selfRatingsJson: string;
+  }>(null);
+
+  const isIpcrFormDirty = useCallback(() => {
+    const snap = lastLoadedSnapshot.current;
+    if (!snap) return false;
+    return (
+      JSON.stringify(targetRows) !== snap.targetRowsJson ||
+      employeeTargets.core !== snap.employeeTargets.core ||
+      employeeTargets.strategic !== snap.employeeTargets.strategic ||
+      employeeTargets.support !== snap.employeeTargets.support ||
+      JSON.stringify(accomplishments) !== snap.accomplishmentsJson ||
+      JSON.stringify(selfRatings) !== snap.selfRatingsJson
+    );
+  }, [targetRows, employeeTargets, accomplishments, selfRatings]);
+
+  const [deferredRefresh, setDeferredRefresh] = useState(false);
+
+  const snapshotLoaded = useCallback((
+    targets: TargetsByFunction,
+    empTargets: { core: string; strategic: string; support: string },
+    accomps: { core: string; strategic: string; support: string },
+    ratings: { core: CatRating; strategic: CatRating; support: CatRating }
+  ) => {
+    lastLoadedSnapshot.current = {
+      targetRowsJson: JSON.stringify(targets),
+      employeeTargets: { ...empTargets },
+      accomplishmentsJson: JSON.stringify(accomps),
+      selfRatingsJson: JSON.stringify(ratings),
+    };
+    setDeferredRefresh(false);
+  }, []);
+
   const calculateRowAverage = (q: number | null, e: number | null, t: number | null): number => {
     const ratings = [q, e, t].filter((r): r is number => typeof r === 'number' && r !== null);
     if (ratings.length === 0) return 0;
@@ -539,6 +576,39 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
           },
         });
         setIpcrApproved(ws.status !== 'Draft Targets');
+        snapshotLoaded(
+          tsRes.ok ? tsRes.data.targets : emptyTargets(),
+          {
+            core: ws.core_target ?? '',
+            strategic: ws.strategic_target ?? '',
+            support: ws.support_target ?? '',
+          },
+          {
+            core: ws.core_accomplishment ?? '',
+            strategic: ws.strategic_accomplishment ?? '',
+            support: ws.support_accomplishment ?? '',
+          },
+          {
+            core: {
+              quality: ws.core_quality ?? null,
+              efficiency: ws.core_efficiency ?? null,
+              timeliness: ws.core_timeliness ?? null,
+              weight: ws.core_weight ?? null,
+            },
+            strategic: {
+              quality: ws.strategic_quality ?? null,
+              efficiency: ws.strategic_efficiency ?? null,
+              timeliness: ws.strategic_timeliness ?? null,
+              weight: ws.strategic_weight ?? null,
+            },
+            support: {
+              quality: ws.support_quality ?? null,
+              efficiency: ws.support_efficiency ?? null,
+              timeliness: ws.support_timeliness ?? null,
+              weight: ws.support_weight ?? null,
+            },
+          }
+        );
       } else {
         setEmployeeTargets({ core: '', strategic: '', support: '' });
         setAccomplishments({ core: '', strategic: '', support: '' });
@@ -548,6 +618,16 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
           support: emptyCatRating(),
         });
         setIpcrApproved(false);
+        snapshotLoaded(
+          tsRes.ok ? tsRes.data.targets : emptyTargets(),
+          { core: '', strategic: '', support: '' },
+          { core: '', strategic: '', support: '' },
+          {
+            core: emptyCatRating(),
+            strategic: emptyCatRating(),
+            support: emptyCatRating(),
+          }
+        );
       }
     } catch (err) {
       console.error('Failed to load IPCR data:', err);
@@ -558,6 +638,18 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       }
     }
   }, [currentUser.supabaseId, currentUser.employeeId, profile.employmentStatus, profile.dateHired]);
+
+  const pendingIpcrRefresh = useRef(false);
+  const reloadIpcrIfSafe = useCallback((isSilent: boolean) => {
+    if (isIpcrFormDirty()) {
+      pendingIpcrRefresh.current = true;
+      setDeferredRefresh(true);
+      return;
+    }
+    pendingIpcrRefresh.current = false;
+    setDeferredRefresh(false);
+    void loadIPCRData(isSilent);
+  }, [isIpcrFormDirty, loadIPCRData]);
 
   // ── My IPCR Workspace (Phase 1 targets / Phase 2 accomplishments) ──────────
   const workspaceIdentity = () => ({
@@ -628,6 +720,15 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
     if (submit) setTargetReviewComment(null);
     setWorkspaceRow(res.row);
     setIpcrApproved(res.row.status !== 'Draft Targets');
+    snapshotLoaded(
+      targetRows,
+      flattened,
+      accomplishments,
+      selfRatings
+    );
+    if (pendingIpcrRefresh.current) {
+      reloadIpcrIfSafe(true);
+    }
     setSaveSuccess(submit ? 'Targets submitted to your Office Account for approval.' : 'Targets saved as draft.');
     setTimeout(() => setSaveSuccess(null), 4000);
   };
@@ -758,6 +859,15 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       }
     } else {
       setSaveSuccess('Accomplishments saved as draft.');
+    }
+    snapshotLoaded(
+      targetRows,
+      employeeTargets,
+      accomplishments,
+      selfRatings
+    );
+    if (pendingIpcrRefresh.current) {
+      reloadIpcrIfSafe(true);
     }
     setWorkspaceSaving(false);
     setTimeout(() => setSaveSuccess(null), 5000);
@@ -1160,9 +1270,9 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
     // and was the historical, now-incorrect trigger, which left the workspace
     // blank for everyone regardless of what was in the database.)
     if (activeTab === 'ipcr-workspace' || activeTab === 'submission') {
-      void loadIPCRData();
+      reloadIpcrIfSafe(false);
     }
-  }, [activeTab, currentUser?.supabaseId]);
+  }, [activeTab, currentUser?.supabaseId, reloadIpcrIfSafe]);
 
   const [bellNotifications, setBellNotifications] = useState<EmployeeNotification[]>([]);
   const [showBellDropdown, setShowBellDropdown] = useState(false);
@@ -1195,9 +1305,9 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
     channel: 'employee-page-ipcr',
     tables: ['probationary_ipcr_schedules', 'phase_schedules', 'ipcr_submissions', 'employee_notifications'],
     onChange: useCallback(() => {
-      void loadIPCRData(true);
+      reloadIpcrIfSafe(true);
       void loadNotifications();
-    }, [loadIPCRData, loadNotifications]),
+    }, [reloadIpcrIfSafe, loadNotifications]),
     enabled: true,
   });
 
@@ -3149,6 +3259,16 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                     );
                   })}
                 </div>
+
+                {deferredRefresh && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-800 flex items-center gap-2 mt-4">
+                    <span className="relative flex h-2 w-2 shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                    </span>
+                    <span>Remote changes detected — the page will refresh to sync data after you save your draft.</span>
+                  </div>
+                )}
 
                 {!targetsLocked && !ipcrApproved && isTargetSettingActive && (
                   <div className="flex justify-end gap-2 pt-3">
