@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ErrorBanner } from './ErrorBanner';
 import {
   Building2,
   ChevronLeft,
@@ -32,28 +33,28 @@ export const OfficeDirectorySection: React.FC<OfficeDirectorySectionProps> = ({
   const [officeEmployees, setOfficeEmployees] = useState<any[]>([]);
   const [officeEmployeesLoading, setOfficeEmployeesLoading] = useState(false);
 
+  // Declared outside the effect so the error banner's Retry can re-run it.
+  const loadDirectory = useCallback(() => {
+    setOfficeDirectoryLoading(true);
+    setOfficeDirectoryError('');
+    return getOfficeDirectory().then((result) => {
+      if (result.ok) {
+        setOfficeDirectoryRows(result.data);
+      } else {
+        setOfficeDirectoryError((result as { ok: false; error: string }).error || 'Failed to load offices');
+      }
+      setOfficeDirectoryLoading(false);
+    });
+  }, []);
+
   // Load the directory rows on mount
   useEffect(() => {
     let cancelled = false;
 
-    const loadDirectory = () => {
-      setOfficeDirectoryLoading(true);
-      setOfficeDirectoryError('');
-      getOfficeDirectory().then((result) => {
-        if (cancelled) return;
-        if (result.ok) {
-          setOfficeDirectoryRows(result.data);
-        } else {
-          setOfficeDirectoryError((result as { ok: false; error: string }).error || 'Failed to load offices');
-        }
-        setOfficeDirectoryLoading(false);
-      });
-    };
-
-    loadDirectory();
+    void loadDirectory();
 
     const reload = () => {
-      if (!cancelled) loadDirectory();
+      if (!cancelled) void loadDirectory();
     };
 
     window.addEventListener('cictrix:applicants-updated', reload);
@@ -70,7 +71,7 @@ export const OfficeDirectorySection: React.FC<OfficeDirectorySectionProps> = ({
       window.removeEventListener('cictrix:job-postings-updated', reload);
       window.removeEventListener('EMPLOYEE_DOCUMENTS_UPDATED', reload);
     };
-  }, []);
+  }, [loadDirectory]);
 
   const handleOfficeClick = (row: OfficeDirectoryRow) => {
     setSelectedOfficeRow(row);
@@ -253,9 +254,7 @@ export const OfficeDirectorySection: React.FC<OfficeDirectorySectionProps> = ({
             </div>
           </section>
 
-          {officeDirectoryError && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{officeDirectoryError}</div>
-          )}
+          <ErrorBanner error={officeDirectoryError} context="server" onRetry={loadDirectory} />
 
           <div className="flex items-center justify-center text-lg font-semibold text-slate-700">
             {filteredOfficeDirectoryRows.length === 0

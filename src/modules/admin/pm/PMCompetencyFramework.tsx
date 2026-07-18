@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ErrorBanner } from '../../../components/ErrorBanner';
 import { BookOpen, Check, Grid3x3, Loader2, RefreshCw, Search, Trash2, X } from 'lucide-react';
 
 import { Dialog } from '../../../components/Dialog';
@@ -293,9 +294,7 @@ const PositionRequirementsPanel = ({
         )}
       </div>
 
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-      )}
+      <ErrorBanner error={error} context="server" />
 
       {!position ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white py-16 text-slate-400">
@@ -621,9 +620,7 @@ const CompetencyMapPanel = ({
         )}
       </div>
 
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-      )}
+      <ErrorBanner error={error} context="server" />
 
       <p className="text-sm text-slate-500">
         Showing <span className="font-semibold text-slate-700">{groupedByPosition.length}</span> position
@@ -811,9 +808,7 @@ export const PMCompetencyFramework = () => {
         ))}
       </div>
 
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-      )}
+      <ErrorBanner error={error} context="server" />
 
       {subtab === 'requirements' && (
         <PositionRequirementsPanel standards={standards} positions={positions} onSaved={() => void load()} />

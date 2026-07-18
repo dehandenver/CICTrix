@@ -2721,6 +2721,53 @@
   border-collapse: collapse;
   background: white;
   font-size: 0.938rem;
+  /* Fixed layout so the columns below are honoured. Auto layout sized columns
+     to their content, which let DESCRIPTION's static helper text crowd out
+     REMARKS — the one column the interviewer actually types into. */
+  table-layout: fixed;
+}
+
+/* Criteria: enough for the longest label ("Communication Skills"). */
+.oral-table th:nth-child(1),
+.oral-table td:nth-child(1) {
+  width: 18%;
+}
+
+/* Description: read-once helper text, so it gets the least room. */
+.oral-table th:nth-child(2),
+.oral-table td:nth-child(2) {
+  width: 22%;
+}
+
+/* Score: just a 1-5 select. */
+.oral-table th:nth-child(3),
+.oral-table td:nth-child(3) {
+  width: 15%;
+}
+
+/* Remarks: the widest column — it takes free-text input. */
+.oral-table th:nth-child(4),
+.oral-table td:nth-child(4) {
+  width: 45%;
+}
+
+/* Fixed layout clips rather than expands, so wrap long content instead of
+   letting it spill over the cell border. */
+.oral-table td {
+  overflow-wrap: break-word;
+}
+
+/* Below this the four columns crush each other; the wrapper already scrolls
+   horizontally, which reads better than an unusably narrow remarks box. */
+.oral-table {
+  min-width: 720px;
+}
+
+/* Description is secondary reference text — de-emphasise it so the eye lands on
+   the score and remarks. */
+.oral-table td:nth-child(2) {
+  font-size: 0.875rem;
+  color: #666;
 }
 
 .oral-table thead {

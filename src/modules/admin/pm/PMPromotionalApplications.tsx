@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ErrorBanner } from '../../../components/ErrorBanner';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -595,9 +596,7 @@ export function PMPromotionalApplications() {
         ))}
       </div>
 
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-      )}
+      <ErrorBanner error={error} context="server" />
 
       {subtab === 'applications' &&
         (selectedFresh ? (

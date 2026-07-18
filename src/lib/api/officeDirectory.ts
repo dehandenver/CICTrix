@@ -177,12 +177,28 @@ export async function getOfficeDirectory(): Promise<
       return { ok: false, error: deptRes.error.message ?? 'Failed to load offices.' };
     }
 
+    // Headcount sources are REQUIRED: swallowing a failure here reported "0
+    // employees" for every office while the data was actually there, so the
+    // screen stated something false. Fail loudly instead — the caller shows
+    // "Server error. Please try again." rather than a wrong number.
+    if (empRes.error) {
+      return { ok: false, error: empRes.error.message ?? 'Failed to load employees.' };
+    }
+    if (hiredRes?.error) {
+      return { ok: false, error: hiredRes.error.message ?? 'Failed to load hired applicants.' };
+    }
+
     const departmentsFromDb: any[] = deptRes.data ?? [];
-    const employees: any[] = empRes.error ? [] : empRes.data ?? [];
+    const employees: any[] = empRes.data ?? [];
+    const hiredApplicants: any[] = hiredRes?.data ?? [];
+
+    // Genuinely optional. These only add detail (a head's name, a supervisor, an
+    // extra office); office_role_assignments in particular is permission-denied
+    // to the anon client by design. Missing detail degrades quietly — it can't
+    // make the headcount lie, so it must not block the whole directory.
     const dbSupervisors: any[] = supRes.error ? [] : supRes.data ?? [];
     const assignments: any[] = assignRes?.error ? [] : assignRes?.data ?? [];
     const jobsData: any[] = jobsRes?.error ? [] : jobsRes?.data ?? [];
-    const hiredApplicants: any[] = hiredRes?.error ? [] : hiredRes?.data ?? [];
 
     // The canonical `departments` table is the source of truth for offices — the
     // same list every other screen reads. Deriving the office list from

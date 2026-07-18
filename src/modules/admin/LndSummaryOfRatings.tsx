@@ -1,9 +1,10 @@
-import { ArrowLeft, ArrowUpDown, Building2, ChevronRight, RefreshCw, Search } from 'lucide-react';
+import { ArrowLeft, ArrowUpDown, Building2, ChevronDown, ChevronRight, RefreshCw, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { EmptyState } from '../../components/EmptyState';
 import { getIPCRRecordsFromGapView } from '../../lib/api/competencyGapAnalysis';
 import { REPORT_PERIOD, getAdjectival, groupByDept, type IPCRRatingRecord } from './pm/SummaryOfRatings';
+import { CompetencyGapPanel } from './pm/CompetencyGapPanel';
 
 // Employees rated below "Satisfactory" (< 3.00 on the IPCR scale) are flagged as
 // needing improvement — the same absolute threshold the department landing counts.
@@ -27,6 +28,7 @@ export const LndSummaryOfRatings = () => {
   const [searchTerm, setSearchTerm] = useState('');
   // null → department landing view; a department name → drilled-in employee view
   const [activeDept, setActiveDept] = useState<string | null>(null);
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
 
   const latestLoadId = useRef(0);
 
@@ -318,39 +320,51 @@ export const LndSummaryOfRatings = () => {
                 row.numericalRating !== null &&
                 row.numericalRating < NEEDS_IMPROVEMENT_THRESHOLD;
               const adj = getAdjectival(row.numericalRating);
+              const hasGaps = (row.competencies ?? []).some(c => c.isGap);
+              const open = !!expandedRows[row.id];
               return (
-                <div
-                  key={row.id}
-                  className={[
-                    'grid grid-cols-12 items-center border-l-4 px-5 py-3.5 transition hover:bg-gray-50/50',
-                    isLow ? 'border-l-amber-400' : 'border-l-transparent',
-                  ].join(' ')}
-                >
-                  <div className="col-span-4">
-                    <p className="text-sm font-semibold text-gray-900">{row.name}</p>
-                    <p className="mt-0.5 text-xs text-gray-400">{row.department}</p>
-                    {isLow && (
-                      <span className="mt-0.5 inline-block text-[10px] font-semibold text-amber-600">
-                        Low performer
+                <div key={row.id}>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedRows(p => ({ ...p, [row.id]: !p[row.id] }))}
+                    className={[
+                      'grid w-full grid-cols-12 items-center border-l-4 px-5 py-3.5 text-left transition hover:bg-gray-50/50',
+                      isLow ? 'border-l-amber-400' : 'border-l-transparent',
+                    ].join(' ')}
+                  >
+                    <div className="col-span-4">
+                      <p className="text-sm font-semibold text-gray-900">{row.name}</p>
+                      <p className="mt-0.5 text-xs text-gray-400">{row.department}</p>
+                      <span className="mt-0.5 flex flex-wrap gap-1">
+                        {isLow && <span className="inline-block text-[10px] font-semibold text-amber-600">Low performer</span>}
+                        {hasGaps && (
+                          <span className="inline-flex items-center rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-600">
+                            Training recommended
+                          </span>
+                        )}
                       </span>
-                    )}
-                  </div>
-                  <div className="col-span-3 text-xs text-gray-500 leading-snug pr-2">
-                    {row.position}
-                  </div>
-                  <div className="col-span-2 flex flex-col items-center gap-1">
-                    <span className="text-sm font-bold text-gray-900">
-                      {row.numericalRating !== null
-                        ? row.numericalRating.toFixed(2)
-                        : '—'}
-                    </span>
-                    <span
-                      className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${adj.pillClass}`}
-                    >
-                      {adj.label}
-                    </span>
-                  </div>
-                  <div className="col-span-3 text-xs text-gray-500">{row.period}</div>
+                    </div>
+                    <div className="col-span-3 text-xs text-gray-500 leading-snug pr-2">
+                      {row.position}
+                    </div>
+                    <div className="col-span-2 flex flex-col items-center gap-1">
+                      <span className="text-sm font-bold text-gray-900">
+                        {row.numericalRating !== null ? row.numericalRating.toFixed(2) : '—'}
+                      </span>
+                      <span className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${adj.pillClass}`}>
+                        {adj.label}
+                      </span>
+                    </div>
+                    <div className="col-span-3 flex items-center justify-between text-xs text-gray-500">
+                      <span>{row.period}</span>
+                      <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+                    </div>
+                  </button>
+                  {open && (
+                    <div className="border-t border-gray-100 bg-gray-50/60 p-4">
+                      <CompetencyGapPanel record={row} />
+                    </div>
+                  )}
                 </div>
               );
             })}

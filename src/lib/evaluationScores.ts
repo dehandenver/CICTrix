@@ -27,8 +27,31 @@ export const deriveEvaluationSnapshot = (row: any): EvaluationSnapshot | null =>
         : typeof row?.technical_score === 'number'
           ? row.technical_score
           : null;
-  const oralRawScore = typeof row?.overall_impression_score === 'number'
-    ? row.overall_impression_score
+  // Oral Examination is the interview as a whole, so it averages every criterion
+  // the interviewer rated (each 1-5) — the same six the form totals out of 30.
+  // It previously read `overall_impression_score` alone, which threw away the
+  // other five ratings: a candidate scoring 5s across the board but a 3 on
+  // overall impression was awarded 12/20 instead of 18.67/20, a 6.67-point swing
+  // on a 100-point ranking.
+  //
+  // Averaging (rather than summing) keeps the result on the 1-5 scale the
+  // downstream conversion expects, so partially-filled evaluations still scale
+  // correctly instead of being penalised for the criteria left blank.
+  const ORAL_CRITERIA_FIELDS = [
+    'communication_skills_score',
+    'confidence_score',
+    'comprehension_score',
+    'personality_score',
+    'job_knowledge_score',
+    'overall_impression_score',
+  ] as const;
+
+  const oralCriteriaScores = ORAL_CRITERIA_FIELDS
+    .map((field) => row?.[field])
+    .filter((value): value is number => typeof value === 'number');
+
+  const oralRawScore = oralCriteriaScores.length > 0
+    ? +(oralCriteriaScores.reduce((sum, value) => sum + value, 0) / oralCriteriaScores.length).toFixed(4)
     : typeof row?.overall_score === 'number'
       ? row.overall_score
       : null;

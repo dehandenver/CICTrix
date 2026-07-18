@@ -60,6 +60,7 @@ import { LndSummaryOfRatings } from './LndSummaryOfRatings';
 import { LndTrainingRequests } from './LndTrainingRequests';
 import { LndTrainingEvaluation } from './LndTrainingEvaluation';
 import { LndRecommendations } from './LndRecommendations';
+import { LndTrainingNeeds } from './LndTrainingNeeds';
 
 type MenuId =
   | 'dashboard'
@@ -67,6 +68,7 @@ type MenuId =
   | 'training-calendar'
   | 'training-plan'
   | 'training-requests'
+  | 'training-needs'
   | 'training-courses'
   | 'seminar-enrollment'
   | 'training-evaluation'
@@ -99,6 +101,7 @@ const LND_MENU: MenuItem[] = [
   { id: 'training-calendar', label: 'Training Calendar', sublabel: 'This year’s trainings', icon: CalendarDays },
   { id: 'training-plan', label: 'Training Plan', sublabel: 'Next year’s plan', icon: CalendarClock },
   { id: 'training-requests', label: 'Training Requests', sublabel: 'Department head submissions', icon: ClipboardList },
+  { id: 'training-needs', label: 'Requests & Needs', sublabel: 'Office requests + AI needs assessment', icon: Sparkles },
   { id: 'training-courses', label: 'Training Courses', sublabel: 'Courses and sessions', icon: BookOpen },
   { id: 'seminar-enrollment', label: 'Seminar Enrollment', sublabel: 'Registrations and slots', icon: ClipboardCheck },
   { id: 'training-evaluation', label: 'Training Evaluation', sublabel: 'Pre/post-test results', icon: TrendingUp },
@@ -680,6 +683,8 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
             <TrainingPlan />
           ) : activeModule === 'training-requests' ? (
             <LndTrainingRequests />
+          ) : activeModule === 'training-needs' ? (
+            <LndTrainingNeeds />
           ) : activeModule === 'training-courses' ? (
             <TrainingCourses />
           ) : activeModule === 'seminar-enrollment' ? (
