@@ -3098,11 +3098,18 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
               </button>
               <button
                 onClick={() => setIpcrSubtab('phase2')}
-                className={`px-4 py-2 text-xs font-bold rounded-md transition ${
+                className={`px-4 py-2 text-xs font-bold rounded-md transition flex items-center gap-1.5 ${
                   ipcrSubtab === 'phase2' ? 'bg-[#363EE8] text-white shadow-sm' : 'text-slate-650 hover:text-slate-800 hover:bg-slate-50'
                 }`}
               >
-                Phase 2: Accomplishments & Ratings
+                Phase 2: Accomplishments &amp; Ratings
+                {isAccomplishmentRatingActive && (
+                  <span className={`inline-block px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide ${
+                    ipcrSubtab === 'phase2' ? 'bg-white/25 text-white' : 'bg-emerald-100 text-emerald-700'
+                  }`}>
+                    Open
+                  </span>
+                )}
               </button>
             </div>
 
@@ -3296,6 +3303,16 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                     </button>
                   </div>
                 )}
+              </div>
+            )}
+
+            {ipcrSubtab === 'phase2' && isAccomplishmentRatingActive && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 flex items-center gap-2.5">
+                <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                <p className="text-xs font-semibold text-emerald-800">
+                  Phase 2 (Accomplishment Rating) is now open. Please fill in your accomplishments
+                  and self-ratings for each Success Indicator, then submit before the deadline.
+                </p>
               </div>
             )}
 

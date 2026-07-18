@@ -107,7 +107,7 @@ export const EmployeePhase2: React.FC<{ employeeId: string | null; phaseOpen?: b
 
   useRealtimeRefresh({
     channel: `employee-phase2-${employeeId || 'anon'}`,
-    tables: ['target_settings', 'success_indicator_ratings', 'ipcr_workspace'],
+    tables: ['target_settings', 'success_indicator_ratings', 'ipcr_workspace', 'phase_schedules'],
     onChange: useCallback(() => {
       if (isDirty) {
         setHasNewerData(true);
