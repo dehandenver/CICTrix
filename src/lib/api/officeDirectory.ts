@@ -237,22 +237,17 @@ export async function getOfficeDirectory(): Promise<
       if (emp?.id) employeeById.set(String(emp.id), emp);
       const email = norm(emp?.email);
       if (email) countedPeople.add(email);
+      // Headcount reflects Active employees only — the real, current roster.
+      if (norm(emp?.status) !== 'active') continue;
       const nameKey = norm(emp?.department) || norm(emp?.current_department);
       if (nameKey) headcountByDeptName.set(nameKey, (headcountByDeptName.get(nameKey) ?? 0) + 1);
     }
 
-    // Hired applicants are the agency's actual staff while employee records still
-    // live in the recruitment tables — `employees_with_department` is empty, so
-    // counting it alone reported 0 for every office even though the drill-down
-    // listed people. Fold them in here (rather than in one dashboard) so RSP, PM
-    // and System Administration all read the same headcount.
-    for (const applicant of hiredApplicants) {
-      const email = norm(applicant?.email);
-      if (email && countedPeople.has(email)) continue;
-      if (email) countedPeople.add(email);
-      const nameKey = norm(applicant?.office);
-      if (nameKey) headcountByDeptName.set(nameKey, (headcountByDeptName.get(nameKey) ?? 0) + 1);
-    }
+    // Hired applicants are no longer folded into the headcount. That was a stopgap
+    // for when `employees` was empty and offices reported 0; now that every office
+    // has real employee records, folding hired applicants double-counted people
+    // (e.g. IT showed 11 employees + 7 hired applicants = 18). Count employees only.
+    void hiredApplicants;
 
     const rows: OfficeDirectoryRow[] = departments.map((dept) => {
       const officeName = String(dept?.name ?? '').trim();
