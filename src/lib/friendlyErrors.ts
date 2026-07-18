@@ -41,6 +41,23 @@ const inferContext = (error: unknown): ErrorContext => {
   if (status >= 500 || message.includes('internal server') || message.includes('service unavailable')) {
     return 'server';
   }
+  // Database/PostgREST failures — a missing table, an unknown column, a blocked
+  // relation. These are server-side faults the user can do nothing about, so
+  // they must read as a server error rather than the vaguer generic message.
+  // Matched on the raw text because Supabase surfaces them with status 200/400
+  // and a `code` (42P01, 42703, 42501, PGRST…) rather than a 5xx.
+  const code = String((error as { code?: unknown })?.code ?? '');
+  if (
+    code.startsWith('42') ||
+    code.startsWith('PGRST') ||
+    message.includes('does not exist') ||
+    message.includes('could not find the table') ||
+    message.includes('permission denied') ||
+    message.includes('relation') ||
+    message.includes('schema cache')
+  ) {
+    return 'server';
+  }
   if (message.includes('failed to fetch') || message.includes('networkerror') || message.includes('network')) {
     return 'network';
   }

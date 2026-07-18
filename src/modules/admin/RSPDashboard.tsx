@@ -30,6 +30,7 @@ import {
   X,
 } from 'lucide-react';
 import { QualifiedApplicantsSection } from '../../components/QualifiedApplicantsSection';
+import { ErrorBanner } from '../../components/ErrorBanner';
 import { getAdminEmail } from '../../lib/adminSession';
 import { SuccessionPlanningPage } from '../../components/SuccessionPlanningPage';
 import { useEffect, useMemo, useState } from 'react';
@@ -3934,9 +3935,7 @@ export const RSPDashboard = () => {
                       </div>
                     </section>
 
-                    {officeDirectoryError && (
-                      <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{officeDirectoryError}</div>
-                    )}
+                    <ErrorBanner error={officeDirectoryError} context="server" />
 
                     <div className="flex items-center justify-center text-lg font-semibold text-slate-700">
                       {filteredOfficeDirectoryRows.length === 0
