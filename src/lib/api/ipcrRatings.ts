@@ -23,6 +23,7 @@ import { bucketForScore } from './performanceEvaluations';
 import type { FunctionType } from './ipcrTargets';
 import { setSubmissionStage, resolveTargetSettingMeta } from './ipcrSubmissions';
 import { createNotifications } from './employeeNotifications';
+import { type OfficeScope, getAcceptedOfficeNames, norm } from './officeScope';
 
 const supabase = supabaseClient as any;
 
@@ -93,7 +94,7 @@ async function cycleTitles(cycleIds: number[]): Promise<Map<number, string>> {
  * yet scoped to the rater's office — same posture as listPendingApprovals; the
  * office-scoping is a shared follow-up.
  */
-export async function listRatableTargets(): Promise<Result<RatableTarget[]>> {
+export async function listRatableTargets(scope?: OfficeScope | null): Promise<Result<RatableTarget[]>> {
   try {
     const { data: settings, error } = await supabase
       .from('target_settings')
@@ -143,7 +144,16 @@ export async function listRatableTargets(): Promise<Result<RatableTarget[]>> {
         ratedCount: c.rated,
       };
     });
-    return { ok: true, data };
+
+    const acceptedNames = await getAcceptedOfficeNames(scope);
+    let list = data;
+    if (acceptedNames) {
+      list = list.filter((t) => {
+        const dept = norm(t.department);
+        return dept && acceptedNames.has(dept);
+      });
+    }
+    return { ok: true, data: list };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Failed to load ratable records.' };
   }

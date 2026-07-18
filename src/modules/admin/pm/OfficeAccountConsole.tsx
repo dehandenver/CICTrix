@@ -44,6 +44,7 @@ import {
   adminEditTargets,
   type PendingApproval,
 } from '../../../lib/api/ipcrApproval';
+import { type OfficeScope } from '../../../lib/api/officeScope';
 import { listNotifications, type IpcrNotification } from '../../../lib/api/ipcrSubmissions';
 import { useRealtimeRefresh } from '../../../hooks/useRealtimeRefresh';
 import {
@@ -195,8 +196,35 @@ export const OfficeAccountConsole: React.FC = () => {
     enabled: !!officeRole,
   });
 
-  // Real IPCR submissions awaiting this office's approval.
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
+  const [collapsedPositions, setCollapsedPositions] = useState<Set<string>>(new Set());
+
+  const togglePositionCollapse = (pos: string) => {
+    setCollapsedPositions((prev) => {
+      const next = new Set(prev);
+      if (next.has(pos)) {
+        next.delete(pos);
+      } else {
+        next.add(pos);
+      }
+      return next;
+    });
+  };
+
+  const groupedApprovals = useMemo(() => {
+    const groups: Record<string, PendingApproval[]> = {};
+    for (const p of pendingApprovals) {
+      const pos = p.position || 'Other Positions';
+      if (!groups[pos]) groups[pos] = [];
+      groups[pos].push(p);
+    }
+    return Object.entries(groups).sort(([a], [b]) => {
+      if (a === 'Other Positions') return 1;
+      if (b === 'Other Positions') return -1;
+      return a.localeCompare(b);
+    });
+  }, [pendingApprovals]);
+
   const [approvalsLoading, setApprovalsLoading] = useState(false);
   const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
   const [approvalNotice, setApprovalNotice] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
@@ -239,7 +267,9 @@ export const OfficeAccountConsole: React.FC = () => {
 
   const refreshPendingApprovals = async () => {
     setApprovalsLoading(true);
-    const res = await listPendingApprovals();
+    const res = await listPendingApprovals(
+      officeRole ? { officeId: officeRole.officeId, officeName: officeRole.officeName } : null
+    );
     setApprovalsLoading(false);
     if (res.ok === false) { setApprovalNotice({ tone: 'err', text: res.error }); return; }
     setPendingApprovals(res.data);
@@ -1016,99 +1046,129 @@ export const OfficeAccountConsole: React.FC = () => {
                           <p className="text-xs text-slate-400 mt-1">Submissions appear here once an employee clicks “Submit Targets for Approval”.</p>
                         </div>
                       ) : (
-                        <div className="space-y-4">
-                          {pendingApprovals.map((p) => {
-                            const isOwn = !!currentEmployeeId && currentEmployeeId === p.employeeId;
-                            const busy = approvalBusyId === p.targetSettingId;
+                        <div className="space-y-6">
+                          {groupedApprovals.map(([pos, items]) => {
+                            const isCollapsed = collapsedPositions.has(pos);
                             return (
-                              <div key={p.targetSettingId} className="rounded-xl border border-slate-200 bg-white shadow-sm">
-                                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
-                                  <div>
-                                    <p className="text-sm font-bold text-slate-800">{p.employeeName}</p>
-                                    <p className="text-[11px] text-slate-500">{[p.position, p.department].filter(Boolean).join(' · ') || '—'}</p>
+                              <div key={pos} className="space-y-3">
+                                <button
+                                  type="button"
+                                  onClick={() => togglePositionCollapse(pos)}
+                                  className="flex w-full items-center justify-between border-b border-slate-200 pb-2 text-left transition hover:opacity-85"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-bold text-slate-800 tracking-tight">{pos}</span>
+                                    <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700">
+                                      {items.length} {items.length === 1 ? 'pending' : 'pending'}
+                                    </span>
                                   </div>
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-bold text-amber-800">Submitted for approval</span>
-                                </div>
+                                  <ChevronDown
+                                    size={16}
+                                    className={`text-slate-400 transition-transform duration-200 ${
+                                      isCollapsed ? '-rotate-90' : ''
+                                    }`}
+                                  />
+                                </button>
 
-                                <div className="px-4 py-3 space-y-3">
-                                  {(['core', 'strategic', 'support'] as const).map((ft) => {
-                                    const group = p.mfos.filter((m) => m.functionType === ft);
-                                    if (group.length === 0) return null;
-                                    const label = ft === 'core' ? 'Core Functions' : ft === 'strategic' ? 'Strategic Functions' : 'Support Functions';
-                                    return (
-                                      <div key={ft}>
-                                        <p className="text-[11px] font-bold uppercase tracking-wide text-indigo-600">{label}</p>
-                                        <ul className="mt-1 space-y-1.5">
-                                          {group.map((m) => {
-                                            const editing = editingId === p.targetSettingId;
-                                            return (
-                                              <li key={m.id} className="rounded-lg bg-slate-50 px-3 py-2">
-                                                {editing ? (
-                                                  <input
-                                                    value={editMfo[m.id] ?? ''}
-                                                    onChange={(e) => setEditMfo((prev) => ({ ...prev, [m.id]: e.target.value }))}
-                                                    className="w-full rounded border border-indigo-200 bg-white px-2 py-1 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                                  />
-                                                ) : (
-                                                  <p className="text-xs font-semibold text-slate-800">{m.title || '(untitled MFO)'}</p>
-                                                )}
-                                                {m.indicators.length > 0 && (
-                                                  <ul className={`mt-1 text-[11px] text-slate-600 ${editing ? 'space-y-1' : 'list-disc pl-5'}`}>
-                                                    {m.indicators.map((si) => (
-                                                      <li key={si.id}>
-                                                        {editing ? (
-                                                          <input
-                                                            value={editSi[si.id] ?? ''}
-                                                            onChange={(e) => setEditSi((prev) => ({ ...prev, [si.id]: e.target.value }))}
-                                                            className="w-full rounded border border-indigo-200 bg-white px-2 py-1 text-[11px] text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                                          />
-                                                        ) : (
-                                                          si.description
-                                                        )}
-                                                      </li>
-                                                    ))}
+                                {!isCollapsed && (
+                                  <div className="space-y-4 pl-1">
+                                    {items.map((p) => {
+                                      const isOwn = !!currentEmployeeId && currentEmployeeId === p.employeeId;
+                                      const busy = approvalBusyId === p.targetSettingId;
+                                      return (
+                                        <div key={p.targetSettingId} className="rounded-xl border border-slate-200 bg-white shadow-sm">
+                                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+                                            <div>
+                                              <p className="text-sm font-bold text-slate-800">{p.employeeName}</p>
+                                              <p className="text-[11px] text-slate-500">{[p.position, p.department].filter(Boolean).join(' · ') || '—'}</p>
+                                            </div>
+                                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-bold text-amber-800">Submitted for approval</span>
+                                          </div>
+
+                                          <div className="px-4 py-3 space-y-3">
+                                            {(['core', 'strategic', 'support'] as const).map((ft) => {
+                                              const group = p.mfos.filter((m) => m.functionType === ft);
+                                              if (group.length === 0) return null;
+                                              const label = ft === 'core' ? 'Core Functions' : ft === 'strategic' ? 'Strategic Functions' : 'Support Functions';
+                                              return (
+                                                <div key={ft}>
+                                                  <p className="text-[11px] font-bold uppercase tracking-wide text-indigo-600">{label}</p>
+                                                  <ul className="mt-1 space-y-1.5">
+                                                    {group.map((m) => {
+                                                      const editing = editingId === p.targetSettingId;
+                                                      return (
+                                                        <li key={m.id} className="rounded-lg bg-slate-50 px-3 py-2">
+                                                          {editing ? (
+                                                            <input
+                                                              value={editMfo[m.id] ?? ''}
+                                                              onChange={(e) => setEditMfo((prev) => ({ ...prev, [m.id]: e.target.value }))}
+                                                              className="w-full rounded border border-indigo-200 bg-white px-2 py-1 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                                            />
+                                                          ) : (
+                                                            <p className="text-xs font-semibold text-slate-800">{m.title || '(untitled MFO)'}</p>
+                                                          )}
+                                                          {m.indicators.length > 0 && (
+                                                            <ul className={`mt-1 text-[11px] text-slate-600 ${editing ? 'space-y-1' : 'list-disc pl-5'}`}>
+                                                              {m.indicators.map((si) => (
+                                                                <li key={si.id}>
+                                                                  {editing ? (
+                                                                    <input
+                                                                      value={editSi[si.id] ?? ''}
+                                                                      onChange={(e) => setEditSi((prev) => ({ ...prev, [si.id]: e.target.value }))}
+                                                                      className="w-full rounded border border-indigo-200 bg-white px-2 py-1 text-[11px] text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                                                    />
+                                                                  ) : (
+                                                                    si.description
+                                                                  )}
+                                                                </li>
+                                                              ))}
+                                                            </ul>
+                                                          )}
+                                                        </li>
+                                                      );
+                                                    })}
                                                   </ul>
-                                                )}
-                                              </li>
-                                            );
-                                          })}
-                                        </ul>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
 
-                                <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-3">
-                                  {isOwn ? (
-                                    <p className="text-[11px] font-semibold text-slate-500">This is your own IPCR — it must be approved by another office account.</p>
-                                  ) : editingId === p.targetSettingId ? (
-                                    <div className="flex flex-1 flex-wrap items-center gap-2">
-                                      <span className="text-[11px] font-semibold text-indigo-600">Editing — change any MFO / Success Indicator text, then save your overrides.</span>
-                                      <div className="ml-auto flex gap-2">
-                                        <button onClick={() => void saveEdits(p)} disabled={savingEdits} className="rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{savingEdits ? 'Saving…' : 'Save Edits'}</button>
-                                        <button onClick={() => setEditingId(null)} disabled={savingEdits} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600">Cancel</button>
-                                      </div>
-                                    </div>
-                                  ) : returnDraftId === p.targetSettingId ? (
-                                    <div className="flex flex-1 flex-wrap items-center gap-2">
-                                      <input
-                                        type="text"
-                                        value={returnComment}
-                                        onChange={(e) => setReturnComment(e.target.value)}
-                                        placeholder="Reason for returning (optional)"
-                                        className="flex-1 min-w-[200px] rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                      />
-                                      <button onClick={() => void handleReturn(p)} disabled={busy} className="rounded-lg bg-amber-600 hover:bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Confirm Return</button>
-                                      <button onClick={() => { setReturnDraftId(null); setReturnComment(''); }} disabled={busy} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600">Cancel</button>
-                                    </div>
-                                  ) : (
-                                    <>
-                                      <button onClick={() => void handleApprove(p)} disabled={busy} className="rounded-lg bg-emerald-600 hover:bg-emerald-700 px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{busy ? 'Working…' : 'Approve & Freeze'}</button>
-                                      <button onClick={() => startEdit(p)} disabled={busy} className="rounded-lg border border-indigo-300 bg-white hover:bg-indigo-50 px-4 py-1.5 text-xs font-semibold text-indigo-700 disabled:opacity-50">Edit / Override</button>
-                                      <button onClick={() => { setReturnDraftId(p.targetSettingId); setReturnComment(''); }} disabled={busy} className="rounded-lg border border-amber-300 bg-white hover:bg-amber-50 px-4 py-1.5 text-xs font-semibold text-amber-700 disabled:opacity-50">Return for Revision</button>
-                                    </>
-                                  )}
-                                </div>
+                                          <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-3">
+                                            {isOwn ? (
+                                              <p className="text-[11px] font-semibold text-slate-500">This is your own IPCR — it must be approved by another office account.</p>
+                                            ) : editingId === p.targetSettingId ? (
+                                              <div className="flex flex-1 flex-wrap items-center gap-2">
+                                                <span className="text-[11px] font-semibold text-indigo-600">Editing — change any MFO / Success Indicator text, then save your overrides.</span>
+                                                <div className="ml-auto flex gap-2">
+                                                  <button onClick={() => void saveEdits(p)} disabled={savingEdits} className="rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{savingEdits ? 'Saving…' : 'Save Edits'}</button>
+                                                  <button onClick={() => setEditingId(null)} disabled={savingEdits} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600">Cancel</button>
+                                                </div>
+                                              </div>
+                                            ) : returnDraftId === p.targetSettingId ? (
+                                              <div className="flex flex-1 flex-wrap items-center gap-2">
+                                                <input
+                                                  type="text"
+                                                  value={returnComment}
+                                                  onChange={(e) => setReturnComment(e.target.value)}
+                                                  placeholder="Reason for returning (optional)"
+                                                  className="flex-1 min-w-[200px] rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                                />
+                                                <button onClick={() => void handleReturn(p)} disabled={busy} className="rounded-lg bg-amber-600 hover:bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Confirm Return</button>
+                                                <button onClick={() => { setReturnDraftId(null); setReturnComment(''); }} disabled={busy} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600">Cancel</button>
+                                              </div>
+                                            ) : (
+                                              <>
+                                                <button onClick={() => void handleApprove(p)} disabled={busy} className="rounded-lg bg-emerald-600 hover:bg-emerald-700 px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{busy ? 'Working…' : 'Approve & Freeze'}</button>
+                                                <button onClick={() => startEdit(p)} disabled={busy} className="rounded-lg border border-indigo-300 bg-white hover:bg-indigo-50 px-4 py-1.5 text-xs font-semibold text-indigo-700 disabled:opacity-50">Edit / Override</button>
+                                                <button onClick={() => { setReturnDraftId(p.targetSettingId); setReturnComment(''); }} disabled={busy} className="rounded-lg border border-amber-300 bg-white hover:bg-amber-50 px-4 py-1.5 text-xs font-semibold text-amber-700 disabled:opacity-50">Return for Revision</button>
+                                              </>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
@@ -1190,7 +1250,14 @@ export const OfficeAccountConsole: React.FC = () => {
 
                 <div className="p-6">
                   {ratingsSubtab === 'review' && (
-                    <Phase2RatingPanel currentEmployeeId={currentEmployeeId} />
+                    <Phase2RatingPanel
+                      currentEmployeeId={currentEmployeeId}
+                      officeScope={
+                        officeRole
+                          ? { officeId: officeRole.officeId, officeName: officeRole.officeName }
+                          : null
+                      }
+                    />
                   )}
 
                   {/* Legacy mock override table — superseded by Phase2RatingPanel above. */}

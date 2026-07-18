@@ -9,8 +9,9 @@
  * Backed by src/lib/api/ipcrRatings.ts.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle, Lock, Loader2, Star } from 'lucide-react';
+import { CheckCircle, Lock, Loader2, Star, ChevronDown } from 'lucide-react';
 import { useRealtimeRefresh } from '../../../hooks/useRealtimeRefresh';
+import { type OfficeScope } from '../../../lib/api/officeScope';
 import {
   listRatableTargets,
   loadRatingSheet,
@@ -49,8 +50,39 @@ const statusChip = (s: string) => {
   };
   return { cls: map[s] ?? map.not_started, text: label[s] ?? s };
 };
-export const Phase2RatingPanel: React.FC<{ currentEmployeeId: string | null }> = ({ currentEmployeeId }) => {
+export const Phase2RatingPanel: React.FC<{
+  currentEmployeeId: string | null;
+  officeScope?: OfficeScope | null;
+}> = ({ currentEmployeeId, officeScope }) => {
   const [targets, setTargets] = useState<RatableTarget[]>([]);
+  const [collapsedPositions, setCollapsedPositions] = useState<Set<string>>(new Set());
+
+  const togglePositionCollapse = (pos: string) => {
+    setCollapsedPositions((prev) => {
+      const next = new Set(prev);
+      if (next.has(pos)) {
+        next.delete(pos);
+      } else {
+        next.add(pos);
+      }
+      return next;
+    });
+  };
+
+  const groupedTargets = useMemo(() => {
+    const groups: Record<string, RatableTarget[]> = {};
+    for (const t of targets) {
+      const pos = t.position || 'Other Positions';
+      if (!groups[pos]) groups[pos] = [];
+      groups[pos].push(t);
+    }
+    return Object.entries(groups).sort(([a], [b]) => {
+      if (a === 'Other Positions') return 1;
+      if (b === 'Other Positions') return -1;
+      return a.localeCompare(b);
+    });
+  }, [targets]);
+
   const [loadingList, setLoadingList] = useState(false);
   const [sheet, setSheet] = useState<RatingSheet | null>(null);
   const [loadingSheet, setLoadingSheet] = useState(false);
@@ -60,6 +92,23 @@ export const Phase2RatingPanel: React.FC<{ currentEmployeeId: string | null }> =
   const [closing, setClosing] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
   const [hasNewerData, setHasNewerData] = useState(false);
+
+  // Keep the currently-selected target's group auto-expanded
+  useEffect(() => {
+    if (sheet?.targetSettingId) {
+      const currentTarget = targets.find(t => t.targetSettingId === sheet.targetSettingId);
+      if (currentTarget) {
+        const pos = currentTarget.position || 'Other Positions';
+        if (collapsedPositions.has(pos)) {
+          setCollapsedPositions((prev) => {
+            const next = new Set(prev);
+            next.delete(pos);
+            return next;
+          });
+        }
+      }
+    }
+  }, [sheet?.targetSettingId, targets]);
 
   const isDirty = useMemo(() => {
     if (!sheet) return false;
@@ -81,11 +130,11 @@ export const Phase2RatingPanel: React.FC<{ currentEmployeeId: string | null }> =
 
   const refreshList = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoadingList(true);
-    const res = await listRatableTargets();
+    const res = await listRatableTargets(officeScope);
     if (!isSilent) setLoadingList(false);
     if (res.ok === false) { setNotice({ tone: 'err', text: res.error }); return; }
     setTargets(res.data);
-  }, []);
+  }, [officeScope]);
 
   useEffect(() => { void refreshList(); }, [refreshList]);
 
@@ -255,24 +304,73 @@ export const Phase2RatingPanel: React.FC<{ currentEmployeeId: string | null }> =
             ) : targets.length === 0 ? (
               <p className="px-3 py-6 text-center text-xs text-slate-400">No approved IPCRs to rate yet.</p>
             ) : (
-              targets.map((t) => {
-                const chip = statusChip(t.phase2Status);
-                const active = sheet?.targetSettingId === t.targetSettingId;
-                return (
-                  <button
-                    key={t.targetSettingId}
-                    onClick={() => void openSheet(t)}
-                    className={`w-full px-3 py-2.5 text-left transition ${active ? 'bg-indigo-50' : 'hover:bg-slate-50'}`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs font-bold text-slate-800 truncate">{t.employeeName}</p>
-                      <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold ${chip.cls}`}>{chip.text}</span>
+              <div className="divide-y divide-slate-100">
+                {groupedTargets.map(([pos, items]) => {
+                  const isCollapsed = collapsedPositions.has(pos);
+                  return (
+                    <div key={pos} className="bg-white">
+                      <button
+                        type="button"
+                        onClick={() => togglePositionCollapse(pos)}
+                        className="flex w-full items-center justify-between px-3 py-2 text-left bg-slate-50/50 hover:bg-slate-50/80 transition"
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-[11px] font-bold text-slate-700 truncate tracking-tight">{pos}</span>
+                          <span className="shrink-0 rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] font-bold text-slate-600">
+                            {items.length}
+                          </span>
+                        </div>
+                        <ChevronDown
+                          size={12}
+                          className={`text-slate-400 shrink-0 transition-transform duration-200 ${
+                            isCollapsed ? '-rotate-90' : ''
+                          }`}
+                        />
+                      </button>
+
+                      {!isCollapsed && (
+                        <div className="divide-y divide-slate-100">
+                          {items.map((t) => {
+                            const chip = statusChip(t.phase2Status);
+                            const active = sheet?.targetSettingId === t.targetSettingId;
+                            const progressPercent = t.indicatorCount > 0
+                              ? Math.round((t.ratedCount / t.indicatorCount) * 100)
+                              : 0;
+                            return (
+                              <button
+                                key={t.targetSettingId}
+                                onClick={() => void openSheet(t)}
+                                className={`w-full px-3 py-2.5 text-left transition ${
+                                  active ? 'bg-indigo-50/85' : 'hover:bg-slate-50/50'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-2 min-w-0">
+                                  <p className="text-xs font-bold text-slate-800 truncate">{t.employeeName}</p>
+                                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold ${chip.cls}`}>{chip.text}</span>
+                                </div>
+                                <p className="text-[10px] text-slate-500 mt-0.5 truncate">{t.period}</p>
+                                
+                                <div className="mt-2 space-y-1">
+                                  <div className="flex items-center justify-between text-[9px] text-slate-400">
+                                    <span>Progress</span>
+                                    <span>{t.ratedCount}/{t.indicatorCount} ({progressPercent}%)</span>
+                                  </div>
+                                  <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
+                                    <div
+                                      className="h-full bg-indigo-600 transition-all duration-300"
+                                      style={{ width: `${progressPercent}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                    <p className="text-[10px] text-slate-500 truncate">{[t.position, t.period].filter(Boolean).join(' · ')}</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">{t.ratedCount}/{t.indicatorCount} indicators scored</p>
-                  </button>
-                );
-              })
+                  );
+                })}
+              </div>
             )}
           </div>
         </div>

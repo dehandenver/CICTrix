@@ -14,6 +14,7 @@
 import { supabase } from '../supabase';
 import { createNotifications } from './employeeNotifications';
 import { setSubmissionStage, resolveTargetSettingMeta } from './ipcrSubmissions';
+import { type OfficeScope, getAcceptedOfficeNames, norm } from './officeScope';
 
 export interface PendingIndicator {
   id: string;
@@ -59,7 +60,7 @@ async function writeAudit(entry: {
 }
 
 /** Every IPCR awaiting approval, with its submitter and frozen-candidate targets. */
-export async function listPendingApprovals(): Promise<Result<PendingApproval[]>> {
+export async function listPendingApprovals(scope?: OfficeScope | null): Promise<Result<PendingApproval[]>> {
   try {
     const { data: settings, error } = await (supabase as any)
       .from('target_settings')
@@ -107,7 +108,16 @@ export async function listPendingApprovals(): Promise<Result<PendingApproval[]>>
           .map((si) => ({ id: si.id, description: si.description })),
       });
     }
-    return { ok: true, data: [...byId.values()] };
+
+    const acceptedNames = await getAcceptedOfficeNames(scope);
+    let list = [...byId.values()];
+    if (acceptedNames) {
+      list = list.filter((p) => {
+        const dept = norm(p.department);
+        return dept && acceptedNames.has(dept);
+      });
+    }
+    return { ok: true, data: list };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Failed to load pending approvals.' };
   }
