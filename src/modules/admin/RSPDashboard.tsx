@@ -2432,10 +2432,14 @@ export const RSPDashboard = () => {
 
   const selectedOfficeEmployees = useMemo(() => {
     if (!selectedDirectoryCard) return [];
-    return directoryEmployeesSource.filter(
+    // The office roster is the real employees for this office (the same set the
+    // directory table counts), sourced from the employees table and deduped by
+    // employee number — NOT the recruitment merge (directoryEmployeesSource),
+    // which folded in hired applicants and duplicated people (14 ≠ 11).
+    return fallbackEmployeeDirectorySource.filter(
       (employee) => normalizeOfficeName(employee.office) === normalizeOfficeName(selectedDirectoryCard.office),
     );
-  }, [directoryEmployeesSource, selectedDirectoryCard]);
+  }, [fallbackEmployeeDirectorySource, selectedDirectoryCard]);
 
   const selectedEmployeeDetails = useMemo(
     () => directoryEmployeesSource.find((employee) => employee.id === selectedEmployeeId) ?? null,
