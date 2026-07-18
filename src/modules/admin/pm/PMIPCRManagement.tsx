@@ -249,6 +249,7 @@ const IPCRDetailPage = ({
   const [ipcrError, setIpcrError] = useState('');
   const [relationalStatus, setRelationalStatus] = useState<string | null>(null);
   const [relationalPhase2Status, setRelationalPhase2Status] = useState<string | null>(null);
+  const [legacyEvaluationStatus, setLegacyEvaluationStatus] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     setIpcrLoading(true);
@@ -259,6 +260,7 @@ const IPCRDetailPage = ({
         setIpcrRows(res.data.rows);
         setRelationalStatus(res.data.status ?? null);
         setRelationalPhase2Status(res.data.phase2Status ?? null);
+        setLegacyEvaluationStatus(null);
       } else {
         const legacyRes = await getEmployeeIPCR(
           employee.employee_id || '',
@@ -268,8 +270,10 @@ const IPCRDetailPage = ({
         );
         if (legacyRes.success && legacyRes.data) {
           setIpcrRows(legacyRes.data.rows || []);
+          setLegacyEvaluationStatus(legacyRes.data.evaluation?.status ?? null);
         } else {
           setIpcrError(legacyRes.error || 'Failed to load IPCR rows.');
+          setLegacyEvaluationStatus(null);
         }
         setRelationalStatus(null);
         setRelationalPhase2Status(null);
@@ -303,6 +307,16 @@ const IPCRDetailPage = ({
         : `${employee.monthsOfService} months`;
   const isProbationary = employee.monthsOfService < 6;
 
+  const LEGACY_WITHOUT_EVALUATION_IS_VISIBLE = true;
+
+  const isApproved =
+    relationalStatus === 'approved' ||
+    legacyEvaluationStatus === 'Approved' ||
+    (LEGACY_WITHOUT_EVALUATION_IS_VISIBLE &&
+      relationalStatus === null &&
+      legacyEvaluationStatus === null &&
+      ipcrRows.length > 0);
+
   return (
     <div className="space-y-6">
       {/* Back button */}
@@ -318,12 +332,12 @@ const IPCRDetailPage = ({
         <div>
           <div className="flex items-center gap-3 flex-wrap">
             <h2 className="text-2xl font-bold text-slate-900 tracking-tight">IPCR — {employee.full_name}</h2>
-            {relationalStatus && (
+            {isApproved && relationalStatus && (
               <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-indigo-50 text-indigo-700 border border-indigo-200">
                 Phase 1: {relationalStatus.replace(/_/g, ' ')}
               </span>
             )}
-            {relationalPhase2Status && (
+            {isApproved && relationalPhase2Status && (
               <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-50 text-emerald-700 border border-emerald-200">
                 Phase 2: {relationalPhase2Status.replace(/_/g, ' ')}
               </span>
@@ -368,59 +382,61 @@ const IPCRDetailPage = ({
           </div>
 
           {/* Cycle Timeline */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-            <h3 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">IPCR Cycle</h3>
-            <div className="flex items-stretch gap-1.5 mb-4">
-              <div
-                className={`flex-1 rounded-lg p-3 border text-center ${
-                  employee.computedPhase === 'target'
-                    ? 'bg-blue-50 border-blue-200'
-                    : 'bg-emerald-50 border-emerald-100'
-                }`}
-              >
-                <p className="text-[9px] text-slate-500 mb-0.5">
-                  {isProbationary ? 'Month 1–3' : 'First 6 Mos'}
-                </p>
-                <p
-                  className={`text-[11px] font-bold ${
-                    employee.computedPhase === 'target' ? 'text-[#363EE8]' : 'text-emerald-700'
+          {!ipcrLoading && isApproved && (
+            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+              <h3 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">IPCR Cycle</h3>
+              <div className="flex items-stretch gap-1.5 mb-4">
+                <div
+                  className={`flex-1 rounded-lg p-3 border text-center ${
+                    employee.computedPhase === 'target'
+                      ? 'bg-blue-50 border-blue-200'
+                      : 'bg-emerald-50 border-emerald-100'
                   }`}
                 >
-                  Target Setting
-                </p>
-                {employee.computedPhase !== 'target' && (
-                  <Check size={10} className="mx-auto mt-1 text-emerald-600" />
-                )}
-              </div>
-              <ChevronRight size={12} className="text-slate-300 self-center flex-shrink-0" />
-              <div
-                className={`flex-1 rounded-lg p-3 border text-center ${
-                  employee.computedPhase === 'rating'
-                    ? 'bg-blue-50 border-blue-200'
-                    : 'bg-slate-50 border-slate-200'
-                }`}
-              >
-                <p className="text-[9px] text-slate-500 mb-0.5">
-                  {isProbationary ? 'Month 4–6' : 'Second 6 Mos'}
-                </p>
-                <p
-                  className={`text-[11px] font-bold ${
-                    employee.computedPhase === 'rating' ? 'text-[#363EE8]' : 'text-slate-400'
+                  <p className="text-[9px] text-slate-500 mb-0.5">
+                    {isProbationary ? 'Month 1–3' : 'First 6 Mos'}
+                  </p>
+                  <p
+                    className={`text-[11px] font-bold ${
+                      employee.computedPhase === 'target' ? 'text-[#363EE8]' : 'text-emerald-700'
+                    }`}
+                  >
+                    Target Setting
+                  </p>
+                  {employee.computedPhase !== 'target' && (
+                    <Check size={10} className="mx-auto mt-1 text-emerald-600" />
+                  )}
+                </div>
+                <ChevronRight size={12} className="text-slate-300 self-center flex-shrink-0" />
+                <div
+                  className={`flex-1 rounded-lg p-3 border text-center ${
+                    employee.computedPhase === 'rating'
+                      ? 'bg-blue-50 border-blue-200'
+                      : 'bg-slate-50 border-slate-200'
                   }`}
                 >
-                  Accomplishment
-                </p>
+                  <p className="text-[9px] text-slate-500 mb-0.5">
+                    {isProbationary ? 'Month 4–6' : 'Second 6 Mos'}
+                  </p>
+                  <p
+                    className={`text-[11px] font-bold ${
+                      employee.computedPhase === 'rating' ? 'text-[#363EE8]' : 'text-slate-400'
+                    }`}
+                  >
+                    Accomplishment
+                  </p>
+                </div>
+              </div>
+              <div className="text-xs text-slate-500 space-y-1">
+                <div>
+                  Period: <strong className="text-slate-700">{employee.periodLabel}</strong>
+                </div>
+                <div>
+                  Due: <strong className="text-slate-700">{fmtDate(employee.computedDueDate)}</strong>
+                </div>
               </div>
             </div>
-            <div className="text-xs text-slate-500 space-y-1">
-              <div>
-                Period: <strong className="text-slate-700">{employee.periodLabel}</strong>
-              </div>
-              <div>
-                Due: <strong className="text-slate-700">{fmtDate(employee.computedDueDate)}</strong>
-              </div>
-            </div>
-          </div>
+          )}
 
 
         </div>
@@ -439,6 +455,12 @@ const IPCRDetailPage = ({
             ) : ipcrError ? (
               <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-center text-sm text-red-700">
                 {ipcrError}
+              </div>
+            ) : !isApproved && (relationalStatus !== null || legacyEvaluationStatus !== null) ? (
+              <div className="p-8 text-center text-sm text-amber-800 flex flex-col items-center gap-2">
+                <ClipboardCheck size={28} className="text-amber-500 mb-1" />
+                <span className="font-semibold text-base">IPCR Sheet Pending Approval</span>
+                <span className="text-xs text-slate-500">This employee's IPCR has not yet been approved by their department head.</span>
               </div>
             ) : ipcrRows.length === 0 ? (
               <div className="p-8 text-center text-sm text-amber-800 flex flex-col items-center gap-2">
