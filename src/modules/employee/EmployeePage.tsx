@@ -507,19 +507,40 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
         setEmployeeEvaluations(evalsRes.data);
       }
 
-      // Always load system-scope phase schedules so they can act as fallback/overrides
-      const supabase = supabaseClient as any;
-      const { data: schedRows } = await supabase
-        .from('phase_schedules')
-        .select('*')
-        .eq('scope', 'system');
-      if (loadId !== latestEmployeeIpcrLoadId.current) return;
-      const rows: any[] = Array.isArray(schedRows) ? schedRows : [];
-      setSystemSchedules({
-        target: rows.find((r) => r.phase === 'target_setting') ?? null,
-        rating: rows.find((r) => r.phase === 'rating') ?? null,
-      });
-
+      // Always load the phase windows so they act as a fallback (probationary
+      // employees OR these with their own schedule). Resolve the employee's
+      // OFFICE override if one exists, else the system default — so offices can
+      // sit on different phases (e.g. Legal stays in Phase 1 while every other
+      // office moves to Phase 2).
+      {
+        const supabase = supabaseClient as any;
+        // Resolve the employee's office_id (departments.id) to match an override.
+        let officeId: string | null = null;
+        const empIdForOffice = currentUser.supabaseId ?? null;
+        if (empIdForOffice) {
+          const { data: empRow } = await supabase
+            .from('employees_with_department')
+            .select('department')
+            .eq('id', empIdForOffice)
+            .maybeSingle();
+          const officeName = String(empRow?.department ?? '').trim();
+          if (officeName) {
+            const { data: dep } = await supabase.from('departments').select('id').eq('name', officeName).maybeSingle();
+            officeId = dep?.id ?? null;
+          }
+        }
+        const { data: schedRows } = await supabase
+          .from('phase_schedules')
+          .select('*')
+          .or(officeId ? `scope.eq.system,office_id.eq.${officeId}` : 'scope.eq.system');
+        if (loadId !== latestEmployeeIpcrLoadId.current) return;
+        const rows: any[] = Array.isArray(schedRows) ? schedRows : [];
+        const resolvePhase = (phase: string) =>
+          (officeId && rows.find((r) => r.scope === 'office' && r.office_id === officeId && r.phase === phase)) ||
+          rows.find((r) => r.scope === 'system' && r.phase === phase) ||
+          null;
+        setSystemSchedules({ target: resolvePhase('target_setting'), rating: resolvePhase('rating') });
+      }
 
       // Phase 1 relational targets. If the active cycle resolves, load by cycle;
       // otherwise (e.g. performance_cycles not readable by the anon client due to
