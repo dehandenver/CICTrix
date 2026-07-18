@@ -250,6 +250,7 @@ const IPCRDetailPage = ({
   const [relationalStatus, setRelationalStatus] = useState<string | null>(null);
   const [relationalPhase2Status, setRelationalPhase2Status] = useState<string | null>(null);
   const [legacyEvaluationStatus, setLegacyEvaluationStatus] = useState<string | null>(null);
+  const [showInfoModal, setShowInfoModal] = useState(false);
 
   const reload = useCallback(async () => {
     setIpcrLoading(true);
@@ -328,6 +329,46 @@ const IPCRDetailPage = ({
         <ChevronLeft size={16} /> Back to IPCR Management
       </button>
 
+      {showInfoModal && (
+        <Dialog open onClose={() => setShowInfoModal(false)} title="Employee Information">
+          <div className="space-y-4 text-sm w-80 max-w-full">
+            <div>
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Name</p>
+              <p className="font-semibold text-slate-800">{employee.full_name}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Position</p>
+              <p className="font-medium text-slate-700">{employee.current_position ?? '—'}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Office / Department</p>
+              <p className="font-medium text-slate-700">{employee.department ?? '—'}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Date Hired</p>
+              <p className="font-medium text-slate-700">{fmtDate(employee.hire_date)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Length of Service</p>
+              <p className="font-medium text-slate-700">{monthsText}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Employee Type</p>
+              <p className="font-medium text-slate-700">{isProbationary ? 'Probationary' : 'Regular'}</p>
+            </div>
+            <div className="flex justify-end pt-4 mt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowInfoModal(false)}
+                className="px-4 py-2 text-xs font-bold bg-[#363EE8] hover:bg-[#2931c5] text-white rounded-lg shadow-sm transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+
       <div className="flex items-center justify-between border-b border-slate-200 pb-4">
         <div>
           <div className="flex items-center gap-3 flex-wrap">
@@ -344,45 +385,20 @@ const IPCRDetailPage = ({
             )}
           </div>
           <p className="text-xs text-slate-500 mt-1">Review targets and accomplishments.</p>
+          <button
+            type="button"
+            onClick={() => setShowInfoModal(true)}
+            className="mt-3 px-3 py-1.5 bg-[#363EE8] hover:bg-[#2931c5] text-white text-xs font-bold rounded-lg shadow-sm transition-colors"
+          >
+            View Employee Information
+          </button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 align-start items-start">
-        {/* Left Column: Info & Control */}
-        <div className="space-y-5 lg:col-span-1">
-          {/* Employee Info */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-            <h3 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">Employee Information</h3>
-            <div className="space-y-3 text-sm">
-              <div>
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Name</p>
-                <p className="font-semibold text-slate-800">{employee.full_name}</p>
-              </div>
-              <div>
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Position</p>
-                <p className="font-medium text-slate-700">{employee.current_position ?? '—'}</p>
-              </div>
-              <div>
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Office / Department</p>
-                <p className="font-medium text-slate-700">{employee.department ?? '—'}</p>
-              </div>
-              <div>
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Date Hired</p>
-                <p className="font-medium text-slate-700">{fmtDate(employee.hire_date)}</p>
-              </div>
-              <div>
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Length of Service</p>
-                <p className="font-medium text-slate-700">{monthsText}</p>
-              </div>
-              <div>
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Employee Type</p>
-                <p className="font-medium text-slate-700">{isProbationary ? 'Probationary' : 'Regular'}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Cycle Timeline */}
-          {!ipcrLoading && isApproved && (
+        {/* Left Column: Cycle Timeline */}
+        {!ipcrLoading && isApproved && (
+          <div className="space-y-5 lg:col-span-1">
             <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
               <h3 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">IPCR Cycle</h3>
               <div className="flex items-stretch gap-1.5 mb-4">
@@ -436,13 +452,11 @@ const IPCRDetailPage = ({
                 </div>
               </div>
             </div>
-          )}
-
-
-        </div>
+          </div>
+        )}
 
         {/* Right Column: IPCR Sheet Details */}
-        <div className="lg:col-span-2 space-y-4">
+        <div className={`space-y-4 ${!ipcrLoading && isApproved ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
           <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
             <h3 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">
               Employee IPCR Sheet
