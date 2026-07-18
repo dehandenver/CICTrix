@@ -23,6 +23,7 @@ import { type IpcrPhase, sendNotification } from '../../../lib/api/ipcrSubmissio
 import { getAllEmployees, type Employee } from '../../../lib/api/employees';
 import { upsertSchedule } from '../../../lib/api/phaseSchedules';
 import { getEmployeeIPCR, type IPCRRowDraft } from '../../../lib/api/performanceEvaluations';
+import { loadEmployeeIpcrForReview } from '../../../lib/api/ipcrApproval';
 import { getCurrentAdminEmail } from '../moduleUi';
 import { supabase as supabaseClient } from '../../../lib/supabase';
 import { getSystemPhaseStates, openPhase, closePhase } from '../../../lib/api/ipcrPhaseControl';
@@ -246,38 +247,51 @@ const IPCRDetailPage = ({
   const [ipcrRows, setIpcrRows] = useState<IPCRRowDraft[]>([]);
   const [ipcrLoading, setIpcrLoading] = useState(true);
   const [ipcrError, setIpcrError] = useState('');
+  const [relationalStatus, setRelationalStatus] = useState<string | null>(null);
+  const [relationalPhase2Status, setRelationalPhase2Status] = useState<string | null>(null);
 
-
-
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      setIpcrLoading(true);
-      setIpcrError('');
-      try {
-        const res = await getEmployeeIPCR(
+  const reload = useCallback(async () => {
+    setIpcrLoading(true);
+    setIpcrError('');
+    try {
+      const res = await loadEmployeeIpcrForReview(employee.id, null);
+      if (res.ok && res.data.relational) {
+        setIpcrRows(res.data.rows);
+        setRelationalStatus(res.data.status ?? null);
+        setRelationalPhase2Status(res.data.phase2Status ?? null);
+      } else {
+        const legacyRes = await getEmployeeIPCR(
           employee.employee_id || '',
           employee.periodLabel,
           employee.id,
           null
         );
-        if (!active) return;
-        if (res.success && res.data) {
-          setIpcrRows(res.data.rows || []);
+        if (legacyRes.success && legacyRes.data) {
+          setIpcrRows(legacyRes.data.rows || []);
         } else {
-          setIpcrError(res.error || 'Failed to load IPCR rows.');
+          setIpcrError(legacyRes.error || 'Failed to load IPCR rows.');
         }
-      } catch (err) {
-        if (!active) return;
-        setIpcrError('Error fetching IPCR details.');
-      } finally {
-        if (active) setIpcrLoading(false);
+        setRelationalStatus(null);
+        setRelationalPhase2Status(null);
       }
-    })();
-    return () => {
-      active = false;
-    };
+    } catch (err) {
+      setIpcrError('Error fetching IPCR details.');
+    } finally {
+      setIpcrLoading(false);
+    }
   }, [employee.id, employee.employee_id, employee.periodLabel]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  useRealtimeRefresh({
+    channel: `pm-ipcr-detail-${employee.id}`,
+    tables: ['target_settings', 'mfos', 'success_indicators', 'success_indicator_ratings'],
+    onChange: reload,
+    enabled: true,
+  });
+
 
 
 
@@ -302,7 +316,19 @@ const IPCRDetailPage = ({
 
       <div className="flex items-center justify-between border-b border-slate-200 pb-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900 tracking-tight">IPCR — {employee.full_name}</h2>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h2 className="text-2xl font-bold text-slate-900 tracking-tight">IPCR — {employee.full_name}</h2>
+            {relationalStatus && (
+              <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-indigo-50 text-indigo-700 border border-indigo-200">
+                Phase 1: {relationalStatus.replace(/_/g, ' ')}
+              </span>
+            )}
+            {relationalPhase2Status && (
+              <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-50 text-emerald-700 border border-emerald-200">
+                Phase 2: {relationalPhase2Status.replace(/_/g, ' ')}
+              </span>
+            )}
+          </div>
           <p className="text-xs text-slate-500 mt-1">Review targets and accomplishments.</p>
         </div>
       </div>

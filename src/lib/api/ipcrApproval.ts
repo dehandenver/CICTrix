@@ -288,3 +288,114 @@ export async function returnForRevision(p: {
     return { ok: false, error: err instanceof Error ? err.message : 'Return failed.' };
   }
 }
+
+/**
+ * Load the employee's active target setting row and merge its MFOs, success indicators,
+ * and optional self-ratings/accomplishments for the PM detail review console.
+ * Without any status checks (returns submitted, pending, approved, etc. records).
+ */
+export async function loadEmployeeIpcrForReview(
+  employeeUuid: string,
+  cycleId?: number | null
+): Promise<Result<{ relational: boolean; status?: string; phase2Status?: string; rows: any[] }>> {
+  try {
+    // 1. Resolve the target_settings row
+    let query = (supabase as any)
+      .from('target_settings')
+      .select('*')
+      .eq('employee_id', employeeUuid);
+
+    if (cycleId) {
+      query = query.eq('cycle_id', cycleId);
+    }
+
+    const { data: settings, error: sErr } = await query
+      .order('updated_at', { ascending: false })
+      .limit(1);
+
+    if (sErr) return { ok: false, error: sErr.message };
+    const setting = (settings as any)?.[0];
+    if (!setting) {
+      return { ok: true, data: { relational: false, rows: [] } };
+    }
+
+    // 2. Fetch MFOs and nested success indicators
+    const { data: mfoRows, error: mErr } = await (supabase as any)
+      .from('mfos')
+      .select('id, function_type, title, sort_order, success_indicators(id, description, sort_order)')
+      .eq('target_setting_id', setting.id)
+      .order('sort_order', { ascending: true });
+
+    if (mErr) return { ok: false, error: mErr.message };
+
+    // 3. Fetch accomplishments & ratings if they exist (Phase 2)
+    const siIds: string[] = [];
+    for (const m of (mfoRows ?? []) as any[]) {
+      for (const si of (m.success_indicators ?? []) as any[]) {
+        siIds.push(si.id);
+      }
+    }
+
+    const ratingBySi = new Map<string, any>();
+    if (siIds.length) {
+      const { data: ratings, error: rErr } = await (supabase as any)
+        .from('success_indicator_ratings')
+        .select('*')
+        .in('success_indicator_id', siIds);
+      if (!rErr && ratings) {
+        for (const r of ratings as any[]) {
+          ratingBySi.set(r.success_indicator_id, r);
+        }
+      }
+    }
+
+    // 4. Map into IPCRRowDraft structure
+    const rows: any[] = [];
+    for (const m of (mfoRows ?? []) as any[]) {
+      const fnType = m.function_type === 'support' ? 'SUPPORT' : 'CORE';
+      const sortedIndicators = ((m.success_indicators ?? []) as any[])
+        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+
+      for (const si of sortedIndicators) {
+        const r = ratingBySi.get(si.id);
+        const q = r?.quality ?? null;
+        const e = r?.efficiency ?? null;
+        const t = r?.timeliness ?? null;
+        const ratings = [q, e, t].filter((val): val is number => val !== null);
+        const ave = ratings.length
+          ? Number((ratings.reduce((acc, val) => acc + val, 0) / ratings.length).toFixed(2))
+          : 0;
+
+        rows.push({
+          id: si.id,
+          function_type: fnType,
+          target_text: `${m.title || 'Untitled MFO'} — ${si.description || 'No indicator description'}`,
+          accomplishment_text: r?.accomplishment ?? '',
+          q_rating: q,
+          e_rating: e,
+          t_rating: t,
+          ave_rating: ave,
+          competency_id: 0,
+          mapped_competency_standard: '',
+          remarks: r?.remarks || '',
+        });
+      }
+    }
+
+    return {
+      ok: true,
+      data: {
+        relational: true,
+        status: setting.status,
+        phase2Status: setting.phase2_status ?? null,
+        rows,
+      },
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
