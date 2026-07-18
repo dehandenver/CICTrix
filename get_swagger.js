@@ -1,28 +1,33 @@
 const fs = require('fs');
 
-const envContent = fs.readFileSync('.env', 'utf8');
-const env = envContent.split('\n').reduce((acc, line) => {
-  const parts = line.split('=');
-  if (parts.length >= 2) {
-    acc[parts[0].trim()] = parts.slice(1).join('=').trim().replace(/['"]/g, '');
-  }
-  return acc;
-}, {});
+function loadEnv(path) {
+  if (!fs.existsSync(path)) return {};
+  return fs.readFileSync(path, 'utf8').split('\n').reduce((acc, l) => {
+    const p = l.split('=');
+    if (p.length >= 2) acc[p[0].trim()] = p.slice(1).join('=').trim().replace(/['"]/g, '');
+    return acc;
+  }, {});
+}
 
-const url = env.VITE_SUPABASE_URL;
-const key = env.VITE_SUPABASE_ANON_KEY;
+const env = { ...loadEnv('.env'), ...loadEnv('backend/.env') };
+const url = env.VITE_SUPABASE_URL || env.SUPABASE_URL;
+const key = env.SUPABASE_SERVICE_ROLE_KEY;
 
 async function run() {
   const res = await fetch(`${url}/rest/v1/`, {
     headers: {
       'apikey': key,
-      'Authorization': `Bearer ${key}`
+      'Authorization': `Bearer ${key}`,
+      'Accept': 'application/openapi+json'
     }
   });
   const data = await res.json();
-  console.log('Paths available:');
-  const paths = Object.keys(data.paths);
-  const rpcs = paths.filter(p => p.startsWith('/rpc/'));
-  console.log(rpcs);
+  if (data.paths) {
+    const paths = Object.keys(data.paths);
+    const rpcs = paths.filter(p => p.startsWith('/rpc/'));
+    console.log('Available RPCs:', rpcs);
+  } else {
+    console.log('Error fetching OpenAPI schema:', data);
+  }
 }
 run();

@@ -15,6 +15,11 @@ import { supabase as supabaseClient } from '../supabase';
 
 const supabase = supabaseClient as any;
 
+// Supabase/PostgREST errors are plain objects with a `message` property, not
+// Error instances — String(e) on them renders "[object Object]" in the UI.
+const errMsg = (e: unknown): string =>
+  e instanceof Error ? e.message : (e as any)?.message ?? String(e);
+
 export const PROFICIENCY_LEVELS = ['Basic', 'Intermediate', 'Advanced'] as const;
 export type ProficiencyLevel = (typeof PROFICIENCY_LEVELS)[number];
 
@@ -88,7 +93,7 @@ export async function listRequirements(): Promise<Result<Requirement[]>> {
     if (error) return { ok: false, error: error.message ?? 'Failed to load requirements.' };
     return { ok: true, data: (data ?? []) as Requirement[] };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errMsg(err) };
   }
 }
 
@@ -128,7 +133,7 @@ export async function createRequirement(input: {
     });
     return { ok: true, data: data as Requirement };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errMsg(err) };
   }
 }
 
@@ -163,7 +168,7 @@ export async function updateRequirement(input: {
     });
     return { ok: true, data: r };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errMsg(err) };
   }
 }
 
@@ -188,7 +193,7 @@ export async function removeRequirement(input: {
     });
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errMsg(err) };
   }
 }
 
@@ -202,7 +207,7 @@ export async function listProposals(): Promise<Result<Proposal[]>> {
     if (error) return { ok: false, error: error.message ?? 'Failed to load proposals.' };
     return { ok: true, data: (data ?? []) as Proposal[] };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errMsg(err) };
   }
 }
 
@@ -232,7 +237,7 @@ export async function submitProposal(input: {
     if (error) return { ok: false, error: error.message ?? 'Failed to submit proposal.' };
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errMsg(err) };
   }
 }
 
@@ -280,7 +285,7 @@ export async function approveProposal(proposal: Proposal, by: string): Promise<R
     if (error) return { ok: false, error: error.message ?? 'Applied change but failed to mark proposal approved.' };
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errMsg(err) };
   }
 }
 
@@ -293,7 +298,7 @@ export async function rejectProposal(id: string, by: string, note: string): Prom
     if (error) return { ok: false, error: error.message ?? 'Failed to reject proposal.' };
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errMsg(err) };
   }
 }
 
@@ -346,7 +351,7 @@ export async function assessEmployeeCompetencies(
     const data = await res.json();
     return { ok: true, data };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, error: errMsg(e) };
   }
 }
 
@@ -384,7 +389,14 @@ export async function getEmployeeCompetencyDetails(
         name: s.competencies?.name ?? 'Unknown Competency',
         proficiencyLevel: s.proficiency_level,
         requiredLevel: s.required_level,
-        status: s.proficiency_level >= s.required_level ? 'Met' : 'Gap',
+        // A null required level means the position has no configured requirement
+        // for this competency — that's neither Met nor a Gap.
+        status:
+          s.required_level == null
+            ? 'No Requirement'
+            : s.proficiency_level >= s.required_level
+              ? 'Met'
+              : 'Gap',
       })),
       summary: summary
         ? {
@@ -397,7 +409,7 @@ export async function getEmployeeCompetencyDetails(
     };
   } catch (e) {
     console.error('getEmployeeCompetencyDetails failed:', e);
-    return { ok: false, error: e instanceof Error ? e.message : String(e), scores: [], summary: null };
+    return { ok: false, error: errMsg(e), scores: [], summary: null };
   }
 }
 
@@ -449,6 +461,6 @@ export async function getGapAnalysisReport() {
     return { ok: true, data: report };
   } catch (e) {
     console.error('getGapAnalysisReport failed:', e);
-    return { ok: false, error: e instanceof Error ? e.message : String(e), data: [] };
+    return { ok: false, error: errMsg(e), data: [] };
   }
 }

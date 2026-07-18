@@ -174,7 +174,7 @@ export const CompetencyFrameworkPage = () => {
             setErrorDetails(res.error || 'Failed to load details.');
           }
         })
-        .catch((err) => setErrorDetails(String(err)))
+        .catch((err) => setErrorDetails(err instanceof Error ? err.message : (err as any)?.message ?? String(err)))
         .finally(() => setLoadingDetails(false));
     } else {
       setDetailScores([]);
@@ -686,10 +686,16 @@ export const CompetencyFrameworkPage = () => {
                             {competency.requiredLevel > 0 ? `Level ${competency.requiredLevel}` : 'No requirement configured'}
                           </td>
                           <td className="px-4 py-3 text-slate-700 font-medium">
-                            {competency.employeeLevel > 0 ? `Level ${competency.employeeLevel}` : 'Not yet demonstrated'}
+                            {competency.proficiencyLevel > 0 ? `Level ${competency.proficiencyLevel}` : 'Not yet demonstrated'}
                           </td>
                           <td className="px-4 py-3">
-                            <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${competency.status === 'Met' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                            <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                              competency.status === 'Met'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : competency.status === 'Gap'
+                                  ? 'bg-amber-100 text-amber-700'
+                                  : 'bg-slate-100 text-slate-600'
+                            }`}>
                               {competency.status}
                             </span>
                           </td>

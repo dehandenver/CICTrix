@@ -82,8 +82,11 @@ async def assess_employee_competencies(req: CompetencyAssessmentRequest):
     if not si_ids:
         raise HTTPException(status_code=404, detail="No success indicators configured in this IPCR")
     
+    # NOTE: the live success_indicator_ratings table has no `remarks` column —
+    # selecting it raises 42703. The prompt builder already defaults missing
+    # remarks to "None" via rating.get("remarks").
     ratings_res = client.table("success_indicator_ratings").select(
-        "success_indicator_id, quality, efficiency, timeliness, accomplishment, remarks"
+        "success_indicator_id, quality, efficiency, timeliness, accomplishment"
     ).in_("success_indicator_id", si_ids).execute()
     
     ratings_by_si = {r["success_indicator_id"]: r for r in (ratings_res.data or [])}
