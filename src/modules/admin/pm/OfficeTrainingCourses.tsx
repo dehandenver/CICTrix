@@ -9,15 +9,39 @@
  * the "Updated by L&D" tag (§4).
  */
 
-import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Eye, RefreshCw, Search, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Check, ChevronLeft, ChevronRight, Eye, RefreshCw, Search, Send, UserPlus, X } from 'lucide-react';
 import {
   listOfficeTrainings,
   markTrainingViewedByOffice,
   type OfficeTraining,
 } from '../../../lib/api/officeTrainingCourses';
+import {
+  listPipeline,
+  officeAddCandidate,
+  officeFinalizeTraining,
+  type PipelineRec,
+} from '../../../lib/api/trainingRecommendations';
+import { supabase as supabaseClient } from '../../../lib/supabase';
 import { CATEGORY_COLORS } from '../trainingCategories';
 import type { LifecycleStatus } from '../../../lib/api/trainingLifecycle';
+
+const supabase = supabaseClient as any;
+const POLL_MS = 12000;
+const OFFICE_ACTOR = 'Department Head';
+
+type EmployeePick = { id: string; name: string; department: string | null };
+type RecGroup = { sessionId: string; title: string; category: string | null; start: string; recs: PipelineRec[] };
+
+const groupRecs = (recs: PipelineRec[]): RecGroup[] => {
+  const map = new Map<string, RecGroup>();
+  for (const r of recs) {
+    let g = map.get(r.sessionId);
+    if (!g) { g = { sessionId: r.sessionId, title: r.sessionTitle, category: r.sessionCategory, start: r.sessionStart, recs: [] }; map.set(r.sessionId, g); }
+    g.recs.push(r);
+  }
+  return [...map.values()].sort((a, b) => a.start.localeCompare(b.start));
+};
 
 type Subtab = 'all' | 'recommendations' | 'pending' | 'attendance';
 type SortKey = 'title' | 'date' | 'status';
@@ -69,6 +93,13 @@ export const OfficeTrainingCourses = () => {
   const [perPage, setPerPage] = useState(5);
   const [detail, setDetail] = useState<OfficeTraining | null>(null);
 
+  const [pipeline, setPipeline] = useState<PipelineRec[]>([]);
+  const [employees, setEmployees] = useState<EmployeePick[]>([]);
+  const [addingTo, setAddingTo] = useState<string | null>(null);
+  const [empSearch, setEmpSearch] = useState('');
+  const [busySession, setBusySession] = useState<string | null>(null);
+  const timer = useRef<number | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -79,6 +110,51 @@ export const OfficeTrainingCourses = () => {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // Poll the recommendation pipeline so L&D approvals appear without a refresh.
+  useEffect(() => {
+    const load = async () => setPipeline(await listPipeline());
+    void load();
+    timer.current = window.setInterval(() => void load(), POLL_MS);
+    return () => { if (timer.current) window.clearInterval(timer.current); };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from('employees_with_department')
+        .select('id, full_name, department, status')
+        .eq('status', 'Active')
+        .order('full_name', { ascending: true });
+      if (cancelled) return;
+      setEmployees((data ?? []).map((e: any) => ({ id: String(e.id), name: (e.full_name ?? '').trim() || 'Unnamed', department: e.department ?? null })));
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const reloadPipeline = async () => setPipeline(await listPipeline());
+
+  const recGroups = useMemo(() => groupRecs(pipeline.filter((r) => r.status === 'LND_APPROVED' || r.status === 'OFFICE_ADDED')), [pipeline]);
+  const pendingGroups = useMemo(() => groupRecs(pipeline.filter((r) => r.status === 'OFFICE_FINALIZED')), [pipeline]);
+
+  const addCandidate = async (sessionId: string, employeeId: string) => {
+    setBusySession(sessionId);
+    const res = await officeAddCandidate({ sessionId, employeeId, actor: OFFICE_ACTOR });
+    setBusySession(null);
+    if (!res.ok) { alert(res.error); return; }
+    setAddingTo(null);
+    setEmpSearch('');
+    await reloadPipeline();
+  };
+
+  const sendToLnd = async (sessionId: string) => {
+    setBusySession(sessionId);
+    const res = await officeFinalizeTraining(sessionId, OFFICE_ACTOR);
+    setBusySession(null);
+    if (!res.ok) { alert(res.error); return; }
+    await reloadPipeline();
+  };
 
   const updatedCount = useMemo(() => trainings.filter((t) => t.updatedByLnd).length, [trainings]);
 
@@ -135,8 +211,8 @@ export const OfficeTrainingCourses = () => {
 
   const subtabs: { id: Subtab; label: string; badge?: number }[] = [
     { id: 'all', label: 'All trainings' },
-    { id: 'recommendations', label: 'L&D recommendations' },
-    { id: 'pending', label: 'Pending enrollment' },
+    { id: 'recommendations', label: 'L&D recommendations', badge: recGroups.length },
+    { id: 'pending', label: 'Pending enrollment', badge: pendingGroups.length },
     { id: 'attendance', label: 'Attendance history' },
   ];
 
@@ -159,16 +235,101 @@ export const OfficeTrainingCourses = () => {
         ))}
       </div>
 
-      {subtab !== 'all' ? (
+      {subtab === 'recommendations' ? (
+        <div className="space-y-4 p-4">
+          {recGroups.length === 0 ? (
+            <div className="p-6 text-center">
+              <p className="text-sm font-semibold text-slate-600">No pending recommendations</p>
+              <p className="mt-1 text-xs text-slate-400">When L&D approves candidates for a training, they appear here to review, add to, and send back.</p>
+            </div>
+          ) : (
+            recGroups.map((g) => {
+              const term = empSearch.trim().toLowerCase();
+              const existingIds = new Set(g.recs.map((r) => r.employeeId));
+              const filteredEmps = employees
+                .filter((e) => !term || e.name.toLowerCase().includes(term) || (e.department ?? '').toLowerCase().includes(term))
+                .slice(0, 30);
+              return (
+                <section key={g.sessionId} className="rounded-xl border border-slate-200">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-slate-900">{g.title}</h3>
+                      <CategoryTag category={g.category} />
+                      <span className="text-xs text-slate-400">· {g.recs.length} candidate{g.recs.length === 1 ? '' : 's'}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => { setAddingTo(addingTo === g.sessionId ? null : g.sessionId); setEmpSearch(''); }} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600">
+                        <UserPlus className="h-3.5 w-3.5" /> Add employee
+                      </button>
+                      <button type="button" disabled={busySession === g.sessionId} onClick={() => void sendToLnd(g.sessionId)} className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">
+                        <Send className="h-3.5 w-3.5" /> {busySession === g.sessionId ? 'Sending…' : 'Send to L&D'}
+                      </button>
+                    </div>
+                  </div>
+                  {addingTo === g.sessionId && (
+                    <div className="border-b border-slate-100 bg-slate-50/60 p-3">
+                      <div className="relative mb-2">
+                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                        <input value={empSearch} onChange={(e) => setEmpSearch(e.target.value)} placeholder="Search employee…" className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm focus:border-indigo-500 focus:outline-none" />
+                      </div>
+                      <ul className="max-h-48 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 bg-white">
+                        {filteredEmps.map((e) => (
+                          <li key={e.id}>
+                            <button type="button" disabled={existingIds.has(e.id) || busySession === g.sessionId} onClick={() => void addCandidate(g.sessionId, e.id)} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50 disabled:opacity-40">
+                              <span className="text-slate-800">{e.name}</span>
+                              <span className="text-xs text-slate-400">{existingIds.has(e.id) ? 'already listed' : e.department}</span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  <ul className="divide-y divide-slate-100">
+                    {g.recs.map((r) => (
+                      <li key={r.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-slate-900">{r.employeeName}</span>
+                          {r.status === 'OFFICE_ADDED' && <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-600"><UserPlus className="h-2.5 w-2.5" /> you added</span>}
+                        </div>
+                        <span className="text-xs text-slate-400">{r.department ?? '—'}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              );
+            })
+          )}
+        </div>
+      ) : subtab === 'pending' ? (
+        <div className="space-y-4 p-4">
+          {pendingGroups.length === 0 ? (
+            <div className="p-6 text-center">
+              <p className="text-sm font-semibold text-slate-600">Nothing pending enrollment</p>
+              <p className="mt-1 text-xs text-slate-400">Lists you send to L&D appear here until L&D enrolls the attendees.</p>
+            </div>
+          ) : (
+            pendingGroups.map((g) => (
+              <section key={g.sessionId} className="rounded-xl border border-slate-200">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+                  <div className="flex items-center gap-2"><h3 className="text-sm font-bold text-slate-900">{g.title}</h3><CategoryTag category={g.category} /></div>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700"><Check className="h-3.5 w-3.5" /> Sent — awaiting L&D enrollment</span>
+                </div>
+                <ul className="divide-y divide-slate-100">
+                  {g.recs.map((r) => (
+                    <li key={r.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
+                      <span className="font-semibold text-slate-900">{r.employeeName}</span>
+                      <span className="text-xs text-slate-400">{r.department ?? '—'}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))
+          )}
+        </div>
+      ) : subtab === 'attendance' ? (
         <div className="p-10 text-center">
-          <p className="text-sm font-semibold text-slate-600">
-            {subtab === 'recommendations' && 'L&D recommendations'}
-            {subtab === 'pending' && 'Pending enrollment'}
-            {subtab === 'attendance' && 'Attendance history'}
-          </p>
-          <p className="mt-1 text-xs text-slate-400">
-            This section is part of the recommendation &amp; attendance workflow and will populate once that flow is live.
-          </p>
+          <p className="text-sm font-semibold text-slate-600">Attendance history</p>
+          <p className="mt-1 text-xs text-slate-400">Attendance records appear here once your office's trainings have taken place.</p>
         </div>
       ) : (
         <div className="p-4">

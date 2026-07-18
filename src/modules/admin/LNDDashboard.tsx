@@ -59,6 +59,7 @@ import EmployeeDirectory from './EmployeeDirectory';
 import { LndSummaryOfRatings } from './LndSummaryOfRatings';
 import { LndTrainingRequests } from './LndTrainingRequests';
 import { LndTrainingEvaluation } from './LndTrainingEvaluation';
+import { LndRecommendations } from './LndRecommendations';
 
 type MenuId =
   | 'dashboard'
@@ -69,6 +70,7 @@ type MenuId =
   | 'training-courses'
   | 'seminar-enrollment'
   | 'training-evaluation'
+  | 'recommendations'
   | 'employees'
   | 'settings';
 
@@ -100,6 +102,7 @@ const LND_MENU: MenuItem[] = [
   { id: 'training-courses', label: 'Training Courses', sublabel: 'Courses and sessions', icon: BookOpen },
   { id: 'seminar-enrollment', label: 'Seminar Enrollment', sublabel: 'Registrations and slots', icon: ClipboardCheck },
   { id: 'training-evaluation', label: 'Training Evaluation', sublabel: 'Pre/post-test results', icon: TrendingUp },
+  { id: 'recommendations', label: 'Recommendations', sublabel: 'IPCR → approval → enrollment', icon: Sparkles },
   { id: 'employees', label: 'Employees', sublabel: 'Directory and profiles', icon: UsersRound },
   { id: 'settings', label: 'Settings', sublabel: 'Division preferences', icon: Settings },
 ];
@@ -654,6 +657,8 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
             <SeminarEnrollment />
           ) : activeModule === 'training-evaluation' ? (
             <LndTrainingEvaluation />
+          ) : activeModule === 'recommendations' ? (
+            <LndRecommendations />
           ) : activeModule === 'employees' ? (
             <EmployeeDirectory />
           ) : (

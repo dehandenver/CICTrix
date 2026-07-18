@@ -2,7 +2,7 @@ import { Download, Sparkles, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { EmptyState } from '../../components/EmptyState';
 import {
-  approveAndEnroll,
+  lndApproveRecommendation,
   dismissRecommendation,
   listRecommendedEmployeesForCourse,
   type GapType,
@@ -39,6 +39,9 @@ const GAP_LABEL: Record<GapType, string> = {
 
 const STATUS_BADGE: Record<RecommendationStatus, string> = {
   SUGGESTED: 'bg-blue-100 text-blue-700',
+  LND_APPROVED: 'bg-indigo-100 text-indigo-700',
+  OFFICE_ADDED: 'bg-indigo-100 text-indigo-700',
+  OFFICE_FINALIZED: 'bg-amber-100 text-amber-700',
   ACCEPTED: 'bg-indigo-100 text-indigo-700',
   ENROLLED: 'bg-emerald-100 text-emerald-700',
   DISMISSED: 'bg-gray-200 text-gray-500',
@@ -99,10 +102,12 @@ export const RecommendedEmployees = ({ sessionId, courseTitle, onChanged, onClos
 
   const handleEnroll = async (rec: RecommendedEmployee) => {
     setBusyId(rec.recommendationId);
-    const result = await approveAndEnroll(rec.recommendationId);
+    // Approval now routes to the Office Account for review, not straight to
+    // enrollment (§6). Final enrollment happens on the L&D Recommendations page.
+    const result = await lndApproveRecommendation(rec.recommendationId);
     setBusyId(null);
     if (!result.ok) {
-      alert(`Could not enroll ${rec.employeeName}: ${result.error}`);
+      alert(`Could not approve ${rec.employeeName}: ${result.error}`);
       return;
     }
     onChanged();
@@ -265,9 +270,10 @@ export const RecommendedEmployees = ({ sessionId, courseTitle, onChanged, onClos
                               type="button"
                               disabled={busyId === r.recommendationId || closed}
                               onClick={() => handleEnroll(r)}
-                              className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-40 transition"
+                              className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-40 transition"
+                              title="Approve and send to the department head for review"
                             >
-                              Approve &amp; Enroll
+                              Approve
                             </button>
                             <button
                               type="button"

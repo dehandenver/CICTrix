@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
+import { MyTrainingsSection } from './MyTrainingsSection';
 import abyanLogo from '../../assets/abyan-logo.png';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
@@ -121,7 +122,7 @@ interface EmployeePageProps {
   onLogout: () => void;
 }
 
-type PortalTab = 'personal' | 'documents' | 'submission' | 'account' | 'ipcr-workspace' | 'new-entrants';
+type PortalTab = 'personal' | 'documents' | 'submission' | 'account' | 'ipcr-workspace' | 'new-entrants' | 'trainings';
 
 interface TabConfig {
   id: PortalTab;
@@ -1130,6 +1131,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
           count: (pendingRequests.length + incompleteSetupCount) || undefined,
         },
         { id: 'ipcr-workspace', label: 'My IPCR Workspace', icon: FileSpreadsheet, route: '/employee/ipcr-workspace' },
+        { id: 'trainings', label: 'My Trainings', icon: Calendar, route: '/employee/trainings' },
         { id: 'account', label: 'Account & Security', icon: Lock, route: '/employee/account' },
       ];
       // Show new entrants track only for probationary/new hires
@@ -1145,6 +1147,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
     if (location.pathname.includes('/documents/requirements')) return 'documents';
     if (location.pathname.includes('/documents/submission')) return 'submission';
     if (location.pathname.includes('/ipcr-workspace')) return 'ipcr-workspace';
+    if (location.pathname.includes('/trainings')) return 'trainings';
     if (location.pathname.includes('/new-entrants')) return 'new-entrants';
     if (location.pathname.includes('/account')) return 'account';
     if (location.pathname.includes('/profile')) return 'personal';
@@ -1660,6 +1663,9 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       </header>
 
       <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
+        {activeTab === 'trainings' && (
+          <MyTrainingsSection employeeId={(currentUser.supabaseId as string) ?? ''} />
+        )}
         {activeTab === 'personal' && (
           <div className="space-y-5">
             {/* Loading skeleton */}
