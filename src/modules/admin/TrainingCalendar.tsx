@@ -555,23 +555,27 @@ const EventDetailPanel = ({ event, recommendedCount, onClose, onEdit, onChanged,
               </span>
             </div>
 
-            {!event.rosterFinalizedAt ? (
+            {/* Show the real roster whenever enrollment records exist — regardless
+                of lock status or the roster_finalized_at flag. The "not finalized"
+                placeholder is only correct for a training that genuinely has no
+                enrollments yet (a future one still in the recommendation pipeline). */}
+            {event.attendees.length > 0 ? (
+              <>
+                <p className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">{attendanceRuleNote}</p>
+                <AttendanceGrid startDate={event.startDate} endDate={event.endDate} attendees={event.attendees} />
+              </>
+            ) : event.rosterFinalizedAt ? (
+              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center">
+                <p className="text-sm font-medium text-gray-600">No attendees enrolled</p>
+                <p className="mt-1 text-xs text-gray-400">The roster was finalized with no employees enrolled.</p>
+              </div>
+            ) : (
               <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center">
                 <p className="text-sm font-medium text-gray-600">Roster not finalized yet</p>
                 <p className="mt-1 text-xs text-gray-400">
                   Attendees appear here once this training's roster is finalized in Seminar Enrollment.
                 </p>
               </div>
-            ) : event.attendees.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center">
-                <p className="text-sm font-medium text-gray-600">No attendees enrolled</p>
-                <p className="mt-1 text-xs text-gray-400">The roster was finalized with no employees enrolled.</p>
-              </div>
-            ) : (
-              <>
-                <p className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">{attendanceRuleNote}</p>
-                <AttendanceGrid startDate={event.startDate} endDate={event.endDate} attendees={event.attendees} />
-              </>
             )}
           </section>
         </div>

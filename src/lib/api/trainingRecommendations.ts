@@ -175,17 +175,27 @@ const scoreLabel = (score: number | null): string =>
  */
 export async function generateRecommendations(): Promise<GenerateResult> {
   try {
-    // 1. Active courses, grouped by competency. Competency is parsed from the
-    // objectives text[] (there is no competency column) and validated against
-    // the 12 canonical competencies.
+    // 1. Active courses in NEXT calendar month, grouped by competency. The
+    // recommendation cycle always targets month+1 (worked the month before), so
+    // it never touches the current month — those trainings predate the cycle and
+    // are handled by the direct backfill instead. Competency is parsed from the
+    // objectives text[] and validated against the 12 canonical competencies.
+    const today = new Date();
+    const targetStart = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+    const targetEnd = new Date(today.getFullYear(), today.getMonth() + 2, 1);
     const { data: sessions, error: sErr } = await supabase
       .from('training_sessions')
-      .select('id, objectives, status, capacity')
-      .in('status', ['Scheduled', 'Ongoing']);
+      .select('id, title, category, objectives, status, capacity, scheduled_date')
+      .in('status', ['Scheduled', 'Ongoing'])
+      .gte('scheduled_date', targetStart.toISOString())
+      .lt('scheduled_date', targetEnd.toISOString());
     if (sErr) return { ok: false, error: sErr.message };
 
     const coursesByCompetency = new Map<string, string[]>();
     for (const s of (sessions ?? []) as any[]) {
+      // Exclude trainings still missing core fields (title / category / capacity /
+      // objectives) from generation until they're filled (§5).
+      if (!s.title || !s.category || !s.capacity || !(s.objectives?.length)) continue;
       const competency = competencyFromObjectives(s.objectives);
       if (!competency) continue;
       const list = coursesByCompetency.get(competency) ?? [];

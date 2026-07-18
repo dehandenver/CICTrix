@@ -106,3 +106,38 @@ export async function listIncompleteLockedTrainings(): Promise<IncompleteLockedT
     .map((r: any) => ({ id: r.id, title: r.title, startDate: r.scheduled_date, category: r.category }))
     .sort((a: IncompleteLockedTraining, b: IncompleteLockedTraining) => a.startDate.localeCompare(b.startDate));
 }
+
+export type LockingSoonTraining = { id: string; title: string; startDate: string; category: string | null };
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Trainings that will hit the 3-day lock within the next 3 days but still have
+ * NO finalized roster (no roster_finalized_at and no active enrollments). The
+ * dashboard warns on these so an admin can finalize the roster before it locks —
+ * the safeguard against a training going live with nobody on it.
+ */
+export async function listLockingSoonWithoutRoster(): Promise<LockingSoonTraining[]> {
+  const { data, error } = await supabase
+    .from('training_sessions')
+    .select('id, title, category, scheduled_date, roster_finalized_at, status, training_enrollments ( id, is_active )')
+    .neq('status', 'Cancelled');
+
+  if (error) {
+    console.error('Error loading trainings for lock-safeguard warning:', error);
+    return [];
+  }
+
+  const now = Date.now();
+  return (data ?? [])
+    .filter((r: any) => {
+      const lockAt = new Date(r.scheduled_date).getTime() - LOCK_LEAD_DAYS * DAY_MS;
+      const notLockedYet = now < lockAt;
+      const locksWithin3Days = lockAt <= now + LOCK_LEAD_DAYS * DAY_MS;
+      const activeEnrollments = (r.training_enrollments ?? []).filter((e: any) => e.is_active !== false).length;
+      const noRoster = !r.roster_finalized_at && activeEnrollments === 0;
+      return notLockedYet && locksWithin3Days && noRoster;
+    })
+    .map((r: any) => ({ id: r.id, title: r.title, startDate: r.scheduled_date, category: r.category }))
+    .sort((a: LockingSoonTraining, b: LockingSoonTraining) => a.startDate.localeCompare(b.startDate));
+}
