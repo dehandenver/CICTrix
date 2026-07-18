@@ -379,6 +379,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
     employeeTargets: { core: string; strategic: string; support: string };
     accomplishmentsJson: string;
     selfRatingsJson: string;
+    ipcrRowsJson: string;
   }>(null);
 
   const isIpcrFormDirty = useCallback(() => {
@@ -390,9 +391,10 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       employeeTargets.strategic !== snap.employeeTargets.strategic ||
       employeeTargets.support !== snap.employeeTargets.support ||
       JSON.stringify(accomplishments) !== snap.accomplishmentsJson ||
-      JSON.stringify(selfRatings) !== snap.selfRatingsJson
+      JSON.stringify(selfRatings) !== snap.selfRatingsJson ||
+      JSON.stringify(ipcrRows) !== snap.ipcrRowsJson
     );
-  }, [targetRows, employeeTargets, accomplishments, selfRatings]);
+  }, [targetRows, employeeTargets, accomplishments, selfRatings, ipcrRows]);
 
   const [deferredRefresh, setDeferredRefresh] = useState(false);
 
@@ -400,13 +402,15 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
     targets: TargetsByFunction,
     empTargets: { core: string; strategic: string; support: string },
     accomps: { core: string; strategic: string; support: string },
-    ratings: { core: CatRating; strategic: CatRating; support: CatRating }
+    ratings: { core: CatRating; strategic: CatRating; support: CatRating },
+    legacyRows: IPCRRowDraft[]
   ) => {
     lastLoadedSnapshot.current = {
       targetRowsJson: JSON.stringify(targets),
       employeeTargets: { ...empTargets },
       accomplishmentsJson: JSON.stringify(accomps),
       selfRatingsJson: JSON.stringify(ratings),
+      ipcrRowsJson: JSON.stringify(legacyRows),
     };
     setDeferredRefresh(false);
   }, []);
@@ -607,7 +611,8 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
               timeliness: ws.support_timeliness ?? null,
               weight: ws.support_weight ?? null,
             },
-          }
+          },
+          ipcrRes.success && ipcrRes.data ? ipcrRes.data.rows : []
         );
       } else {
         setEmployeeTargets({ core: '', strategic: '', support: '' });
@@ -626,7 +631,8 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
             core: emptyCatRating(),
             strategic: emptyCatRating(),
             support: emptyCatRating(),
-          }
+          },
+          ipcrRes.success && ipcrRes.data ? ipcrRes.data.rows : []
         );
       }
     } catch (err) {
@@ -724,7 +730,8 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       targetRows,
       flattened,
       accomplishments,
-      selfRatings
+      selfRatings,
+      ipcrRows
     );
     if (pendingIpcrRefresh.current) {
       reloadIpcrIfSafe(true);
@@ -864,7 +871,8 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       targetRows,
       employeeTargets,
       accomplishments,
-      selfRatings
+      selfRatings,
+      ipcrRows
     );
     if (pendingIpcrRefresh.current) {
       reloadIpcrIfSafe(true);
