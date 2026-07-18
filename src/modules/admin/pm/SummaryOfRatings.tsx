@@ -1,6 +1,7 @@
 import { AlertCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronUp, Info, Printer, Search, Send, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getIPCRRecordsFromGapView } from '../../../lib/api/competencyGapAnalysis';
+import { CompetencyGapPanel } from './CompetencyGapPanel';
 import { useRealtimeRefresh } from '../../../hooks/useRealtimeRefresh';
 import { supabase as supabaseClient } from '../../../lib/supabase';
 
@@ -452,36 +453,7 @@ export const SummaryOfRatings = () => {
                         {/* Sub Row */}
                         {expandedRows[row.id] && row.competencies && (
                           <div className="bg-slate-50 border-t border-slate-100 p-4 pl-12 shadow-inner">
-                            <h4 className="text-xs font-bold text-slate-700 mb-3 uppercase tracking-wider">Competency Gap Evaluation</h4>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                              {row.competencies.map((comp, cIdx) => (
-                                <div key={cIdx} className={`rounded-lg p-3 border ${comp.isGap ? 'bg-rose-50 border-rose-200' : 'bg-white border-slate-200'}`}>
-                                  <div className="flex items-start justify-between mb-2">
-                                    <span className="text-xs font-bold text-slate-800 leading-tight pr-2">{comp.name}</span>
-                                    {comp.isGap ? (
-                                      <AlertCircle className="h-4 w-4 text-rose-500 shrink-0" />
-                                    ) : (
-                                      <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-4 mt-2">
-                                    <div>
-                                      <span className="block text-[10px] text-slate-500 uppercase tracking-wider">Required</span>
-                                      <span className="text-sm font-semibold text-slate-700">{comp.required}</span>
-                                    </div>
-                                    <div>
-                                      <span className="block text-[10px] text-slate-500 uppercase tracking-wider">Possessed</span>
-                                      <span className={`text-sm font-bold ${comp.isGap ? 'text-rose-600' : 'text-emerald-600'}`}>{comp.possessed}</span>
-                                    </div>
-                                    {comp.isGap && (
-                                      <div className="ml-auto">
-                                        <span className="inline-flex rounded bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700 uppercase">Gap Identified</span>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
+                            <CompetencyGapPanel record={row} />
                           </div>
                         )}
                         </div>
