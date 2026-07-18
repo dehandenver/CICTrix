@@ -369,7 +369,7 @@ const IPCRDetailPage = ({
         </Dialog>
       )}
 
-      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-200 pb-4 gap-4">
         <div>
           <div className="flex items-center gap-3 flex-wrap">
             <h2 className="text-2xl font-bold text-slate-900 tracking-tight">IPCR — {employee.full_name}</h2>
@@ -385,30 +385,72 @@ const IPCRDetailPage = ({
             )}
           </div>
           <p className="text-xs text-slate-500 mt-1">Review targets and accomplishments.</p>
-          <div className="mt-3 flex flex-wrap items-center gap-4">
-            <button
-              type="button"
-              onClick={() => setShowInfoModal(true)}
-              className="px-3 py-1.5 bg-[#363EE8] hover:bg-[#2931c5] text-white text-xs font-bold rounded-lg shadow-sm transition-colors"
-            >
-              View Employee Information
-            </button>
-            {!ipcrLoading && isApproved && (
-              <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 sm:border-l sm:border-slate-200 sm:pl-4">
-                <div>Period: <strong className="text-slate-700">{employee.periodLabel}</strong></div>
-                <div>Due: <strong className="text-slate-700">{fmtDate(employee.computedDueDate)}</strong></div>
-                <span className={`inline-block px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase ${
-                  employee.computedPhase === 'target'
-                    ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                }`}>
-                  {employee.computedPhase === 'target' ? 'Target Setting' : 'Accomplishment Rating'}
-                  {` · ${isProbationary ? (employee.computedPhase === 'target' ? 'Month 1–3' : 'Month 4–6') : (employee.computedPhase === 'target' ? 'First 6 Mos' : 'Second 6 Mos')}`}
-                </span>
-              </div>
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowInfoModal(true)}
+            className="mt-3 px-3 py-1.5 bg-[#363EE8] hover:bg-[#2931c5] text-white text-xs font-bold rounded-lg shadow-sm transition-colors"
+          >
+            View Employee Information
+          </button>
         </div>
+
+        {!ipcrLoading && isApproved && (
+          <div className="flex items-center gap-4 bg-slate-50/50 p-3 rounded-xl border border-slate-100 flex-shrink-0">
+            {/* Visual Timeline Blocks */}
+            <div className="flex items-stretch gap-1.5 w-60">
+              <div
+                className={`flex-1 rounded-lg p-2 border text-center ${
+                  employee.computedPhase === 'target'
+                    ? 'bg-blue-50 border-blue-200'
+                    : 'bg-emerald-50 border-emerald-100'
+                }`}
+              >
+                <p className="text-[8px] text-slate-500 mb-0.5">
+                  {isProbationary ? 'Month 1–3' : 'First 6 Mos'}
+                </p>
+                <p
+                  className={`text-[10px] font-bold ${
+                    employee.computedPhase === 'target' ? 'text-[#363EE8]' : 'text-emerald-700'
+                  }`}
+                >
+                  Target Setting
+                </p>
+                {employee.computedPhase !== 'target' && (
+                  <Check size={8} className="mx-auto mt-0.5 text-emerald-600" />
+                )}
+              </div>
+              <ChevronRight size={10} className="text-slate-300 self-center flex-shrink-0" />
+              <div
+                className={`flex-1 rounded-lg p-2 border text-center ${
+                  employee.computedPhase === 'rating'
+                    ? 'bg-blue-50 border-blue-200'
+                    : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                <p className="text-[8px] text-slate-500 mb-0.5">
+                  {isProbationary ? 'Month 4–6' : 'Second 6 Mos'}
+                </p>
+                <p
+                  className={`text-[10px] font-bold ${
+                    employee.computedPhase === 'rating' ? 'text-[#363EE8]' : 'text-slate-400'
+                  }`}
+                >
+                  Accomplishment
+                </p>
+              </div>
+            </div>
+
+            {/* Metadata Text */}
+            <div className="text-[11px] text-slate-500 space-y-1 border-l border-slate-200 pl-4">
+              <div>
+                Period: <strong className="text-slate-700">{employee.periodLabel}</strong>
+              </div>
+              <div>
+                Due: <strong className="text-slate-700">{fmtDate(employee.computedDueDate)}</strong>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="w-full space-y-4">
