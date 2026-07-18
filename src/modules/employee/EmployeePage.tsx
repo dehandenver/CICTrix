@@ -657,6 +657,32 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
     void loadIPCRData(isSilent);
   }, [isIpcrFormDirty, loadIPCRData]);
 
+  /**
+   * Lightweight phase-gate refresh: re-fetches only the two system-scope
+   * phase_schedules rows and updates systemSchedules without touching any
+   * form state. Called unconditionally from the realtime onChange so that
+   * isTargetSettingActive / isAccomplishmentRatingActive flip instantly
+   * for every employee when the PM opens or closes a phase — even when
+   * the full loadIPCRData reload is deferred due to a dirty form.
+   */
+  const refreshPhaseSchedules = useCallback(async () => {
+    if (!currentUser.supabaseId) return;
+    try {
+      const supabase = supabaseClient as any;
+      const { data: schedRows } = await supabase
+        .from('phase_schedules')
+        .select('*')
+        .eq('scope', 'system');
+      const rows: any[] = Array.isArray(schedRows) ? schedRows : [];
+      setSystemSchedules({
+        target: rows.find((r: any) => r.phase === 'target_setting') ?? null,
+        rating: rows.find((r: any) => r.phase === 'rating') ?? null,
+      });
+    } catch (err) {
+      console.warn('[EmployeePage] refreshPhaseSchedules failed:', err);
+    }
+  }, [currentUser.supabaseId]);
+
   // ── My IPCR Workspace (Phase 1 targets / Phase 2 accomplishments) ──────────
   const workspaceIdentity = () => ({
     employeeId: currentUser.supabaseId as string,
@@ -1313,9 +1339,13 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
     channel: 'employee-page-ipcr',
     tables: ['probationary_ipcr_schedules', 'phase_schedules', 'ipcr_submissions', 'employee_notifications'],
     onChange: useCallback(() => {
+      // Always refresh phase gate flags immediately — bypasses the dirty-form
+      // guard so employees see Phase 1/2 open/close without waiting for a
+      // full data reload.
+      void refreshPhaseSchedules();
       reloadIpcrIfSafe(true);
       void loadNotifications();
-    }, [reloadIpcrIfSafe, loadNotifications]),
+    }, [refreshPhaseSchedules, reloadIpcrIfSafe, loadNotifications]),
     enabled: true,
   });
 
