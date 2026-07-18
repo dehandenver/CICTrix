@@ -673,12 +673,11 @@ export async function listPendingRatingApprovals(
     if (error) return { ok: false, error: error.message };
     if (!settings?.length) return { ok: true, data: [] };
 
-    // 2. Fetch submission pipeline stage to filter only those in 'Submitted to Office'
+    // 2. Fetch submission pipeline stage to filter only those in 'Submitted to Office' or missing
     const { data: pipeline } = await supabase
       .from('ipcr_submissions')
       .select('employee_id, period, stage')
-      .eq('phase', 'rating')
-      .eq('stage', 'Submitted to Office');
+      .eq('phase', 'rating');
     const pipelineMap = new Map((pipeline ?? []).map((p: any) => [`${p.employee_id}::${p.period}`, p.stage]));
 
     const empIds = [...new Set(settings.map((s: any) => s.employee_id))];
@@ -694,7 +693,8 @@ export async function listPendingRatingApprovals(
       const periodLabel = titles.get(s.cycle_id) ?? '—';
       const submissionStage = pipelineMap.get(`${s.employee_id}::${periodLabel}`);
 
-      if (submissionStage === 'Submitted to Office') {
+      // Self-healing: if stage is 'Submitted to Office' OR if the stage row is missing/not 'Forwarded to PM' (but setting has phase2_status = completed)
+      if (submissionStage === 'Submitted to Office' || (!submissionStage || submissionStage !== 'Forwarded to PM')) {
         settingIdsToLoad.push(s.id);
       }
     }
