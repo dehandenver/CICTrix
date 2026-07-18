@@ -385,166 +385,120 @@ const IPCRDetailPage = ({
             )}
           </div>
           <p className="text-xs text-slate-500 mt-1">Review targets and accomplishments.</p>
-          <button
-            type="button"
-            onClick={() => setShowInfoModal(true)}
-            className="mt-3 px-3 py-1.5 bg-[#363EE8] hover:bg-[#2931c5] text-white text-xs font-bold rounded-lg shadow-sm transition-colors"
-          >
-            View Employee Information
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 align-start items-start">
-        {/* Left Column: Cycle Timeline */}
-        {!ipcrLoading && isApproved && (
-          <div className="space-y-5 lg:col-span-1">
-            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-              <h3 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">IPCR Cycle</h3>
-              <div className="flex items-stretch gap-1.5 mb-4">
-                <div
-                  className={`flex-1 rounded-lg p-3 border text-center ${
-                    employee.computedPhase === 'target'
-                      ? 'bg-blue-50 border-blue-200'
-                      : 'bg-emerald-50 border-emerald-100'
-                  }`}
-                >
-                  <p className="text-[9px] text-slate-500 mb-0.5">
-                    {isProbationary ? 'Month 1–3' : 'First 6 Mos'}
-                  </p>
-                  <p
-                    className={`text-[11px] font-bold ${
-                      employee.computedPhase === 'target' ? 'text-[#363EE8]' : 'text-emerald-700'
-                    }`}
-                  >
-                    Target Setting
-                  </p>
-                  {employee.computedPhase !== 'target' && (
-                    <Check size={10} className="mx-auto mt-1 text-emerald-600" />
-                  )}
-                </div>
-                <ChevronRight size={12} className="text-slate-300 self-center flex-shrink-0" />
-                <div
-                  className={`flex-1 rounded-lg p-3 border text-center ${
-                    employee.computedPhase === 'rating'
-                      ? 'bg-blue-50 border-blue-200'
-                      : 'bg-slate-50 border-slate-200'
-                  }`}
-                >
-                  <p className="text-[9px] text-slate-500 mb-0.5">
-                    {isProbationary ? 'Month 4–6' : 'Second 6 Mos'}
-                  </p>
-                  <p
-                    className={`text-[11px] font-bold ${
-                      employee.computedPhase === 'rating' ? 'text-[#363EE8]' : 'text-slate-400'
-                    }`}
-                  >
-                    Accomplishment
-                  </p>
-                </div>
-              </div>
-              <div className="text-xs text-slate-500 space-y-1">
-                <div>
-                  Period: <strong className="text-slate-700">{employee.periodLabel}</strong>
-                </div>
-                <div>
-                  Due: <strong className="text-slate-700">{fmtDate(employee.computedDueDate)}</strong>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Right Column: IPCR Sheet Details */}
-        <div className={`space-y-4 ${!ipcrLoading && isApproved ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
-          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-            <h3 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">
-              Employee IPCR Sheet
-            </h3>
-
-            {ipcrLoading ? (
-              <div className="p-12 text-center text-sm text-slate-400">
-                Loading IPCR details…
-              </div>
-            ) : ipcrError ? (
-              <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-center text-sm text-red-700">
-                {ipcrError}
-              </div>
-            ) : !isApproved && (relationalStatus !== null || legacyEvaluationStatus !== null) ? (
-              <div className="p-8 text-center text-sm text-amber-800 flex flex-col items-center gap-2">
-                <ClipboardCheck size={28} className="text-amber-500 mb-1" />
-                <span className="font-semibold text-base">IPCR Sheet Pending Approval</span>
-                <span className="text-xs text-slate-500">This employee's IPCR has not yet been approved by their department head.</span>
-              </div>
-            ) : ipcrRows.length === 0 ? (
-              <div className="p-8 text-center text-sm text-amber-800 flex flex-col items-center gap-2">
-                <ClipboardCheck size={28} className="text-amber-500 mb-1" />
-                <span className="font-semibold">No IPCR records found</span>
-                <span className="text-xs text-slate-500">The employee has not encoded targets for the rating period {employee.periodLabel}.</span>
-              </div>
-            ) : (
-              <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
-                      <th className="px-3 py-3 w-16">Type</th>
-                      <th className="px-3 py-3">M.F.O. / Target Description</th>
-                      {employee.computedPhase === 'rating' && (
-                        <>
-                          <th className="px-3 py-3">Accomplishment</th>
-                          <th className="px-3 py-3 w-28">Ratings (Q/E/T/Ave)</th>
-                        </>
-                      )}
-                      <th className="px-3 py-3 w-28">Remarks</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-slate-700">
-                    {ipcrRows.map((row, idx) => {
-                      const isCore = row.function_type === 'CORE';
-                      return (
-                        <tr key={row.id || idx} className="hover:bg-slate-50/40 transition-colors">
-                          <td className="px-3 py-3.5 align-top">
-                            <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                              isCore ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' : 'bg-slate-100 text-slate-700'
-                            }`}>
-                              {row.function_type}
-                            </span>
-                          </td>
-                          <td className="px-3 py-3.5 align-top whitespace-pre-wrap leading-relaxed text-slate-800">
-                            {row.target_text || '—'}
-                          </td>
-                          {employee.computedPhase === 'rating' && (
-                            <>
-                              <td className="px-3 py-3.5 align-top whitespace-pre-wrap leading-relaxed text-slate-800">
-                                {row.accomplishment_text || '—'}
-                              </td>
-                              <td className="px-3 py-3.5 align-top">
-                                {row.ave_rating ? (
-                                  <div className="space-y-0.5">
-                                    <div className="font-bold text-slate-800 text-sm">
-                                      {row.ave_rating.toFixed(2)}
-                                    </div>
-                                    <div className="text-[10px] text-slate-400 font-mono">
-                                      Q:{row.q_rating ?? '—'} E:{row.e_rating ?? '—'} T:{row.t_rating ?? '—'}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <span className="text-slate-400 italic">Not rated</span>
-                                )}
-                              </td>
-                            </>
-                          )}
-                          <td className="px-3 py-3.5 align-top whitespace-pre-wrap text-slate-500 italic">
-                            {row.remarks || '—'}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+          <div className="mt-3 flex flex-wrap items-center gap-4">
+            <button
+              type="button"
+              onClick={() => setShowInfoModal(true)}
+              className="px-3 py-1.5 bg-[#363EE8] hover:bg-[#2931c5] text-white text-xs font-bold rounded-lg shadow-sm transition-colors"
+            >
+              View Employee Information
+            </button>
+            {!ipcrLoading && isApproved && (
+              <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 sm:border-l sm:border-slate-200 sm:pl-4">
+                <div>Period: <strong className="text-slate-700">{employee.periodLabel}</strong></div>
+                <div>Due: <strong className="text-slate-700">{fmtDate(employee.computedDueDate)}</strong></div>
+                <span className={`inline-block px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                  employee.computedPhase === 'target'
+                    ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                }`}>
+                  {employee.computedPhase === 'target' ? 'Target Setting' : 'Accomplishment Rating'}
+                  {` · ${isProbationary ? (employee.computedPhase === 'target' ? 'Month 1–3' : 'Month 4–6') : (employee.computedPhase === 'target' ? 'First 6 Mos' : 'Second 6 Mos')}`}
+                </span>
               </div>
             )}
           </div>
+        </div>
+      </div>
+
+      <div className="w-full space-y-4">
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+          <h3 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-3 mb-4">
+            Employee IPCR Sheet
+          </h3>
+
+          {ipcrLoading ? (
+            <div className="p-12 text-center text-sm text-slate-400">
+              Loading IPCR details…
+            </div>
+          ) : ipcrError ? (
+            <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-center text-sm text-red-700">
+              {ipcrError}
+            </div>
+          ) : !isApproved && (relationalStatus !== null || legacyEvaluationStatus !== null) ? (
+            <div className="p-8 text-center text-sm text-amber-800 flex flex-col items-center gap-2">
+              <ClipboardCheck size={28} className="text-amber-500 mb-1" />
+              <span className="font-semibold text-base">IPCR Sheet Pending Approval</span>
+              <span className="text-xs text-slate-500">This employee's IPCR has not yet been approved by their department head.</span>
+            </div>
+          ) : ipcrRows.length === 0 ? (
+            <div className="p-8 text-center text-sm text-amber-800 flex flex-col items-center gap-2">
+              <ClipboardCheck size={28} className="text-amber-500 mb-1" />
+              <span className="font-semibold">No IPCR records found</span>
+              <span className="text-xs text-slate-500">The employee has not encoded targets for the rating period {employee.periodLabel}.</span>
+            </div>
+          ) : (
+            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
+                    <th className="px-3 py-3 w-16">Type</th>
+                    <th className="px-3 py-3">M.F.O. / Target Description</th>
+                    {employee.computedPhase === 'rating' && (
+                      <>
+                        <th className="px-3 py-3">Accomplishment</th>
+                        <th className="px-3 py-3 w-28">Ratings (Q/E/T/Ave)</th>
+                      </>
+                    )}
+                    <th className="px-3 py-3 w-28">Remarks</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700">
+                  {ipcrRows.map((row, idx) => {
+                    const isCore = row.function_type === 'CORE';
+                    return (
+                      <tr key={row.id || idx} className="hover:bg-slate-50/40 transition-colors">
+                        <td className="px-3 py-3.5 align-top">
+                          <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                            isCore ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' : 'bg-slate-100 text-slate-700'
+                          }`}>
+                            {row.function_type}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3.5 align-top whitespace-pre-wrap leading-relaxed text-slate-800">
+                          {row.target_text || '—'}
+                        </td>
+                        {employee.computedPhase === 'rating' && (
+                          <>
+                            <td className="px-3 py-3.5 align-top whitespace-pre-wrap leading-relaxed text-slate-800">
+                              {row.accomplishment_text || '—'}
+                            </td>
+                            <td className="px-3 py-3.5 align-top">
+                              {row.ave_rating ? (
+                                <div className="space-y-0.5">
+                                  <div className="font-bold text-slate-800 text-sm">
+                                    {row.ave_rating.toFixed(2)}
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 font-mono">
+                                    Q:{row.q_rating ?? '—'} E:{row.e_rating ?? '—'} T:{row.t_rating ?? '—'}
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-slate-400 italic">Not rated</span>
+                              )}
+                            </td>
+                          </>
+                        )}
+                        <td className="px-3 py-3.5 align-top whitespace-pre-wrap text-slate-500 italic">
+                          {row.remarks || '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </div>
