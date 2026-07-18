@@ -17,10 +17,10 @@ console.log('Connecting using Anon Key...');
 const supabase = createClient(url, key);
 
 async function run() {
-  console.log('--- Testing employees_with_department view ---');
+  console.log('--- Testing employee_portal_accounts ---');
   const { data, error } = await supabase
-    .from('employees_with_department')
-    .select('id, employee_id, full_name, current_position');
+    .from('employee_portal_accounts')
+    .select('*');
 
   if (error) {
     console.error('Error with Anon Key:', error);
