@@ -507,22 +507,19 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
         setEmployeeEvaluations(evalsRes.data);
       }
 
-      // System-scope PM phase windows (gate regular, non-probationary employees).
-      if (!activeProbationarySchedule) {
-        const supabase = supabaseClient as any;
-        const { data: schedRows } = await supabase
-          .from('phase_schedules')
-          .select('*')
-          .eq('scope', 'system');
-        if (loadId !== latestEmployeeIpcrLoadId.current) return;
-        const rows: any[] = Array.isArray(schedRows) ? schedRows : [];
-        setSystemSchedules({
-          target: rows.find((r) => r.phase === 'target_setting') ?? null,
-          rating: rows.find((r) => r.phase === 'rating') ?? null,
-        });
-      } else {
-        setSystemSchedules({ target: null, rating: null });
-      }
+      // Always load system-scope phase schedules so they can act as fallback/overrides
+      const supabase = supabaseClient as any;
+      const { data: schedRows } = await supabase
+        .from('phase_schedules')
+        .select('*')
+        .eq('scope', 'system');
+      if (loadId !== latestEmployeeIpcrLoadId.current) return;
+      const rows: any[] = Array.isArray(schedRows) ? schedRows : [];
+      setSystemSchedules({
+        target: rows.find((r) => r.phase === 'target_setting') ?? null,
+        rating: rows.find((r) => r.phase === 'rating') ?? null,
+      });
+
 
       // Phase 1 relational targets. If the active cycle resolves, load by cycle;
       // otherwise (e.g. performance_cycles not readable by the anon client due to
