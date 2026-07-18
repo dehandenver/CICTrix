@@ -1081,7 +1081,7 @@ const ProbationaryPanel = ({
                       {fmtDate(emp.hire_date)}
                     </td>
                     <td className="px-4 py-3">
-                      <span style={stagePillStyle(emp.actualStage)}>{emp.computedStage}</span>
+                      <span style={stagePillStyle(emp.actualStage)}>{emp.actualStage}</span>
                     </td>
                     <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
                       {fmtDate(emp.computedDueDate)}
@@ -1473,7 +1473,7 @@ const RegularPanel = ({
                     </td>
                     <td className="px-4 py-3 text-slate-600">{emp.current_position ?? '—'}</td>
                     <td className="px-4 py-3">
-                      <span style={stagePillStyle(emp.actualStage)}>{emp.computedStage}</span>
+                      <span style={stagePillStyle(emp.actualStage)}>{emp.actualStage}</span>
                     </td>
                     <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
                       {fmtDate(emp.computedDueDate)}
