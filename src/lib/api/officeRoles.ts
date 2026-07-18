@@ -16,10 +16,13 @@ import { generateTemporaryPassword } from './supervisors';
 
 const supabase = supabaseClient as any;
 
-export type OfficeRole = 'Supervisor' | 'DeptHead';
+// The office role is a single role: Department Head (head of everyone in the
+// office). The former 'Supervisor' office-role was a duplicate of this and has
+// been retired — this is NOT the IPCR rater/"supervisor" subsystem, which is a
+// separate reviewer relationship and stays intact.
+export type OfficeRole = 'DeptHead';
 
 export const ROLE_LABELS: Record<OfficeRole, string> = {
-  Supervisor: 'Supervisor',
   DeptHead: 'Department Head',
 };
 

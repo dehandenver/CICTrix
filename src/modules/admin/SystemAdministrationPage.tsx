@@ -641,7 +641,7 @@ const AddPersonnelModal = ({
 }) => {
   const [employeeId, setEmployeeId] = useState('');
   const [officeId, setOfficeId] = useState('');
-  const [role, setRole] = useState<OfficeRole>('Supervisor');
+  const [role] = useState<OfficeRole>('DeptHead');
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
   const [creds, setCreds] = useState<{ username: string; password: string } | null>(null);
@@ -712,10 +712,9 @@ const AddPersonnelModal = ({
             </select>
           </Field>
           <Field label="Role">
-            <select value={role} onChange={(e) => setRole(e.target.value as OfficeRole)} style={input}>
-              <option value="Supervisor">Supervisor</option>
-              <option value="DeptHead">Department Head</option>
-            </select>
+            <div style={{ ...input, display: 'flex', alignItems: 'center', color: 'var(--text-secondary)' }}>
+              Department Head
+            </div>
           </Field>
           <p style={{ fontSize: '12px', color: '#6b7280', marginTop: '-4px' }}>
             An Office Account username and temporary password will be generated automatically.
