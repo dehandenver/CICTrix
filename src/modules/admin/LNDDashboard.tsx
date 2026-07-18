@@ -54,11 +54,12 @@ import { CATEGORY_COLORS, TRAINING_CATEGORIES } from './trainingCategories';
 
 import { EmptyState } from '../../components/EmptyState';
 import { listTrainingRequestsDetailed, type TrainingRequest } from '../../lib/api/trainingRequests';
-import { listIncompleteLockedTrainings, type IncompleteLockedTraining } from '../../lib/api/trainingLifecycle';
+import { listIncompleteLockedTrainings, listLockingSoonWithoutRoster, type IncompleteLockedTraining, type LockingSoonTraining } from '../../lib/api/trainingLifecycle';
 import EmployeeDirectory from './EmployeeDirectory';
 import { LndSummaryOfRatings } from './LndSummaryOfRatings';
 import { LndTrainingRequests } from './LndTrainingRequests';
 import { LndTrainingEvaluation } from './LndTrainingEvaluation';
+import { LndRecommendations } from './LndRecommendations';
 
 type MenuId =
   | 'dashboard'
@@ -69,6 +70,7 @@ type MenuId =
   | 'training-courses'
   | 'seminar-enrollment'
   | 'training-evaluation'
+  | 'recommendations'
   | 'employees'
   | 'settings';
 
@@ -100,6 +102,7 @@ const LND_MENU: MenuItem[] = [
   { id: 'training-courses', label: 'Training Courses', sublabel: 'Courses and sessions', icon: BookOpen },
   { id: 'seminar-enrollment', label: 'Seminar Enrollment', sublabel: 'Registrations and slots', icon: ClipboardCheck },
   { id: 'training-evaluation', label: 'Training Evaluation', sublabel: 'Pre/post-test results', icon: TrendingUp },
+  { id: 'recommendations', label: 'Recommendations', sublabel: 'IPCR → approval → enrollment', icon: Sparkles },
   { id: 'employees', label: 'Employees', sublabel: 'Directory and profiles', icon: UsersRound },
   { id: 'settings', label: 'Settings', sublabel: 'Division preferences', icon: Settings },
 ];
@@ -226,18 +229,21 @@ const LndDashboardContent = () => {
   const [selectedRadarDept, setSelectedRadarDept] = useState('');
   const [viewDeptDetails, setViewDeptDetails] = useState<string | null>(null);
   const [incompleteLocked, setIncompleteLocked] = useState<IncompleteLockedTraining[]>([]);
+  const [lockingSoon, setLockingSoon] = useState<LockingSoonTraining[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [data, locked] = await Promise.all([
+        const [data, locked, soon] = await Promise.all([
           listTrainingRequestsDetailed(),
           listIncompleteLockedTrainings(),
+          listLockingSoonWithoutRoster(),
         ]);
         if (cancelled) return;
         setRequests(data);
         setIncompleteLocked(locked);
+        setLockingSoon(soon);
         const depts = Array.from(new Set(data.map((r: TrainingRequest) => r.employees?.department).filter(Boolean)));
         if (depts.length > 0) setSelectedRadarDept(depts[0] as string);
       } catch (err) {
@@ -368,6 +374,32 @@ const LndDashboardContent = () => {
                     <span className="font-medium">{t.title}</span>
                     {t.category ? <span className="text-amber-600"> · {t.category}</span> : null}
                     <span className="text-amber-600"> · starts {new Date(t.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Safeguard — trainings about to lock (3 days out) with no finalized roster */}
+      {lockingSoon.length > 0 && (
+        <section className="rounded-2xl border border-orange-300 bg-orange-50 p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-orange-600" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-orange-800">
+                {lockingSoon.length} training{lockingSoon.length === 1 ? '' : 's'} locking within 3 days — roster not finalized
+              </p>
+              <p className="mt-0.5 text-xs text-orange-700">
+                These will lock (editing closes 3 days before start) while still having no enrolled attendees. Finalize their rosters now, before they go live empty.
+              </p>
+              <ul className="mt-2 space-y-1">
+                {lockingSoon.map((t) => (
+                  <li key={t.id} className="text-xs text-orange-800">
+                    <span className="font-medium">{t.title}</span>
+                    {t.category ? <span className="text-orange-600"> · {t.category}</span> : null}
+                    <span className="text-orange-600"> · starts {new Date(t.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                   </li>
                 ))}
               </ul>
@@ -654,6 +686,8 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
             <SeminarEnrollment />
           ) : activeModule === 'training-evaluation' ? (
             <LndTrainingEvaluation />
+          ) : activeModule === 'recommendations' ? (
+            <LndRecommendations />
           ) : activeModule === 'employees' ? (
             <EmployeeDirectory />
           ) : (

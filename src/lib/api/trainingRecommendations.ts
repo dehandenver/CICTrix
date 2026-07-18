@@ -101,7 +101,14 @@ export type MutationResult = { ok: boolean; error?: string };
 
 export type GapType = 'LOW_SCORE' | 'DECLINING_TREND' | 'KRA_ALIGNED';
 export type Priority = 'HIGH' | 'MEDIUM' | 'LOW';
-export type RecommendationStatus = 'SUGGESTED' | 'ACCEPTED' | 'ENROLLED' | 'DISMISSED';
+export type RecommendationStatus =
+  | 'SUGGESTED'
+  | 'LND_APPROVED'
+  | 'OFFICE_ADDED'
+  | 'OFFICE_FINALIZED'
+  | 'ENROLLED'
+  | 'DISMISSED'
+  | 'ACCEPTED'; // legacy, no longer produced
 
 /**
  * The gap threshold: an overall IPCR score at or below this flags a development
@@ -168,17 +175,27 @@ const scoreLabel = (score: number | null): string =>
  */
 export async function generateRecommendations(): Promise<GenerateResult> {
   try {
-    // 1. Active courses, grouped by competency. Competency is parsed from the
-    // objectives text[] (there is no competency column) and validated against
-    // the 12 canonical competencies.
+    // 1. Active courses in NEXT calendar month, grouped by competency. The
+    // recommendation cycle always targets month+1 (worked the month before), so
+    // it never touches the current month — those trainings predate the cycle and
+    // are handled by the direct backfill instead. Competency is parsed from the
+    // objectives text[] and validated against the 12 canonical competencies.
+    const today = new Date();
+    const targetStart = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+    const targetEnd = new Date(today.getFullYear(), today.getMonth() + 2, 1);
     const { data: sessions, error: sErr } = await supabase
       .from('training_sessions')
-      .select('id, objectives, status, capacity')
-      .in('status', ['Scheduled', 'Ongoing']);
+      .select('id, title, category, objectives, status, capacity, scheduled_date')
+      .in('status', ['Scheduled', 'Ongoing'])
+      .gte('scheduled_date', targetStart.toISOString())
+      .lt('scheduled_date', targetEnd.toISOString());
     if (sErr) return { ok: false, error: sErr.message };
 
     const coursesByCompetency = new Map<string, string[]>();
     for (const s of (sessions ?? []) as any[]) {
+      // Exclude trainings still missing core fields (title / category / capacity /
+      // objectives) from generation until they're filled (§5).
+      if (!s.title || !s.category || !s.capacity || !(s.objectives?.length)) continue;
       const competency = competencyFromObjectives(s.objectives);
       if (!competency) continue;
       const list = coursesByCompetency.get(competency) ?? [];
@@ -426,6 +443,218 @@ export async function approveAndEnroll(recommendationId: string): Promise<Mutati
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Failed to enroll employee.' };
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §6 pipeline — SUGGESTED → LND_APPROVED → OFFICE_FINALIZED → ENROLLED
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** L&D approves a system suggestion; it becomes visible to the Office Account. */
+export async function lndApproveRecommendation(recommendationId: string): Promise<MutationResult> {
+  const { error } = await supabase
+    .from('training_recommendations')
+    .update({ status: 'LND_APPROVED', updated_at: new Date().toISOString() })
+    .eq('id', recommendationId);
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+/**
+ * Department head adds a candidate L&D didn't suggest. Creates an OFFICE_ADDED
+ * row (or re-activates a dismissed one) for the training. The competency is
+ * derived from the training so the row stays consistent with the others.
+ */
+export async function officeAddCandidate(input: {
+  sessionId: string;
+  employeeId: string;
+  actor: string;
+}): Promise<MutationResult> {
+  const { data: existing } = await supabase
+    .from('training_recommendations')
+    .select('id, status')
+    .eq('session_id', input.sessionId)
+    .eq('employee_id', input.employeeId)
+    .limit(1);
+  const row = (existing ?? [])[0];
+  if (row) {
+    // Already on this training's list — nothing to add unless it was dismissed.
+    if (row.status === 'DISMISSED') {
+      const { error } = await supabase
+        .from('training_recommendations')
+        .update({ status: 'OFFICE_ADDED', office_actor: input.actor, updated_at: new Date().toISOString() })
+        .eq('id', row.id);
+      return error ? { ok: false, error: error.message } : { ok: true };
+    }
+    return { ok: true };
+  }
+
+  const { data: session } = await supabase
+    .from('training_sessions')
+    .select('objectives')
+    .eq('id', input.sessionId)
+    .single();
+  const competency = competencyFromObjectives(session?.objectives) ?? 'Department Head Nomination';
+
+  const { error } = await supabase.from('training_recommendations').insert({
+    employee_id: input.employeeId,
+    session_id: input.sessionId,
+    competency,
+    source_cycle_id: null,
+    gap_type: 'KRA_ALIGNED',
+    gap_detail: 'Added by department head.',
+    priority: 'MEDIUM',
+    status: 'OFFICE_ADDED',
+    office_actor: input.actor,
+  });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+/** Department head sends the training's list back to L&D — all pending rows finalize. */
+export async function officeFinalizeTraining(sessionId: string, actor: string): Promise<MutationResult> {
+  const { error } = await supabase
+    .from('training_recommendations')
+    .update({ status: 'OFFICE_FINALIZED', office_actor: actor, updated_at: new Date().toISOString() })
+    .eq('session_id', sessionId)
+    .in('status', ['LND_APPROVED', 'OFFICE_ADDED']);
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+export type EnrolledRecipient = { employeeId: string; name: string; email: string | null; department: string | null };
+
+/**
+ * L&D enrolls the office-finalized list for a training. Single pass: create the
+ * confirmed enrollments (the calendar roster + attendance read from the same
+ * training_enrollments rows), flip the recs to ENROLLED, and return the enrolled
+ * employees (with emails) so the caller can open the §7 notify modal. The
+ * employee portal's "My trainings" reads these same enrollment rows (§8).
+ */
+export async function enrollFinalAttendees(
+  sessionId: string,
+  actor: string,
+): Promise<MutationResult & { enrolled?: EnrolledRecipient[] }> {
+  const { data: recs, error: rErr } = await supabase
+    .from('training_recommendations')
+    .select('id, employee_id')
+    .eq('session_id', sessionId)
+    .eq('status', 'OFFICE_FINALIZED');
+  if (rErr) return { ok: false, error: rErr.message };
+  const finalized = (recs ?? []) as any[];
+  if (!finalized.length) return { ok: true, enrolled: [] };
+
+  // One confirmed enrollment per attendee (idempotent on the roster's unique key).
+  const enrollRows = finalized.map((r) => ({
+    employee_id: r.employee_id,
+    session_id: sessionId,
+    status: 'Enrolled',
+    enrollment_status: 'Confirmed',
+    added_by: actor,
+    added_by_role: 'LND',
+    is_active: true,
+    removed_reason: null,
+    removed_by_role: null,
+    removed_at: null,
+  }));
+  const { error: eErr } = await supabase
+    .from('training_enrollments')
+    .upsert(enrollRows, { onConflict: 'employee_id,session_id' });
+  if (eErr) return { ok: false, error: eErr.message };
+
+  const { error: uErr } = await supabase
+    .from('training_recommendations')
+    .update({ status: 'ENROLLED', updated_at: new Date().toISOString() })
+    .eq('session_id', sessionId)
+    .eq('status', 'OFFICE_FINALIZED');
+  if (uErr) return { ok: false, error: uErr.message };
+
+  // Resolve emails for the notify modal from the anon-readable view.
+  const ids = finalized.map((r) => String(r.employee_id));
+  const { data: emps } = await supabase
+    .from('employees_with_department')
+    .select('id, full_name, email, department')
+    .in('id', ids);
+  const byId = new Map<string, any>((emps ?? []).map((e: any) => [String(e.id), e]));
+  const enrolled: EnrolledRecipient[] = ids.map((id) => {
+    const e = byId.get(id);
+    return {
+      employeeId: id,
+      name: (e?.full_name ?? 'Unknown employee').trim(),
+      email: e?.email ?? null,
+      department: e?.department ?? null,
+    };
+  });
+  return { ok: true, enrolled };
+}
+
+export type PipelineRec = {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  department: string | null;
+  position: string | null;
+  sessionId: string;
+  sessionTitle: string;
+  sessionCategory: string | null;
+  sessionStart: string;
+  sessionCapacity: number;
+  competency: string;
+  priority: Priority;
+  status: RecommendationStatus;
+  triggerScoreLabel: string;
+  gapDetail: string | null;
+  officeActor: string | null;
+};
+
+/**
+ * All in-flight recommendations (not yet enrolled/dismissed), enriched with
+ * employee identity and training info. Both the L&D Recommendations page and the
+ * Office "L&D recommendations" subtab poll this and group it by session + status.
+ */
+export async function listPipeline(): Promise<PipelineRec[]> {
+  const { data: recs, error } = await supabase
+    .from('training_recommendations')
+    .select('id, employee_id, session_id, competency, priority, status, trigger_score, gap_detail, office_actor')
+    .in('status', ['SUGGESTED', 'LND_APPROVED', 'OFFICE_ADDED', 'OFFICE_FINALIZED']);
+  if (error) {
+    console.error('Error loading recommendation pipeline:', error);
+    return [];
+  }
+  const rows = (recs ?? []) as any[];
+  if (!rows.length) return [];
+
+  const employeeIds = [...new Set(rows.map((r) => String(r.employee_id)))];
+  const sessionIds = [...new Set(rows.map((r) => String(r.session_id)))];
+  const [{ data: emps }, { data: sessions }] = await Promise.all([
+    supabase.from('employees_with_department').select('id, full_name, current_position, department').in('id', employeeIds),
+    supabase.from('training_sessions').select('id, title, category, scheduled_date, capacity').in('id', sessionIds),
+  ]);
+  const empById = new Map<string, any>((emps ?? []).map((e: any) => [String(e.id), e]));
+  const sesById = new Map<string, any>((sessions ?? []).map((s: any) => [String(s.id), s]));
+
+  return rows
+    .map((r): PipelineRec | null => {
+      const s = sesById.get(String(r.session_id));
+      if (!s) return null;
+      const e = empById.get(String(r.employee_id));
+      const triggerScore = r.trigger_score != null ? Number(r.trigger_score) : null;
+      return {
+        id: String(r.id),
+        employeeId: String(r.employee_id),
+        employeeName: (e?.full_name ?? 'Unknown employee').trim(),
+        department: e?.department ?? null,
+        position: e?.current_position ?? null,
+        sessionId: String(r.session_id),
+        sessionTitle: s.title,
+        sessionCategory: s.category,
+        sessionStart: s.scheduled_date,
+        sessionCapacity: s.capacity ?? 0,
+        competency: r.competency,
+        priority: r.priority as Priority,
+        status: r.status as RecommendationStatus,
+        triggerScoreLabel: scoreLabel(triggerScore),
+        gapDetail: r.gap_detail ?? null,
+        officeActor: r.office_actor ?? null,
+      };
+    })
+    .filter((x): x is PipelineRec => x !== null);
 }
 
 /** Dismiss a recommendation with an optional admin remark. */
