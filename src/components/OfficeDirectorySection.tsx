@@ -104,26 +104,15 @@ export const OfficeDirectorySection: React.FC<OfficeDirectorySectionProps> = ({
         if (email) employeeEmails.add(email);
       }
 
+      // Active employees only, matching the headcount rule in officeDirectory.ts
+      // (hired applicants are no longer folded into the office roster).
+      void hiredApplicants;
+      void employeeEmails;
       const officeEmps = allEmployees.filter(
-        (emp) => (norm(emp?.department) || norm(emp?.current_department)) === officeKey
+        (emp) =>
+          (norm(emp?.department) || norm(emp?.current_department)) === officeKey &&
+          norm(emp?.status) === 'active'
       );
-
-      const officeApplicants = hiredApplicants
-        .filter((applicant) => {
-          if (norm(applicant?.office) !== officeKey) return false;
-          const email = norm(applicant?.email);
-          return !email || !employeeEmails.has(email);
-        })
-        .map((applicant) => ({
-          id: applicant.id,
-          first_name: applicant.first_name,
-          middle_name: applicant.middle_name,
-          last_name: applicant.last_name,
-          current_position: applicant.position,
-          email: applicant.email,
-          mobile_number: applicant.contact_number,
-          status: 'Hired',
-        }));
 
       const compareText = (a: string, b: string) =>
         a.localeCompare(b, undefined, { sensitivity: 'base' });
@@ -142,13 +131,14 @@ export const OfficeDirectorySection: React.FC<OfficeDirectorySectionProps> = ({
         return compareText(String(a?.first_name ?? ''), String(b?.first_name ?? ''));
       };
 
-      setOfficeEmployees([...officeEmps, ...officeApplicants].sort(byPositionThenName));
+      setOfficeEmployees([...officeEmps].sort(byPositionThenName));
       setOfficeEmployeesLoading(false);
     });
   };
 
   const filteredOfficeDirectoryRows = useMemo(
-    () => filterOfficeDirectory(officeDirectoryRows, officeDirectorySearch),
+    // Show active offices only — the directory reflects the current org.
+    () => filterOfficeDirectory(officeDirectoryRows.filter((r) => r.isActive), officeDirectorySearch),
     [officeDirectoryRows, officeDirectorySearch]
   );
 

@@ -2377,14 +2377,21 @@ export const RSPDashboard = () => {
 
   // Headcount comes from getOfficeDirectory() so this page, PM and System
   // Administration all report the same numbers from one query.
+  // Active offices only — the directory reflects the current org (deactivated
+  // offices are managed on the System Administration page, not here).
+  const activeOfficeDirectoryRows = useMemo(
+    () => officeDirectoryRows.filter((row) => row.isActive),
+    [officeDirectoryRows]
+  );
+
   const filteredOfficeDirectoryRows = useMemo(
-    () => filterOfficeDirectory(officeDirectoryRows, employeeDirectorySearch),
-    [officeDirectoryRows, employeeDirectorySearch]
+    () => filterOfficeDirectory(activeOfficeDirectoryRows, employeeDirectorySearch),
+    [activeOfficeDirectoryRows, employeeDirectorySearch]
   );
 
   const officeDirectoryTotalEmployees = useMemo(
-    () => officeDirectoryRows.reduce((sum, row) => sum + row.employeeCount, 0),
-    [officeDirectoryRows]
+    () => activeOfficeDirectoryRows.reduce((sum, row) => sum + row.employeeCount, 0),
+    [activeOfficeDirectoryRows]
   );
 
   const employeeDirectoryPageCount = Math.max(1, Math.ceil(filteredOfficeDirectoryRows.length / EMPLOYEE_DIRECTORY_OFFICES_PER_PAGE));
