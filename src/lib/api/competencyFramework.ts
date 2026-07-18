@@ -311,3 +311,144 @@ export async function listChangeLog(limit = 100): Promise<ChangeLogEntry[]> {
     return [];
   }
 }
+
+// ── AI Competency Assessment & Gaps ───────────────────────────────────────────
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+
+export interface CompetencyAssessmentResult {
+  ok: boolean;
+  error?: string;
+  data?: any;
+}
+
+export async function assessEmployeeCompetencies(
+  employeeId: string,
+  cycleId?: number | null
+): Promise<CompetencyAssessmentResult> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/competency-assessment/assess`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ employee_id: employeeId, cycle_id: cycleId ?? null }),
+    });
+
+    if (!res.ok) {
+      let detail = `Assessment failed (${res.status})`;
+      try {
+        const body = await res.json();
+        if (body?.detail) detail = String(body.detail);
+      } catch {
+        /* ignore parsing failures */
+      }
+      return { ok: false, error: detail };
+    }
+
+    const data = await res.json();
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export async function getEmployeeCompetencyDetails(
+  employeeId: string,
+  cycleId?: number | null
+) {
+  try {
+    // 1. Fetch scores
+    const { data: scores, error: sErr } = await supabase
+      .from('employee_competencies')
+      .select('competency_id, proficiency_level, required_level, assessed_at, assessed_by, competencies(name)')
+      .eq('employee_id', employeeId);
+    if (sErr) throw sErr;
+
+    // 2. Fetch summary
+    let query = supabase
+      .from('employee_competency_summaries')
+      .select('*')
+      .eq('employee_id', employeeId);
+    
+    if (cycleId) {
+      query = query.eq('cycle_id', cycleId);
+    } else {
+      query = query.is('cycle_id', null);
+    }
+    const { data: summaries, error: sumErr } = await query;
+    if (sumErr) throw sumErr;
+
+    const summary = summaries?.[0] || null;
+
+    return {
+      ok: true,
+      scores: (scores ?? []).map((s: any) => ({
+        name: s.competencies?.name ?? 'Unknown Competency',
+        proficiencyLevel: s.proficiency_level,
+        requiredLevel: s.required_level,
+        status: s.proficiency_level >= s.required_level ? 'Met' : 'Gap',
+      })),
+      summary: summary
+        ? {
+            strengths: summary.strengths,
+            improvements: summary.improvements,
+            recommendations: summary.recommendations,
+            assessedAt: summary.created_at,
+          }
+        : null,
+    };
+  } catch (e) {
+    console.error('getEmployeeCompetencyDetails failed:', e);
+    return { ok: false, error: e instanceof Error ? e.message : String(e), scores: [], summary: null };
+  }
+}
+
+export async function getGapAnalysisReport() {
+  try {
+    // Fetch employees and scores
+    const [empRes, scoresRes] = await Promise.all([
+      supabase.from('employees_with_department').select('id, full_name, department, current_position, status'),
+      supabase.from('employee_competencies').select('employee_id, proficiency_level, required_level'),
+    ]);
+
+    if (empRes.error) throw empRes.error;
+    if (scoresRes.error) throw scoresRes.error;
+
+    const emps = empRes.data ?? [];
+    const scores = scoresRes.data ?? [];
+
+    const scoresByEmp = new Map<string, any[]>();
+    for (const s of scores) {
+      const list = scoresByEmp.get(s.employee_id) ?? [];
+      list.push(s);
+      scoresByEmp.set(s.employee_id, list);
+    }
+
+    const report = emps.map((e: any) => {
+      const empScores = scoresByEmp.get(e.id) ?? [];
+      
+      let status: 'Not Yet Assessed' | 'Meets Requirement' | 'Below Requirement' = 'Not Yet Assessed';
+      let missingCount = 0;
+
+      if (empScores.length > 0) {
+        const gaps = empScores.filter((s) => s.proficiency_level < s.required_level);
+        missingCount = gaps.length;
+        status = missingCount > 0 ? 'Below Requirement' : 'Meets Requirement';
+      }
+
+      return {
+        id: e.id,
+        employeeName: e.full_name,
+        department: e.department || 'Unassigned',
+        position: e.current_position || 'Unassigned',
+        status,
+        missingCompetencies: missingCount,
+        assessedAt: empScores[0]?.assessed_at || '',
+        assessor: empScores[0]?.assessed_by || '',
+      };
+    });
+
+    return { ok: true, data: report };
+  } catch (e) {
+    console.error('getGapAnalysisReport failed:', e);
+    return { ok: false, error: e instanceof Error ? e.message : String(e), data: [] };
+  }
+}

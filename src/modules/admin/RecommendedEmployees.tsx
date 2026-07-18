@@ -29,12 +29,14 @@ const GAP_BADGE: Record<GapType, string> = {
   LOW_SCORE: 'bg-red-50 text-red-600 border border-red-200',
   DECLINING_TREND: 'bg-amber-50 text-amber-600 border border-amber-200',
   KRA_ALIGNED: 'bg-blue-50 text-blue-600 border border-blue-200',
+  COMPETENCY_GAP: 'bg-emerald-50 text-emerald-600 border border-emerald-200',
 };
 
 const GAP_LABEL: Record<GapType, string> = {
   LOW_SCORE: 'Low score',
   DECLINING_TREND: 'Declining trend',
   KRA_ALIGNED: 'KRA aligned',
+  COMPETENCY_GAP: 'Competency gap',
 };
 
 const STATUS_BADGE: Record<RecommendationStatus, string> = {

@@ -1,15 +1,23 @@
-import { useMemo, useState } from 'react';
-import { Eye, ListChecks, Plus, Search, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Eye, ListChecks, Plus, Search, Trash2, Loader2, AlertCircle, Sparkles, Check } from 'lucide-react';
 import { AdminHeader } from '../../components/AdminHeader';
 import { Dialog } from '../../components/Dialog';
 import { Sidebar } from '../../components/Sidebar';
+import { useDepartmentNames } from '../../hooks/useDepartmentOptions';
+import {
+  assessEmployeeCompetencies,
+  getEmployeeCompetencyDetails,
+  getGapAnalysisReport,
+  type Requirement,
+} from '../../lib/api/competencyFramework';
+import { generateRecommendations } from '../../lib/api/trainingRecommendations';
 
 type TabKey = 'report' | 'management';
 type CompetencyStatus = 'Meets Requirement' | 'Below Requirement' | 'Not Yet Assessed';
 type CompetencyGapStatus = 'Met' | 'Gap';
 
 type EmployeeAssessment = {
-  id: number;
+  id: string;
   employeeName: string;
   department: string;
   position: string;
@@ -40,54 +48,6 @@ type CompetencyLibraryItem = {
   category: string;
 };
 
-const initialEmployees: EmployeeAssessment[] = [
-  {
-    id: 1,
-    employeeName: 'John Doe',
-    department: 'IT',
-    position: 'Software Developer',
-    status: 'Below Requirement',
-    missingCompetencies: 2,
-    assessedAt: '2026-06-18',
-    assessor: 'HR Officer',
-    competencies: [
-      { name: 'Programming', requiredLevel: 5, employeeLevel: 4, status: 'Gap' },
-      { name: 'Database Management', requiredLevel: 4, employeeLevel: 4, status: 'Met' },
-      { name: 'Communication', requiredLevel: 3, employeeLevel: 3, status: 'Met' },
-      { name: 'Problem Solving', requiredLevel: 4, employeeLevel: 2, status: 'Gap' },
-    ],
-  },
-  {
-    id: 2,
-    employeeName: 'Jane Smith',
-    department: 'HR',
-    position: 'HR Officer',
-    status: 'Meets Requirement',
-    missingCompetencies: 0,
-    assessedAt: '2026-06-20',
-    assessor: 'HR Manager',
-    competencies: [
-      { name: 'Communication', requiredLevel: 3, employeeLevel: 3, status: 'Met' },
-      { name: 'Policy Interpretation', requiredLevel: 4, employeeLevel: 4, status: 'Met' },
-      { name: 'Leadership', requiredLevel: 3, employeeLevel: 3, status: 'Met' },
-    ],
-  },
-  {
-    id: 3,
-    employeeName: 'Maria Santos',
-    department: 'Finance',
-    position: 'Accountant',
-    status: 'Not Yet Assessed',
-    missingCompetencies: 0,
-    assessedAt: '',
-    assessor: '',
-    competencies: [
-      { name: 'Accounting Principles', requiredLevel: 4, employeeLevel: 0, status: 'Gap' },
-      { name: 'Reporting', requiredLevel: 3, employeeLevel: 0, status: 'Gap' },
-    ],
-  },
-];
-
 const initialPositions: PositionRequirement[] = [
   {
     id: 1,
@@ -98,7 +58,6 @@ const initialPositions: PositionRequirement[] = [
       { name: 'Communication', level: 3 },
       { name: 'Policy Interpretation', level: 4 },
       { name: 'Leadership', level: 3 },
-      { name: 'Records Management', level: 3 },
     ],
   },
   {
@@ -128,13 +87,24 @@ const tabs: { key: TabKey; label: string }[] = [
 ];
 
 const statusOptions = ['All', 'Meets Requirement', 'Below Requirement', 'Not Yet Assessed'] as const;
-const departmentOptions = ['All', 'HR', 'IT', 'Finance'] as const;
-const positionOptions = ['All', 'HR Officer', 'Software Developer', 'Accountant'] as const;
-const assessmentPeriods = ['All Periods', 'Q2 2026', 'Q3 2026', 'Q4 2026'] as const;
 
 export const CompetencyFrameworkPage = () => {
   const [activeTab, setActiveTab] = useState<TabKey>('report');
-  const [employees, setEmployees] = useState<EmployeeAssessment[]>(initialEmployees);
+  
+  // Real Database States
+  const [employees, setEmployees] = useState<EmployeeAssessment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  
+  // Details Modal States
+  const [detailScores, setDetailScores] = useState<any[]>([]);
+  const [detailSummary, setDetailSummary] = useState<any | null>(null);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [assessing, setAssessing] = useState(false);
+  const [recommending, setRecommending] = useState(false);
+  const [recSuccess, setRecSuccess] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState('');
+
   const [positions, setPositions] = useState<PositionRequirement[]>(initialPositions);
   const [competencies, setCompetencies] = useState<CompetencyLibraryItem[]>(initialCompetencies);
   const [selectedEmployee, setSelectedEmployee] = useState<EmployeeAssessment | null>(null);
@@ -154,6 +124,105 @@ export const CompetencyFrameworkPage = () => {
     status: 'All',
   });
   const [manageDraft, setManageDraft] = useState({ name: '', level: 3 });
+
+  // Dynamic Options
+  const departmentNames = useDepartmentNames();
+  const departmentOptions = useMemo(() => ['All', ...departmentNames], [departmentNames]);
+  
+  const positionOptions = useMemo(() => {
+    const list = Array.from(new Set(employees.map((e) => e.position))).filter(Boolean);
+    return ['All', ...list];
+  }, [employees]);
+
+  const assessmentPeriods = useMemo(() => {
+    const list = Array.from(new Set(employees.map((e) => e.assessedAt))).filter(Boolean).map(date => {
+      return date.substring(0, 7); // YYYY-MM
+    });
+    const uniquePeriods = Array.from(new Set(list));
+    return ['All Periods', ...uniquePeriods];
+  }, [employees]);
+
+  const loadReport = async () => {
+    setLoading(true);
+    setError('');
+    const res = await getGapAnalysisReport();
+    if (res.ok && res.data) {
+      setEmployees(res.data as EmployeeAssessment[]);
+    } else {
+      setError(res.error || 'Failed to load gap analysis report.');
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'report') {
+      void loadReport();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (selectedEmployee) {
+      setLoadingDetails(true);
+      setErrorDetails('');
+      setRecSuccess(null);
+      getEmployeeCompetencyDetails(selectedEmployee.id)
+        .then((res) => {
+          if (res.ok) {
+            setDetailScores(res.scores || []);
+            setDetailSummary(res.summary);
+          } else {
+            setErrorDetails(res.error || 'Failed to load details.');
+          }
+        })
+        .catch((err) => setErrorDetails(String(err)))
+        .finally(() => setLoadingDetails(false));
+    } else {
+      setDetailScores([]);
+      setDetailSummary(null);
+    }
+  }, [selectedEmployee]);
+
+  const handleRunAssessment = async () => {
+    if (!selectedEmployee) return;
+    setAssessing(true);
+    setErrorDetails('');
+    setRecSuccess(null);
+    const res = await assessEmployeeCompetencies(selectedEmployee.id);
+    setAssessing(false);
+    if (res.ok) {
+      const det = await getEmployeeCompetencyDetails(selectedEmployee.id);
+      if (det.ok) {
+        setDetailScores(det.scores || []);
+        setDetailSummary(det.summary);
+      }
+      void loadReport();
+    } else {
+      setErrorDetails(res.error || 'AI Assessment failed.');
+    }
+  };
+
+  const handleGenerateRecommendations = async () => {
+    if (!selectedEmployee) return;
+    const gaps = detailScores
+      .filter((s) => s.status === 'Gap')
+      .map((s) => ({ competency: s.name, gap: Math.max(s.requiredLevel - s.proficiencyLevel, 0) }));
+    
+    if (gaps.length === 0) {
+      setRecSuccess('No competency gaps found to recommend training for.');
+      return;
+    }
+    
+    setRecommending(true);
+    setRecSuccess(null);
+    setErrorDetails('');
+    const res = await generateRecommendations(selectedEmployee.id, gaps);
+    setRecommending(false);
+    if (res.ok) {
+      setRecSuccess(`Successfully generated recommendations for ${res.upserted} scheduled course(s).`);
+    } else {
+      setErrorDetails(res.error || 'Failed to generate training recommendations.');
+    }
+  };
 
   const filteredEmployees = useMemo(() => {
     return employees.filter((employee) => {
@@ -394,25 +463,51 @@ export const CompetencyFrameworkPage = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 bg-white">
-                      {filteredEmployees.map((employee) => (
-                        <tr key={employee.id} className="hover:bg-slate-50">
-                          <td className="px-5 py-4 font-semibold text-slate-900">{employee.employeeName}</td>
-                          <td className="px-5 py-4 text-slate-600">{employee.department}</td>
-                          <td className="px-5 py-4 text-slate-600">{employee.position}</td>
-                          <td className="px-5 py-4">
-                            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${employee.status === 'Meets Requirement' ? 'bg-emerald-100 text-emerald-700' : employee.status === 'Below Requirement' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-700'}`}>
-                              {employee.status}
+                      {loading ? (
+                        <tr>
+                          <td colSpan={6} className="px-5 py-10 text-center text-slate-500 font-medium">
+                            <span className="inline-flex items-center gap-2">
+                              <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                              Loading report data...
                             </span>
                           </td>
-                          <td className="px-5 py-4 text-slate-700">{employee.missingCompetencies}</td>
-                          <td className="px-5 py-4">
-                            <button type="button" onClick={() => setSelectedEmployee(employee)} className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100">
-                              <Eye size={15} />
-                              View
-                            </button>
+                        </tr>
+                      ) : error ? (
+                        <tr>
+                          <td colSpan={6} className="px-5 py-10 text-center text-red-500 font-medium">
+                            <span className="inline-flex items-center gap-2">
+                              <AlertCircle className="h-5 w-5" />
+                              {error}
+                            </span>
                           </td>
                         </tr>
-                      ))}
+                      ) : filteredEmployees.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-5 py-10 text-center text-slate-400 font-medium">
+                            No employees found matching the current filters.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredEmployees.map((employee) => (
+                          <tr key={employee.id} className="hover:bg-slate-50">
+                            <td className="px-5 py-4 font-semibold text-slate-900">{employee.employeeName}</td>
+                            <td className="px-5 py-4 text-slate-600">{employee.department}</td>
+                            <td className="px-5 py-4 text-slate-600">{employee.position}</td>
+                            <td className="px-5 py-4">
+                              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${employee.status === 'Meets Requirement' ? 'bg-emerald-100 text-emerald-700' : employee.status === 'Below Requirement' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-700'}`}>
+                                {employee.status}
+                              </span>
+                            </td>
+                            <td className="px-5 py-4 text-slate-700">{employee.missingCompetencies}</td>
+                            <td className="px-5 py-4">
+                              <button type="button" onClick={() => setSelectedEmployee(employee)} className="inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100">
+                                <Eye size={15} />
+                                View
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -500,6 +595,20 @@ export const CompetencyFrameworkPage = () => {
       {selectedEmployee && (
         <Dialog open onClose={() => setSelectedEmployee(null)} title={`Competency Details · ${selectedEmployee.employeeName}`}>
           <div className="space-y-5">
+            {errorDetails && (
+              <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+                <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                <span>{errorDetails}</span>
+              </div>
+            )}
+            
+            {recSuccess && (
+              <div className="flex items-center gap-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">
+                <Check className="h-4 w-4 flex-shrink-0" />
+                <span>{recSuccess}</span>
+              </div>
+            )}
+
             <div className="grid gap-4 md:grid-cols-2">
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Employee Information</p>
@@ -509,7 +618,6 @@ export const CompetencyFrameworkPage = () => {
                   <p><span className="font-semibold text-slate-900">Department:</span> {selectedEmployee.department}</p>
                   <p><span className="font-semibold text-slate-900">Position:</span> {selectedEmployee.position}</p>
                   <p><span className="font-semibold text-slate-900">Date Assessed:</span> {selectedEmployee.assessedAt || 'Pending'}</p>
-                  <p><span className="font-semibold text-slate-900">Assessor:</span> {selectedEmployee.assessor || 'Pending'}</p>
                 </div>
               </div>
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -518,43 +626,108 @@ export const CompetencyFrameworkPage = () => {
                   <p><span className="font-semibold text-slate-900">Overall Status:</span> {selectedEmployee.status}</p>
                   <p><span className="font-semibold text-slate-900">Missing Competencies:</span> {selectedEmployee.missingCompetencies}</p>
                   <div className="flex flex-wrap gap-2 pt-2">
-                    <button type="button" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Print Report</button>
-                    <button type="button" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Export PDF</button>
-                    <button type="button" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Export Excel</button>
+                    <button
+                      type="button"
+                      disabled={assessing || loadingDetails}
+                      onClick={handleRunAssessment}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                    >
+                      {assessing ? (
+                        <>
+                          <Loader2 className="h-3 w-3 animate-spin" /> Assessing…
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-3 w-3" /> Run AI Assessment
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={recommending || loadingDetails || detailScores.length === 0 || !detailScores.some(s => s.status === 'Gap')}
+                      onClick={handleGenerateRecommendations}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      {recommending ? (
+                        <>
+                          <Loader2 className="h-3 w-3 animate-spin" /> Recommending…
+                        </>
+                      ) : (
+                        'Generate Recommendations'
+                      )}
+                    </button>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-xl border border-slate-200">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.2em] text-slate-600">
-                  <tr>
-                    <th className="px-4 py-3">Competency</th>
-                    <th className="px-4 py-3">Required Level</th>
-                    <th className="px-4 py-3">Employee Level</th>
-                    <th className="px-4 py-3">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200 bg-white">
-                  {selectedEmployee.competencies.map((competency) => (
-                    <tr key={competency.name}>
-                      <td className="px-4 py-3 font-semibold text-slate-900">{competency.name}</td>
-                      <td className="px-4 py-3 text-slate-700">{competency.requiredLevel}</td>
-                      <td className="px-4 py-3 text-slate-700">{competency.employeeLevel}</td>
-                      <td className="px-4 py-3">
-                        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${competency.status === 'Met' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                          {competency.status === 'Met' ? 'Met' : 'Gap'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            {loadingDetails ? (
+              <div className="flex items-center justify-center py-10 text-sm text-slate-500 gap-2">
+                <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                <span>Loading competency details...</span>
+              </div>
+            ) : (
+              <>
+                <div className="overflow-hidden rounded-xl border border-slate-200">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.2em] text-slate-600">
+                      <tr>
+                        <th className="px-4 py-3">Competency</th>
+                        <th className="px-4 py-3">Required Level</th>
+                        <th className="px-4 py-3">Employee Level</th>
+                        <th className="px-4 py-3">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 bg-white">
+                      {detailScores.map((competency) => (
+                        <tr key={competency.name} className="hover:bg-slate-50">
+                          <td className="px-4 py-3 font-semibold text-slate-900">{competency.name}</td>
+                          <td className="px-4 py-3 text-slate-700">
+                            {competency.requiredLevel > 0 ? `Level ${competency.requiredLevel}` : 'No requirement configured'}
+                          </td>
+                          <td className="px-4 py-3 text-slate-700 font-medium">
+                            {competency.employeeLevel > 0 ? `Level ${competency.employeeLevel}` : 'Not yet demonstrated'}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${competency.status === 'Met' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                              {competency.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                      {detailScores.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="px-4 py-6 text-center text-slate-400">
+                            No competency records found. Click "Run AI Assessment" to evaluate.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
 
-            <div className="flex flex-wrap justify-end gap-2">
-              <button type="button" className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700">Reassess Employee</button>
+                {detailSummary && (
+                  <div className="space-y-4">
+                    <div className="rounded-xl border border-slate-200 p-4 bg-slate-50">
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Demonstrated Strengths</p>
+                      <p className="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{detailSummary.strengths}</p>
+                    </div>
+                    
+                    <div className="rounded-xl border border-slate-200 p-4 bg-slate-50">
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Areas for Improvement</p>
+                      <p className="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{detailSummary.improvements}</p>
+                    </div>
+
+                    <div className="rounded-xl border border-slate-200 p-4 bg-slate-50">
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Recommended Learning Interventions</p>
+                      <p className="mt-2 text-sm text-slate-700 whitespace-pre-wrap">{detailSummary.recommendations}</p>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
               <button type="button" onClick={() => setSelectedEmployee(null)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Close</button>
             </div>
           </div>

@@ -99,7 +99,7 @@ async function loadCompetenciesByEmployee(): Promise<Map<string, Set<string>>> {
 // strict:false config (see other api/ modules).
 export type MutationResult = { ok: boolean; error?: string };
 
-export type GapType = 'LOW_SCORE' | 'DECLINING_TREND' | 'KRA_ALIGNED';
+export type GapType = 'LOW_SCORE' | 'DECLINING_TREND' | 'KRA_ALIGNED' | 'COMPETENCY_GAP';
 export type Priority = 'HIGH' | 'MEDIUM' | 'LOW';
 export type RecommendationStatus =
   | 'SUGGESTED'
@@ -173,13 +173,12 @@ const scoreLabel = (score: number | null): string =>
  * re-running never duplicates rows. Employees who already have an ENROLLED or
  * DISMISSED recommendation keep that status (we don't clobber admin decisions).
  */
-export async function generateRecommendations(): Promise<GenerateResult> {
+export async function generateRecommendations(
+  specificEmployeeId?: string | null,
+  specificGaps?: { competency: string; gap: number }[] | null
+): Promise<GenerateResult> {
   try {
-    // 1. Active courses in NEXT calendar month, grouped by competency. The
-    // recommendation cycle always targets month+1 (worked the month before), so
-    // it never touches the current month — those trainings predate the cycle and
-    // are handled by the direct backfill instead. Competency is parsed from the
-    // objectives text[] and validated against the 12 canonical competencies.
+    // 1. Active courses in NEXT calendar month, grouped by competency.
     const today = new Date();
     const targetStart = new Date(today.getFullYear(), today.getMonth() + 1, 1);
     const targetEnd = new Date(today.getFullYear(), today.getMonth() + 2, 1);
@@ -193,8 +192,6 @@ export async function generateRecommendations(): Promise<GenerateResult> {
 
     const coursesByCompetency = new Map<string, string[]>();
     for (const s of (sessions ?? []) as any[]) {
-      // Exclude trainings still missing core fields (title / category / capacity /
-      // objectives) from generation until they're filled (§5).
       if (!s.title || !s.category || !s.capacity || !(s.objectives?.length)) continue;
       const competency = competencyFromObjectives(s.objectives);
       if (!competency) continue;
@@ -204,46 +201,25 @@ export async function generateRecommendations(): Promise<GenerateResult> {
     }
     if (!coursesByCompetency.size) return { ok: true, upserted: 0, employeesConsidered: 0 };
 
-    // 2. Employee → competencies. Authoritative source is ipcr_competency_matches
-    //    (AI matcher); falls back to the job-title heuristic (identical to the
-    //    seeder) so live regeneration works even before the matcher has run.
-    const competenciesByEmployee = await loadCompetenciesByEmployee();
-    if (!competenciesByEmployee.size) return { ok: true, upserted: 0, employeesConsidered: 0 };
-
-    // 3. Latest finalized overall score per employee (live roll-up).
-    const employeeIds = [...competenciesByEmployee.keys()];
-    const scores = await getLatestOverallScores(employeeIds);
-
-    // 4. Build gap rows.
     const now = new Date().toISOString();
     const rows: any[] = [];
     let considered = 0;
 
-    for (const employeeId of employeeIds) {
-      const score = scores.get(employeeId);
-      if (!score || score.overallScore == null) continue; // never finalized → skip
-      if (score.overallScore > GAP_THRESHOLD) continue; // performing well → no gap
-      considered += 1;
-
-      const priority = scoreToPriority(score.overallScore);
-      // Only competencies this employee's targets actually map to, that also have
-      // at least one active course. Cap to the top N by relevance (all share the
-      // same overall score here, so order is stable/alphabetical).
-      const gapCompetencies = [...(competenciesByEmployee.get(employeeId) ?? [])]
-        .filter((c) => coursesByCompetency.has(c))
-        .sort()
-        .slice(0, MAX_GAPS_PER_EMPLOYEE);
-
-      for (const competency of gapCompetencies) {
-        const detail = buildGapDetail(competency, score.overallScore, score.adjectival, score.period);
+    if (specificEmployeeId && specificGaps) {
+      considered = 1;
+      for (const g of specificGaps) {
+        const competency = g.competency;
+        if (!coursesByCompetency.has(competency)) continue;
+        const priority = g.gap >= 1.5 ? 'HIGH' : 'MEDIUM';
+        const detail = `Demonstrated competency gap identified by AI assessment: required level was higher by ${g.gap}`;
         for (const sessionId of coursesByCompetency.get(competency) ?? []) {
           rows.push({
-            employee_id: employeeId,
+            employee_id: specificEmployeeId,
             session_id: sessionId,
             competency,
-            source_cycle_id: score.cycleId,
-            trigger_score: score.overallScore,
-            gap_type: 'LOW_SCORE' as GapType,
+            source_cycle_id: null,
+            trigger_score: null,
+            gap_type: 'COMPETENCY_GAP' as GapType,
             gap_detail: detail,
             priority,
             generated_at: now,
@@ -251,12 +227,55 @@ export async function generateRecommendations(): Promise<GenerateResult> {
           });
         }
       }
+    } else {
+      // 2. Employee → competencies. Authoritative source is ipcr_competency_matches; falls back to heuristic.
+      const competenciesByEmployee = await loadCompetenciesByEmployee();
+      if (!competenciesByEmployee.size) return { ok: true, upserted: 0, employeesConsidered: 0 };
+
+      // Filter to specific employee if full run isn't requested but specific gaps weren't passed
+      const employeeIds = specificEmployeeId && competenciesByEmployee.has(specificEmployeeId)
+        ? [specificEmployeeId]
+        : [...competenciesByEmployee.keys()];
+      
+      // 3. Latest finalized overall score per employee (live roll-up).
+      const scores = await getLatestOverallScores(employeeIds);
+
+      // 4. Build gap rows.
+      for (const employeeId of employeeIds) {
+        const score = scores.get(employeeId);
+        if (!score || score.overallScore == null) continue; // never finalized → skip
+        if (score.overallScore > GAP_THRESHOLD) continue; // performing well → no gap
+        considered += 1;
+
+        const priority = scoreToPriority(score.overallScore);
+        const gapCompetencies = [...(competenciesByEmployee.get(employeeId) ?? [])]
+          .filter((c) => coursesByCompetency.has(c))
+          .sort()
+          .slice(0, MAX_GAPS_PER_EMPLOYEE);
+
+        for (const competency of gapCompetencies) {
+          const detail = buildGapDetail(competency, score.overallScore, score.adjectival, score.period);
+          for (const sessionId of coursesByCompetency.get(competency) ?? []) {
+            rows.push({
+              employee_id: employeeId,
+              session_id: sessionId,
+              competency,
+              source_cycle_id: score.cycleId,
+              trigger_score: score.overallScore,
+              gap_type: 'LOW_SCORE' as GapType,
+              gap_detail: detail,
+              priority,
+              generated_at: now,
+              updated_at: now,
+            });
+          }
+        }
+      }
     }
 
     if (!rows.length) return { ok: true, upserted: 0, employeesConsidered: considered };
 
-    // 5. Upsert. onConflict keeps the row identity stable; status/admin_remark are
-    // NOT in the payload, so an already ENROLLED/DISMISSED row keeps its decision.
+    // 5. Upsert.
     const { error: uErr } = await supabase
       .from('training_recommendations')
       .upsert(rows, { onConflict: 'employee_id,session_id,source_cycle_id', ignoreDuplicates: false });
