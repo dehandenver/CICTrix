@@ -127,7 +127,7 @@ BEGIN
     s.first, s.middle, s.last,
     lower(s.first) || '.' || lower(s.last) || '@cityhall.gov.ph',
     s.office, s.position, 'Regular', 'Active', 'Filipino', 'Active',
-    DATE '2024-01-15' + (s.slot || ' days')::interval,
+    (DATE '2024-01-15' + (s.slot || ' days')::interval)::date,
     '00000000-0000-0000-0000-000000000000'
   FROM org_slots s
   WHERE s.slot > n;
@@ -138,6 +138,12 @@ UPDATE office_role_assignments
    SET status = 'Revoked', revoked_at = now(),
        revoke_reason = COALESCE(revoke_reason, 'Consolidated: one Department Head per office; Supervisor role retired.')
  WHERE status = 'Active';
+
+-- Every historical Supervisor office-role IS a Department Head (they were the
+-- same role, mislabeled). Relabel ALL rows — active and revoked history alike —
+-- so the narrowed CHECK holds for the whole table (a CHECK constraint validates
+-- every row, not just the active ones).
+UPDATE office_role_assignments SET role = 'DeptHead' WHERE role = 'Supervisor';
 
 ALTER TABLE office_role_assignments DROP CONSTRAINT IF EXISTS office_role_assignments_role_check;
 ALTER TABLE office_role_assignments
