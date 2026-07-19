@@ -2,7 +2,7 @@
 """
 Versioned prompt for IPCR qualitative competency assessment.
 Tracks strengths, areas for improvement, and recommended learning interventions.
-Reuses the Anthropic Claude model configuration.
+Reuses the Google Gemini model configuration.
 """
 
 PROMPT_VERSION = "2026-08-07.1"

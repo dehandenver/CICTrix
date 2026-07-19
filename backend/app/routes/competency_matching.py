@@ -1,12 +1,12 @@
 """
-IPCR competency matching — server-side Claude call.
+IPCR competency matching — server-side Gemini call.
 
 An HR admin sends an employee's job position plus a list of IPCR targets
-(success indicators); Claude maps each target to the LGU's 12 canonical
+(success indicators); Gemini maps each target to the LGU's 12 canonical
 competencies with a confidence score and justification, and we persist the
 matches to `ipcr_competency_matches` for the review queue.
 
-The Claude call lives here (not in the browser) so ANTHROPIC_API_KEY never
+The Gemini call lives here (not in the browser) so GEMINI_API_KEY never
 reaches the client. Access follows the app's anon-open posture — the L&D Portal
 that surfaces this is already access-gated; enforcement is app-layer.
 """

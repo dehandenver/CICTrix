@@ -39,3 +39,11 @@ coverage
 # Supabase
 .supabase
 .vercel
+
+# Python compiled files
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+

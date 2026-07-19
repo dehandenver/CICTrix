@@ -3,7 +3,7 @@
  * maps IPCR targets to the LGU's 12 canonical competencies.
  *
  * The analysis runs in the FastAPI backend (backend/app/routes/competency_matching.py)
- * so the Anthropic API key stays server-side. Matches are persisted to
+ * so the Gemini API key stays server-side. Matches are persisted to
  * ipcr_competency_matches when `persist` is true.
  */
 

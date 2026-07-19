@@ -164,7 +164,7 @@ Write-Host "  6. Run: pip install -r backend/requirements.txt (in backend)" -For
 Write-Host ""
 
 if ($backendReady) {
-    Write-Host "Backend API is accessible at: http://localhost:8000/health" -ForegroundColor Green
+    Write-Host "Backend API is accessible at: http://127.0.0.1:8000/health" -ForegroundColor Green
 } else {
     Write-Host "Backend not responding - check 'Run Python Backend' terminal" -ForegroundColor Red
 }
