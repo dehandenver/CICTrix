@@ -103,8 +103,15 @@ const LND_MENU: MenuItem[] = [
 
 const LndSidebar = ({ activeModule, onSelect }: { activeModule: MenuId; onSelect: (id: MenuId) => void }) => {
   return (
-    <aside className="w-64 shrink-0 border-r border-slate-200 bg-white px-3 py-4 min-h-[calc(100vh-70px)]">
-      <nav className="space-y-1.5">
+    <aside className="w-64 shrink-0 border-r border-slate-200 bg-white min-h-[calc(100vh-70px)]">
+      <div className="border-b border-slate-200 px-6 pb-5 pt-7">
+        <h2 className="mb-1 text-xl font-bold text-slate-900">LND Admin</h2>
+        <span className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Learning and Development
+        </span>
+      </div>
+
+      <nav className="space-y-1.5 px-3 py-4">
         {LND_MENU.map((item) => {
           const Icon = item.icon;
           const isActive = activeModule === item.id;
@@ -698,7 +705,7 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800">
       <AdminHeader
-        userName="Alex Gonzales"
+        userName="LND Admin"
         divisionLabel="L&D Division"
       />
       <div className="flex">

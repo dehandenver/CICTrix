@@ -1,20 +1,26 @@
 /**
- * Per-day attendance grid (§5).
+ * Per-half-day attendance grid (§5).
  *
- * Rows = enrolled attendees, columns = each training day. Each cell is
- * Present / Absent / Excused; an excused day opens a required-note popup, and
- * the note shows again when the Excused badge is reopened. A day can only be
- * marked once it has started — future-day cells are disabled. A roll-up per
- * attendee summarises present / absent / excused across the days.
+ * Rows = enrolled attendees. Each training day splits into a Morning and an
+ * Afternoon column, because attendance is taken twice a day — recording once
+ * made a half-day absence unrepresentable. Each cell is Present / Absent /
+ * Excused; an excused half-day opens a required-note popup, and the note shows
+ * again when the Excused badge is reopened. A day can only be marked once it has
+ * started — future-day cells are disabled. A roll-up per attendee summarises
+ * present / absent / excused across all half-days.
  */
 
 import { useEffect, useMemo, useState } from 'react';
 import { Info, X } from 'lucide-react';
 import {
+  cellKey,
   listAttendance,
   setDayAttendance,
+  SESSION_HALVES,
+  SESSION_LABEL,
   type AttendanceMap,
   type DayStatus,
+  type SessionHalf,
 } from '../../lib/api/trainingAttendance';
 
 type Attendee = { enrollmentId: string; name: string; department: string };
@@ -54,7 +60,10 @@ export const AttendanceGrid = ({ startDate, endDate, attendees }: Props) => {
 
   const [attendance, setAttendance] = useState<AttendanceMap>(new Map());
   const [busy, setBusy] = useState<string | null>(null);
-  const [excuse, setExcuse] = useState<{ enrollmentId: string; dayKey: string; attendee: string; dayLabel: string; note: string } | null>(null);
+  const [excuse, setExcuse] = useState<{
+    enrollmentId: string; dayKey: string; session: SessionHalf;
+    attendee: string; dayLabel: string; note: string;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,46 +74,48 @@ export const AttendanceGrid = ({ startDate, endDate, attendees }: Props) => {
     return () => { cancelled = true; };
   }, [attendees]);
 
-  const cellOf = (enrollmentId: string, dayKey: string) =>
-    attendance.get(enrollmentId)?.get(dayKey) ?? { status: null as DayStatus | null, note: null as string | null };
+  const cellOf = (enrollmentId: string, dayKey: string, session: SessionHalf) =>
+    attendance.get(enrollmentId)?.get(cellKey(dayKey, session))
+      ?? { status: null as DayStatus | null, note: null as string | null };
 
-  const applyLocal = (enrollmentId: string, dayKey: string, status: DayStatus | null, note: string | null) =>
+  const applyLocal = (enrollmentId: string, dayKey: string, session: SessionHalf, status: DayStatus | null, note: string | null) =>
     setAttendance((prev) => {
       const next = new Map(prev);
       const inner = new Map(next.get(enrollmentId) ?? []);
-      inner.set(dayKey, { status, note });
+      inner.set(cellKey(dayKey, session), { status, note });
       next.set(enrollmentId, inner);
       return next;
     });
 
-  const commit = async (enrollmentId: string, dayKey: string, status: DayStatus | null, note?: string | null) => {
-    setBusy(`${enrollmentId}:${dayKey}`);
-    const res = await setDayAttendance({ enrollmentId, dayKey, status, note });
+  const commit = async (enrollmentId: string, dayKey: string, session: SessionHalf, status: DayStatus | null, note?: string | null) => {
+    setBusy(`${enrollmentId}:${dayKey}:${session}`);
+    const res = await setDayAttendance({ enrollmentId, dayKey, session, status, note });
     setBusy(null);
     if (!res.ok) { alert(res.error); return; }
-    applyLocal(enrollmentId, dayKey, status, status === 'Excused' ? (note ?? '') : null);
+    applyLocal(enrollmentId, dayKey, session, status, status === 'Excused' ? (note ?? '') : null);
   };
 
-  const clickStatus = (enrollmentId: string, dayKey: string, status: DayStatus) => {
-    const current = cellOf(enrollmentId, dayKey).status;
+  const clickStatus = (enrollmentId: string, dayKey: string, session: SessionHalf, status: DayStatus) => {
+    const cell = cellOf(enrollmentId, dayKey, session);
     if (status === 'Excused') {
-      const cell = cellOf(enrollmentId, dayKey);
       const attendee = attendees.find((a) => a.enrollmentId === enrollmentId)?.name ?? '';
-      const dayLabel = days.find((d) => d.key === dayKey)?.label ?? dayKey;
-      setExcuse({ enrollmentId, dayKey, attendee, dayLabel, note: cell.note ?? '' });
+      const dayLabel = `${days.find((d) => d.key === dayKey)?.label ?? dayKey} · ${SESSION_LABEL[session]}`;
+      setExcuse({ enrollmentId, dayKey, session, attendee, dayLabel, note: cell.note ?? '' });
       return;
     }
     // Clicking the active Present/Absent clears it.
-    void commit(enrollmentId, dayKey, current === status ? null : status);
+    void commit(enrollmentId, dayKey, session, cell.status === status ? null : status);
   };
 
   const rollup = (enrollmentId: string) => {
     let p = 0, a = 0, e = 0;
     for (const d of days) {
-      const s = cellOf(enrollmentId, d.key).status;
-      if (s === 'Present') p++;
-      else if (s === 'Absent') a++;
-      else if (s === 'Excused') e++;
+      for (const half of SESSION_HALVES) {
+        const s = cellOf(enrollmentId, d.key, half).status;
+        if (s === 'Present') p++;
+        else if (s === 'Absent') a++;
+        else if (s === 'Excused') e++;
+      }
     }
     return { p, a, e };
   };
@@ -114,11 +125,32 @@ export const AttendanceGrid = ({ startDate, endDate, attendees }: Props) => {
       <table className="w-full text-left text-sm">
         <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 border-b border-gray-200">
           <tr>
-            <th className="px-4 py-2.5 font-semibold sticky left-0 bg-gray-50">Attendee</th>
+            <th rowSpan={2} className="px-4 py-2.5 font-semibold sticky left-0 bg-gray-50 align-bottom">Attendee</th>
             {days.map((d) => (
-              <th key={d.key} className="px-3 py-2.5 font-semibold text-center whitespace-nowrap">{d.label}</th>
+              <th
+                key={d.key}
+                colSpan={2}
+                className="px-3 py-2 font-semibold text-center whitespace-nowrap border-l border-gray-200"
+              >
+                {d.label}
+              </th>
             ))}
-            <th className="px-4 py-2.5 font-semibold text-right whitespace-nowrap">Roll-up</th>
+            <th rowSpan={2} className="px-4 py-2.5 font-semibold text-right whitespace-nowrap align-bottom border-l border-gray-200">Roll-up</th>
+          </tr>
+          <tr>
+            {days.flatMap((d) =>
+              SESSION_HALVES.map((half) => (
+                <th
+                  key={`${d.key}-${half}`}
+                  className={[
+                    'px-2 pb-2 text-[10px] font-medium text-center whitespace-nowrap',
+                    half === 'AM' ? 'border-l border-gray-200' : '',
+                  ].join(' ')}
+                >
+                  {half}
+                </th>
+              ))
+            )}
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
@@ -130,50 +162,60 @@ export const AttendanceGrid = ({ startDate, endDate, attendees }: Props) => {
                   <p className="font-semibold text-gray-900 whitespace-nowrap">{att.name}</p>
                   <p className="text-xs text-gray-500 whitespace-nowrap">{att.department}</p>
                 </td>
-                {days.map((d) => {
-                  const cell = cellOf(att.enrollmentId, d.key);
-                  const future = d.key > todayKey;
-                  const cellBusy = busy === `${att.enrollmentId}:${d.key}`;
-                  if (future) {
-                    return <td key={d.key} className="px-3 py-3 text-center"><span className="text-[11px] text-gray-300">upcoming</span></td>;
-                  }
-                  return (
-                    <td key={d.key} className="px-3 py-3">
-                      <div className="flex items-center justify-center gap-1">
-                        {(['Present', 'Absent', 'Excused'] as DayStatus[]).map((s) => {
-                          const active = cell.status === s;
-                          const label = s[0]; // P / A / E
-                          return (
+                {days.flatMap((d) =>
+                  SESSION_HALVES.map((half) => {
+                    const cell = cellOf(att.enrollmentId, d.key, half);
+                    const future = d.key > todayKey;
+                    const cellBusy = busy === `${att.enrollmentId}:${d.key}:${half}`;
+                    const edge = half === 'AM' ? 'border-l border-gray-200' : '';
+                    if (future) {
+                      return (
+                        <td key={`${d.key}-${half}`} className={`px-2 py-3 text-center ${edge}`}>
+                          <span className="text-[10px] text-gray-300">—</span>
+                        </td>
+                      );
+                    }
+                    return (
+                      <td key={`${d.key}-${half}`} className={`px-2 py-3 ${edge}`}>
+                        <div className="flex items-center justify-center gap-0.5">
+                          {(['Present', 'Absent', 'Excused'] as DayStatus[]).map((s) => {
+                            const active = cell.status === s;
+                            return (
+                              <button
+                                key={s}
+                                type="button"
+                                disabled={cellBusy}
+                                onClick={() => clickStatus(att.enrollmentId, d.key, half, s)}
+                                title={
+                                  s === 'Excused' && active && cell.note
+                                    ? cell.note
+                                    : `${s} · ${SESSION_LABEL[half]}`
+                                }
+                                className={[
+                                  'h-5 w-5 rounded text-[10px] font-bold transition disabled:opacity-50',
+                                  active ? STATUS_STYLE[s] : 'bg-gray-100 text-gray-500 hover:bg-gray-200',
+                                ].join(' ')}
+                              >
+                                {s[0]}
+                              </button>
+                            );
+                          })}
+                          {cell.status === 'Excused' && cell.note && (
                             <button
-                              key={s}
                               type="button"
-                              disabled={cellBusy}
-                              onClick={() => clickStatus(att.enrollmentId, d.key, s)}
-                              title={s === 'Excused' && active && cell.note ? cell.note : s}
-                              className={[
-                                'h-6 w-6 rounded-md text-[11px] font-bold transition disabled:opacity-50',
-                                active ? STATUS_STYLE[s] : 'bg-gray-100 text-gray-500 hover:bg-gray-200',
-                              ].join(' ')}
+                              onClick={() => clickStatus(att.enrollmentId, d.key, half, 'Excused')}
+                              title="View excuse note"
+                              className="text-amber-500 hover:text-amber-600"
                             >
-                              {label}
+                              <Info className="h-3 w-3" />
                             </button>
-                          );
-                        })}
-                        {cell.status === 'Excused' && cell.note && (
-                          <button
-                            type="button"
-                            onClick={() => clickStatus(att.enrollmentId, d.key, 'Excused')}
-                            title="View excuse note"
-                            className="text-amber-500 hover:text-amber-600"
-                          >
-                            <Info className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  );
-                })}
-                <td className="px-4 py-3 text-right whitespace-nowrap text-xs text-gray-600">
+                          )}
+                        </div>
+                      </td>
+                    );
+                  })
+                )}
+                <td className="px-4 py-3 text-right whitespace-nowrap text-xs text-gray-600 border-l border-gray-200">
                   <span className="text-emerald-600 font-semibold">{r.p}P</span>{' · '}
                   <span className="text-red-600 font-semibold">{r.a}A</span>{' · '}
                   <span className="text-amber-600 font-semibold">{r.e}E</span>
@@ -204,10 +246,10 @@ export const AttendanceGrid = ({ startDate, endDate, attendees }: Props) => {
                 className="w-full rounded-lg border border-gray-300 p-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
               <div className="mt-3 flex items-center justify-between">
-                {cellOf(excuse.enrollmentId, excuse.dayKey).status === 'Excused' ? (
+                {cellOf(excuse.enrollmentId, excuse.dayKey, excuse.session).status === 'Excused' ? (
                   <button
                     type="button"
-                    onClick={() => { void commit(excuse.enrollmentId, excuse.dayKey, null); setExcuse(null); }}
+                    onClick={() => { void commit(excuse.enrollmentId, excuse.dayKey, excuse.session, null); setExcuse(null); }}
                     className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-semibold text-gray-600 hover:bg-gray-50"
                   >
                     Clear
@@ -218,7 +260,7 @@ export const AttendanceGrid = ({ startDate, endDate, attendees }: Props) => {
                   <button
                     type="button"
                     disabled={!excuse.note.trim()}
-                    onClick={() => { void commit(excuse.enrollmentId, excuse.dayKey, 'Excused', excuse.note); setExcuse(null); }}
+                    onClick={() => { void commit(excuse.enrollmentId, excuse.dayKey, excuse.session, 'Excused', excuse.note); setExcuse(null); }}
                     className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-50"
                   >
                     Save excuse
