@@ -22,6 +22,10 @@ import {
   listEmployeeOptions,
   listPositionTitlesForDepartment,
   getPositionQualifications,
+  listPositionQualificationsForDepartment,
+  diffQualifications,
+  type PositionQualifications,
+  type QualificationDrift,
   listCompetencyRequirements,
   saveCompetencyRequirement,
   removeCompetencyRequirement,
@@ -109,6 +113,10 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
   // Tells the user which fields came from the job posting rather than their typing.
   const [prefillNotice, setPrefillNotice] = useState('');
 
+  // Current posting qualifications for this office, keyed by lowercased title —
+  // one query, used to flag positions whose snapshot has gone stale.
+  const [postingQuals, setPostingQuals] = useState<Map<string, PositionQualifications>>(new Map());
+
   const readOnly = modal?.mode === 'view';
 
   const loadPositions = async () => {
@@ -132,12 +140,14 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
       const deptRes = await getDepartmentById(officeId);
       const name = deptRes.success ? deptRes.data.name : officeName;
       setDepartmentName(name);
-      const [titles, compRes, emps] = await Promise.all([
+      const [titles, compRes, emps, quals] = await Promise.all([
         listPositionTitlesForDepartment(name),
         getCompetencyLibrary(),
         listEmployeeOptions(),
+        listPositionQualificationsForDepartment(name),
       ]);
       setPositionTitleOptions(titles);
+      setPostingQuals(quals);
       if (compRes.success) setCompetencyCatalog(compRes.data ?? []);
       setEmployees(emps.filter((e) => (e.department ?? '').trim().toLowerCase() === name.trim().toLowerCase()));
     })();
@@ -169,6 +179,44 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
     }
     return [current, ...positionTitleOptions];
   }, [positionTitleOptions, form.title]);
+
+  /**
+   * Positions whose snapshot no longer matches their job posting. Requirements
+   * are snapshotted on purpose (a repost must not silently move the bar on
+   * successors already assessed), so this only flags the difference — adopting
+   * it stays a deliberate act.
+   */
+  const driftByPosition = useMemo(() => {
+    const map = new Map<string, QualificationDrift[]>();
+    for (const p of positions) {
+      const posted = postingQuals.get(p.title.trim().toLowerCase());
+      if (!posted) continue;
+      const drift = diffQualifications(p, posted);
+      if (drift.length > 0) map.set(p.id, drift);
+    }
+    return map;
+  }, [positions, postingQuals]);
+
+  /** Drift for the position currently open in the modal, if any. */
+  const openDrift = useMemo(
+    () => (modal?.position ? driftByPosition.get(modal.position.id) ?? [] : []),
+    [modal, driftByPosition],
+  );
+
+  /** Copy the posting's current values into the form — the user still saves. */
+  const adoptPostingValues = () => {
+    const posted = postingQuals.get(form.title.trim().toLowerCase());
+    if (!posted) return;
+    setForm((f) => ({
+      ...f,
+      minYearsExperience: posted.minYearsExperience || f.minYearsExperience,
+      requiredEducation: posted.requiredEducation || f.requiredEducation,
+      requiredEligibility: posted.requiredEligibility || f.requiredEligibility,
+      requiredCertifications:
+        posted.requiredCertifications.length > 0 ? posted.requiredCertifications : f.requiredCertifications,
+    }));
+    setPrefillNotice('Updated from the job posting — review, then Save to apply.');
+  };
 
   /**
    * Selecting a position pulls the qualification requirements RSP already
@@ -460,7 +508,20 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
             {!loading && filtered.map((p) => (
               <tr key={p.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
                 <td className="px-4 py-3 font-medium text-[var(--text-primary)]">
-                  <span className="flex items-center gap-1.5"><Briefcase size={14} className="text-[var(--text-muted)]" />{p.title}</span>
+                  <span className="flex items-center gap-1.5">
+                    <Briefcase size={14} className="text-[var(--text-muted)]" />
+                    {p.title}
+                    {(driftByPosition.get(p.id)?.length ?? 0) > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => openFor('edit', p)}
+                        title="The job posting for this role has changed since it was flagged — review"
+                        className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 hover:bg-amber-100"
+                      >
+                        <AlertTriangle size={11} /> Posting changed
+                      </button>
+                    )}
+                  </span>
                 </td>
                 <td className="px-4 py-3 text-[var(--text-secondary)]">{departmentName}</td>
                 <td className="px-4 py-3 text-[var(--text-secondary)]">{p.incumbentName ?? <span className="italic text-slate-400">Vacant</span>}</td>
@@ -577,6 +638,37 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
               {!readOnly && prefillNotice && (
                 <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
                   {prefillNotice}
+                </div>
+              )}
+
+              {/* Snapshot has gone stale: show exactly what differs and let the
+                  Department Head decide, rather than changing it for them. */}
+              {!readOnly && openDrift.length > 0 && (
+                <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5">
+                  <p className="!mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-amber-900">
+                    <AlertTriangle size={13} /> The job posting for this role has changed since it was flagged
+                  </p>
+                  <ul className="!mb-2 space-y-1 text-xs text-amber-900">
+                    {openDrift.map((d) => (
+                      <li key={d.label}>
+                        <span className="font-medium">{d.label}:</span>{' '}
+                        <span className="line-through opacity-70">{d.stored}</span>{' '}
+                        <span aria-hidden="true">→</span> <span className="font-semibold">{d.posted}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={adoptPostingValues}
+                      className="rounded-lg border border-amber-400 bg-white px-2.5 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+                    >
+                      Use the posting's values
+                    </button>
+                    <span className="self-center text-xs text-amber-800">
+                      or leave as-is — successors are assessed against what's saved here.
+                    </span>
+                  </div>
                 </div>
               )}
               <div className="space-y-4">

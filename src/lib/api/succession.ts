@@ -757,6 +757,106 @@ export async function getPositionQualifications(
   }
 }
 
+/** One field whose stored requirement no longer matches the job posting. */
+export interface QualificationDrift {
+  label: string;
+  stored: string;
+  posted: string;
+}
+
+const asText = (v: unknown): string => String(v ?? '').trim();
+
+/**
+ * Fields where a critical position's stored requirements have diverged from its
+ * job posting.
+ *
+ * Requirements are snapshotted when the position is flagged, deliberately: a
+ * reposted job must not silently raise the bar on successors already assessed as
+ * ready. But a stale snapshot shouldn't pass unnoticed either, so this reports
+ * the difference and the Department Head decides whether to adopt it.
+ *
+ * Only fields the posting actually specifies are compared — a posting that never
+ * recorded an eligibility can't be said to disagree with one.
+ */
+export function diffQualifications(
+  stored: CriticalPosition,
+  posted: PositionQualifications,
+): QualificationDrift[] {
+  const drift: QualificationDrift[] = [];
+
+  const compare = (label: string, storedValue: string, postedValue: string) => {
+    if (!postedValue) return;
+    if (storedValue.toLowerCase() === postedValue.toLowerCase()) return;
+    drift.push({ label, stored: storedValue || '—', posted: postedValue });
+  };
+
+  compare('Education', asText(stored.requiredEducation), posted.requiredEducation);
+  compare('Eligibility', asText(stored.requiredEligibility), posted.requiredEligibility);
+  compare(
+    'Minimum experience',
+    stored.minYearsExperience != null ? String(stored.minYearsExperience) : '',
+    posted.minYearsExperience,
+  );
+
+  const storedCerts = (stored.requiredCertifications ?? []).map(asText).filter(Boolean).sort();
+  const postedCerts = posted.requiredCertifications.map(asText).filter(Boolean).sort();
+  if (postedCerts.length > 0 && storedCerts.join('|').toLowerCase() !== postedCerts.join('|').toLowerCase()) {
+    drift.push({
+      label: 'Certifications',
+      stored: storedCerts.join(', ') || '—',
+      posted: postedCerts.join(', '),
+    });
+  }
+
+  return drift;
+}
+
+/**
+ * Every posting's qualifications for one office, keyed by lowercased title.
+ * One query for the whole page — comparing each critical position separately
+ * would be a request per row.
+ */
+export async function listPositionQualificationsForDepartment(
+  departmentName: string,
+): Promise<Map<string, PositionQualifications>> {
+  const dept = asText(departmentName);
+  const byTitle = new Map<string, PositionQualifications>();
+  if (!dept) return byTitle;
+
+  try {
+    const { data, error } = await supabase
+      .from('job_postings')
+      .select(
+        'title, description, summary, education_requirement, education_field, experience_years, eligibility, competency, training_requirement, certifications, created_at',
+      )
+      .eq('department', dept)
+      .order('created_at', { ascending: false });
+    if (error) return byTitle;
+
+    for (const row of (data ?? []) as any[]) {
+      const key = asText(row.title).toLowerCase();
+      // Ordered newest-first, so the first entry per title is the current posting.
+      if (!key || byTitle.has(key)) continue;
+
+      const years = Number(row.experience_years);
+      byTitle.set(key, {
+        positionDescription: asText(row.description) || asText(row.summary),
+        minYearsExperience: Number.isFinite(years) && years > 0 ? String(years) : '',
+        requiredEducation: [row.education_requirement, row.education_field].map(asText).filter(Boolean).join(' — '),
+        requiredEligibility: asText(row.eligibility),
+        requiredCertifications: Array.isArray(row.certifications)
+          ? row.certifications.map(asText).filter(Boolean)
+          : [],
+        competency: asText(row.competency),
+        trainingRequirement: asText(row.training_requirement),
+      });
+    }
+    return byTitle;
+  } catch {
+    return byTitle;
+  }
+}
+
 /**
  * Every position that exists in an office, from both sources:
  *   - employees_with_department — roles currently held (the office directory)
