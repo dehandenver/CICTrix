@@ -401,18 +401,23 @@ async def assess_employee_competencies(req: CompetencyAssessmentRequest):
         possessed_val = score_info["possessed"]
         required_val = required_levels[comp]
         
-        if possessed_val is None:
-            # Skip saving if the competency standard could not be assessed
+        if possessed_val is None and required_val is None:
+            # Neither demonstrated in IPCR nor required for the position —
+            # nothing to record
             continue
-            
+
         norm_name = normalize_comp_name(comp)
         comp_uuid = normalized_comp_map.get(norm_name)
         if not comp_uuid:
             # Defensive check
             continue
-            
-        # Convert possessed rating average (1.0 - 5.0) to integer (1 - 5)
-        proficiency_level = max(1, min(5, round(possessed_val)))
+
+        # Convert possessed rating average (1.0 - 5.0) to integer (1 - 5).
+        # NULL proficiency = required for the position but never demonstrated
+        # in IPCR targets — the UI surfaces that as a Gap.
+        proficiency_level = (
+            max(1, min(5, round(possessed_val))) if possessed_val is not None else None
+        )
         
         # Save to employee_competencies
         emp_comp_row = {
@@ -456,15 +461,17 @@ async def assess_employee_competencies(req: CompetencyAssessmentRequest):
         
         gap = 0.0
         status_str = "Met"
-        if possessed is not None and required is not None:
-            gap_val = required - possessed
+        if required is not None:
+            # A required competency never demonstrated in IPCR counts as a
+            # full gap (possessed treated as 0), matching what is persisted.
+            gap_val = required - (possessed if possessed is not None else 0)
             if gap_val > 0:
                 gap = round(gap_val, 2)
                 status_str = "Gap"
                 competency_gaps.append({
                     "competency": comp,
                     "required": required,
-                    "possessed": possessed,
+                    "possessed": possessed if possessed is not None else 0,
                     "gap": gap
                 })
         elif possessed is None:

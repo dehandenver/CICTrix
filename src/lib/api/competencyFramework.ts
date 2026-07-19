@@ -400,14 +400,16 @@ export async function getEmployeeCompetencyDetails(
       ok: true,
       scores: (scores ?? []).map((s: any) => ({
         name: s.competencies?.name ?? 'Unknown Competency',
-        proficiencyLevel: s.proficiency_level,
+        // Null proficiency = required for the position but never demonstrated
+        // in IPCR targets; the UI renders 0 as "Not yet demonstrated".
+        proficiencyLevel: s.proficiency_level ?? 0,
         requiredLevel: s.required_level,
         // A null required level means the position has no configured requirement
         // for this competency — that's neither Met nor a Gap.
         status:
           s.required_level == null
             ? 'No Requirement'
-            : s.proficiency_level >= s.required_level
+            : (s.proficiency_level ?? 0) >= s.required_level
               ? 'Met'
               : 'Gap',
       })),
