@@ -15,6 +15,7 @@
 import { supabase as supabaseClient } from '../supabase';
 import { bucketForScore } from './performanceEvaluations';
 import { setSubmissionStage } from './ipcrSubmissions';
+import { resolveOfficeWeights } from './officeWeighting';
 
 const supabase = supabaseClient as any;
 
@@ -221,10 +222,21 @@ export async function saveAccomplishments(
     const coreAvg = categoryAverage(input.core);
     const strategicAvg = categoryAverage(input.strategic);
     const supportAvg = categoryAverage(input.support);
+
+    // The office's weighting option (A/B/C) is the policy for how the three
+    // categories combine, so it drives the score. Explicit per-category weights
+    // still win where they are set — an office can deviate for one employee
+    // without its whole split being ignored — but when they are absent the
+    // office config applies instead of falling through to an unweighted mean,
+    // which is what previously made the configured split have no effect.
+    const officeWeights = await resolveOfficeWeights(input.officeId);
+    const weightFor = (explicit: number | null, fromOffice: number | undefined) =>
+      explicit ?? fromOffice ?? null;
+
     const overallScore = computeOverallScore([
-      { average: coreAvg, weight: input.core.weight },
-      { average: strategicAvg, weight: input.strategic.weight },
-      { average: supportAvg, weight: input.support.weight },
+      { average: coreAvg, weight: weightFor(input.core.weight, officeWeights?.core) },
+      { average: strategicAvg, weight: weightFor(input.strategic.weight, officeWeights?.strategic) },
+      { average: supportAvg, weight: weightFor(input.support.weight, officeWeights?.support) },
     ]);
     const adjectival = overallScore !== null ? bucketForScore(overallScore) : null;
 
@@ -236,15 +248,18 @@ export async function saveAccomplishments(
       core_quality: input.core.quality,
       core_efficiency: input.core.efficiency,
       core_timeliness: input.core.timeliness,
-      core_weight: input.core.weight,
+      // Store the weight actually used, not the (often null) input. Otherwise the
+      // row shows no weights beside a weighted overall_score and the number
+      // cannot be reproduced from the record.
+      core_weight: weightFor(input.core.weight, officeWeights?.core),
       strategic_quality: input.strategic.quality,
       strategic_efficiency: input.strategic.efficiency,
       strategic_timeliness: input.strategic.timeliness,
-      strategic_weight: input.strategic.weight,
+      strategic_weight: weightFor(input.strategic.weight, officeWeights?.strategic),
       support_quality: input.support.quality,
       support_efficiency: input.support.efficiency,
       support_timeliness: input.support.timeliness,
-      support_weight: input.support.weight,
+      support_weight: weightFor(input.support.weight, officeWeights?.support),
       core_rating: coreAvg,
       strategic_rating: strategicAvg,
       support_rating: supportAvg,

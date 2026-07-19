@@ -12,7 +12,7 @@ of these degrade silently when a bad row lands.
 | 2 | Legal in Phase 1; all other offices in Phase 2 | **PASS** | Legal 10 `draft`; IT 11, Accountant 10, Engineer 10, Health 9 `approved` |
 | 3 | Summary of Ratings reads real seeded history, not defaulting low | **PASS** | Mean 4.227 / 5; 0 rows outside canonical periods |
 | 4 | Gap analysis / training needs runs against seeded data via the API | **PARTIAL** | View returns 168 rows for 52 employees, but **0** flagged `training_needed` — see Known issue 1 |
-| 5 | Office weighting recorded and applied per office | **PASS** | 5/5 active offices on option C |
+| 5 | Office weighting recorded and applied per office | **PASS** | 5/5 active offices on option C; split now drives `computeOverallScore` on both the employee save and the PM roll-up |
 | 6 | Office accounts show My IPCR Workspace / Training locked-with-note | **PASS** | `OfficeAccountLockedNote` gated on `isOfficeAccount` |
 
 Supporting counts: 805 `ipcr_performance` rows, 183 MFOs, 212 success indicators.
@@ -88,6 +88,11 @@ the scale.
 
 ### 2. `target_settings.status` value outside its CHECK constraint
 
+Re-checked after §4 went live: not a blocker. The weighting path reads
+`department_weighting_configs` and `departments`, and never branches on
+`target_settings.status`, so the odd value cannot affect a computed score.
+
+
 One City Health employee's row has `status = 'submitted_for_approval'`, which is
 not in that column's CHECK list (`draft` / `submitted` / `approved` / `rejected`).
 Either the constraint was altered live or the row predates it. Harmless today,
@@ -102,13 +107,29 @@ Seeded supervisor passwords (`pm123` / `lnd123`) remain in
 exploitable today since the table is not used for auth, but it should be
 scrubbed, or the migration retired, if the Supervisor model is ever revived.
 
-### 4. Weighting options A and B would zero-weight real work
+### 4. Weighting options A and B would zero-weight real work — now live
 
 All five offices file Core, Strategic **and** Support MFOs. Option A sets
 Support to 0 and option B sets Strategic to 0, so moving any office onto them
-today discards rated work. All five are on C. A and B remain selectable — that
-is an operational choice, not a bug — but nothing should sit on them while the
-function mix looks like this.
+discards rated work. All five are on C.
+
+**Status changed when §4 went live.** This was theoretical while nothing read
+the config. The split now drives `computeOverallScore`, so selecting A or B in
+the admin UI immediately changes real scores.
+
+It also exposes an edge case, verified 2026-07-19:
+
+> Under option A, an employee whose **only** filled category is Support scores
+> `3.2` from a Support average of `3.2` — despite Support being weighted 0%.
+> `computeOverallScore` falls back to an unweighted mean when the weight sum is
+> zero, which is the right default for "no weights configured" but the wrong one
+> for "this category is deliberately worth nothing". The same applies to option
+> B and a Strategic-only employee.
+
+Option C has no such case: every category carries weight. The fallback is only
+reachable on A or B, and only for an employee rated in the zero-weighted
+category alone. Not fixed — the correct behaviour (score `null`? treat as 0?
+refuse the split?) is a policy question, not a code one.
 
 ## Resolved
 

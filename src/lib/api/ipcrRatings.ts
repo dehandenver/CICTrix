@@ -19,6 +19,7 @@
  */
 import { supabase as supabaseClient } from '../supabase';
 import { categoryAverage, computeOverallScore } from './ipcrWorkspace';
+import { resolveOfficeWeights } from './officeWeighting';
 import { bucketForScore } from './performanceEvaluations';
 import type { FunctionType } from './ipcrTargets';
 import { setSubmissionStage, resolveTargetSettingMeta } from './ipcrSubmissions';
@@ -371,6 +372,31 @@ export async function saveRatings(params: {
  * Only updates an existing workspace row (matched by employee + period); it does
  * not create one, and it never changes the workspace status.
  */
+/**
+ * The department id for an employee. `employees` has no department_id — only a
+ * department *name* — so this resolves the name to a departments row, which is
+ * what department_weighting_configs keys on.
+ */
+async function officeIdForEmployee(employeeId: string): Promise<string | null> {
+  try {
+    const { data: emp } = await supabase
+      .from('employees_with_department')
+      .select('department')
+      .eq('id', employeeId)
+      .maybeSingle();
+    const name = String(emp?.department ?? '').trim();
+    if (!name) return null;
+    const { data: dep } = await supabase
+      .from('departments')
+      .select('id')
+      .eq('name', name)
+      .maybeSingle();
+    return dep?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function rollUpToWorkspace(
   targetSettingId: string,
   setting: { employee_id: string; cycle_id: number },
@@ -406,10 +432,15 @@ async function rollUpToWorkspace(
     return { q, e, t, average };
   };
   const core = cat('core'), strategic = cat('strategic'), support = cat('support');
+
+  // Apply the employee's office weighting split. Without this the PM-side
+  // roll-up scored an unweighted mean while the employee-side save applied the
+  // office split, so the same IPCR could produce two different overall scores.
+  const officeWeights = await resolveOfficeWeights(await officeIdForEmployee(setting.employee_id));
   const overallScore = computeOverallScore([
-    { average: core.average, weight: null },
-    { average: strategic.average, weight: null },
-    { average: support.average, weight: null },
+    { average: core.average, weight: officeWeights?.core ?? null },
+    { average: strategic.average, weight: officeWeights?.strategic ?? null },
+    { average: support.average, weight: officeWeights?.support ?? null },
   ]);
   const adjectival = overallScore !== null ? bucketForScore(overallScore) : null;
 
