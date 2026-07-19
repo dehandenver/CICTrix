@@ -85,7 +85,7 @@ import '../../styles/admin.css';
 type EmployeeOption = { id: string; name: string; position: string; department: string };
 
 import { PMIPCRManagement } from './pm/PMIPCRManagement';
-import { PMCompetencyFramework } from './pm/PMCompetencyFramework';
+import { CompetencyFrameworkPage } from './CompetencyFrameworkPageView';
 import { PMArchive } from './pm/PMArchive';
 import { OfficeWeightingPanel } from './pm/OfficeWeightingPanel';
 import { PMPromotionalApplications } from './pm/PMPromotionalApplications';
@@ -1370,7 +1370,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
             {activeSection === 'ipcr-management' && <PMIPCRManagement />}
 
-            {activeSection === 'competency' && <PMCompetencyFramework />}
+            {activeSection === 'competency' && <CompetencyFrameworkPage isDashboardView />}
 
             {activeSection === 'archive' && <PMArchive />}
             {activeSection === 'weighting' && <OfficeWeightingPanel />}
