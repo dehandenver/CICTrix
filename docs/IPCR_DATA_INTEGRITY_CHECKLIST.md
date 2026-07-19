@@ -62,6 +62,20 @@ something other than that table, and the mapping cannot be read from this repo â
 the view is defined directly in Supabase. Re-tiering the requirements table
 would write hundreds of rows and change nothing.
 
+Black-box mapping of the view narrowed it further (2026-07-19):
+
+* `required_proficiency` takes only three values: `3`, `3.5`, `4`.
+* It varies **per employee, not per position**. Two `Midwife II` employees on the
+  same competency get different requirements â€” EMP-130 gets `4`, EMP-2026-013
+  gets `3`. So no position-level table can be the sole input.
+* Only **5 of 52** employees have anything other than a flat `3`: EMP-130 to
+  EMP-134, the original pre-seed employees. All 47 seeded employees are flat `3`.
+
+That last point matters for the rank-suffix plan: whatever drives the variation
+is attached to those five legacy records, not to position title or rank. Tiering
+by rank suffix cannot be expressed through any table reachable from here until
+the view shows where the requirement actually resolves from.
+
 This item cannot progress until the view definition is captured:
 
 ```sql

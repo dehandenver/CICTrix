@@ -3,7 +3,6 @@ import {
   Award,
   BarChart2,
   Sparkles,
-  BookOpen,
   Building2,
   CalendarClock,
   CalendarDays,
@@ -24,7 +23,6 @@ import {
   TrendingUp,
   Upload,
   Users,
-  UsersRound,
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -49,17 +47,15 @@ import { supabase } from '../../lib/supabase';
 import { SeminarEnrollment } from './SeminarEnrollment';
 import { TrainingCalendar } from './TrainingCalendar';
 import { TrainingPlan } from './TrainingPlan';
-import { TrainingCourses } from './TrainingCourses';
 import { CATEGORY_COLORS, TRAINING_CATEGORIES } from './trainingCategories';
 
 import { EmptyState } from '../../components/EmptyState';
 import { listTrainingRequestsDetailed, type TrainingRequest } from '../../lib/api/trainingRequests';
 import { listIncompleteLockedTrainings, listLockingSoonWithoutRoster, type IncompleteLockedTraining, type LockingSoonTraining } from '../../lib/api/trainingLifecycle';
-import EmployeeDirectory from './EmployeeDirectory';
+import { OfficeDirectorySection } from '../../components/OfficeDirectorySection';
 import { LndSummaryOfRatings } from './LndSummaryOfRatings';
 import { LndTrainingRequests } from './LndTrainingRequests';
 import { LndTrainingEvaluation } from './LndTrainingEvaluation';
-import { LndRecommendations } from './LndRecommendations';
 import { LndTrainingNeeds } from './LndTrainingNeeds';
 
 type MenuId =
@@ -69,11 +65,9 @@ type MenuId =
   | 'training-plan'
   | 'training-requests'
   | 'training-needs'
-  | 'training-courses'
   | 'seminar-enrollment'
   | 'training-evaluation'
-  | 'recommendations'
-  | 'employees'
+  | 'office-directory'
   | 'settings';
 
 type MenuItem = {
@@ -102,11 +96,9 @@ const LND_MENU: MenuItem[] = [
   { id: 'training-plan', label: 'Training Plan', sublabel: 'Next year’s plan', icon: CalendarClock },
   { id: 'training-requests', label: 'Training Requests', sublabel: 'Department head submissions', icon: ClipboardList },
   { id: 'training-needs', label: 'Requests & Needs', sublabel: 'Office requests + AI needs assessment', icon: Sparkles },
-  { id: 'training-courses', label: 'Training Courses', sublabel: 'Courses and sessions', icon: BookOpen },
   { id: 'seminar-enrollment', label: 'Seminar Enrollment', sublabel: 'Registrations and slots', icon: ClipboardCheck },
   { id: 'training-evaluation', label: 'Training Evaluation', sublabel: 'Pre/post-test results', icon: TrendingUp },
-  { id: 'recommendations', label: 'Recommendations', sublabel: 'IPCR → approval → enrollment', icon: Sparkles },
-  { id: 'employees', label: 'Employees', sublabel: 'Directory and profiles', icon: UsersRound },
+  { id: 'office-directory', label: 'Office Directory', sublabel: 'All employees', icon: Users },
   { id: 'settings', label: 'Settings', sublabel: 'Division preferences', icon: Settings },
 ];
 
@@ -685,16 +677,12 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
             <LndTrainingRequests />
           ) : activeModule === 'training-needs' ? (
             <LndTrainingNeeds />
-          ) : activeModule === 'training-courses' ? (
-            <TrainingCourses />
           ) : activeModule === 'seminar-enrollment' ? (
             <SeminarEnrollment />
           ) : activeModule === 'training-evaluation' ? (
             <LndTrainingEvaluation />
-          ) : activeModule === 'recommendations' ? (
-            <LndRecommendations />
-          ) : activeModule === 'employees' ? (
-            <EmployeeDirectory />
+          ) : activeModule === 'office-directory' ? (
+            <OfficeDirectorySection showBulkRequest={false} />
           ) : (
             <PlaceholderPage label={LND_MENU.find((item) => item.id === activeModule)?.label || 'Module'} />
           )}
