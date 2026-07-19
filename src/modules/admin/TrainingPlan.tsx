@@ -772,10 +772,11 @@ export const TrainingPlan = () => {
             <p className="text-sm font-semibold text-emerald-900">
               {wState.until
                 ? `Planning window open — editable through ${formatDate(wState.until)}.`
-                : 'Planning window open — editable until it is closed manually.'}
+                : `Planning window open — stays open until the full ${planYear} plan is set and published.`}
             </p>
             <p className="mt-0.5 text-sm text-emerald-700">
               Add entries from the calendar or the New Planned Training button.
+              {!wState.until && ' Close it under Planning window once the plan is published.'}
             </p>
           </div>
         </div>
