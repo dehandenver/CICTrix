@@ -385,10 +385,11 @@ export async function getEmployeeCompetencyDetails(
       .select('*')
       .eq('employee_id', employeeId);
     
-    if (cycleId) {
+    if (cycleId != null) {
       query = query.eq('cycle_id', cycleId);
     } else {
-      query = query.is('cycle_id', null);
+      // No cycle specified — return the most recent summary for this employee
+      query = query.order('created_at', { ascending: false }).limit(1);
     }
     const { data: summaries, error: sumErr } = await query;
     if (sumErr) throw sumErr;

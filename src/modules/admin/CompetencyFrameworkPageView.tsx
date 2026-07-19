@@ -190,7 +190,7 @@ export const CompetencyFrameworkPage = () => {
     const res = await assessEmployeeCompetencies(selectedEmployee.id);
     setAssessing(false);
     if (res.ok) {
-      const det = await getEmployeeCompetencyDetails(selectedEmployee.id);
+      const det = await getEmployeeCompetencyDetails(selectedEmployee.id, res.data?.cycle_id);
       if (det.ok) {
         setDetailScores(det.scores || []);
         setDetailSummary(det.summary);
