@@ -26,6 +26,7 @@ import {
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { MyTrainingsSection } from './MyTrainingsSection';
+import { getActiveOfficeRole } from '../../lib/api/officeRoles';
 import abyanLogo from '../../assets/abyan-logo.png';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
@@ -92,6 +93,28 @@ function isPhaseScheduleOpen(row: any | null): boolean {
   if (!row.start_date || !row.deadline_date) return false;
   return today >= row.start_date && today <= row.deadline_date;
 }
+
+/**
+ * Shown in place of the employee-only sections when the signed-in account is an
+ * Office Account (a department/office head). The tab stays in the navigation so
+ * the portal structure is identical across account types — it is explained, not
+ * hidden, so it never reads as a missing feature or a bug.
+ */
+const OfficeAccountLockedNote = ({ section }: { section: string }) => (
+  <div className="mx-auto max-w-3xl px-4 py-10">
+    <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+        <Lock className="h-6 w-6" />
+      </div>
+      <h2 className="text-lg font-bold text-slate-900">{section} is not available for Office Accounts</h2>
+      <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-slate-600">
+        Office Accounts are held by department and office heads, who oversee their team's
+        performance and training rather than completing individual IPCR targets or training
+        requests themselves. Your oversight tools are available in the Office Account portal.
+      </p>
+    </div>
+  </div>
+);
 
 const SOURCE_BADGE_STYLES: Record<RequestSource, string> = {
   HR: 'bg-slate-100 text-slate-700 ring-1 ring-slate-200',
@@ -283,6 +306,24 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
     target: null,
     rating: null,
   });
+
+  // Office Accounts (department/office heads) oversee their team rather than
+  // filing their own IPCR or training requests — those tabs stay visible but
+  // render an explanatory note instead of the employee-only content.
+  const [isOfficeAccount, setIsOfficeAccount] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const empId = currentUser.supabaseId;
+      if (!empId) {
+        if (!cancelled) setIsOfficeAccount(false);
+        return;
+      }
+      const role = await getActiveOfficeRole(String(empId));
+      if (!cancelled) setIsOfficeAccount(Boolean(role));
+    })();
+    return () => { cancelled = true; };
+  }, [currentUser.supabaseId]);
 
   const isTargetSettingActive = useMemo(() => {
     const systemOpen = isPhaseScheduleOpen(systemSchedules.target);
@@ -1830,7 +1871,9 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
 
       <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
         {activeTab === 'trainings' && (
-          <MyTrainingsSection employeeId={(currentUser.supabaseId as string) ?? ''} />
+          isOfficeAccount
+            ? <OfficeAccountLockedNote section="Training" />
+            : <MyTrainingsSection employeeId={(currentUser.supabaseId as string) ?? ''} />
         )}
         {activeTab === 'personal' && (
           <div className="space-y-5">
@@ -3132,7 +3175,11 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
             </section>
           </div>
         )}
-        {activeTab === 'ipcr-workspace' && (
+        {activeTab === 'ipcr-workspace' && isOfficeAccount && (
+          <OfficeAccountLockedNote section="My IPCR Workspace" />
+        )}
+
+        {activeTab === 'ipcr-workspace' && !isOfficeAccount && (
           <div className="space-y-6 animate-fade-in" style={{ fontFamily: "'Poppins', sans-serif" }}>
             {/* Subtabs selector */}
             <div className="flex border-b border-slate-200 bg-white rounded-xl p-2 shadow-sm gap-2">
