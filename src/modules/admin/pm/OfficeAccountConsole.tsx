@@ -26,7 +26,9 @@ import {
   BookOpen,
   ChevronDown,
   Search,
-  Check
+  Check,
+  Target,
+  GitCompare
 } from 'lucide-react';
 import { LogoutConfirmPopover } from '../../../components/LogoutConfirmPopover';
 import abyanLogo from '../../../assets/abyan-logo.png';
@@ -55,6 +57,8 @@ import {
 } from '../../../lib/api/trainingRequests';
 import { Phase2RatingPanel } from './Phase2RatingPanel';
 import { OfficeTrainingCourses } from './OfficeTrainingCourses';
+import { CriticalPositionPage } from '../../../components/CriticalPositionPage';
+import { CriticalPositionGapAnalysisPage } from '../../../components/CriticalPositionGapAnalysisPage';
 
 type Pillar = 'Cultural Transformation' | 'Employee Development' | 'Leadership' | 'Technical';
 
@@ -307,7 +311,7 @@ export const OfficeAccountConsole: React.FC = () => {
   };
   const switchEnabled = officeRole !== null;
   // Navigation tabs: 'targets' | 'ratings' | 'training-requests'
-  const [activeTab, setActiveTab] = useState<'targets' | 'ratings' | 'training-requests' | 'training-courses'>('targets');
+  const [activeTab, setActiveTab] = useState<'targets' | 'ratings' | 'training-requests' | 'training-courses' | 'critical-positions' | 'gap-analysis'>('targets');
 
   // Subtabs
   const [targetsSubtab, setTargetsSubtab] = useState<'verify' | 'transmittal'>('verify');
@@ -933,6 +937,38 @@ export const OfficeAccountConsole: React.FC = () => {
                 </p>
               </div>
             </button>
+            <button
+              onClick={() => setActiveTab('critical-positions')}
+              className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${
+                activeTab === 'critical-positions' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
+              }`}
+            >
+              <Target className={`h-5 w-5 ${activeTab === 'critical-positions' ? 'text-white' : 'text-black'}`} />
+              <div>
+                <p className={`text-sm font-semibold leading-tight ${activeTab === 'critical-positions' ? 'text-white' : 'text-black'}`}>
+                  Critical Positions
+                </p>
+                <p className={`text-[11px] mt-0.5 ${activeTab === 'critical-positions' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
+                  Manage & configure requirements
+                </p>
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('gap-analysis')}
+              className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${
+                activeTab === 'gap-analysis' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
+              }`}
+            >
+              <GitCompare className={`h-5 w-5 ${activeTab === 'gap-analysis' ? 'text-white' : 'text-black'}`} />
+              <div>
+                <p className={`text-sm font-semibold leading-tight ${activeTab === 'gap-analysis' ? 'text-white' : 'text-black'}`}>
+                  Gap Analysis
+                </p>
+                <p className={`text-[11px] mt-0.5 ${activeTab === 'gap-analysis' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
+                  Compare employees vs. requirements
+                </p>
+              </div>
+            </button>
           </nav>
         </aside>
 
@@ -940,6 +976,13 @@ export const OfficeAccountConsole: React.FC = () => {
         <main className="flex-1 p-6 space-y-6">
           
           {/* Section Header */}
+          {activeTab === 'critical-positions' || activeTab === 'gap-analysis' ? (
+            <div className="flex justify-end border-b border-slate-200 pb-5">
+              <div className="flex items-center gap-2 rounded-lg bg-indigo-50 border border-indigo-200 px-3 py-1.5 text-xs font-semibold text-indigo-800">
+                <Shield className="h-4 w-4" /> Office Account Authorized
+              </div>
+            </div>
+          ) : (
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 pb-5">
             <div>
               <h2 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2.5">
@@ -975,11 +1018,12 @@ export const OfficeAccountConsole: React.FC = () => {
                   : 'Submit structured training requests for employees, evaluated using a Weighted Sum Model (WSM) for prioritization.'}
               </p>
             </div>
-            
+
             <div className="flex items-center gap-2 rounded-lg bg-indigo-50 border border-indigo-200 px-3 py-1.5 text-xs font-semibold text-indigo-800">
               <Shield className="h-4 w-4" /> Office Account Authorized
             </div>
           </div>
+          )}
 
           {/* Success Banner */}
           {consoleMessage && (
@@ -993,6 +1037,18 @@ export const OfficeAccountConsole: React.FC = () => {
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden min-h-[450px]">
 
             {activeTab === 'training-courses' && <OfficeTrainingCourses />}
+
+            {activeTab === 'critical-positions' && officeRole?.officeId && (
+              <div className="p-6">
+                <CriticalPositionPage officeId={officeRole.officeId} officeName={officeRole.officeName ?? ''} currentUserName={currentUserName} />
+              </div>
+            )}
+
+            {activeTab === 'gap-analysis' && officeRole?.officeId && (
+              <div className="p-6">
+                <CriticalPositionGapAnalysisPage officeId={officeRole.officeId} officeName={officeRole.officeName ?? ''} />
+              </div>
+            )}
 
             {/* 📥 TAB 2.1: TARGET INTERCEPTION */}
             {activeTab === 'targets' && (

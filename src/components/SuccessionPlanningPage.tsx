@@ -27,10 +27,14 @@ import {
   updateCandidateNote,
   removeCandidate,
   listEmployeeOptions,
+  listCompetencyRequirements,
+  listTrainingRequirements,
   type DepartmentSummary,
   type CriticalPosition,
   type RankedCandidate,
   type EmployeeOption,
+  type CompetencyRequirement,
+  type TrainingRequirement,
 } from '../lib/api/succession';
 
 // The Succession Planning view lives inside the RSP Portal, which is already
@@ -567,7 +571,8 @@ const CriticalPositionsPanel = (props: CriticalPositionsPanelProps) => {
             </div>
 
             {isOpen && (
-              <div className="border-t border-[var(--border-color)] bg-slate-50/50 p-4">
+              <div className="space-y-4 border-t border-[var(--border-color)] bg-slate-50/50 p-4">
+                <RequirementsPanel position={position} />
                 <CandidatesPanel
                   candidates={props.candidatesByPosition[position.id]}
                   loading={props.loadingCandidates[position.id]}
@@ -580,6 +585,116 @@ const CriticalPositionsPanel = (props: CriticalPositionsPanelProps) => {
           </div>
         );
       })}
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Qualification requirements panel (inside an expanded critical position) —
+// read-only here. Configured by the position's Office Account in the
+// Critical Position module; RSP can view but not edit in this pass.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const RequirementsPanel = ({ position }: { position: CriticalPosition }) => {
+  const [competencyReqs, setCompetencyReqs] = useState<CompetencyRequirement[]>([]);
+  const [trainingReqs, setTrainingReqs] = useState<TrainingRequirement[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([listCompetencyRequirements(position.id), listTrainingRequirements(position.id)]).then(
+      ([compRes, trainRes]) => {
+        if (cancelled) return;
+        setCompetencyReqs(compRes.ok ? compRes.data : []);
+        setTrainingReqs(trainRes.ok ? trainRes.data : []);
+        setLoading(false);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [position.id]);
+
+  const hasAnything =
+    !!position.positionDescription ||
+    !!position.requiredEducation ||
+    !!position.requiredEligibility ||
+    position.minYearsExperience != null ||
+    !!position.minIpcrRating ||
+    (position.requiredCertifications ?? []).length > 0 ||
+    competencyReqs.length > 0 ||
+    trainingReqs.length > 0;
+
+  return (
+    <div className="rounded-lg border border-[var(--border-color)] bg-white p-4">
+      <h4 className="!mb-3 text-sm font-semibold text-[var(--text-primary)]">Qualification Requirements</h4>
+
+      {loading && <p className="text-sm text-[var(--text-secondary)]">Loading requirements…</p>}
+
+      {!loading && !hasAnything && (
+        <p className="!mb-0 text-sm text-[var(--text-secondary)]">No qualification requirements configured yet.</p>
+      )}
+
+      {!loading && hasAnything && (
+        <div className="space-y-3 text-sm">
+          {position.positionDescription && (
+            <div><span className="text-[var(--text-secondary)]">Description</span><p className="!mb-0 font-medium">{position.positionDescription}</p></div>
+          )}
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3">
+            <div><span className="text-[var(--text-secondary)]">Required successors</span><p className="!mb-0 font-medium">{position.requiredSuccessorsCount}</p></div>
+            <div><span className="text-[var(--text-secondary)]">Min. experience</span><p className="!mb-0 font-medium">{position.minYearsExperience != null ? `${position.minYearsExperience} year(s)` : '—'}</p></div>
+            <div>
+              <span className="text-[var(--text-secondary)]">Min. IPCR rating</span>
+              <p className="!mb-0">
+                {position.minIpcrRating ? (
+                  <span className={`inline-block rounded-full border px-2 py-0.5 text-xs font-semibold ${adjectivalTone(position.minIpcrRating)}`}>
+                    {position.minIpcrRating}
+                  </span>
+                ) : '—'}
+              </p>
+            </div>
+            <div><span className="text-[var(--text-secondary)]">Required education</span><p className="!mb-0 font-medium">{position.requiredEducation ?? '—'}</p></div>
+            <div><span className="text-[var(--text-secondary)]">Required eligibility</span><p className="!mb-0 font-medium">{position.requiredEligibility ?? '—'}</p></div>
+          </div>
+
+          {(position.requiredCertifications ?? []).length > 0 && (
+            <div>
+              <span className="text-[var(--text-secondary)]">Required certifications</span>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {position.requiredCertifications.map((c) => (
+                  <span key={c} className="rounded-full border border-[var(--border-color)] bg-slate-50 px-2 py-0.5 text-xs text-[var(--text-primary)]">{c}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {competencyReqs.length > 0 && (
+            <div>
+              <span className="text-[var(--text-secondary)]">Required competencies</span>
+              <ul className="!mb-0 mt-1 space-y-0.5">
+                {competencyReqs.map((c) => (
+                  <li key={c.id} className="flex items-center justify-between rounded-md bg-slate-50 px-2.5 py-1 text-xs">
+                    <span>{c.competencyName}</span>
+                    <span className="font-semibold text-[var(--text-secondary)]">Level {c.requiredLevel}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {trainingReqs.length > 0 && (
+            <div>
+              <span className="text-[var(--text-secondary)]">Required trainings</span>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {trainingReqs.map((t) => (
+                  <span key={t.id} className="rounded-full border border-[var(--border-color)] bg-slate-50 px-2 py-0.5 text-xs text-[var(--text-primary)]">{t.trainingTitle}</span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

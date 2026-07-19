@@ -46,6 +46,29 @@ export interface CriticalPosition {
   criticalityReason: string | null;
   createdBy: string | null;
   createdAt: string;
+  updatedAt: string;
+  // Qualification requirements (migration 20260809)
+  positionDescription: string | null;
+  requiredSuccessorsCount: number;
+  minYearsExperience: number | null;
+  minIpcrRating: string | null; // one of the 5 adjectival buckets, or null
+  requiredEducation: string | null;
+  requiredEligibility: string | null;
+  requiredCertifications: string[];
+}
+
+export interface CompetencyRequirement {
+  id: string;
+  criticalPositionId: string;
+  competencyId: string;
+  competencyName: string;
+  requiredLevel: number; // 1-5
+}
+
+export interface TrainingRequirement {
+  id: string;
+  criticalPositionId: string;
+  trainingTitle: string;
 }
 
 export interface RankedCandidate {
@@ -259,11 +282,29 @@ export async function listCriticalPositions(departmentId: string): Promise<Resul
       criticalityReason: r.criticality_reason ?? null,
       createdBy: r.created_by ?? null,
       createdAt: String(r.created_at),
+      updatedAt: String(r.updated_at ?? r.created_at),
+      positionDescription: r.position_description ?? null,
+      requiredSuccessorsCount: Number(r.required_successors_count ?? 1),
+      minYearsExperience: r.min_years_experience != null ? Number(r.min_years_experience) : null,
+      minIpcrRating: r.min_ipcr_rating ?? null,
+      requiredEducation: r.required_education ?? null,
+      requiredEligibility: r.required_eligibility ?? null,
+      requiredCertifications: Array.isArray(r.required_certifications) ? r.required_certifications : [],
     }));
     return { ok: true, data: data2 };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Failed to load critical positions.' };
   }
+}
+
+/** Incumbent employment status, resolved live from employees_with_department. */
+export async function getIncumbentStatuses(employeeIds: string[]): Promise<Map<string, string>> {
+  const ids = [...new Set(employeeIds)].filter(Boolean);
+  const result = new Map<string, string>();
+  if (!ids.length) return result;
+  const { data } = await supabase.from('employees_with_department').select('id, status').in('id', ids);
+  for (const e of (data ?? []) as any[]) result.set(String(e.id), String(e.status ?? ''));
+  return result;
 }
 
 export async function createCriticalPosition(input: {
@@ -272,6 +313,13 @@ export async function createCriticalPosition(input: {
   incumbentEmployeeId?: string | null;
   criticalityReason?: string | null;
   createdBy: string;
+  positionDescription?: string | null;
+  requiredSuccessorsCount?: number;
+  minYearsExperience?: number | null;
+  minIpcrRating?: string | null;
+  requiredEducation?: string | null;
+  requiredEligibility?: string | null;
+  requiredCertifications?: string[];
 }): Promise<Result<CriticalPosition>> {
   try {
     if (!input.title.trim()) return { ok: false, error: 'A position title is required.' };
@@ -283,6 +331,13 @@ export async function createCriticalPosition(input: {
         incumbent_employee_id: input.incumbentEmployeeId || null,
         criticality_reason: input.criticalityReason?.trim() || null,
         created_by: input.createdBy,
+        position_description: input.positionDescription?.trim() || null,
+        required_successors_count: input.requiredSuccessorsCount ?? 1,
+        min_years_experience: input.minYearsExperience ?? null,
+        min_ipcr_rating: input.minIpcrRating || null,
+        required_education: input.requiredEducation?.trim() || null,
+        required_eligibility: input.requiredEligibility?.trim() || null,
+        required_certifications: input.requiredCertifications ?? [],
       })
       .select()
       .single();
@@ -298,6 +353,14 @@ export async function createCriticalPosition(input: {
         criticalityReason: data.criticality_reason ?? null,
         createdBy: data.created_by ?? null,
         createdAt: String(data.created_at),
+        updatedAt: String(data.updated_at ?? data.created_at),
+        positionDescription: data.position_description ?? null,
+        requiredSuccessorsCount: Number(data.required_successors_count ?? 1),
+        minYearsExperience: data.min_years_experience != null ? Number(data.min_years_experience) : null,
+        minIpcrRating: data.min_ipcr_rating ?? null,
+        requiredEducation: data.required_education ?? null,
+        requiredEligibility: data.required_eligibility ?? null,
+        requiredCertifications: Array.isArray(data.required_certifications) ? data.required_certifications : [],
       },
     };
   } catch (err) {
@@ -307,13 +370,31 @@ export async function createCriticalPosition(input: {
 
 export async function updateCriticalPosition(
   id: string,
-  patch: { title?: string; incumbentEmployeeId?: string | null; criticalityReason?: string | null },
+  patch: {
+    title?: string;
+    incumbentEmployeeId?: string | null;
+    criticalityReason?: string | null;
+    positionDescription?: string | null;
+    requiredSuccessorsCount?: number;
+    minYearsExperience?: number | null;
+    minIpcrRating?: string | null;
+    requiredEducation?: string | null;
+    requiredEligibility?: string | null;
+    requiredCertifications?: string[];
+  },
 ): Promise<Result<null>> {
   try {
     const update: Record<string, unknown> = { updated_at: nowIso() };
     if (patch.title !== undefined) update.title = patch.title.trim();
     if (patch.incumbentEmployeeId !== undefined) update.incumbent_employee_id = patch.incumbentEmployeeId || null;
     if (patch.criticalityReason !== undefined) update.criticality_reason = patch.criticalityReason?.trim() || null;
+    if (patch.positionDescription !== undefined) update.position_description = patch.positionDescription?.trim() || null;
+    if (patch.requiredSuccessorsCount !== undefined) update.required_successors_count = patch.requiredSuccessorsCount;
+    if (patch.minYearsExperience !== undefined) update.min_years_experience = patch.minYearsExperience;
+    if (patch.minIpcrRating !== undefined) update.min_ipcr_rating = patch.minIpcrRating || null;
+    if (patch.requiredEducation !== undefined) update.required_education = patch.requiredEducation?.trim() || null;
+    if (patch.requiredEligibility !== undefined) update.required_eligibility = patch.requiredEligibility?.trim() || null;
+    if (patch.requiredCertifications !== undefined) update.required_certifications = patch.requiredCertifications;
     const { error } = await supabase.from('critical_positions').update(update).eq('id', id);
     if (error) return { ok: false, error: error.message };
     return { ok: true, data: null };
@@ -463,6 +544,162 @@ export async function listEmployeeOptions(): Promise<EmployeeOption[]> {
       department: e.department ?? null,
       position: e.current_position ?? null,
     }));
+  } catch {
+    return [];
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Critical Position qualification requirements (migration 20260809)
+//
+// "Not required" is the absence of a row — save is an upsert on the unique
+// pair, remove is a delete. Mirrors the pattern src/lib/api/pmCompetency.ts
+// already uses for position_competency_requirements.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Competency requirements for one critical position, with names resolved for display. */
+export async function listCompetencyRequirements(
+  criticalPositionId: string,
+): Promise<Result<CompetencyRequirement[]>> {
+  try {
+    const { data, error } = await supabase
+      .from('critical_position_competency_requirements')
+      .select('id, critical_position_id, competency_id, required_level, competencies ( name )')
+      .eq('critical_position_id', criticalPositionId);
+    if (error) return { ok: false, error: error.message };
+    const rows: CompetencyRequirement[] = (data ?? []).map((r: any) => ({
+      id: String(r.id),
+      criticalPositionId: String(r.critical_position_id),
+      competencyId: String(r.competency_id),
+      competencyName: r.competencies?.name ?? 'Unknown',
+      requiredLevel: Number(r.required_level),
+    }));
+    return { ok: true, data: rows };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Failed to load competency requirements.' };
+  }
+}
+
+/** Upsert on (critical_position_id, competency_id) — re-saving edits, never duplicates. */
+export async function saveCompetencyRequirement(input: {
+  criticalPositionId: string;
+  competencyId: string;
+  requiredLevel: number; // 1-5
+}): Promise<Result<null>> {
+  try {
+    const { error } = await supabase
+      .from('critical_position_competency_requirements')
+      .upsert(
+        [
+          {
+            critical_position_id: input.criticalPositionId,
+            competency_id: input.competencyId,
+            required_level: input.requiredLevel,
+            updated_at: nowIso(),
+          },
+        ],
+        { onConflict: 'critical_position_id,competency_id' },
+      );
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, data: null };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Failed to save competency requirement.' };
+  }
+}
+
+/** Mark a competency Not Required — the row simply goes away. */
+export async function removeCompetencyRequirement(input: {
+  criticalPositionId: string;
+  competencyId: string;
+}): Promise<Result<null>> {
+  try {
+    const { error } = await supabase
+      .from('critical_position_competency_requirements')
+      .delete()
+      .eq('critical_position_id', input.criticalPositionId)
+      .eq('competency_id', input.competencyId);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, data: null };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Failed to remove competency requirement.' };
+  }
+}
+
+/** Training requirements for one critical position. */
+export async function listTrainingRequirements(
+  criticalPositionId: string,
+): Promise<Result<TrainingRequirement[]>> {
+  try {
+    const { data, error } = await supabase
+      .from('critical_position_training_requirements')
+      .select('id, critical_position_id, training_title')
+      .eq('critical_position_id', criticalPositionId)
+      .order('training_title');
+    if (error) return { ok: false, error: error.message };
+    return {
+      ok: true,
+      data: (data ?? []).map((r: any) => ({
+        id: String(r.id),
+        criticalPositionId: String(r.critical_position_id),
+        trainingTitle: String(r.training_title),
+      })),
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Failed to load training requirements.' };
+  }
+}
+
+export async function saveTrainingRequirement(input: {
+  criticalPositionId: string;
+  trainingTitle: string;
+}): Promise<Result<null>> {
+  try {
+    const title = input.trainingTitle.trim();
+    if (!title) return { ok: false, error: 'Training title is required.' };
+    const { error } = await supabase
+      .from('critical_position_training_requirements')
+      .upsert(
+        [{ critical_position_id: input.criticalPositionId, training_title: title }],
+        { onConflict: 'critical_position_id,training_title' },
+      );
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, data: null };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Failed to save training requirement.' };
+  }
+}
+
+export async function removeTrainingRequirement(id: string): Promise<Result<null>> {
+  try {
+    const { error } = await supabase.from('critical_position_training_requirements').delete().eq('id', id);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, data: null };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Failed to remove training requirement.' };
+  }
+}
+
+/**
+ * Position titles that exist in one department — the "select from existing
+ * Job Positions" source for Critical Position. There is no positions-with-IDs
+ * catalog in active use for this kind of picker; this mirrors the same
+ * distinct-current_position approach src/lib/api/pmCompetency.ts's
+ * listPositions()/listPositionDepartments() already use for the same purpose.
+ */
+export async function listPositionTitlesForDepartment(departmentName: string): Promise<string[]> {
+  if (!departmentName) return [];
+  try {
+    const { data, error } = await supabase
+      .from('employees_with_department')
+      .select('current_position, department')
+      .eq('department', departmentName);
+    if (error) return [];
+    const titles = new Set<string>();
+    for (const r of (data ?? []) as any[]) {
+      const t = String(r.current_position ?? '').trim();
+      if (t) titles.add(t);
+    }
+    return [...titles].sort((a, b) => a.localeCompare(b));
   } catch {
     return [];
   }
