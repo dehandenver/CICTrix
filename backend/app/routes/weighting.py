@@ -25,12 +25,18 @@ from app.models.weighting import (
     WeightingConfigUpdate,
     WeightingSchemaOption,
 )
-from app.utils.dependencies import get_current_user, require_role
+from app.utils.dependencies import get_authenticated_user, require_role
 
 router = APIRouter(prefix="/api/offices", tags=["ipcr-weighting"])
 
-# Who may re-weight an office. PM admins own the IPCR cycle; L&D reads it.
-WRITE_ROLES = ("ADMIN", "PM", "PM_ADMIN")
+# Who may re-weight an office. Roles come from `user_roles` and are uppercase.
+#
+# PM owns the IPCR cycle, and L&D consumes the ratings, so both may set a split.
+# Super-admin is deliberately excluded: that portal is a read-only viewer in this
+# system, and it is stored as ADMIN (the user_roles CHECK allows no SUPER_ADMIN
+# value), so listing ADMIN here would hand the read-only role a write that
+# recomputes every rating in an office.
+WRITE_ROLES = ("PM", "LND")
 
 
 def _flatten(config: dict, department_name: str | None = None) -> WeightingConfigResponse:
@@ -50,7 +56,7 @@ def _flatten(config: dict, department_name: str | None = None) -> WeightingConfi
 
 
 @router.get("/weighting-options", response_model=List[WeightingSchemaOption])
-async def list_weighting_options(current_user: TokenData = Depends(get_current_user)):
+async def list_weighting_options(current_user: TokenData = Depends(get_authenticated_user)):
     """The three legal splits. A lookup table, so an invalid split is unrepresentable."""
     try:
         client = db.get_client()
@@ -64,7 +70,7 @@ async def list_weighting_options(current_user: TokenData = Depends(get_current_u
 
 
 @router.get("/weighting-configs", response_model=List[WeightingConfigResponse])
-async def list_weighting_configs(current_user: TokenData = Depends(get_current_user)):
+async def list_weighting_configs(current_user: TokenData = Depends(get_authenticated_user)):
     """Every active office's weighting — the admin table's read."""
     try:
         client = db.get_client()
@@ -100,7 +106,7 @@ async def list_weighting_configs(current_user: TokenData = Depends(get_current_u
 @router.get("/{office_id}/weighting-config", response_model=WeightingConfigResponse)
 async def get_weighting_config(
     office_id: str,
-    current_user: TokenData = Depends(get_current_user),
+    current_user: TokenData = Depends(get_authenticated_user),
 ):
     """One office's active weighting."""
     try:
