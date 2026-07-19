@@ -31,22 +31,28 @@ interface LoginPageProps {
   onLogin: (email: string, role: Role) => void;
 }
 
-// Mock credentials for development
+/**
+ * Development-only fallback credentials.
+ *
+ * These are compiled into the public JS bundle, so anything listed here is
+ * readable by anyone who opens devtools on the deployed site — it is a published
+ * password, not a secret. PM and L&D were removed once real Supabase Auth
+ * accounts existed for them (scripts/create-admin-accounts.mjs): those two
+ * portals reach backend-gated endpoints, so a public password there would defeat
+ * the RBAC on routes like the IPCR weighting config.
+ *
+ * Do NOT add entries back. The remaining super-admin and RSP entries are a known
+ * issue on the same footing and should be migrated to real accounts too.
+ */
 const MOCK_USERS: Record<string, { password: string; role: Role }> = {
   'admin@abyan.gov.ph': { password: 'admin123', role: 'super-admin' },
   'rsp@abyan.gov.ph': { password: 'rsp123', role: 'rsp' },
-  'lnd@abyan.gov.ph': { password: 'lnd123', role: 'lnd' },
-  'pm@abyan.gov.ph': { password: 'pm123', role: 'pm' },
 
   'admin@cictrix.gov.ph': { password: 'admin123', role: 'super-admin' },
   'rsp@cictrix.gov.ph': { password: 'rsp123', role: 'rsp' },
-  'lnd@cictrix.gov.ph': { password: 'lnd123', role: 'lnd' },
-  'pm@cictrix.gov.ph': { password: 'pm123', role: 'pm' },
 
   'admin@abyan.com': { password: 'Admin@123', role: 'super-admin' },
   'rsp@abyan.com': { password: 'RSP@123', role: 'rsp' },
-  'lnd@abyan.com': { password: 'LND@123', role: 'lnd' },
-  'pm@abyan.com': { password: 'PM@123', role: 'pm' },
 };
 
 const ROLES: { key: Role; label: string; sublabel: string }[] = [
