@@ -20,6 +20,7 @@ from typing import List, Optional
 
 from app.core.config import settings
 from app.core.supabase_client import db
+from app.utils.gemini import generate_content as gemini_generate_content
 from app.prompts.competency_matching import (
     COMPETENCY_SET,
     OUTPUT_SCHEMA,
@@ -141,29 +142,16 @@ async def analyze_targets(req: CompetencyMatchRequest):
             detail="No usable IPCR targets after cleanup.",
         )
 
-    try:
-        import google.generativeai as genai
-    except ImportError:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="The 'google-generativeai' package is not installed on the server.",
-        )
-
-    genai.configure(api_key=settings.GEMINI_API_KEY)
     model = settings.GEMINI_MODEL
 
     try:
-        model_instance = genai.GenerativeModel(
-            model_name=model,
-            system_instruction=SYSTEM_PROMPT
-        )
-        response = model_instance.generate_content(
-            build_user_message(req.job_position, req.rating_period, targets),
-            generation_config=genai.GenerationConfig(
-                response_mime_type="application/json",
-                response_schema=OUTPUT_SCHEMA,
-                temperature=0.2,
-            )
+        response = gemini_generate_content(
+            api_key=settings.GEMINI_API_KEY,
+            model=model,
+            system_instruction=SYSTEM_PROMPT,
+            user_message=build_user_message(req.job_position, req.rating_period, targets),
+            response_schema=OUTPUT_SCHEMA,
+            temperature=0.2,
         )
     except Exception as e:
         raise HTTPException(

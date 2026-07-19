@@ -7,6 +7,7 @@ from typing import List, Optional, Dict, Any
 
 from app.core.config import settings
 from app.core.supabase_client import db
+from app.utils.gemini import generate_content as gemini_generate_content
 from app.prompts.competency_assessment import (
     SYSTEM_PROMPT,
     OUTPUT_SCHEMA,
@@ -105,14 +106,6 @@ async def assess_employee_competencies(req: CompetencyAssessmentRequest):
                 status_code=503,
                 detail="Competency matching is required but GEMINI_API_KEY is unset.",
             )
-        try:
-            import google.generativeai as genai
-        except ImportError:
-            raise HTTPException(
-                status_code=503,
-                detail="The 'google-generativeai' package is not installed on the server.",
-            )
-        
         # Build composite target texts
         mfo_by_id = {m["id"]: m for m in mfos_res.data}
         targets_list = []
@@ -127,19 +120,14 @@ async def assess_employee_competencies(req: CompetencyAssessmentRequest):
             
         cleaned_targets = _clean_targets(targets_list)
         if cleaned_targets:
-            genai.configure(api_key=settings.GEMINI_API_KEY)
             try:
-                model_instance = genai.GenerativeModel(
-                    model_name=settings.GEMINI_MODEL,
-                    system_instruction=MATCHER_SYSTEM_PROMPT
-                )
-                response = model_instance.generate_content(
-                    build_matcher_user_message(position_title, None, cleaned_targets),
-                    generation_config=genai.GenerationConfig(
-                        response_mime_type="application/json",
-                        response_schema=MATCHER_OUTPUT_SCHEMA,
-                        temperature=0.2,
-                    )
+                response = gemini_generate_content(
+                    api_key=settings.GEMINI_API_KEY,
+                    model=settings.GEMINI_MODEL,
+                    system_instruction=MATCHER_SYSTEM_PROMPT,
+                    user_message=build_matcher_user_message(position_title, None, cleaned_targets),
+                    response_schema=MATCHER_OUTPUT_SCHEMA,
+                    temperature=0.2,
                 )
                 parsed = _extract_json(response)
                 
@@ -299,7 +287,6 @@ async def assess_employee_competencies(req: CompetencyAssessmentRequest):
             status_code=503,
             detail="AI qualitative assessment is not configured (GEMINI_API_KEY is unset).",
         )
-    import google.generativeai as genai
 
     # Format inputs for Gemini
     reqs_text = "\n".join([
@@ -355,15 +342,12 @@ async def assess_employee_competencies(req: CompetencyAssessmentRequest):
     if not available_courses_text:
         available_courses_text = "No scheduled training courses available next month."
 
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-
     try:
-        model_instance = genai.GenerativeModel(
-            model_name=settings.GEMINI_MODEL,
-            system_instruction=SYSTEM_PROMPT
-        )
-        response = model_instance.generate_content(
-            build_assessment_user_message(
+        response = gemini_generate_content(
+            api_key=settings.GEMINI_API_KEY,
+            model=settings.GEMINI_MODEL,
+            system_instruction=SYSTEM_PROMPT,
+            user_message=build_assessment_user_message(
                 position_title,
                 department,
                 reqs_text,
@@ -371,11 +355,8 @@ async def assess_employee_competencies(req: CompetencyAssessmentRequest):
                 ipcr_details_text,
                 available_courses_text
             ),
-            generation_config=genai.GenerationConfig(
-                response_mime_type="application/json",
-                response_schema=OUTPUT_SCHEMA,
-                temperature=0.3,
-            )
+            response_schema=OUTPUT_SCHEMA,
+            temperature=0.3,
         )
         qual_res = _extract_json(response)
     except Exception as e:
