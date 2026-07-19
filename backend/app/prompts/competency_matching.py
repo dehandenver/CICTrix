@@ -133,22 +133,19 @@ def build_user_message(job_position: str, rating_period: str | None, targets: li
 # constrains competency names to the exact taxonomy strings via `enum`.
 OUTPUT_SCHEMA = {
     "type": "object",
-    "additionalProperties": False,
     "properties": {
         "employee_position": {"type": "string"},
-        "rating_period": {"type": ["string", "null"]},
+        "rating_period": {"type": "string"},
         "results": {
             "type": "array",
             "items": {
                 "type": "object",
-                "additionalProperties": False,
                 "properties": {
                     "target_text": {"type": "string"},
                     "matched_competencies": {
                         "type": "array",
                         "items": {
                             "type": "object",
-                            "additionalProperties": False,
                             "properties": {
                                 "competency": {"type": "string", "enum": COMPETENCIES},
                                 "confidence": {"type": "number"},

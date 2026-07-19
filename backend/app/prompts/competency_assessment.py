@@ -46,7 +46,6 @@ def build_assessment_user_message(
 
 OUTPUT_SCHEMA = {
     "type": "object",
-    "additionalProperties": False,
     "properties": {
         "strengths": {"type": "string"},
         "improvements": {"type": "string"},

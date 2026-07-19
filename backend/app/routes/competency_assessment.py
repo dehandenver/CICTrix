@@ -100,12 +100,18 @@ async def assess_employee_competencies(req: CompetencyAssessmentRequest):
     
     # If no matches exist, run the Claude-matching engine first to backfill
     if not matches:
-        if not settings.ANTHROPIC_API_KEY:
+        if not settings.GEMINI_API_KEY:
             raise HTTPException(
                 status_code=503,
-                detail="Competency matching is required but ANTHROPIC_API_KEY is unset.",
+                detail="Competency matching is required but GEMINI_API_KEY is unset.",
             )
-        import anthropic
+        try:
+            import google.generativeai as genai
+        except ImportError:
+            raise HTTPException(
+                status_code=503,
+                detail="The 'google-generativeai' package is not installed on the server.",
+            )
         
         # Build composite target texts
         mfo_by_id = {m["id"]: m for m in mfos_res.data}
@@ -121,24 +127,21 @@ async def assess_employee_competencies(req: CompetencyAssessmentRequest):
             
         cleaned_targets = _clean_targets(targets_list)
         if cleaned_targets:
-            anth_client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+            genai.configure(api_key=settings.GEMINI_API_KEY)
             try:
-                message = anth_client.messages.create(
-                    model=settings.ANTHROPIC_MODEL,
-                    max_tokens=8000,
-                    system=[{
-                        "type": "text",
-                        "text": MATCHER_SYSTEM_PROMPT,
-                        "cache_control": {"type": "ephemeral"},
-                    }],
-                    thinking={"type": "adaptive"},
-                    output_config={"format": {"type": "json_schema", "schema": MATCHER_OUTPUT_SCHEMA}},
-                    messages=[{
-                        "role": "user",
-                        "content": build_matcher_user_message(position_title, None, cleaned_targets),
-                    }],
+                model_instance = genai.GenerativeModel(
+                    model_name=settings.GEMINI_MODEL,
+                    system_instruction=MATCHER_SYSTEM_PROMPT
                 )
-                parsed = _extract_json(message)
+                response = model_instance.generate_content(
+                    build_matcher_user_message(position_title, None, cleaned_targets),
+                    generation_config=genai.GenerationConfig(
+                        response_mime_type="application/json",
+                        response_schema=MATCHER_OUTPUT_SCHEMA,
+                        temperature=0.2,
+                    )
+                )
+                parsed = _extract_json(response)
                 
                 # Format into database rows
                 # Prepare mock request structure for _rows_from_result compatibility
@@ -150,7 +153,7 @@ async def assess_employee_competencies(req: CompetencyAssessmentRequest):
                         self.created_by = "AI Assessor"
                 
                 mock_req = MockReq(req.employee_id, position_title, cycle_id)
-                rows = _rows_from_result(mock_req, settings.ANTHROPIC_MODEL, parsed)
+                rows = _rows_from_result(mock_req, settings.GEMINI_MODEL, parsed)
                 
                 # Attach success_indicator_id robustly
                 for row in rows:
@@ -290,32 +293,32 @@ async def assess_employee_competencies(req: CompetencyAssessmentRequest):
                 courses_by_comp[comp] = []
             courses_by_comp[comp].append(s)
 
-    # ── 8. Call Claude to generate qualitative analysis ──────────────────────
-    if not settings.ANTHROPIC_API_KEY:
+    # ── 8. Call Gemini to generate qualitative analysis ──────────────────────
+    if not settings.GEMINI_API_KEY:
         raise HTTPException(
             status_code=503,
-            detail="AI qualitative assessment is not configured (ANTHROPIC_API_KEY is unset).",
+            detail="AI qualitative assessment is not configured (GEMINI_API_KEY is unset).",
         )
-    import anthropic
-    
-    # Format inputs for Claude
+    import google.generativeai as genai
+
+    # Format inputs for Gemini
     reqs_text = "\n".join([
         f"- {comp}: Required Level: {required_text_levels[comp]} (mapped to {required_levels[comp]} / 5)"
         for comp in COMPETENCIES
     ])
-    
+
     scores_text = ""
     gaps_found = []
     for comp in COMPETENCIES:
         score_info = calculated_scores[comp]
         possessed = score_info["possessed"]
         required = required_levels[comp]
-        
+
         possessed_label = f"{possessed} / 5" if possessed is not None else "Not Yet Assessed"
         required_label = f"{required} / 5" if required is not None else "No Requirement"
-        
+
         scores_text += f"- {comp}: Demonstrated={possessed_label}, Required={required_label}"
-        
+
         if possessed is not None and required is not None:
             gap = required - possessed
             if gap > 0:
@@ -323,7 +326,7 @@ async def assess_employee_competencies(req: CompetencyAssessmentRequest):
                 scores_text += f" -> GAP of {round(gap, 2)}"
         scores_text += "\n"
 
-    # IPCR details text table
+    # IPCR details text block
     ipcr_details_text = ""
     for si in sis_res.data:
         composite = si_to_composite[si["id"]]
@@ -335,14 +338,12 @@ async def assess_employee_competencies(req: CompetencyAssessmentRequest):
             scores = [str(s) for s in [q, e, t] if s is not None]
             score_label = "/".join(scores) if scores else "Not Rated"
             accomplishment = rating.get("accomplishment") or "No accomplishment details entered"
-            remarks = rating.get("remarks") or "None"
             ipcr_details_text += (
                 f"Target: {composite}\n"
                 f"  Ratings (Q/E/T): {score_label}\n"
-                f"  Accomplishment: {accomplishment}\n"
-                f"  Supervisor Remarks: {remarks}\n\n"
+                f"  Accomplishment: {accomplishment}\n\n"
             )
-            
+
     # Available courses text
     available_courses_text = ""
     for comp in COMPETENCIES:
@@ -354,34 +355,31 @@ async def assess_employee_competencies(req: CompetencyAssessmentRequest):
     if not available_courses_text:
         available_courses_text = "No scheduled training courses available next month."
 
-    # Call Anthropic
-    anth_client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+    genai.configure(api_key=settings.GEMINI_API_KEY)
+
     try:
-        message = anth_client.messages.create(
-            model=settings.ANTHROPIC_MODEL,
-            max_tokens=2000,
-            system=[{
-                "type": "text",
-                "text": SYSTEM_PROMPT,
-                "cache_control": {"type": "ephemeral"},
-            }],
-            thinking={"type": "adaptive"},
-            output_config={"format": {"type": "json_schema", "schema": OUTPUT_SCHEMA}},
-            messages=[{
-                "role": "user",
-                "content": build_assessment_user_message(
-                    position_title,
-                    department,
-                    reqs_text,
-                    scores_text,
-                    ipcr_details_text,
-                    available_courses_text
-                )
-            }]
+        model_instance = genai.GenerativeModel(
+            model_name=settings.GEMINI_MODEL,
+            system_instruction=SYSTEM_PROMPT
         )
-        qual_res = _extract_json(message)
+        response = model_instance.generate_content(
+            build_assessment_user_message(
+                position_title,
+                department,
+                reqs_text,
+                scores_text,
+                ipcr_details_text,
+                available_courses_text
+            ),
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json",
+                response_schema=OUTPUT_SCHEMA,
+                temperature=0.3,
+            )
+        )
+        qual_res = _extract_json(response)
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Claude qualitative analysis call failed: {e}")
+        raise HTTPException(status_code=502, detail=f"Gemini qualitative analysis call failed: {e}")
 
     # ── 9. Persist assessment results in database ─────────────────────────────
     # Fetch competencies UUID mapping by querying the `competencies` table
@@ -510,5 +508,5 @@ async def assess_employee_competencies(req: CompetencyAssessmentRequest):
         "improvements": qual_res.get("improvements"),
         "recommendations": qual_res.get("recommendations"),
         "prompt_version": PROMPT_VERSION,
-        "model": settings.ANTHROPIC_MODEL
+        "model": settings.GEMINI_MODEL
     }

@@ -19,11 +19,11 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_HOURS: int = 24
 
-    # Anthropic (IPCR competency matching). Key is optional at import time so the
-    # rest of the API boots without it; the competency-matching route returns a
+    # Gemini (IPCR competency matching & assessment). Key is optional at import
+    # time so the rest of the API boots without it; competency routes return a
     # clear 503 if it's unset when called.
-    ANTHROPIC_API_KEY: str = ""
-    ANTHROPIC_MODEL: str = "claude-opus-4-8"
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-flash-latest"
 
     # SMTP (Email Configuration)
     SMTP_HOST: str = "smtp.gmail.com"

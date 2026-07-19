@@ -83,12 +83,9 @@ def _clean_targets(raw: List[str]) -> List[str]:
     return cleaned
 
 
-def _extract_json(message) -> dict:
-    """Pull the JSON text block out of the response (skips any thinking block)."""
-    for block in message.content:
-        if getattr(block, "type", None) == "text":
-            return json.loads(block.text)
-    raise ValueError("model response contained no text block")
+def _extract_json(response) -> dict:
+    """Extract JSON from a Gemini GenerateContentResponse."""
+    return json.loads(response.text)
 
 
 def _rows_from_result(req: CompetencyMatchRequest, model: str, parsed: dict) -> list[dict]:
@@ -131,10 +128,10 @@ def _rows_from_result(req: CompetencyMatchRequest, model: str, parsed: dict) -> 
 
 @router.post("/analyze", response_model=CompetencyMatchResponse)
 async def analyze_targets(req: CompetencyMatchRequest):
-    if not settings.ANTHROPIC_API_KEY:
+    if not settings.GEMINI_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Competency matching is not configured (ANTHROPIC_API_KEY is unset).",
+            detail="Competency matching is not configured (GEMINI_API_KEY is unset).",
         )
 
     targets = _clean_targets(req.targets)
@@ -145,57 +142,41 @@ async def analyze_targets(req: CompetencyMatchRequest):
         )
 
     try:
-        import anthropic
+        import google.generativeai as genai
     except ImportError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="The 'anthropic' package is not installed on the server.",
+            detail="The 'google-generativeai' package is not installed on the server.",
         )
 
-    client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-    model = settings.ANTHROPIC_MODEL
+    genai.configure(api_key=settings.GEMINI_API_KEY)
+    model = settings.GEMINI_MODEL
 
     try:
-        message = client.messages.create(
-            model=model,
-            max_tokens=8000,
-            # Cache the large, static instruction+taxonomy+examples prefix so
-            # repeated analyses only pay for it once.
-            system=[{
-                "type": "text",
-                "text": SYSTEM_PROMPT,
-                "cache_control": {"type": "ephemeral"},
-            }],
-            thinking={"type": "adaptive"},
-            output_config={"format": {"type": "json_schema", "schema": OUTPUT_SCHEMA}},
-            messages=[{
-                "role": "user",
-                "content": build_user_message(req.job_position, req.rating_period, targets),
-            }],
+        model_instance = genai.GenerativeModel(
+            model_name=model,
+            system_instruction=SYSTEM_PROMPT
         )
-    except anthropic.APIStatusError as e:
+        response = model_instance.generate_content(
+            build_user_message(req.job_position, req.rating_period, targets),
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json",
+                response_schema=OUTPUT_SCHEMA,
+                temperature=0.2,
+            )
+        )
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Claude API error ({e.status_code}): {e.message}",
-        )
-    except anthropic.APIConnectionError:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Could not reach the Claude API.",
-        )
-
-    if message.stop_reason == "refusal":
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="The model declined to analyze these targets.",
+            detail=f"Gemini API error: {e}",
         )
 
     try:
-        parsed = _extract_json(message)
+        parsed = _extract_json(response)
     except (ValueError, json.JSONDecodeError) as e:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Could not parse the model response: {e}",
+            detail=f"Could not parse the model response or the model blocked the response: {e}",
         )
 
     rows = _rows_from_result(req, model, parsed)
@@ -205,7 +186,7 @@ async def analyze_targets(req: CompetencyMatchRequest):
             client_db = db.get_client()
             resp = client_db.table("ipcr_competency_matches").insert(rows).execute()
             persisted = len(resp.data or [])
-        except Exception as e:  # noqa: BLE001 — surface storage failures, don't lose the analysis
+        except Exception as e:  # noqa: BLE001
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Analysis succeeded but persisting matches failed: {e}",
