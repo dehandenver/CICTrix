@@ -55,7 +55,6 @@ import { computeNeedsAssessment, type CompetencyNeed } from '../../lib/api/train
 import { listIncompleteLockedTrainings, listLockingSoonWithoutRoster, type IncompleteLockedTraining, type LockingSoonTraining } from '../../lib/api/trainingLifecycle';
 import { OfficeDirectorySection } from '../../components/OfficeDirectorySection';
 import { LndSummaryOfRatings } from './LndSummaryOfRatings';
-import { LndTrainingRequests } from './LndTrainingRequests';
 import { LndTrainingEvaluation } from './LndTrainingEvaluation';
 import { LndTrainingNeeds } from './LndTrainingNeeds';
 
@@ -64,7 +63,6 @@ type MenuId =
   | 'summary-of-ratings'
   | 'training-calendar'
   | 'training-plan'
-  | 'training-requests'
   | 'training-needs'
   | 'seminar-enrollment'
   | 'training-evaluation'
@@ -95,7 +93,6 @@ const LND_MENU: MenuItem[] = [
   { id: 'summary-of-ratings', label: 'Summary of Ratings', sublabel: 'IPCR performance data', icon: BarChart2 },
   { id: 'training-calendar', label: 'Training Calendar', sublabel: 'This year’s trainings', icon: CalendarDays },
   { id: 'training-plan', label: 'Training Plan', sublabel: 'Next year’s plan', icon: CalendarClock },
-  { id: 'training-requests', label: 'Training Requests', sublabel: 'Department head submissions', icon: ClipboardList },
   { id: 'training-needs', label: 'Requests & Needs', sublabel: 'Office requests + AI needs assessment', icon: Sparkles },
   { id: 'seminar-enrollment', label: 'Seminar Enrollment', sublabel: 'Registrations and slots', icon: ClipboardCheck },
   { id: 'training-evaluation', label: 'Training Evaluation', sublabel: 'Pre/post-test results', icon: TrendingUp },
@@ -715,8 +712,6 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
             <TrainingCalendar />
           ) : activeModule === 'training-plan' ? (
             <TrainingPlan />
-          ) : activeModule === 'training-requests' ? (
-            <LndTrainingRequests />
           ) : activeModule === 'training-needs' ? (
             <LndTrainingNeeds />
           ) : activeModule === 'seminar-enrollment' ? (
