@@ -686,18 +686,40 @@ export async function removeTrainingRequirement(id: string): Promise<Result<null
  * distinct-current_position approach src/lib/api/pmCompetency.ts's
  * listPositions()/listPositionDepartments() already use for the same purpose.
  */
+/**
+ * Every position that exists in an office, from both sources:
+ *   - employees_with_department — roles currently held (the office directory)
+ *   - job_postings              — roles being recruited for
+ *
+ * Job postings are included because a vacant position can still be critical —
+ * arguably more so — and a directory-only list would hide exactly the roles
+ * with nobody in them.
+ */
 export async function listPositionTitlesForDepartment(departmentName: string): Promise<string[]> {
   if (!departmentName) return [];
   try {
-    const { data, error } = await supabase
-      .from('employees_with_department')
-      .select('current_position, department')
-      .eq('department', departmentName);
-    if (error) return [];
+    const [empRes, jobRes] = await Promise.all([
+      supabase
+        .from('employees_with_department')
+        .select('current_position, department')
+        .eq('department', departmentName),
+      supabase.from('job_postings').select('title, department').eq('department', departmentName),
+    ]);
+
     const titles = new Set<string>();
-    for (const r of (data ?? []) as any[]) {
-      const t = String(r.current_position ?? '').trim();
-      if (t) titles.add(t);
+    if (!empRes.error) {
+      for (const r of (empRes.data ?? []) as any[]) {
+        const t = String(r.current_position ?? '').trim();
+        if (t) titles.add(t);
+      }
+    }
+    // A posting failing shouldn't empty the dropdown — the directory alone is
+    // still a usable list.
+    if (!jobRes.error) {
+      for (const r of (jobRes.data ?? []) as any[]) {
+        const t = String(r.title ?? '').trim();
+        if (t) titles.add(t);
+      }
     }
     return [...titles].sort((a, b) => a.localeCompare(b));
   } catch {

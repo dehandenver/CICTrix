@@ -155,6 +155,17 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
     [positions],
   );
 
+  // The dropdown is restricted to the office's real positions, but an existing
+  // record may hold a title that predates that list (or whose employee has since
+  // left). Union it in so editing that position doesn't silently blank its title.
+  const titleDropdownOptions = useMemo(() => {
+    const current = form.title.trim();
+    if (!current || positionTitleOptions.some((t) => t.trim().toLowerCase() === current.toLowerCase())) {
+      return positionTitleOptions;
+    }
+    return [current, ...positionTitleOptions];
+  }, [positionTitleOptions, form.title]);
+
   const openBulk = () => {
     setBulkSelected(new Set());
     setBulkError('');
@@ -516,17 +527,22 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
                     <p className="cp-static">{form.title || '—'}</p>
                   ) : (
                     <>
-                      <input
-                        type="text"
-                        list="cp-title-options"
+                      <select
                         value={form.title}
                         onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-                        placeholder="Select or type a position title"
                         className="cp-input"
-                      />
-                      <datalist id="cp-title-options">
-                        {positionTitleOptions.map((t) => <option key={t} value={t} />)}
-                      </datalist>
+                      >
+                        <option value="">Select a position…</option>
+                        {titleDropdownOptions.map((t) => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
+                      {positionTitleOptions.length === 0 && (
+                        <p className="!mb-0 mt-1.5 text-xs text-[var(--text-muted)]">
+                          No positions found for {departmentName}. Positions come from the employees assigned to
+                          this office and from its job postings.
+                        </p>
+                      )}
                     </>
                   )}
                 </Field>
