@@ -93,7 +93,7 @@ const LND_MENU: MenuItem[] = [
   { id: 'summary-of-ratings', label: 'Summary of Ratings', sublabel: 'IPCR performance data', icon: BarChart2 },
   { id: 'training-calendar', label: 'Training Calendar', sublabel: 'This year’s trainings', icon: CalendarDays },
   { id: 'training-plan', label: 'Training Plan', sublabel: 'Next year’s plan', icon: CalendarClock },
-  { id: 'training-needs', label: 'Requests & Needs', sublabel: 'Office requests + AI needs assessment', icon: Sparkles },
+  { id: 'training-needs', label: 'Requests & Needs', sublabel: 'Office requests and Training Needs Assessment', icon: Sparkles },
   { id: 'seminar-enrollment', label: 'Seminar Enrollment', sublabel: 'Registrations and slots', icon: ClipboardCheck },
   { id: 'training-evaluation', label: 'Training Evaluation', sublabel: 'Pre/post-test results', icon: TrendingUp },
   { id: 'office-directory', label: 'Office Directory', sublabel: 'All employees', icon: Users },

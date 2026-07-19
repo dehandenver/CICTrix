@@ -6,6 +6,7 @@ import {
   Inbox,
   Lightbulb,
   Lock,
+  LockOpen,
   Plus,
   Settings2,
   Sparkles,
@@ -84,6 +85,29 @@ const entryDayKeys = (entry: PlanEntry): string[] => {
     cursor.setDate(cursor.getDate() + 1);
   }
   return keys;
+};
+
+// ── Window state ─────────────────────────────────────────────────────────────
+
+/**
+ * Resolve the window into what the banner actually needs to say. `isOpen` alone
+ * cannot distinguish "never configured" from "configured and since passed",
+ * which are the same lock but very different admin next-steps.
+ */
+type WindowState =
+  | { kind: 'unset' }
+  | { kind: 'open'; until: string | null }
+  | { kind: 'pending'; opensOn: string }
+  | { kind: 'closed'; closedOn: string | null };
+
+const windowState = (win: PlanningWindow): WindowState => {
+  if (win.isOpen) return { kind: 'open', until: win.deadlineDate };
+  if (win.schedule?.mode === 'Closed') return { kind: 'closed', closedOn: win.deadlineDate };
+  if (!win.schedule || !win.startDate || !win.deadlineDate) return { kind: 'unset' };
+  // Auto with both dates set, but resolved Closed: either not yet started or over.
+  const today = new Date().toISOString().slice(0, 10);
+  if (today < win.startDate) return { kind: 'pending', opensOn: win.startDate };
+  return { kind: 'closed', closedOn: win.deadlineDate };
 };
 
 const monthGrid = (year: number, month: number): (Date | null)[] => {
@@ -655,6 +679,9 @@ export const TrainingPlan = () => {
   }, [refresh]);
 
   const editable = win.isOpen;
+  const wState = useMemo(() => windowState(win), [win]);
+  const lockReason =
+    wState.kind === 'unset' ? 'No planning window has been set.' : 'Planning window closed.';
 
   const filtered = useMemo(
     () =>
@@ -729,8 +756,8 @@ export const TrainingPlan = () => {
             type="button"
             disabled={!editable}
             onClick={() => setFormState({})}
-            title={editable ? undefined : 'The planning window is closed.'}
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50 shadow-sm"
+            title={editable ? undefined : lockReason}
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 shadow-sm"
           >
             <Plus className="h-4 w-4" /> New Planned Training
           </button>
@@ -738,17 +765,39 @@ export const TrainingPlan = () => {
       </section>
 
       {/* Window banner */}
-      {!editable && (
+      {wState.kind === 'open' ? (
+        <div className="flex items-start gap-3 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3">
+          <LockOpen className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+          <div>
+            <p className="text-sm font-semibold text-emerald-900">
+              {wState.until
+                ? `Planning window open — editable through ${formatDate(wState.until)}.`
+                : 'Planning window open — editable until it is closed manually.'}
+            </p>
+            <p className="mt-0.5 text-sm text-emerald-700">
+              Add entries from the calendar or the New Planned Training button.
+            </p>
+          </div>
+        </div>
+      ) : (
         <div className="flex items-start gap-3 rounded-xl border border-slate-300 bg-slate-50 px-4 py-3">
           <Lock className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
           <div>
-            <p className="text-sm font-semibold text-slate-800">Planning window closed — this page is view-only</p>
+            <p className="text-sm font-semibold text-slate-800">
+              {wState.kind === 'unset'
+                ? 'No planning window set — this page is view-only'
+                : wState.kind === 'pending'
+                  ? `Planning window not open yet — opens ${formatDate(wState.opensOn)}`
+                  : wState.closedOn
+                    ? `Planning window closed — closed on ${formatDate(wState.closedOn)}`
+                    : 'Planning window closed — this page is view-only'}
+            </p>
             <p className="mt-0.5 text-sm text-slate-600">
-              {win.schedule?.mode === 'Closed'
-                ? 'The window is set to Closed. Reopen it under Planning window.'
-                : win.startDate && win.deadlineDate
-                  ? `Reopens ${formatDate(win.startDate)} and closes ${formatDate(win.deadlineDate)}.`
-                  : 'No planning dates have been set yet. Set them under Planning window.'}
+              {wState.kind === 'unset'
+                ? 'No planning dates have been set yet. Set them under Planning window.'
+                : wState.kind === 'pending'
+                  ? 'The page unlocks on its own once that date arrives.'
+                  : 'Reopen it under Planning window to make changes.'}
             </p>
           </div>
         </div>
@@ -820,7 +869,10 @@ export const TrainingPlan = () => {
                   </span>
                   <div className="mt-1 space-y-1">
                     {dayEntries.map((entry) => {
-                      const color = categoryColor(entry.category);
+                      // Two-tone by commitment, not category: Confirmed is the only
+                      // status that will actually roll into Training Courses, so the
+                      // calendar reads as "settled vs still moving" at a glance.
+                      const confirmed = entry.planStatus === 'Confirmed';
                       return (
                         <button
                           key={entry.id}
@@ -830,10 +882,12 @@ export const TrainingPlan = () => {
                           onDragEnd={() => setDraggingId(null)}
                           onClick={(e) => { e.stopPropagation(); setSelectedId(entry.id); }}
                           title={`${entry.title} — ${entry.planStatus}`}
-                          // Dashed border marks "planned", so it reads as tentative
-                          // at a glance without reading the status label.
-                          className="block w-full truncate rounded border border-dashed px-1.5 py-1 text-left text-[11px] font-medium transition hover:brightness-95"
-                          style={{ backgroundColor: `${color}14`, color, borderColor: color, opacity: draggingId === entry.id ? 0.4 : 1 }}
+                          className={`block w-full truncate rounded border px-1.5 py-1 text-left text-[11px] font-medium transition hover:brightness-95 ${
+                            confirmed
+                              ? 'border-blue-500 bg-blue-100 text-blue-800'
+                              : 'border-dashed border-gray-400 bg-gray-100 text-gray-600'
+                          }`}
+                          style={{ opacity: draggingId === entry.id ? 0.4 : 1 }}
                         >
                           {entry.title}
                         </button>
@@ -847,7 +901,10 @@ export const TrainingPlan = () => {
 
           <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-400">
             <span className="inline-flex items-center gap-1.5">
-              <span className="inline-block h-3 w-5 rounded border border-dashed border-gray-400" /> Planned (tentative)
+              <span className="inline-block h-3 w-5 rounded border border-dashed border-gray-400 bg-gray-100" /> Draft (tentative)
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block h-3 w-5 rounded border border-blue-500 bg-blue-100" /> Confirmed
             </span>
             {editable && <span>Drag a chip to another day to reschedule.</span>}
           </p>
@@ -895,16 +952,17 @@ export const TrainingPlan = () => {
                         type="button"
                         disabled={!editable}
                         onClick={() => setFormState({ prefill: { recommendation: rec } })}
-                        title={editable ? undefined : 'The planning window is closed.'}
-                        className="flex-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                        title={editable ? undefined : `${lockReason} Accepting creates a plan entry.`}
+                        className="flex-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Accept
                       </button>
+                      {/* Dismiss is queue triage — it writes nothing to the plan, so it
+                          stays available year-round even while the window is closed. */}
                       <button
                         type="button"
-                        disabled={!editable}
                         onClick={() => setDismissing(rec)}
-                        className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                        className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-50"
                       >
                         Dismiss
                       </button>
