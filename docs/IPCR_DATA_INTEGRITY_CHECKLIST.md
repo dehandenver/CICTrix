@@ -12,7 +12,7 @@ of these degrade silently when a bad row lands.
 | 2 | Legal in Phase 1; all other offices in Phase 2 | **PASS** | Legal 10 `draft`; IT 11, Accountant 10, Engineer 10, Health 9 `approved` |
 | 3 | Summary of Ratings reads real seeded history, not defaulting low | **PASS** | Mean 4.227 / 5; 0 rows outside canonical periods |
 | 4 | Gap analysis / training needs runs against seeded data via the API | **PARTIAL** | View returns 168 rows for 52 employees, but **0** flagged `training_needed` — see Known issue 1 |
-| 5 | Office weighting recorded and applied per office | **PASS** | 5/5 active offices on option C |
+| 5 | Office weighting recorded and applied per office | **PASS** | 5/5 active offices on option C; split now drives `computeOverallScore` on both the employee save and the PM roll-up |
 | 6 | Office accounts show My IPCR Workspace / Training locked-with-note | **PASS** | `OfficeAccountLockedNote` gated on `isOfficeAccount` |
 
 Supporting counts: 805 `ipcr_performance` rows, 183 MFOs, 212 success indicators.
