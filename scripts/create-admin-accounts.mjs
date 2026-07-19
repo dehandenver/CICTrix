@@ -47,12 +47,20 @@ if (!URL || !SERVICE_KEY) {
 const supabase = createClient(URL, SERVICE_KEY, { auth: { persistSession: false } });
 
 /**
- * The two admin portals that reach backend-gated endpoints. `role` is stored as
- * written; LoginPage's normalizeAdminRole lowercases it to match its Role union.
+ * Every admin portal role. `role` is stored as written; LoginPage's
+ * normalizeAdminRole lowercases it and maps it to its Role union, so
+ * SUPER_ADMIN becomes 'super-admin'.
+ *
+ * Super-admin was the highest-privilege account still on a bundled password, so
+ * it is included even though that portal is a read-only viewer.
  */
 const ADMINS = [
-  { email: 'pm@cictrix.gov.ph',  role: 'PM',  name: 'PM Admin',  label: 'PM Admin (Performance Management)' },
-  { email: 'lnd@cictrix.gov.ph', role: 'LND', name: 'L&D Admin', label: 'L&D Admin (Learning & Development)' },
+  { email: 'pm@cictrix.gov.ph',    role: 'PM',          name: 'PM Admin',    label: 'PM Admin (Performance Management)' },
+  { email: 'lnd@cictrix.gov.ph',   role: 'LND',         name: 'L&D Admin',   label: 'L&D Admin (Learning & Development)' },
+  // user_roles has a CHECK allowing only ADMIN / RSP / PM / LND / INTERVIEWER,
+  // so super-admin is stored as ADMIN; normalizeAdminRole maps it to 'super-admin'.
+  { email: 'admin@cictrix.gov.ph', role: 'ADMIN', name: 'Super Admin', label: 'Super Admin (HR Head, read-only viewer)' },
+  { email: 'rsp@cictrix.gov.ph',   role: 'RSP',         name: 'RSP Admin',   label: 'RSP Admin (Recruitment)' },
 ];
 
 /** Strong random password — no ambiguous characters, mixed classes. */
@@ -73,6 +81,28 @@ function generatePassword(length = 20) {
   return chars.join('');
 }
 
+/** Passing --rotate resets passwords on accounts that already exist. */
+const ROTATE = process.argv.includes('--rotate');
+
+/** LoginPage reads the role from user_roles after signInWithPassword, so the
+ *  account is unusable without this row even though auth itself succeeds. */
+async function ensureRole(userId, admin) {
+  const { data: existingRole } = await supabase
+    .from('user_roles').select('id').eq('user_id', userId).maybeSingle();
+  const payload = {
+    user_id: userId,
+    email: admin.email,
+    role: admin.role,
+    name: admin.name,
+    is_active: true,
+  };
+  const { error } = existingRole
+    ? await supabase.from('user_roles').update(payload).eq('id', existingRole.id)
+    : await supabase.from('user_roles').insert(payload);
+  if (error) console.error(`  ! ${admin.email} user_roles:`, error.message);
+  return !error;
+}
+
 async function main() {
   const { data: existing, error: listErr } = await supabase.auth.admin.listUsers();
   if (listErr) throw listErr;
@@ -86,6 +116,15 @@ async function main() {
     let userId;
 
     if (found) {
+      // Rotating silently would invalidate a password already recorded
+      // elsewhere, so an existing account keeps its password unless --rotate is
+      // passed explicitly. Its role row is still re-asserted below.
+      if (!ROTATE) {
+        console.log(`  = ${admin.email} already exists — password kept (pass --rotate to reset)`);
+        userId = found.id;
+        await ensureRole(userId, admin);
+        continue;
+      }
       const { data, error } = await supabase.auth.admin.updateUserById(found.id, {
         password,
         email_confirm: true,
@@ -106,22 +145,7 @@ async function main() {
       console.log(`  + ${admin.email} created`);
     }
 
-    // LoginPage reads the role from user_roles after signInWithPassword, so the
-    // account is unusable without this row even though auth succeeds.
-    const { data: existingRole } = await supabase
-      .from('user_roles').select('id').eq('user_id', userId).maybeSingle();
-
-    const rolePayload = {
-      user_id: userId,
-      email: admin.email,
-      role: admin.role,
-      name: admin.name,
-      is_active: true,
-    };
-    const { error: roleErr } = existingRole
-      ? await supabase.from('user_roles').update(rolePayload).eq('id', existingRole.id)
-      : await supabase.from('user_roles').insert(rolePayload);
-    if (roleErr) { console.error(`  ! ${admin.email} user_roles:`, roleErr.message); continue; }
+    if (!(await ensureRole(userId, admin))) continue;
 
     results.push({ ...admin, password, userId });
   }

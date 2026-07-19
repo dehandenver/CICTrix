@@ -32,28 +32,17 @@ interface LoginPageProps {
 }
 
 /**
- * Development-only fallback credentials.
+ * There is deliberately no hardcoded credential table here.
  *
- * These are compiled into the public JS bundle, so anything listed here is
- * readable by anyone who opens devtools on the deployed site — it is a published
- * password, not a secret. PM and L&D were removed once real Supabase Auth
- * accounts existed for them (scripts/create-admin-accounts.mjs): those two
- * portals reach backend-gated endpoints, so a public password there would defeat
- * the RBAC on routes like the IPCR weighting config.
+ * All four admin roles authenticate against Supabase Auth, with the role read
+ * from `user_roles` (accounts provisioned by scripts/create-admin-accounts.mjs).
  *
- * Do NOT add entries back. The remaining super-admin and RSP entries are a known
- * issue on the same footing and should be migrated to real accounts too.
+ * Anything hardcoded in this file compiles into the public JS bundle and is
+ * readable by anyone who opens devtools on the deployed site — a published
+ * password, not a secret. The previous MOCK_USERS table put working super-admin,
+ * RSP, PM and L&D passwords in production, and would defeat the RBAC on
+ * backend-gated routes like the IPCR weighting config. Do not reintroduce it.
  */
-const MOCK_USERS: Record<string, { password: string; role: Role }> = {
-  'admin@abyan.gov.ph': { password: 'admin123', role: 'super-admin' },
-  'rsp@abyan.gov.ph': { password: 'rsp123', role: 'rsp' },
-
-  'admin@cictrix.gov.ph': { password: 'admin123', role: 'super-admin' },
-  'rsp@cictrix.gov.ph': { password: 'rsp123', role: 'rsp' },
-
-  'admin@abyan.com': { password: 'Admin@123', role: 'super-admin' },
-  'rsp@abyan.com': { password: 'RSP@123', role: 'rsp' },
-};
 
 const ROLES: { key: Role; label: string; sublabel: string }[] = [
   { key: 'rsp', label: 'RSP', sublabel: 'Recruitment' },
@@ -99,18 +88,6 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
 
     setLoading(true);
     try {
-      const normalizedEmail = email.trim().toLowerCase();
-      const mockUser = MOCK_USERS[normalizedEmail];
-      if (mockUser && mockUser.password === password) {
-        if (mockUser.role !== selectedRole) {
-          // Auto-select the correct role instead of failing
-          setSelectedRole(mockUser.role);
-        }
-        onLogin(normalizedEmail, mockUser.role);
-        navigateAfterLogin(mockUser.role);
-        return;
-      }
-
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
