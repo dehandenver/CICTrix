@@ -5,7 +5,7 @@ load_dotenv()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import auth, applicants, email, evaluations, settings, departments, employees, competency_matching, competency_assessment
+from app.routes import auth, applicants, email, evaluations, settings, departments, employees, competency_matching, competency_assessment, weighting
 
 # Create FastAPI app
 app = FastAPI(
@@ -33,6 +33,7 @@ app.include_router(email.router)
 app.include_router(departments.router)
 app.include_router(competency_matching.router)
 app.include_router(competency_assessment.router)
+app.include_router(weighting.router)
 
 
 @app.get("/")
