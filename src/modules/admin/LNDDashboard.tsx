@@ -51,6 +51,7 @@ import { CATEGORY_COLORS, TRAINING_CATEGORIES } from './trainingCategories';
 
 import { EmptyState } from '../../components/EmptyState';
 import { listTrainingRequestsDetailed, type TrainingRequest } from '../../lib/api/trainingRequests';
+import { computeNeedsAssessment, type CompetencyNeed } from '../../lib/api/trainingNeeds';
 import { listIncompleteLockedTrainings, listLockingSoonWithoutRoster, type IncompleteLockedTraining, type LockingSoonTraining } from '../../lib/api/trainingLifecycle';
 import { OfficeDirectorySection } from '../../components/OfficeDirectorySection';
 import { LndSummaryOfRatings } from './LndSummaryOfRatings';
@@ -225,21 +226,35 @@ const LndDashboardContent = () => {
   const [viewDeptDetails, setViewDeptDetails] = useState<string | null>(null);
   const [incompleteLocked, setIncompleteLocked] = useState<IncompleteLockedTraining[]>([]);
   const [lockingSoon, setLockingSoon] = useState<LockingSoonTraining[]>([]);
+  /**
+   * The AI needs assessment — competency gaps derived from the summary of
+   * ratings and mapped onto the competency framework. This, not the manual
+   * request queue, is what the analytics below describe: requests are what
+   * offices thought to ask for, whereas this is what the ratings actually show.
+   */
+  const [needs, setNeeds] = useState<CompetencyNeed[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [data, locked, soon] = await Promise.all([
+        const [data, locked, soon, assessed] = await Promise.all([
           listTrainingRequestsDetailed(),
           listIncompleteLockedTrainings(),
           listLockingSoonWithoutRoster(),
+          computeNeedsAssessment(),
         ]);
         if (cancelled) return;
         setRequests(data);
         setIncompleteLocked(locked);
         setLockingSoon(soon);
-        const depts = Array.from(new Set(data.map((r: TrainingRequest) => r.employees?.department).filter(Boolean)));
+        setNeeds(assessed);
+        // Offices come from the needs assessment, which covers everyone with
+        // rated IPCR data — not just offices that happened to file a request.
+        const assessedDepts = Array.from(new Set(assessed.flatMap((n) => n.offices.map((o) => o.office))));
+        const depts = assessedDepts.length
+          ? assessedDepts
+          : Array.from(new Set(data.map((r: TrainingRequest) => r.employees?.department).filter(Boolean))) as string[];
         if (depts.length > 0) setSelectedRadarDept(depts[0] as string);
       } catch (err) {
         console.error('LND dashboard error', err);
@@ -252,9 +267,30 @@ const LndDashboardContent = () => {
 
   const currentYear = new Date().getFullYear().toString();
 
-  const departments = useMemo(
-    () => Array.from(new Set(requests.map(r => r.employees?.department).filter(Boolean))) as string[],
-    [requests]
+  // Offices with assessed needs, falling back to request-filing offices only
+  // when the assessment has produced nothing (e.g. before the matcher runs).
+  const departments = useMemo(() => {
+    const assessed = Array.from(new Set(needs.flatMap((n) => n.offices.map((o) => o.office))));
+    if (assessed.length) return assessed.sort();
+    return Array.from(new Set(requests.map(r => r.employees?.department).filter(Boolean))) as string[];
+  }, [needs, requests]);
+
+  /** Distinct employees with at least one identified competency gap. */
+  const employeesWithGaps = useMemo(() => {
+    const perOffice = new Map<string, number>();
+    for (const n of needs) {
+      for (const o of n.offices) {
+        // An employee can appear under several competencies; the office's
+        // headcount bounds it, so take the max rather than summing.
+        perOffice.set(o.office, Math.max(perOffice.get(o.office) ?? 0, o.affected));
+      }
+    }
+    return [...perOffice.values()].reduce((a, b) => a + b, 0);
+  }, [needs]);
+
+  const topNeed = useMemo(
+    () => [...needs].sort((a, b) => b.demand - a.demand || b.peakOfficeDemand - a.peakOfficeDemand)[0] ?? null,
+    [needs]
   );
 
   const deptColorMap = useMemo(() => {
@@ -286,51 +322,49 @@ const LndDashboardContent = () => {
     return map;
   }, [requests]);
 
-  // Stacked bar: one entry per category, departments as segment keys — current year only
+  // Stacked bar: assessed competency gaps per framework category, split by
+  // office. Counts affected employees, so a category is tall because many
+  // people need it — not because someone filed paperwork for it.
   const categoryChartData = useMemo(() =>
     TRAINING_CATEGORIES.map(cat => {
       const entry: Record<string, any> = { category: cat };
       for (const dept of departments) {
-        entry[dept] = requests.filter(r =>
-          r.category === cat &&
-          r.employees?.department === dept &&
-          r.requested_at?.startsWith(currentYear)
-        ).length;
+        entry[dept] = needs
+          .filter(n => n.category === cat)
+          .reduce((sum, n) => sum + (n.offices.find(o => o.office === dept)?.affected ?? 0), 0);
       }
       return entry;
     }),
-    [requests, departments, currentYear]
+    [needs, departments]
   );
 
-  // Radar: demand share per competency for the selected department
-  const radarData = useMemo(() => {
-    const deptReqs = requests.filter(r => r.employees?.department === selectedRadarDept);
-    const total = deptReqs.length || 1;
-    return COMPETENCY_LIST.map(comp => ({
+  // Radar: for the selected office, the share of its headcount with a gap in
+  // each competency. Reads as "how much of this office needs this", which is
+  // the question the profile is meant to answer.
+  const radarData = useMemo(() =>
+    COMPETENCY_LIST.map(comp => ({
       subject: COMPETENCY_SHORT[comp] ?? comp,
       fullName: comp,
-      value: Math.round(deptReqs.filter(r => r.competency === comp).length / total * 100),
-    }));
-  }, [requests, selectedRadarDept]);
+      value: needs.find(n => n.competency === comp)?.offices
+        .find(o => o.office === selectedRadarDept)?.demand ?? 0,
+    })),
+    [needs, selectedRadarDept]
+  );
 
-  // Demand table: one row per department, top competency + priority + demand %
+  // Demand table: per office, its strongest assessed need. Demand is the share
+  // of that office's headcount affected, so offices are comparable regardless
+  // of how many requests they filed.
   const demandTableData = useMemo(() => {
     return departments.map(dept => {
-      const deptReqs = requests.filter(r => r.employees?.department === dept);
-      const total = deptReqs.length || 1;
-      const compCounts = new Map<string, number>();
-      for (const r of deptReqs) {
-        if (r.competency) compCounts.set(r.competency, (compCounts.get(r.competency) ?? 0) + 1);
+      let topComp = '—', demand = 0;
+      for (const n of needs) {
+        const o = n.offices.find(x => x.office === dept);
+        if (o && o.demand > demand) { topComp = n.competency; demand = o.demand; }
       }
-      let topComp = '—', topCount = 0;
-      for (const [comp, cnt] of compCounts) {
-        if (cnt > topCount) { topComp = comp; topCount = cnt; }
-      }
-      const demand = Math.round(topCount / total * 100);
       const priority: 'high' | 'medium' | 'emerging' = demand >= 60 ? 'high' : demand >= 30 ? 'medium' : 'emerging';
       return { department: dept, topCompetency: topComp, demand, priority };
     }).sort((a, b) => b.demand - a.demand);
-  }, [requests, departments]);
+  }, [needs, departments]);
 
   // Full request history for the department drill-down modal, most recent first
   const deptDetailRequests = useMemo(() => {
@@ -406,26 +440,34 @@ const LndDashboardContent = () => {
       {/* Metric Cards */}
       <section className="grid grid-cols-1 gap-6 md:grid-cols-3 relative">
         {loading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
-        <StatCard label="Total training requests (office accounts)" value={ytdCount.toString()} icon={ClipboardList} color="blue" sublabel="Year to date" />
+        <StatCard
+          label="Employees with identified skill gaps"
+          value={employeesWithGaps.toString()}
+          icon={ClipboardList}
+          color="blue"
+          sublabel={`From rated IPCR data · ${ytdCount} requests filed YTD`}
+        />
         <article className="rounded-2xl border border-gray-200 bg-white p-5 transition hover:shadow-md">
           <div className="flex items-start justify-between">
             <div className="min-w-0 flex-1 pr-3">
-              <p className="text-sm font-medium text-gray-500">Most requested category, YTD</p>
+              <p className="text-sm font-medium text-gray-500">Top competency need</p>
               <p className="mt-1 text-3xl font-bold text-gray-900 leading-tight truncate">
-                {topCategoryEntry.count > 0 ? topCategoryEntry.cat : '—'}
+                {topNeed ? (COMPETENCY_SHORT[topNeed.competency] ?? topNeed.competency) : '—'}
               </p>
-              {topCategoryEntry.count > 0 && (
-                <p className="mt-1 text-xs text-gray-500">{topCategoryEntry.count} requests</p>
+              {topNeed && (
+                <p className="mt-1 text-xs text-gray-500">
+                  {topNeed.category} · {topNeed.demand}% LGU-wide, peaks at {topNeed.peakOfficeDemand}% in one office
+                </p>
               )}
             </div>
             <div
               className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl"
               style={{
-                backgroundColor: topCategoryEntry.cat && CATEGORY_COLORS[topCategoryEntry.cat]
-                  ? `${CATEGORY_COLORS[topCategoryEntry.cat]}22`
+                backgroundColor: topNeed && CATEGORY_COLORS[topNeed.category]
+                  ? `${CATEGORY_COLORS[topNeed.category]}22`
                   : 'rgb(254 215 170)',
-                color: topCategoryEntry.cat && CATEGORY_COLORS[topCategoryEntry.cat]
-                  ? CATEGORY_COLORS[topCategoryEntry.cat]
+                color: topNeed && CATEGORY_COLORS[topNeed.category]
+                  ? CATEGORY_COLORS[topNeed.category]
                   : 'rgb(194 65 12)',
               }}
             >
@@ -433,14 +475,14 @@ const LndDashboardContent = () => {
             </div>
           </div>
         </article>
-        <StatCard label="Departments reporting" value={departments.length.toString()} icon={Building2} color="green" sublabel="With active requests" />
+        <StatCard label="Offices assessed" value={departments.length.toString()} icon={Building2} color="green" sublabel="With identified competency gaps" />
       </section>
 
       {/* Category chart — stacked bar, 4 categories × departments */}
       <section className="rounded-2xl border border-gray-200 bg-white p-5 relative min-h-[380px]">
         {loading && <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 rounded-2xl" />}
         <div className="mb-1">
-          <h2 className="text-sm font-semibold text-gray-700">Training requests by category and department, current year</h2>
+          <h2 className="text-sm font-semibold text-gray-700">Assessed competency gaps by category and office</h2>
         </div>
         {departments.length === 0 && !loading ? (
           <div className="mt-6"><EmptyState title="No request data" description="No training requests have been submitted yet." /></div>
@@ -496,7 +538,7 @@ const LndDashboardContent = () => {
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Competency profile by department</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Each axis shows that competency's share of the department's total requests</p>
+            <p className="text-xs text-gray-400 mt-0.5">Each axis shows the share of that office affected by the competency</p>
           </div>
           {departments.length > 0 && (
             <select

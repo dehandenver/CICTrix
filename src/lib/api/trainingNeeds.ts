@@ -104,9 +104,18 @@ export type OfficeNeed = {
 
 export type CompetencyNeed = {
   competency: string;
+  /**
+   * The competency framework's training stream for this competency, title-cased
+   * ("Technical", "Leadership", ...). Read from `competency_standards` rather
+   * than a local map so the framework stays the single source of truth for how
+   * competencies group.
+   */
+  category: string;
   /** total affected employees / total LGU headcount, as a percentage. */
   demand: number;
   priority: NeedPriority;
+  /** Highest single-office demand — the signal a per-office reading needs. */
+  peakOfficeDemand: number;
   offices: OfficeNeed[];
 };
 
@@ -167,6 +176,16 @@ export async function computeNeedsAssessment(): Promise<CompetencyNeed[]> {
     affectedByComp.get(comp)!.add(emp);
   }
 
+  // Competency -> training stream, straight from the framework.
+  const { data: standards } = await supabase
+    .from('competency_standards')
+    .select('competency_name, training_stream');
+  const titleCase = (s: string) =>
+    String(s ?? '').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+  const categoryOf = new Map<string, string>(
+    (standards ?? []).map((s: any) => [String(s.competency_name), titleCase(s.training_stream)])
+  );
+
   const needs: CompetencyNeed[] = [];
   for (const [competency, officeMap] of byComp) {
     const offices: OfficeNeed[] = [...officeMap.entries()]
@@ -178,7 +197,14 @@ export async function computeNeedsAssessment(): Promise<CompetencyNeed[]> {
 
     const affected = affectedByComp.get(competency)?.size ?? 0;
     const demand = pct(affected, totalLgu);
-    needs.push({ competency, demand, priority: priorityOf(demand), offices });
+    needs.push({
+      competency,
+      category: categoryOf.get(competency) ?? 'Technical',
+      demand,
+      priority: priorityOf(demand),
+      peakOfficeDemand: offices[0]?.demand ?? 0,
+      offices,
+    });
   }
 
   return needs.sort((a, b) => b.demand - a.demand);
