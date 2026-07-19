@@ -13,7 +13,6 @@ import {
   ArrowRight,
   Database,
   Shield,
-  HelpCircle,
   Bell,
   UserCircle2,
   Lock,
@@ -691,27 +690,39 @@ export const OfficeAccountConsole: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-800">
+    <div className="brand-text min-h-screen bg-slate-100 font-sans text-[#040E6B]">
 
       {/* ── Top Header ── */}
-      <header style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', boxShadow: '0 2px 16px rgba(54,62,232,0.18)' }} className="sticky top-0 z-40 print:hidden">
-        <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-3">
+      <header
+        className="sticky top-0 z-40 shadow-md print:hidden"
+        style={{ backgroundColor: '#363EE8', fontFamily: "'Poppins', system-ui, -apple-system, sans-serif" }}
+      >
+        <div className="flex items-center justify-between px-6 py-3">
+
+          {/* Left — Logo & Branding (mirrors AdminHeader) */}
           <div className="flex items-center gap-3">
             <img
               src={abyanLogo}
-              alt="Abyan HRIS"
-              style={{ height: 40, width: 'auto', objectFit: 'contain', mixBlendMode: 'screen' }}
+              alt="ABYAN HRIS"
+              className="h-10 w-auto object-contain"
+              style={{ mixBlendMode: 'screen' }}
             />
-            <div>
-              <h1 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.01em' }}>Office Performance Console</h1>
-              <p style={{ margin: 0, fontSize: '0.75rem', color: '#C8D1FF' }}>Human Resources Information System</p>
+            <div className="flex flex-col items-start text-left leading-tight">
+              <span className="text-lg font-bold tracking-tight" style={{ color: '#ffffff' }}>
+                ABYAN
+              </span>
+              <span className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.80)' }}>
+                Human Resource Information System
+              </span>
             </div>
           </div>
-          <div className="flex items-center gap-4 text-slate-500">
-            <button className="rounded-full p-2 hover:bg-slate-100" type="button"><HelpCircle className="h-5 w-5" /></button>
+
+          {/* Right — Notifications + Switch Account + User info + Logout */}
+          <div className="flex items-center gap-4">
             <div className="relative">
-              <button 
-                className="rounded-full p-2 hover:bg-indigo-600/10 text-white relative transition" 
+              <button
+                className="relative rounded-full p-2 transition hover:bg-white/20"
+                style={{ color: '#ffffff' }}
                 type="button"
                 onClick={handleToggleBell}
               >
@@ -771,29 +782,25 @@ export const OfficeAccountConsole: React.FC = () => {
                 </div>
               )}
             </div>
-            <div className="h-8 w-px bg-slate-200" />
+            {/* Divider */}
+            <div style={{ width: '1px', height: '28px', backgroundColor: 'rgba(255,255,255,0.25)' }} />
+
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 {switchEnabled && (
                   <div className="relative">
                     <button
                       onClick={() => setShowSwitchModal(!showSwitchModal)}
+                      className="flex h-9 w-9 items-center justify-center rounded-full transition hover:bg-white/30"
                       style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        height: '40px',
-                        width: '40px',
-                        borderRadius: '50%',
-                        border: '1.5px solid #C8D1FF',
-                        background: '#F0F2FD',
-                        color: '#363EE8',
+                        backgroundColor: 'rgba(255,255,255,0.18)',
+                        border: 'none',
                         cursor: 'pointer',
                         padding: 0
                       }}
                       title="Switch Account"
                     >
-                      <UserCircle2 className="h-6 w-6 text-indigo-650" />
+                      <UserCircle2 className="h-5 w-5" style={{ color: '#ffffff' }} />
                     </button>
                     {showSwitchModal && (
                       <div
@@ -854,13 +861,26 @@ export const OfficeAccountConsole: React.FC = () => {
                     )}
                   </div>
                 )}
-                <div className="leading-tight text-left">
-                  <p className="text-sm font-semibold text-slate-800">{currentUserName}</p>
-                  <p className="text-xs text-slate-500">{currentUserPosition ?? 'Office Account Console'}</p>
+                <div className="hidden sm:flex flex-col leading-tight text-left">
+                  <p className="text-sm font-semibold" style={{ color: '#ffffff' }}>{currentUserName}</p>
+                  <p className="text-xs" style={{ color: 'rgba(255,255,255,0.75)' }}>
+                    {currentUserPosition ?? 'Office Account Console'}
+                  </p>
                 </div>
               </div>
             </div>
-            <LogoutConfirmPopover />
+
+            {/* Divider */}
+            <div style={{ width: '1px', height: '28px', backgroundColor: 'rgba(255,255,255,0.25)' }} />
+
+            <LogoutConfirmPopover
+              buttonClassName="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold transition hover:bg-white/20"
+              buttonStyle={{
+                borderColor: 'rgba(255,255,255,0.35)',
+                backgroundColor: 'rgba(255,255,255,0.12)',
+                color: '#ffffff',
+              }}
+            />
           </div>
         </div>
       </header>

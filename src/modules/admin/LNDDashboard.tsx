@@ -707,7 +707,7 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
   const [activeModule, setActiveModule] = useState<MenuId>('dashboard');
 
   return (
-    <div className="min-h-screen bg-slate-100 font-sans text-[#040E6B]">
+    <div className="brand-text min-h-screen bg-slate-100 font-sans text-[#040E6B]">
       <AdminHeader
         userName="L&D Admin"
         divisionLabel="L&D Division"

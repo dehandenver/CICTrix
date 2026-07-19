@@ -943,3 +943,30 @@ html[data-theme='dark'] ::-webkit-scrollbar-track { background: #0f172a; }
 html[data-theme='dark'] ::-webkit-scrollbar-thumb { background: #334155; border-radius: 5px; }
 html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover { background: #475569; }
 
+
+/* ─────────────────────────────────────────────────────────────
+   Brand text color (#040E6B) — portal scope
+   Applied via `.brand-text` on a portal root (L&D, PM, Employee,
+   Office Account). Overrides the generic slate/gray body-text
+   utilities so all copy reads in the brand dark blue instead of
+   neutral gray. Light mode only — dark theme keeps its own ramp.
+   Inline `style={{ color }}` still wins, so white-on-blue active
+   nav items and buttons are unaffected.
+   ───────────────────────────────────────────────────────────── */
+html:not([data-theme='dark']) .brand-text {
+  color: #040E6B;
+}
+
+html:not([data-theme='dark']) .brand-text .text-slate-900,
+html:not([data-theme='dark']) .brand-text .text-slate-800,
+html:not([data-theme='dark']) .brand-text .text-slate-700,
+html:not([data-theme='dark']) .brand-text .text-gray-900,
+html:not([data-theme='dark']) .brand-text .text-gray-800,
+html:not([data-theme='dark']) .brand-text .text-gray-700,
+html:not([data-theme='dark']) .brand-text .text-black {
+  color: #040E6B;
+}
+
+/* Muted small print (400/500/600) deliberately stays gray — this mirrors
+   RSP, which applies #040E6B to headings, names and field values while
+   leaving secondary captions neutral. */

@@ -1663,7 +1663,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   );
 
   return (
-    <div className="min-h-screen" style={{ background: '#F0F2FD', fontFamily: "'Poppins', sans-serif" }}>
+    <div className="brand-text min-h-screen" style={{ background: '#F0F2FD', fontFamily: "'Poppins', sans-serif" }}>
       {/* ── Branded top nav ── */}
       <header style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', boxShadow: '0 2px 16px rgba(54,62,232,0.18)' }}>
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-3 sm:px-6">

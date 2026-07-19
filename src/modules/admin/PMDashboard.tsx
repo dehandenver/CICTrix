@@ -929,7 +929,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     ] as const;
 
     return (
-      <div className="min-h-screen bg-slate-100 font-sans text-[#040E6B]">
+      <div className="brand-text min-h-screen bg-slate-100 font-sans text-[#040E6B]">
         <AdminHeader userName="PM Admin" divisionLabel="PM Division" />
 
         <div className="flex">
