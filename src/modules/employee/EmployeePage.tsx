@@ -1,4 +1,5 @@
 import {
+  Archive,
   Bell,
   Calendar,
   CheckCircle2,
@@ -26,6 +27,7 @@ import {
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { MyTrainingsSection } from './MyTrainingsSection';
+import { MyArchiveSection } from './MyArchiveSection';
 import { getActiveOfficeRole } from '../../lib/api/officeRoles';
 import abyanLogo from '../../assets/abyan-logo.png';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -145,7 +147,7 @@ interface EmployeePageProps {
   onLogout: () => void;
 }
 
-type PortalTab = 'personal' | 'documents' | 'submission' | 'account' | 'ipcr-workspace' | 'new-entrants' | 'trainings';
+type PortalTab = 'personal' | 'documents' | 'submission' | 'account' | 'ipcr-workspace' | 'new-entrants' | 'trainings' | 'archive';
 
 interface TabConfig {
   id: PortalTab;
@@ -1335,6 +1337,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
         },
         { id: 'ipcr-workspace', label: 'My IPCR Workspace', icon: FileSpreadsheet, route: '/employee/ipcr-workspace' },
         { id: 'trainings', label: 'My Trainings', icon: Calendar, route: '/employee/trainings' },
+        { id: 'archive', label: 'My Archive', icon: Archive, route: '/employee/archive' },
         { id: 'account', label: 'Account & Security', icon: Lock, route: '/employee/account' },
       ];
       // Show new entrants track only for probationary/new hires
@@ -1351,6 +1354,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
     if (location.pathname.includes('/documents/submission')) return 'submission';
     if (location.pathname.includes('/ipcr-workspace')) return 'ipcr-workspace';
     if (location.pathname.includes('/trainings')) return 'trainings';
+    if (location.pathname.includes('/archive')) return 'archive';
     if (location.pathname.includes('/new-entrants')) return 'new-entrants';
     if (location.pathname.includes('/account')) return 'account';
     if (location.pathname.includes('/profile')) return 'personal';
@@ -1874,6 +1878,12 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
           isOfficeAccount
             ? <OfficeAccountLockedNote section="Training" />
             : <MyTrainingsSection employeeId={(currentUser.supabaseId as string) ?? ''} />
+        )}
+
+        {activeTab === 'archive' && (
+          <MyArchiveSection
+            employeeNum={String(employeeRawDetails?.employee_number ?? currentUser.employeeId ?? '')}
+          />
         )}
         {activeTab === 'personal' && (
           <div className="space-y-5">

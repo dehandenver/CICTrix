@@ -1,6 +1,7 @@
 import {
   AlertCircle,
   AlertTriangle,
+  Archive as ArchiveIcon,
   BarChart3,
   Bell,
   BookOpen,
@@ -84,6 +85,7 @@ type EmployeeOption = { id: string; name: string; position: string; department: 
 
 import { PMIPCRManagement } from './pm/PMIPCRManagement';
 import { PMCompetencyFramework } from './pm/PMCompetencyFramework';
+import { PMArchive } from './pm/PMArchive';
 import { PMPromotionalApplications } from './pm/PMPromotionalApplications';
 import { PMReportsAnalytics } from './pm/PMReportsAnalytics';
 
@@ -128,7 +130,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<
-    'dashboard' | 'office-directory' | 'ipcr-management' | 'competency' | 'promotions' | 'analytics' | 'settings'
+    'dashboard' | 'office-directory' | 'ipcr-management' | 'competency' | 'promotions' | 'analytics' | 'archive' | 'settings'
   >('dashboard');
 
   const [newCycle, setNewCycle] = useState<{
@@ -919,6 +921,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
       { key: 'competency', label: 'Competency Framework', subtitle: 'Position Requirements', icon: BookOpen },
       { key: 'promotions', label: 'Promotional Applications', subtitle: 'End-to-end Promotions', icon: TrendingUp },
       { key: 'analytics', label: 'Reports & Analytics', subtitle: 'Insights & Exports', icon: TrendingUp },
+      { key: 'archive', label: 'Archive', subtitle: 'Historical IPCR records', icon: ArchiveIcon },
       { key: 'settings', label: 'Settings', subtitle: '', icon: Settings },
     ] as const;
 
@@ -1366,6 +1369,8 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
 
             {activeSection === 'competency' && <PMCompetencyFramework />}
 
+            {activeSection === 'archive' && <PMArchive />}
+
             {activeSection === 'promotions' && <PMPromotionalApplications />}
 
             {activeSection === 'analytics' && <PMReportsAnalytics />}
@@ -1464,7 +1469,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
               </>
             )}
 
-            {!['dashboard', 'employees', 'evaluation-status', 'performance-reviews', 'goals', 'ipcr', 'ipcr-management', 'competency', 'analytics', 'reports', 'settings', 'registry'].includes(activeSection) && (
+            {!['dashboard', 'employees', 'evaluation-status', 'performance-reviews', 'goals', 'ipcr', 'ipcr-management', 'competency', 'analytics', 'archive', 'office-directory', 'promotions', 'reports', 'settings', 'registry'].includes(activeSection) && (
               <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
                 <h2 className="text-2xl font-bold text-slate-900 capitalize">{activeSection.replace('-', ' ')}</h2>
                 <p className="mt-2 text-slate-600">Section scaffold is ready. Share the next screenshots and I'll match this page exactly.</p>
