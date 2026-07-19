@@ -168,9 +168,11 @@ function seeded(str) {
 function ratings(key, semIdx) {
   const r = seeded(key);
   const lift = semIdx * 0.15; // slight improvement over time
+  // Q/E/T are integer columns in ipcr_performance — whole steps only. Only the
+  // average is fractional (numeric), which is what gives 4.33-style scores.
   const pick = (o) => {
     const v = 3 + (r * 10 + o + lift) % 2.2; // ~3.0 - 5.0
-    return Math.min(5, Math.max(3, Math.round(v * 2) / 2));
+    return Math.min(5, Math.max(3, Math.round(v)));
   };
   const q = pick(0.9), e = pick(0.3), t = pick(0.6);
   return { q, e, t, ave: Math.round(((q + e + t) / 3) * 100) / 100 };
@@ -252,8 +254,15 @@ async function main() {
     console.log(`  ✓ ${Math.min(i + 200, rows.length)}/${rows.length}`);
   }
 
-  // 4. Report
-  const { data: after } = await supabase.from('ipcr_performance').select('employee_num, ave_rating');
+  // 4. Report. Page through — PostgREST caps a plain select at 1000 rows, which
+  // silently undercounts the summary once the table grows past that.
+  const after = [];
+  for (let from = 0; ; from += 1000) {
+    const { data } = await supabase.from('ipcr_performance').select('employee_num, ave_rating').range(from, from + 999);
+    if (!data?.length) break;
+    after.push(...data);
+    if (data.length < 1000) break;
+  }
   const distinct = new Set((after ?? []).map((r) => r.employee_num)).size;
   const avg = (after ?? []).reduce((s, r) => s + Number(r.ave_rating || 0), 0) / Math.max(1, (after ?? []).length);
   console.log(`\nDone. ipcr_performance now covers ${distinct} employees; overall average rating ${avg.toFixed(2)} / 5.`);
