@@ -58,10 +58,11 @@ export async function openPhase(input: {
     const period = cycleInfo.period;
     const cycleId = cycleInfo.cycleId;
 
-    // Get count of employees
+    // Get count of active employees
     const { count, error: countErr } = await supabase
       .from('employees')
-      .select('*', { count: 'exact', head: true });
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'Active');
     if (countErr) return { ok: false, error: countErr.message };
     const employeeCount = count ?? 0;
 
@@ -94,7 +95,8 @@ export async function openPhase(input: {
     // 5. Notify employees via employee_notifications
     const { data: emps, error: empErr } = await supabase
       .from('employees')
-      .select('id');
+      .select('id')
+      .eq('status', 'Active');
     if (empErr) return { ok: false, error: empErr.message };
 
     if (emps && emps.length > 0) {
@@ -131,9 +133,14 @@ export async function closePhase(input: {
   try {
     const isPhase1 = input.phase === 'phase1';
     const dbPhase: PhaseKey = isPhase1 ? 'target_setting' : 'rating';
+    const notifPhase: IpcrPhase = isPhase1 ? 'target' : 'rating';
     const today = new Date().toISOString().slice(0, 10);
 
-    // 1. Upsert system schedule to Closed
+    // 1. Get the current status to check if it's already Closed
+    const phaseStates = await getSystemPhaseStates();
+    const wasClosed = phaseStates[dbPhase] === 'Closed';
+
+    // 2. Upsert system schedule to Closed
     const upsertRes = await upsertSchedule({
       scope: 'system',
       phase: dbPhase,
@@ -144,14 +151,72 @@ export async function closePhase(input: {
     });
     if (upsertRes.ok === false) return { ok: false, error: upsertRes.error };
 
-    // 2. Handle Phase 2 specifics (closeSelfRatingPeriod)
+    // 3. Get active cycle and period label
+    const cycleInfo = await getActiveCyclePeriod();
+    const period = cycleInfo.period;
+    const cycleId = cycleInfo.cycleId;
+
+    // 4. Handle Phase 2 specifics (closeSelfRatingPeriod)
     if (!isPhase1) {
-      const cycleInfo = await getActiveCyclePeriod();
       const ratingRes = await closeSelfRatingPeriod({
-        cycleId: cycleInfo.cycleId ?? undefined,
+        cycleId: cycleId ?? undefined,
         closedBy: input.closedBy,
       });
       if (ratingRes.ok === false) return { ok: false, error: ratingRes.error };
+    }
+
+    // 5. If already closed, return immediately to skip duplicate notifications
+    if (wasClosed) {
+      return { ok: true };
+    }
+
+    // Get count of active employees
+    const { count, error: countErr } = await supabase
+      .from('employees')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'Active');
+    if (countErr) return { ok: false, error: countErr.message };
+    const employeeCount = count ?? 0;
+
+    // 6. Log Office notification
+    const msg = isPhase1
+      ? `IPCR Target Setting (Phase 1) is now closed system-wide for period: ${period}.`
+      : `IPCR Accomplishment Rating (Phase 2) is now closed system-wide for period: ${period}.`;
+    const notifRes = await sendNotification({
+      phase: notifPhase,
+      officeId: null,
+      officeName: null,
+      period,
+      employeeCount,
+      message: msg,
+      triggeredBy: input.closedBy,
+    });
+    if (notifRes.ok === false) return { ok: false, error: notifRes.error };
+
+    // 7. Notify active employees via employee_notifications
+    const { data: emps, error: empErr } = await supabase
+      .from('employees')
+      .select('id')
+      .eq('status', 'Active');
+    if (empErr) return { ok: false, error: empErr.message };
+
+    if (emps && emps.length > 0) {
+      const notifType = isPhase1 ? 'phase1_close' : 'phase2_close';
+      const notifTitle = isPhase1 ? 'IPCR Phase 1 (Target Setting) is Closed' : 'IPCR Phase 2 (Accomplishment Rating) is Closed';
+      const notifMsg = isPhase1
+        ? `The target setting phase for ${period} has been closed system-wide. Target submission is now locked.`
+        : `The accomplishment rating phase for ${period} has been closed system-wide. Accomplishment submission is now locked.`;
+
+      const payloads = emps.map((e: any) => ({
+        employeeId: String(e.id),
+        type: notifType,
+        title: notifTitle,
+        message: notifMsg,
+        period,
+        link: '/employee/ipcr-workspace',
+      }));
+
+      await createNotifications(payloads);
     }
 
     return { ok: true };
