@@ -80,11 +80,26 @@ Reference for local development access to frontend pages and backend API endpoin
 - Description: Admin authentication
 - Roles: `super-admin`, `rsp`, `lnd`, `pm`
 
-### Default Development Credentials
-- Super Admin: `admin@cictrix.gov.ph / admin123`
-- RSP: `rsp@cictrix.gov.ph / rsp123`
-- LND: `lnd@cictrix.gov.ph / lnd123`
-- PM: `pm@cictrix.gov.ph / pm123`
+### Admin Credentials
+
+There are no default development passwords, and none are recorded here. All four
+admin roles authenticate against Supabase Auth, with the role read from
+`user_roles`:
+
+- Super Admin (HR Head, read-only viewer): `admin@cictrix.gov.ph`
+- RSP (Recruitment): `rsp@cictrix.gov.ph`
+- L&D (Learning & Development): `lnd@cictrix.gov.ph`
+- PM (Performance Management): `pm@cictrix.gov.ph`
+
+Accounts are provisioned by `scripts/create-admin-accounts.mjs`, which generates
+random passwords and prints them once. Ask whoever ran it, or re-run it to
+rotate — it is idempotent and re-asserts the role rather than erroring.
+
+Do not paste passwords back into this file. The previous version of this section
+listed `admin123` / `rsp123` / `lnd123` / `pm123`, which matched a hardcoded
+`MOCK_USERS` table in `src/modules/admin/LoginPage.tsx`. That file compiles into
+the public JS bundle, so those were readable by anyone who opened devtools on the
+deployed site. Both the table and the accounts it stood in for are gone.
 
 ### Dashboards and Management Pages
 - Super Admin Dashboard: [http://localhost:5173/admin](http://localhost:5173/admin)
