@@ -86,10 +86,14 @@ There are no default development passwords, and none are recorded here. All four
 admin roles authenticate against Supabase Auth, with the role read from
 `user_roles`:
 
-- Super Admin (HR Head, read-only viewer): `superadmin.test@gmail.com`
-- RSP (Recruitment): `rsp.admin.test@gmail.com`
-- L&D (Learning & Development): `lnd.admin.test@gmail.com`
-- PM (Performance Management): `pm.admin.test@gmail.com`
+- Super Admin (HR Head, read-only viewer): `cictrix23+superadmin@gmail.com`
+- RSP (Recruitment): `cictrix23+rsp@gmail.com`
+- L&D (Learning & Development): `cictrix23+lnd@gmail.com`
+- PM (Performance Management): `cictrix23+pm@gmail.com`
+
+All four are plus-addresses on the single real inbox `cictrix23@gmail.com`, so
+Supabase's **Authentication → Users → Reset password** button delivers and
+anyone with that inbox can reset a forgotten password without SQL.
 
 Accounts are provisioned by `scripts/create-admin-accounts.mjs`, which generates
 random passwords and prints them once. Ask whoever ran it, or re-run it to
