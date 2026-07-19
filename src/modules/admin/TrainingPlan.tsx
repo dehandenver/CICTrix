@@ -1,6 +1,7 @@
 import {
   ArrowUpRight,
   CalendarDays,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Inbox,
@@ -22,16 +23,21 @@ import {
   createPlanEntry,
   deletePlanEntry,
   dismissRecommendation,
+  getPlanPublication,
   getPlanningWindow,
   listPlanEntries,
   listRecommendations,
   promotePlanEntry,
+  publishTrainingPlan,
   reschedulePlanEntry,
+  rolloverTrainingPlan,
   setPlanningWindow,
+  unpublishTrainingPlan,
   updatePlanEntry,
   PLAN_STATUSES,
   type PlanEntry,
   type PlanEntryInput,
+  type PlanPublication,
   type PlanStatus,
   type PlanningWindow,
   type Recommendation,
@@ -651,6 +657,7 @@ export const TrainingPlan = () => {
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [departments, setDepartments] = useState<DepartmentOption[]>([]);
   const [win, setWin] = useState<PlanningWindow>({ schedule: null, isOpen: false, startDate: null, deadlineDate: null });
+  const [publication, setPublication] = useState<PlanPublication | null>(null);
   const [loading, setLoading] = useState(true);
   const [month, setMonth] = useState(0);
 
@@ -666,10 +673,16 @@ export const TrainingPlan = () => {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    const [e, r, w] = await Promise.all([listPlanEntries(planYear), listRecommendations(), getPlanningWindow()]);
+    const [e, r, w, p] = await Promise.all([
+      listPlanEntries(planYear),
+      listRecommendations(),
+      getPlanningWindow(),
+      getPlanPublication(planYear),
+    ]);
     setEntries(e);
     setRecommendations(r);
     setWin(w);
+    setPublication(p);
     setLoading(false);
   }, [planYear]);
 
@@ -678,10 +691,26 @@ export const TrainingPlan = () => {
     void getDepartmentIdOptions().then(setDepartments);
   }, [refresh]);
 
-  const editable = win.isOpen;
+  // A published plan is frozen regardless of the window: sign-off is the point
+  // at which the year stops moving.
+  const editable = win.isOpen && !publication;
   const wState = useMemo(() => windowState(win), [win]);
-  const lockReason =
-    wState.kind === 'unset' ? 'No planning window has been set.' : 'Planning window closed.';
+  const lockReason = publication
+    ? `The ${planYear} plan is published.`
+    : wState.kind === 'unset'
+      ? 'No planning window has been set.'
+      : 'Planning window closed.';
+
+  // Publish blocks on these; surfacing them here means the admin can fix them
+  // before clicking rather than reading a wall of titles out of an exception.
+  const blockers = useMemo(() => {
+    const unsettled = entries.filter((e) => e.planStatus !== 'Confirmed');
+    const noDept = entries.filter((e) => !e.departmentId);
+    return { unsettled, noDept, total: unsettled.length + noDept.length };
+  }, [entries]);
+
+  const canPublish = !publication && entries.length > 0 && blockers.total === 0;
+  const yearArrived = planYear <= currentYear;
 
   const filtered = useMemo(
     () =>
@@ -709,6 +738,41 @@ export const TrainingPlan = () => {
   const selected = useMemo(() => entries.find((e) => e.id === selectedId) ?? null, [entries, selectedId]);
   const cells = useMemo(() => monthGrid(planYear, month), [planYear, month]);
   const monthName = new Date(planYear, month).toLocaleString('en-US', { month: 'long' });
+
+  const [publishing, setPublishing] = useState(false);
+
+  const handlePublish = async () => {
+    if (!window.confirm(
+      `Publish the ${planYear} plan?\n\n${entries.length} confirmed entries will be frozen and the planning window will close. ` +
+      `They roll into Training Courses in January ${planYear}, not now.`
+    )) return;
+    setPublishing(true);
+    const result = await publishTrainingPlan(planYear, 'L&D Admin');
+    setPublishing(false);
+    if (!result.ok) { setError(result.error ?? 'Could not publish the plan.'); return; }
+    await refresh();
+  };
+
+  const handleUnpublish = async () => {
+    if (!window.confirm(`Reopen the ${planYear} plan for editing? The planning window will reopen.`)) return;
+    setPublishing(true);
+    const result = await unpublishTrainingPlan(planYear, 'L&D Admin');
+    setPublishing(false);
+    if (!result.ok) { setError(result.error ?? 'Could not unpublish the plan.'); return; }
+    await refresh();
+  };
+
+  const handleRollover = async () => {
+    if (!window.confirm(
+      `Roll the ${planYear} plan into Training Courses?\n\n` +
+      `This creates a draft per entry, each needing Dept Head review. Safe to re-run if it stops partway.`
+    )) return;
+    setPublishing(true);
+    const result = await rolloverTrainingPlan(planYear, 'L&D Admin');
+    setPublishing(false);
+    if (!result.ok) { setError(result.error ?? 'Could not roll the plan over.'); return; }
+    await refresh();
+  };
 
   const handleDrop = async (date: Date) => {
     const entry = entries.find((e) => e.id === draggingId);
@@ -761,11 +825,96 @@ export const TrainingPlan = () => {
           >
             <Plus className="h-4 w-4" /> New Planned Training
           </button>
+          {!publication && (
+            <button
+              type="button"
+              disabled={!canPublish || publishing}
+              onClick={() => void handlePublish()}
+              title={
+                entries.length === 0
+                  ? 'Add entries before publishing.'
+                  : blockers.total > 0
+                    ? `${blockers.total} entr${blockers.total === 1 ? 'y' : 'ies'} must be resolved first.`
+                    : undefined
+              }
+              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 shadow-sm"
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              {publishing ? 'Publishing…' : `Publish ${planYear} Plan`}
+            </button>
+          )}
         </div>
       </section>
 
+      {/* Publish blockers — the same rules publish_training_plan() enforces, shown
+          before the click so they can be fixed rather than read out of an error. */}
+      {!publication && entries.length > 0 && blockers.total > 0 && (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+          <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-amber-900">
+              {planYear} plan is not ready to publish
+            </p>
+            <ul className="mt-1 space-y-0.5 text-sm text-amber-800">
+              {blockers.unsettled.length > 0 && (
+                <li>
+                  <span className="font-semibold">{blockers.unsettled.length}</span> not Confirmed —
+                  only Confirmed entries roll into Training Courses:{' '}
+                  <span className="text-amber-700">
+                    {blockers.unsettled.slice(0, 4).map((e) => e.title).join(', ')}
+                    {blockers.unsettled.length > 4 ? ` +${blockers.unsettled.length - 4} more` : ''}
+                  </span>
+                </li>
+              )}
+              {blockers.noDept.length > 0 && (
+                <li>
+                  <span className="font-semibold">{blockers.noDept.length}</span> with no department —
+                  a draft needs a Dept Head to review it:{' '}
+                  <span className="text-amber-700">
+                    {blockers.noDept.slice(0, 4).map((e) => e.title).join(', ')}
+                    {blockers.noDept.length > 4 ? ` +${blockers.noDept.length - 4} more` : ''}
+                  </span>
+                </li>
+              )}
+            </ul>
+          </div>
+        </div>
+      )}
+
       {/* Window banner */}
-      {wState.kind === 'open' ? (
+      {publication ? (
+        <div className="flex flex-wrap items-start gap-3 rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-3">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-indigo-900">
+              {planYear} plan published — {publication.entryCount} entries locked.
+            </p>
+            <p className="mt-0.5 text-sm text-indigo-700">
+              {publication.rolledOverAt
+                ? `Rolled into Training Courses on ${formatDate(publication.rolledOverAt)} — ${publication.draftCount} drafts created. See them on the Training Calendar.`
+                : yearArrived
+                  ? 'Ready to roll into Training Courses. Each entry becomes a draft for its Dept Head to review.'
+                  : `Rolls into Training Courses in January ${planYear}. Nothing moves before then.`}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {!publication.rolledOverAt && yearArrived && (
+              <button type="button" onClick={() => void handleRollover()} disabled={publishing}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">
+                <ArrowUpRight className="h-3.5 w-3.5" />
+                {publishing ? 'Rolling over…' : 'Roll into Training Courses'}
+              </button>
+            )}
+            {!publication.rolledOverAt && (
+              <button type="button" onClick={() => void handleUnpublish()} disabled={publishing}
+                title="Reopens the plan for editing. Only possible before rollover."
+                className="rounded-lg border border-indigo-300 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60">
+                Unpublish
+              </button>
+            )}
+          </div>
+        </div>
+      ) : wState.kind === 'open' ? (
         <div className="flex items-start gap-3 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3">
           <LockOpen className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
           <div>

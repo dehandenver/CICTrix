@@ -53,7 +53,7 @@ import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { Button } from '../../components/Button';
 import { Dialog } from '../../components/Dialog';
 import { Input } from '../../components/Input';
-import { LogoutConfirmPopover } from '../../components/LogoutConfirmPopover';
+import { AdminHeader } from '../../components/AdminHeader';
 import { Sidebar } from '../../components/Sidebar';
 import { OfficeDirectorySection } from '../../components/OfficeDirectorySection';
 import {
@@ -929,40 +929,22 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
     ] as const;
 
     return (
-      <div className="min-h-screen bg-slate-100 text-slate-800">
-        <header className="sticky top-0 z-40 border-b border-slate-200 bg-white shadow-sm print:hidden">
-          <div className="flex items-center justify-between px-6 py-3">
-            <div className="flex items-center gap-4">
-              <div className="h-10 w-10 rounded-xl bg-[#363EE8] text-white grid place-content-center text-lg font-bold">AB</div>
-              <div>
-                <h1 className="text-lg font-bold leading-none">Abyan HRIS</h1>
-                <p className="text-xs text-slate-500">Human Resource Information System</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-4 text-slate-500">
-              <button className="rounded-full p-2 hover:bg-slate-100" type="button"><HelpCircle className="h-5 w-5" /></button>
-              <button className="rounded-full p-2 hover:bg-slate-100 relative" type="button">
-                <Bell className="h-5 w-5" />
-                <span className="absolute right-2 top-1 inline-block h-2 w-2 rounded-full bg-red-500" />
-              </button>
-              <div className="h-8 w-px bg-slate-200" />
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-blue-600 text-white grid place-content-center">
-                  <UserCircle2 className="h-6 w-6" />
-                </div>
-                <div className="leading-tight">
-                  <p className="text-sm font-semibold text-slate-800">interviewer</p>
-                  <p className="text-xs text-slate-500">PM Division</p>
-                </div>
-              </div>
-              <LogoutConfirmPopover />
-            </div>
-          </div>
-        </header>
+      <div className="min-h-screen bg-slate-100 font-sans text-[#040E6B]">
+        <AdminHeader userName="PM Admin" divisionLabel="PM Division" />
 
         <div className="flex">
-          <aside className="w-64 shrink-0 border-r border-slate-200 bg-white px-3 py-4 min-h-[calc(100vh-70px)] print:hidden">
-            <nav className="space-y-1.5">
+          <aside className="w-64 shrink-0 border-r border-slate-200 bg-white min-h-[calc(100vh-70px)] print:hidden">
+            <div
+              className="border-b border-slate-200 px-6 pb-5 pt-7"
+              style={{ background: 'linear-gradient(135deg, #C8D1FF 0%, #FFFFFF 100%)' }}
+            >
+              <h2 className="mb-1 text-xl font-bold" style={{ color: '#040E6B' }}>PM Admin</h2>
+              <span className="block text-xs font-semibold uppercase tracking-wider" style={{ color: '#363EE8' }}>
+                Performance Management
+              </span>
+            </div>
+
+            <nav className="space-y-1.5 px-3 py-4">
               {sideNavItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeSection === item.key;
@@ -971,15 +953,15 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                     type="button"
                     key={item.key}
                     onClick={() => setActiveSection(item.key)}
-                    className={`w-full rounded-lg px-3 py-2.5 text-left transition ${isActive ? 'bg-blue-600 text-white shadow-md' : 'text-black hover:bg-slate-200'
-                      }`}
+                    className={`w-full rounded-xl px-3 py-2.5 text-left transition ${isActive ? 'shadow-sm' : 'hover:bg-[#C8D1FF]/50'}`}
+                    style={isActive ? { backgroundColor: '#363EE8', color: '#FFFFFF' } : { color: '#040E6B' }}
                   >
                     <div className="flex items-start gap-3">
-                      <Icon className={`mt-0.5 h-5 w-5 ${isActive ? 'text-white' : 'text-slate-600'}`} />
+                      <Icon className="mt-0.5 h-5 w-5" style={{ color: isActive ? '#FFFFFF' : '#363EE8' }} />
                       <div>
-                        <p className={`text-sm font-semibold leading-tight ${isActive ? 'text-white' : 'text-black'}`}>{item.label}</p>
+                        <p className="text-sm font-semibold leading-tight">{item.label}</p>
                         {item.subtitle ? (
-                          <p className={`text-xs ${isActive ? 'text-blue-100' : 'text-black'}`}>{item.subtitle}</p>
+                          <p className="text-xs" style={{ color: isActive ? 'rgba(255,255,255,0.80)' : 'rgba(4,14,107,0.65)' }}>{item.subtitle}</p>
                         ) : null}
                       </div>
                     </div>

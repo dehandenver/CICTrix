@@ -83,6 +83,87 @@ export async function setPlanningWindow(input: {
   return error ? { ok: false, error: error.message } : { ok: true };
 }
 
+// ── Publication ──────────────────────────────────────────────────────────────
+
+/**
+ * Publishing and rolling over are two steps, because promote_training_plan_entry
+ * refuses any entry whose plan year has not arrived. A 2027 plan signed off in
+ * 2026 waits until January to become Training Courses drafts.
+ */
+export type PlanPublication = {
+  planYear: number;
+  publishedAt: string;
+  publishedBy: string | null;
+  entryCount: number;
+  rolledOverAt: string | null;
+  rolledOverBy: string | null;
+  draftCount: number;
+};
+
+/**
+ * Null means "not published". A missing table reads as null too: this project
+ * has a standing gap between migrations landing in git and being applied in
+ * Supabase, and an unapplied migration must not break the page.
+ */
+export async function getPlanPublication(planYear: number): Promise<PlanPublication | null> {
+  const { data, error } = await supabase
+    .from('training_plan_publications')
+    .select('*')
+    .eq('plan_year', planYear)
+    .maybeSingle();
+
+  if (error || !data) {
+    if (error) console.warn('Planning publication unavailable (migration applied?):', error.message);
+    return null;
+  }
+  return {
+    planYear: data.plan_year,
+    publishedAt: data.published_at,
+    publishedBy: data.published_by,
+    entryCount: data.entry_count ?? 0,
+    rolledOverAt: data.rolled_over_at,
+    rolledOverBy: data.rolled_over_by,
+    draftCount: data.draft_count ?? 0,
+  };
+}
+
+/** Blocks unless every entry is Confirmed, has a department, and has a Dept Head. */
+export async function publishTrainingPlan(
+  planYear: number,
+  actorName: string
+): Promise<MutationResult & { entryCount?: number }> {
+  const { data, error } = await supabase.rpc('publish_training_plan', {
+    p_plan_year: planYear,
+    p_actor: actorName,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, entryCount: data as number };
+}
+
+export async function unpublishTrainingPlan(
+  planYear: number,
+  actorName: string
+): Promise<MutationResult> {
+  const { error } = await supabase.rpc('unpublish_training_plan', {
+    p_plan_year: planYear,
+    p_actor: actorName,
+  });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+/** Idempotent: promoted entries are skipped, so a partial run is safe to re-run. */
+export async function rolloverTrainingPlan(
+  planYear: number,
+  actorName: string
+): Promise<MutationResult & { draftCount?: number }> {
+  const { data, error } = await supabase.rpc('rollover_training_plan', {
+    p_plan_year: planYear,
+    p_actor: actorName,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, draftCount: data as number };
+}
+
 // ── Plan entries ─────────────────────────────────────────────────────────────
 
 export type PlanEntry = {

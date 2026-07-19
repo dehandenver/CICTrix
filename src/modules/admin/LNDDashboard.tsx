@@ -104,9 +104,12 @@ const LND_MENU: MenuItem[] = [
 const LndSidebar = ({ activeModule, onSelect }: { activeModule: MenuId; onSelect: (id: MenuId) => void }) => {
   return (
     <aside className="w-64 shrink-0 border-r border-slate-200 bg-white min-h-[calc(100vh-70px)]">
-      <div className="border-b border-slate-200 px-6 pb-5 pt-7">
-        <h2 className="mb-1 text-xl font-bold text-slate-900">LND Admin</h2>
-        <span className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
+      <div
+        className="border-b border-slate-200 px-6 pb-5 pt-7"
+        style={{ background: 'linear-gradient(135deg, #C8D1FF 0%, #FFFFFF 100%)' }}
+      >
+        <h2 className="mb-1 text-xl font-bold" style={{ color: '#040E6B' }}>L&amp;D Admin</h2>
+        <span className="block text-xs font-semibold uppercase tracking-wider" style={{ color: '#363EE8' }}>
           Learning and Development
         </span>
       </div>
@@ -122,15 +125,16 @@ const LndSidebar = ({ activeModule, onSelect }: { activeModule: MenuId; onSelect
               onClick={() => onSelect(item.id)}
               className={[
                 'flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition',
-                isActive
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-black hover:bg-gray-200',
+                isActive ? 'shadow-sm' : 'hover:bg-[#C8D1FF]/50',
               ].join(' ')}
+              style={isActive ? { backgroundColor: '#363EE8', color: '#FFFFFF' } : { color: '#040E6B' }}
             >
-              <Icon className={isActive ? 'mt-0.5 h-5 w-5 text-white' : 'mt-0.5 h-5 w-5 text-gray-600'} />
+              <span style={{ color: isActive ? '#FFFFFF' : '#363EE8' }}>
+                <Icon className="mt-0.5 h-5 w-5" />
+              </span>
               <span className="flex flex-col">
                 <span className="text-sm font-semibold">{item.label}</span>
-                <span className={isActive ? 'text-xs text-blue-100' : 'text-xs text-black'}>{item.sublabel}</span>
+                <span className="text-xs" style={{ color: isActive ? 'rgba(255,255,255,0.80)' : 'rgba(4,14,107,0.65)' }}>{item.sublabel}</span>
               </span>
             </button>
           );
@@ -703,9 +707,9 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
   const [activeModule, setActiveModule] = useState<MenuId>('dashboard');
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-800">
+    <div className="min-h-screen bg-slate-100 font-sans text-[#040E6B]">
       <AdminHeader
-        userName="LND Admin"
+        userName="L&D Admin"
         divisionLabel="L&D Division"
       />
       <div className="flex">
