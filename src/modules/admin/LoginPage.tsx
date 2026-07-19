@@ -60,6 +60,7 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
   const [loading, setLoading] = useState(false);
   const [selectedRole, setSelectedRole] = useState<Role>('rsp');
   const [rememberMe, setRememberMe] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -84,11 +85,12 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!email || !password) {
-      alert('Please enter your email and password.');
+      setErrorMsg('Please enter your email and password.');
       return;
     }
 
     setLoading(true);
+    setErrorMsg(null);
     try {
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
@@ -96,7 +98,7 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
       });
 
       if (authError || !authData.user) {
-        alert('Invalid email or password.');
+        setErrorMsg("You don't have permission to login to this account");
         return;
       }
 
@@ -108,22 +110,20 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
 
       if (roleError || !(roleData as any)?.role) {
         await discardSession();
-        alert('No role assigned. Contact the admin.');
+        setErrorMsg('No role assigned. Contact the admin.');
         return;
       }
 
       const role = normalizeAdminRole((roleData as any).role);
       if (!role) {
         await discardSession();
-        alert('Invalid role assignment. Contact the admin.');
+        setErrorMsg('Invalid role assignment. Contact the admin.');
         return;
       }
 
       if (role !== selectedRole) {
         await discardSession();
-        const selectedLabel = ROLES.find((r) => r.key === selectedRole)?.label ?? selectedRole;
-        const actualLabel = ROLES.find((r) => r.key === role)?.label ?? role;
-        alert(`This account does not have permission to log in as ${selectedLabel} (found role: ${actualLabel}).`);
+        setErrorMsg("You don't have permission to login to this account");
         return;
       }
 
@@ -131,7 +131,7 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
       onLogin(resolvedEmail, role);
       navigateAfterLogin(role);
     } catch {
-      alert('Login failed. Please try again.');
+      setErrorMsg('Login failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -265,12 +265,22 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
                     type="email"
                     placeholder="Enter your email"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      setErrorMsg(null);
+                    }}
                     autoComplete="email"
                     className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-3 text-sm text-slate-900 placeholder:text-slate-400 transition-shadow focus:border-[#363EE8] focus:outline-none focus:ring-4 focus:ring-[#EEF2FF]"
                   />
                 </div>
               </div>
+
+              {/* Error Message Card */}
+              {errorMsg && (
+                <div className="rounded-xl bg-red-50 border border-red-200 p-4 text-sm text-red-600 font-medium">
+                  {errorMsg}
+                </div>
+              )}
 
               {/* Password */}
               <div>
@@ -291,7 +301,10 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
                     type={showPassword ? 'text' : 'password'}
                     placeholder="Enter your password"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      setErrorMsg(null);
+                    }}
                     autoComplete="current-password"
                     className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-11 text-sm text-slate-900 placeholder:text-slate-400 transition-shadow focus:border-[#4F46E5] focus:outline-none focus:ring-4 focus:ring-[#EEF2FF]"
                   />
@@ -316,7 +329,10 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
                       <button
                         key={role.key}
                         type="button"
-                        onClick={() => setSelectedRole(role.key)}
+                        onClick={() => {
+                          setSelectedRole(role.key);
+                          setErrorMsg(null);
+                        }}
                         className={[
                           'group flex flex-col items-start gap-0.5 rounded-xl border px-4 py-3 text-left transition',
                           isActive
