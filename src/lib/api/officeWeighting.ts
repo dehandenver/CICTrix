@@ -70,6 +70,40 @@ export const setWeightingConfig = (officeId: string, code: 'A' | 'B' | 'C', setB
     body: JSON.stringify({ code, set_by_employee_id: setByEmployeeId ?? null }),
   });
 
+/**
+ * The office's active split, read straight from Supabase rather than through the
+ * backend.
+ *
+ * Scoring runs for employees, who reach PostgREST as `anon` and hold no backend
+ * token — routing this through the API would make every IPCR save fail with 401.
+ * Reads are open on these tables by design; only writes are locked to
+ * service_role, which is what protects the config from being changed here.
+ *
+ * Returns null when the office has no config, so callers can fall back rather
+ * than silently scoring against zeroes.
+ */
+export async function resolveOfficeWeights(
+  officeId: string | null
+): Promise<{ core: number; strategic: number; support: number; code: string } | null> {
+  if (!officeId) return null;
+  const { data, error } = await supabase
+    .from('department_weighting_configs')
+    .select('weighting_schema_options(code, strategic_weight, core_weight, support_weight)')
+    .eq('department_id', officeId)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (error || !data) return null;
+  const opt = (data as any).weighting_schema_options;
+  if (!opt) return null;
+  return {
+    core: Number(opt.core_weight),
+    strategic: Number(opt.strategic_weight),
+    support: Number(opt.support_weight),
+    code: String(opt.code),
+  };
+}
+
 /** Human-readable split, e.g. "Strategic 30 / Core 50 / Support 20". */
 export function describeSplit(c: Pick<WeightingConfig, 'strategic_weight' | 'core_weight' | 'support_weight'>): string {
   if (c.strategic_weight == null) return 'Not set';
