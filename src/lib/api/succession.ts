@@ -686,6 +686,77 @@ export async function removeTrainingRequirement(id: string): Promise<Result<null
  * distinct-current_position approach src/lib/api/pmCompetency.ts's
  * listPositions()/listPositionDepartments() already use for the same purpose.
  */
+export interface PositionQualifications {
+  positionDescription: string;
+  minYearsExperience: string;
+  requiredEducation: string;
+  requiredEligibility: string;
+  requiredCertifications: string[];
+  competency: string;
+  trainingRequirement: string;
+}
+
+/**
+ * The qualification requirements RSP already recorded when this position was
+ * posted, so the Department Head doesn't retype them onto the critical position.
+ *
+ * Education, eligibility, experience, certifications, competency and training
+ * are captured on the job posting at creation (education and eligibility are
+ * required fields there) and are the same set the critical position asks for.
+ * Entering them twice guarantees the two copies drift apart, so the posting is
+ * treated as the source and these prefill the form — the Department Head can
+ * still override any of them.
+ *
+ * Returns null when the position has no posting (e.g. a role that predates the
+ * job board), which simply leaves the form blank as before.
+ */
+export async function getPositionQualifications(
+  departmentName: string,
+  title: string,
+): Promise<PositionQualifications | null> {
+  const dept = String(departmentName ?? '').trim();
+  const pos = String(title ?? '').trim();
+  if (!dept || !pos) return null;
+
+  try {
+    const { data, error } = await supabase
+      .from('job_postings')
+      .select(
+        'title, department, description, summary, education_requirement, education_field, experience_years, eligibility, competency, training_requirement, certifications, created_at',
+      )
+      .eq('department', dept)
+      .ilike('title', pos)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (error || !Array.isArray(data) || data.length === 0) return null;
+    const row = data[0] as any;
+
+    const certifications = Array.isArray(row.certifications)
+      ? row.certifications.map((c: unknown) => String(c ?? '').trim()).filter(Boolean)
+      : [];
+
+    const years = Number(row.experience_years);
+    const education = [row.education_requirement, row.education_field]
+      .map((v: unknown) => String(v ?? '').trim())
+      .filter(Boolean)
+      .join(' — ');
+
+    return {
+      positionDescription: String(row.description ?? row.summary ?? '').trim(),
+      // 0 is the posting's "no requirement" default, not a real minimum.
+      minYearsExperience: Number.isFinite(years) && years > 0 ? String(years) : '',
+      requiredEducation: education,
+      requiredEligibility: String(row.eligibility ?? '').trim(),
+      requiredCertifications: certifications,
+      competency: String(row.competency ?? '').trim(),
+      trainingRequirement: String(row.training_requirement ?? '').trim(),
+    };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Every position that exists in an office, from both sources:
  *   - employees_with_department — roles currently held (the office directory)

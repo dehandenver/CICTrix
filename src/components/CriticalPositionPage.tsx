@@ -21,6 +21,7 @@ import {
   deleteCriticalPosition,
   listEmployeeOptions,
   listPositionTitlesForDepartment,
+  getPositionQualifications,
   listCompetencyRequirements,
   saveCompetencyRequirement,
   removeCompetencyRequirement,
@@ -105,6 +106,9 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkError, setBulkError] = useState('');
 
+  // Tells the user which fields came from the job posting rather than their typing.
+  const [prefillNotice, setPrefillNotice] = useState('');
+
   const readOnly = modal?.mode === 'view';
 
   const loadPositions = async () => {
@@ -166,6 +170,54 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
     return [current, ...positionTitleOptions];
   }, [positionTitleOptions, form.title]);
 
+  /**
+   * Selecting a position pulls the qualification requirements RSP already
+   * recorded on its job posting, so they aren't retyped here (and can't drift
+   * from the posting). Only blank fields are filled — anything the user has
+   * already typed is left alone, and every value stays editable.
+   */
+  const handleTitleChange = async (title: string) => {
+    setForm((f) => ({ ...f, title }));
+    if (!title) return;
+
+    setPrefillNotice('');
+    const quals = await getPositionQualifications(departmentName, title);
+    if (!quals) return;
+
+    setForm((f) => {
+      if (f.title !== title) return f; // selection moved on while we were loading
+      const filled: string[] = [];
+      const next = { ...f };
+
+      const take = (key: 'positionDescription' | 'minYearsExperience' | 'requiredEducation' | 'requiredEligibility', value: string, label: string) => {
+        if (value && !next[key].trim()) {
+          next[key] = value;
+          filled.push(label);
+        }
+      };
+      take('positionDescription', quals.positionDescription, 'description');
+      take('minYearsExperience', quals.minYearsExperience, 'experience');
+      take('requiredEducation', quals.requiredEducation, 'education');
+      take('requiredEligibility', quals.requiredEligibility, 'eligibility');
+
+      if (quals.requiredCertifications.length > 0 && next.requiredCertifications.length === 0) {
+        next.requiredCertifications = quals.requiredCertifications;
+        filled.push('certifications');
+      }
+      if (quals.trainingRequirement && next.trainingDrafts.length === 0) {
+        next.trainingDrafts = [quals.trainingRequirement];
+        filled.push('training');
+      }
+
+      setPrefillNotice(
+        filled.length > 0
+          ? `Filled ${filled.join(', ')} from this position's job posting. Edit anything that differs.`
+          : '',
+      );
+      return next;
+    });
+  };
+
   const openBulk = () => {
     setBulkSelected(new Set());
     setBulkError('');
@@ -210,6 +262,7 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
   };
 
   const openAdd = () => {
+    setPrefillNotice('');
     setForm(emptyForm);
     setModal({ mode: 'add', position: null });
   };
@@ -521,6 +574,11 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
           <div className="space-y-5">
             <div>
               <h3 className="!mb-2 text-sm font-semibold text-[var(--text-primary)]">Position Information</h3>
+              {!readOnly && prefillNotice && (
+                <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                  {prefillNotice}
+                </div>
+              )}
               <div className="space-y-4">
                 <Field label="Position title *">
                   {readOnly ? (
@@ -529,7 +587,7 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
                     <>
                       <select
                         value={form.title}
-                        onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                        onChange={(e) => void handleTitleChange(e.target.value)}
                         className="cp-input"
                       >
                         <option value="">Select a position…</option>
