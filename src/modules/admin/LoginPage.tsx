@@ -79,6 +79,8 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
     };
   }, []);
 
+  const discardSession = () => supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!email || !password) {
@@ -105,19 +107,24 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
         .single();
 
       if (roleError || !(roleData as any)?.role) {
+        await discardSession();
         alert('No role assigned. Contact the admin.');
         return;
       }
 
       const role = normalizeAdminRole((roleData as any).role);
       if (!role) {
+        await discardSession();
         alert('Invalid role assignment. Contact the admin.');
         return;
       }
 
       if (role !== selectedRole) {
-        // Auto-select the correct role instead of failing
-        setSelectedRole(role as Role);
+        await discardSession();
+        const selectedLabel = ROLES.find((r) => r.key === selectedRole)?.label ?? selectedRole;
+        const actualLabel = ROLES.find((r) => r.key === role)?.label ?? role;
+        alert(`This account does not have permission to log in as ${selectedLabel} (found role: ${actualLabel}).`);
+        return;
       }
 
       const resolvedEmail = authData.user.email ?? email;
