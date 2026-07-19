@@ -55,12 +55,12 @@ const supabase = createClient(URL, SERVICE_KEY, { auth: { persistSession: false 
  * it is included even though that portal is a read-only viewer.
  */
 const ADMINS = [
-  { email: 'pm@cictrix.gov.ph',    role: 'PM',          name: 'PM Admin',    label: 'PM Admin (Performance Management)' },
-  { email: 'lnd@cictrix.gov.ph',   role: 'LND',         name: 'L&D Admin',   label: 'L&D Admin (Learning & Development)' },
+  { email: 'pm.admin.test@gmail.com',  role: 'PM',  name: 'PM Admin',  label: 'PM Admin (Performance Management)' },
+  { email: 'lnd.admin.test@gmail.com', role: 'LND', name: 'L&D Admin', label: 'L&D Admin (Learning & Development)' },
   // user_roles has a CHECK allowing only ADMIN / RSP / PM / LND / INTERVIEWER,
   // so super-admin is stored as ADMIN; normalizeAdminRole maps it to 'super-admin'.
-  { email: 'admin@cictrix.gov.ph', role: 'ADMIN', name: 'Super Admin', label: 'Super Admin (HR Head, read-only viewer)' },
-  { email: 'rsp@cictrix.gov.ph',   role: 'RSP',         name: 'RSP Admin',   label: 'RSP Admin (Recruitment)' },
+  { email: 'superadmin.test@gmail.com', role: 'ADMIN', name: 'Super Admin', label: 'Super Admin (HR Head, read-only viewer)' },
+  { email: 'rsp.admin.test@gmail.com',  role: 'RSP',   name: 'RSP Admin',   label: 'RSP Admin (Recruitment)' },
 ];
 
 /** Strong random password — no ambiguous characters, mixed classes. */

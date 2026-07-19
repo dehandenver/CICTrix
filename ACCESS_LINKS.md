@@ -86,10 +86,10 @@ There are no default development passwords, and none are recorded here. All four
 admin roles authenticate against Supabase Auth, with the role read from
 `user_roles`:
 
-- Super Admin (HR Head, read-only viewer): `admin@cictrix.gov.ph`
-- RSP (Recruitment): `rsp@cictrix.gov.ph`
-- L&D (Learning & Development): `lnd@cictrix.gov.ph`
-- PM (Performance Management): `pm@cictrix.gov.ph`
+- Super Admin (HR Head, read-only viewer): `superadmin.test@gmail.com`
+- RSP (Recruitment): `rsp.admin.test@gmail.com`
+- L&D (Learning & Development): `lnd.admin.test@gmail.com`
+- PM (Performance Management): `pm.admin.test@gmail.com`
 
 Accounts are provisioned by `scripts/create-admin-accounts.mjs`, which generates
 random passwords and prints them once. Ask whoever ran it, or re-run it to
