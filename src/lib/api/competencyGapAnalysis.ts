@@ -34,9 +34,17 @@ export async function getGapAnalysisRows(): Promise<GapAnalysisRow[]> {
 
 // 2. aggregator — one IPCRRatingRecord per employee, ready for SoR
 export async function getIPCRRecordsFromGapView(period: string): Promise<IPCRRatingRecord[]> {
-  const rows = await getGapAnalysisRows();
-  
-  if (!rows || rows.length === 0) return [];
+  const raw = await getGapAnalysisRows();
+
+  // The view aggregates `ipcr_performance` internally and doesn't expose
+  // rating_period, so we can't scope it to the canonical semesters from here
+  // (see src/lib/ipcrPeriods.ts). What we can do is drop rows carrying no real
+  // rating: unrated placeholder records surface as 0/null possessed_proficiency
+  // and would otherwise average straight into every employee's score, pulling
+  // the Summary of Ratings down. Ratings are 1-5, so 0 always means "no data".
+  const rows = (raw ?? []).filter(r => Number(r.possessed_proficiency) > 0);
+
+  if (rows.length === 0) return [];
 
   // Group by employee
   const employeeGroups = new Map<string, GapAnalysisRow[]>();

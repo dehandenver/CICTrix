@@ -11,6 +11,7 @@
  */
 
 import { supabase as supabaseClient } from '../supabase';
+import { canonicalPeriodList } from '../ipcrPeriods';
 
 const supabase = supabaseClient as any;
 
@@ -64,8 +65,15 @@ export function periodSortKey(period: string): number {
   return year * 10 + (second ? 2 : 1);
 }
 
-const mean = (nums: number[]): number | null =>
-  nums.length ? Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 100) / 100 : null;
+/**
+ * Average of actual ratings only. Ratings run 1-5, so a 0 means "target recorded
+ * but never rated" — counting those as a literal zero would sink an otherwise
+ * good semester. Same rule the gap-view aggregator applies.
+ */
+const mean = (nums: number[]): number | null => {
+  const scored = (nums ?? []).filter((n) => Number(n) > 0);
+  return scored.length ? Math.round((scored.reduce((a, b) => a + b, 0) / scored.length) * 100) / 100 : null;
+};
 
 /** Every archived semester for one employee, most recent first. */
 export async function getEmployeeArchive(employeeNum: string): Promise<ArchiveSemester[]> {
@@ -73,7 +81,8 @@ export async function getEmployeeArchive(employeeNum: string): Promise<ArchiveSe
   const { data, error } = await supabase
     .from('ipcr_performance')
     .select('id, ipcr_id, ipcr_row_id, rating_period, position, function_type, target_text, accomplishment_text, q_rating, e_rating, t_rating, ave_rating, mapped_competency_standard')
-    .eq('employee_num', employeeNum);
+    .eq('employee_num', employeeNum)
+    .in('rating_period', canonicalPeriodList());
 
   if (error) {
     console.error('Error loading IPCR archive:', error);
@@ -116,7 +125,8 @@ export async function getEmployeeArchive(employeeNum: string): Promise<ArchiveSe
 export async function listArchiveEmployees(): Promise<ArchiveEmployee[]> {
   const { data, error } = await supabase
     .from('ipcr_performance')
-    .select('employee_num, rating_period, position, ave_rating');
+    .select('employee_num, rating_period, position, ave_rating')
+    .in('rating_period', canonicalPeriodList());
   if (error) {
     console.error('Error loading archive employees:', error);
     return [];
