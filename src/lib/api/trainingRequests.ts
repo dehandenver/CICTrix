@@ -76,31 +76,38 @@ export async function listTrainingRequestsDetailed(): Promise<TrainingRequest[]>
 }
 
 /**
- * Office Account submission. A department head recommends three things and no
- * more: a topic, the competency it develops, and the reasoning. Everything the
- * old form asked for beyond that — proficiency sliders, rationale tags, an
- * after-training metric — was office-side guesswork that L&D re-derives from
- * IPCR anyway, so those columns are left null here rather than filled with
- * numbers nobody owns. They stay in the table for the pre-existing rows.
+ * Office Account submission. A request asks for a TOPIC, not for a person: the
+ * office names a competency, a topic and the reasoning, and L&D decides whether
+ * to run it. Who attends is settled later and separately, in the recommendation
+ * pipeline — the system proposes attendees from IPCR data and the office reviews
+ * them there. Naming an employee here would mean picking attendees before the
+ * course exists.
  *
- * `employee_id` is required by the schema (NOT NULL), so a recommendation is
- * always attached to the employee it is for.
+ * Everything the old form asked for beyond these three — proficiency sliders,
+ * rationale tags, an after-training metric — was office-side guesswork that L&D
+ * re-derives from IPCR, so those columns are left null. They stay on the table
+ * for pre-existing rows.
+ *
+ * Requires migration 20260810 (employee_id nullable + requesting_office).
  */
 export async function createTrainingRequest(input: {
-  employee_id: string;
   program_id?: string | null;
   topic: string;
   category: 'Cultural Transformation' | 'Employee Development' | 'Leadership' | 'Technical';
   competency: string;
   reasoning: string;
+  requestingOffice: string | null;
+  requestedBy: string | null;
 }): Promise<{ ok: boolean; error?: string }> {
   const { error } = await supabase.from('training_requests').insert([{
-    employee_id: input.employee_id,
+    employee_id: null,
     program_id: input.program_id ?? null,
     title: input.topic,
     justification: input.reasoning,
     category: input.category,
     competency: input.competency,
+    requesting_office: input.requestingOffice,
+    requested_by: input.requestedBy,
     status: 'pending',
     requested_at: new Date().toISOString(),
   }]);
@@ -117,22 +124,18 @@ export type RequestOutcome =
   | { kind: 'scheduled'; decidedAt: string | null; sessionTitle: string; scheduledDate: string };
 
 export type OfficeTrainingRequest = TrainingRequest & {
-  employeeName: string;
-  employeePosition: string | null;
-  employeeDepartment: string | null;
+  requestingOffice: string | null;
+  requestedBy: string | null;
   outcome: RequestOutcome;
 };
 
 /**
  * The office's own requests, with L&D's response resolved.
  *
- * Scoped to `officeName` so a department head sees their office and not the
- * whole LGU — `listTrainingRequestsDetailed` is deliberately left unscoped for
- * the L&D-side consumers that need every office.
- *
- * Identity is resolved through `employees_with_department` rather than a
- * PostgREST embed: the embed on `employees` is blocked for anon, which is what
- * produced the "Unknown employee" rows elsewhere.
+ * Scoped by `requesting_office`, the column the office writes on submit.
+ * (`listTrainingRequestsDetailed` is deliberately left unscoped for the L&D-side
+ * consumers that need every office.) Requests predating migration 20260810 were
+ * backfilled from their employee's department, so legacy rows still scope.
  *
  * The outcome is more than the `status` column. A request L&D approved may then
  * have been promoted into next year's plan (`training_plan_entries`) or turned
@@ -153,17 +156,12 @@ export async function listOfficeTrainingRequests(
     return [];
   }
 
-  const rows = (data ?? []) as TrainingRequest[];
+  const rows = (data ?? []) as any[];
   if (!rows.length) return [];
 
-  const employeeIds = [...new Set(rows.map((r) => String(r.employee_id)))];
   const requestIds = rows.map((r) => String(r.id));
 
-  const [{ data: emps }, { data: planEntries }, { data: sessions }] = await Promise.all([
-    supabase
-      .from('employees_with_department')
-      .select('id, full_name, current_position, department')
-      .in('id', employeeIds),
+  const [{ data: planEntries }, { data: sessions }] = await Promise.all([
     supabase
       .from('training_plan_entries')
       .select('source_request_id, plan_year, plan_status')
@@ -174,7 +172,6 @@ export async function listOfficeTrainingRequests(
       .in('source_request_id', requestIds),
   ]);
 
-  const empById = new Map<string, any>((emps ?? []).map((e: any) => [String(e.id), e]));
   const planByReq = new Map<string, any>(
     (planEntries ?? []).map((p: any) => [String(p.source_request_id), p])
   );
@@ -185,19 +182,15 @@ export async function listOfficeTrainingRequests(
   const want = norm(officeName);
 
   return rows
-    .map((r): OfficeTrainingRequest => {
-      const e = empById.get(String(r.employee_id));
-      return {
-        ...r,
-        employeeName: (e?.full_name ?? 'Unknown employee').trim(),
-        employeePosition: e?.current_position ?? null,
-        employeeDepartment: e?.department ?? null,
-        outcome: resolveOutcome(r, planByReq.get(String(r.id)), sessionByReq.get(String(r.id))),
-      };
-    })
-    // No office on the session means show everything — a console with no
-    // resolved office role is better off seeing the data than seeing nothing.
-    .filter((r) => !want || norm(r.employeeDepartment) === want);
+    .map((r): OfficeTrainingRequest => ({
+      ...(r as TrainingRequest),
+      requestingOffice: r.requesting_office ?? null,
+      requestedBy: r.requested_by ?? null,
+      outcome: resolveOutcome(r, planByReq.get(String(r.id)), sessionByReq.get(String(r.id))),
+    }))
+    // No resolved office role means show everything — a console that cannot
+    // identify its office is better off seeing the data than seeing nothing.
+    .filter((r) => !want || norm(r.requestingOffice) === want);
 }
 
 const norm = (v: unknown) => String(v ?? '').trim().toLowerCase();

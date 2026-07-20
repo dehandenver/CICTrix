@@ -34,10 +34,17 @@ export type OfficeRequest = {
 const dbToStatus = (s: string): RequestStatus =>
   s === 'approved' ? 'Approved' : s === 'rejected' ? 'Dismissed' : 'Pending';
 
+/**
+ * Requests are office-level: since migration 20260810 the office writes
+ * `requesting_office` / `requested_by` on submit and `employee_id` is null.
+ * Rows predating that were backfilled, but the employee lookup is kept as a
+ * fallback so any request that slipped through still resolves an office rather
+ * than collapsing into "Unassigned office".
+ */
 export async function listOfficeRequests(): Promise<OfficeRequest[]> {
   const { data, error } = await supabase
     .from('training_requests')
-    .select('id, title, justification, competency, category, status, requested_at, employee_id')
+    .select('id, title, justification, competency, category, status, requested_at, employee_id, requesting_office, requested_by')
     .order('requested_at', { ascending: false });
 
   if (error) {
@@ -47,8 +54,8 @@ export async function listOfficeRequests(): Promise<OfficeRequest[]> {
   const rows = (data ?? []) as any[];
   if (!rows.length) return [];
 
-  // Resolve names + offices from the anon-readable view.
-  const ids = [...new Set(rows.map((r) => String(r.employee_id)).filter(Boolean))];
+  // Fallback identity for legacy rows that still carry an employee.
+  const ids = [...new Set(rows.filter((r) => !r.requesting_office).map((r) => String(r.employee_id)).filter(Boolean))];
   const identity = new Map<string, { name: string; office: string }>();
   if (ids.length) {
     const { data: emps } = await supabase
@@ -68,8 +75,8 @@ export async function listOfficeRequests(): Promise<OfficeRequest[]> {
     return {
       id: r.id,
       title: r.title,
-      requestedBy: who?.name ?? 'Office account',
-      office: who?.office ?? 'Unassigned office',
+      requestedBy: r.requested_by ?? who?.name ?? 'Office account',
+      office: r.requesting_office ?? who?.office ?? 'Unassigned office',
       requestedAt: r.requested_at,
       status: dbToStatus(r.status),
       justification: r.justification ?? null,

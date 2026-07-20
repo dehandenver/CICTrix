@@ -9,7 +9,7 @@
  * the "Updated by L&D" tag (§4).
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronLeft, ChevronRight, Eye, RefreshCw, Search, Send, UserPlus, X } from 'lucide-react';
 import {
   listOfficeTrainings,
@@ -80,8 +80,15 @@ const StatusBadge = ({ status }: { status: LifecycleStatus }) => (
   <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${STATUS_BADGE[status]}`}>{status}</span>
 );
 
-export const OfficeTrainingCourses = () => {
-  const [subtab, setSubtab] = useState<Subtab>('all');
+type Props = {
+  /** Signed-in office. Scopes recommendations and the add-candidate list. */
+  officeName?: string | null;
+  /** Which subtab to open on. Lets the console link straight to the round-trip. */
+  initialSubtab?: Subtab;
+};
+
+export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all' }: Props) => {
+  const [subtab, setSubtab] = useState<Subtab>(initialSubtab);
   const [trainings, setTrainings] = useState<OfficeTraining[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -111,29 +118,43 @@ export const OfficeTrainingCourses = () => {
     return () => { cancelled = true; };
   }, []);
 
+  // A department head reviews their own office's candidates, not the LGU's.
+  const inOffice = useCallback(
+    (recs: PipelineRec[]) => {
+      const want = officeName?.trim().toLowerCase();
+      if (!want) return recs;
+      return recs.filter((r) => (r.department ?? '').trim().toLowerCase() === want);
+    },
+    [officeName],
+  );
+
   // Poll the recommendation pipeline so L&D approvals appear without a refresh.
   useEffect(() => {
-    const load = async () => setPipeline(await listPipeline());
+    const load = async () => setPipeline(inOffice(await listPipeline()));
     void load();
     timer.current = window.setInterval(() => void load(), POLL_MS);
     return () => { if (timer.current) window.clearInterval(timer.current); };
-  }, []);
+  }, [inOffice]);
 
+  // Candidates a head may add are their own staff — the same scope as the
+  // recommendations they are added to.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data } = await supabase
+      let query = supabase
         .from('employees_with_department')
         .select('id, full_name, department, status')
         .eq('status', 'Active')
         .order('full_name', { ascending: true });
+      if (officeName) query = query.eq('department', officeName);
+      const { data } = await query;
       if (cancelled) return;
       setEmployees((data ?? []).map((e: any) => ({ id: String(e.id), name: (e.full_name ?? '').trim() || 'Unnamed', department: e.department ?? null })));
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [officeName]);
 
-  const reloadPipeline = async () => setPipeline(await listPipeline());
+  const reloadPipeline = async () => setPipeline(inOffice(await listPipeline()));
 
   const recGroups = useMemo(() => groupRecs(pipeline.filter((r) => r.status === 'LND_APPROVED' || r.status === 'OFFICE_ADDED')), [pipeline]);
   const pendingGroups = useMemo(() => groupRecs(pipeline.filter((r) => r.status === 'OFFICE_FINALIZED')), [pipeline]);
