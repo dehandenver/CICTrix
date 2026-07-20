@@ -17,6 +17,7 @@ import {
 } from '../lib/recruitmentData';
 import { supabase } from '../lib/supabase';
 import { createPassword, createUniqueUsername, getEmployeePortalAccounts, upsertEmployeePortalAccount } from '../lib/employeePortalData';
+import { seedEmployeeContactFromApplication } from '../lib/api/employeePortal';
 import type { NewlyHired, NewlyHiredStatus } from '../types/recruitment.types';
 import { AdminHeader } from './AdminHeader';
 import { Sidebar } from './Sidebar';
@@ -322,6 +323,11 @@ export const NewlyHiredPage = () => {
 
     try {
       for (const credential of generatedCredentials) {
+        const info = selectedDepartmentRows.find((row) => row.id === credential.id)?.employeeInfo;
+        const email = info?.email ?? '';
+        const mobileNumber = info?.phone ?? '';
+        const homeAddress = info?.address ?? '';
+
         upsertEmployeePortalAccount({
           id: `portal-${credential.employeeNumber}`,
           username: credential.username,
@@ -329,14 +335,14 @@ export const NewlyHiredPage = () => {
           employee: {
             employeeId: credential.employeeNumber,
             fullName: credential.fullName,
-            email: selectedDepartmentRows.find((row) => row.id === credential.id)?.employeeInfo.email ?? '',
+            email,
             dateOfBirth: '',
             age: 0,
             gender: 'Other',
             civilStatus: 'Single',
             nationality: '',
-            mobileNumber: selectedDepartmentRows.find((row) => row.id === credential.id)?.employeeInfo.phone ?? '',
-            homeAddress: selectedDepartmentRows.find((row) => row.id === credential.id)?.employeeInfo.address ?? '',
+            mobileNumber,
+            homeAddress,
             emergencyContactName: '',
             emergencyRelationship: '',
             emergencyContactNumber: '',
@@ -345,6 +351,16 @@ export const NewlyHiredPage = () => {
             pagibigNumber: '',
             tinNumber: '',
           },
+        });
+
+        // The portal account above can't carry these: employee_portal_accounts
+        // has no address column, and the portal's Personal Information reads
+        // `employees` anyway. Without this the new hire is asked to retype an
+        // address they already gave on their application.
+        await seedEmployeeContactFromApplication(credential.employeeNumber, {
+          homeAddress,
+          mobileNumber,
+          email,
         });
       }
 

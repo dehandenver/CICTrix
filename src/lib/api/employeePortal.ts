@@ -283,3 +283,55 @@ export async function patchPortalEmployee(
     return { ok: false, error: err?.message ?? 'Failed to save to database.' };
   }
 }
+
+/**
+ * Copy contact details captured on the application onto the employee row, at
+ * the moment portal credentials are generated.
+ *
+ * The applicant supplies email, phone and address when they apply, but the
+ * portal's Personal Information reads `employees`, not `applicants` — so a new
+ * hire was met by the "complete your profile" wizard asking for an address they
+ * had already typed. The generated portal account can't carry it either:
+ * `employee_portal_accounts` has no address column, so anything set there is
+ * dropped on the way to Supabase.
+ *
+ * Only fills columns that are currently blank — never overwrites a value an
+ * employee has already corrected in the portal. Best-effort: a failure here
+ * must not block credential generation, so it logs and resolves.
+ */
+export async function seedEmployeeContactFromApplication(
+  employeeNumber: string,
+  contact: { homeAddress?: string; mobileNumber?: string; email?: string },
+): Promise<void> {
+  const number = String(employeeNumber ?? '').trim();
+  if (!number) return;
+
+  try {
+    const { data, error } = await (supabase as any)
+      .from('employees')
+      .select('id, email, phone, current_address_street')
+      .eq('employee_number', number)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return;
+
+    const blank = (v: unknown) => !String(v ?? '').trim();
+    const columns: Record<string, unknown> = {};
+    if (blank(data.current_address_street) && contact.homeAddress?.trim())
+      columns.current_address_street = contact.homeAddress.trim();
+    if (blank(data.phone) && contact.mobileNumber?.trim())
+      columns.phone = contact.mobileNumber.trim();
+    if (blank(data.email) && contact.email?.trim())
+      columns.email = contact.email.trim();
+
+    if (Object.keys(columns).length === 0) return;
+
+    const { error: updateError } = await (supabase as any)
+      .from('employees')
+      .update(columns)
+      .eq('id', data.id);
+    if (updateError) throw updateError;
+  } catch (err: any) {
+    console.error('[employeePortal] seedEmployeeContactFromApplication failed:', err);
+  }
+}
