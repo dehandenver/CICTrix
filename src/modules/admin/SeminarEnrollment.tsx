@@ -40,12 +40,14 @@ import {
   listAllRecommendations,
   listRecommendationCandidates,
   listRecommendationEvents,
+  listRosterGroups,
   publishRoster,
   sendBatchToOffice,
   dismissRecommendation,
   monthWindow,
   type PipelineRecFull,
   type RecommendationEvent,
+  type RosterGroup,
 } from '../../lib/api/trainingRecommendations';
 import { isLocked, LOCK_LEAD_DAYS } from '../../lib/api/trainingLifecycle';
 import { categoryColor } from './trainingCategories';
@@ -182,6 +184,9 @@ export const SeminarEnrollment = () => {
   const [candidates, setCandidates] = useState<PipelineRecFull[]>([]);
   const [all, setAll] = useState<PipelineRecFull[]>([]);
   const [events, setEvents] = useState<RecommendationEvent[]>([]);
+  // Enrolled/Published read the roster, not the recommendation pipeline: rosters
+  // seeded outside that flow (July's) have no recommendation rows at all.
+  const [rosters, setRosters] = useState<RosterGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
@@ -189,12 +194,14 @@ export const SeminarEnrollment = () => {
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const [cands, everything] = await Promise.all([
+    const [cands, everything, rosterGroups] = await Promise.all([
       listRecommendationCandidates(),
       listAllRecommendations(),
+      listRosterGroups([0, 1]),
     ]);
     setCandidates(cands);
     setAll(everything);
+    setRosters(rosterGroups);
     setEvents(await listRecommendationEvents([...new Set(everything.map((r) => r.sessionId))]));
     setLoading(false);
   }, []);
@@ -216,15 +223,16 @@ export const SeminarEnrollment = () => {
   const recGroups = useMemo(() => groupBySession(candidates), [candidates]);
   const sentGroups = useMemo(() => byStatus(['LND_APPROVED', 'OFFICE_ADDED']), [byStatus]);
   const returnedGroups = useMemo(() => byStatus(['OFFICE_FINALIZED']), [byStatus]);
-  const enrolledGroups = useMemo(() => byStatus(['ENROLLED', 'FINALIZED']), [byStatus]);
-  const publishedGroups = useMemo(() => byStatus(['PUBLISHED']), [byStatus]);
+  // A roster is "enrolled" until it is published; publishing moves it on.
+  const enrolledRosters = useMemo(() => rosters.filter((r) => !r.publishedAt), [rosters]);
+  const publishedRosters = useMemo(() => rosters.filter((r) => !!r.publishedAt), [rosters]);
 
   const counts: Record<Subtab, number> = {
     recommendation: recGroups.length,
     sent: sentGroups.length,
     returned: returnedGroups.length,
-    enrolled: enrolledGroups.length,
-    published: publishedGroups.length,
+    enrolled: enrolledRosters.length,
+    published: publishedRosters.length,
   };
 
   // Next month's courses that have not reached Published yet — the cadence rule
@@ -536,63 +544,84 @@ export const SeminarEnrollment = () => {
       ) : subtab === 'enrolled' ? (
         <div className="space-y-4">
           <p className="text-xs text-gray-500">
-            Grouped by training course. Finalizing locks a roster; publishing exposes it to
-            employees and cannot be undone. Rosters lock automatically {LOCK_LEAD_DAYS} days before
-            their training starts.
+            Grouped by training course, covering {monthName(0)} and {monthName(1)}. Finalizing locks
+            a roster; publishing exposes it to employees and cannot be undone. Rosters lock
+            automatically {LOCK_LEAD_DAYS} days before their training starts.
           </p>
-          {enrolledGroups.length === 0 ? (
+          {enrolledRosters.length === 0 ? (
             <EmptyState
               icon={Users}
               title="No enrolled rosters"
-              description="Enrolled attendees appear here, grouped by course, once you enroll a returned batch."
+              description="Rosters with attendees appear here, grouped by course."
             />
           ) : (
-            enrolledGroups.map((g) => {
-              const allFinalized = g.recs.every((r) => r.status === 'FINALIZED');
+            enrolledRosters.map((g) => {
               const locked = isLocked(g.start);
+              const note = lockNote(g.start);
               return (
                 <section key={g.sessionId} className="rounded-xl border border-gray-200 bg-white">
-                  <SectionHeader
-                    group={g}
-                    right={
-                      <div className="flex items-center gap-2">
-                        {!allFinalized ? (
-                          <button
-                            type="button"
-                            disabled={busy === g.sessionId || locked}
-                            title={locked ? 'This training is within the lock window.' : undefined}
-                            onClick={() => void finalize(g.sessionId)}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-bold text-gray-700 hover:border-blue-400 hover:text-blue-600 disabled:opacity-50"
-                          >
-                            <Lock className="h-3.5 w-3.5" /> Finalize
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            disabled={busy === g.sessionId}
-                            onClick={() => void publish(g.sessionId)}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
-                          >
-                            <Send className="h-3.5 w-3.5" />
-                            {busy === g.sessionId ? 'Publishing…' : 'Publish'}
-                          </button>
-                        )}
-                      </div>
-                    }
-                  />
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-sm font-bold text-gray-900">{g.title}</h3>
+                      <CategoryTag category={g.category} />
+                      <span className="text-xs text-gray-400">
+                        {fmtDate(g.start)} · {g.attendees.length} attendee
+                        {g.attendees.length === 1 ? '' : 's'}
+                        {g.capacity ? ` / ${g.capacity} slots` : ''}
+                      </span>
+                      {g.finalizedAt && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                          <Lock className="h-2.5 w-2.5" /> Finalized
+                        </span>
+                      )}
+                      {note && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-700">
+                          <Lock className="h-2.5 w-2.5" /> {note}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {!g.finalizedAt ? (
+                        <button
+                          type="button"
+                          disabled={busy === g.sessionId || locked}
+                          title={locked ? 'This training is within the lock window.' : undefined}
+                          onClick={() => void finalize(g.sessionId)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-bold text-gray-700 hover:border-blue-400 hover:text-blue-600 disabled:opacity-50"
+                        >
+                          <Lock className="h-3.5 w-3.5" /> Finalize
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={busy === g.sessionId}
+                          onClick={() => void publish(g.sessionId)}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          <Send className="h-3.5 w-3.5" />
+                          {busy === g.sessionId ? 'Publishing…' : 'Publish'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   <ul className="divide-y divide-gray-100">
-                    {g.recs.map((r) => (
-                      <AttendeeRow
-                        key={r.id}
-                        rec={r}
-                        trailing={
-                          r.status === 'FINALIZED' ? (
-                            <span className="shrink-0 text-[10px] font-bold uppercase text-gray-400">
-                              finalized
-                            </span>
-                          ) : null
-                        }
-                      />
+                    {g.attendees.map((a) => (
+                      <li key={a.enrollmentId} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-gray-900">{a.name}</span>
+                            {a.fromRecommendation && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600">
+                                <Sparkles className="h-2.5 w-2.5" /> recommended
+                              </span>
+                            )}
+                          </div>
+                          <p className="truncate text-[11px] text-gray-500">
+                            {a.department ?? '—'}
+                            {a.position ? ` · ${a.position}` : ''}
+                          </p>
+                        </div>
+                      </li>
                     ))}
                   </ul>
                 </section>
@@ -602,7 +631,7 @@ export const SeminarEnrollment = () => {
         </div>
       ) : (
         <div className="space-y-4">
-          {publishedGroups.length === 0 ? (
+          {publishedRosters.length === 0 ? (
             <EmptyState
               icon={CheckCircle2}
               title="Nothing published yet"
@@ -617,19 +646,29 @@ export const SeminarEnrollment = () => {
                   admin action outside this workflow.
                 </span>
               </div>
-              {publishedGroups.map((g) => (
+              {publishedRosters.map((g) => (
                 <section key={g.sessionId} className="rounded-xl border border-gray-200 bg-white">
-                  <SectionHeader
-                    group={g}
-                    right={
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                        <CheckCircle2 className="h-3.5 w-3.5" /> Published
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-sm font-bold text-gray-900">{g.title}</h3>
+                      <CategoryTag category={g.category} />
+                      <span className="text-xs text-gray-400">
+                        {fmtDate(g.start)} · {g.attendees.length} attendee
+                        {g.attendees.length === 1 ? '' : 's'}
                       </span>
-                    }
-                  />
+                    </div>
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Published
+                    </span>
+                  </div>
                   <ul className="divide-y divide-gray-100">
-                    {g.recs.map((r) => (
-                      <AttendeeRow key={r.id} rec={r} />
+                    {g.attendees.map((a) => (
+                      <li key={a.enrollmentId} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                        <div className="min-w-0">
+                          <span className="font-semibold text-gray-900">{a.name}</span>
+                          <p className="truncate text-[11px] text-gray-500">{a.department ?? '—'}</p>
+                        </div>
+                      </li>
                     ))}
                   </ul>
                 </section>

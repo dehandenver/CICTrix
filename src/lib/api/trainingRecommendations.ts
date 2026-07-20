@@ -862,24 +862,45 @@ export async function returnBatchToLnd(batchId: string, actor: string): Promise<
   return bErr ? { ok: false, error: bErr.message } : { ok: true };
 }
 
-/** Lock a course's roster. No further adds or removals afterwards. */
+/**
+ * Lock a course's roster. No further adds or removals afterwards.
+ *
+ * Stamped on the SESSION, not on each recommendation: a roster is finalized as
+ * a whole, and rosters that never went through the recommendation flow (July's,
+ * seeded during June) have no recommendation rows to stamp. Recommendation rows
+ * are advanced too, when there are any, so the pipeline view stays consistent.
+ */
 export async function finalizeRoster(sessionId: string): Promise<MutationResult> {
+  const now = new Date().toISOString();
   const { error } = await supabase
+    .from('training_sessions')
+    .update({ roster_finalized_at: now })
+    .eq('id', sessionId);
+  if (error) return { ok: false, error: error.message };
+
+  await supabase
     .from('training_recommendations')
-    .update({ status: 'FINALIZED', finalized_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .update({ status: 'FINALIZED', finalized_at: now, updated_at: now })
     .eq('session_id', sessionId)
     .eq('status', 'ENROLLED');
-  return error ? { ok: false, error: error.message } : { ok: true };
+  return { ok: true };
 }
 
-/** Publish a finalized roster to employees. One-way: the DB blocks reopening. */
+/** Publish a finalized roster to employees. One-way — there is no unpublish. */
 export async function publishRoster(sessionId: string): Promise<MutationResult> {
+  const now = new Date().toISOString();
   const { error } = await supabase
+    .from('training_sessions')
+    .update({ roster_published_at: now })
+    .eq('id', sessionId);
+  if (error) return { ok: false, error: error.message };
+
+  await supabase
     .from('training_recommendations')
-    .update({ status: 'PUBLISHED', published_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .update({ status: 'PUBLISHED', published_at: now, updated_at: now })
     .eq('session_id', sessionId)
     .eq('status', 'FINALIZED');
-  return error ? { ok: false, error: error.message } : { ok: true };
+  return { ok: true };
 }
 
 /** Every recommendation across the pipeline, for the status-tabbed views. */
@@ -967,4 +988,129 @@ export async function listRecommendationEvents(sessionIds: string[]): Promise<Re
     actorDepartment: e.actor_department ?? null,
     createdAt: e.created_at,
   }));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rosters (migration 20260812)
+//
+// "Who is attending" lives in training_enrollments, not in
+// training_recommendations — the recommendation table records how a name got
+// routed, the enrollment table records that they are on the roster. Rosters
+// seeded outside the recommendation flow (July's, planned during June) exist
+// only here, which is why the Enrolled and Published subtabs read this.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type RosterAttendee = {
+  enrollmentId: string;
+  employeeId: string;
+  name: string;
+  department: string | null;
+  position: string | null;
+  /** True when this attendee arrived via the recommendation pipeline. */
+  fromRecommendation: boolean;
+};
+
+export type RosterGroup = {
+  sessionId: string;
+  title: string;
+  category: string | null;
+  start: string;
+  capacity: number;
+  finalizedAt: string | null;
+  publishedAt: string | null;
+  attendees: RosterAttendee[];
+};
+
+/**
+ * Rosters with at least one active attendee, newest course first.
+ *
+ * `monthOffsets` selects which months to include — [0, 1] is "this month and
+ * next", which is what the Enrolled subtab wants: next month's rosters are
+ * being built while the current month's are already settled.
+ */
+export async function listRosterGroups(monthOffsets: number[] = [0, 1]): Promise<RosterGroup[]> {
+  const windows = monthOffsets.map((o) => monthWindow(o));
+  const lo = windows.map((w) => w.start).sort()[0];
+  const hi = windows.map((w) => w.end).sort().slice(-1)[0];
+
+  // roster_published_at arrives with migration 20260812. Until that is applied,
+  // selecting it 400s and would blank the whole subtab, so fall back to the
+  // pre-migration shape and treat every roster as unpublished. Remove the
+  // fallback once 20260812 is deployed everywhere.
+  const BASE_COLS = 'id, title, category, scheduled_date, capacity, roster_finalized_at';
+  let { data: sessions, error } = await supabase
+    .from('training_sessions')
+    .select(`${BASE_COLS}, roster_published_at`)
+    .gte('scheduled_date', lo)
+    .lt('scheduled_date', hi);
+
+  if (error?.message?.includes('roster_published_at')) {
+    ({ data: sessions, error } = await supabase
+      .from('training_sessions')
+      .select(BASE_COLS)
+      .gte('scheduled_date', lo)
+      .lt('scheduled_date', hi));
+  }
+
+  if (error) {
+    console.error('Error loading rosters:', error);
+    return [];
+  }
+  const ses = (sessions ?? []) as any[];
+  if (!ses.length) return [];
+
+  const sessionIds = ses.map((s) => String(s.id));
+  const [{ data: enrollments }, { data: recs }] = await Promise.all([
+    supabase
+      .from('training_enrollments')
+      .select('id, session_id, employee_id, is_active')
+      .in('session_id', sessionIds),
+    supabase
+      .from('training_recommendations')
+      .select('session_id, employee_id')
+      .in('session_id', sessionIds),
+  ]);
+
+  const active = (enrollments ?? []).filter((e: any) => e.is_active !== false);
+  const employeeIds = [...new Set(active.map((e: any) => String(e.employee_id)))];
+  const { data: emps } = employeeIds.length
+    ? await supabase
+        .from('employees_with_department')
+        .select('id, full_name, current_position, department')
+        .in('id', employeeIds)
+    : { data: [] as any[] };
+
+  const empById = new Map<string, any>((emps ?? []).map((e: any) => [String(e.id), e]));
+  const recommended = new Set(
+    (recs ?? []).map((r: any) => `${String(r.session_id)}:${String(r.employee_id)}`),
+  );
+
+  const bySession = new Map<string, RosterAttendee[]>();
+  for (const e of active) {
+    const key = String(e.session_id);
+    const emp = empById.get(String(e.employee_id));
+    if (!bySession.has(key)) bySession.set(key, []);
+    bySession.get(key)!.push({
+      enrollmentId: String(e.id),
+      employeeId: String(e.employee_id),
+      name: (emp?.full_name ?? 'Unknown employee').trim(),
+      department: emp?.department ?? null,
+      position: emp?.current_position ?? null,
+      fromRecommendation: recommended.has(`${key}:${String(e.employee_id)}`),
+    });
+  }
+
+  return ses
+    .map((s): RosterGroup => ({
+      sessionId: String(s.id),
+      title: s.title,
+      category: s.category,
+      start: s.scheduled_date,
+      capacity: s.capacity ?? 0,
+      finalizedAt: s.roster_finalized_at ?? null,
+      publishedAt: s.roster_published_at ?? null,
+      attendees: (bySession.get(String(s.id)) ?? []).sort((a, b) => a.name.localeCompare(b.name)),
+    }))
+    .filter((g) => g.attendees.length > 0)
+    .sort((a, b) => a.start.localeCompare(b.start));
 }
