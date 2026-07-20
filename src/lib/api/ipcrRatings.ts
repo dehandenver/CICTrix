@@ -473,10 +473,28 @@ async function rollUpToWorkspace(
   ]);
   const adjectival = overallScore !== null ? bucketForScore(overallScore) : null;
 
-  // Resolve the workspace period from the cycle title; update in place if present.
+  // Find the employee's workspace row by id rather than matching on a period
+  // label. The two sides label the same period differently — the employee's
+  // workspace stores a semester ("July–December 2026", from defaultPeriod())
+  // while this roll-up only knew the cycle title ("2026 Performance Cycle") —
+  // so `.eq('period', cycleTitle)` matched no rows. A PostgREST update that
+  // matches nothing is not an error, so the score silently never landed and the
+  // approval banner reported "Overall Score: —".
   const titles = await cycleTitles([setting.cycle_id]);
-  const period = titles.get(setting.cycle_id);
-  if (period) {
+  const cycleTitle = titles.get(setting.cycle_id) ?? null;
+
+  const { data: wsRows } = await supabase
+    .from('ipcr_workspace')
+    .select('id, period, updated_at')
+    .eq('employee_id', setting.employee_id)
+    .order('updated_at', { ascending: false });
+
+  const rows = (wsRows ?? []) as any[];
+  // Prefer an exact label match when one exists; otherwise the most recently
+  // touched row, which is the period the employee is actually working in.
+  const target = (cycleTitle ? rows.find((r) => r.period === cycleTitle) : null) ?? rows[0] ?? null;
+
+  if (target) {
     const patch: Record<string, unknown> = {
       core_quality: core.q, core_efficiency: core.e, core_timeliness: core.t, core_rating: core.average,
       strategic_quality: strategic.q, strategic_efficiency: strategic.e, strategic_timeliness: strategic.t, strategic_rating: strategic.average,
@@ -487,7 +505,12 @@ async function rollUpToWorkspace(
       patch.overall_score = overallScore;
       patch.adjectival = adjectival;
     }
-    await supabase.from('ipcr_workspace').update(patch).eq('employee_id', setting.employee_id).eq('period', period);
+    const { error: wsErr } = await supabase.from('ipcr_workspace').update(patch).eq('id', target.id);
+    // Surfaced rather than swallowed: a failure here means the finalized score
+    // never reaches the PDF or the dashboards.
+    if (wsErr) console.error('[ipcrRatings] rollUpToWorkspace update failed:', wsErr);
+  } else {
+    console.error('[ipcrRatings] rollUpToWorkspace: no ipcr_workspace row for employee', setting.employee_id);
   }
 
   return { overallScore, adjectival };
