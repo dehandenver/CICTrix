@@ -22,7 +22,6 @@ import {
   ShieldCheck,
   TrendingUp,
   Upload,
-  UserCheck,
   Users,
   X,
 } from 'lucide-react';
@@ -58,7 +57,6 @@ import { OfficeDirectorySection } from '../../components/OfficeDirectorySection'
 import { LndSummaryOfRatings } from './LndSummaryOfRatings';
 import { LndTrainingEvaluation } from './LndTrainingEvaluation';
 import { LndTrainingNeeds } from './LndTrainingNeeds';
-import { LndRecommendations } from './LndRecommendations';
 
 type MenuId =
   | 'dashboard'
@@ -66,7 +64,6 @@ type MenuId =
   | 'training-calendar'
   | 'training-plan'
   | 'training-needs'
-  | 'recommendations'
   | 'seminar-enrollment'
   | 'training-evaluation'
   | 'office-directory'
@@ -97,7 +94,6 @@ const LND_MENU: MenuItem[] = [
   { id: 'training-calendar', label: 'Training Calendar', sublabel: 'This year’s trainings', icon: CalendarDays },
   { id: 'training-plan', label: 'Training Plan', sublabel: 'Next year’s plan', icon: CalendarClock },
   { id: 'training-needs', label: 'Requests & Needs', sublabel: 'Office requests and Training Needs Assessment', icon: Sparkles },
-  { id: 'recommendations', label: 'Recommendations', sublabel: 'Approve candidates and send to offices', icon: UserCheck },
   { id: 'seminar-enrollment', label: 'Seminar Enrollment', sublabel: 'Registrations and slots', icon: ClipboardCheck },
   { id: 'training-evaluation', label: 'Training Evaluation', sublabel: 'Pre/post-test results', icon: TrendingUp },
   { id: 'office-directory', label: 'Office Directory', sublabel: 'All employees', icon: Users },
@@ -729,8 +725,6 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
             <TrainingPlan />
           ) : activeModule === 'training-needs' ? (
             <LndTrainingNeeds />
-          ) : activeModule === 'recommendations' ? (
-            <LndRecommendations />
           ) : activeModule === 'seminar-enrollment' ? (
             <SeminarEnrollment />
           ) : activeModule === 'training-evaluation' ? (

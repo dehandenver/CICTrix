@@ -107,6 +107,8 @@ export type RecommendationStatus =
   | 'OFFICE_ADDED'
   | 'OFFICE_FINALIZED'
   | 'ENROLLED'
+  | 'FINALIZED' // roster locked; no further adds or removals
+  | 'PUBLISHED' // visible to employees; one-way, the DB blocks reopening
   | 'DISMISSED'
   | 'ACCEPTED'; // legacy, no longer produced
 
@@ -694,4 +696,275 @@ export async function dismissRecommendation(
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Failed to dismiss recommendation.' };
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Seminar Enrollment pipeline (migration 20260811)
+//
+// The five Seminar Enrollment subtabs are five reads of this one table:
+//   Recommendation  SUGGESTED            (next month's courses only)
+//   Sent to Office  LND_APPROVED / OFFICE_ADDED, batch_id set
+//   Returned        OFFICE_FINALIZED
+//   Enrolled        ENROLLED / FINALIZED
+//   Published       PUBLISHED
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type PipelineRecFull = PipelineRec & { batchId: string | null; source: string };
+
+/** First/last instant of the month `offset` months from today, as ISO strings. */
+export function monthWindow(offset: number, now: Date = new Date()): { start: string; end: string } {
+  const start = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+  const end = new Date(now.getFullYear(), now.getMonth() + offset + 1, 1);
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
+/** Session ids scheduled within a given month offset (0 = this month, 1 = next). */
+async function sessionIdsInMonth(offset: number): Promise<string[]> {
+  const { start, end } = monthWindow(offset);
+  const { data, error } = await supabase
+    .from('training_sessions')
+    .select('id')
+    .gte('scheduled_date', start)
+    .lt('scheduled_date', end);
+  if (error) {
+    console.error('Error loading sessions for month:', error);
+    return [];
+  }
+  return (data ?? []).map((s: any) => String(s.id));
+}
+
+/**
+ * Recommendations eligible for review: SUGGESTED rows against NEXT month's
+ * courses. Next month is the month being planned — August's roster is built
+ * during July, exactly as July's was built during June. Current and past months
+ * are deliberately excluded; their rosters were settled before they began.
+ */
+export async function listRecommendationCandidates(): Promise<PipelineRecFull[]> {
+  const ids = await sessionIdsInMonth(1);
+  if (!ids.length) return [];
+  const eligible = new Set(ids);
+  const all = await listAllRecommendations();
+  return all.filter((r) => r.status === 'SUGGESTED' && eligible.has(r.sessionId));
+}
+
+/**
+ * L&D accepts a set of recommendations and hands them to the offices in one
+ * action. A batch may span several courses — L&D sends everything that is ready
+ * at once rather than one course at a time.
+ */
+export async function sendBatchToOffice(
+  recommendationIds: string[],
+  actor: string,
+  note?: string | null,
+): Promise<MutationResult & { batchId?: string }> {
+  if (!recommendationIds.length) return { ok: false, error: 'Nothing selected to send.' };
+
+  const { data: batch, error: bErr } = await supabase
+    .from('seminar_batches')
+    .insert({ sent_by: actor, note: note?.trim() || null })
+    .select('id')
+    .single();
+  if (bErr) return { ok: false, error: bErr.message };
+
+  const { error } = await supabase
+    .from('training_recommendations')
+    .update({ status: 'LND_APPROVED', batch_id: batch.id, updated_at: new Date().toISOString() })
+    .in('id', recommendationIds);
+  if (error) return { ok: false, error: error.message };
+
+  return { ok: true, batchId: String(batch.id) };
+}
+
+/** Office adds someone the AI missed. Tagged office-sourced and audited. */
+export async function officeAddCandidateAudited(input: {
+  sessionId: string;
+  employeeId: string;
+  actor: string;
+  actorDepartment: string | null;
+  batchId?: string | null;
+}): Promise<MutationResult> {
+  const res = await officeAddCandidate({
+    sessionId: input.sessionId,
+    employeeId: input.employeeId,
+    actor: input.actor,
+  });
+  if (!res.ok) return res;
+
+  await supabase
+    .from('training_recommendations')
+    .update({ source: 'office_account_added', batch_id: input.batchId ?? null })
+    .eq('session_id', input.sessionId)
+    .eq('employee_id', input.employeeId);
+
+  await supabase.from('seminar_recommendation_events').insert({
+    session_id: input.sessionId,
+    employee_id: input.employeeId,
+    action: 'added',
+    actor: input.actor,
+    actor_department: input.actorDepartment,
+  });
+
+  return { ok: true };
+}
+
+/**
+ * Office removes someone from a recommended list. A reason is mandatory — it is
+ * the point of the audit trail, and the database rejects a blank one.
+ */
+export async function officeRemoveCandidate(input: {
+  recommendationId: string;
+  sessionId: string;
+  employeeId: string;
+  reason: string;
+  actor: string;
+  actorDepartment: string | null;
+}): Promise<MutationResult> {
+  if (!input.reason.trim()) return { ok: false, error: 'A reason is required to remove someone.' };
+
+  const { error } = await supabase
+    .from('training_recommendations')
+    .update({
+      status: 'DISMISSED',
+      admin_remark: input.reason.trim(),
+      office_actor: input.actor,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', input.recommendationId);
+  if (error) return { ok: false, error: error.message };
+
+  const { error: evErr } = await supabase.from('seminar_recommendation_events').insert({
+    recommendation_id: input.recommendationId,
+    session_id: input.sessionId,
+    employee_id: input.employeeId,
+    action: 'removed',
+    reason: input.reason.trim(),
+    actor: input.actor,
+    actor_department: input.actorDepartment,
+  });
+  if (evErr) return { ok: false, error: evErr.message };
+
+  return { ok: true };
+}
+
+/** Office hands a batch back to L&D once it has finished reviewing. */
+export async function returnBatchToLnd(batchId: string, actor: string): Promise<MutationResult> {
+  const { error } = await supabase
+    .from('training_recommendations')
+    .update({ status: 'OFFICE_FINALIZED', office_actor: actor, updated_at: new Date().toISOString() })
+    .eq('batch_id', batchId)
+    .in('status', ['LND_APPROVED', 'OFFICE_ADDED']);
+  if (error) return { ok: false, error: error.message };
+
+  const { error: bErr } = await supabase
+    .from('seminar_batches')
+    .update({ returned_at: new Date().toISOString(), returned_by: actor })
+    .eq('id', batchId);
+  return bErr ? { ok: false, error: bErr.message } : { ok: true };
+}
+
+/** Lock a course's roster. No further adds or removals afterwards. */
+export async function finalizeRoster(sessionId: string): Promise<MutationResult> {
+  const { error } = await supabase
+    .from('training_recommendations')
+    .update({ status: 'FINALIZED', finalized_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq('session_id', sessionId)
+    .eq('status', 'ENROLLED');
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+/** Publish a finalized roster to employees. One-way: the DB blocks reopening. */
+export async function publishRoster(sessionId: string): Promise<MutationResult> {
+  const { error } = await supabase
+    .from('training_recommendations')
+    .update({ status: 'PUBLISHED', published_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq('session_id', sessionId)
+    .eq('status', 'FINALIZED');
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+/** Every recommendation across the pipeline, for the status-tabbed views. */
+export async function listAllRecommendations(): Promise<PipelineRecFull[]> {
+  const { data, error } = await supabase
+    .from('training_recommendations')
+    .select('id, employee_id, session_id, competency, priority, status, trigger_score, gap_detail, office_actor, batch_id, source')
+    .in('status', ['SUGGESTED', 'LND_APPROVED', 'OFFICE_ADDED', 'OFFICE_FINALIZED', 'ENROLLED', 'FINALIZED', 'PUBLISHED']);
+  if (error) {
+    console.error('Error loading recommendations:', error);
+    return [];
+  }
+  const rows = (data ?? []) as any[];
+  if (!rows.length) return [];
+
+  const employeeIds = [...new Set(rows.map((r) => String(r.employee_id)))];
+  const sessionIds = [...new Set(rows.map((r) => String(r.session_id)))];
+  const [{ data: emps }, { data: sessions }] = await Promise.all([
+    supabase.from('employees_with_department').select('id, full_name, current_position, department').in('id', employeeIds),
+    supabase.from('training_sessions').select('id, title, category, scheduled_date, capacity').in('id', sessionIds),
+  ]);
+  const empById = new Map<string, any>((emps ?? []).map((e: any) => [String(e.id), e]));
+  const sesById = new Map<string, any>((sessions ?? []).map((s: any) => [String(s.id), s]));
+
+  return rows
+    .map((r): PipelineRecFull | null => {
+      const s = sesById.get(String(r.session_id));
+      if (!s) return null;
+      const e = empById.get(String(r.employee_id));
+      const triggerScore = r.trigger_score != null ? Number(r.trigger_score) : null;
+      return {
+        id: String(r.id),
+        employeeId: String(r.employee_id),
+        employeeName: (e?.full_name ?? 'Unknown employee').trim(),
+        department: e?.department ?? null,
+        position: e?.current_position ?? null,
+        sessionId: String(r.session_id),
+        sessionTitle: s.title,
+        sessionCategory: s.category,
+        sessionStart: s.scheduled_date,
+        sessionCapacity: s.capacity ?? 0,
+        competency: r.competency,
+        priority: r.priority as Priority,
+        status: r.status as RecommendationStatus,
+        triggerScoreLabel: scoreLabel(triggerScore),
+        gapDetail: r.gap_detail ?? null,
+        officeActor: r.office_actor ?? null,
+        batchId: r.batch_id ? String(r.batch_id) : null,
+        source: r.source ?? 'ai_recommended',
+      };
+    })
+    .filter((x): x is PipelineRecFull => x !== null);
+}
+
+export type RecommendationEvent = {
+  id: string;
+  sessionId: string;
+  employeeId: string;
+  action: 'added' | 'removed';
+  reason: string | null;
+  actor: string | null;
+  actorDepartment: string | null;
+  createdAt: string;
+};
+
+/** What the offices changed — shown to L&D on the Returned subtab. */
+export async function listRecommendationEvents(sessionIds: string[]): Promise<RecommendationEvent[]> {
+  if (!sessionIds.length) return [];
+  const { data, error } = await supabase
+    .from('seminar_recommendation_events')
+    .select('id, session_id, employee_id, action, reason, actor, actor_department, created_at')
+    .in('session_id', sessionIds)
+    .order('created_at', { ascending: false });
+  if (error) {
+    console.error('Error loading recommendation events:', error);
+    return [];
+  }
+  return (data ?? []).map((e: any) => ({
+    id: String(e.id),
+    sessionId: String(e.session_id),
+    employeeId: String(e.employee_id),
+    action: e.action,
+    reason: e.reason ?? null,
+    actor: e.actor ?? null,
+    actorDepartment: e.actor_department ?? null,
+    createdAt: e.created_at,
+  }));
 }

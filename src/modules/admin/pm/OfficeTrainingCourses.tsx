@@ -17,10 +17,11 @@ import {
   type OfficeTraining,
 } from '../../../lib/api/officeTrainingCourses';
 import {
-  listPipeline,
-  officeAddCandidate,
-  officeFinalizeTraining,
-  type PipelineRec,
+  listAllRecommendations,
+  officeAddCandidateAudited,
+  officeRemoveCandidate,
+  returnBatchToLnd,
+  type PipelineRecFull,
 } from '../../../lib/api/trainingRecommendations';
 import { supabase as supabaseClient } from '../../../lib/supabase';
 import { CATEGORY_COLORS } from '../trainingCategories';
@@ -31,9 +32,11 @@ const POLL_MS = 12000;
 const OFFICE_ACTOR = 'Department Head';
 
 type EmployeePick = { id: string; name: string; department: string | null };
-type RecGroup = { sessionId: string; title: string; category: string | null; start: string; recs: PipelineRec[] };
+type RecGroup = { sessionId: string; title: string; category: string | null; start: string; recs: PipelineRecFull[] };
+/** A batch is the unit L&D sends and the office returns; it may span courses. */
+type BatchGroup = { batchId: string | null; courses: RecGroup[] };
 
-const groupRecs = (recs: PipelineRec[]): RecGroup[] => {
+const groupRecs = (recs: PipelineRecFull[]): RecGroup[] => {
   const map = new Map<string, RecGroup>();
   for (const r of recs) {
     let g = map.get(r.sessionId);
@@ -41,6 +44,19 @@ const groupRecs = (recs: PipelineRec[]): RecGroup[] => {
     g.recs.push(r);
   }
   return [...map.values()].sort((a, b) => a.start.localeCompare(b.start));
+};
+
+const groupByBatch = (recs: PipelineRecFull[]): BatchGroup[] => {
+  const map = new Map<string, PipelineRecFull[]>();
+  for (const r of recs) {
+    const k = r.batchId ?? 'unbatched';
+    if (!map.has(k)) map.set(k, []);
+    map.get(k)!.push(r);
+  }
+  return [...map.entries()].map(([k, rs]) => ({
+    batchId: k === 'unbatched' ? null : k,
+    courses: groupRecs(rs),
+  }));
 };
 
 type Subtab = 'all' | 'recommendations' | 'pending' | 'attendance';
@@ -100,7 +116,9 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
   const [perPage, setPerPage] = useState(5);
   const [detail, setDetail] = useState<OfficeTraining | null>(null);
 
-  const [pipeline, setPipeline] = useState<PipelineRec[]>([]);
+  const [pipeline, setPipeline] = useState<PipelineRecFull[]>([]);
+  const [removeTarget, setRemoveTarget] = useState<PipelineRecFull | null>(null);
+  const [removeReason, setRemoveReason] = useState('');
   const [employees, setEmployees] = useState<EmployeePick[]>([]);
   const [addingTo, setAddingTo] = useState<string | null>(null);
   const [empSearch, setEmpSearch] = useState('');
@@ -120,7 +138,7 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
 
   // A department head reviews their own office's candidates, not the LGU's.
   const inOffice = useCallback(
-    (recs: PipelineRec[]) => {
+    (recs: PipelineRecFull[]) => {
       const want = officeName?.trim().toLowerCase();
       if (!want) return recs;
       return recs.filter((r) => (r.department ?? '').trim().toLowerCase() === want);
@@ -130,7 +148,7 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
 
   // Poll the recommendation pipeline so L&D approvals appear without a refresh.
   useEffect(() => {
-    const load = async () => setPipeline(inOffice(await listPipeline()));
+    const load = async () => setPipeline(inOffice(await listAllRecommendations()));
     void load();
     timer.current = window.setInterval(() => void load(), POLL_MS);
     return () => { if (timer.current) window.clearInterval(timer.current); };
@@ -154,14 +172,24 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
     return () => { cancelled = true; };
   }, [officeName]);
 
-  const reloadPipeline = async () => setPipeline(inOffice(await listPipeline()));
+  const reloadPipeline = async () => setPipeline(inOffice(await listAllRecommendations()));
 
-  const recGroups = useMemo(() => groupRecs(pipeline.filter((r) => r.status === 'LND_APPROVED' || r.status === 'OFFICE_ADDED')), [pipeline]);
+  const reviewBatches = useMemo(
+    () => groupByBatch(pipeline.filter((r) => r.status === 'LND_APPROVED' || r.status === 'OFFICE_ADDED')),
+    [pipeline],
+  );
+  const recGroups = useMemo(() => reviewBatches.flatMap((b) => b.courses), [reviewBatches]);
   const pendingGroups = useMemo(() => groupRecs(pipeline.filter((r) => r.status === 'OFFICE_FINALIZED')), [pipeline]);
 
-  const addCandidate = async (sessionId: string, employeeId: string) => {
+  const addCandidate = async (sessionId: string, employeeId: string, batchId: string | null) => {
     setBusySession(sessionId);
-    const res = await officeAddCandidate({ sessionId, employeeId, actor: OFFICE_ACTOR });
+    const res = await officeAddCandidateAudited({
+      sessionId,
+      employeeId,
+      actor: OFFICE_ACTOR,
+      actorDepartment: officeName,
+      batchId,
+    });
     setBusySession(null);
     if (!res.ok) { alert(res.error); return; }
     setAddingTo(null);
@@ -169,9 +197,34 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
     await reloadPipeline();
   };
 
-  const sendToLnd = async (sessionId: string) => {
-    setBusySession(sessionId);
-    const res = await officeFinalizeTraining(sessionId, OFFICE_ACTOR);
+  /**
+   * Removals need a reason — it is what the audit trail is for, and the database
+   * rejects a blank one. Hence the modal rather than a bare button.
+   */
+  const confirmRemove = async () => {
+    if (!removeTarget) return;
+    if (!removeReason.trim()) { alert('Please give a reason for removing this employee.'); return; }
+    setBusySession(removeTarget.sessionId);
+    const res = await officeRemoveCandidate({
+      recommendationId: removeTarget.id,
+      sessionId: removeTarget.sessionId,
+      employeeId: removeTarget.employeeId,
+      reason: removeReason,
+      actor: OFFICE_ACTOR,
+      actorDepartment: officeName,
+    });
+    setBusySession(null);
+    if (!res.ok) { alert(res.error); return; }
+    setRemoveTarget(null);
+    setRemoveReason('');
+    await reloadPipeline();
+  };
+
+  /** The office returns a whole batch at once, which is how L&D sent it. */
+  const sendBatchBack = async (batchId: string | null, sessionIds: string[]) => {
+    if (!batchId) { alert('This list has no batch reference and cannot be returned automatically.'); return; }
+    setBusySession(sessionIds[0] ?? batchId);
+    const res = await returnBatchToLnd(batchId, OFFICE_ACTOR);
     setBusySession(null);
     if (!res.ok) { alert(res.error); return; }
     await reloadPipeline();
@@ -257,68 +310,150 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
       </div>
 
       {subtab === 'recommendations' ? (
-        <div className="space-y-4 p-4">
-          {recGroups.length === 0 ? (
+        <div className="space-y-5 p-4">
+          {reviewBatches.length === 0 ? (
             <div className="p-6 text-center">
               <p className="text-sm font-semibold text-slate-600">No pending recommendations</p>
-              <p className="mt-1 text-xs text-slate-400">When L&D approves candidates for a training, they appear here to review, add to, and send back.</p>
+              <p className="mt-1 text-xs text-slate-400">When L&D sends candidates for your office, they appear here to review, adjust, and send back.</p>
             </div>
           ) : (
-            recGroups.map((g) => {
-              const term = empSearch.trim().toLowerCase();
-              const existingIds = new Set(g.recs.map((r) => r.employeeId));
-              const filteredEmps = employees
-                .filter((e) => !term || e.name.toLowerCase().includes(term) || (e.department ?? '').toLowerCase().includes(term))
-                .slice(0, 30);
+            reviewBatches.map((batch) => {
+              const sessionIds = batch.courses.map((c) => c.sessionId);
+              const totalRecs = batch.courses.reduce((n, c) => n + c.recs.length, 0);
+              const batchBusy = sessionIds.some((id) => busySession === id);
               return (
-                <section key={g.sessionId} className="rounded-xl border border-slate-200">
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-bold text-slate-900">{g.title}</h3>
-                      <CategoryTag category={g.category} />
-                      <span className="text-xs text-slate-400">· {g.recs.length} candidate{g.recs.length === 1 ? '' : 's'}</span>
+                <div key={batch.batchId ?? 'unbatched'} className="rounded-xl border border-indigo-200 bg-indigo-50/30">
+                  {/* A batch is what L&D sent and what the office returns — it may
+                      cover several courses, so the send-back action lives here. */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-indigo-100 px-4 py-3">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-indigo-800">
+                        Batch from L&amp;D
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-500">
+                        {batch.courses.length} course{batch.courses.length === 1 ? '' : 's'} · {totalRecs} candidate{totalRecs === 1 ? '' : 's'}
+                      </p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button type="button" onClick={() => { setAddingTo(addingTo === g.sessionId ? null : g.sessionId); setEmpSearch(''); }} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600">
-                        <UserPlus className="h-3.5 w-3.5" /> Add employee
-                      </button>
-                      <button type="button" disabled={busySession === g.sessionId} onClick={() => void sendToLnd(g.sessionId)} className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">
-                        <Send className="h-3.5 w-3.5" /> {busySession === g.sessionId ? 'Sending…' : 'Send to L&D'}
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      disabled={batchBusy}
+                      onClick={() => void sendBatchBack(batch.batchId, sessionIds)}
+                      className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white hover:bg-indigo-700 disabled:opacity-60"
+                    >
+                      <Send className="h-3.5 w-3.5" /> {batchBusy ? 'Sending…' : 'Send back to L&D'}
+                    </button>
                   </div>
-                  {addingTo === g.sessionId && (
-                    <div className="border-b border-slate-100 bg-slate-50/60 p-3">
-                      <div className="relative mb-2">
-                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                        <input value={empSearch} onChange={(e) => setEmpSearch(e.target.value)} placeholder="Search employee…" className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm focus:border-indigo-500 focus:outline-none" />
-                      </div>
-                      <ul className="max-h-48 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 bg-white">
-                        {filteredEmps.map((e) => (
-                          <li key={e.id}>
-                            <button type="button" disabled={existingIds.has(e.id) || busySession === g.sessionId} onClick={() => void addCandidate(g.sessionId, e.id)} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50 disabled:opacity-40">
-                              <span className="text-slate-800">{e.name}</span>
-                              <span className="text-xs text-slate-400">{existingIds.has(e.id) ? 'already listed' : e.department}</span>
+
+                  <div className="space-y-3 p-3">
+                    {batch.courses.map((g) => {
+                      const term = empSearch.trim().toLowerCase();
+                      const existingIds = new Set(g.recs.map((r) => r.employeeId));
+                      const filteredEmps = employees
+                        .filter((e) => !term || e.name.toLowerCase().includes(term) || (e.department ?? '').toLowerCase().includes(term))
+                        .slice(0, 30);
+                      return (
+                        <section key={g.sessionId} className="rounded-xl border border-slate-200 bg-white">
+                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-sm font-bold text-slate-900">{g.title}</h3>
+                              <CategoryTag category={g.category} />
+                              <span className="text-xs text-slate-400">· {g.recs.length} candidate{g.recs.length === 1 ? '' : 's'}</span>
+                            </div>
+                            <button type="button" onClick={() => { setAddingTo(addingTo === g.sessionId ? null : g.sessionId); setEmpSearch(''); }} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:border-indigo-400 hover:text-indigo-600">
+                              <UserPlus className="h-3.5 w-3.5" /> Add employee
                             </button>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  <ul className="divide-y divide-slate-100">
-                    {g.recs.map((r) => (
-                      <li key={r.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-slate-900">{r.employeeName}</span>
-                          {r.status === 'OFFICE_ADDED' && <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-600"><UserPlus className="h-2.5 w-2.5" /> you added</span>}
-                        </div>
-                        <span className="text-xs text-slate-400">{r.department ?? '—'}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
+                          </div>
+                          {addingTo === g.sessionId && (
+                            <div className="border-b border-slate-100 bg-slate-50/60 p-3">
+                              <div className="relative mb-2">
+                                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                                <input value={empSearch} onChange={(e) => setEmpSearch(e.target.value)} placeholder="Search employee…" className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm focus:border-indigo-500 focus:outline-none" />
+                              </div>
+                              <ul className="max-h-48 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 bg-white">
+                                {filteredEmps.map((e) => (
+                                  <li key={e.id}>
+                                    <button type="button" disabled={existingIds.has(e.id) || busySession === g.sessionId} onClick={() => void addCandidate(g.sessionId, e.id, batch.batchId)} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50 disabled:opacity-40">
+                                      <span className="text-slate-800">{e.name}</span>
+                                      <span className="text-xs text-slate-400">{existingIds.has(e.id) ? 'already listed' : e.department}</span>
+                                    </button>
+                                  </li>
+                                ))}
+                                {filteredEmps.length === 0 && (
+                                  <li className="px-3 py-3 text-center text-xs text-slate-400">
+                                    No employees in your office match that search.
+                                  </li>
+                                )}
+                              </ul>
+                            </div>
+                          )}
+                          <ul className="divide-y divide-slate-100">
+                            {g.recs.map((r) => (
+                              <li key={r.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-semibold text-slate-900">{r.employeeName}</span>
+                                    {r.source === 'office_account_added' && <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-600"><UserPlus className="h-2.5 w-2.5" /> you added</span>}
+                                  </div>
+                                  <p className="truncate text-[11px] text-slate-400">{r.department ?? '—'} · {r.competency}</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => { setRemoveTarget(r); setRemoveReason(''); }}
+                                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:border-rose-400 hover:text-rose-600"
+                                >
+                                  <X className="h-3 w-3" /> Remove
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        </section>
+                      );
+                    })}
+                  </div>
+                </div>
               );
             })
+          )}
+
+          {/* Removal needs a recorded reason — the audit trail is the whole point,
+              and the database rejects a blank one. */}
+          {removeTarget && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+              <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-xl">
+                <h3 className="text-sm font-bold text-slate-900">Remove {removeTarget.employeeName}?</h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  From <strong>{removeTarget.sessionTitle}</strong>. L&amp;D will see this removal and
+                  your reason when the batch comes back.
+                </p>
+                <label className="mt-4 block text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  Reason (required)
+                </label>
+                <textarea
+                  rows={3}
+                  value={removeReason}
+                  onChange={(e) => setRemoveReason(e.target.value)}
+                  placeholder="e.g. On extended leave during the training dates."
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+                />
+                <div className="mt-4 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setRemoveTarget(null); setRemoveReason(''); }}
+                    className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!removeReason.trim() || busySession === removeTarget.sessionId}
+                    onClick={() => void confirmRemove()}
+                    className="rounded-lg bg-rose-600 px-3 py-2 text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-50"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       ) : subtab === 'pending' ? (
