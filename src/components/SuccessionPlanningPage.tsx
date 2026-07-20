@@ -28,13 +28,11 @@ import {
   removeCandidate,
   listEmployeeOptions,
   listCompetencyRequirements,
-  listTrainingRequirements,
   type DepartmentSummary,
   type CriticalPosition,
   type RankedCandidate,
   type EmployeeOption,
   type CompetencyRequirement,
-  type TrainingRequirement,
 } from '../lib/api/succession';
 
 // The Succession Planning view lives inside the RSP Portal, which is already
@@ -597,20 +595,18 @@ const CriticalPositionsPanel = (props: CriticalPositionsPanelProps) => {
 
 const RequirementsPanel = ({ position }: { position: CriticalPosition }) => {
   const [competencyReqs, setCompetencyReqs] = useState<CompetencyRequirement[]>([]);
-  const [trainingReqs, setTrainingReqs] = useState<TrainingRequirement[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    Promise.all([listCompetencyRequirements(position.id), listTrainingRequirements(position.id)]).then(
-      ([compRes, trainRes]) => {
-        if (cancelled) return;
-        setCompetencyReqs(compRes.ok ? compRes.data : []);
-        setTrainingReqs(trainRes.ok ? trainRes.data : []);
-        setLoading(false);
-      },
-    );
+    // Training requirements are no longer settable on a critical position, so
+    // there's nothing to fetch for them.
+    listCompetencyRequirements(position.id).then((compRes) => {
+      if (cancelled) return;
+      setCompetencyReqs(compRes.ok ? compRes.data : []);
+      setLoading(false);
+    });
     return () => {
       cancelled = true;
     };
@@ -621,10 +617,8 @@ const RequirementsPanel = ({ position }: { position: CriticalPosition }) => {
     !!position.requiredEducation ||
     !!position.requiredEligibility ||
     position.minYearsExperience != null ||
-    !!position.minIpcrRating ||
     (position.requiredCertifications ?? []).length > 0 ||
-    competencyReqs.length > 0 ||
-    trainingReqs.length > 0;
+    competencyReqs.length > 0;
 
   return (
     <div className="rounded-lg border border-[var(--border-color)] bg-white p-4">
@@ -641,19 +635,12 @@ const RequirementsPanel = ({ position }: { position: CriticalPosition }) => {
           {position.positionDescription && (
             <div><span className="text-[var(--text-secondary)]">Description</span><p className="!mb-0 font-medium">{position.positionDescription}</p></div>
           )}
+          {/* Mirrors the Critical Positions form exactly: only requirements a
+              Department Head can actually set. Required successors and Min. IPCR
+              rating were dropped there, so showing them here would render a
+              value nobody can change. */}
           <div className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3">
-            <div><span className="text-[var(--text-secondary)]">Required successors</span><p className="!mb-0 font-medium">{position.requiredSuccessorsCount}</p></div>
             <div><span className="text-[var(--text-secondary)]">Min. experience</span><p className="!mb-0 font-medium">{position.minYearsExperience != null ? `${position.minYearsExperience} year(s)` : '—'}</p></div>
-            <div>
-              <span className="text-[var(--text-secondary)]">Min. IPCR rating</span>
-              <p className="!mb-0">
-                {position.minIpcrRating ? (
-                  <span className={`inline-block rounded-full border px-2 py-0.5 text-xs font-semibold ${adjectivalTone(position.minIpcrRating)}`}>
-                    {position.minIpcrRating}
-                  </span>
-                ) : '—'}
-              </p>
-            </div>
             <div><span className="text-[var(--text-secondary)]">Required education</span><p className="!mb-0 font-medium">{position.requiredEducation ?? '—'}</p></div>
             <div><span className="text-[var(--text-secondary)]">Required eligibility</span><p className="!mb-0 font-medium">{position.requiredEligibility ?? '—'}</p></div>
           </div>
@@ -683,16 +670,6 @@ const RequirementsPanel = ({ position }: { position: CriticalPosition }) => {
             </div>
           )}
 
-          {trainingReqs.length > 0 && (
-            <div>
-              <span className="text-[var(--text-secondary)]">Required trainings</span>
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                {trainingReqs.map((t) => (
-                  <span key={t.id} className="rounded-full border border-[var(--border-color)] bg-slate-50 px-2 py-0.5 text-xs text-[var(--text-primary)]">{t.trainingTitle}</span>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
     </div>

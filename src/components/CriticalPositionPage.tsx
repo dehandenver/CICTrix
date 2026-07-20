@@ -714,27 +714,6 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
                   </div>
                 </Field>
 
-                <Field label="Required trainings">
-                  <div className="flex flex-wrap gap-2">
-                    {form.trainingDrafts.map((t) => (
-                      <span key={t} className="flex items-center gap-1 rounded-full border border-[var(--border-color)] bg-slate-50 px-2.5 py-1 text-xs text-[var(--text-primary)]">
-                        {t}
-                        {!readOnly && (
-                          <button onClick={() => setForm((f) => ({ ...f, trainingDrafts: f.trainingDrafts.filter((x) => x !== t) }))} className="text-slate-400 hover:text-red-500">
-                            <X size={11} />
-                          </button>
-                        )}
-                      </span>
-                    ))}
-                    {form.trainingDrafts.length === 0 && <span className="text-sm text-[var(--text-secondary)]">None specified.</span>}
-                  </div>
-                  {!readOnly && (
-                    <div className="mt-2 flex gap-2">
-                      <input type="text" value={form.trainingDraft} onChange={(e) => setForm((f) => ({ ...f, trainingDraft: e.target.value }))} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addTraining())} placeholder="e.g. Leadership Development Program" className="cp-input" />
-                      <Button variant="secondary" onClick={addTraining} type="button">Add</Button>
-                    </div>
-                  )}
-                </Field>
               </div>
             </div>
           </div>
