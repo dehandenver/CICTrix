@@ -98,7 +98,9 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
       });
 
       if (authError || !authData.user) {
-        setErrorMsg("You don't have permission to login to this account");
+        // The credentials themselves failed — say so, rather than implying the
+        // account exists but is barred.
+        setErrorMsg('Invalid email or password.');
         return;
       }
 
@@ -122,8 +124,15 @@ export const LoginPage = ({ onLogin }: LoginPageProps) => {
       }
 
       if (role !== selectedRole) {
+        // The account is valid — the wrong role button is selected. Saying
+        // "no permission" here reads as a barred account and leaves the user
+        // with nothing to act on, so name the role they need instead. The
+        // selector defaults to RSP, so this is the common first attempt for
+        // every non-RSP admin.
         await discardSession();
-        setErrorMsg("You don't have permission to login to this account");
+        const correctLabel = ROLES.find((r) => r.key === role)?.label ?? role;
+        setErrorMsg(`This is a ${correctLabel} account. Select ${correctLabel} above, then sign in.`);
+        setSelectedRole(role);
         return;
       }
 
