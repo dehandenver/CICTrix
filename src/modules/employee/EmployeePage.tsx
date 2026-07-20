@@ -770,17 +770,32 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       setIpcrError('Add at least one MFO with a success indicator before submitting.');
       return;
     }
-    if (!activeCycleId) {
+
+    // activeCycleId is populated by loadIPCRData. That runs a long chain of
+    // queries before it reaches the cycle, so a slow load — or any earlier step
+    // failing — left this null and the submit dead-ended on "No active
+    // performance cycle" even though a cycle exists. Resolve it on demand
+    // instead of trusting load-time state.
+    let cycleId = activeCycleId;
+    if (!cycleId) {
+      const cycleRes = await getActiveCycle();
+      if (cycleRes.ok && cycleRes.data) {
+        cycleId = cycleRes.data.id;
+        setActiveCycleId(cycleRes.data.id);
+      }
+    }
+    if (!cycleId) {
       setIpcrError('No active performance cycle. Please contact your PM / administrator.');
       return;
     }
+
     setWorkspaceSaving(true);
     setIpcrError(null);
 
     // Source of truth: the relational rows Phase 2 will attach ratings to.
     const targetRes = await saveTargetSetting({
       employeeId: currentUser.supabaseId,
-      cycleId: activeCycleId,
+      cycleId,
       targets: targetRows,
       submit,
     });
@@ -3389,6 +3404,21 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
                     </span>
                     <span>Remote changes detected — the page will refresh to sync data after you save your draft.</span>
+                  </div>
+                )}
+
+                {/* Repeated next to the buttons on purpose. The banners at the
+                    top of the workspace are far above the fold once the three
+                    function tables are filled in, so a failed submit down here
+                    looked like the button simply doing nothing. */}
+                {!targetsLocked && !ipcrApproved && isTargetSettingActive && ipcrError && (
+                  <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700">
+                    {ipcrError}
+                  </div>
+                )}
+                {!targetsLocked && !ipcrApproved && isTargetSettingActive && saveSuccess && (
+                  <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs font-semibold text-emerald-700">
+                    {saveSuccess}
                   </div>
                 )}
 
