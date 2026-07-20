@@ -35,6 +35,13 @@ export interface DepartmentSummary {
   code: string;
   criticalPositionCount: number;
   vacantCriticalCount: number;
+  /**
+   * False for a department that has been deactivated but still owns critical
+   * positions. Those rows stay visible (see listDepartmentSummaries) so a
+   * Department Head's work never silently disappears from RSP — the flag lets
+   * the UI mark them rather than mix them in unannounced.
+   */
+  isActive: boolean;
 }
 
 export interface CriticalPosition {
@@ -217,11 +224,20 @@ export async function getLatestOverallScores(
 // Departments (top level)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Active departments with their critical-position counts (total + vacant). */
+/**
+ * Departments with their critical-position counts (total + vacant).
+ *
+ * Active departments are always listed. An INACTIVE one is listed too if it
+ * still owns at least one critical position: filtering those out in SQL meant a
+ * Department Head assigned to a deactivated office could flag positions that RSP
+ * could never see, with no error anywhere. The filter therefore runs in JS,
+ * after the counts are known — no extra round-trip, since every
+ * critical_positions row is already fetched here.
+ */
 export async function listDepartmentSummaries(): Promise<Result<DepartmentSummary[]>> {
   try {
     const [{ data: depts, error: dErr }, { data: positions, error: pErr }] = await Promise.all([
-      supabase.from('departments').select('id, code, name, is_active').eq('is_active', true).order('name'),
+      supabase.from('departments').select('id, code, name, is_active').order('name'),
       supabase.from('critical_positions').select('department_id, incumbent_employee_id'),
     ]);
     if (dErr) return { ok: false, error: dErr.message };
@@ -235,13 +251,16 @@ export async function listDepartmentSummaries(): Promise<Result<DepartmentSummar
       if (!p.incumbent_employee_id) vacants.set(key, (vacants.get(key) ?? 0) + 1);
     }
 
-    const data: DepartmentSummary[] = ((depts ?? []) as any[]).map((d) => ({
-      departmentId: String(d.id),
-      departmentName: String(d.name ?? '').trim(),
-      code: String(d.code ?? ''),
-      criticalPositionCount: totals.get(String(d.id)) ?? 0,
-      vacantCriticalCount: vacants.get(String(d.id)) ?? 0,
-    }));
+    const data: DepartmentSummary[] = ((depts ?? []) as any[])
+      .map((d) => ({
+        departmentId: String(d.id),
+        departmentName: String(d.name ?? '').trim(),
+        code: String(d.code ?? ''),
+        criticalPositionCount: totals.get(String(d.id)) ?? 0,
+        vacantCriticalCount: vacants.get(String(d.id)) ?? 0,
+        isActive: d.is_active === true,
+      }))
+      .filter((d) => d.isActive || d.criticalPositionCount > 0);
     return { ok: true, data };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Failed to load departments.' };

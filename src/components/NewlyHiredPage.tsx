@@ -110,6 +110,7 @@ export const NewlyHiredPage = () => {
                 lastName: String(row?.last_name ?? '').trim(),
                 email: String(row?.email ?? '').trim(),
                 phone: String(row?.contact_number ?? '').trim(),
+                address: String(row?.address ?? '').trim(),
                 emergencyContact: {
                   name: '',
                   relationship: '',
@@ -335,7 +336,7 @@ export const NewlyHiredPage = () => {
             civilStatus: 'Single',
             nationality: '',
             mobileNumber: selectedDepartmentRows.find((row) => row.id === credential.id)?.employeeInfo.phone ?? '',
-            homeAddress: '',
+            homeAddress: selectedDepartmentRows.find((row) => row.id === credential.id)?.employeeInfo.address ?? '',
             emergencyContactName: '',
             emergencyRelationship: '',
             emergencyContactNumber: '',

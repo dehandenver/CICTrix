@@ -122,6 +122,7 @@ export interface NewlyHired {
     lastName: string;
     email: string;
     phone: string;
+    address?: string;
     emergencyContact: { name: string; relationship: string; phone: string };
     governmentIds: {
       sss?: string;

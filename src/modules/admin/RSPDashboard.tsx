@@ -144,6 +144,9 @@ interface ApplicantRecord {
   // Optional metadata used by the assessment-form rendering paths.
   appointmentType?: 'original' | 'promotional';
   positionType?: 'rank-and-file' | 'executive';
+  education_level?: string | null;
+  years_of_experience?: number | null;
+  application_type?: string | null;
 }
 
 interface RaterRecord {
@@ -1341,6 +1344,9 @@ export const RSPDashboard = () => {
             interview_date: item?.interview_date ?? null,
             interview_time: item?.interview_time ?? null,
             assigned_interviewer_email: item?.assigned_interviewer_email ?? null,
+            application_type: item?.application_type ?? null,
+            education_level: item?.education_level ?? item?.educational_attainment ?? item?.education ?? null,
+            years_of_experience: item?.years_of_experience != null ? Number(item.years_of_experience) : null,
           };
         });
 

@@ -611,6 +611,7 @@ const handleNextToReview = () => {
       application_type: applicationType,
       status: 'New Application',
       years_of_experience: totalExperienceYears > 0 ? totalExperienceYears : null,
+      education_level: formData.education_attainment || null,
     };
 
     if (applicationType === 'promotion') {

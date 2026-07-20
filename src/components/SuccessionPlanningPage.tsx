@@ -7,6 +7,9 @@ import {
   Plus,
   AlertTriangle,
   Users,
+  RefreshCw,
+  // Still used by the candidate rows (edit note / remove candidate) — the
+  // position rows themselves are read-only for RSP.
   Pencil,
   Trash2,
   X,
@@ -19,20 +22,20 @@ import { Button } from './Button';
 import {
   listDepartmentSummaries,
   listCriticalPositions,
-  createCriticalPosition,
-  updateCriticalPosition,
-  deleteCriticalPosition,
   listCandidates,
   addCandidate,
   updateCandidateNote,
   removeCandidate,
   listEmployeeOptions,
   listCompetencyRequirements,
+  listPositionQualificationsForDepartment,
+  diffQualifications,
   type DepartmentSummary,
   type CriticalPosition,
   type RankedCandidate,
   type EmployeeOption,
   type CompetencyRequirement,
+  type QualificationDrift,
 } from '../lib/api/succession';
 
 // The Succession Planning view lives inside the RSP Portal, which is already
@@ -52,12 +55,12 @@ const adjectivalTone = (adj: string | null): string => {
   }
 };
 
-type PositionFormState = {
-  title: string;
-  incumbentEmployeeId: string;
-  criticalityReason: string;
-};
-
+// Critical positions are authored solely by the Department Head, in the Critical
+// Positions tab of their Office Account console. RSP reads them here and manages
+// the successor pipeline; it does not create, edit, or remove the positions
+// themselves. That keeps the two screens structurally incapable of disagreeing —
+// there is no second write path that could produce a position with a free-text
+// title or no qualifications attached.
 export const SuccessionPlanningPage = () => {
   const admin = useMemo(getCurrentAdmin, []);
 
@@ -75,17 +78,9 @@ export const SuccessionPlanningPage = () => {
 
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
 
+  const [refreshing, setRefreshing] = useState(false);
+
   // ── Modals ────────────────────────────────────────────────────────────────
-  const [positionModal, setPositionModal] = useState<
-    | { mode: 'add'; departmentId: string; departmentName: string }
-    | { mode: 'edit'; departmentId: string; departmentName: string; position: CriticalPosition }
-    | null
-  >(null);
-  const [positionForm, setPositionForm] = useState<PositionFormState>({
-    title: '',
-    incumbentEmployeeId: '',
-    criticalityReason: '',
-  });
   const [candidateModal, setCandidateModal] = useState<
     | { positionId: string; positionTitle: string; departmentName: string }
     | null
@@ -135,7 +130,11 @@ export const SuccessionPlanningPage = () => {
       return;
     }
     setExpandedDeptId(deptId);
-    if (!positionsByDept[deptId]) loadPositions(deptId);
+    // Always refetch, never serve the cached list. A Department Head can flag a
+    // new critical position at any moment; caching on first expand meant RSP
+    // kept showing a stale list until a full browser reload. The previously
+    // loaded rows stay on screen while this runs, so there's no flicker.
+    loadPositions(deptId);
   };
 
   const togglePosition = (positionId: string) => {
@@ -147,61 +146,18 @@ export const SuccessionPlanningPage = () => {
     if (!candidatesByPosition[positionId]) loadCandidates(positionId);
   };
 
-  // ── Critical position CRUD ────────────────────────────────────────────────
-  const openAddPosition = (dept: DepartmentSummary) =>
-    setPositionModal({ mode: 'add', departmentId: dept.departmentId, departmentName: dept.departmentName });
-
-  const openEditPosition = (dept: DepartmentSummary, position: CriticalPosition) => {
-    setPositionForm({
-      title: position.title,
-      incumbentEmployeeId: position.incumbentEmployeeId ?? '',
-      criticalityReason: position.criticalityReason ?? '',
-    });
-    setPositionModal({ mode: 'edit', departmentId: dept.departmentId, departmentName: dept.departmentName, position });
-  };
-
-  useEffect(() => {
-    if (positionModal?.mode === 'add') {
-      setPositionForm({ title: '', incumbentEmployeeId: '', criticalityReason: '' });
-    }
-  }, [positionModal]);
-
-  const savePosition = async () => {
-    if (!positionModal) return;
-    setSaving(true);
-    const res =
-      positionModal.mode === 'add'
-        ? await createCriticalPosition({
-            departmentId: positionModal.departmentId,
-            title: positionForm.title,
-            incumbentEmployeeId: positionForm.incumbentEmployeeId || null,
-            criticalityReason: positionForm.criticalityReason || null,
-            createdBy: admin,
-          })
-        : await updateCriticalPosition(positionModal.position.id, {
-            title: positionForm.title,
-            incumbentEmployeeId: positionForm.incumbentEmployeeId || null,
-            criticalityReason: positionForm.criticalityReason || null,
-          });
-    setSaving(false);
-    if (res.ok === false) {
-      setError(res.error);
-      return;
-    }
-    const deptId = positionModal.departmentId;
-    setPositionModal(null);
-    await Promise.all([loadPositions(deptId), loadDepartments()]);
-  };
-
-  const confirmDeletePosition = async (dept: DepartmentSummary, position: CriticalPosition) => {
-    if (!window.confirm(`Remove critical position "${position.title}"? Its candidate list will be removed too.`)) return;
-    const res = await deleteCriticalPosition(position.id);
-    if (res.ok === false) {
-      setError(res.error);
-      return;
-    }
-    if (expandedPositionId === position.id) setExpandedPositionId(null);
-    await Promise.all([loadPositions(dept.departmentId), loadDepartments()]);
+  // ── Refresh ───────────────────────────────────────────────────────────────
+  // Pulls the department counts and whatever is currently expanded, so RSP can
+  // pick up a Department Head's edits mid-session without reloading the page.
+  const refreshAll = async () => {
+    setRefreshing(true);
+    setError(null);
+    await Promise.all([
+      loadDepartments(),
+      expandedDeptId ? loadPositions(expandedDeptId) : Promise.resolve(),
+      expandedPositionId ? loadCandidates(expandedPositionId) : Promise.resolve(),
+    ]);
+    setRefreshing(false);
   };
 
   // ── Candidate CRUD ────────────────────────────────────────────────────────
@@ -259,12 +215,17 @@ export const SuccessionPlanningPage = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="!mb-1 text-2xl font-bold text-[var(--text-primary)]">Succession Planning</h1>
-        <p className="!mb-0 text-sm text-[var(--text-secondary)]">
-          Drill down by department to manage critical positions and their successor pipelines. Candidates are ranked
-          live by their latest completed IPCR score.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="!mb-1 text-2xl font-bold text-[var(--text-primary)]">Succession Planning</h1>
+          <p className="!mb-0 text-sm text-[var(--text-secondary)]">
+            Drill down by department to review critical positions and build their successor pipelines. Positions are
+            flagged by each office's Department Head; candidates are ranked live by their latest completed IPCR score.
+          </p>
+        </div>
+        <Button variant="secondary" onClick={refreshAll} loading={refreshing}>
+          <RefreshCw size={15} /> Refresh
+        </Button>
       </div>
 
       {/* Breadcrumb */}
@@ -333,6 +294,14 @@ export const SuccessionPlanningPage = () => {
                         {isOpen ? <ChevronDown size={18} className="text-blue-600" /> : <ChevronRight size={18} className="text-[var(--text-muted)]" />}
                         <span className="rounded-xl bg-blue-100 p-2 text-blue-600"><Building2 size={18} /></span>
                         <span className="font-semibold text-[var(--text-primary)]">{dept.departmentName}</span>
+                        {/* Only ever shown for a deactivated office that still
+                            owns critical positions — those stay listed so the
+                            work doesn't vanish, but they shouldn't look normal. */}
+                        {!dept.isActive && (
+                          <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                            Inactive office
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="px-5 py-4 text-center font-semibold text-[var(--text-primary)]">{dept.criticalPositionCount}</td>
@@ -359,9 +328,6 @@ export const SuccessionPlanningPage = () => {
                           expandedPositionId={expandedPositionId}
                           candidatesByPosition={candidatesByPosition}
                           loadingCandidates={loadingCandidates}
-                          onAddPosition={() => openAddPosition(dept)}
-                          onEditPosition={(p) => openEditPosition(dept, p)}
-                          onDeletePosition={(p) => confirmDeletePosition(dept, p)}
                           onTogglePosition={togglePosition}
                           onAddCandidate={(p) => openAddCandidate(p, dept.departmentName)}
                           onEditNote={editNote}
@@ -376,56 +342,6 @@ export const SuccessionPlanningPage = () => {
           </tbody>
         </table>
       </div>
-
-      {/* Add / Edit critical position modal */}
-      {positionModal && (
-        <Modal
-          title={positionModal.mode === 'add' ? 'Add Critical Position' : 'Edit Critical Position'}
-          subtitle={`${positionModal.departmentName} · marking a position critical is a deliberate action`}
-          onClose={() => setPositionModal(null)}
-        >
-          <div className="space-y-4">
-            <Field label="Position title *">
-              <input
-                type="text"
-                value={positionForm.title}
-                onChange={(e) => setPositionForm((f) => ({ ...f, title: e.target.value }))}
-                placeholder="e.g. Department Head, Senior Accountant"
-                className="sp-input"
-              />
-            </Field>
-            <Field label="Current incumbent (optional)">
-              <select
-                value={positionForm.incumbentEmployeeId}
-                onChange={(e) => setPositionForm((f) => ({ ...f, incumbentEmployeeId: e.target.value }))}
-                className="sp-input bg-white"
-              >
-                <option value="">Vacant / not linked</option>
-                {employees.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.fullName}{e.position ? ` — ${e.position}` : ''}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Criticality reason (optional)">
-              <textarea
-                rows={3}
-                value={positionForm.criticalityReason}
-                onChange={(e) => setPositionForm((f) => ({ ...f, criticalityReason: e.target.value }))}
-                placeholder="e.g. Sole subject-matter expert · Incumbent retiring within 1 year · High business impact"
-                className="sp-input resize-y"
-              />
-            </Field>
-          </div>
-          <div className="mt-6 flex justify-end gap-3">
-            <Button variant="secondary" onClick={() => setPositionModal(null)}>Cancel</Button>
-            <Button onClick={savePosition} loading={saving} disabled={!positionForm.title.trim()}>
-              {positionModal.mode === 'add' ? 'Add position' : 'Save changes'}
-            </Button>
-          </div>
-        </Modal>
-      )}
 
       {/* Add candidate modal */}
       {candidateModal && (
@@ -478,9 +394,6 @@ type CriticalPositionsPanelProps = {
   expandedPositionId: string | null;
   candidatesByPosition: Record<string, RankedCandidate[]>;
   loadingCandidates: Record<string, boolean>;
-  onAddPosition: () => void;
-  onEditPosition: (p: CriticalPosition) => void;
-  onDeletePosition: (p: CriticalPosition) => void;
   onTogglePosition: (id: string) => void;
   onAddCandidate: (p: CriticalPosition) => void;
   onEditNote: (c: RankedCandidate) => void;
@@ -492,14 +405,9 @@ const CriticalPositionsPanel = (props: CriticalPositionsPanelProps) => {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="!mb-0 text-sm font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
-          Critical Positions — {dept.departmentName}
-        </h3>
-        <Button size="sm" onClick={props.onAddPosition} className="flex items-center gap-1.5">
-          <Plus size={15} /> Add Critical Position
-        </Button>
-      </div>
+      <h3 className="!mb-0 text-sm font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
+        Critical Positions — {dept.departmentName}
+      </h3>
 
       {loading && <p className="text-sm text-[var(--text-secondary)]">Loading critical positions…</p>}
 
@@ -511,12 +419,9 @@ const CriticalPositionsPanel = (props: CriticalPositionsPanelProps) => {
           <p className="!mb-1 text-sm font-medium text-[var(--text-primary)]">
             No critical positions identified for this department yet
           </p>
-          <p className="!mb-3 text-sm text-[var(--text-secondary)]">
-            Flag a role that needs a succession plan to get started.
+          <p className="!mb-0 text-sm text-[var(--text-secondary)]">
+            The Department Head flags these from the Critical Positions tab in their Office Account.
           </p>
-          <Button size="sm" variant="secondary" onClick={props.onAddPosition} className="inline-flex items-center gap-1.5">
-            <Plus size={15} /> Add Critical Position
-          </Button>
         </div>
       )}
 
@@ -550,27 +455,11 @@ const CriticalPositionsPanel = (props: CriticalPositionsPanelProps) => {
                   </p>
                 )}
               </div>
-              <div className="flex shrink-0 items-center gap-1.5">
-                <button
-                  onClick={() => props.onEditPosition(position)}
-                  className="rounded-lg border border-[var(--border-color)] p-1.5 text-blue-600 hover:bg-blue-50"
-                  title="Edit position"
-                >
-                  <Pencil size={14} />
-                </button>
-                <button
-                  onClick={() => props.onDeletePosition(position)}
-                  className="rounded-lg border border-[var(--border-color)] p-1.5 text-red-500 hover:bg-red-50"
-                  title="Remove position"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
             </div>
 
             {isOpen && (
               <div className="space-y-4 border-t border-[var(--border-color)] bg-slate-50/50 p-4">
-                <RequirementsPanel position={position} />
+                <RequirementsPanel position={position} departmentName={props.dept.departmentName} />
                 <CandidatesPanel
                   candidates={props.candidatesByPosition[position.id]}
                   loading={props.loadingCandidates[position.id]}
@@ -589,12 +478,19 @@ const CriticalPositionsPanel = (props: CriticalPositionsPanelProps) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Qualification requirements panel (inside an expanded critical position) —
-// read-only here. Configured by the position's Office Account in the
-// Critical Position module; RSP can view but not edit in this pass.
+// read-only here. Configured by the position's Department Head in the Critical
+// Positions module, which pulls them from the job posting. RSP views only.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const RequirementsPanel = ({ position }: { position: CriticalPosition }) => {
+const RequirementsPanel = ({
+  position,
+  departmentName,
+}: {
+  position: CriticalPosition;
+  departmentName: string;
+}) => {
   const [competencyReqs, setCompetencyReqs] = useState<CompetencyRequirement[]>([]);
+  const [drift, setDrift] = useState<QualificationDrift[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -602,15 +498,24 @@ const RequirementsPanel = ({ position }: { position: CriticalPosition }) => {
     setLoading(true);
     // Training requirements are no longer settable on a critical position, so
     // there's nothing to fetch for them.
-    listCompetencyRequirements(position.id).then((compRes) => {
+    Promise.all([
+      listCompetencyRequirements(position.id),
+      listPositionQualificationsForDepartment(departmentName),
+    ]).then(([compRes, postingQuals]) => {
       if (cancelled) return;
       setCompetencyReqs(compRes.ok ? compRes.data : []);
+      // Requirements are snapshotted when the position is flagged, so a posting
+      // edited afterwards leaves this showing stale values. RSP can't re-sync
+      // (the Department Head owns that) but must not be misled into assessing
+      // successors against a superseded bar.
+      const posted = postingQuals.get(position.title.trim().toLowerCase());
+      setDrift(posted ? diffQualifications(position, posted) : []);
       setLoading(false);
     });
     return () => {
       cancelled = true;
     };
-  }, [position.id]);
+  }, [position, departmentName]);
 
   const hasAnything =
     !!position.positionDescription ||
@@ -623,6 +528,24 @@ const RequirementsPanel = ({ position }: { position: CriticalPosition }) => {
   return (
     <div className="rounded-lg border border-[var(--border-color)] bg-white p-4">
       <h4 className="!mb-3 text-sm font-semibold text-[var(--text-primary)]">Qualification Requirements</h4>
+
+      {!loading && drift.length > 0 && (
+        <div className="!mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+          <p className="!mb-1 flex items-center gap-1.5 font-semibold">
+            <AlertTriangle size={13} /> The job posting for this position has changed since it was flagged critical
+          </p>
+          <ul className="!mb-0 space-y-0.5">
+            {drift.map((d) => (
+              <li key={d.label}>
+                <span className="font-medium">{d.label}:</span> showing “{d.stored}” · posting now says “{d.posted}”
+              </li>
+            ))}
+          </ul>
+          <p className="!mb-0 mt-1.5 text-amber-700">
+            Only the Department Head can adopt the new values, from their Critical Positions tab.
+          </p>
+        </div>
+      )}
 
       {loading && <p className="text-sm text-[var(--text-secondary)]">Loading requirements…</p>}
 
@@ -913,12 +836,5 @@ const Modal = ({
       </div>
       <div className="overflow-y-auto px-6 py-5">{children}</div>
     </div>
-  </div>
-);
-
-const Field = ({ label, children }: { label: string; children: ReactNode }) => (
-  <div>
-    <label className="mb-1.5 block text-sm font-medium text-[var(--text-primary)]">{label}</label>
-    {children}
   </div>
 );
