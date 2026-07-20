@@ -23,9 +23,6 @@ import {
   type RequestStatus,
 } from '../../lib/api/trainingNeeds';
 
-const fmtDate = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
-
 const PRIORITY_BADGE: Record<NeedPriority, string> = {
   High: 'bg-red-100 text-red-700',
   Medium: 'bg-amber-100 text-amber-700',
@@ -184,7 +181,6 @@ export const LndTrainingNeeds = () => {
                             <th className={TH}>Requested By</th>
                             <th className={TH}>Competency</th>
                             <th className={TH}>Status</th>
-                            <th className={TH}>Requested</th>
                             <th className={`${TH} text-right`}>Action</th>
                           </tr>
                         </thead>
@@ -204,7 +200,6 @@ export const LndTrainingNeeds = () => {
                                   {r.status}
                                 </span>
                               </td>
-                              <td className="whitespace-nowrap px-5 py-4 text-xs text-slate-500">{fmtDate(r.requestedAt)}</td>
                               <td className="px-5 py-4 text-right">
                                 {r.status === 'Pending' ? (
                                   <div className="flex items-center justify-end gap-1.5">
