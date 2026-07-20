@@ -245,6 +245,11 @@ export async function fetchPortalEmployeeByNumber(
       phone: data.mobile_number,
       sex: data.gender,
       current_address_street: data.home_address,
+      // The view exposes these as current_position / current_department;
+      // mapSupabaseRowToEmployee reads the base-table names. Without this the
+      // portal showed no position at all for a newly hired employee.
+      position: data.current_position ?? data.position,
+      department: data.current_department ?? data.department,
     };
 
     return { ok: true, data: mapSupabaseRowToEmployee(normalised) };

@@ -1923,8 +1923,10 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
               <FieldRow label="Place of Birth" value={profile.placeOfBirth || '--'} />
               <FieldRow label="Gender" value={profile.gender || '--'} />
               <FieldRow label="Address" value={profile.homeAddress} />
-              <FieldRow label="Position" value="Employee" />
-              <FieldRow label="Department" value="Health Office" />
+              {/* The position and office the applicant was hired into, not a
+                  placeholder — same source the Work Information card reads. */}
+              <FieldRow label="Position" value={(employeeRawDetails?.position ?? profile.currentPosition) || '--'} />
+              <FieldRow label="Department" value={(employeeRawDetails?.department ?? profile.currentDepartment) || '--'} />
             </section>
 
             {/* Contact, Emergency, Gov ID — read-only in Personal Info; editable in Submission Bin */}
