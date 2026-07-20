@@ -21,7 +21,6 @@ import {
   deleteCriticalPosition,
   listEmployeeOptions,
   listPositionTitlesForDepartment,
-  getPositionQualifications,
   listPositionQualificationsForDepartment,
   diffQualifications,
   type PositionQualifications,
@@ -110,8 +109,6 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkError, setBulkError] = useState('');
 
-  // Tells the user which fields came from the job posting rather than their typing.
-  const [prefillNotice, setPrefillNotice] = useState('');
 
   // Current posting qualifications for this office, keyed by lowercased title —
   // one query, used to flag positions whose snapshot has gone stale.
@@ -180,6 +177,23 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
     return [current, ...positionTitleOptions];
   }, [positionTitleOptions, form.title]);
 
+  /** The posted requirements for whichever position the form has selected. */
+  const selectedQuals = useMemo(
+    () => (form.title ? postingQuals.get(form.title.trim().toLowerCase()) ?? null : null),
+    [postingQuals, form.title],
+  );
+
+  /**
+   * Whoever currently holds the selected position in this office. Derived from
+   * the directory rather than picked by hand, so it can't disagree with the org
+   * chart; a position nobody holds simply reads as vacant.
+   */
+  const resolvedIncumbent = useMemo(() => {
+    const title = form.title.trim().toLowerCase();
+    if (!title) return null;
+    return employees.find((e) => (e.position ?? '').trim().toLowerCase() === title) ?? null;
+  }, [employees, form.title]);
+
   /**
    * Positions whose snapshot no longer matches their job posting. Requirements
    * are snapshotted on purpose (a repost must not silently move the bar on
@@ -203,67 +217,8 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
     [modal, driftByPosition],
   );
 
-  /** Copy the posting's current values into the form — the user still saves. */
-  const adoptPostingValues = () => {
-    const posted = postingQuals.get(form.title.trim().toLowerCase());
-    if (!posted) return;
-    setForm((f) => ({
-      ...f,
-      minYearsExperience: posted.minYearsExperience || f.minYearsExperience,
-      requiredEducation: posted.requiredEducation || f.requiredEducation,
-      requiredEligibility: posted.requiredEligibility || f.requiredEligibility,
-      requiredCertifications:
-        posted.requiredCertifications.length > 0 ? posted.requiredCertifications : f.requiredCertifications,
-    }));
-    setPrefillNotice('Updated from the job posting — review, then Save to apply.');
-  };
-
-  /**
-   * Selecting a position pulls the qualification requirements RSP already
-   * recorded on its job posting, so they aren't retyped here (and can't drift
-   * from the posting). Only blank fields are filled — anything the user has
-   * already typed is left alone, and every value stays editable.
-   */
-  const handleTitleChange = async (title: string) => {
+  const handleTitleChange = (title: string) => {
     setForm((f) => ({ ...f, title }));
-    if (!title) return;
-
-    setPrefillNotice('');
-    const quals = await getPositionQualifications(departmentName, title);
-    if (!quals) return;
-
-    setForm((f) => {
-      if (f.title !== title) return f; // selection moved on while we were loading
-      const filled: string[] = [];
-      const next = { ...f };
-
-      const take = (key: 'positionDescription' | 'minYearsExperience' | 'requiredEducation' | 'requiredEligibility', value: string, label: string) => {
-        if (value && !next[key].trim()) {
-          next[key] = value;
-          filled.push(label);
-        }
-      };
-      take('positionDescription', quals.positionDescription, 'description');
-      take('minYearsExperience', quals.minYearsExperience, 'experience');
-      take('requiredEducation', quals.requiredEducation, 'education');
-      take('requiredEligibility', quals.requiredEligibility, 'eligibility');
-
-      if (quals.requiredCertifications.length > 0 && next.requiredCertifications.length === 0) {
-        next.requiredCertifications = quals.requiredCertifications;
-        filled.push('certifications');
-      }
-      if (quals.trainingRequirement && next.trainingDrafts.length === 0) {
-        next.trainingDrafts = [quals.trainingRequirement];
-        filled.push('training');
-      }
-
-      setPrefillNotice(
-        filled.length > 0
-          ? `Filled ${filled.join(', ')} from this position's job posting. Edit anything that differs.`
-          : '',
-      );
-      return next;
-    });
   };
 
   const openBulk = () => {
@@ -310,7 +265,6 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
   };
 
   const openAdd = () => {
-    setPrefillNotice('');
     setForm(emptyForm);
     setModal({ mode: 'add', position: null });
   };
@@ -352,14 +306,17 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
     if (!modal || readOnly) return;
     setSaving(true);
 
+    // Requirements come from the job posting, never from this form — the two
+    // must state the same thing. Persisting them (rather than joining at read
+    // time) keeps RSP's Succession Planning and Gap Analysis reading one shape,
+    // and they refresh from the posting whenever this is saved.
+    const posted = selectedQuals;
     const payload = {
-      positionDescription: form.positionDescription || null,
-      requiredSuccessorsCount: Number(form.requiredSuccessorsCount) || 1,
-      minYearsExperience: form.minYearsExperience ? Number(form.minYearsExperience) : null,
-      minIpcrRating: form.minIpcrRating || null,
-      requiredEducation: form.requiredEducation || null,
-      requiredEligibility: form.requiredEligibility || null,
-      requiredCertifications: form.requiredCertifications,
+      positionDescription: posted?.positionDescription || null,
+      minYearsExperience: posted?.minYearsExperience ? Number(posted.minYearsExperience) : null,
+      requiredEducation: posted?.requiredEducation || null,
+      requiredEligibility: posted?.requiredEligibility || null,
+      requiredCertifications: posted?.requiredCertifications ?? [],
     };
 
     const res =
@@ -367,16 +324,14 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
         ? await createCriticalPosition({
             departmentId: officeId,
             title: form.title,
-            incumbentEmployeeId: form.incumbentEmployeeId || null,
-            criticalityReason: form.criticalityReason || null,
+            incumbentEmployeeId: resolvedIncumbent?.id || null,
             createdBy: currentUserName,
             ...payload,
           })
         : await updateCriticalPosition(modal.position!.id, {
             title: form.title,
-            incumbentEmployeeId: form.incumbentEmployeeId || null,
-            criticalityReason: form.criticalityReason || null,
-            ...payload,
+            incumbentEmployeeId: resolvedIncumbent?.id || null,
+                        ...payload,
           });
 
     if (res.ok === false) {
@@ -424,11 +379,6 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
     await loadPositions();
   };
 
-  const addCertification = () => {
-    const value = form.certificationDraft.trim();
-    if (!value || form.requiredCertifications.includes(value)) return;
-    setForm((f) => ({ ...f, requiredCertifications: [...f.requiredCertifications, value], certificationDraft: '' }));
-  };
 
   const addTraining = () => {
     const value = form.trainingDraft.trim();
@@ -635,40 +585,17 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
           <div className="space-y-5">
             <div>
               <h3 className="!mb-2 text-sm font-semibold text-[var(--text-primary)]">Position Information</h3>
-              {!readOnly && prefillNotice && (
-                <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
-                  {prefillNotice}
-                </div>
-              )}
 
-              {/* Snapshot has gone stale: show exactly what differs and let the
-                  Department Head decide, rather than changing it for them. */}
+              {/* The stored copy is older than the posting. The requirements block
+                  below already shows the posting's current values, so saving is
+                  all that's needed to bring the record back in line. */}
               {!readOnly && openDrift.length > 0 && (
-                <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5">
-                  <p className="!mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-amber-900">
-                    <AlertTriangle size={13} /> The job posting for this role has changed since it was flagged
+                <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                  <p className="!mb-0">
+                    The job posting for this role has changed since it was flagged. The requirements shown
+                    below are the posting's current ones — <strong>Save</strong> to update this record.
                   </p>
-                  <ul className="!mb-2 space-y-1 text-xs text-amber-900">
-                    {openDrift.map((d) => (
-                      <li key={d.label}>
-                        <span className="font-medium">{d.label}:</span>{' '}
-                        <span className="line-through opacity-70">{d.stored}</span>{' '}
-                        <span aria-hidden="true">→</span> <span className="font-semibold">{d.posted}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={adoptPostingValues}
-                      className="rounded-lg border border-amber-400 bg-white px-2.5 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-100"
-                    >
-                      Use the posting's values
-                    </button>
-                    <span className="self-center text-xs text-amber-800">
-                      or leave as-is — successors are assessed against what's saved here.
-                    </span>
-                  </div>
                 </div>
               )}
               <div className="space-y-4">
@@ -679,7 +606,7 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
                     <>
                       <select
                         value={form.title}
-                        onChange={(e) => void handleTitleChange(e.target.value)}
+                        onChange={(e) => handleTitleChange(e.target.value)}
                         className="cp-input"
                       >
                         <option value="">Select a position…</option>
@@ -696,97 +623,53 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
                     </>
                   )}
                 </Field>
-                <Field label="Current incumbent (optional)">
-                  {readOnly ? (
-                    <p className="cp-static">{form.incumbentEmployeeId ? employees.find((e) => e.id === form.incumbentEmployeeId)?.fullName ?? '—' : 'Vacant'}</p>
-                  ) : (
-                    <select
-                      value={form.incumbentEmployeeId}
-                      onChange={(e) => setForm((f) => ({ ...f, incumbentEmployeeId: e.target.value }))}
-                      className="cp-input bg-white"
-                    >
-                      <option value="">Vacant / not linked</option>
-                      {employees.map((e) => (
-                        <option key={e.id} value={e.id}>{e.fullName}{e.position ? ` — ${e.position}` : ''}</option>
-                      ))}
-                    </select>
-                  )}
-                </Field>
-                <Field label="Position description (optional)">
-                  {readOnly ? (
-                    <p className="cp-static">{form.positionDescription || '—'}</p>
-                  ) : (
-                    <textarea rows={2} value={form.positionDescription} onChange={(e) => setForm((f) => ({ ...f, positionDescription: e.target.value }))} className="cp-input resize-y" />
-                  )}
-                </Field>
-                <Field label="Reason for classification as critical (optional)">
-                  {readOnly ? (
-                    <p className="cp-static">{form.criticalityReason || '—'}</p>
-                  ) : (
-                    <textarea rows={2} value={form.criticalityReason} onChange={(e) => setForm((f) => ({ ...f, criticalityReason: e.target.value }))} className="cp-input resize-y" />
-                  )}
-                </Field>
-                <Field label="Number of required successors (optional)">
-                  {readOnly ? (
-                    <p className="cp-static">{form.requiredSuccessorsCount}</p>
-                  ) : (
-                    <input type="number" min={1} value={form.requiredSuccessorsCount} onChange={(e) => setForm((f) => ({ ...f, requiredSuccessorsCount: e.target.value }))} className="cp-input" />
-                  )}
+                {/* Incumbent is whoever currently holds this position in the
+                    office — resolved from the directory, not chosen by hand, so
+                    it can't disagree with the org. */}
+                <Field label="Current incumbent">
+                  <p className="cp-static">
+                    {resolvedIncumbent
+                      ? `${resolvedIncumbent.fullName}`
+                      : <span className="italic text-slate-400">None (vacant)</span>}
+                  </p>
                 </Field>
               </div>
             </div>
 
             <div className="border-t border-[var(--border-color)] pt-4">
-              <h3 className="!mb-2 text-sm font-semibold text-[var(--text-primary)]">Qualification Requirements</h3>
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Min. years of relevant experience">
-                    {readOnly ? <p className="cp-static">{form.minYearsExperience || '—'}</p> : (
-                      <input type="number" step="0.5" min={0} value={form.minYearsExperience} onChange={(e) => setForm((f) => ({ ...f, minYearsExperience: e.target.value }))} className="cp-input" />
-                    )}
-                  </Field>
-                  <Field label="Min. IPCR rating">
-                    {readOnly ? <p className="cp-static">{form.minIpcrRating || '—'}</p> : (
-                      <select value={form.minIpcrRating} onChange={(e) => setForm((f) => ({ ...f, minIpcrRating: e.target.value }))} className="cp-input bg-white">
-                        <option value="">Not required</option>
-                        {IPCR_RATING_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
-                      </select>
-                    )}
-                  </Field>
-                </div>
-                <Field label="Required educational attainment (optional)">
-                  {readOnly ? <p className="cp-static">{form.requiredEducation || '—'}</p> : (
-                    <input type="text" value={form.requiredEducation} onChange={(e) => setForm((f) => ({ ...f, requiredEducation: e.target.value }))} placeholder="e.g. Bachelor's Degree, Master's Degree" className="cp-input" />
-                  )}
-                </Field>
-                <Field label="Required eligibility (if applicable)">
-                  {readOnly ? <p className="cp-static">{form.requiredEligibility || '—'}</p> : (
-                    <input type="text" value={form.requiredEligibility} onChange={(e) => setForm((f) => ({ ...f, requiredEligibility: e.target.value }))} placeholder="e.g. CSC Professional" className="cp-input" />
-                  )}
-                </Field>
+              <h3 className="!mb-1 text-sm font-semibold text-[var(--text-primary)]">Qualification Requirements</h3>
+              <p className="!mb-3 text-xs text-[var(--text-muted)]">
+                Taken from this position's job posting, so the succession requirements and the posted
+                requirements are always the same. Edit them on the job posting in RSP.
+              </p>
 
-                <Field label="Required certifications (if available)">
-                  <div className="flex flex-wrap gap-2">
-                    {form.requiredCertifications.map((c) => (
-                      <span key={c} className="flex items-center gap-1 rounded-full border border-[var(--border-color)] bg-slate-50 px-2.5 py-1 text-xs text-[var(--text-primary)]">
-                        {c}
-                        {!readOnly && (
-                          <button onClick={() => setForm((f) => ({ ...f, requiredCertifications: f.requiredCertifications.filter((x) => x !== c) }))} className="text-slate-400 hover:text-red-500">
-                            <X size={11} />
-                          </button>
-                        )}
-                      </span>
-                    ))}
-                    {form.requiredCertifications.length === 0 && <span className="text-sm text-[var(--text-secondary)]">None specified.</span>}
-                  </div>
-                  {!readOnly && (
-                    <div className="mt-2 flex gap-2">
-                      <input type="text" value={form.certificationDraft} onChange={(e) => setForm((f) => ({ ...f, certificationDraft: e.target.value }))} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCertification())} placeholder="e.g. Project Management Professional" className="cp-input" />
-                      <Button variant="secondary" onClick={addCertification} type="button">Add</Button>
+              {selectedQuals ? (
+                <dl className="grid grid-cols-1 gap-x-4 gap-y-2.5 rounded-lg border border-[var(--border-color)] bg-slate-50 px-4 py-3 sm:grid-cols-2">
+                  {[
+                    ['Eligibility', selectedQuals.requiredEligibility],
+                    ['Education', selectedQuals.requiredEducation],
+                    ['Training', selectedQuals.trainingRequirement],
+                    ['Work experience', selectedQuals.minYearsExperience ? `${selectedQuals.minYearsExperience} year(s)` : ''],
+                    ['Competency', selectedQuals.competency],
+                    ['Certifications', selectedQuals.requiredCertifications.join(', ')],
+                  ].map(([label, value]) => (
+                    <div key={label as string}>
+                      <dt className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">{label}</dt>
+                      <dd className="!mb-0 text-sm text-[var(--text-primary)]">
+                        {value ? (value as string) : <span className="text-slate-400">Not specified on the posting</span>}
+                      </dd>
                     </div>
-                  )}
-                </Field>
+                  ))}
+                </dl>
+              ) : (
+                <div className="rounded-lg border border-dashed border-[var(--border-color)] px-4 py-6 text-center text-sm text-[var(--text-muted)]">
+                  {form.title
+                    ? 'No job posting found for this position, so there are no posted requirements to show.'
+                    : 'Select a position to see its posted requirements.'}
+                </div>
+              )}
 
+              <div className="mt-4 space-y-4">
                 <Field label="Required competencies">
                   <div className="space-y-2">
                     {form.competencyDrafts.map((row, idx) => (
