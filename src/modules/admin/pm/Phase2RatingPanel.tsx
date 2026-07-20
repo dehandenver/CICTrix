@@ -55,6 +55,11 @@ export const Phase2RatingPanel: React.FC<{
   const [opening, setOpening] = useState(false);
   const [closing, setClosing] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
+  // Which sheet the current notice came from. The panel-level banner sits at the
+  // top, far above the action buttons once a few sheets are expanded, so a
+  // failed approval read as the button doing nothing. This echoes the message
+  // beside the buttons that produced it.
+  const [noticeSheetId, setNoticeSheetId] = useState<string | null>(null);
 
   const togglePositionCollapse = (pos: string) => {
     setCollapsedPositions((prev) => {
@@ -127,6 +132,7 @@ export const Phase2RatingPanel: React.FC<{
   const handleApproveRating = async (sheet: RatingSheet) => {
     setApprovalBusyId(sheet.targetSettingId);
     setNotice(null);
+    setNoticeSheetId(sheet.targetSettingId);
 
     const indicatorIds = sheet.mfos.flatMap(m => m.indicators.map(si => si.successIndicatorId));
     
@@ -477,6 +483,21 @@ export const Phase2RatingPanel: React.FC<{
                               );
                             })}
                           </div>
+
+                          {/* Echo of the panel banner, next to the buttons that
+                              produced it — the banner at the top of the panel is
+                              off-screen by the time you reach these actions. */}
+                          {notice && noticeSheetId === sheet.targetSettingId && (
+                            <div
+                              className={`mx-4 mt-3 rounded-lg px-3 py-2 text-xs font-semibold ${
+                                notice.tone === 'ok'
+                                  ? 'border border-emerald-100 bg-emerald-50 text-emerald-800'
+                                  : 'border border-rose-100 bg-rose-50 text-rose-700'
+                              }`}
+                            >
+                              {notice.text}
+                            </div>
+                          )}
 
                           {/* Footer Actions */}
                           <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-3 bg-slate-50/20">

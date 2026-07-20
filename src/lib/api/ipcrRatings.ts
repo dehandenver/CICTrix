@@ -86,6 +86,17 @@ const clamp15 = (v: number | null): number | null =>
   v === null || Number.isNaN(v) ? null : Math.max(1, Math.min(5, Math.round(v)));
 
 /** cycle_id → title, for the period label shown on each ratable record. */
+/**
+ * True when a PostgREST error is "phase2_approved_at / phase2_approved_by does
+ * not exist" — i.e. migration 20260811_phase2_rating_approval.sql hasn't been
+ * run yet. Callers fall back to the pre-migration behaviour rather than failing,
+ * so a deploy that lands before the SQL does degrades instead of breaking.
+ */
+function isMissingApprovalColumn(err: { message?: string; code?: string } | null): boolean {
+  const msg = String(err?.message ?? '').toLowerCase();
+  return msg.includes('phase2_approved_at') || msg.includes('phase2_approved_by');
+}
+
 async function cycleTitles(cycleIds: number[]): Promise<Map<number, string>> {
   const ids = [...new Set(cycleIds)].filter((n) => n != null);
   if (!ids.length) return new Map();
@@ -300,14 +311,32 @@ export async function saveRatings(params: {
     }
 
     const phase2Status: Phase2Status = complete ? 'completed' : 'in_progress';
-    const { error: stErr } = await supabase
+    // phase2_status alone can't express "approved": the employee's own Phase 2
+    // submit sets 'completed' too, so the pending list (which filters on it)
+    // could never drop an approved sheet. phase2_approved_at is written only
+    // here, by the rater, and is what listPendingRatingApprovals excludes on.
+    const baseUpdate = {
+      phase2_status: phase2Status,
+      phase2_completed_at: complete ? nowIso() : null,
+      updated_at: nowIso(),
+    };
+    let { error: stErr } = await supabase
       .from('target_settings')
       .update({
-        phase2_status: phase2Status,
-        phase2_completed_at: complete ? nowIso() : null,
-        updated_at: nowIso(),
+        ...baseUpdate,
+        phase2_approved_at: complete ? nowIso() : null,
+        phase2_approved_by: complete ? raterEmployeeId : null,
       })
       .eq('id', targetSettingId);
+    // Tolerate the approval columns not existing yet (migration
+    // 20260811_phase2_rating_approval.sql not run). Approving still works; the
+    // sheet just won't leave the pending list until the migration lands.
+    if (stErr && isMissingApprovalColumn(stErr)) {
+      ({ error: stErr } = await supabase
+        .from('target_settings')
+        .update(baseUpdate)
+        .eq('id', targetSettingId));
+    }
     if (stErr) return { ok: false, error: stErr.message };
 
     if (complete) {
@@ -695,12 +724,22 @@ export async function listPendingRatingApprovals(
   scope?: OfficeScope | null,
 ): Promise<Result<RatingSheet[]>> {
   try {
-    // 1. Fetch settings in status approved with phase2_status completed
-    const { data: settings, error } = await supabase
-      .from('target_settings')
-      .select('id, employee_id, cycle_id, phase2_status, review_comment')
-      .eq('status', 'approved')
-      .eq('phase2_status', 'completed');
+    // 1. Settings the employee has submitted for Phase 2 and that no rater has
+    //    approved yet. phase2_approved_at is the authoritative "already
+    //    approved" marker — filtering on phase2_status alone kept approved
+    //    sheets in this list forever, because the employee's submit writes the
+    //    same 'completed' value the approval does.
+    const pending = () =>
+      supabase
+        .from('target_settings')
+        .select('id, employee_id, cycle_id, phase2_status, review_comment')
+        .eq('status', 'approved')
+        .eq('phase2_status', 'completed');
+
+    let { data: settings, error } = await pending().is('phase2_approved_at', null);
+    if (error && isMissingApprovalColumn(error)) {
+      ({ data: settings, error } = await pending());
+    }
     if (error) return { ok: false, error: error.message };
     if (!settings?.length) return { ok: true, data: [] };
 
