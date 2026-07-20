@@ -14,6 +14,7 @@ import SuccessionReadinessEngine from './components/SuccessionReadinessEngine';
 import { findEmployeePortalAccount, findEmployeePortalAccountFromSupabase } from './lib/employeePortalData';
 import { fetchPortalEmployeeByNumber } from './lib/api/employeePortal';
 import { clearAdminSession, readAdminSession, writeAdminSession } from './lib/adminSession';
+import { clearEmployeeSession, readEmployeeSession, writeEmployeeSession } from './lib/employeeSession';
 import { supabase } from './lib/supabase';
 import { syncThemeWithRoute } from './lib/theme';
 import { LNDDashboard } from './modules/admin/LNDDashboard';
@@ -50,7 +51,6 @@ type InterviewerSession = { email: string; name: string };
 type AdminModule = 'dashboard' | 'rsp' | 'lnd' | 'pm' | 'settings';
 const RATER_ACCESS_STATE_KEY = 'cictrix_rater_access_state_map';
 const INTERVIEWER_SESSION_KEY = 'cictrix_interviewer_session';
-const EMPLOYEE_SESSION_KEY = 'cictrix_employee_session';
 
 const getAccessClient = () => {
   // All data access is exclusively through Supabase
@@ -130,25 +130,9 @@ const loadInterviewerSession = (): InterviewerSession | null => {
   }
 };
 
-const loadEmployeeSession = (): EmployeeSession | null => {
-  try {
-    const stored = localStorage.getItem(EMPLOYEE_SESSION_KEY);
-    if (!stored) return null;
-
-    const parsed = JSON.parse(stored) as EmployeeSession;
-    if (!parsed?.employeeId) {
-      localStorage.removeItem(EMPLOYEE_SESSION_KEY);
-      return null;
-    }
-
-    // Since we rely on online checks, we will permit parsed for now
-    // and rely on guarded routes or deeper fetches to validate it further.
-    return parsed;
-  } catch {
-    localStorage.removeItem(EMPLOYEE_SESSION_KEY);
-    return null;
-  }
-};
+// Per-tab, so two employees can be signed in side by side without one tab
+// silently becoming the other. See src/lib/employeeSession.ts.
+const loadEmployeeSession = (): EmployeeSession | null => readEmployeeSession();
 
 const AdminRoute = ({
   children,
@@ -259,7 +243,7 @@ function AppContent() {
         if (!res.ok || !res.data.supabaseId) return;
         setCurrentEmployee(res.data);
         const healed: EmployeeSession = { ...session, supabaseId: res.data.supabaseId };
-        localStorage.setItem(EMPLOYEE_SESSION_KEY, JSON.stringify(healed));
+        writeEmployeeSession(healed);
         setEmployeeSession(healed);
       });
     }
@@ -445,7 +429,7 @@ function AppContent() {
 
     setCurrentEmployee(resolvedEmployee);
     setEmployeeSession(session);
-    localStorage.setItem(EMPLOYEE_SESSION_KEY, JSON.stringify(session));
+    writeEmployeeSession(session);
     const empParams = new URLSearchParams(location.search);
     const empReturnTo = empParams.get('returnTo');
     const empDefault = session.mustChangePassword ? '/employee/set-password' : '/employee/dashboard';
@@ -459,7 +443,7 @@ function AppContent() {
     if (!employeeSession) return;
     const updated: EmployeeSession = { ...employeeSession, mustChangePassword: false };
     setEmployeeSession(updated);
-    localStorage.setItem(EMPLOYEE_SESSION_KEY, JSON.stringify(updated));
+    writeEmployeeSession(updated);
     navigate('/employee/dashboard');
   };
 
@@ -472,7 +456,7 @@ function AppContent() {
   const handleEmployeeLogout = () => {
     setEmployeeSession(null);
     setCurrentEmployee(null);
-    localStorage.removeItem(EMPLOYEE_SESSION_KEY);
+    clearEmployeeSession();
     navigate('/employee/login');
   };
 

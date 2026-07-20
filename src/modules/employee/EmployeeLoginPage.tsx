@@ -2,6 +2,7 @@ import { Eye, EyeOff, Lock, User } from 'lucide-react';
 import { useState } from 'react';
 import abyanLogo from '../../assets/abyan-logo.png';
 import iloiloCitySeal from '../../assets/iloilo-city-seal.png';
+import { readEmployeeSession } from '../../lib/employeeSession';
 
 interface EmployeeLoginPageProps {
   onLogin: (username: string, password: string) => Promise<void> | void;
@@ -34,7 +35,7 @@ export const EmployeeLoginPage: React.FC<EmployeeLoginPageProps> = ({
     setLoading(true);
     try {
       await onLogin(username, password);
-      const session = localStorage.getItem('cictrix_employee_session');
+      const session = readEmployeeSession();
       if (!session) {
         setLoading(false);
       }

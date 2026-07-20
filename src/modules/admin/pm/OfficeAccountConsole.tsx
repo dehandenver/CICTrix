@@ -30,6 +30,7 @@ import {
   GitCompare
 } from 'lucide-react';
 import { LogoutConfirmPopover } from '../../../components/LogoutConfirmPopover';
+import { readEmployeeSession } from '../../../lib/employeeSession';
 import abyanLogo from '../../../assets/abyan-logo.png';
 import { supabase } from '../../../lib/supabase';
 import {
@@ -406,9 +407,11 @@ export const OfficeAccountConsole: React.FC = () => {
   useEffect(() => {
     async function loadUserSession() {
       try {
-        const raw = localStorage.getItem('cictrix_employee_session');
-        if (!raw) return;
-        const session = JSON.parse(raw) as { employeeId?: string; fullName?: string; supabaseId?: string; loginUsername?: string };
+        // Must go through readEmployeeSession — the session is per-tab now, and
+        // reading localStorage directly would resolve another tab's Department
+        // Head and scope this console to the wrong office.
+        const session = readEmployeeSession();
+        if (!session) return;
         if (session.fullName) setCurrentUserName(session.fullName);
 
         const sessionId = session.supabaseId ?? session.employeeId;
