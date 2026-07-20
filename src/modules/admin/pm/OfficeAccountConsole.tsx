@@ -49,11 +49,13 @@ import { type OfficeScope } from '../../../lib/api/officeScope';
 import { listNotifications, type IpcrNotification } from '../../../lib/api/ipcrSubmissions';
 import { useRealtimeRefresh } from '../../../hooks/useRealtimeRefresh';
 import {
-  listTrainingRequestsDetailed,
+  listOfficeTrainingRequests,
   createTrainingRequest,
   logPostTrainingProficiency,
-  type TrainingRequest
+  type OfficeTrainingRequest,
+  type RequestOutcome
 } from '../../../lib/api/trainingRequests';
+import { listPipeline, type PipelineRec } from '../../../lib/api/trainingRecommendations';
 import { Phase2RatingPanel } from './Phase2RatingPanel';
 import { OfficeTrainingCourses } from './OfficeTrainingCourses';
 import { CriticalPositionPage } from '../../../components/CriticalPositionPage';
@@ -83,6 +85,52 @@ export const COMPETENCY_CATALOG: Record<Pillar, string[]> = {
     'Digital Literacy for Government Services',
     'Technical Writing & Records Management'
   ]
+};
+
+const fmtDate = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+
+/**
+ * What L&D did with a recommendation, from the office's point of view. The DB
+ * only stores {pending, approved, rejected}; "planned" and "scheduled" are the
+ * downstream states the office actually wants to see, resolved in the API layer.
+ */
+const OutcomeBadge = ({ outcome }: { outcome: RequestOutcome }) => {
+  const styles: Record<RequestOutcome['kind'], string> = {
+    under_review: 'bg-amber-50 text-amber-700 border-amber-200',
+    declined: 'bg-rose-50 text-rose-700 border-rose-200',
+    approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    planned: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    scheduled: 'bg-sky-50 text-sky-700 border-sky-200',
+  };
+  const labels: Record<RequestOutcome['kind'], string> = {
+    under_review: 'Under review by L&D',
+    declined: 'Declined',
+    approved: 'Approved',
+    planned: 'In training plan',
+    scheduled: 'Scheduled',
+  };
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-bold ${styles[outcome.kind]}`}>
+      {labels[outcome.kind]}
+    </span>
+  );
+};
+
+/** The line under the badge — the detail that makes the status actionable. */
+const outcomeDetail = (outcome: RequestOutcome): string => {
+  switch (outcome.kind) {
+    case 'under_review':
+      return 'Awaiting L&D decision';
+    case 'declined':
+      return `Declined ${fmtDate(outcome.decidedAt)}`;
+    case 'approved':
+      return `Approved ${fmtDate(outcome.decidedAt)} · not yet planned`;
+    case 'planned':
+      return `FY ${outcome.planYear} plan · ${outcome.planStatus}`;
+    case 'scheduled':
+      return `${outcome.sessionTitle} · ${fmtDate(outcome.scheduledDate)}`;
+  }
 };
 
 interface EmployeeTarget {
@@ -324,19 +372,22 @@ export const OfficeAccountConsole: React.FC = () => {
   // New Training Requests States
   const [employees, setEmployees] = useState<any[]>([]);
   const [randomEmployees, setRandomEmployees] = useState<any[]>([]);
-  const [detailedRequests, setDetailedRequests] = useState<TrainingRequest[]>([]);
-  const [loadingRequests, setLoadingRequests] = useState(false);
+  const [detailedRequests, setDetailedRequests] = useState<OfficeTrainingRequest[]>([]);
+  // Starts true: the office-scoped fetch waits for the office role to resolve,
+  // and a false start would flash "no recommendations sent yet" before it runs.
+  const [loadingRequests, setLoadingRequests] = useState(true);
 
-  // Form States
+  // L&D's recommendations for this office, mirrored from the shared pipeline.
+  const [officeRecs, setOfficeRecs] = useState<PipelineRec[]>([]);
+
+  // Form States — an office recommends a topic, a competency, and the reasoning.
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
   const [employeeDropdownOpen, setEmployeeDropdownOpen] = useState(false);
   const [employeeSearchQuery, setEmployeeSearchQuery] = useState('');
   const [selectedPillar, setSelectedPillar] = useState<Pillar | ''>('');
   const [selectedCompetency, setSelectedCompetency] = useState<string>('');
-  const [selectedRationales, setSelectedRationales] = useState<string[]>([]);
-  const [currentProficiency, setCurrentProficiency] = useState<number>(3);
-  const [desiredProficiency, setDesiredProficiency] = useState<number>(4);
-  const [afterTrainingMetric, setAfterTrainingMetric] = useState<string>('');
+  const [topic, setTopic] = useState<string>('');
+  const [reasoning, setReasoning] = useState<string>('');
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
 
   // Evaluation States
@@ -389,15 +440,22 @@ export const OfficeAccountConsole: React.FC = () => {
     void loadUserSession();
   }, []);
 
-  // Load active employees and training requests
+  // Load the employees this office can recommend for. Scoped to the office for
+  // the same reason the requests table is: a head who picks another office's
+  // employee would file a request that immediately disappears from their own
+  // list, filtered out by the very scope that put it there.
   useEffect(() => {
-    async function loadData() {
-      // 1. Fetch employees directly from table per [[feedback_prefer_employees_base_table]]
-      const { data: empData, error: empError } = await (supabase as any)
+    if (officeRoleLoading) return;
+    async function loadEmployees() {
+      // Fetch employees directly from table per [[feedback_prefer_employees_base_table]]
+      let query = (supabase as any)
         .from('employees')
-        .select('id, first_name, last_name, position, status')
+        .select('id, first_name, last_name, position, department, status')
         .eq('status', 'Active')
         .order('last_name');
+      if (officeRole?.officeName) query = query.eq('department', officeRole.officeName);
+
+      const { data: empData, error: empError } = await query;
 
       if (empError) {
         console.error('Error fetching employees:', empError);
@@ -407,23 +465,36 @@ export const OfficeAccountConsole: React.FC = () => {
         const shuffled = [...(empData ?? [])].sort(() => 0.5 - Math.random());
         setRandomEmployees(shuffled.slice(0, 10));
       }
-
-      // 2. Fetch detailed training requests
-      setLoadingRequests(true);
-      const reqs = await listTrainingRequestsDetailed();
-      setDetailedRequests(reqs);
-      setLoadingRequests(false);
     }
-    
-    void loadData();
-  }, []);
 
-  const refreshRequests = async () => {
+    void loadEmployees();
+  }, [officeRoleLoading, officeRole?.officeName]);
+
+  // Requests and recommendations are both office-scoped, so they can only load
+  // once the office role has resolved — running them on mount would read the
+  // whole LGU for the split second before `officeRole` lands.
+  const officeName = officeRole?.officeName ?? null;
+
+  const refreshRequests = useCallback(async () => {
     setLoadingRequests(true);
-    const reqs = await listTrainingRequestsDetailed();
+    const reqs = await listOfficeTrainingRequests(officeName);
     setDetailedRequests(reqs);
     setLoadingRequests(false);
-  };
+  }, [officeName]);
+
+  const refreshOfficeRecs = useCallback(async () => {
+    const all = await listPipeline();
+    const want = officeName?.trim().toLowerCase();
+    setOfficeRecs(
+      want ? all.filter((r) => (r.department ?? '').trim().toLowerCase() === want) : all
+    );
+  }, [officeName]);
+
+  useEffect(() => {
+    if (officeRoleLoading) return;
+    void refreshRequests();
+    void refreshOfficeRecs();
+  }, [officeRoleLoading, refreshRequests, refreshOfficeRecs]);
 
   const handleSubmitRequest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -439,49 +510,39 @@ export const OfficeAccountConsole: React.FC = () => {
       alert('Please select a competency.');
       return;
     }
-    if (selectedRationales.length === 0) {
-      alert('Please select at least one rationale tag.');
+    if (!topic.trim()) {
+      alert('Please give the recommended training a topic.');
       return;
     }
-    if (currentProficiency < 1 || currentProficiency > 5 || desiredProficiency < 1 || desiredProficiency > 5) {
-      alert('Proficiency ratings must be between 1 and 5.');
-      return;
-    }
-    if (!afterTrainingMetric.trim()) {
-      alert('Please specify the after-training success evaluation metric.');
+    if (!reasoning.trim()) {
+      alert('Please explain the reasoning for this recommendation.');
       return;
     }
 
     const employeeObj = employees.find(e => e.id === selectedEmployeeId);
     const employeeName = employeeObj ? `${employeeObj.first_name} ${employeeObj.last_name}` : 'Employee';
-    const titleText = `${selectedPillar} · ${selectedCompetency}`;
 
     setIsSubmittingRequest(true);
     const result = await createTrainingRequest({
       employee_id: selectedEmployeeId,
-      title: titleText,
+      topic: topic.trim(),
       category: selectedPillar,
       competency: selectedCompetency,
-      rationales: selectedRationales,
-      current_proficiency: currentProficiency,
-      desired_proficiency: desiredProficiency,
-      after_training_metric: afterTrainingMetric
+      reasoning: reasoning.trim()
     });
     setIsSubmittingRequest(false);
 
     if (result.ok) {
-      setConsoleMessage(`Successfully submitted training request for ${employeeName}.`);
+      setConsoleMessage(`Recommendation sent to L&D for ${employeeName}.`);
       setTimeout(() => setConsoleMessage(null), 4000);
-      
+
       // Reset form
       setSelectedEmployeeId('');
       setSelectedPillar('');
       setSelectedCompetency('');
-      setSelectedRationales([]);
-      setCurrentProficiency(3);
-      setDesiredProficiency(4);
-      setAfterTrainingMetric('');
-      
+      setTopic('');
+      setReasoning('');
+
       // Re-fetch
       await refreshRequests();
     } else {
@@ -508,34 +569,29 @@ export const OfficeAccountConsole: React.FC = () => {
     }
   };
 
-  const calculateWSM = (req: TrainingRequest) => {
-    if (!req.current_proficiency || !req.desired_proficiency || !req.rationales) return 0;
-    
-    const gap = req.desired_proficiency - req.current_proficiency;
-    const gapScore = gap * 1.5;
-    
-    let rationaleScore = 0;
-    req.rationales.forEach(tag => {
-      if (tag === 'Performance Improvement') rationaleScore += 2.0;
-      else if (tag === 'Skill Gap / Refresher') rationaleScore += 1.5;
-      else if (tag === 'Preparation for Promotion') rationaleScore += 1.0;
-      else if (tag === 'New Technology / System Rollout') rationaleScore += 1.0;
-    });
-    
-    return gapScore + rationaleScore;
-  };
+  // Newest first: the office's own submissions, so recency is the useful order.
+  // (WSM ranking lived here before; it scored proficiency-gap and rationale-tag
+  // fields the office no longer supplies, and prioritising across offices is
+  // L&D's call to make on the Requests & Needs page.)
+  const sortedRequests = [...detailedRequests].sort(
+    (a, b) => new Date(b.requested_at).getTime() - new Date(a.requested_at).getTime()
+  );
 
-  const sortedRequests = [...detailedRequests]
-    .filter(r => r.category && r.competency && r.current_proficiency !== undefined && r.desired_proficiency !== undefined)
-    .sort((a, b) => {
-      const scoreA = calculateWSM(a);
-      const scoreB = calculateWSM(b);
-      if (scoreB !== scoreA) {
-        return scoreB - scoreA;
-      }
-      // Tie-breaker: requested_at ascending (older requests first)
-      return new Date(a.requested_at).getTime() - new Date(b.requested_at).getTime();
-    });
+  const requestCounts = useMemo(() => {
+    const c = { review: 0, moving: 0, declined: 0 };
+    for (const r of detailedRequests) {
+      if (r.outcome.kind === 'under_review') c.review++;
+      else if (r.outcome.kind === 'declined') c.declined++;
+      else c.moving++;
+    }
+    return c;
+  }, [detailedRequests]);
+
+  // Recommendations awaiting this office's review vs. already sent back to L&D.
+  const recsToReview = officeRecs.filter(
+    (r) => r.status === 'LND_APPROVED' || r.status === 'OFFICE_ADDED'
+  );
+  const recsAwaitingLnd = officeRecs.filter((r) => r.status === 'OFFICE_FINALIZED');
 
   const filteredEmployees = employeeSearchQuery.trim() === ''
     ? randomEmployees
@@ -1722,225 +1778,246 @@ export const OfficeAccountConsole: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Step 3: Standardized Rationale */}
+                  {/* Step 4: Topic */}
                   <div className="space-y-2">
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Step 4: Standardized Rationale (Select all that apply)
+                      Step 4: Recommended Topic
                     </label>
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        'Skill Gap / Refresher',
-                        'Preparation for Promotion',
-                        'New Technology / System Rollout',
-                        'Performance Improvement'
-                      ].map((tag) => {
-                        const isTagSelected = selectedRationales.includes(tag);
-                        return (
-                          <button
-                            key={tag}
-                            type="button"
-                            onClick={() => {
-                              setSelectedRationales(prev =>
-                                isTagSelected ? prev.filter(t => t !== tag) : [...prev, tag]
-                              );
-                            }}
-                            className={`px-3 py-2 rounded-lg text-xs font-semibold border transition cursor-pointer ${
-                              isTagSelected
-                                ? 'bg-amber-500 text-white border-amber-500 shadow-sm'
-                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                            }`}
-                          >
-                            {tag}
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <input
+                      type="text"
+                      value={topic}
+                      onChange={(e) => setTopic(e.target.value)}
+                      placeholder="e.g., Records Digitization Workshop for Frontline Staff"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                    <p className="text-[10px] text-slate-400">
+                      The training you are proposing. L&amp;D designs the actual course.
+                    </p>
                   </div>
 
-                  {/* Step 4: Before & After Seminar Proficiency (1-5) */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 flex justify-between">
-                        <span>Step 5: Current Proficiency Level</span>
-                        <span className="text-indigo-600 font-bold">{currentProficiency} / 5</span>
-                      </label>
-                      <input
-                        type="range"
-                        min="1"
-                        max="5"
-                        step="1"
-                        value={currentProficiency}
-                        onChange={(e) => setCurrentProficiency(parseInt(e.target.value))}
-                        className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                      />
-                      <div className="flex justify-between text-[10px] text-slate-400 px-1">
-                        <span>1 = Basic</span>
-                        <span>3 = Competent</span>
-                        <span>5 = Expert</span>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 flex justify-between">
-                        <span>Desired Target Proficiency Level</span>
-                        <span className="text-indigo-600 font-bold">{desiredProficiency} / 5</span>
-                      </label>
-                      <input
-                        type="range"
-                        min="1"
-                        max="5"
-                        step="1"
-                        value={desiredProficiency}
-                        onChange={(e) => setDesiredProficiency(parseInt(e.target.value))}
-                        className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
-                      />
-                      <div className="flex justify-between text-[10px] text-slate-400 px-1">
-                        <span>1 = Basic</span>
-                        <span>3 = Competent</span>
-                        <span>5 = Expert</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Step 5: After-Training Success Evaluation Metric */}
+                  {/* Step 5: Reasoning */}
                   <div className="space-y-2">
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Step 6: Expected After-Training Success Metric
+                      Step 5: Reasoning
                     </label>
                     <textarea
-                      rows={2}
-                      value={afterTrainingMetric}
-                      onChange={(e) => setAfterTrainingMetric(e.target.value)}
-                      placeholder="e.g., Increase department report turnaround time by 15%, or demonstrate autonomous project planning."
+                      rows={3}
+                      value={reasoning}
+                      onChange={(e) => setReasoning(e.target.value)}
+                      placeholder="Why does this employee need this training? What have you observed in their work that this would address?"
                       className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
 
-                  <div className="flex justify-end pt-2">
+                  <div className="flex items-center justify-between pt-2">
+                    <p className="text-[10px] text-slate-400 max-w-md">
+                      L&amp;D reviews every recommendation against IPCR performance data before
+                      scheduling. You will see their decision in the table below.
+                    </p>
                     <button
                       type="submit"
                       disabled={isSubmittingRequest}
                       className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-6 py-2.5 text-xs font-bold flex items-center gap-1.5 shadow-sm transition disabled:opacity-50 cursor-pointer"
                     >
                       <Send className="h-4 w-4" />
-                      {isSubmittingRequest ? 'Submitting...' : 'Submit Training Request'}
+                      {isSubmittingRequest ? 'Sending...' : 'Send to L&D'}
                     </button>
                   </div>
                 </form>
 
-                {/* Prioritized Requests Table */}
+                {/* L&D's recommendations for this office */}
+                <div className="space-y-4">
+                  <div className="flex items-end justify-between gap-4">
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                        <UserCheck className="h-5 w-5 text-indigo-600" />
+                        L&amp;D Recommended Employees
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Employees L&amp;D identified from IPCR performance data as candidates for
+                        upcoming trainings in {officeRole?.officeName ?? 'your office'}.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab('training-courses')}
+                      className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] font-bold text-indigo-700 hover:bg-indigo-100 transition cursor-pointer"
+                    >
+                      Review &amp; send back <ArrowRight className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+
+                  {officeRecs.length === 0 ? (
+                    <div className="border border-dashed border-slate-300 rounded-xl p-8 text-center text-slate-500 text-xs">
+                      <UserCheck className="h-9 w-9 text-slate-300 mx-auto mb-2" />
+                      <p className="font-bold">No recommendations from L&amp;D yet.</p>
+                      <p className="mt-1">
+                        When L&amp;D approves candidates from your office for a training, they appear
+                        here for your review.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-4">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-bold uppercase tracking-wider text-amber-800">
+                            Needs your review
+                          </p>
+                          <span className="text-xl font-bold text-amber-800">{recsToReview.length}</span>
+                        </div>
+                        <ul className="mt-3 space-y-1.5">
+                          {recsToReview.slice(0, 5).map((r) => (
+                            <li key={r.id} className="flex items-center justify-between gap-2 text-[11px]">
+                              <span className="font-semibold text-slate-800">{r.employeeName}</span>
+                              <span className="text-slate-500 truncate max-w-[55%] text-right">{r.sessionTitle}</span>
+                            </li>
+                          ))}
+                          {recsToReview.length === 0 && (
+                            <li className="text-[11px] text-slate-500 italic">Nothing waiting on you.</li>
+                          )}
+                          {recsToReview.length > 5 && (
+                            <li className="text-[11px] text-amber-700 font-semibold">
+                              +{recsToReview.length - 5} more
+                            </li>
+                          )}
+                        </ul>
+                      </div>
+
+                      <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                            Sent back to L&amp;D
+                          </p>
+                          <span className="text-xl font-bold text-slate-700">{recsAwaitingLnd.length}</span>
+                        </div>
+                        <ul className="mt-3 space-y-1.5">
+                          {recsAwaitingLnd.slice(0, 5).map((r) => (
+                            <li key={r.id} className="flex items-center justify-between gap-2 text-[11px]">
+                              <span className="font-semibold text-slate-800">{r.employeeName}</span>
+                              <span className="text-slate-500 truncate max-w-[55%] text-right">{r.sessionTitle}</span>
+                            </li>
+                          ))}
+                          {recsAwaitingLnd.length === 0 && (
+                            <li className="text-[11px] text-slate-500 italic">Nothing awaiting enrollment.</li>
+                          )}
+                          {recsAwaitingLnd.length > 5 && (
+                            <li className="text-[11px] text-slate-600 font-semibold">
+                              +{recsAwaitingLnd.length - 5} more
+                            </li>
+                          )}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Submitted recommendations + what L&D did with them */}
                 <div className="space-y-4">
                   <div>
                     <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                       <TrendingUp className="h-5 w-5 text-indigo-650" />
-                      Prioritized Training Needs (WSM Rankings)
+                      Your Recommendations to L&amp;D
                     </h3>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Evaluated and sorted desc by WSM Priority Score: <code className="font-mono text-[11px] bg-slate-100 px-1 py-0.5 rounded text-indigo-800">Gap × 1.5 + Rationale Weights</code>.
+                      Everything {officeRole?.officeName ?? 'your office'} has sent, newest first, with
+                      L&amp;D&rsquo;s response.
                     </p>
                   </div>
 
+                  {!loadingRequests && detailedRequests.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      <span className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-bold text-amber-800">
+                        <Clock className="h-3.5 w-3.5" /> {requestCounts.review} under review
+                      </span>
+                      <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-bold text-emerald-800">
+                        <CheckCircle className="h-3.5 w-3.5" /> {requestCounts.moving} accepted
+                      </span>
+                      <span className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] font-bold text-rose-800">
+                        <AlertTriangle className="h-3.5 w-3.5" /> {requestCounts.declined} declined
+                      </span>
+                    </div>
+                  )}
+
                   {loadingRequests ? (
                     <div className="border border-slate-150 rounded-xl p-12 text-center text-slate-500 text-xs">
-                      Loading prioritized training requests...
+                      Loading your recommendations...
                     </div>
                   ) : sortedRequests.length === 0 ? (
                     <div className="border border-dashed border-slate-300 rounded-xl p-12 text-center text-slate-500 text-xs">
                       <ClipboardCheck className="h-10 w-10 text-slate-300 mx-auto mb-2" />
-                      <p className="font-bold">No structured training requests found.</p>
-                      <p className="mt-1">Fill out and submit the form above to generate records.</p>
+                      <p className="font-bold">No recommendations sent yet.</p>
+                      <p className="mt-1">Use the form above to recommend a training to L&amp;D.</p>
                     </div>
                   ) : (
                     <div className="overflow-x-auto rounded-lg border border-slate-150">
                       <table className="w-full text-left border-collapse text-xs">
                         <thead>
                           <tr className="bg-slate-50 text-slate-650 font-semibold border-b border-slate-150">
-                            <th className="px-4 py-3">Employee Details</th>
-                            <th className="px-4 py-3">Training Competency</th>
-                            <th className="px-4 py-3 text-center">Pillar</th>
-                            <th className="px-4 py-3 text-center">Proficiency Gap</th>
-                            <th className="px-4 py-3 text-center">WSM Priority</th>
-                            <th className="px-4 py-3">Rationale & Metrics</th>
+                            <th className="px-4 py-3">Employee</th>
+                            <th className="px-4 py-3">Topic</th>
+                            <th className="px-4 py-3">Competency</th>
+                            <th className="px-4 py-3">Reasoning</th>
+                            <th className="px-4 py-3">Sent</th>
+                            <th className="px-4 py-3">L&amp;D Response</th>
                             <th className="px-4 py-3 text-center">Post-Evaluation</th>
-                            <th className="px-4 py-3 text-center">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {sortedRequests.map((req) => {
-                            const wsmScore = calculateWSM(req);
-                            const hasEvaluation = req.post_training_proficiency !== undefined && req.post_training_proficiency !== null;
-                            const empName = req.employees ? `${req.employees.last_name}, ${req.employees.first_name}` : 'Unknown';
-                            const empDept = req.employees?.department ?? '—';
-                            const empPos = req.employees?.position ?? '—';
-                            
-                            // Calculate improvement only if logged
-                            const current = req.current_proficiency ?? 0;
-                            const target = req.desired_proficiency ?? 0;
+                            const hasEvaluation =
+                              req.post_training_proficiency !== undefined &&
+                              req.post_training_proficiency !== null;
                             const postScore = req.post_training_proficiency ?? 0;
-                            const improvement = postScore - current;
+                            // Only a training that actually happened can be evaluated.
+                            const canEvaluate =
+                              req.outcome.kind === 'scheduled' || req.outcome.kind === 'approved';
 
                             return (
-                              <tr key={req.id} className="hover:bg-slate-50/30 transition">
+                              <tr key={req.id} className="hover:bg-slate-50/30 transition align-top">
                                 <td className="px-4 py-3">
-                                  <p className="font-bold text-slate-800">{empName}</p>
-                                  <p className="text-[10px] text-slate-550">{empPos}</p>
-                                  <p className="text-[10px] text-slate-400 font-semibold">{empDept}</p>
+                                  <p className="font-bold text-slate-800">{req.employeeName}</p>
+                                  <p className="text-[10px] text-slate-550">{req.employeePosition ?? '—'}</p>
                                 </td>
                                 <td className="px-4 py-3">
-                                  <p className="font-bold text-indigo-900">{req.competency}</p>
-                                  <p className="text-[9px] text-slate-400 uppercase font-mono mt-0.5">Status: {req.status}</p>
+                                  <p className="font-semibold text-slate-800 max-w-[180px]">{req.title}</p>
                                 </td>
-                                <td className="px-4 py-3 text-center">
-                                  <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
-                                    req.category === 'Cultural Transformation' ? 'bg-purple-50 text-purple-700 border border-purple-100' :
-                                    req.category === 'Employee Development' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
-                                    req.category === 'Leadership' ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' :
-                                    'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                                  }`}>
-                                    {req.category}
-                                  </span>
+                                <td className="px-4 py-3">
+                                  <p className="font-bold text-indigo-900 max-w-[160px]">{req.competency ?? '—'}</p>
+                                  {req.category && (
+                                    <span
+                                      className={`mt-1 inline-block px-2 py-0.5 rounded text-[9px] font-bold ${
+                                        req.category === 'Cultural Transformation'
+                                          ? 'bg-purple-50 text-purple-700 border border-purple-100'
+                                          : req.category === 'Employee Development'
+                                          ? 'bg-blue-50 text-blue-700 border border-blue-100'
+                                          : req.category === 'Leadership'
+                                          ? 'bg-indigo-50 text-indigo-700 border border-indigo-100'
+                                          : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                      }`}
+                                    >
+                                      {req.category}
+                                    </span>
+                                  )}
                                 </td>
-                                <td className="px-4 py-3 text-center">
-                                  <div className="font-semibold text-slate-700">
-                                    {current} &rarr; {target}
-                                  </div>
-                                  <span className="text-[9px] text-slate-400 font-mono">Gap: +{target - current}</span>
+                                <td className="px-4 py-3">
+                                  <p className="text-[11px] text-slate-600 leading-snug max-w-[220px]">
+                                    {req.justification ?? '—'}
+                                  </p>
                                 </td>
-                                <td className="px-4 py-3 text-center font-bold text-lg text-indigo-750 bg-indigo-50/20">
-                                  {wsmScore.toFixed(1)}
+                                <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
+                                  {fmtDate(req.requested_at)}
                                 </td>
-                                <td className="px-4 py-3 max-w-xs space-y-1">
-                                  <div className="flex flex-wrap gap-1">
-                                    {(req.rationales ?? []).map((tag, i) => (
-                                      <span key={i} className="bg-slate-100 text-slate-600 rounded px-1.5 py-0.5 text-[9px] font-medium border border-slate-150">
-                                        {tag}
-                                      </span>
-                                    ))}
-                                  </div>
-                                  <p className="text-[10px] text-slate-550 italic leading-tight">
-                                    <strong className="text-slate-650 not-italic">Metric:</strong> {req.after_training_metric ?? '—'}
+                                <td className="px-4 py-3">
+                                  <OutcomeBadge outcome={req.outcome} />
+                                  <p className="text-[10px] text-slate-500 mt-1 max-w-[180px]">
+                                    {outcomeDetail(req.outcome)}
                                   </p>
                                 </td>
                                 <td className="px-4 py-3 text-center">
                                   {hasEvaluation ? (
-                                    <div className="space-y-1">
-                                      <p className="font-bold text-slate-700 text-xs">Score: {postScore}/5</p>
-                                      {improvement > 0 ? (
-                                        <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[9px] font-bold text-emerald-700">
-                                          +{improvement.toFixed(1)} Improved
-                                        </span>
-                                      ) : (
-                                        <span className="inline-flex items-center gap-0.5 rounded-full bg-slate-50 border border-slate-200 px-2 py-0.5 text-[9px] font-bold text-slate-500">
-                                          {improvement.toFixed(1)} No Change
-                                        </span>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <span className="text-slate-400 italic">Not evaluated</span>
-                                  )}
-                                </td>
-                                <td className="px-4 py-3 text-center">
-                                  {loggingRequestId === req.id ? (
+                                    <p className="font-bold text-slate-700 text-xs">{postScore}/5</p>
+                                  ) : !canEvaluate ? (
+                                    <span className="text-slate-300 italic text-[10px]">—</span>
+                                  ) : loggingRequestId === req.id ? (
                                     <div className="flex flex-col gap-1.5 p-2 bg-slate-55 rounded border border-slate-200 min-w-[120px]">
                                       <label className="text-[10px] font-bold text-slate-500 uppercase">Post score</label>
                                       <select
@@ -1974,11 +2051,11 @@ export const OfficeAccountConsole: React.FC = () => {
                                     <button
                                       onClick={() => {
                                         setLoggingRequestId(req.id);
-                                        setPostTrainingScore(req.post_training_proficiency ?? (req.desired_proficiency ?? 4));
+                                        setPostTrainingScore(req.post_training_proficiency ?? 4);
                                       }}
                                       className="inline-flex items-center gap-1 rounded border border-slate-200 bg-white hover:bg-slate-50 px-2 py-1 font-semibold text-slate-700 cursor-pointer"
                                     >
-                                      <TrendingUp className="h-3 w-3" /> Log Evaluation
+                                      <TrendingUp className="h-3 w-3" /> Log
                                     </button>
                                   )}
                                 </td>
