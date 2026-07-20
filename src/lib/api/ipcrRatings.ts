@@ -87,6 +87,22 @@ const clamp15 = (v: number | null): number | null =>
 
 /** cycle_id → title, for the period label shown on each ratable record. */
 /**
+ * The single rating embedded under a success indicator.
+ *
+ * success_indicator_ratings is UNIQUE on success_indicator_id, so PostgREST
+ * treats it as a to-one relationship and embeds it as an OBJECT, not an array.
+ * Indexing `[0]` into that object yields undefined, which silently dropped
+ * every score: category averages came out null and the finalized IPCR read
+ * "Overall Score: —" even with all indicators rated. Accepts either shape so it
+ * stays correct if the constraint ever changes.
+ */
+export function embeddedRating(value: unknown): any | null {
+  if (!value) return null;
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value;
+}
+
+/**
  * True when a PostgREST error is "phase2_approved_at / phase2_approved_by does
  * not exist" — i.e. migration 20260811_phase2_rating_approval.sql hasn't been
  * run yet. Callers fall back to the pre-migration behaviour rather than failing,
@@ -138,7 +154,7 @@ export async function listRatableTargets(scope?: OfficeScope | null): Promise<Re
       const c = counts.get(m.target_setting_id) ?? { total: 0, rated: 0 };
       for (const si of (m.success_indicators ?? []) as any[]) {
         c.total++;
-        const r = (si.success_indicator_ratings ?? [])[0];
+        const r = embeddedRating(si.success_indicator_ratings);
         if (r && (r.quality != null || r.efficiency != null || r.timeliness != null)) c.rated++;
       }
       counts.set(m.target_setting_id, c);
@@ -445,7 +461,7 @@ async function rollUpToWorkspace(
     const fn = m.function_type as FunctionType;
     if (!acc[fn]) continue;
     for (const si of (m.success_indicators ?? []) as any[]) {
-      const r = (si.success_indicator_ratings ?? [])[0];
+      const r = embeddedRating(si.success_indicator_ratings);
       if (!r) continue;
       if (r.quality != null) acc[fn].q.push(r.quality);
       if (r.efficiency != null) acc[fn].e.push(r.efficiency);

@@ -310,6 +310,17 @@ const IPCRDetailPage = ({
 
   const LEGACY_WITHOUT_EVALUATION_IS_VISIBLE = true;
 
+  // computedPhase comes from the calendar alone (months of service vs the
+  // probationary schedule), so an employee still inside their target-setting
+  // window reads as 'target' even after they have submitted accomplishments and
+  // had them approved. That hid the entire Phase 2 section here — PM saw only
+  // the Phase 1 MFOs for a fully rated IPCR. Trust the record's actual Phase 2
+  // state when it has one, and fall back to the schedule when it doesn't.
+  const phase2Started = ['open', 'in_progress', 'completed'].includes(
+    String(relationalPhase2Status ?? '').toLowerCase(),
+  );
+  const showPhase2 = employee.computedPhase === 'rating' || phase2Started;
+
   const splitTarget = (targetText: string) => {
     const delimiter = ' — ';
     const index = targetText.indexOf(delimiter);
@@ -484,7 +495,7 @@ const IPCRDetailPage = ({
             <div className="flex items-stretch gap-1.5 w-60">
               <div
                 className={`flex-1 rounded-lg p-2 border text-center ${
-                  employee.computedPhase === 'target'
+                  !showPhase2
                     ? 'bg-blue-50 border-blue-200'
                     : 'bg-emerald-50 border-emerald-100'
                 }`}
@@ -494,19 +505,19 @@ const IPCRDetailPage = ({
                 </p>
                 <p
                   className={`text-[10px] font-bold ${
-                    employee.computedPhase === 'target' ? 'text-[#363EE8]' : 'text-emerald-700'
+                    !showPhase2 ? 'text-[#363EE8]' : 'text-emerald-700'
                   }`}
                 >
                   Target Setting
                 </p>
-                {employee.computedPhase !== 'target' && (
+                {showPhase2 && (
                   <Check size={8} className="mx-auto mt-0.5 text-emerald-600" />
                 )}
               </div>
               <ChevronRight size={10} className="text-slate-300 self-center flex-shrink-0" />
               <div
                 className={`flex-1 rounded-lg p-2 border text-center ${
-                  employee.computedPhase === 'rating'
+                  showPhase2
                     ? 'bg-blue-50 border-blue-200'
                     : 'bg-slate-50 border-slate-200'
                 }`}
@@ -516,7 +527,7 @@ const IPCRDetailPage = ({
                 </p>
                 <p
                   className={`text-[10px] font-bold ${
-                    employee.computedPhase === 'rating' ? 'text-[#363EE8]' : 'text-slate-400'
+                    showPhase2 ? 'text-[#363EE8]' : 'text-slate-400'
                   }`}
                 >
                   Accomplishment
@@ -543,7 +554,7 @@ const IPCRDetailPage = ({
             <h3 className="text-sm font-bold text-slate-800">
               Employee IPCR Sheet
             </h3>
-            {employee.computedPhase === 'rating' && computedScores.overallScore !== null && (
+            {showPhase2 && computedScores.overallScore !== null && (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-500 font-medium">Overall Rating:</span>
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
@@ -618,7 +629,7 @@ const IPCRDetailPage = ({
                             </p>
                           </div>
 
-                          {employee.computedPhase === 'rating' && (
+                          {showPhase2 && (
                             <>
                               {/* Accomplishment Achievement */}
                               <div>
