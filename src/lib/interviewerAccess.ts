@@ -58,7 +58,23 @@ export const resolveAssignedPositionsForInterviewer = async (
           : []
       );
 
-    return { email, positions: uniqueStrings(positionsFromRows) };
+    let positionsFromApplicants: string[] = [];
+    try {
+      const { data: assignedApplicants, error: applicantsError } = await supabase
+        .from('applicants')
+        .select('position,assigned_interviewer_email');
+      
+      if (applicantsError) throw applicantsError;
+
+      positionsFromApplicants = (Array.isArray(assignedApplicants) ? assignedApplicants : [])
+        .filter((row: any) => normalizeText(row?.assigned_interviewer_email) === normalizedEmail)
+        .map((row: any) => row?.position)
+        .filter((value: unknown): value is string => typeof value === 'string' && value.trim().length > 0);
+    } catch (appErr) {
+      console.warn('[interviewerAccess] Failed to fetch assigned positions from applicants:', appErr);
+    }
+
+    return { email, positions: uniqueStrings([...positionsFromRows, ...positionsFromApplicants]) };
   } catch (err) {
     console.warn('[interviewerAccess] Failed to fetch assigned_positions from Supabase:', err);
     return { email, positions: [] };
