@@ -264,10 +264,37 @@ export async function fetchEmployeeApplicationProfile(
 
   // Education and experience are optional detail tables — a failure to read
   // them shouldn't sink the whole prefill, so settle both and tolerate errors.
-  const [educationResult, experienceResult] = await Promise.allSettled([
+  //
+  // The original applicant record is a THIRD source: an employee promoted
+  // straight after hiring often has no employee_education / work_experience
+  // rows yet, but did declare education_level and years_of_experience when they
+  // applied. The newly_hired fallback path already reads those; the main path
+  // must too, or a promotional applicant sees blanks for data the system holds.
+  // The hire flow reuses the applicant's id as the employee id, so match on
+  // that first and fall back to email.
+  const employeeEmail = String(employeeRow.email ?? '').trim();
+  const [educationResult, experienceResult, applicantResult] = await Promise.allSettled([
     client.from('employee_education').select('*').eq('employee_id', employeeId),
     client.from('employee_work_experience').select('*').eq('employee_id', employeeId),
+    client
+      // select('*') rather than naming columns: education_degree /
+      // education_school (migration 20260812) may not exist yet, and naming a
+      // missing column fails the whole select — which would take the
+      // education_level fallback down with it. '*' returns whatever exists.
+      .from('applicants')
+      .select('*')
+      .or(
+        employeeEmail
+          ? `id.eq.${employeeId},email.ilike.${employeeEmail}`
+          : `id.eq.${employeeId}`,
+      )
+      .limit(1),
   ]);
+
+  const applicantRow: any =
+    applicantResult.status === 'fulfilled' && Array.isArray(applicantResult.value?.data)
+      ? applicantResult.value.data[0] ?? null
+      : null;
 
   // ── Highest educational attainment ──
   let educationAttainment = String(employeeRow.highest_educational_attainment ?? '').trim();
@@ -292,6 +319,17 @@ export async function fetchEmployeeApplicationProfile(
       educationDegree = String(highest.course ?? '').trim();
       educationSchool = String(highest.school_name ?? '').trim();
     }
+  }
+
+  // Last resort: what the employee declared on their application.
+  if (!educationAttainment) {
+    educationAttainment = String(applicantRow?.education_level ?? '').trim();
+  }
+  if (!educationDegree) {
+    educationDegree = String(applicantRow?.education_degree ?? '').trim();
+  }
+  if (!educationSchool) {
+    educationSchool = String(applicantRow?.education_school ?? '').trim();
   }
 
   // ── Work experience: total tenure + the most recent post ──
@@ -331,7 +369,15 @@ export async function fetchEmployeeApplicationProfile(
     }
   }
 
-  // Tenure fallback: if no work-experience rows exist, derive from date_hired/hire_date.
+  // Applicant fallback: no work-experience rows, but they declared total years
+  // of relevant experience when they applied (stored as a decimal year, e.g.
+  // 1.5). Prefer this over raw tenure — it's the figure HR actually vetted.
+  if (totalMonths === 0) {
+    const declaredYears = Number(applicantRow?.years_of_experience) || 0;
+    if (declaredYears > 0) totalMonths = Math.round(declaredYears * 12);
+  }
+
+  // Tenure fallback: still nothing, so derive from date_hired/hire_date.
   const hireDate = employeeRow.date_hired || employeeRow.hire_date;
   if (totalMonths === 0 && hireDate) {
     totalMonths = monthsBetween(String(hireDate), null, true);
@@ -377,7 +423,9 @@ export async function fetchEmployeeApplicationProfile(
     // position/department/division (backend 001) or current_* (Supabase 20260510)
     currentPosition: rowPosition,
     currentDepartment: rowDepartment,
-    currentDivision: String(employeeRow.division ?? employeeRow.current_division ?? '').trim(),
+    currentDivision:
+      String(employeeRow.division ?? employeeRow.current_division ?? '').trim() ||
+      String(applicantRow?.current_division ?? '').trim(),
 
     educationAttainment,
     educationDegree,

@@ -432,7 +432,7 @@ export async function getGapAnalysisReport() {
   try {
     // Fetch employees and scores
     const [empRes, scoresRes] = await Promise.all([
-      supabase.from('employees_with_department').select('id, full_name, department, current_position, status'),
+      supabase.from('employees_with_department').select('id, employee_id, full_name, department, current_position, status'),
       supabase.from('employee_competencies').select('employee_id, proficiency_level, required_level'),
     ]);
 
@@ -463,6 +463,9 @@ export async function getGapAnalysisReport() {
 
       return {
         id: e.id,
+        // Human-readable number (EMP-2026-xxxx) for display. `id` stays the
+        // Supabase UUID because the assessment/recommendation calls key on it.
+        employeeNumber: e.employee_id ?? '',
         employeeName: e.full_name,
         department: e.department || 'Unassigned',
         position: e.current_position || 'Unassigned',

@@ -11,9 +11,11 @@ import {
   ChevronRight,
   ClipboardCheck,
   RefreshCw,
+  Scale,
   Search,
   Send,
   Users,
+  X,
 } from 'lucide-react';
 import { Dialog } from '../../../components/Dialog';
 import { useDepartmentNames } from '../../../hooks/useDepartmentOptions';
@@ -24,6 +26,7 @@ import { getAllEmployees, type Employee } from '../../../lib/api/employees';
 import { upsertSchedule } from '../../../lib/api/phaseSchedules';
 import { getEmployeeIPCR, type IPCRRowDraft, bucketForScore } from '../../../lib/api/performanceEvaluations';
 import { loadEmployeeIpcrForReview } from '../../../lib/api/ipcrApproval';
+import { OfficeWeightingPanel } from './OfficeWeightingPanel';
 import { getCurrentAdminEmail } from '../moduleUi';
 import { supabase as supabaseClient } from '../../../lib/supabase';
 import { getSystemPhaseStates, openPhase, closePhase } from '../../../lib/api/ipcrPhaseControl';
@@ -310,6 +313,17 @@ const IPCRDetailPage = ({
 
   const LEGACY_WITHOUT_EVALUATION_IS_VISIBLE = true;
 
+  // computedPhase comes from the calendar alone (months of service vs the
+  // probationary schedule), so an employee still inside their target-setting
+  // window reads as 'target' even after they have submitted accomplishments and
+  // had them approved. That hid the entire Phase 2 section here — PM saw only
+  // the Phase 1 MFOs for a fully rated IPCR. Trust the record's actual Phase 2
+  // state when it has one, and fall back to the schedule when it doesn't.
+  const phase2Started = ['open', 'in_progress', 'completed'].includes(
+    String(relationalPhase2Status ?? '').toLowerCase(),
+  );
+  const showPhase2 = employee.computedPhase === 'rating' || phase2Started;
+
   const splitTarget = (targetText: string) => {
     const delimiter = ' — ';
     const index = targetText.indexOf(delimiter);
@@ -484,7 +498,7 @@ const IPCRDetailPage = ({
             <div className="flex items-stretch gap-1.5 w-60">
               <div
                 className={`flex-1 rounded-lg p-2 border text-center ${
-                  employee.computedPhase === 'target'
+                  !showPhase2
                     ? 'bg-blue-50 border-blue-200'
                     : 'bg-emerald-50 border-emerald-100'
                 }`}
@@ -494,19 +508,19 @@ const IPCRDetailPage = ({
                 </p>
                 <p
                   className={`text-[10px] font-bold ${
-                    employee.computedPhase === 'target' ? 'text-[#363EE8]' : 'text-emerald-700'
+                    !showPhase2 ? 'text-[#363EE8]' : 'text-emerald-700'
                   }`}
                 >
                   Target Setting
                 </p>
-                {employee.computedPhase !== 'target' && (
+                {showPhase2 && (
                   <Check size={8} className="mx-auto mt-0.5 text-emerald-600" />
                 )}
               </div>
               <ChevronRight size={10} className="text-slate-300 self-center flex-shrink-0" />
               <div
                 className={`flex-1 rounded-lg p-2 border text-center ${
-                  employee.computedPhase === 'rating'
+                  showPhase2
                     ? 'bg-blue-50 border-blue-200'
                     : 'bg-slate-50 border-slate-200'
                 }`}
@@ -516,7 +530,7 @@ const IPCRDetailPage = ({
                 </p>
                 <p
                   className={`text-[10px] font-bold ${
-                    employee.computedPhase === 'rating' ? 'text-[#363EE8]' : 'text-slate-400'
+                    showPhase2 ? 'text-[#363EE8]' : 'text-slate-400'
                   }`}
                 >
                   Accomplishment
@@ -543,7 +557,7 @@ const IPCRDetailPage = ({
             <h3 className="text-sm font-bold text-slate-800">
               Employee IPCR Sheet
             </h3>
-            {employee.computedPhase === 'rating' && computedScores.overallScore !== null && (
+            {showPhase2 && computedScores.overallScore !== null && (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-500 font-medium">Overall Rating:</span>
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
@@ -618,7 +632,7 @@ const IPCRDetailPage = ({
                             </p>
                           </div>
 
-                          {employee.computedPhase === 'rating' && (
+                          {showPhase2 && (
                             <>
                               {/* Accomplishment Achievement */}
                               <div>
@@ -1907,6 +1921,10 @@ export const PMIPCRManagement = () => {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [selectedEmployee, setSelectedEmployee] = useState<EnrichedEmployee | null>(null);
+  // IPCR Weighting used to be its own sidebar page; it now opens from here as a
+  // popup so the per-office Core/Strategic/Support split lives beside the IPCR
+  // records it governs.
+  const [showWeighting, setShowWeighting] = useState(false);
 
   const latestLoadId = useRef<number>(0);
 
@@ -2024,15 +2042,26 @@ export const PMIPCRManagement = () => {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-          <ClipboardCheck className="h-6 w-6 text-[#363EE8]" />
-          IPCR Management
-        </h2>
-        <p className="text-sm text-slate-550 mt-0.5">
-          Module 2 — employees auto-classified by length of service: 3-month cycle (probationary)
-          and 6-month cycle (regular).
-        </p>
+      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+            <ClipboardCheck className="h-6 w-6 text-[#363EE8]" />
+            IPCR Management
+          </h2>
+          <p className="text-sm text-slate-550 mt-0.5">
+            Module 2 — employees auto-classified by length of service: 3-month cycle (probationary)
+            and 6-month cycle (regular).
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowWeighting(true)}
+          className="flex shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
+          title="Set each office's Core / Strategic / Support split"
+        >
+          <Scale size={15} className="text-blue-600" />
+          IPCR Weighting
+        </button>
       </div>
 
       {/* Subtabs */}
@@ -2073,6 +2102,30 @@ export const PMIPCRManagement = () => {
           onRefresh={load}
           onSelectEmployee={setSelectedEmployee}
         />
+      )}
+
+      {/* IPCR Weighting popup — a wide custom overlay rather than the shared
+          Dialog, whose 500px cap is too narrow for the per-office table. */}
+      {showWeighting && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm sm:p-8"
+          onClick={() => setShowWeighting(false)}
+        >
+          <div
+            className="relative w-full max-w-5xl rounded-2xl bg-white p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setShowWeighting(false)}
+              className="absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              title="Close"
+            >
+              <X size={18} />
+            </button>
+            <OfficeWeightingPanel />
+          </div>
+        </div>
       )}
     </div>
   );

@@ -17,6 +17,7 @@
 import { supabase as supabaseClient } from '../supabase';
 import { categoryAverage, computeOverallScore } from './ipcrWorkspace';
 import { bucketForScore } from './performanceEvaluations';
+import { embeddedRating } from './ipcrRatings';
 import type { FunctionType } from './ipcrTargets';
 
 const supabase = supabaseClient as any;
@@ -135,7 +136,7 @@ function overallFromMfoRows(mfoRows: any[]): number | null {
     const fn = m.function_type as FunctionType;
     if (!acc[fn]) continue;
     for (const si of (m.success_indicators ?? []) as any[]) {
-      const r = (si.success_indicator_ratings ?? [])[0];
+      const r = embeddedRating(si.success_indicator_ratings);
       if (!r) continue;
       if (r.quality != null) acc[fn].q.push(r.quality);
       if (r.efficiency != null) acc[fn].e.push(r.efficiency);

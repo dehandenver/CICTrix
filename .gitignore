@@ -47,3 +47,9 @@ coverage
 *.pyd
 .pytest_cache/
 
+
+# MabuhAi — a separate project (github.com/cictapps/mabuh-ai), unrelated to
+# ABYAN HRIS. It was tracked here as a stray gitlink with no .gitmodules entry.
+# Ignored so the working copy left on disk can't be committed back in as a
+# 160 MB directory.
+mabuh-ai/

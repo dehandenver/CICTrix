@@ -398,7 +398,6 @@ export const ApplicantWizard: React.FC = () => {
           if (!resolvedGender) notOnFile.push('Gender');
           if (!(profile?.contactNumber || matchedAccount?.employee?.mobileNumber)) notOnFile.push('Contact Number');
           if (!(profile?.address || matchedAccount?.employee?.homeAddress)) notOnFile.push('Address');
-          if (!currentDivision) notOnFile.push('Current Division');
           if (!profile?.educationAttainment) notOnFile.push('Highest Educational Attainment');
           if (!profile?.relevantExperiencePosition) notOnFile.push('Position Held');
           if (!profile?.relevantExperienceCompany) notOnFile.push('Company / Organization');
@@ -612,6 +611,11 @@ const handleNextToReview = () => {
       status: 'New Application',
       years_of_experience: totalExperienceYears > 0 ? totalExperienceYears : null,
       education_level: formData.education_attainment || null,
+      // Persist the degree/course + school so a later promotional appointment can
+      // prefill them (migration 20260812). Stripped automatically on the retry
+      // below if that migration hasn't been run yet, so submission never breaks.
+      education_degree: safe(formData.education_degree).trim() || null,
+      education_school: safe(formData.education_school).trim() || null,
     };
 
     if (applicationType === 'promotion') {
@@ -624,11 +628,29 @@ const handleNextToReview = () => {
 
     let applicantData;
     try {
-      const { data, error } = await (supabase as any)
+      let { data, error } = await (supabase as any)
         .from('applicants')
         .insert(applicantPayload)
         .select('id, item_number')
         .single();
+
+      // If the education_degree / education_school columns aren't there yet
+      // (migration 20260812 not run), drop them and retry so a submission never
+      // fails just because the schema hasn't caught up to the form.
+      const msg = String(error?.message ?? '').toLowerCase();
+      const missingNewCols =
+        error &&
+        (String(error?.code ?? '') === '42703' || String(error?.code ?? '') === 'PGRST204') &&
+        (msg.includes('education_degree') || msg.includes('education_school'));
+      if (missingNewCols) {
+        delete applicantPayload.education_degree;
+        delete applicantPayload.education_school;
+        ({ data, error } = await (supabase as any)
+          .from('applicants')
+          .insert(applicantPayload)
+          .select('id, item_number')
+          .single());
+      }
 
       if (error || !data?.id) {
         throw error || new Error('Empty ID returned from database');
@@ -1183,10 +1205,6 @@ const handleNextToReview = () => {
                         <div>
                           <label>Current Department</label>
                           <p>{formData.current_department || '-'}</p>
-                        </div>
-                        <div>
-                          <label>Current Division</label>
-                          <p>{formData.current_division || '-'}</p>
                         </div>
                       </>
                     )}
