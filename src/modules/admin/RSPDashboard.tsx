@@ -2266,6 +2266,34 @@ export const RSPDashboard = () => {
     };
   }, []);
 
+  // Full personal fields per employee, read straight from the base `employees`
+  // table (anon-readable) and keyed by employee_number. The account-detail
+  // profile panel needs date/place of birth, address, sex, civil status and
+  // emergency contact — NONE of which the portal-account object carries
+  // (portalAccountFromRow defaults them to '' / 'Other' / 'Single'), which is
+  // why every employee's profile rendered blank. This is the canonical source.
+  const [employeePersonalByNumber, setEmployeePersonalByNumber] = useState<Map<string, any>>(new Map());
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await (supabase as any)
+        .from('employees')
+        .select(
+          'employee_number, email, phone, current_address_street, date_of_birth, place_of_birth, sex, civil_status, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone, date_hired',
+        );
+      if (cancelled || error || !Array.isArray(data)) return;
+      const map = new Map<string, any>();
+      data.forEach((row: any) => {
+        const num = String(row?.employee_number ?? '').trim();
+        if (num) map.set(num, row);
+      });
+      setEmployeePersonalByNumber(map);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const fallbackEmployeeDirectorySource = useMemo(() => {
     const seenEmployeeIds = new Set<string>();
 
@@ -2456,12 +2484,22 @@ export const RSPDashboard = () => {
   const selectedEmployeeProfile = useMemo(() => {
     if (!selectedEmployeeDetails) return null;
     const resolvedEmployeeId = String(
-      selectedEmployeeDetails.employeeId ?? employeeNumberFromNewlyHired.get(selectedEmployeeDetails.id) ?? ''
+      selectedEmployeeDetails.employeeId
+        ?? employeeNumberById.get(selectedEmployeeDetails.id)
+        ?? employeeNumberFromNewlyHired.get(selectedEmployeeDetails.id)
+        ?? ''
     ).trim();
     const portalAccount =
       (resolvedEmployeeId ? portalAccountByEmployeeId.get(resolvedEmployeeId) : null) ??
       portalAccountByApplicantId.get(selectedEmployeeDetails.id);
     const emp = portalAccount?.employee;
+    // Canonical personal data lives in the `employees` table; the portal-account
+    // object only carries name/email/phone, so prefer the DB row for everything.
+    const rec = resolvedEmployeeId ? employeePersonalByNumber.get(resolvedEmployeeId) : null;
+    const nn = (v: unknown) => {
+      const s = String(v ?? '').trim();
+      return s ? s : null;
+    };
     const computeAge = (dob: string | undefined) => {
       if (!dob) return null;
       const birth = new Date(dob);
@@ -2474,20 +2512,25 @@ export const RSPDashboard = () => {
       if (!hasBirthdayPassed) years -= 1;
       return years;
     };
-    const ageFromDob = computeAge(emp?.dateOfBirth);
+    const dob = nn(rec?.date_of_birth) || nn(emp?.dateOfBirth);
+    const ageFromDob = computeAge(dob ?? undefined);
     return {
-      address: emp?.homeAddress || selectedEmployeeDetails.contact_number || '--',
-      dateOfBirth: emp?.dateOfBirth || '--',
-      placeOfBirth: emp?.placeOfBirth || '--',
-      age: ageFromDob != null ? `${ageFromDob} years old` : (emp?.age != null ? `${emp.age} years old` : '--'),
-      sex: emp?.gender || '--',
-      civilStatus: emp?.civilStatus || '--',
-      emergencyContactName: emp?.emergencyContactName || '--',
-      emergencyContactRelationship: emp?.emergencyRelationship || '--',
-      emergencyContactPhone: emp?.emergencyContactNumber || '--',
-      dateHired: formatDate(selectedEmployeeDetails.created_at),
+      email: nn(rec?.email) || nn(selectedEmployeeDetails.email) || nn(emp?.email),
+      phone: nn(rec?.phone) || nn(selectedEmployeeDetails.contact_number) || nn(emp?.mobileNumber),
+      address: nn(rec?.current_address_street) || nn(emp?.homeAddress),
+      dateOfBirth: dob ? formatDate(dob) : null,
+      placeOfBirth: nn(rec?.place_of_birth) || nn(emp?.placeOfBirth),
+      age: ageFromDob != null ? `${ageFromDob} years old` : (emp?.age ? `${emp.age} years old` : null),
+      sex: nn(rec?.sex) || nn(emp?.gender),
+      civilStatus: nn(rec?.civil_status) || nn(emp?.civilStatus),
+      emergencyContactName: nn(rec?.emergency_contact_name) || nn(emp?.emergencyContactName),
+      emergencyContactRelationship: nn(rec?.emergency_contact_relationship) || nn(emp?.emergencyRelationship),
+      emergencyContactPhone: nn(rec?.emergency_contact_phone) || nn(emp?.emergencyContactNumber),
+      dateHired: nn(rec?.date_hired)
+        ? formatDate(rec.date_hired)
+        : (selectedEmployeeDetails.created_at ? formatDate(selectedEmployeeDetails.created_at) : null),
     };
-  }, [selectedEmployeeDetails, employeeNumberFromNewlyHired, portalAccountByApplicantId, portalAccountByEmployeeId]);
+  }, [selectedEmployeeDetails, employeeNumberById, employeeNumberFromNewlyHired, portalAccountByApplicantId, portalAccountByEmployeeId, employeePersonalByNumber]);
 
   const selectedEmployeeDocuments = useMemo(() => {
     if (!selectedEmployeeDetails) return [] as Array<{
@@ -4300,8 +4343,8 @@ export const RSPDashboard = () => {
                           <div className="divide-y divide-slate-100">
                             {([
                               ['Full Name', selectedEmployeeDetails?.full_name],
-                              ['Email Address', selectedEmployeeDetails?.email],
-                              ['Phone Number', selectedEmployeeDetails?.contact_number],
+                              ['Email Address', selectedEmployeeProfile?.email],
+                              ['Phone Number', selectedEmployeeProfile?.phone],
                               ['Address', selectedEmployeeProfile?.address],
                               ['Date of Birth', selectedEmployeeProfile?.dateOfBirth],
                               ['Place of Birth', selectedEmployeeProfile?.placeOfBirth],
