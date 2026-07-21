@@ -10,8 +10,9 @@ import {
     User,
     X,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
 import { getPreferredDataSourceMode } from '../../lib/dataSourceMode';
 import { isPositionAssignedToInterviewer, resolveAssignedPositionsForInterviewer } from '../../lib/interviewerAccess';
@@ -453,9 +454,9 @@ export function InterviewerApplicantsList() {
   const [evaluationsByApplicant, setEvaluationsByApplicant] = useState<Record<string, InterviewerEvaluationFields[]>>({});
 
   useEffect(() => {
-    const syncJobs = () => {
+    const syncJobs = (silent = false) => {
       if (jobTitle && jobTitle !== 'N/A') {
-        void fetchApplicantsAndJob();
+        void fetchApplicantsAndJob(silent);
       } else {
         setLoading(false);
       }
@@ -468,26 +469,37 @@ export function InterviewerApplicantsList() {
         event.key === 'cictrix_job_postings' ||
         event.key === 'cictrix_authoritative_job_postings'
       ) {
-        syncJobs();
+        syncJobs(true);
       }
     };
 
-    syncJobs();
-    window.addEventListener('focus', syncJobs);
-    window.addEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
+    syncJobs(false);
+    
+    const handleFocus = () => syncJobs(true);
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('cictrix:job-postings-updated', handleFocus as EventListener);
     window.addEventListener('storage', onStorage);
 
     return () => {
-      window.removeEventListener('focus', syncJobs);
-      window.removeEventListener('cictrix:job-postings-updated', syncJobs as EventListener);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('cictrix:job-postings-updated', handleFocus as EventListener);
       window.removeEventListener('storage', onStorage);
     };
   }, [jobTitle]);
 
-  const fetchApplicantsAndJob = async () => {
+  useRealtimeRefresh({
+    channel: `interviewer-applicants-${jobTitle}`,
+    tables: ['applicants', 'evaluations'],
+    onChange: useCallback(() => { void fetchApplicantsAndJob(true); }, [jobTitle]),
+  });
+
+  const fetchApplicantsAndJob = async (silent = false) => {
     try {
-      setLoading(true);
-      setError(null);
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+      }
 
       const { positions } = await resolveAssignedPositionsForInterviewer();
       setAssignedPositions(positions);
@@ -590,6 +602,7 @@ export function InterviewerApplicantsList() {
       }
 
       setApplicants(applicantsWithStatus);
+      setActiveApplicant((prev) => prev ? applicantsWithStatus.find((a) => a.id === prev.id) ?? prev : prev);
       setJobDetails(resolvedJobDetails);
 
       if (!matchingPosting && applicantsWithStatus.length === 0) {
@@ -820,7 +833,7 @@ export function InterviewerApplicantsList() {
         ) : error ? (
           <div className="error-state">
             <p>❌ Error: {error}</p>
-            <button onClick={() => void fetchApplicantsAndJob()}>Retry</button>
+            <button onClick={() => void fetchApplicantsAndJob(false)}>Retry</button>
           </div>
         ) : filteredApplicants.length > 0 ? (
           <div className="applicants-table-container">

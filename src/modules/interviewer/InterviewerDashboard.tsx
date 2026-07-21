@@ -1,6 +1,7 @@
 import { Filter, LogOut, Search, Trash2, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import abyanLogo from '../../assets/abyan-logo.png';
 import { Dialog } from '../../components/Dialog';
 import { POSITION_TO_DEPARTMENT_MAP } from '../../constants/positions';
@@ -219,7 +220,7 @@ export function InterviewerDashboard({
 
   useEffect(() => {
     const syncJobs = () => {
-      void fetchJobsAndApplicants();
+      void fetchJobsAndApplicants(true);
     };
 
     const onStorage = (event: StorageEvent) => {
@@ -229,11 +230,11 @@ export function InterviewerDashboard({
         event.key === 'cictrix_job_postings' ||
         event.key === 'cictrix_authoritative_job_postings'
       ) {
-        void fetchJobsAndApplicants();
+        void fetchJobsAndApplicants(true);
       }
     };
 
-    void fetchJobsAndApplicants();
+    void fetchJobsAndApplicants(false);
     
     if (typeof window !== 'undefined') {
       window.addEventListener('focus', syncJobs);
@@ -248,10 +249,18 @@ export function InterviewerDashboard({
     }
   }, []);
 
-  const fetchJobsAndApplicants = async () => {
+  useRealtimeRefresh({
+    channel: 'interviewer-dashboard',
+    tables: ['applicants', 'evaluations', 'job_postings'],
+    onChange: useCallback(() => { void fetchJobsAndApplicants(true); }, []),
+  });
+
+  const fetchJobsAndApplicants = async (silent = false) => {
     try {
-      setLoading(true);
-      setError(null);
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+      }
       // CRITICAL: Always fetch applicants from Supabase (as per user requirement: "all datas must be stored in supabase")
       const primaryClient = supabase; // Always use Supabase for applicants
       const secondaryClient = (mockDatabase as any); // Fallback only if Supabase fails
@@ -526,7 +535,7 @@ export function InterviewerDashboard({
       ) : error ? (
         <div className="error-state">
           <p>❌ Error: {error}</p>
-          <button onClick={() => void fetchJobsAndApplicants()}>Retry</button>
+          <button onClick={() => void fetchJobsAndApplicants(false)}>Retry</button>
         </div>
       ) : (
         <>
