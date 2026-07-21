@@ -88,7 +88,6 @@ import { PMIPCRManagement } from './pm/PMIPCRManagement';
 import { CompetencyFrameworkPage } from './CompetencyFrameworkPageView';
 import { PMArchive } from './pm/PMArchive';
 import { OfficeWeightingPanel } from './pm/OfficeWeightingPanel';
-import { PMReportsAnalytics } from './pm/PMReportsAnalytics';
 
 type EvaluationEmployeeRow = { name: string; position: string; status: string };
 type EvaluationGroup = {
@@ -920,7 +919,6 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
       { key: 'office-directory', label: 'Office Directory', subtitle: 'Offices, heads & employees', icon: Building2 },
       { key: 'ipcr-management', label: 'IPCR Management', subtitle: 'Onboarding & Tracking', icon: ClipboardList },
       { key: 'competency', label: 'Competency Framework', subtitle: 'Position Requirements', icon: BookOpen },
-      { key: 'analytics', label: 'Reports & Analytics', subtitle: 'Insights & Exports', icon: TrendingUp },
       { key: 'archive', label: 'Archive', subtitle: 'Historical IPCR records', icon: ArchiveIcon },
       { key: 'weighting', label: 'IPCR Weighting', subtitle: 'Core/Strategic/Support split', icon: Scale },
       { key: 'settings', label: 'Settings', subtitle: '', icon: Settings },
@@ -1355,7 +1353,6 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
             {activeSection === 'archive' && <PMArchive />}
             {activeSection === 'weighting' && <OfficeWeightingPanel />}
 
-            {activeSection === 'analytics' && <PMReportsAnalytics />}
 
             {activeSection === 'settings' && (
               <>
