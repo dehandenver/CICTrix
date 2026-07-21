@@ -25,6 +25,8 @@ import { type IpcrPhase, sendNotification } from '../../../lib/api/ipcrSubmissio
 import { getAllEmployees, type Employee } from '../../../lib/api/employees';
 import { upsertSchedule } from '../../../lib/api/phaseSchedules';
 import { getEmployeeIPCR, type IPCRRowDraft, bucketForScore } from '../../../lib/api/performanceEvaluations';
+import { computeOverallScore } from '../../../lib/api/ipcrWorkspace';
+import { resolveOfficeWeights } from '../../../lib/api/officeWeighting';
 import { loadEmployeeIpcrForReview } from '../../../lib/api/ipcrApproval';
 import { OfficeWeightingPanel } from './OfficeWeightingPanel';
 import { getCurrentAdminEmail } from '../moduleUi';
@@ -254,6 +256,34 @@ const IPCRDetailPage = ({
   const [relationalPhase2Status, setRelationalPhase2Status] = useState<string | null>(null);
   const [legacyEvaluationStatus, setLegacyEvaluationStatus] = useState<string | null>(null);
   const [showInfoModal, setShowInfoModal] = useState(false);
+  // The office's Core/Strategic/Support split, so the overall shown here matches
+  // the weighted score rollUpToWorkspace stores — not an unweighted mean.
+  const [officeWeights, setOfficeWeights] = useState<
+    { core: number; strategic: number; support: number } | null
+  >(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const name = String(employee.department ?? '').trim();
+      if (!name) {
+        setOfficeWeights(null);
+        return;
+      }
+      const { data: dep } = await (supabaseClient as any)
+        .from('departments')
+        .select('id')
+        .eq('name', name)
+        .maybeSingle();
+      const weights = dep?.id ? await resolveOfficeWeights(String(dep.id)) : null;
+      if (!cancelled) {
+        setOfficeWeights(weights ? { core: weights.core, strategic: weights.strategic, support: weights.support } : null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [employee.department]);
 
   const reload = useCallback(async () => {
     setIpcrLoading(true);
@@ -390,15 +420,15 @@ const IPCRDetailPage = ({
     const strategicAvg = catAvg('strategic');
     const supportAvg = catAvg('support');
 
-    const filledAverages = [coreAvg, strategicAvg, supportAvg].filter(
-      (avg): avg is number => avg !== null && !Number.isNaN(avg)
-    );
-
-    let overallScore: number | null = null;
-    if (filledAverages.length > 0) {
-      const meanOverall = filledAverages.reduce((s, p) => s + p, 0) / filledAverages.length;
-      overallScore = Number(meanOverall.toFixed(2));
-    }
+    // Apply the office's Core/Strategic/Support split so this matches the
+    // finalized score rollUpToWorkspace stores. computeOverallScore falls back
+    // to an unweighted mean when no weights are configured, so this is never
+    // worse than before.
+    const overallScore = computeOverallScore([
+      { average: coreAvg, weight: officeWeights?.core ?? null },
+      { average: strategicAvg, weight: officeWeights?.strategic ?? null },
+      { average: supportAvg, weight: officeWeights?.support ?? null },
+    ]);
 
     return {
       coreAvg,
@@ -406,7 +436,7 @@ const IPCRDetailPage = ({
       supportAvg,
       overallScore,
     };
-  }, [ipcrRows]);
+  }, [ipcrRows, officeWeights]);
 
   const isApproved =
     relationalStatus === 'approved' ||
