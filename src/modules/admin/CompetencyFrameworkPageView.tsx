@@ -19,6 +19,7 @@ type CompetencyGapStatus = 'Met' | 'Gap';
 
 type EmployeeAssessment = {
   id: string;
+  employeeNumber: string;
   employeeName: string;
   department: string;
   position: string;
@@ -390,7 +391,7 @@ export const CompetencyFrameworkPage = ({ isDashboardView = false }: { isDashboa
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Employee Information</p>
                 <div className="mt-3 space-y-2 text-sm text-slate-700">
-                  <p><span className="font-semibold text-slate-900">Employee ID:</span> {selectedEmployee.id}</p>
+                  <p><span className="font-semibold text-slate-900">Employee ID:</span> {selectedEmployee.employeeNumber || '—'}</p>
                   <p><span className="font-semibold text-slate-900">Name:</span> {selectedEmployee.employeeName}</p>
                   <p><span className="font-semibold text-slate-900">Department:</span> {selectedEmployee.department}</p>
                   <p><span className="font-semibold text-slate-900">Position:</span> {selectedEmployee.position}</p>
@@ -415,7 +416,7 @@ export const CompetencyFrameworkPage = ({ isDashboardView = false }: { isDashboa
                         </>
                       ) : (
                         <>
-                          <Sparkles className="h-3 w-3" /> Run AI Assessment
+                          <Sparkles className="h-3 w-3" /> Run Assessment
                         </>
                       )}
                     </button>
@@ -481,7 +482,7 @@ export const CompetencyFrameworkPage = ({ isDashboardView = false }: { isDashboa
                       {detailScores.length === 0 && (
                         <tr>
                           <td colSpan={4} className="px-4 py-6 text-center text-slate-400">
-                            No competency records found. Click "Run AI Assessment" to evaluate.
+                            No competency records found. Click "Run Assessment" to evaluate.
                           </td>
                         </tr>
                       )}
