@@ -277,8 +277,12 @@ export async function fetchEmployeeApplicationProfile(
     client.from('employee_education').select('*').eq('employee_id', employeeId),
     client.from('employee_work_experience').select('*').eq('employee_id', employeeId),
     client
+      // select('*') rather than naming columns: education_degree /
+      // education_school (migration 20260812) may not exist yet, and naming a
+      // missing column fails the whole select — which would take the
+      // education_level fallback down with it. '*' returns whatever exists.
       .from('applicants')
-      .select('education_level, years_of_experience, current_division')
+      .select('*')
       .or(
         employeeEmail
           ? `id.eq.${employeeId},email.ilike.${employeeEmail}`
@@ -317,9 +321,15 @@ export async function fetchEmployeeApplicationProfile(
     }
   }
 
-  // Last resort: the level the employee declared on their application.
+  // Last resort: what the employee declared on their application.
   if (!educationAttainment) {
     educationAttainment = String(applicantRow?.education_level ?? '').trim();
+  }
+  if (!educationDegree) {
+    educationDegree = String(applicantRow?.education_degree ?? '').trim();
+  }
+  if (!educationSchool) {
+    educationSchool = String(applicantRow?.education_school ?? '').trim();
   }
 
   // ── Work experience: total tenure + the most recent post ──
