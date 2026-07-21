@@ -36,6 +36,7 @@ import {
   type EmployeeOption,
   type CompetencyRequirement,
   type QualificationDrift,
+  type PositionQualifications,
 } from '../lib/api/succession';
 
 // The Succession Planning view lives inside the RSP Portal, which is already
@@ -491,6 +492,7 @@ const RequirementsPanel = ({
 }) => {
   const [competencyReqs, setCompetencyReqs] = useState<CompetencyRequirement[]>([]);
   const [drift, setDrift] = useState<QualificationDrift[]>([]);
+  const [posted, setPosted] = useState<PositionQualifications | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -504,12 +506,16 @@ const RequirementsPanel = ({
     ]).then(([compRes, postingQuals]) => {
       if (cancelled) return;
       setCompetencyReqs(compRes.ok ? compRes.data : []);
-      // Requirements are snapshotted when the position is flagged, so a posting
-      // edited afterwards leaves this showing stale values. RSP can't re-sync
-      // (the Department Head owns that) but must not be misled into assessing
-      // successors against a superseded bar.
-      const posted = postingQuals.get(position.title.trim().toLowerCase());
-      setDrift(posted ? diffQualifications(position, posted) : []);
+      // The position snapshots its requirements when flagged, but leaves fields
+      // the Department Head never filled as blank. Those blanks fall back to the
+      // job posting for display (below), so keep the posting around.
+      const postingMatch = postingQuals.get(position.title.trim().toLowerCase()) ?? null;
+      setPosted(postingMatch);
+      // Drift warns only about a real override — a snapshot value that diverges
+      // from the posting. A blank snapshot isn't stale: it's displayed straight
+      // from the posting, so drop those entries (diffQualifications marks a blank
+      // snapshot with stored === '—') or the banner would contradict the value shown.
+      setDrift(postingMatch ? diffQualifications(position, postingMatch).filter((d) => d.stored !== '—') : []);
       setLoading(false);
     });
     return () => {
@@ -517,11 +523,22 @@ const RequirementsPanel = ({
     };
   }, [position, departmentName]);
 
+  // Snapshot wins; a blank field falls back to the job posting so the panel
+  // reflects what the admin entered on the Job Posts page.
+  const education = position.requiredEducation?.trim() || posted?.requiredEducation || '';
+  const eligibility = position.requiredEligibility?.trim() || posted?.requiredEligibility || '';
+  const experience =
+    position.minYearsExperience != null
+      ? `${position.minYearsExperience} year(s)`
+      : posted?.minYearsExperience
+      ? `${posted.minYearsExperience} year(s)`
+      : '—';
+
   const hasAnything =
     !!position.positionDescription ||
-    !!position.requiredEducation ||
-    !!position.requiredEligibility ||
-    position.minYearsExperience != null ||
+    !!education ||
+    !!eligibility ||
+    experience !== '—' ||
     (position.requiredCertifications ?? []).length > 0 ||
     competencyReqs.length > 0;
 
@@ -563,9 +580,9 @@ const RequirementsPanel = ({
               rating were dropped there, so showing them here would render a
               value nobody can change. */}
           <div className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3">
-            <div><span className="text-[var(--text-secondary)]">Min. experience</span><p className="!mb-0 font-medium">{position.minYearsExperience != null ? `${position.minYearsExperience} year(s)` : '—'}</p></div>
-            <div><span className="text-[var(--text-secondary)]">Required education</span><p className="!mb-0 font-medium">{position.requiredEducation ?? '—'}</p></div>
-            <div><span className="text-[var(--text-secondary)]">Required eligibility</span><p className="!mb-0 font-medium">{position.requiredEligibility ?? '—'}</p></div>
+            <div><span className="text-[var(--text-secondary)]">Min. experience</span><p className="!mb-0 font-medium">{experience}</p></div>
+            <div><span className="text-[var(--text-secondary)]">Required education</span><p className="!mb-0 font-medium">{education || '—'}</p></div>
+            <div><span className="text-[var(--text-secondary)]">Required eligibility</span><p className="!mb-0 font-medium">{eligibility || '—'}</p></div>
           </div>
 
           {(position.requiredCertifications ?? []).length > 0 && (
