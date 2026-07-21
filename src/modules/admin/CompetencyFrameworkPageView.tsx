@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Eye, ListChecks, Search, Loader2, AlertCircle, Sparkles, Check } from 'lucide-react';
+import { Eye, ListChecks, Search, Loader2, AlertCircle, Check } from 'lucide-react';
 import { AdminHeader } from '../../components/AdminHeader';
 import { Dialog } from '../../components/Dialog';
 import { Sidebar } from '../../components/Sidebar';
@@ -415,9 +415,7 @@ export const CompetencyFrameworkPage = ({ isDashboardView = false }: { isDashboa
                           <Loader2 className="h-3 w-3 animate-spin" /> Assessing…
                         </>
                       ) : (
-                        <>
-                          <Sparkles className="h-3 w-3" /> Run Assessment
-                        </>
+                        'Run Assessment'
                       )}
                     </button>
                     <button

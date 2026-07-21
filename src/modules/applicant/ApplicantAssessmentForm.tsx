@@ -245,13 +245,6 @@ export const ApplicantAssessmentForm: React.FC<ApplicantAssessmentFormProps> = (
               error={errors.current_department}
               required
             />
-
-            <Input
-              label="Current Division"
-              placeholder="Enter your current division (optional)"
-              value={formData.current_division}
-              onChange={(e) => onChange('current_division', e.target.value)}
-            />
           </>
         )}
 
