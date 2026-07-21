@@ -156,6 +156,28 @@ function computeStageInfo(
   };
 }
 
+/**
+ * Start of the employee's CURRENT overarching cycle — the floor used to match a
+ * submission to this employee without picking up a stale one from a prior cycle.
+ * Mirrors the regular-cycle math in computeStageInfo. Probationary employees use
+ * their hire date (the whole probation is the current window).
+ */
+function currentCycleStart(hireDate: string): Date {
+  const hired = new Date(hireDate);
+  if (getMonthsOfService(hireDate) < 6) return hired;
+  const regularStart = new Date(hired);
+  regularStart.setMonth(regularStart.getMonth() + 6);
+  const now = new Date();
+  const msSinceRegular = Math.max(
+    0,
+    (now.getFullYear() - regularStart.getFullYear()) * 12 + (now.getMonth() - regularStart.getMonth()),
+  );
+  const completedCycles = Math.floor(msSinceRegular / 12);
+  const cycleStart = new Date(regularStart);
+  cycleStart.setMonth(cycleStart.getMonth() + completedCycles * 12);
+  return cycleStart;
+}
+
 function deriveStatus(
   dueDate: Date,
   actualStage: IpcrStage,
@@ -1967,7 +1989,7 @@ export const PMIPCRManagement = () => {
     try {
       const [empResult, subRes, schedRes] = await Promise.all([
         getAllEmployees({ status: 'Active' }),
-        supabase.from('ipcr_submissions').select('id, employee_id, period, phase, stage'),
+        supabase.from('ipcr_submissions').select('id, employee_id, period, phase, stage, updated_at'),
         supabase.from('probationary_ipcr_schedules').select('*'),
       ]);
 
@@ -1984,10 +2006,27 @@ export const PMIPCRManagement = () => {
 
       const submissions: any[] = subRes.error ? [] : (subRes.data ?? []);
       const schedules: any[] = schedRes.error ? [] : (schedRes.data ?? []);
+      // Exact key: employee::period::phase. But `period` is written in several
+      // vocabularies across the codebase (cycle title vs semester vs
+      // probationary label), while this screen derives its own label from the
+      // hire date — so the exact key often misses even when a submission exists,
+      // leaving a submitted employee showing "Not Started". The fallback map,
+      // keyed by employee::phase and holding the most recently updated
+      // submission, recovers that match. It's only consulted when the exact key
+      // misses, and only accepted when the submission is newer than the current
+      // cycle start, so it can't surface a prior cycle's stage.
       const subMap = new Map<string, { stage: IpcrStage; id: string }>();
+      const subByEmpPhase = new Map<string, { stage: IpcrStage; id: string; updatedAt: number }>();
       for (const s of submissions) {
         const k = `${s.employee_id}::${s.period}::${s.phase}`;
         subMap.set(k, { stage: s.stage as IpcrStage, id: s.id });
+
+        const fk = `${s.employee_id}::${s.phase}`;
+        const updatedAt = new Date(s.updated_at ?? 0).getTime();
+        const prev = subByEmpPhase.get(fk);
+        if (!prev || updatedAt >= prev.updatedAt) {
+          subByEmpPhase.set(fk, { stage: s.stage as IpcrStage, id: s.id, updatedAt });
+        }
       }
 
       const enriched: EnrichedEmployee[] = [];
@@ -1996,7 +2035,14 @@ export const PMIPCRManagement = () => {
         const months = getMonthsOfService(hireDateToUse);
         const { stage, phase, dueDate, periodLabel } = computeStageInfo(hireDateToUse, schedules);
         const k = `${emp.id}::${periodLabel}::${phase}`;
-        const sub = subMap.get(k);
+        let sub: { stage: IpcrStage; id: string } | undefined = subMap.get(k);
+        if (!sub) {
+          const fallback = subByEmpPhase.get(`${emp.id}::${phase}`);
+          // Only within the current cycle — never resurrect a prior cycle's stage.
+          if (fallback && fallback.updatedAt >= currentCycleStart(hireDateToUse).getTime()) {
+            sub = { stage: fallback.stage, id: fallback.id };
+          }
+        }
         const actualStage: IpcrStage = sub?.stage ?? 'Not Started';
         enriched.push({
           ...emp,
