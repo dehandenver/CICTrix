@@ -11,9 +11,11 @@ import {
   ChevronRight,
   ClipboardCheck,
   RefreshCw,
+  Scale,
   Search,
   Send,
   Users,
+  X,
 } from 'lucide-react';
 import { Dialog } from '../../../components/Dialog';
 import { useDepartmentNames } from '../../../hooks/useDepartmentOptions';
@@ -24,6 +26,7 @@ import { getAllEmployees, type Employee } from '../../../lib/api/employees';
 import { upsertSchedule } from '../../../lib/api/phaseSchedules';
 import { getEmployeeIPCR, type IPCRRowDraft, bucketForScore } from '../../../lib/api/performanceEvaluations';
 import { loadEmployeeIpcrForReview } from '../../../lib/api/ipcrApproval';
+import { OfficeWeightingPanel } from './OfficeWeightingPanel';
 import { getCurrentAdminEmail } from '../moduleUi';
 import { supabase as supabaseClient } from '../../../lib/supabase';
 import { getSystemPhaseStates, openPhase, closePhase } from '../../../lib/api/ipcrPhaseControl';
@@ -1918,6 +1921,10 @@ export const PMIPCRManagement = () => {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [selectedEmployee, setSelectedEmployee] = useState<EnrichedEmployee | null>(null);
+  // IPCR Weighting used to be its own sidebar page; it now opens from here as a
+  // popup so the per-office Core/Strategic/Support split lives beside the IPCR
+  // records it governs.
+  const [showWeighting, setShowWeighting] = useState(false);
 
   const latestLoadId = useRef<number>(0);
 
@@ -2035,15 +2042,26 @@ export const PMIPCRManagement = () => {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-          <ClipboardCheck className="h-6 w-6 text-[#363EE8]" />
-          IPCR Management
-        </h2>
-        <p className="text-sm text-slate-550 mt-0.5">
-          Module 2 — employees auto-classified by length of service: 3-month cycle (probationary)
-          and 6-month cycle (regular).
-        </p>
+      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+            <ClipboardCheck className="h-6 w-6 text-[#363EE8]" />
+            IPCR Management
+          </h2>
+          <p className="text-sm text-slate-550 mt-0.5">
+            Module 2 — employees auto-classified by length of service: 3-month cycle (probationary)
+            and 6-month cycle (regular).
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowWeighting(true)}
+          className="flex shrink-0 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
+          title="Set each office's Core / Strategic / Support split"
+        >
+          <Scale size={15} className="text-blue-600" />
+          IPCR Weighting
+        </button>
       </div>
 
       {/* Subtabs */}
@@ -2084,6 +2102,30 @@ export const PMIPCRManagement = () => {
           onRefresh={load}
           onSelectEmployee={setSelectedEmployee}
         />
+      )}
+
+      {/* IPCR Weighting popup — a wide custom overlay rather than the shared
+          Dialog, whose 500px cap is too narrow for the per-office table. */}
+      {showWeighting && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm sm:p-8"
+          onClick={() => setShowWeighting(false)}
+        >
+          <div
+            className="relative w-full max-w-5xl rounded-2xl bg-white p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setShowWeighting(false)}
+              className="absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              title="Close"
+            >
+              <X size={18} />
+            </button>
+            <OfficeWeightingPanel />
+          </div>
+        </div>
       )}
     </div>
   );
