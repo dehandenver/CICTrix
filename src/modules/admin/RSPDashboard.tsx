@@ -2279,7 +2279,7 @@ export const RSPDashboard = () => {
       const { data, error } = await (supabase as any)
         .from('employees')
         .select(
-          'employee_number, email, phone, current_address_street, date_of_birth, place_of_birth, sex, civil_status, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone, date_hired',
+          'employee_number, first_name, middle_name, last_name, suffix, position, department, status, email, phone, current_address_street, date_of_birth, place_of_birth, sex, civil_status, emergency_contact_name, emergency_contact_relationship, emergency_contact_phone, date_hired',
         );
       if (cancelled || error || !Array.isArray(data)) return;
       const map = new Map<string, any>();
@@ -2308,7 +2308,10 @@ export const RSPDashboard = () => {
       acc.push({
         id: employeeId,
         employeeId,
-        full_name: String(account?.employee.fullName ?? record.name ?? 'Employee'),
+        // Prefer the DB name; only fall back to a portal-account name or the
+        // 'Employee' placeholder. Using `||` (not `??`) so an empty-string
+        // account name can't blank out a real employee's name in the list.
+        full_name: String(record.name || account?.employee.fullName || 'Employee'),
         first_name: record.firstName || undefined,
         last_name: record.lastName || undefined,
         email: String(account?.employee.email ?? ''),
@@ -2481,21 +2484,58 @@ export const RSPDashboard = () => {
     [directoryEmployeesSource, selectedEmployeeId]
   );
 
+  // Authoritative employee row from the `employees` table for the selected
+  // person. The directory merge (directoryEmployeesSource) can hand back a row
+  // with empty name/position/office — or the office-list id (which IS the
+  // employee_number) may not resolve in that merge at all — leaving the whole
+  // detail blank. Resolving straight from the DB by employee_number guarantees
+  // the panel is populated for any real employee.
+  const selectedEmployeeDbRecord = useMemo(() => {
+    const candidates = [
+      selectedEmployeeId, // office-directory clicks pass the employee_number directly
+      selectedEmployeeDetails?.employeeId,
+      selectedEmployeeDetails ? employeeNumberById.get(selectedEmployeeDetails.id) : null,
+      selectedEmployeeDetails?.id,
+      selectedEmployeeDetails ? employeeNumberFromNewlyHired.get(selectedEmployeeDetails.id) : null,
+    ];
+    for (const c of candidates) {
+      const key = String(c ?? '').trim();
+      if (key && employeePersonalByNumber.has(key)) return employeePersonalByNumber.get(key);
+    }
+    return null;
+  }, [selectedEmployeeId, selectedEmployeeDetails, employeeNumberById, employeeNumberFromNewlyHired, employeePersonalByNumber]);
+
+  // Full name assembled from the DB row when the merge didn't supply one.
+  const selectedEmployeeDbName = useMemo(() => {
+    if (!selectedEmployeeDbRecord) return null;
+    const parts = [
+      selectedEmployeeDbRecord.first_name,
+      selectedEmployeeDbRecord.middle_name,
+      selectedEmployeeDbRecord.last_name,
+      selectedEmployeeDbRecord.suffix,
+    ]
+      .map((p: unknown) => String(p ?? '').trim())
+      .filter(Boolean);
+    return parts.length ? parts.join(' ') : null;
+  }, [selectedEmployeeDbRecord]);
+
   const selectedEmployeeProfile = useMemo(() => {
-    if (!selectedEmployeeDetails) return null;
+    if (!selectedEmployeeId && !selectedEmployeeDetails) return null;
     const resolvedEmployeeId = String(
-      selectedEmployeeDetails.employeeId
-        ?? employeeNumberById.get(selectedEmployeeDetails.id)
-        ?? employeeNumberFromNewlyHired.get(selectedEmployeeDetails.id)
+      selectedEmployeeId
+        ?? selectedEmployeeDetails?.employeeId
+        ?? (selectedEmployeeDetails ? employeeNumberById.get(selectedEmployeeDetails.id) : null)
+        ?? selectedEmployeeDetails?.id
+        ?? (selectedEmployeeDetails ? employeeNumberFromNewlyHired.get(selectedEmployeeDetails.id) : null)
         ?? ''
     ).trim();
     const portalAccount =
       (resolvedEmployeeId ? portalAccountByEmployeeId.get(resolvedEmployeeId) : null) ??
-      portalAccountByApplicantId.get(selectedEmployeeDetails.id);
+      (selectedEmployeeDetails ? portalAccountByApplicantId.get(selectedEmployeeDetails.id) : null);
     const emp = portalAccount?.employee;
     // Canonical personal data lives in the `employees` table; the portal-account
     // object only carries name/email/phone, so prefer the DB row for everything.
-    const rec = resolvedEmployeeId ? employeePersonalByNumber.get(resolvedEmployeeId) : null;
+    const rec = selectedEmployeeDbRecord;
     const nn = (v: unknown) => {
       const s = String(v ?? '').trim();
       return s ? s : null;
@@ -2515,8 +2555,8 @@ export const RSPDashboard = () => {
     const dob = nn(rec?.date_of_birth) || nn(emp?.dateOfBirth);
     const ageFromDob = computeAge(dob ?? undefined);
     return {
-      email: nn(rec?.email) || nn(selectedEmployeeDetails.email) || nn(emp?.email),
-      phone: nn(rec?.phone) || nn(selectedEmployeeDetails.contact_number) || nn(emp?.mobileNumber),
+      email: nn(rec?.email) || nn(selectedEmployeeDetails?.email) || nn(emp?.email),
+      phone: nn(rec?.phone) || nn(selectedEmployeeDetails?.contact_number) || nn(emp?.mobileNumber),
       address: nn(rec?.current_address_street) || nn(emp?.homeAddress),
       dateOfBirth: dob ? formatDate(dob) : null,
       placeOfBirth: nn(rec?.place_of_birth) || nn(emp?.placeOfBirth),
@@ -2528,9 +2568,9 @@ export const RSPDashboard = () => {
       emergencyContactPhone: nn(rec?.emergency_contact_phone) || nn(emp?.emergencyContactNumber),
       dateHired: nn(rec?.date_hired)
         ? formatDate(rec.date_hired)
-        : (selectedEmployeeDetails.created_at ? formatDate(selectedEmployeeDetails.created_at) : null),
+        : (selectedEmployeeDetails?.created_at ? formatDate(selectedEmployeeDetails.created_at) : null),
     };
-  }, [selectedEmployeeDetails, employeeNumberById, employeeNumberFromNewlyHired, portalAccountByApplicantId, portalAccountByEmployeeId, employeePersonalByNumber]);
+  }, [selectedEmployeeId, selectedEmployeeDetails, selectedEmployeeDbRecord, employeeNumberById, employeeNumberFromNewlyHired, portalAccountByApplicantId, portalAccountByEmployeeId, employeePersonalByNumber]);
 
   const selectedEmployeeDocuments = useMemo(() => {
     if (!selectedEmployeeDetails) return [] as Array<{
@@ -4266,7 +4306,7 @@ export const RSPDashboard = () => {
                         <ChevronLeft size={13} /> {selectedDirectoryCard?.office ?? 'Office'}
                       </button>
                       <ChevronRight size={13} className="text-slate-400" />
-                      <span className="font-medium text-slate-700">{selectedEmployeeDetails?.full_name ?? 'Employee'}</span>
+                      <span className="font-medium text-slate-700">{selectedEmployeeDbName ?? selectedEmployeeDetails?.full_name ?? 'Employee'}</span>
                     </div>
 
                     {/* Header — matches Applicant detail style */}
@@ -4277,20 +4317,20 @@ export const RSPDashboard = () => {
                         </div>
                         <div>
                           <h2 className="!mb-0.5 text-xl font-bold" style={{ color: '#040E6B' }}>
-                            {selectedEmployeeDetails?.full_name ?? 'Employee'}
+                            {selectedEmployeeDbName ?? selectedEmployeeDetails?.full_name ?? 'Employee'}
                           </h2>
-                          <p className="!mb-2 text-sm text-slate-500">{selectedEmployeeDetails?.position || '—'}</p>
+                          <p className="!mb-2 text-sm text-slate-500">{selectedEmployeeDbRecord?.position ?? selectedEmployeeDetails?.position ?? '—'}</p>
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${selectedEmployeeDetails?.status?.toLowerCase().includes('inactive') ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                              {selectedEmployeeDetails?.status?.toLowerCase().includes('inactive') ? 'Inactive' : 'Active'}
+                            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${(selectedEmployeeDbRecord?.status ?? selectedEmployeeDetails?.status)?.toLowerCase().includes('inactive') ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                              {(selectedEmployeeDbRecord?.status ?? selectedEmployeeDetails?.status)?.toLowerCase().includes('inactive') ? 'Inactive' : 'Active'}
                             </span>
-                            {selectedEmployeeDetails && employeeNumberById.get(selectedEmployeeDetails.id) && (
+                            {(selectedEmployeeDbRecord?.employee_number ?? (selectedEmployeeDetails && employeeNumberById.get(selectedEmployeeDetails.id))) && (
                               <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-                                {employeeNumberById.get(selectedEmployeeDetails.id)}
+                                {selectedEmployeeDbRecord?.employee_number ?? employeeNumberById.get(selectedEmployeeDetails!.id)}
                               </span>
                             )}
                             <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-                              {selectedEmployeeDetails?.office || 'Unassigned Office'}
+                              {selectedEmployeeDbRecord?.department ?? selectedEmployeeDetails?.office ?? 'Unassigned Office'}
                             </span>
                           </div>
                         </div>
@@ -4342,7 +4382,7 @@ export const RSPDashboard = () => {
                           <h3 className="!mb-4 text-xs font-bold uppercase tracking-widest" style={{ color: '#363EE8' }}>Personal Information</h3>
                           <div className="divide-y divide-slate-100">
                             {([
-                              ['Full Name', selectedEmployeeDetails?.full_name],
+                              ['Full Name', selectedEmployeeDbName ?? selectedEmployeeDetails?.full_name],
                               ['Email Address', selectedEmployeeProfile?.email],
                               ['Phone Number', selectedEmployeeProfile?.phone],
                               ['Address', selectedEmployeeProfile?.address],
@@ -4365,11 +4405,11 @@ export const RSPDashboard = () => {
                           <h3 className="!mb-4 text-xs font-bold uppercase tracking-widest" style={{ color: '#363EE8' }}>Employment Details</h3>
                           <div className="divide-y divide-slate-100">
                             {([
-                              ['Employee Number', selectedEmployeeDetails ? (employeeNumberById.get(selectedEmployeeDetails.id) ?? null) : null],
-                              ['Position', selectedEmployeeDetails?.position],
-                              ['Department / Office', selectedEmployeeDetails?.office],
+                              ['Employee Number', selectedEmployeeDbRecord?.employee_number ?? (selectedEmployeeDetails ? (employeeNumberById.get(selectedEmployeeDetails.id) ?? null) : null)],
+                              ['Position', selectedEmployeeDbRecord?.position ?? selectedEmployeeDetails?.position],
+                              ['Department / Office', selectedEmployeeDbRecord?.department ?? selectedEmployeeDetails?.office],
                               ['Date Hired', selectedEmployeeProfile?.dateHired],
-                              ['Employment Status', selectedEmployeeDetails?.status?.toLowerCase().includes('inactive') ? 'Inactive' : 'Active'],
+                              ['Employment Status', (selectedEmployeeDbRecord?.status ?? selectedEmployeeDetails?.status)?.toLowerCase().includes('inactive') ? 'Inactive' : 'Active'],
                             ] as [string, string | null | undefined][]).map(([label, value]) => (
                               <div key={label} className="flex items-center justify-between py-3">
                                 <p className="!mb-0 text-sm text-slate-500">{label}</p>
