@@ -21,8 +21,9 @@
 import { supabase as supabaseClient } from '../supabase';
 import { getLatestOverallScores } from './succession';
 import { competencyFromObjectives, competenciesFromObjectives, canonicalizeCompetency } from './trainingCalendar';
-import { getActiveOfficeNameSet } from './departments';
+import { getActiveOfficeNameSet, getActiveOfficeNames } from './departments';
 import { isPublishable, lifecycleFieldsFromRow } from './trainingLifecycle';
+import { computeNeedsAssessment } from './trainingNeeds';
 import { COMPETENCIES } from '../../constants/positions';
 
 const supabase = supabaseClient as any;
@@ -1200,4 +1201,129 @@ export async function listRosterGroups(monthOffsets: number[] = [0, 1]): Promise
     }))
     .filter((g) => g.attendees.length > 0)
     .sort((a, b) => a.start.localeCompare(b.start));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Manual attendee picker (L&D adds people the AI didn't surface)
+//
+// A course may return 0 AI matches (no employee's finalized IPCR shows a gap in
+// its competency) yet L&D still wants to send people — new hires, succession,
+// cross-training. These helpers back the "+ Add Attendee" picker: offices ranked
+// by how relevant their gap profile is to the course, then each office's staff
+// with their latest IPCR score for context.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type PickerOffice = {
+  office: string;
+  /** Employees in this office with a gap in any of the course's competencies. */
+  relatedGapCount: number;
+};
+
+/**
+ * The 5 active offices ranked by relevance to a course's competencies, using the
+ * same competency-demand data the dashboard's "offices driving this need" reads
+ * (computeNeedsAssessment). Relevance = employees in the office whose IPCR gaps
+ * map to any of the course's tagged competencies. When the course has no tags,
+ * offices rank by total gap headcount so the picker is still ordered by need,
+ * not alphabetically.
+ */
+export async function getManualPickerOffices(competencies: string[]): Promise<PickerOffice[]> {
+  const [needs, activeOffices] = await Promise.all([computeNeedsAssessment(), getActiveOfficeNames()]);
+  const wanted = new Set(competencies.map((c) => canonicalizeCompetency(c) ?? c));
+
+  const byOffice = new Map<string, number>();
+  for (const name of activeOffices) byOffice.set(name, 0);
+  for (const n of needs) {
+    const canon = canonicalizeCompetency(n.competency) ?? n.competency;
+    if (wanted.size && !wanted.has(canon)) continue; // course-tagged competencies only
+    for (const o of n.offices) {
+      if (!byOffice.has(o.office)) continue; // active offices only
+      byOffice.set(o.office, (byOffice.get(o.office) ?? 0) + o.affected);
+    }
+  }
+
+  return [...byOffice.entries()]
+    .map(([office, relatedGapCount]) => ({ office, relatedGapCount }))
+    .sort((a, b) => b.relatedGapCount - a.relatedGapCount || a.office.localeCompare(b.office));
+}
+
+export type PickerEmployee = {
+  id: string;
+  name: string;
+  position: string | null;
+  /** e.g. "3.5/5" or "No finalized IPCR". */
+  overallLabel: string;
+  /** Performance cycle the score is from, or null. */
+  cycle: string | null;
+};
+
+/** Active employees in one office, each with their latest finalized IPCR overall + cycle. */
+export async function getOfficeEmployeesWithScores(office: string): Promise<PickerEmployee[]> {
+  const { data: emps, error } = await supabase
+    .from('employees_with_department')
+    .select('id, full_name, current_position, status')
+    .eq('status', 'Active')
+    .eq('department', office);
+  if (error) {
+    console.error('Error loading office employees for picker:', error);
+    return [];
+  }
+  const rows = (emps ?? []) as any[];
+  const scores = await getLatestOverallScores(rows.map((e) => String(e.id)));
+  return rows
+    .map((e): PickerEmployee => {
+      const s = scores.get(String(e.id));
+      const score = s?.overallScore ?? null;
+      return {
+        id: String(e.id),
+        name: String(e.full_name ?? '').trim() || 'Unknown employee',
+        position: e.current_position ?? null,
+        overallLabel: score != null ? `${Number(score).toFixed(score % 1 === 0 ? 0 : 1)}/5` : 'No finalized IPCR',
+        cycle: s?.period ?? null,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * L&D manually adds one or more employees to a course's recommendation list.
+ * They enter as SUGGESTED (so they sit alongside AI suggestions and route
+ * through the same Send → Return → Enroll → Publish pipeline) but tagged
+ * source='lnd_manual' with an "Added manually" rationale, so they read as
+ * admin-selected, not AI-matched. Anyone already on the course is skipped.
+ */
+export async function lndAddAttendees(input: {
+  sessionId: string;
+  employeeIds: string[];
+  competency?: string | null;
+}): Promise<MutationResult & { added?: number }> {
+  const ids = [...new Set(input.employeeIds.map(String))].filter(Boolean);
+  if (!ids.length) return { ok: false, error: 'No employees selected.' };
+
+  const { data: existing } = await supabase
+    .from('training_recommendations')
+    .select('employee_id')
+    .eq('session_id', input.sessionId)
+    .in('employee_id', ids);
+  const have = new Set((existing ?? []).map((r: any) => String(r.employee_id)));
+  const toAdd = ids.filter((id) => !have.has(id));
+  if (!toAdd.length) return { ok: true, added: 0 };
+
+  const now = new Date().toISOString();
+  const rows = toAdd.map((employee_id) => ({
+    employee_id,
+    session_id: input.sessionId,
+    competency: input.competency || 'Manual selection',
+    source_cycle_id: null,
+    trigger_score: null,
+    gap_type: 'KRA_ALIGNED' as GapType,
+    gap_detail: 'Added manually by L&D.',
+    priority: 'MEDIUM' as Priority,
+    status: 'SUGGESTED' as RecommendationStatus,
+    source: 'lnd_manual',
+    generated_at: now,
+    updated_at: now,
+  }));
+  const { error } = await supabase.from('training_recommendations').insert(rows);
+  return error ? { ok: false, error: error.message } : { ok: true, added: rows.length };
 }
