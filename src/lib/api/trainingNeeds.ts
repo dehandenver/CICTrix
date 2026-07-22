@@ -12,6 +12,7 @@
  */
 
 import { supabase as supabaseClient } from '../supabase';
+import { getActiveOfficeNameSet } from './departments';
 
 const supabase = supabaseClient as any;
 
@@ -138,23 +139,37 @@ const pct = (n: number, d: number): number => (d > 0 ? Math.round((n / d) * 100)
  * Priority thresholds: >=75 High, 50-74 Medium, <50 Emerging.
  */
 export async function computeNeedsAssessment(): Promise<CompetencyNeed[]> {
-  const { data: emps, error: eErr } = await supabase
-    .from('employees_with_department')
-    .select('id, department, status')
-    .eq('status', 'Active');
+  const [{ data: emps, error: eErr }, activeOffices] = await Promise.all([
+    supabase
+      .from('employees_with_department')
+      .select('id, department, status')
+      .eq('status', 'Active'),
+    getActiveOfficeNameSet(),
+  ]);
   if (eErr) {
     console.error('Error loading employees for needs assessment:', eErr);
     return [];
   }
 
+  // Only the currently-active offices count toward the assessment. Employees
+  // tagged to a deactivated/legacy office are excluded from every aggregate so
+  // the dashboard reflects the live 5-office structure, not stale data. An empty
+  // active set (lookup failed) means "don't filter" — better to show everyone
+  // than blank the whole dashboard on a transient error.
+  const isActiveOffice = (office: string) =>
+    activeOffices.size === 0 || activeOffices.has(office.trim().toLowerCase());
+
   const officeByEmp = new Map<string, string>();
   const totalByOffice = new Map<string, number>();
   for (const e of (emps ?? []) as any[]) {
     const office = e.department ?? 'Unassigned office';
+    if (!isActiveOffice(office)) continue;
     officeByEmp.set(String(e.id), office);
     totalByOffice.set(office, (totalByOffice.get(office) ?? 0) + 1);
   }
-  const totalLgu = (emps ?? []).length;
+  // LGU-wide headcount = employees in an active office only (matches officeByEmp),
+  // so competency-demand percentages divide by the real 5-office population.
+  const totalLgu = officeByEmp.size;
   if (!totalLgu) return [];
 
   const { data: matches, error: mErr } = await supabase

@@ -41,10 +41,11 @@ import {
   listRecommendationCandidates,
   listRecommendationEvents,
   listRosterGroups,
+  listNextMonthPublishedCourses,
   publishRoster,
   sendBatchToOffice,
   dismissRecommendation,
-  monthWindow,
+  type NextMonthCourse,
   type PipelineRecFull,
   type RecommendationEvent,
   type RosterGroup,
@@ -182,6 +183,7 @@ const AttendeeRow = ({
 export const SeminarEnrollment = () => {
   const [subtab, setSubtab] = useState<Subtab>('recommendation');
   const [candidates, setCandidates] = useState<PipelineRecFull[]>([]);
+  const [courses, setCourses] = useState<NextMonthCourse[]>([]);
   const [all, setAll] = useState<PipelineRecFull[]>([]);
   const [events, setEvents] = useState<RecommendationEvent[]>([]);
   // Enrolled/Published read the roster, not the recommendation pipeline: rosters
@@ -194,14 +196,16 @@ export const SeminarEnrollment = () => {
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    const [cands, everything, rosterGroups] = await Promise.all([
+    const [cands, everything, rosterGroups, publishedCourses] = await Promise.all([
       listRecommendationCandidates(),
       listAllRecommendations(),
       listRosterGroups([0, 1]),
+      listNextMonthPublishedCourses(),
     ]);
     setCandidates(cands);
     setAll(everything);
     setRosters(rosterGroups);
+    setCourses(publishedCourses);
     setEvents(await listRecommendationEvents([...new Set(everything.map((r) => r.sessionId))]));
     setLoading(false);
   }, []);
@@ -221,6 +225,26 @@ export const SeminarEnrollment = () => {
   );
 
   const recGroups = useMemo(() => groupBySession(candidates), [candidates]);
+
+  // Coverage (Task 2): one entry per PUBLISHED next-month course, whether or not
+  // the AI matched anyone. A course with no candidates is shown flagged for
+  // review rather than silently missing. Candidate groups for courses that
+  // aren't published yet (still in planning) are appended so existing
+  // suggestions are never hidden.
+  const coverage = useMemo<{ course: NextMonthCourse; group: Group | null }[]>(() => {
+    const byId = new Map(recGroups.map((g) => [g.sessionId, g]));
+    const covered = new Set(courses.map((c) => c.sessionId));
+    const entries = courses.map((course) => ({ course, group: byId.get(course.sessionId) ?? null }));
+    for (const g of recGroups) {
+      if (covered.has(g.sessionId)) continue;
+      entries.push({
+        course: { sessionId: g.sessionId, title: g.title, category: g.category, start: g.start, capacity: g.capacity, competency: null },
+        group: g,
+      });
+    }
+    return entries.sort((a, b) => a.course.start.localeCompare(b.course.start));
+  }, [courses, recGroups]);
+
   const sentGroups = useMemo(() => byStatus(['LND_APPROVED', 'OFFICE_ADDED']), [byStatus]);
   const returnedGroups = useMemo(() => byStatus(['OFFICE_FINALIZED']), [byStatus]);
   // A roster is "enrolled" until it is published; publishing moves it on.
@@ -228,23 +252,24 @@ export const SeminarEnrollment = () => {
   const publishedRosters = useMemo(() => rosters.filter((r) => !!r.publishedAt), [rosters]);
 
   const counts: Record<Subtab, number> = {
-    recommendation: recGroups.length,
+    recommendation: coverage.length,
     sent: sentGroups.length,
     returned: returnedGroups.length,
     enrolled: enrolledRosters.length,
     published: publishedRosters.length,
   };
 
-  // Next month's courses that have not reached Published yet — the cadence rule
-  // says they must all be published before that month starts.
+  // Next month's PUBLISHED courses whose roster has not been published yet — the
+  // cadence rule says every course's roster must be published before that month
+  // starts. Driven by the course list (not just courses that happen to have
+  // recommendations), so a published course with zero matches still counts.
   const cadenceWarning = useMemo(() => {
-    const { start, end } = monthWindow(1);
-    const nextMonth = all.filter((r) => r.sessionStart >= start && r.sessionStart < end);
-    const unpublished = new Set(
-      nextMonth.filter((r) => r.status !== 'PUBLISHED').map((r) => r.sessionId),
-    );
-    return unpublished.size;
-  }, [all]);
+    const rosterPublished = new Set<string>([
+      ...all.filter((r) => r.status === 'PUBLISHED').map((r) => r.sessionId),
+      ...publishedRosters.map((r) => r.sessionId),
+    ]);
+    return courses.filter((c) => !rosterPublished.has(c.sessionId)).length;
+  }, [courses, all, publishedRosters]);
 
   const toggle = (id: string) =>
     setSelected((prev) => {
@@ -410,47 +435,76 @@ export const SeminarEnrollment = () => {
             </div>
           </div>
 
-          {recGroups.length === 0 ? (
+          {coverage.length === 0 ? (
             <EmptyState
               icon={Sparkles}
-              title={`No recommendations for ${monthName(1)}`}
-              description="Recommendations are generated from finalized IPCR data against next month's scheduled courses. If next month has no courses yet, schedule them in Training Calendar first."
+              title={`No published courses for ${monthName(1)}`}
+              description="Every published course scheduled for next month is listed here for attendee routing. If next month has no published courses yet, schedule and complete them in Training Calendar first."
             />
           ) : (
-            recGroups.map((g) => (
-              <section key={g.sessionId} className="rounded-xl border border-gray-200 bg-white">
-                <SectionHeader group={g} />
-                <ul className="divide-y divide-gray-100">
-                  {g.recs.map((r) => (
-                    <AttendeeRow
-                      key={r.id}
-                      rec={r}
-                      trailing={
-                        <div className="flex shrink-0 items-center gap-2">
-                          <button
-                            type="button"
-                            disabled={busy === r.id}
-                            onClick={() => void reject(r.id)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2 py-1 text-[11px] font-semibold text-gray-600 hover:border-rose-400 hover:text-rose-600"
-                          >
-                            <X className="h-3 w-3" /> Reject
-                          </button>
-                          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-300 px-2 py-1 text-[11px] font-semibold text-gray-700 hover:border-blue-400">
-                            <input
-                              type="checkbox"
-                              checked={selected.has(r.id)}
-                              onChange={() => toggle(r.id)}
-                              className="h-3 w-3 accent-blue-600"
-                            />
-                            Accept
-                          </label>
-                        </div>
-                      }
-                    />
-                  ))}
-                </ul>
-              </section>
-            ))
+            coverage.map(({ course, group }) => {
+              const g: Group =
+                group ?? {
+                  sessionId: course.sessionId,
+                  title: course.title,
+                  category: course.category,
+                  start: course.start,
+                  capacity: course.capacity,
+                  recs: [],
+                };
+              const zeroMatch = !group || group.recs.length === 0;
+              return (
+                <section key={course.sessionId} className="rounded-xl border border-gray-200 bg-white">
+                  <SectionHeader
+                    group={g}
+                    right={
+                      zeroMatch ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                          <AlertTriangle className="h-3.5 w-3.5" /> 0 matches — review
+                        </span>
+                      ) : undefined
+                    }
+                  />
+                  {zeroMatch ? (
+                    <p className="px-4 py-3 text-xs text-amber-800">
+                      {course.competency === null
+                        ? 'This course has no competency mapping, so no attendees can be matched automatically. Add a “Competency: …” line to its objectives in Training Calendar, then Regenerate — or route attendees manually via the Office Account.'
+                        : `No employee's finalized IPCR data currently shows a gap in ${course.competency}. Nothing to auto-route — Regenerate after new IPCR data, or add attendees manually via the Office Account.`}
+                    </p>
+                  ) : (
+                    <ul className="divide-y divide-gray-100">
+                      {g.recs.map((r) => (
+                        <AttendeeRow
+                          key={r.id}
+                          rec={r}
+                          trailing={
+                            <div className="flex shrink-0 items-center gap-2">
+                              <button
+                                type="button"
+                                disabled={busy === r.id}
+                                onClick={() => void reject(r.id)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2 py-1 text-[11px] font-semibold text-gray-600 hover:border-rose-400 hover:text-rose-600"
+                              >
+                                <X className="h-3 w-3" /> Reject
+                              </button>
+                              <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-300 px-2 py-1 text-[11px] font-semibold text-gray-700 hover:border-blue-400">
+                                <input
+                                  type="checkbox"
+                                  checked={selected.has(r.id)}
+                                  onChange={() => toggle(r.id)}
+                                  className="h-3 w-3 accent-blue-600"
+                                />
+                                Accept
+                              </label>
+                            </div>
+                          }
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              );
+            })
           )}
         </div>
       ) : subtab === 'sent' ? (

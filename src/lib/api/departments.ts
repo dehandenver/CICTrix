@@ -113,6 +113,30 @@ export async function getDepartmentIdOptions(): Promise<DepartmentOption[]> {
 }
 
 /**
+ * The names of the currently-active offices, read live from the canonical
+ * `departments` table (is_active = true). This is the single source of truth for
+ * "which offices exist" — L&D aggregates, charts, dropdowns and the recommendation
+ * engine filter to this set so records tied to deactivated/legacy offices never
+ * leak into live views. Never hardcode the office list; call this instead.
+ */
+export async function getActiveOfficeNames(): Promise<string[]> {
+  const result = await listDepartments(false);
+  if (!result.success) return [];
+  return result.data.map((d) => d.name);
+}
+
+/**
+ * Active office names as a normalised (trimmed, lower-cased) Set, for
+ * case-insensitive membership tests against employees' free-text `department`
+ * values. Empty set only when the lookup fails — callers should treat an empty
+ * set as "don't filter" so a transient DB error can't blank every office.
+ */
+export async function getActiveOfficeNameSet(): Promise<Set<string>> {
+  const names = await getActiveOfficeNames();
+  return new Set(names.map((n) => n.trim().toLowerCase()));
+}
+
+/**
  * Resolve a department name to its UUID. Used by writes that still take a
  * name from the UI but need to persist the FK. Returns null if unknown.
  */

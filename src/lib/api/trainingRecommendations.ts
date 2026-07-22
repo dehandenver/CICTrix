@@ -21,6 +21,8 @@
 import { supabase as supabaseClient } from '../supabase';
 import { getLatestOverallScores } from './succession';
 import { competencyFromObjectives } from './trainingCalendar';
+import { getActiveOfficeNameSet } from './departments';
+import { isPublishable, lifecycleFieldsFromRow } from './trainingLifecycle';
 import { COMPETENCIES } from '../../constants/positions';
 
 const supabase = supabaseClient as any;
@@ -74,16 +76,35 @@ async function loadCompetenciesByEmployee(): Promise<Map<string, Set<string>>> {
     byEmployee.set(key, set);
   }
 
+  // Active-office scope: recommendations only ever cover employees in one of the
+  // 5 active offices. Anyone tagged to a deactivated/legacy office is dropped
+  // from both the authoritative and the heuristic pass.
+  const activeOffices = await getActiveOfficeNameSet();
+  const inActiveOffice = (dept: unknown) =>
+    activeOffices.size === 0 || activeOffices.has(String(dept ?? '').trim().toLowerCase());
+
   // 2. Fallback: job-title heuristic, applied ONLY to employees the matcher has
   //    no rows for. Employees already covered above are skipped, so better data
   //    always wins and the heuristic only fills genuine gaps.
   const { data: emps } = await supabase
     .from('employees_with_department')
-    .select('id, current_position, status')
+    .select('id, current_position, department, status')
     .eq('status', 'Active');
+
+  // Employees in an active office, so the authoritative pass can be pruned to
+  // the same scope (its matcher rows may reference now-inactive offices).
+  const activeEmpIds = new Set<string>();
+  for (const e of (emps ?? []) as any[]) {
+    if (inActiveOffice(e.department)) activeEmpIds.add(String(e.id));
+  }
+  for (const id of [...byEmployee.keys()]) {
+    if (!activeEmpIds.has(id)) byEmployee.delete(id);
+  }
+
   for (const e of (emps ?? []) as any[]) {
     const id = String(e.id);
     if (byEmployee.has(id)) continue; // matcher already covers this employee
+    if (!inActiveOffice(e.department)) continue; // outside the 5 active offices
     const pos = String(e.current_position ?? '').toLowerCase();
     const set = new Set<string>();
     for (const competency of COMPETENCIES as readonly string[]) {
@@ -119,8 +140,6 @@ export type RecommendationStatus =
  * ones. Keep in sync with scripts/seed-training-recommendations.mjs.
  */
 const GAP_THRESHOLD = 4.0;
-/** Cap recommendations per employee (spec §2.3 TOP_N). */
-const MAX_GAPS_PER_EMPLOYEE = 3;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -250,10 +269,12 @@ export async function generateRecommendations(
         considered += 1;
 
         const priority = scoreToPriority(score.overallScore);
+        // Uncapped (spec §2): every competency the employee's IPCR targets map to
+        // that a scheduled course addresses becomes a recommendation. No top-N —
+        // course capacity is enforced later, at finalization, not here.
         const gapCompetencies = [...(competenciesByEmployee.get(employeeId) ?? [])]
           .filter((c) => coursesByCompetency.has(c))
-          .sort()
-          .slice(0, MAX_GAPS_PER_EMPLOYEE);
+          .sort();
 
         for (const competency of gapCompetencies) {
           const detail = buildGapDetail(competency, score.overallScore, score.adjectival, score.period);
@@ -731,6 +752,53 @@ async function sessionIdsInMonth(offset: number): Promise<string[]> {
     return [];
   }
   return (data ?? []).map((s: any) => String(s.id));
+}
+
+export type NextMonthCourse = {
+  sessionId: string;
+  title: string;
+  category: string | null;
+  start: string;
+  capacity: number;
+  /** One of the 12 canonical competencies, or null when the course omits it. */
+  competency: string | null;
+};
+
+/**
+ * Every PUBLISHED course scheduled next month.
+ *
+ * The Seminar Enrollment Recommendation tab renders one group per course in this
+ * list, so a published course with zero AI matches is still shown (flagged for
+ * review) instead of silently missing — the coverage guarantee in Task 2.
+ * "Published" is the calendar lifecycle status: every detail field filled
+ * (isPublishable) and not Cancelled. A course with no parseable "Competency:"
+ * line has competency null, which the UI surfaces as the reason for zero matches.
+ */
+export async function listNextMonthPublishedCourses(): Promise<NextMonthCourse[]> {
+  const { start, end } = monthWindow(1);
+  const { data, error } = await supabase
+    .from('training_sessions')
+    .select(
+      'id, title, category, scheduled_date, capacity, objectives, instructor_name, location, description, materials, prerequisites, status',
+    )
+    .gte('scheduled_date', start)
+    .lt('scheduled_date', end)
+    .neq('status', 'Cancelled');
+  if (error) {
+    console.error('Error loading next-month published courses:', error);
+    return [];
+  }
+  return (data ?? [])
+    .filter((r: any) => isPublishable(lifecycleFieldsFromRow(r)))
+    .map((r: any): NextMonthCourse => ({
+      sessionId: String(r.id),
+      title: r.title,
+      category: r.category,
+      start: r.scheduled_date,
+      capacity: r.capacity ?? 0,
+      competency: competencyFromObjectives(r.objectives),
+    }))
+    .sort((a: NextMonthCourse, b: NextMonthCourse) => a.start.localeCompare(b.start));
 }
 
 /**
