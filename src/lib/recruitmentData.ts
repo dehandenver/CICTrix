@@ -852,7 +852,13 @@ const mapEmployeeRow = (row: any): EmployeeRecord => ({
 
 export const getEmployeeRecordsFromSupabase = async (): Promise<EmployeeRecord[]> => {
   try {
-    const { data, error } = await (supabase as any).from('employees_with_department').select('*');
+    // Exclude separated staff — the directory shows current employees only.
+    // (Downstream this record set hardcodes status:'Active', so a soft-deleted
+    // 'Separated' row would otherwise still appear in the RSP directory.)
+    const { data, error } = await (supabase as any)
+      .from('employees_with_department')
+      .select('*')
+      .neq('status', 'Separated');
     if (error) {
       console.warn('[recruitmentData] employees fetch failed:', error);
       return [];
