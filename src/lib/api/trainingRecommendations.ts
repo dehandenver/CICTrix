@@ -20,7 +20,7 @@
 
 import { supabase as supabaseClient } from '../supabase';
 import { getLatestOverallScores } from './succession';
-import { competencyFromObjectives } from './trainingCalendar';
+import { competencyFromObjectives, competenciesFromObjectives, canonicalizeCompetency } from './trainingCalendar';
 import { getActiveOfficeNameSet } from './departments';
 import { isPublishable, lifecycleFieldsFromRow } from './trainingLifecycle';
 import { COMPETENCIES } from '../../constants/positions';
@@ -70,9 +70,13 @@ async function loadCompetenciesByEmployee(): Promise<Map<string, Set<string>>> {
     .not('employee_id', 'is', null)
     .not('competency', 'is', null);
   for (const r of (matches ?? []) as any[]) {
+    // Canonicalise so competency-string drift (e.g. the spaced vs unspaced
+    // "Fiscal Management / Budgeting for LGU") still lines up with course tags.
+    const canon = canonicalizeCompetency(r.competency);
+    if (!canon) continue;
     const key = String(r.employee_id);
     const set = byEmployee.get(key) ?? new Set<string>();
-    set.add(r.competency);
+    set.add(canon);
     byEmployee.set(key, set);
   }
 
@@ -205,20 +209,29 @@ export async function generateRecommendations(
     const targetEnd = new Date(today.getFullYear(), today.getMonth() + 2, 1);
     const { data: sessions, error: sErr } = await supabase
       .from('training_sessions')
-      .select('id, title, category, objectives, status, capacity, scheduled_date')
+      .select(
+        'id, title, category, objectives, status, capacity, scheduled_date, instructor_name, location, description, materials, prerequisites',
+      )
       .in('status', ['Scheduled', 'Ongoing'])
       .gte('scheduled_date', targetStart.toISOString())
       .lt('scheduled_date', targetEnd.toISOString());
     if (sErr) return { ok: false, error: sErr.message };
 
+    // A course may develop SEVERAL competencies. Index the session under every
+    // tag it carries, so an employee is matched if ANY of their gap
+    // competencies overlaps ANY of the course's tags (OR logic, not AND).
     const coursesByCompetency = new Map<string, string[]>();
     for (const s of (sessions ?? []) as any[]) {
       if (!s.title || !s.category || !s.capacity || !(s.objectives?.length)) continue;
-      const competency = competencyFromObjectives(s.objectives);
-      if (!competency) continue;
-      const list = coursesByCompetency.get(competency) ?? [];
-      list.push(String(s.id));
-      coursesByCompetency.set(competency, list);
+      // Only PUBLISHED courses generate recommendations — a course still in
+      // planning (any detail field blank, shown dashed on the calendar) is
+      // excluded, so recommendations track the calendar's published set exactly.
+      if (!isPublishable(lifecycleFieldsFromRow(s))) continue;
+      for (const competency of competenciesFromObjectives(s.objectives)) {
+        const list = coursesByCompetency.get(competency) ?? [];
+        list.push(String(s.id));
+        coursesByCompetency.set(competency, list);
+      }
     }
     if (!coursesByCompetency.size) return { ok: true, upserted: 0, employeesConsidered: 0 };
 
@@ -276,9 +289,15 @@ export async function generateRecommendations(
           .filter((c) => coursesByCompetency.has(c))
           .sort();
 
+        // One recommendation per (employee, course): a course tagged with two
+        // competencies the employee both lacks must not double-list them. The
+        // first (sorted) matching competency is the one recorded.
+        const seenSessions = new Set<string>();
         for (const competency of gapCompetencies) {
           const detail = buildGapDetail(competency, score.overallScore, score.adjectival, score.period);
           for (const sessionId of coursesByCompetency.get(competency) ?? []) {
+            if (seenSessions.has(sessionId)) continue;
+            seenSessions.add(sessionId);
             rows.push({
               employee_id: employeeId,
               session_id: sessionId,
@@ -760,8 +779,8 @@ export type NextMonthCourse = {
   category: string | null;
   start: string;
   capacity: number;
-  /** One of the 12 canonical competencies, or null when the course omits it. */
-  competency: string | null;
+  /** All canonical competencies the course is tagged with (may be several, or empty). */
+  competencies: string[];
 };
 
 /**
@@ -796,7 +815,7 @@ export async function listNextMonthPublishedCourses(): Promise<NextMonthCourse[]
       category: r.category,
       start: r.scheduled_date,
       capacity: r.capacity ?? 0,
-      competency: competencyFromObjectives(r.objectives),
+      competencies: competenciesFromObjectives(r.objectives),
     }))
     .sort((a: NextMonthCourse, b: NextMonthCourse) => a.start.localeCompare(b.start));
 }

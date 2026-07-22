@@ -4,23 +4,59 @@ import { COMPETENCIES } from '../../constants/positions';
 
 const supabase = supabaseClient as any;
 
-const COMPETENCY_SET = new Set<string>(COMPETENCIES as readonly string[]);
+/**
+ * Normalise a competency string for comparison: lower-case, collapse the spaces
+ * around a slash and any run of whitespace. This absorbs the real-world variants
+ * that drift into the data — e.g. "Fiscal Management/Budgeting for LGU" (as
+ * stored in ipcr_competency_matches) vs. the canonical "Fiscal Management /
+ * Budgeting for LGU" (positions.ts) — so a course tagged one way still matches
+ * an employee mapped the other way.
+ */
+const normalizeCompetencyKey = (s: string): string =>
+  String(s ?? '')
+    .toLowerCase()
+    .replace(/\s*\/\s*/g, '/')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const CANON_BY_KEY = new Map<string, string>(
+  (COMPETENCIES as readonly string[]).map((c) => [normalizeCompetencyKey(c), c]),
+);
 
 /**
- * A course's competency lives inside the `objectives` text[] as a
- * "Competency: <name>" line (there is no competency column — see the seeders).
- * Parse it and validate against the 12 canonical competencies. Returns null when
- * absent or not one of the 12.
+ * Resolve any competency spelling to its canonical form (one of the 12 in
+ * positions.ts), or null if it isn't a recognised competency. Use this on BOTH
+ * sides of a match — course tags and employee competencies — so string drift
+ * never silently drops a genuine match.
  */
-export const competencyFromObjectives = (objectives: string[] | null | undefined): string | null => {
+export const canonicalizeCompetency = (raw: string | null | undefined): string | null =>
+  raw == null ? null : CANON_BY_KEY.get(normalizeCompetencyKey(raw)) ?? null;
+
+/**
+ * ALL competencies a course develops, parsed from the `objectives` text[] where
+ * each is a "Competency: <name>" line (there is no competency column — see the
+ * seeders). A course may carry several such lines; each is canonicalised and
+ * validated, unknowns dropped, order preserved, duplicates removed. Returns an
+ * empty array when none are present.
+ */
+export const competenciesFromObjectives = (objectives: string[] | null | undefined): string[] => {
+  const out: string[] = [];
   for (const line of objectives ?? []) {
     if (typeof line === 'string' && line.startsWith('Competency: ')) {
-      const value = line.slice('Competency: '.length).trim();
-      if (COMPETENCY_SET.has(value)) return value;
+      const canon = canonicalizeCompetency(line.slice('Competency: '.length));
+      if (canon && !out.includes(canon)) out.push(canon);
     }
   }
-  return null;
+  return out;
 };
+
+/**
+ * A course's PRIMARY competency — the first tag — or null. Kept for callers that
+ * only need one (e.g. a display label). Prefer competenciesFromObjectives for
+ * matching, which honours every tag.
+ */
+export const competencyFromObjectives = (objectives: string[] | null | undefined): string | null =>
+  competenciesFromObjectives(objectives)[0] ?? null;
 
 export type CalendarEventStatus = 'Scheduled' | 'Ongoing' | 'Completed' | 'Cancelled';
 export type AttendanceStatus = 'Present' | 'Absent' | 'Excused';

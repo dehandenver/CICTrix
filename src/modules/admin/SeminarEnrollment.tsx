@@ -211,7 +211,21 @@ export const SeminarEnrollment = () => {
   }, []);
 
   useEffect(() => {
-    void refresh();
+    let cancelled = false;
+    (async () => {
+      // Sync on open: regenerate recommendations from the latest published
+      // calendar courses + IPCR data, so newly published courses arrive here
+      // already matched — no manual Regenerate needed. Failures are non-fatal;
+      // the pipeline still loads whatever is already there.
+      setBusy('regen');
+      await generateRecommendations().catch(() => {});
+      if (cancelled) return;
+      setBusy(null);
+      await refresh();
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [refresh]);
 
   const say = (tone: 'ok' | 'err', text: string) => {
@@ -228,22 +242,28 @@ export const SeminarEnrollment = () => {
 
   // Coverage (Task 2): one entry per PUBLISHED next-month course, whether or not
   // the AI matched anyone. A course with no candidates is shown flagged for
-  // review rather than silently missing. Candidate groups for courses that
-  // aren't published yet (still in planning) are appended so existing
-  // suggestions are never hidden.
+  // review rather than silently missing. Courses still in planning (dashed on
+  // the calendar) are intentionally excluded — recommendations only cover
+  // published courses.
   const coverage = useMemo<{ course: NextMonthCourse; group: Group | null }[]>(() => {
     const byId = new Map(recGroups.map((g) => [g.sessionId, g]));
-    const covered = new Set(courses.map((c) => c.sessionId));
-    const entries = courses.map((course) => ({ course, group: byId.get(course.sessionId) ?? null }));
-    for (const g of recGroups) {
-      if (covered.has(g.sessionId)) continue;
-      entries.push({
-        course: { sessionId: g.sessionId, title: g.title, category: g.category, start: g.start, capacity: g.capacity, competency: null },
-        group: g,
-      });
-    }
-    return entries.sort((a, b) => a.course.start.localeCompare(b.course.start));
+    return courses
+      .map((course) => ({ course, group: byId.get(course.sessionId) ?? null }))
+      .sort((a, b) => a.course.start.localeCompare(b.course.start));
   }, [courses, recGroups]);
+
+  // For a published course with no SUGGESTED candidates, distinguish "genuinely
+  // nobody matched" from "already routed downstream" (its recommendations moved
+  // past SUGGESTED into a later tab) — so an advanced course isn't mislabelled
+  // "0 matches".
+  const routedBySession = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of all) {
+      if (r.status === 'SUGGESTED') continue;
+      m.set(r.sessionId, (m.get(r.sessionId) ?? 0) + 1);
+    }
+    return m;
+  }, [all]);
 
   const sentGroups = useMemo(() => byStatus(['LND_APPROVED', 'OFFICE_ADDED']), [byStatus]);
   const returnedGroups = useMemo(() => byStatus(['OFFICE_FINALIZED']), [byStatus]);
@@ -453,23 +473,30 @@ export const SeminarEnrollment = () => {
                   recs: [],
                 };
               const zeroMatch = !group || group.recs.length === 0;
+              const routed = routedBySession.get(course.sessionId) ?? 0;
               return (
                 <section key={course.sessionId} className="rounded-xl border border-gray-200 bg-white">
                   <SectionHeader
                     group={g}
                     right={
-                      zeroMatch ? (
+                      !zeroMatch ? undefined : routed > 0 ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                          <Check className="h-3.5 w-3.5" /> {routed} already routed
+                        </span>
+                      ) : (
                         <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
                           <AlertTriangle className="h-3.5 w-3.5" /> 0 matches — review
                         </span>
-                      ) : undefined
+                      )
                     }
                   />
                   {zeroMatch ? (
-                    <p className="px-4 py-3 text-xs text-amber-800">
-                      {course.competency === null
+                    <p className={`px-4 py-3 text-xs ${routed > 0 ? 'text-slate-500' : 'text-amber-800'}`}>
+                      {routed > 0
+                        ? `All ${routed} recommendation${routed === 1 ? '' : 's'} for this course have moved past review — see the Sent to Office Account, Returned, Enrolled or Published tabs.`
+                        : course.competencies.length === 0
                         ? 'This course has no competency mapping, so no attendees can be matched automatically. Add a “Competency: …” line to its objectives in Training Calendar, then Regenerate — or route attendees manually via the Office Account.'
-                        : `No employee's finalized IPCR data currently shows a gap in ${course.competency}. Nothing to auto-route — Regenerate after new IPCR data, or add attendees manually via the Office Account.`}
+                        : `No employee's finalized IPCR data currently shows a gap in ${course.competencies.join(' or ')}. Nothing to auto-route — Regenerate after new IPCR data, or add attendees manually via the Office Account.`}
                     </p>
                   ) : (
                     <ul className="divide-y divide-gray-100">
