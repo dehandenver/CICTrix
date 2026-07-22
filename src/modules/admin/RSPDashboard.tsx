@@ -3224,22 +3224,9 @@ export const RSPDashboard = () => {
       try {
         await hireApplicant(id);
         return true;
-      } catch (backendErr) {
-        console.warn('[RSPDashboard] hire backend unavailable, falling back to direct Supabase update', backendErr);
-        try {
-          const { error } = await (supabase as any)
-            .from('applicants')
-            .update({ status: 'Hired' })
-            .eq('id', id);
-          if (error) {
-            console.error('[RSPDashboard] Supabase status update failed', id, error);
-            return false;
-          }
-          return true;
-        } catch (err) {
-          console.error('[RSPDashboard] Supabase status update threw', id, err);
-          return false;
-        }
+      } catch (err) {
+        console.error('[RSPDashboard] hireApplicant failed', id, err);
+        return false;
       }
     };
 

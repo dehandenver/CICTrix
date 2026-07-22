@@ -93,17 +93,214 @@ async function getAuthToken() {
  */
 export async function hireApplicant(applicantId: string): Promise<EmployeeRow> {
   const token = await getAuthToken();
-  const res = await fetch(`${API_BASE_URL}/employees/from-applicant/${applicantId}`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`
-    }
-  });
+  try {
+    const res = await fetch(`${API_BASE_URL}/employees/from-applicant/${applicantId}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
 
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.detail || 'Failed to hire applicant');
+    if (res.ok) {
+      return await res.json();
+    }
+    console.warn(`[employeesApi] Backend hire failed (status ${res.status}), trying client-side fallback...`);
+  } catch (fetchErr) {
+    console.warn('[employeesApi] Backend hire endpoint unreachable, trying client-side fallback...', fetchErr);
   }
 
-  return res.json();
+  // Client-side fallback:
+  // 1. Fetch applicant details
+  const { data: applicant, error: appErr } = await (supabase as any)
+    .from('applicants')
+    .select('*')
+    .eq('id', applicantId)
+    .maybeSingle();
+
+  if (appErr || !applicant) {
+    throw new Error(appErr?.message || 'Applicant not found in Supabase for client-side fallback');
+  }
+
+  // 2. Generate and verify unique employee number
+  let empId = (applicant as any).employee_id;
+  if (!empId) {
+    let candidateId = `EMP-${applicantId.replace(/-/g, '').slice(0, 8).toUpperCase()}`;
+    let isUnique = false;
+    let attempts = 0;
+    while (!isUnique && attempts < 10) {
+      const { data: existing } = await (supabase as any)
+        .from('employees')
+        .select('employee_number')
+        .eq('employee_number', candidateId)
+        .maybeSingle();
+      if (!existing) {
+        isUnique = true;
+        empId = candidateId;
+      } else {
+        const randHex = Math.floor(Math.random() * 0xffffffff).toString(16).padEnd(8, '0').toUpperCase();
+        candidateId = `EMP-NH${randHex.slice(0, 6)}`;
+        attempts++;
+      }
+    }
+    if (!empId) empId = candidateId;
+  } else {
+    // If the applicant had a pre-assigned employee_id, verify it doesn't clash
+    const { data: clashingEmp } = await (supabase as any)
+      .from('employees')
+      .select('employee_number')
+      .eq('employee_number', empId)
+      .maybeSingle();
+    
+    if (clashingEmp) {
+      let candidateId = `EMP-NH${applicantId.replace(/-/g, '').slice(0, 6).toUpperCase()}`;
+      let isUnique = false;
+      let attempts = 0;
+      while (!isUnique && attempts < 10) {
+        const { data: existing } = await (supabase as any)
+          .from('employees')
+          .select('employee_number')
+          .eq('employee_number', candidateId)
+          .maybeSingle();
+        if (!existing) {
+          isUnique = true;
+          empId = candidateId;
+        } else {
+          const randHex = Math.floor(Math.random() * 0xffffffff).toString(16).padEnd(8, '0').toUpperCase();
+          candidateId = `EMP-NH${randHex.slice(0, 6)}`;
+          attempts++;
+        }
+      }
+      if (!empId) empId = candidateId;
+    }
+  }
+
+  // 3. Resolve department name and ID
+  const positionName = (applicant as any).position || 'Staff';
+  let departmentName = (applicant as any).office || 'Operations';
+  
+  // Try to match department name from job_postings
+  try {
+    const { data: job } = await (supabase as any)
+      .from('job_postings')
+      .select('department')
+      .ilike('title', positionName)
+      .maybeSingle();
+    if (job?.department) {
+      departmentName = job.department;
+    }
+  } catch { /* ignore */ }
+
+  const legacyMap: Record<string, string> = {
+    'Human Resource Management Office': 'Human Resources',
+    'Information Technology Office': 'Information Technology',
+    'City Planning and Development Office': 'Operations',
+    'City Health Office': 'Operations',
+    'City Engineering Office': 'Operations',
+    "Treasurer's Office": 'Finance',
+    'Budget Office': 'Finance',
+    'General Services Office': 'Operations',
+    'Office of the City Engineer': 'Operations',
+    'Office of the City Accountant': 'Finance',
+    'Office of the City Social Welfare and Development': 'Operations',
+    'IT Department': 'Information Technology',
+    'HR Department': 'Human Resources',
+    'Finance Department': 'Finance',
+    'Legal Department': 'Legal',
+    'IT Division': 'Information Technology',
+    'Health Office': 'Operations',
+    'Treasury Department': 'Finance'
+  };
+
+  if (legacyMap[departmentName]) {
+    departmentName = legacyMap[departmentName];
+  }
+
+  let deptId: string | null = null;
+  try {
+    const { data: dept } = await (supabase as any)
+      .from('departments')
+      .select('id')
+      .eq('name', departmentName)
+      .maybeSingle();
+    if (dept?.id) {
+      deptId = dept.id;
+    }
+  } catch { /* ignore */ }
+
+  // 4. Construct email & resolve email uniqueness constraint
+  let email = (applicant as any).email;
+  if (!email) {
+    const first = String((applicant as any).first_name || '').toLowerCase().replace(/\s+/g, '');
+    const last = String((applicant as any).last_name || '').toLowerCase().replace(/\s+/g, '');
+    email = `${first}.${last}.${empId.toLowerCase()}@employee.local`;
+  }
+
+  let finalEmail = email;
+  let emailUnique = false;
+  let emailAttempts = 0;
+  while (!emailUnique && emailAttempts < 10) {
+    const { data: existingEmail } = await (supabase as any)
+      .from('employees')
+      .select('email')
+      .eq('email', finalEmail)
+      .maybeSingle();
+    if (!existingEmail) {
+      emailUnique = true;
+    } else {
+      emailAttempts++;
+      const parts = email.split('@');
+      finalEmail = `${parts[0]}.${emailAttempts + 1}@${parts[1]}`;
+    }
+  }
+
+  // 5. Insert employee record (using insert, not upsert, for safety)
+  const validGenders = ['Male', 'Female', 'Other', 'Prefer not to say'];
+  const gender = validGenders.includes((applicant as any).gender) ? (applicant as any).gender : 'Other';
+
+  const insertData = {
+    employee_number: empId,
+    first_name: (applicant as any).first_name || '',
+    middle_name: (applicant as any).middle_name || '',
+    last_name: (applicant as any).last_name || '',
+    email: finalEmail,
+    phone: (applicant as any).contact_number || null,
+    current_address_street: (applicant as any).address || null,
+    permanent_address_street: (applicant as any).address || null,
+    sex: gender,
+    position: positionName,
+    department: departmentName,
+    employment_status: 'Regular',
+    date_hired: new Date().toISOString().split('T')[0],
+    status: 'Active',
+    user_account_id: null
+  };
+
+  const { data: newEmp, error: insertErr } = await (supabase as any)
+    .from('employees')
+    .insert(insertData)
+    .select()
+    .maybeSingle();
+
+  if (insertErr || !newEmp) {
+    throw new Error(insertErr?.message || 'Failed to insert employee record in client-side fallback');
+  }
+
+  // 6. Update applicant status and link to the new employee number
+  const { error: updateErr } = await (supabase as any)
+    .from('applicants')
+    .update({ status: 'Hired', employee_id: empId })
+    .eq('id', applicantId);
+
+  if (updateErr) {
+    console.error('[employeesApi] Failed to update applicant status and link:', updateErr);
+  }
+
+  // 7. Read through view
+  const { data: viewEmp } = await (supabase as any)
+    .from('employees_with_department')
+    .select('*')
+    .eq('id', (newEmp as any).id)
+    .maybeSingle();
+
+  return (viewEmp || newEmp) as EmployeeRow;
 }

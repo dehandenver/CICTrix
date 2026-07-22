@@ -275,17 +275,12 @@ export const ForHiringPage = () => {
 
     for (const row of confirmTarget) {
       let employeeId = '';
-      let backendSuccess = false;
       try {
         const employeeRow = await hireApplicant(row.id);
         employeeId = employeeRow?.employee_id || '';
-        backendSuccess = Boolean(employeeId);
-      } catch { /* fallback below */ }
-
-      if (!employeeId) {
-        const year = new Date().getFullYear();
-        const rnd  = String(Math.floor(Math.random() * 9000) + 1000);
-        employeeId = `EMP-${year}-${rnd}`;
+      } catch (err) {
+        console.error(`Failed to hire applicant ${row.id}:`, err);
+        continue;
       }
 
       const tempPassword = createPassword();
@@ -305,13 +300,6 @@ export const ForHiringPage = () => {
           hireDate:   new Date().toISOString().split('T')[0],
         } as any,
       });
-
-      try {
-        await (supabase as any)
-          .from('applicants')
-          .update({ status: 'Hired' })
-          .eq('id', row.id);
-      } catch { /* continue */ }
 
       saveApplicants(
         getApplicants().map(a => a.id === row.id ? { ...a, status: 'Hired' as any } : a)
@@ -365,7 +353,7 @@ export const ForHiringPage = () => {
               `Employee ID       : ${employeeId}\n` +
               `Temporary password: ${tempPassword}\n\n` +
               `Please log in to the Employee Portal and change your password before accessing any module.\n` +
-              (backendSuccess ? '' : `\nNote: Your employee record is being finalised. Please contact HR if you experience any access issues.\n`) +
+              (true ? '' : `\nNote: Your employee record is being finalised. Please contact HR if you experience any access issues.\n`) +
               `\nIf you did not expect this email, please contact HR immediately.\n`,
             employeeId,
             template: 'employee_credentials',

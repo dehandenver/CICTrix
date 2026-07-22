@@ -209,8 +209,35 @@ async def hire_from_applicant(
         if insert_data["sex"] not in valid_genders:
             insert_data.pop("sex", None)
 
-        # 2. Upsert into employees (using on_conflict to ensure idempotency)
-        emp_res = client.table("employees").upsert(insert_data, on_conflict="employee_number").execute()
+        # Check email uniqueness and append disambiguator if necessary
+        email_val = insert_data.get("email")
+        if email_val:
+            email_unique = False
+            email_attempts = 0
+            while not email_unique and email_attempts < 10:
+                existing_email = client.table("employees").select("email").eq("email", email_val).execute()
+                if not existing_email.data:
+                    email_unique = True
+                else:
+                    email_attempts += 1
+                    parts = insert_data["email"].split('@')
+                    email_val = f"{parts[0]}.{email_attempts + 1}@{parts[1]}"
+            insert_data["email"] = email_val
+
+        # Check for employee_number clash first
+        existing = client.table("employees").select("id").eq("employee_number", insert_data["employee_number"]).execute()
+        if existing.data:
+            # Clash detected — generate a new unique ID
+            import secrets
+            while True:
+                new_id = f"EMP-NH{secrets.token_hex(4).upper()}"
+                check = client.table("employees").select("id").eq("employee_number", new_id).execute()
+                if not check.data:
+                    insert_data["employee_number"] = new_id
+                    break
+
+        # 2. Insert into employees
+        emp_res = client.table("employees").insert(insert_data).execute()
         if not emp_res.data:
             raise HTTPException(status_code=500, detail="Failed to insert employee record")
             
