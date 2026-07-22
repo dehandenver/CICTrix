@@ -251,14 +251,20 @@ export const JobDetailsPage = () => {
                 label="Work Experience"
                 value={(() => {
                   const total = Number(job.qualifications.experience.years || 0);
-                  if (total <= 0) return '';
+                  const field = job.qualifications.experience.field;
+                  if (total <= 0) {
+                    // Years may be left at 0 while a domain of experience is
+                    // still required ("Experience In"). Surface that text rather
+                    // than returning '' → "None required", which hid a real
+                    // requirement the poster had entered.
+                    return field ? `Relevant experience in ${field}` : '';
+                  }
                   const years = Math.floor(total);
                   const months = Math.round((total - years) * 12);
                   const parts: string[] = [];
                   if (years > 0) parts.push(`${years} year${years === 1 ? '' : 's'}`);
                   if (months > 0) parts.push(`${months} month${months === 1 ? '' : 's'}`);
                   const duration = parts.join(' ');
-                  const field = job.qualifications.experience.field;
                   return field ? `${duration} in ${field}` : duration;
                 })()}
                 emptyText="None required"
