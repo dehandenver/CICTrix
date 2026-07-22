@@ -1448,9 +1448,19 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
       const s = a.status.toLowerCase();
       // Exclude disqualified/rejected — they are removed from all list views.
       if (s.includes('not qualified') || s.includes('disqualif') || s.includes('reject')) return false;
-      // Exclude fully qualified applicants — they belong in the Qualified Applicants tab.
-      if (s === 'qualified' || s.includes('recommended for hiring') || s.includes('accepted') || s.includes('hired')) return false;
-      // Include shortlisted and applicants in the interview/evaluation pipeline.
+      // Exclude applicants who have finished the pipeline.
+      if (s.includes('accepted') || s.includes('hired')) return false;
+      // Once an applicant has a scheduled exam/interview they belong here to be
+      // scored — regardless of their status label. Scheduling doesn't move an
+      // applicant off "Qualified"/"Recommended for Hiring", so keying inclusion
+      // on status alone hid every scheduled applicant from scoring (e.g. an
+      // Engineer II applicant scheduled from the Qualified Applicants tab never
+      // appeared here).
+      if (a.exam_date || a.interview_date) return true;
+      // Not yet scheduled: keep the original behaviour — fully qualified /
+      // recommended applicants wait in the Qualified Applicants tab; everyone in
+      // the interview/evaluation pipeline shows here.
+      if (s === 'qualified' || s.includes('recommended for hiring')) return false;
       return s.includes('shortlist') || s.includes('interview') || s.includes('review') || completedEvaluationIds.has(a.id);
     }),
     [applicants, completedEvaluationIds],
