@@ -2480,7 +2480,7 @@ export const RSPDashboard = () => {
   }, [fallbackEmployeeDirectorySource, selectedDirectoryCard]);
 
   const selectedEmployeeDetails = useMemo(
-    () => directoryEmployeesSource.find((employee) => employee.id === selectedEmployeeId) ?? null,
+    () => directoryEmployeesSource.find((employee) => (employee.id === selectedEmployeeId || employee.employeeId === selectedEmployeeId)) ?? null,
     [directoryEmployeesSource, selectedEmployeeId]
   );
 

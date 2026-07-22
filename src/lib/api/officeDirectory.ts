@@ -221,27 +221,6 @@ export async function getOfficeDirectory(): Promise<
       }));
     const departments = [...departmentsFromDb, ...orphanDepts];
 
-    // Group active assignments by office id and by office name (fallback join key).
-    const assignmentPerson = (a: any): OfficePerson => ({
-      name: String(a?.employee_name ?? '').trim() || 'Unnamed',
-      contact: a?.account_username ? `@${a.account_username}` : '—',
-      position: a?.role === 'DeptHead' ? 'Department Head' : 'Supervisor',
-      accountStatus: 'Active',
-    });
-    const deptHeadAssignByOfficeId = new Map<string, any>();
-    const supervisorAssignsByOfficeId = new Map<string, OfficePerson[]>();
-    for (const a of assignments) {
-      const officeKey = String(a?.office_id ?? '');
-      if (!officeKey) continue;
-      if (a?.role === 'DeptHead') {
-        if (!deptHeadAssignByOfficeId.has(officeKey)) deptHeadAssignByOfficeId.set(officeKey, a);
-      } else if (a?.role === 'Supervisor') {
-        const list = supervisorAssignsByOfficeId.get(officeKey) ?? [];
-        list.push(assignmentPerson(a));
-        supervisorAssignsByOfficeId.set(officeKey, list);
-      }
-    }
-
     // Index employees by id (for dept-head lookup) and count per department.
     const employeeById = new Map<string, any>();
     const headcountByDeptName = new Map<string, number>();
@@ -257,6 +236,31 @@ export async function getOfficeDirectory(): Promise<
       if (norm(emp?.status) !== 'active') continue;
       const nameKey = norm(emp?.department) || norm(emp?.current_department);
       if (nameKey) headcountByDeptName.set(nameKey, (headcountByDeptName.get(nameKey) ?? 0) + 1);
+    }
+
+    // Group active assignments by office id and by office name (fallback join key).
+    const assignmentPerson = (a: any): OfficePerson => {
+      const emp = a?.employee_id ? employeeById.get(String(a.employee_id)) : null;
+      const contact = emp ? buildContact(emp.email, emp.mobile_number) : '—';
+      return {
+        name: String(a?.employee_name ?? '').trim() || 'Unnamed',
+        contact: contact !== '—' ? contact : (a?.account_username ? `@${a.account_username}` : '—'),
+        position: a?.role === 'DeptHead' ? 'Department Head' : 'Supervisor',
+        accountStatus: 'Active',
+      };
+    };
+    const deptHeadAssignByOfficeId = new Map<string, any>();
+    const supervisorAssignsByOfficeId = new Map<string, OfficePerson[]>();
+    for (const a of assignments) {
+      const officeKey = String(a?.office_id ?? '');
+      if (!officeKey) continue;
+      if (a?.role === 'DeptHead') {
+        if (!deptHeadAssignByOfficeId.has(officeKey)) deptHeadAssignByOfficeId.set(officeKey, a);
+      } else if (a?.role === 'Supervisor') {
+        const list = supervisorAssignsByOfficeId.get(officeKey) ?? [];
+        list.push(assignmentPerson(a));
+        supervisorAssignsByOfficeId.set(officeKey, list);
+      }
     }
 
     // Hired applicants are no longer folded into the headcount. That was a stopgap

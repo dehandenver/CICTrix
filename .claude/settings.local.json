@@ -37,7 +37,9 @@
       "Bash(npx tsc *)",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" https://cic-trix.vercel.app/api/applicants/?skip=0\\\\&limit=1)",
       "Bash(node -e ' *)",
-      "Bash(curl -s 'https://fyzdfgxaaowjzbjpwrii.supabase.co/rest/v1/employees?employee_number=in.\\(EMP-7FA5BA9A,EMP-2026-002,EMP-09CC4879,EMP-F0156D31,EMP-2238FD0D\\)&select=*' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5emRmZ3hhYW93anpianB3cmlpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTY5NTcwNywiZXhwIjoyMDg1MjcxNzA3fQ.ZK7i_oUHgJj2cEmDy5UDhLp50BaD_4xo6TJlLJ_iX60' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5emRmZ3hhYW93anpianB3cmlpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTY5NTcwNywiZXhwIjoyMDg1MjcxNzA3fQ.ZK7i_oUHgJj2cEmDy5UDhLp50BaD_4xo6TJlLJ_iX60')"
+      "Bash(curl -s 'https://fyzdfgxaaowjzbjpwrii.supabase.co/rest/v1/employees?employee_number=in.\\(EMP-7FA5BA9A,EMP-2026-002,EMP-09CC4879,EMP-F0156D31,EMP-2238FD0D\\)&select=*' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5emRmZ3hhYW93anpianB3cmlpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTY5NTcwNywiZXhwIjoyMDg1MjcxNzA3fQ.ZK7i_oUHgJj2cEmDy5UDhLp50BaD_4xo6TJlLJ_iX60' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5emRmZ3hhYW93anpianB3cmlpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTY5NTcwNywiZXhwIjoyMDg1MjcxNzA3fQ.ZK7i_oUHgJj2cEmDy5UDhLp50BaD_4xo6TJlLJ_iX60')",
+      "Bash(node scratch/inspect_schema_columns.js)",
+      "Bash(node scratch/diag_depthead_email.js)"
     ]
   }
 }

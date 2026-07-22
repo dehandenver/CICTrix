@@ -250,6 +250,8 @@ export async function fetchPortalEmployeeByNumber(
       // portal showed no position at all for a newly hired employee.
       position: data.current_position ?? data.position,
       department: data.current_department ?? data.department,
+      date_hired: data.hire_date,
+      modified_at: data.updated_at,
     };
 
     return { ok: true, data: mapSupabaseRowToEmployee(normalised) };
