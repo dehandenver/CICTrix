@@ -210,12 +210,12 @@ const deriveInitial = (
   applicant: ApplicantRecord,
   saved: Record<string, ApplicantCategoryScores>,
 ): ApplicantCategoryScores => {
-  const savedScores = saved[applicant.id];
-  if (savedScores) return savedScores;
   const pct = (applicant.total_score ?? 0) / 100;
   const autoEdu = educationLevelToPoints(applicant.education_level);
   const autoExp = experienceYearsToPoints(applicant.years_of_experience);
-  return {
+  // Full template with every category present — the reader (calcOverall, sv,
+  // the score grid) assumes all seven keys exist.
+  const fresh: ApplicantCategoryScores = {
     education:   { initialScore: autoEdu ?? +((pct * 20).toFixed(1)),  finalScore: autoEdu,  remarks: '' },
     experience:  { initialScore: autoExp ?? +((pct * 25).toFixed(1)),  finalScore: autoExp,  remarks: '' },
     performance: { initialScore: +((pct * 20).toFixed(1)),             finalScore: null,     remarks: '' },
@@ -226,13 +226,19 @@ const deriveInitial = (
     appointmentType: normalizeApplicationType(applicant.application_type),
     positionType: 'rank-and-file',
   };
+  // Merge any saved scores OVER the full template rather than returning them
+  // verbatim: a partial or older-format saved object (missing e.g. performance
+  // or writtenExam) would otherwise leave a category undefined and crash the
+  // reader with "Cannot read properties of undefined (reading 'finalScore')".
+  const savedScores = saved[applicant.id];
+  return savedScores ? { ...fresh, ...savedScores } : fresh;
 };
 
 const calcOverall = (scores: ApplicantCategoryScores): { value: number | null; pct: string | null } => {
-  for (const k of BASE_CATS) if (scores[k].finalScore === null) return { value: null, pct: null };
-  if (scores.writtenExam.finalScore === null) return { value: null, pct: null };
-  const base = BASE_CATS.reduce((s, k) => s + (scores[k].finalScore ?? 0), 0);
-  const val = +(base + (scores.writtenExam.finalScore ?? 0) * 0.30).toFixed(2);
+  for (const k of BASE_CATS) if ((scores[k]?.finalScore ?? null) === null) return { value: null, pct: null };
+  if ((scores.writtenExam?.finalScore ?? null) === null) return { value: null, pct: null };
+  const base = BASE_CATS.reduce((s, k) => s + (scores[k]?.finalScore ?? 0), 0);
+  const val = +(base + (scores.writtenExam?.finalScore ?? 0) * 0.30).toFixed(2);
   return { value: val, pct: ((val / MAX_TOTAL) * 100).toFixed(1) };
 };
 
@@ -1338,7 +1344,7 @@ const ApplicantsListView = ({ folder, completedEvaluationIds, savedCatScores, on
               const isFinalized = !!savedCatScores[a.id] || completedEvaluationIds.has(a.id);
               const cs = a.catScores;
               const sv = (key: CatKey): string => {
-                const v = cs[key].finalScore ?? cs[key].initialScore;
+                const v = cs[key]?.finalScore ?? cs[key]?.initialScore ?? 0;
                 return v > 0 ? String(v) : '—';
               };
               return (
