@@ -2793,33 +2793,7 @@ export const RSPDashboard = () => {
     const nextJobs = jobs.filter((item) => item.id !== job.id);
     setJobs(nextJobs);
 
-    // Persist through the central recruitment utility so all dependent caches/events stay in sync.
-    const nextRecruitmentRows: JobPosting[] = nextJobs.map((row, index) => ({
-      id: String(row.id ?? crypto.randomUUID()),
-      jobCode: row.item_number || `ABYAN-2026-${String(index + 1).padStart(3, '0')}`,
-      title: row.title,
-      department: row.department || 'Operations',
-      division: 'Operations',
-      positionType: 'Civil Service',
-      numberOfPositions: 1,
-      employmentStatus: 'Permanent',
-      summary: `${row.title} recruitment posting.`,
-      responsibilities: ['Review and process applications.'],
-      qualifications: {
-        education: "Bachelor's Degree",
-        experience: { years: 0, field: 'General' },
-        skills: [],
-        certifications: [],
-      },
-      requiredDocuments: ['Resume/CV', 'Application Letter'],
-      applicationDeadline: new Date(Date.now() + 30 * 86400000).toISOString(),
-      status: row.status === 'Closed' ? 'Closed' : row.status === 'Reviewing' ? 'Draft' : 'Active',
-      postedDate: row.created_at || new Date().toISOString(),
-      postedBy: 'HR Admin',
-      applicantCount: row.applicant_count ?? 0,
-      qualifiedCount: 0,
-    }));
-    saveJobPostings(nextRecruitmentRows);
+    persistDashboardJobsToRecruitment(nextJobs);
 
     try {
       await Promise.allSettled([
@@ -2837,33 +2811,7 @@ export const RSPDashboard = () => {
     const nextJobs = jobs.map((item) => (item.id === job.id ? { ...item, status: updatedStatus } : item));
     setJobs(nextJobs);
 
-    // Persist through the central recruitment utility so all dependent caches/events stay in sync.
-    const nextRecruitmentRows: JobPosting[] = nextJobs.map((row, index) => ({
-      id: String(row.id ?? crypto.randomUUID()),
-      jobCode: row.item_number || `ABYAN-2026-${String(index + 1).padStart(3, '0')}`,
-      title: row.title,
-      department: row.department || 'Operations',
-      division: 'Operations',
-      positionType: 'Civil Service',
-      numberOfPositions: 1,
-      employmentStatus: 'Permanent',
-      summary: `${row.title} recruitment posting.`,
-      responsibilities: ['Review and process applications.'],
-      qualifications: {
-        education: "Bachelor's Degree",
-        experience: { years: 0, field: 'General' },
-        skills: [],
-        certifications: [],
-      },
-      requiredDocuments: ['Resume/CV', 'Application Letter'],
-      applicationDeadline: new Date(Date.now() + 30 * 86400000).toISOString(),
-      status: row.status === 'Closed' ? 'Closed' : row.status === 'Reviewing' ? 'Draft' : 'Active',
-      postedDate: row.created_at || new Date().toISOString(),
-      postedBy: 'HR Admin',
-      applicantCount: row.applicant_count ?? 0,
-      qualifiedCount: 0,
-    }));
-    saveJobPostings(nextRecruitmentRows);
+    persistDashboardJobsToRecruitment(nextJobs);
 
     try {
       await Promise.allSettled([
