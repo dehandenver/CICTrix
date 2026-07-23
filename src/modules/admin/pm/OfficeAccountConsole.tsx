@@ -367,8 +367,9 @@ export const OfficeAccountConsole: React.FC = () => {
     void refreshPendingApprovals();
   };
   const switchEnabled = officeRole !== null;
-  // Navigation tabs: 'targets' | 'ratings' | 'training-requests'
-  const [activeTab, setActiveTab] = useState<'targets' | 'ratings' | 'training-requests' | 'training-attendees' | 'training-courses' | 'critical-positions' | 'gap-analysis'>('targets');
+  // Navigation tabs: 'targets' | 'ratings' | 'training-requests' | 'training-attendees' | 'critical-positions' | 'gap-analysis'
+  // Note: 'training-courses' (read-only) was removed — 'training-attendees' is the sole training nav item, renamed 'Training Courses' in the UI.
+  const [activeTab, setActiveTab] = useState<'targets' | 'ratings' | 'training-requests' | 'training-attendees' | 'critical-positions' | 'gap-analysis'>('targets');
 
   // Subtabs
   const [targetsSubtab, setTargetsSubtab] = useState<'verify' | 'transmittal'>('verify');
@@ -388,10 +389,10 @@ export const OfficeAccountConsole: React.FC = () => {
   // L&D's recommendations for this office, mirrored from the shared pipeline.
   const [officeRecs, setOfficeRecs] = useState<PipelineRec[]>([]);
 
-  // Form States — an office requests a topic, a competency, and the reasoning.
-  // No employee picker: a request asks for a training, not for an attendee.
-  const [selectedPillar, setSelectedPillar] = useState<Pillar | ''>('');
-  const [selectedCompetency, setSelectedCompetency] = useState<string>('');
+  // Form States — an office requests a topic and the reasoning.
+  // Category/competency are intentionally excluded: office admins shouldn't need
+  // to know L&D's internal pillar taxonomy. L&D assigns category/competency
+  // during their intake triage, not at submission time.
   const [topic, setTopic] = useState<string>('');
   const [reasoning, setReasoning] = useState<string>('');
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
@@ -471,14 +472,6 @@ export const OfficeAccountConsole: React.FC = () => {
 
   const handleSubmitRequest = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedPillar) {
-      alert('Please select a training category (pillar).');
-      return;
-    }
-    if (!selectedCompetency) {
-      alert('Please select a competency.');
-      return;
-    }
     if (!topic.trim()) {
       alert('Please give the recommended training a topic.');
       return;
@@ -491,8 +484,9 @@ export const OfficeAccountConsole: React.FC = () => {
     setIsSubmittingRequest(true);
     const result = await createTrainingRequest({
       topic: topic.trim(),
-      category: selectedPillar,
-      competency: selectedCompetency,
+      // category and competency are left null — L&D assigns them during triage.
+      category: null,
+      competency: null,
       reasoning: reasoning.trim(),
       requestingOffice: officeRole?.officeName ?? null,
       requestedBy: currentUserName || null
@@ -504,8 +498,6 @@ export const OfficeAccountConsole: React.FC = () => {
       setTimeout(() => setConsoleMessage(null), 4000);
 
       // Reset form
-      setSelectedPillar('');
-      setSelectedCompetency('');
       setTopic('');
       setReasoning('');
 
@@ -944,7 +936,7 @@ export const OfficeAccountConsole: React.FC = () => {
               <UserCheck className={`h-5 w-5 ${activeTab === 'training-attendees' ? 'text-white' : 'text-black'}`} />
               <div className="flex-1">
                 <p className={`text-sm font-semibold leading-tight flex items-center gap-2 ${activeTab === 'training-attendees' ? 'text-white' : 'text-black'}`}>
-                  Training Attendees
+                  Training Courses
                   {recsToReview.length > 0 && (
                     <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
                       activeTab === 'training-attendees' ? 'bg-white text-indigo-700' : 'bg-indigo-600 text-white'
@@ -955,22 +947,6 @@ export const OfficeAccountConsole: React.FC = () => {
                 </p>
                 <p className={`text-[11px] mt-0.5 ${activeTab === 'training-attendees' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
                   Review L&amp;D's list, add, send back
-                </p>
-              </div>
-            </button>
-            <button
-              onClick={() => setActiveTab('training-courses')}
-              className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${
-                activeTab === 'training-courses' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
-              }`}
-            >
-              <BookOpen className={`h-5 w-5 ${activeTab === 'training-courses' ? 'text-white' : 'text-black'}`} />
-              <div>
-                <p className={`text-sm font-semibold leading-tight ${activeTab === 'training-courses' ? 'text-white' : 'text-black'}`}>
-                  Training Courses
-                </p>
-                <p className={`text-[11px] mt-0.5 ${activeTab === 'training-courses' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
-                  All trainings (read-only)
                 </p>
               </div>
             </button>
@@ -1033,15 +1009,10 @@ export const OfficeAccountConsole: React.FC = () => {
                     <Sliders className="h-7 w-7 text-indigo-600" />
                     Phase 2: Ratings Validation & Cascading Summaries
                   </>
-                ) : activeTab === 'training-courses' ? (
-                  <>
-                    <BookOpen className="h-7 w-7 text-indigo-600" />
-                    Training Courses
-                  </>
                 ) : activeTab === 'training-attendees' ? (
                   <>
                     <UserCheck className="h-7 w-7 text-indigo-600" />
-                    Training Attendees
+                    Training Courses
                   </>
                 ) : (
                   <>
@@ -1055,10 +1026,8 @@ export const OfficeAccountConsole: React.FC = () => {
                   ? 'Audit and direct-edit employee target submissions before transmitting them to the central PM registrar.'
                   : activeTab === 'ratings'
                   ? 'Verify accomplishments at the 6-month mark, apply rating overrides, and generate automated DPCR/OPCR summaries.'
-                  : activeTab === 'training-courses'
-                  ? 'Browse every training in the system. Read-only — trainings are managed by L&D.'
                   : activeTab === 'training-attendees'
-                  ? "Review the trainees L&D's system recommended for your office, add anyone they missed, then send the list back to L&D for enrollment."
+                  ? 'Browse published trainings and review L&D\'s roster recommendations for your office. Add employees L&D missed, then send the list back for enrollment.'
                   : 'Request trainings from L&D and track their decisions.'}
               </p>
             </div>
@@ -1079,10 +1048,6 @@ export const OfficeAccountConsole: React.FC = () => {
 
           {/* Main Panel Card */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden min-h-[450px]">
-
-            {activeTab === 'training-courses' && (
-              <OfficeTrainingCourses officeName={officeRole?.officeName ?? null} />
-            )}
 
             {activeTab === 'training-attendees' && (
               <OfficeTrainingCourses
@@ -1590,91 +1555,16 @@ export const OfficeAccountConsole: React.FC = () => {
                     New Training Request
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Ask L&amp;D to run a training. Name the competency it develops, the topic, and
-                    why {officeRole?.officeName ?? 'your office'} needs it — L&amp;D decides who
-                    attends once the course is scheduled.
+                    Ask L&amp;D to run a training. Describe the topic and why {officeRole?.officeName ?? 'your office'} needs
+                    it — L&amp;D reviews every request and decides who attends once the course is scheduled.
                   </p>
                 </div>
 
                 <form onSubmit={handleSubmitRequest} className="space-y-6 max-w-4xl bg-slate-50/50 p-6 rounded-xl border border-slate-200">
-                  {/* Step 1: Category Selection (Pillars) */}
+                  {/* Recommended Topic */}
                   <div className="space-y-2">
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Step 1: Category Selection (Broad Pillar Filter)
-                    </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                      {(['Cultural Transformation', 'Employee Development', 'Leadership', 'Technical'] as Pillar[]).map((pillar) => {
-                        const isSelected = selectedPillar === pillar;
-                        // Colors and themes for each pillar
-                        const themes = {
-                          'Cultural Transformation': 'border-purple-200 hover:border-purple-400 bg-purple-50/20 text-purple-900',
-                          'Employee Development': 'border-blue-200 hover:border-blue-400 bg-blue-50/20 text-blue-900',
-                          'Leadership': 'border-indigo-200 hover:border-indigo-400 bg-indigo-50/20 text-indigo-900',
-                          'Technical': 'border-emerald-200 hover:border-emerald-400 bg-emerald-50/20 text-emerald-900'
-                        };
-                        const selectedBorder = {
-                          'Cultural Transformation': 'border-purple-600 ring-2 ring-purple-600 bg-purple-50/50',
-                          'Employee Development': 'border-blue-600 ring-2 ring-blue-600 bg-blue-50/50',
-                          'Leadership': 'border-indigo-600 ring-2 ring-indigo-600 bg-indigo-50/50',
-                          'Technical': 'border-emerald-600 ring-2 ring-emerald-600 bg-emerald-50/50'
-                        };
-                        return (
-                          <button
-                            key={pillar}
-                            type="button"
-                            onClick={() => {
-                              setSelectedPillar(pillar);
-                              setSelectedCompetency('');
-                            }}
-                            className={`flex flex-col items-center justify-center p-4 rounded-xl border text-center transition cursor-pointer ${
-                              isSelected ? selectedBorder[pillar] : themes[pillar]
-                            } h-28 bg-white`}
-                          >
-                            <span className="text-xs font-bold leading-tight">{pillar}</span>
-                            <span className="text-[10px] text-slate-400 mt-2">
-                              {pillar === 'Cultural Transformation' && 'Ethics & Advocacy'}
-                              {pillar === 'Employee Development' && 'Mentorship & Comms'}
-                              {pillar === 'Leadership' && 'Governance & Strategy'}
-                              {pillar === 'Technical' && 'LGU Systems & Tech'}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Step 2: Competency Selection */}
-                  {selectedPillar && (
-                    <div className="space-y-2">
-                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-                        Step 2: Select Competency ({selectedPillar})
-                      </label>
-                      <div className="flex flex-wrap gap-2">
-                        {COMPETENCY_CATALOG[selectedPillar].map((comp) => {
-                          const isCompSelected = selectedCompetency === comp;
-                          return (
-                            <button
-                              key={comp}
-                              type="button"
-                              onClick={() => setSelectedCompetency(comp)}
-                              className={`px-3 py-2 rounded-lg text-xs font-semibold border transition cursor-pointer ${
-                                isCompSelected
-                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                              }`}
-                            >
-                              {comp}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Step 4: Topic */}
-                  <div className="space-y-2">
-                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Step 3: Recommended Topic
+                      Recommended Topic
                     </label>
                     <input
                       type="text"
@@ -1688,10 +1578,10 @@ export const OfficeAccountConsole: React.FC = () => {
                     </p>
                   </div>
 
-                  {/* Step 4: Reasoning */}
+                  {/* Reasoning */}
                   <div className="space-y-2">
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
-                      Step 4: Reasoning
+                      Reasoning
                     </label>
                     <textarea
                       rows={3}

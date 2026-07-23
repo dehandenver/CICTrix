@@ -93,8 +93,10 @@ export async function listTrainingRequestsDetailed(): Promise<TrainingRequest[]>
 export async function createTrainingRequest(input: {
   program_id?: string | null;
   topic: string;
-  category: 'Cultural Transformation' | 'Employee Development' | 'Leadership' | 'Technical';
-  competency: string;
+  /** L&D assigns category during triage; office admins leave this null. */
+  category?: 'Cultural Transformation' | 'Employee Development' | 'Leadership' | 'Technical' | null;
+  /** L&D assigns competency during triage; office admins leave this null. */
+  competency?: string | null;
   reasoning: string;
   requestingOffice: string | null;
   requestedBy: string | null;

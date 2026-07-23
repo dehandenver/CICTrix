@@ -1,8 +1,12 @@
 /**
  * Office Account — Training Courses (§3 / §4).
  *
- * A read-only, system-wide list of every training for department heads. Each
- * row carries the derived lifecycle status, an attendee count, and an
+ * Returns only PUBLISHED and LOCKED trainings — planning-status courses are
+ * L&D's internal draft state and must never be visible to Office Account users.
+ * lifecycleStatus is derived in JS (not stored), so the filter runs after the
+ * map, not at the DB query level.
+ *
+ * Each row carries the derived lifecycle status, an attendee count, and an
  * "updated by L&D" flag (updated_at > last_viewed_by_office). Opening a
  * training's drawer marks it viewed, clearing the flag.
  *
@@ -84,18 +88,13 @@ export async function listOfficeTrainings(): Promise<OfficeTraining[]> {
   const allEmployeeIds = rows.flatMap((r) => (r.training_enrollments ?? []).filter(isActive).map((e: any) => e.employee_id));
   const identities = await resolveIdentities(allEmployeeIds);
 
-  return rows.map((r): OfficeTraining => {
-    const active = (r.training_enrollments ?? []).filter(isActive);
-    const updatedAt: string | null = r.updated_at;
-    const lastViewed: string | null = r.last_viewed_by_office;
-    const updatedByLnd = !!updatedAt && (!lastViewed || updatedAt > lastViewed);
-    return {
-      id: r.id,
-      title: r.title,
-      category: r.category,
-      startDate: r.scheduled_date,
-      endDate: r.end_date,
-      status: lifecycleStatus({
+  return rows
+    .map((r): OfficeTraining => {
+      const active = (r.training_enrollments ?? []).filter(isActive);
+      const updatedAt: string | null = r.updated_at;
+      const lastViewed: string | null = r.last_viewed_by_office;
+      const updatedByLnd = !!updatedAt && (!lastViewed || updatedAt > lastViewed);
+      const lc = lifecycleStatus({
         startDate: r.scheduled_date,
         objectives: r.objectives,
         instructorName: r.instructor_name,
@@ -103,23 +102,34 @@ export async function listOfficeTrainings(): Promise<OfficeTraining[]> {
         description: r.description,
         materials: r.materials,
         prerequisites: r.prerequisites,
-      }),
-      operationalStatus: r.status,
-      attendeeCount: active.length,
-      capacity: r.capacity ?? 0,
-      updatedByLnd,
-      speaker: r.instructor_name,
-      location: r.location,
-      objectives: r.objectives ?? [],
-      description: r.description,
-      materials: r.materials,
-      prerequisites: r.prerequisites,
-      rosterFinalizedAt: r.roster_finalized_at,
-      attendees: active
-        .map((e: any) => identities.get(String(e.employee_id)) ?? { name: 'Unknown employee', department: '—', position: '—' })
-        .sort((a: OfficeAttendee, b: OfficeAttendee) => a.name.localeCompare(b.name)),
-    };
-  });
+      });
+      return {
+        id: r.id,
+        title: r.title,
+        category: r.category,
+        startDate: r.scheduled_date,
+        endDate: r.end_date,
+        // Derived — never stored. 'planning' rows are filtered out below.
+        status: lc,
+        operationalStatus: r.status,
+        attendeeCount: active.length,
+        capacity: r.capacity ?? 0,
+        updatedByLnd,
+        speaker: r.instructor_name,
+        location: r.location,
+        objectives: r.objectives ?? [],
+        description: r.description,
+        materials: r.materials,
+        prerequisites: r.prerequisites,
+        rosterFinalizedAt: r.roster_finalized_at,
+        attendees: active
+          .map((e: any) => identities.get(String(e.employee_id)) ?? { name: 'Unknown employee', department: '—', position: '—' })
+          .sort((a: OfficeAttendee, b: OfficeAttendee) => a.name.localeCompare(b.name)),
+      };
+    })
+    // Planning = L&D's internal draft state. Office Account must only see
+    // finalized (published) or imminent (locked) trainings.
+    .filter((t) => t.status === 'published' || t.status === 'locked');
 }
 
 /** Opening the detail drawer as an office user clears the "Updated by L&D" tag. */

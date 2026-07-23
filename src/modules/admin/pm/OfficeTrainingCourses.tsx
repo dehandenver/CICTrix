@@ -127,13 +127,17 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    const load = async () => {
       const data = await listOfficeTrainings();
       if (cancelled) return;
       setTrainings(data);
       setLoading(false);
-    })();
-    return () => { cancelled = true; };
+    };
+    void load();
+    // Poll so newly published courses appear without a manual reload —
+    // mirrors the recommendation pipeline's existing 12-second cycle.
+    const interval = window.setInterval(() => void load(), POLL_MS);
+    return () => { cancelled = true; window.clearInterval(interval); };
   }, []);
 
   // A department head reviews their own office's candidates, not the LGU's.
@@ -506,7 +510,6 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 focus:border-indigo-500 focus:outline-none"
             >
               <option value="all">All status</option>
-              <option value="planning">Planning</option>
               <option value="published">Published</option>
               <option value="locked">Locked</option>
             </select>
@@ -534,7 +537,7 @@ export const OfficeTrainingCourses = ({ officeName = null, initialSubtab = 'all'
                 {loading ? (
                   <tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-400">Loading trainings…</td></tr>
                 ) : pageRows.length === 0 ? (
-                  <tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-400">No trainings match your filters.</td></tr>
+                  <tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-400">No published trainings match your filters.</td></tr>
                 ) : (
                   pageRows.map((t) => (
                     <tr key={t.id} className="hover:bg-slate-50/60 transition">
