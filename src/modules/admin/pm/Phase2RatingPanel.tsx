@@ -41,8 +41,8 @@ export const Phase2RatingPanel: React.FC<{
   
   // Edit mode state
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editMfo, setEditMfo] = useState<Record<string, string>>({}); // mfoId -> title
-  const [editSi, setEditSi] = useState<Record<string, string>>({});   // siId -> description
+  // Only accomplishments are editable in Phase 2 review — MFO titles and SI
+  // descriptions are frozen Phase 1 targets (DB trigger enforces it).
   const [editAccomplishment, setEditAccomplishment] = useState<Record<string, string>>({}); // siId -> accomplishment
   const [savingEdits, setSavingEdits] = useState(false);
 
@@ -197,21 +197,13 @@ export const Phase2RatingPanel: React.FC<{
 
   const startEdit = (sheet: RatingSheet) => {
     setEditingId(sheet.targetSettingId);
-    
-    const mfoTitles: Record<string, string> = {};
-    const siDescs: Record<string, string> = {};
-    const accomplishments: Record<string, string> = {};
 
+    const accomplishments: Record<string, string> = {};
     for (const m of sheet.mfos) {
-      mfoTitles[m.id] = m.title;
       for (const si of m.indicators) {
-        siDescs[si.successIndicatorId] = si.description;
         accomplishments[si.successIndicatorId] = si.accomplishment;
       }
     }
-
-    setEditMfo(mfoTitles);
-    setEditSi(siDescs);
     setEditAccomplishment(accomplishments);
   };
 
@@ -223,8 +215,8 @@ export const Phase2RatingPanel: React.FC<{
       targetSettingId: sheet.targetSettingId,
       approverEmployeeId: currentEmployeeId,
       submitterEmployeeId: sheet.employeeId,
-      mfos: sheet.mfos.map(m => ({ id: m.id, title: editMfo[m.id] ?? m.title })),
-      indicators: sheet.mfos.flatMap(m => m.indicators.map(si => ({ id: si.successIndicatorId, description: editSi[si.successIndicatorId] ?? si.description }))),
+      // Only accomplishments are editable — the MFO/SI target text is frozen
+      // once Phase 1 is approved (DB trigger blocks writing it).
       accomplishments: sheet.mfos.flatMap(m => m.indicators.map(si => ({ successIndicatorId: si.successIndicatorId, accomplishment: editAccomplishment[si.successIndicatorId] ?? si.accomplishment }))),
     });
 
@@ -382,15 +374,8 @@ export const Phase2RatingPanel: React.FC<{
                                   <div className="space-y-3">
                                     {group.map((m) => (
                                       <div key={m.id} className="rounded-lg bg-slate-50/50 border border-slate-100 p-3">
-                                        {editing ? (
-                                          <input
-                                            value={editMfo[m.id] ?? ''}
-                                            onChange={(e) => setEditMfo((prev) => ({ ...prev, [m.id]: e.target.value }))}
-                                            className="w-full mb-2 rounded border border-indigo-200 bg-white px-2 py-1 text-xs font-semibold text-slate-850 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                          />
-                                        ) : (
-                                          <p className="text-xs font-bold text-slate-800 mb-2">{m.title || '(untitled MFO)'}</p>
-                                        )}
+                                        {/* MFO title is a frozen Phase 1 target — read-only even in edit mode. */}
+                                        <p className="text-xs font-bold text-slate-800 mb-2">{m.title || '(untitled MFO)'}</p>
 
                                         <div className="space-y-2.5">
                                           {m.indicators.map((si) => {
@@ -403,15 +388,8 @@ export const Phase2RatingPanel: React.FC<{
                                                 {/* Target Indicator */}
                                                 <div>
                                                   <span className="text-[10px] font-extrabold uppercase text-slate-400 block tracking-wider">Success Indicator (Phase 1 Target)</span>
-                                                  {editing ? (
-                                                    <input
-                                                      value={editSi[si.successIndicatorId] ?? ''}
-                                                      onChange={(e) => setEditSi((prev) => ({ ...prev, [si.successIndicatorId]: e.target.value }))}
-                                                      className="w-full mt-1 rounded border border-indigo-200 bg-white px-2 py-1 text-xs text-slate-750 focus:outline-none"
-                                                    />
-                                                  ) : (
-                                                    <p className="text-slate-800 font-medium mt-0.5">{si.description}</p>
-                                                  )}
+                                                  {/* Frozen Phase 1 target — read-only even in edit mode. */}
+                                                  <p className="text-slate-800 font-medium mt-0.5">{si.description}</p>
                                                 </div>
 
                                                 {/* Accomplishment */}

@@ -946,28 +946,25 @@ export async function returnPhase2ForRevision(p: {
 }
 
 /**
- * Edit MFO titles, Success Indicator descriptions, and Accomplishment texts inline during Phase 2 review.
+ * Edit the employee's Accomplishment texts inline during Phase 2 review.
+ *
+ * Only accomplishments are editable here. The MFO titles and Success Indicator
+ * descriptions are the Phase 1 targets, which are frozen the moment Phase 1 is
+ * approved — a database trigger (migration 20260715) blocks any write to mfos /
+ * success_indicators of an approved target_setting. Attempting to update them
+ * raised "IPCR target setting … is approved and frozen; its targets cannot be
+ * modified." and failed the whole save. Phase 2 rates accomplishments against
+ * the frozen targets; it never rewrites them.
  */
 export async function adminEditRatings(p: {
   targetSettingId: string;
   approverEmployeeId: string | null;
   submitterEmployeeId: string;
-  mfos: Array<{ id: string; title: string }>;
-  indicators: Array<{ id: string; description: string }>;
   accomplishments: Array<{ successIndicatorId: string; accomplishment: string }>;
 }): Promise<Result<null>> {
   try {
-    // 1. Edit MFOs
-    for (const m of p.mfos) {
-      const { error } = await supabase.from('mfos').update({ title: m.title }).eq('id', m.id);
-      if (error) return { ok: false, error: error.message };
-    }
-    // 2. Edit Success Indicators
-    for (const si of p.indicators) {
-      const { error } = await supabase.from('success_indicators').update({ description: si.description }).eq('id', si.id);
-      if (error) return { ok: false, error: error.message };
-    }
-    // 3. Edit Accomplishments
+    // Edit Accomplishments only (success_indicator_ratings is exempt from the
+    // freeze trigger; mfos / success_indicators are not and must not change).
     for (const acc of p.accomplishments) {
       const { error } = await supabase
         .from('success_indicator_ratings')
