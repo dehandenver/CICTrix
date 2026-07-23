@@ -9,7 +9,9 @@
  */
 
 import { AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import type { IPCRRatingRecord } from './SummaryOfRatings';
+import { supabase } from '../../../lib/supabase';
 
 type Comp = { name: string; possessed: number; required: number; isGap: boolean };
 
@@ -39,6 +41,42 @@ export function summarizeGaps(record: IPCRRatingRecord): string {
 
 export const CompetencyGapPanel = ({ record }: { record: IPCRRatingRecord }) => {
   const comps = (record.competencies ?? []) as Comp[];
+  const [recommendations, setRecommendations] = useState<string | null>(null);
+  const [loadingRec, setLoadingRec] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const fetchRecommendations = async () => {
+      setLoadingRec(true);
+      try {
+        const { data, error } = await (supabase as any)
+          .from('employee_competency_summaries')
+          .select('recommendations, employees!inner(employee_number)')
+          .eq('employees.employee_number', record.id)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        if (error) throw error;
+        if (active) {
+          if (data && data.length > 0) {
+            setRecommendations(data[0].recommendations);
+          } else {
+            setRecommendations(null);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching recommendations in CompetencyGapPanel:', err);
+      } finally {
+        if (active) setLoadingRec(false);
+      }
+    };
+
+    void fetchRecommendations();
+    return () => {
+      active = false;
+    };
+  }, [record.id]);
+
   if (comps.length === 0) {
     return <p className="text-xs text-slate-400">No competency breakdown available for this employee.</p>;
   }
@@ -53,6 +91,22 @@ export const CompetencyGapPanel = ({ record }: { record: IPCRRatingRecord }) => 
         </p>
         <p className="mt-1 text-sm leading-relaxed text-slate-700">{summarizeGaps(record)}</p>
       </div>
+
+      {/* Recommended Learning Interventions */}
+      {loadingRec ? (
+        <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50/70 p-3 animate-pulse">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-blue-700">
+            Loading Recommended Learning Interventions...
+          </p>
+        </div>
+      ) : recommendations ? (
+        <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50/70 p-3">
+          <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-blue-700">
+            <Sparkles className="h-3.5 w-3.5" /> Recommended Learning Interventions
+          </p>
+          <p className="mt-1 text-sm leading-relaxed text-slate-700 whitespace-pre-wrap">{recommendations}</p>
+        </div>
+      ) : null}
 
       <h4 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
         Competency gap evaluation {gapCount > 0 && <span className="text-rose-600">· {gapCount} gap{gapCount === 1 ? '' : 's'}</span>}

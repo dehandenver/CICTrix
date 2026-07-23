@@ -1,12 +1,9 @@
-import { AlertCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronUp, Info, Printer, Search, Send, X } from 'lucide-react';
+import { ArrowLeft, ArrowUpDown, Building2, ChevronDown, ChevronRight, RefreshCw, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRealtimeRefresh } from '../../../hooks/useRealtimeRefresh';
+import { EmptyState } from '../../../components/EmptyState';
 import { getIPCRRecordsFromGapView } from '../../../lib/api/competencyGapAnalysis';
 import { CompetencyGapPanel } from './CompetencyGapPanel';
-import { useRealtimeRefresh } from '../../../hooks/useRealtimeRefresh';
-import { supabase as supabaseClient } from '../../../lib/supabase';
-
-// Bypass auto-generated Supabase types resolving to `never`.
-const supabase = supabaseClient as any;
 
 export interface IPCRRatingRecord {
   id: string;
@@ -97,627 +94,370 @@ export function groupByDept(records: IPCRRatingRecord[]) {
 
 export const REPORT_PERIOD = 'January–June 2025';
 
+const NEEDS_IMPROVEMENT_THRESHOLD = 3;
+
+const fmtDate = (d: Date) =>
+  d.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
 export const SummaryOfRatings = () => {
   const [records, setRecords] = useState<IPCRRatingRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [lastSynced, setLastSynced] = useState<Date | null>(null);
+  const [sortAsc, setSortAsc] = useState(true);
+  const [deptSortAsc, setDeptSortAsc] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedDept, setSelectedDept] = useState('All Departments');
-  const [deptOptions, setDeptOptions] = useState<string[]>(['All Departments']);
-  const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({});
+  // null → department landing view; a department name → drilled-in employee view
+  const [activeDept, setActiveDept] = useState<string | null>(null);
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
 
   const latestLoadId = useRef(0);
 
-  const loadData = useCallback(async (isSilent = false) => {
+  const fetchRecords = useCallback(async (isSilent = false) => {
     const loadId = ++latestLoadId.current;
-    if (!isSilent) {
-      setIsLoading(true);
-    }
+    if (!isSilent) setLoading(true);
     try {
       const data = await getIPCRRecordsFromGapView(REPORT_PERIOD);
       if (loadId !== latestLoadId.current) return;
       setRecords(data);
-      const depts = Array.from(new Set(data.map(r => r.department)));
-      setDeptOptions(['All Departments', ...depts]);
-      setExpandedDepts(prev => {
-        const next = { ...prev };
-        depts.forEach(d => {
-          if (next[d] === undefined) next[d] = true;
-        });
-        return next;
-      });
+      setLastSynced(new Date());
     } catch (err) {
-      console.error("Error loading PM records:", err);
+      console.error('Error loading IPCR records:', err);
     } finally {
       if (loadId === latestLoadId.current && !isSilent) {
-        setIsLoading(false);
+        setLoading(false);
       }
     }
   }, []);
 
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
+    void fetchRecords();
+  }, [fetchRecords]);
 
   useRealtimeRefresh({
-    channel: 'pm-summary-of-ratings',
+    channel: 'pm-summary-of-ratings-mirrored',
     tables: ['success_indicator_ratings', 'ipcr_competency_matches'],
     onChange: useCallback(() => {
-      void loadData(true);
-    }, [loadData]),
+      void fetchRecords(true);
+    }, [fetchRecords]),
   });
 
-  // Pagination states keyed by department
-  const [pages, setPages] = useState<Record<string, number>>({});
-  const rowsPerPage = 5;
-
-  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
-
-  const toggleRow = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  // L&D modal state
-  const [showLNDModal, setShowLNDModal] = useState(false);
-  const [modalDept, setModalDept] = useState<string>('All Departments');
-  const [pmNotes, setPmNotes] = useState('');
-  const [isSendingLND, setIsSendingLND] = useState(false);
-
-  // Post-send notification (replaces native browser alert)
-  const [notification, setNotification] = useState<{ type: 'success' | 'error'; title: string; message: string } | null>(null);
-
-  const filteredRecords = useMemo(() => {
-    return records.filter(r => {
-      const matchSearch = r.name.toLowerCase().includes(searchTerm.toLowerCase()) || r.department.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchDept = selectedDept === 'All Departments' || r.department === selectedDept;
-      return matchSearch && matchDept;
+  // Department landing rows — grouped, with avg rating and low-performer counts.
+  const deptRows = useMemo(() => {
+    const groups = groupByDept(records);
+    const rows = Array.from(groups.entries()).map(([department, g]) => {
+      const lowCount = g.distribution.Unsatisfactory + g.distribution.Poor;
+      return {
+        department,
+        count: g.records.length,
+        avg: g._count > 0 ? g.avg : null,
+        lowCount,
+        nonSubmission: g.distribution['Non-Submission'],
+      };
     });
-  }, [records, searchTerm, selectedDept]);
+    return rows.sort((a, b) => {
+      const aAvg = a.avg ?? -1;
+      const bAvg = b.avg ?? -1;
+      return deptSortAsc ? aAvg - bAvg : bAvg - aAvg;
+    });
+  }, [records, deptSortAsc]);
 
-  const kpis = useMemo(() => computeKPIs(filteredRecords), [filteredRecords]);
-  const deptGroups = useMemo(() => groupByDept(filteredRecords), [filteredRecords]);
-
-  // Modal-scoped data: ignores the page-level filter so the dropdown can switch independently.
-  const modalDeptRecords = useMemo(() => {
-    if (modalDept === 'All Departments') return records;
-    return records.filter(r => r.department === modalDept);
-  }, [records, modalDept]);
-
-  const modalAvg = useMemo(() => {
-    const rated = modalDeptRecords.filter(r => r.numericalRating !== null);
-    if (rated.length === 0) return 0;
-    return rated.reduce((s, r) => s + (r.numericalRating as number), 0) / rated.length;
-  }, [modalDeptRecords]);
-
-  const toggleDept = (dept: string) => {
-    setExpandedDepts(prev => ({ ...prev, [dept]: !prev[dept] }));
-  };
-
-  const handlePageChange = (dept: string, newPage: number) => {
-    setPages(prev => ({ ...prev, [dept]: newPage }));
-  };
-
-  const openLNDModal = (dept: string) => {
-    setModalDept(dept);
-    setPmNotes('');
-    setShowLNDModal(true);
-  };
-
-  const closeLNDModal = () => {
-    if (isSendingLND) return;
-    setShowLNDModal(false);
-    setPmNotes('');
-  };
-
-  const submitLNDReport = async () => {
-    setIsSendingLND(true);
-    try {
-      const flagged = modalDeptRecords
-        .filter(r => r.submissionStatus !== 'SUBMITTED' || (r.numericalRating ?? 0) < 4.5)
-        .map(r => r.name);
-
-      // Cast: pm_lnd_reports isn't in the generated Database types yet;
-      // it lives in Supabase but predates the latest typegen.
-      const { error } = await supabase.from('pm_lnd_reports').insert([{
-        department: modalDept,
-        period: REPORT_PERIOD,
-        average_rating: Number(modalAvg.toFixed(3)),
-        employees_flagged: JSON.stringify(flagged),
-        pm_notes: pmNotes,
-        records: modalDeptRecords,
-      }] as never);
-      if (error) throw error;
-      setShowLNDModal(false);
-      setPmNotes('');
-      setNotification({
-        type: 'success',
-        title: 'Report Sent Successfully',
-        message: `The Summary of Ratings for ${modalDept} (${REPORT_PERIOD}) has been forwarded to the Learning & Development division for discernment.`,
+  // Employees within the drilled-in department, searched + sorted by rating.
+  const filteredSorted = useMemo(() => {
+    if (!activeDept) return [];
+    const term = searchTerm.toLowerCase();
+    return records
+      .filter(r => r.department === activeDept)
+      .filter(r => !term || r.name.toLowerCase().includes(term))
+      .sort((a, b) => {
+        const aScore = a.numericalRating ?? -1;
+        const bScore = b.numericalRating ?? -1;
+        return sortAsc ? aScore - bScore : bScore - aScore;
       });
-    } catch (err) {
-      console.error('Error sending report to L&D:', err);
-      setNotification({
-        type: 'error',
-        title: 'Failed to Send Report',
-        message: 'The report could not be sent to L&D. Please check your connection and try again.',
-      });
-    } finally {
-      setIsSendingLND(false);
-    }
+  }, [records, searchTerm, activeDept, sortAsc]);
+
+  const enterDept = (dept: string) => {
+    setActiveDept(dept);
+    setSearchTerm('');
+  };
+
+  const backToDepartments = () => {
+    setActiveDept(null);
+    setSearchTerm('');
   };
 
   return (
-    <div className="space-y-6 pb-12">
-      {/* Header Row */}
-      <div className="flex items-center justify-between print:hidden">
-        <div className="flex items-center gap-3">
-          <button type="button" className="p-1 text-slate-400 hover:text-slate-600 transition">
-            <ChevronLeft className="h-5 w-5" />
-          </button>
+    <div className="space-y-5 p-8">
+      {/* Header */}
+      <section>
+        <p className="text-sm font-medium text-gray-500">
+          <span className="text-blue-600">PM</span>{' '}
+          <span className="mx-1 text-gray-400">/</span>{' '}
+          {activeDept === null ? (
+            <span>Summary of Ratings</span>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={backToDepartments}
+                className="text-blue-600 hover:underline"
+              >
+                Summary of Ratings
+              </button>
+              <span className="mx-1 text-gray-400">/</span> {activeDept}
+            </>
+          )}
+        </p>
+        <div className="mt-1 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-              Summary of Ratings — IPCR
-            </h2>
-            <p className="text-sm text-slate-500">
-              Individual Performance Commitment and Review &bull; January–June 2025
+            {activeDept !== null && (
+              <button
+                type="button"
+                onClick={backToDepartments}
+                className="mb-2 inline-flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-blue-600 transition"
+              >
+                <ArrowLeft className="h-4 w-4" /> All departments
+              </button>
+            )}
+            <h1 className="text-3xl font-bold text-gray-900">
+              {activeDept === null ? 'Summary of Ratings' : activeDept}
+            </h1>
+            <p className="mt-1 text-sm text-gray-500">
+              {activeDept === null
+                ? 'IPCR performance ratings by department — read-only identification surface'
+                : `Employee ratings · sorted lowest-first · ${REPORT_PERIOD}`}
             </p>
           </div>
+          <div className="flex items-center gap-3">
+            {lastSynced && (
+              <span className="text-xs text-gray-400">
+                Last synced {fmtDate(lastSynced)}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => void fetchRecords()}
+              disabled={loading}
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition disabled:opacity-50"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
+      </section>
+
+      {activeDept === null ? (
+      /* ── Department landing table ─────────────────────────────── */
+      <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+        {loading && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur-[1px]">
+            <span className="text-sm text-gray-500">Loading…</span>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 px-5 py-3">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+            {deptRows.length} department{deptRows.length !== 1 ? 's' : ''} · {records.length} employees
+          </span>
           <button
             type="button"
-            onClick={() => openLNDModal(selectedDept)}
-            className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 transition shadow-sm"
+            onClick={() => setDeptSortAsc(v => !v)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:border-blue-400 hover:text-blue-600 transition"
           >
-            <Send className="h-4 w-4" /> Send to L&D
-          </button>
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition shadow-sm"
-          >
-            <Printer className="h-4 w-4" /> Print
+            <ArrowUpDown className="h-3.5 w-3.5" />
+            {deptSortAsc ? 'Lowest avg first' : 'Highest avg first'}
           </button>
         </div>
-      </div>
 
-      {/* Filter Bar */}
-      <div className="rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm flex items-center gap-3 print:hidden">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-          <input
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full rounded-lg border border-slate-200 pl-9 pr-4 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-            placeholder="Search by name or department..."
-          />
+        {/* Column headers */}
+        <div className="grid grid-cols-12 items-center border-b border-gray-100 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+          <div className="col-span-5">Department</div>
+          <div className="col-span-2 text-center">Employees</div>
+          <div className="col-span-2 text-center">Avg Rating</div>
+          <div className="col-span-2 text-center">Needs Attention</div>
+          <div className="col-span-1" />
         </div>
-        <select
-          value={selectedDept}
-          onChange={(e) => setSelectedDept(e.target.value)}
-          className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-500 outline-none w-48"
-        >
-          {deptOptions.map((dept) => (
-            <option key={dept} value={dept}>{dept}</option>
-          ))}
-        </select>
-        <select className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 focus:border-blue-500 outline-none w-48">
-          <option>January–June 2025</option>
-        </select>
-        <span className="text-sm text-slate-400 px-2">{filteredRecords.length} records</span>
-      </div>
 
-      {/* Legend */}
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex items-center gap-2 mb-2">
-          <Info className="h-4 w-4 text-slate-400" />
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Legend</span>
-        </div>
-        <div className="flex flex-wrap items-center gap-4 text-xs font-semibold text-slate-700">
-          <span className="flex items-center gap-1.5"><span className="h-4 w-4 rounded bg-yellow-400 inline-block" /> Outstanding</span>
-          <span className="flex items-center gap-1.5"><span className="h-4 w-4 rounded bg-emerald-400 inline-block" /> Very Satisfactory</span>
-          <span className="flex items-center gap-1.5"><span className="h-4 w-4 rounded bg-teal-400 inline-block" /> Satisfactory</span>
-          <span className="flex items-center gap-1.5"><span className="h-4 w-4 rounded bg-red-300 inline-block" /> Unsatisfactory</span>
-          <span className="flex items-center gap-1.5"><span className="h-4 w-4 rounded bg-red-500 inline-block" /> Poor</span>
-          <span className="flex items-center gap-1.5"><span className="h-4 w-4 rounded bg-blue-300 inline-block" /> Non-Submission</span>
-        </div>
-      </div>
-
-      {/* Grouped Table by Department */}
-      <div className="space-y-6">
-        {Array.from(deptGroups.entries()).map(([dept, group]) => {
-          const isExpanded = expandedDepts[dept] !== false;
-          const page = pages[dept] || 1;
-          const totalPages = Math.ceil(group.records.length / rowsPerPage);
-          const startIndex = (page - 1) * rowsPerPage;
-          const visibleRecords = group.records.slice(startIndex, startIndex + rowsPerPage);
-          const deptAvgAdj = getAdjectival(group.avg);
-
-          return (
-            <div key={dept} className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden mb-6 print:break-inside-avoid">
-              {/* Group Header (Dark Slate) */}
-              <div
-                className="bg-[#1e293b] px-5 py-4 flex flex-col md:flex-row md:items-center justify-between text-white cursor-pointer hover:bg-slate-800 transition"
-                onClick={() => toggleDept(dept)}
-              >
-                <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                    IPCR — Individual Performance Commitment and Review
-                  </p>
-                  <h3 className="text-lg font-bold leading-tight">{dept}</h3>
-                  <p className="text-xs text-slate-400 mt-1">
-                    Period: January–June 2025 &bull; {group.records.length} employees &bull; {totalPages} pages
-                  </p>
-                </div>
-                <div className="flex items-center gap-3 mt-4 md:mt-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {Object.entries(group.distribution).map(([adj, count]) => {
-                      if (count === 0) return null;
-                      // Mapping to get the background color pill
-                      const pillStyle = getAdjectival(adj === 'Non-Submission' ? null : adj === 'Outstanding' ? 5 : adj === 'Very Satisfactory' ? 4 : adj === 'Satisfactory' ? 3 : adj === 'Unsatisfactory' ? 2 : 1).pillClass;
-                      return (
-                        <span key={adj} className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold ${pillStyle}`}>
-                          {count} {adj}
-                        </span>
-                      );
-                    })}
-                  </div>
-                  <div className="flex items-center gap-3 ml-2 pl-3 border-l border-slate-600">
-                    <span className="inline-flex items-center rounded-full border border-slate-500 bg-slate-700/50 px-3 py-1 text-xs font-bold text-white">
-                      Avg: {group.avg > 0 ? group.avg.toFixed(4) : 'N/A'}
+        {deptRows.length === 0 && !loading ? (
+          <div className="py-12">
+            <EmptyState
+              title="No departments found"
+              description="No IPCR records are available to summarize yet."
+            />
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {deptRows.map(d => {
+              const adj = getAdjectival(d.avg);
+              return (
+                <button
+                  key={d.department}
+                  type="button"
+                  onClick={() => enterDept(d.department)}
+                  className="grid w-full grid-cols-12 items-center px-5 py-4 text-left transition hover:bg-blue-50/40"
+                >
+                  <div className="col-span-5 flex items-center gap-3">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+                      <Building2 className="h-4 w-4" />
                     </span>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); openLNDModal(dept); }}
-                      className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700 transition"
-                      title={`Send ${dept} summary to L&D`}
+                    <span className="text-sm font-semibold text-gray-900">{d.department}</span>
+                  </div>
+                  <div className="col-span-2 text-center text-sm text-gray-600">{d.count}</div>
+                  <div className="col-span-2 flex flex-col items-center gap-1">
+                    <span className="text-sm font-bold text-gray-900">
+                      {d.avg !== null ? d.avg.toFixed(2) : '—'}
+                    </span>
+                    <span
+                      className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${adj.pillClass}`}
                     >
-                      <Send className="h-3 w-3" /> Send to L&D
-                    </button>
-                    {isExpanded ? <ChevronUp className="h-5 w-5 text-slate-400" /> : <ChevronDown className="h-5 w-5 text-slate-400" />}
+                      {adj.label}
+                    </span>
                   </div>
-                </div>
-              </div>
-
-              {isExpanded && (
-                <>
-                  {/* Complex Header */}
-                  <div className="grid grid-cols-12 items-center px-5 border-b border-slate-200">
-                    <div className="col-span-1 py-4 text-[11px] font-bold text-slate-800 uppercase tracking-wider text-center border-r border-slate-100">NO.</div>
-                    <div className="col-span-2 py-4 px-4 text-[11px] font-bold text-slate-800 uppercase tracking-wider border-r border-slate-100">DEPARTMENT</div>
-                    <div className="col-span-2 py-4 px-4 text-[11px] font-bold text-slate-800 uppercase tracking-wider border-r border-slate-100">NAME</div>
-                    <div className="col-span-2 py-4 px-4 text-[11px] font-bold text-slate-800 uppercase tracking-wider border-r border-slate-100 text-center">IPCR PERIOD</div>
-                    <div className="col-span-2 flex flex-col border-r border-slate-100 h-full">
-                      <div className="py-2 text-[11px] font-bold text-slate-800 uppercase tracking-wider text-center border-b border-slate-100 h-1/2 flex items-center justify-center">RATINGS</div>
-                      <div className="grid grid-cols-2 h-1/2 text-[9px] font-bold text-slate-500 uppercase tracking-wider text-center">
-                        <div className="border-r border-slate-100 py-2 flex items-center justify-center">NUMERICAL</div>
-                        <div className="py-2 flex items-center justify-center">ADJECTIVAL</div>
-                      </div>
-                    </div>
-                    <div className="col-span-1 py-4 px-2 text-[11px] font-bold text-slate-800 uppercase tracking-wider border-r border-slate-100 text-center">REMARKS</div>
-                    <div className="col-span-2 py-4 px-4 text-[11px] font-bold text-slate-800 uppercase tracking-wider text-center">SUBMISSION STATUS</div>
-                  </div>
-
-                  {/* Table Rows */}
-                  <div className="divide-y divide-slate-100">
-                    {visibleRecords.map((row, idx) => {
-                      const adj = getAdjectival(row.numericalRating);
-                      return (
-                        <div key={row.id} className="flex flex-col">
-                        <div className="grid grid-cols-12 items-stretch hover:bg-slate-50 transition min-h-[48px]">
-                          <div className="col-span-1 px-2 py-3 text-sm text-slate-600 border-r border-slate-100 flex items-center justify-center">
-                            {startIndex + idx + 1}
-                          </div>
-                          <div className="col-span-2 px-4 py-3 text-sm text-slate-600 border-r border-slate-100 flex items-center">
-                            {row.department}
-                          </div>
-                          <div className="col-span-2 px-4 py-3 border-r border-slate-100 flex flex-col justify-center">
-                            <span className="text-sm font-semibold text-slate-800 leading-tight">{row.name}</span>
-                            {row.position && <span className="text-[11px] text-slate-400">{row.position}</span>}
-                          </div>
-                          <div className="col-span-2 px-4 py-3 text-xs text-slate-500 border-r border-slate-100 flex items-center justify-center">
-                            {row.period}
-                          </div>
-                          <div className="col-span-2 flex border-r border-slate-100">
-                            <div className="w-1/2 border-r border-slate-100 py-3 flex items-center justify-center">
-                              <span className="font-bold text-slate-800 text-sm">{row.numericalRating !== null ? row.numericalRating.toFixed(2) : '—'}</span>
-                            </div>
-                            <div className="w-1/2 py-3 flex items-center justify-center px-2">
-                              <span className={`inline-flex items-center justify-center w-full max-w-full rounded px-2 py-1 text-[10px] font-bold uppercase text-center leading-tight whitespace-normal break-words ${adj.pillClass}`}>
-                                {adj.label}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="col-span-1 px-2 py-3 text-xs text-slate-500 italic border-r border-slate-100 flex items-center justify-center text-center">
-                            {row.remarks === 'Training Recommended' ? (
-                              <button
-                                onClick={(e) => toggleRow(row.id, e)}
-                                className="inline-flex items-center gap-1 text-[10px] font-semibold text-rose-600 hover:text-rose-800 bg-rose-50 px-2 py-1 rounded border border-rose-200 transition"
-                              >
-                                {row.remarks}
-                                <ChevronDown className={`h-3 w-3 transition-transform duration-200 ${expandedRows[row.id] ? 'rotate-180' : ''}`} />
-                              </button>
-                            ) : (
-                              row.remarks || '—'
-                            )}
-                          </div>
-                          <div className="col-span-2 px-4 py-3 flex items-center justify-center">
-                            <span className={`inline-flex items-center rounded-sm border px-3 py-1 text-xs font-bold uppercase tracking-wider ${row.submissionStatus === 'SUBMITTED' ? 'border-emerald-200 bg-emerald-50 text-emerald-600' :
-                              row.submissionStatus === 'OVERDUE' ? 'border-red-200 bg-red-50 text-red-600' :
-                                'border-orange-200 bg-orange-50 text-orange-600'
-                              }`}>
-                              {row.submissionStatus}
-                            </span>
-                          </div>
-                        </div>
-                        {/* Sub Row */}
-                        {expandedRows[row.id] && row.competencies && (
-                          <div className="bg-slate-50 border-t border-slate-100 p-4 pl-12 shadow-inner">
-                            <CompetencyGapPanel record={row} />
-                          </div>
-                        )}
-                        </div>
-                      )
-                    })}
-                  </div>
-
-                  {/* Department Average Row */}
-                  <div className="grid grid-cols-12 items-stretch bg-slate-50/80 border-t-2 border-slate-200 min-h-[48px]">
-                    <div className="col-span-7 px-4 py-3 border-r border-slate-200 flex items-center justify-end">
-                      <span className="font-bold text-slate-800 text-xs uppercase tracking-wider">{dept} AVERAGE RATING</span>
-                    </div>
-                    <div className="col-span-2 flex border-r border-slate-200">
-                      <div className="w-1/2 border-r border-slate-200 py-3 flex items-center justify-center">
-                        <span className="font-bold text-blue-600 text-sm">{group.avg > 0 ? group.avg.toFixed(4) : 'N/A'}</span>
-                      </div>
-                      <div className="w-1/2 py-3 flex items-center justify-center px-2">
-                        {group.avg > 0 && (
-                          <span className={`inline-flex items-center justify-center w-full max-w-full rounded px-2 py-1 text-[10px] font-bold uppercase text-center leading-tight whitespace-normal break-words ${deptAvgAdj.pillClass}`}>
-                            {deptAvgAdj.label}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="col-span-3"></div>
-                  </div>
-
-                  {/* Footer Pagination & Distribution */}
-                  <div className="px-5 py-4 border-t border-slate-200 bg-slate-50 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="flex items-center justify-between md:w-auto w-full gap-8">
-                      <span className="text-sm text-slate-500">
-                        Showing <span className="font-semibold text-slate-700">{startIndex + 1}–{Math.min(startIndex + rowsPerPage, group.records.length)}</span> of <span className="font-semibold text-slate-700">{group.records.length}</span> employees
+                  <div className="col-span-2 text-center">
+                    {d.lowCount > 0 ? (
+                      <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
+                        {d.lowCount} low
                       </span>
-                      {totalPages > 1 && (
-                        <div className="flex items-center gap-1 text-slate-400">
-                          <button
-                            type="button"
-                            className="px-1 hover:text-blue-600 transition disabled:opacity-50"
-                            onClick={() => handlePageChange(dept, 1)}
-                            disabled={page === 1}
-                          >&laquo;</button>
-                          <button
-                            type="button"
-                            className="px-1 hover:text-blue-600 transition disabled:opacity-50"
-                            onClick={() => handlePageChange(dept, Math.max(1, page - 1))}
-                            disabled={page === 1}
-                          >&lsaquo;</button>
-                          {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
-                            <button
-                              key={n}
-                              type="button"
-                              onClick={() => handlePageChange(dept, n)}
-                              className={`h-7 w-7 rounded text-xs font-semibold mx-0.5 ${n === page ? 'bg-blue-600 text-white' : 'bg-transparent text-slate-600 hover:bg-slate-200'}`}
-                            >
-                              {n}
-                            </button>
-                          ))}
-                          <button
-                            type="button"
-                            className="px-1 hover:text-blue-600 transition disabled:opacity-50"
-                            onClick={() => handlePageChange(dept, Math.min(totalPages, page + 1))}
-                            disabled={page === totalPages}
-                          >&rsaquo;</button>
-                          <button
-                            type="button"
-                            className="px-1 hover:text-blue-600 transition disabled:opacity-50"
-                            onClick={() => handlePageChange(dept, totalPages)}
-                            disabled={page === totalPages}
-                          >&raquo;</button>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 w-full md:w-auto border-t md:border-t-0 border-slate-200 pt-3 md:pt-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-2">Distribution:</span>
-                        {Object.entries(group.distribution).map(([adj, count]) => {
-                          if (count === 0) return null;
-                          const pillStyle = getAdjectival(adj === 'Non-Submission' ? null : adj === 'Outstanding' ? 5 : adj === 'Very Satisfactory' ? 4 : adj === 'Satisfactory' ? 3 : adj === 'Unsatisfactory' ? 2 : 1).pillClass;
-                          return (
-                            <span key={adj} className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold ${pillStyle}`}>
-                              {count} {adj}
-                            </span>
-                          );
-                        })}
-                      </div>
-                      <div className="text-sm font-bold text-blue-600 md:ml-6">
-                        Dept. Avg: {group.avg > 0 ? group.avg.toFixed(4) : 'N/A'}
-                      </div>
-                    </div>
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
+                    {d.nonSubmission > 0 && (
+                      <span className="ml-1 inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                        {d.nonSubmission} no sub
+                      </span>
+                    )}
                   </div>
-                </>
-              )}
-            </div>
-          );
-        })}
-
-        {deptGroups.size === 0 && (
-          <div className="rounded-xl border border-slate-200 bg-white p-12 text-center text-slate-500 shadow-sm">
-            No records found matching your filters.
+                  <div className="col-span-1 flex justify-end">
+                    <ChevronRight className="h-4 w-4 text-gray-400" />
+                  </div>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
-
-      {showLNDModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 print:hidden"
-          onClick={closeLNDModal}
-        >
-          <div
-            className="w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Green header */}
-            <div className="flex items-start justify-between bg-emerald-600 px-5 py-4 text-white">
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-white/20 p-2">
-                  <Send className="h-5 w-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold leading-tight">Send Summary to L&D</h3>
-                  <p className="text-xs text-emerald-50/90">Performance Management Division</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={closeLNDModal}
-                className="rounded p-1 text-white/80 hover:bg-white/10 hover:text-white transition"
-                aria-label="Close"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Body */}
-            <div className="space-y-4 px-5 py-5">
-              {/* Read-only summary card */}
-              <div className="rounded-lg bg-emerald-50 p-4 text-sm">
-                <div className="grid grid-cols-2 gap-y-1.5">
-                  <span className="text-slate-600">Dept:</span>
-                  <span className="font-semibold text-slate-800">{modalDept}</span>
-                  <span className="text-slate-600">Period:</span>
-                  <span className="font-semibold text-slate-800">{REPORT_PERIOD}</span>
-                  <span className="text-slate-600">Employees:</span>
-                  <span className="font-semibold text-slate-800">{modalDeptRecords.length}</span>
-                  <span className="text-slate-600">Avg:</span>
-                  <span className="font-bold text-blue-600">
-                    {modalDeptRecords.length > 0 ? modalAvg.toFixed(3) : 'N/A'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Send report for */}
-              <div>
-                <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-600">
-                  Send Report For
-                </label>
-                <select
-                  value={modalDept}
-                  onChange={(e) => setModalDept(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
-                >
-                  {deptOptions.map(opt => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Notes */}
-              <div>
-                <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-600">
-                  Notes <span className="font-normal normal-case text-slate-400">(optional)</span>
-                </label>
-                <textarea
-                  value={pmNotes}
-                  onChange={(e) => setPmNotes(e.target.value)}
-                  rows={3}
-                  placeholder="L&D will use this summary to identify training needs for employees rated below Outstanding or with Non-Submission status."
-                  className="w-full resize-none rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="flex items-center justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
-              <button
-                type="button"
-                onClick={closeLNDModal}
-                disabled={isSendingLND}
-                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={submitLNDReport}
-                disabled={isSendingLND}
-                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 transition disabled:opacity-60"
-              >
-                <Send className="h-4 w-4" />
-                {isSendingLND ? 'Sending…' : 'Send to L&D'}
-              </button>
-            </div>
-          </div>
+      ) : (
+      <>
+      {/* Filter bar */}
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+          <input
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            placeholder="Search employees in this department…"
+            className="w-full rounded-lg border border-gray-200 py-1.5 pl-9 pr-4 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
         </div>
-      )}
+        <span className="ml-auto text-xs text-gray-400">
+          {filteredSorted.length} employee{filteredSorted.length !== 1 ? 's' : ''}
+        </span>
+      </div>
 
-      {notification && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4 print:hidden"
-          onClick={() => setNotification(null)}
-        >
-          <div
-            className="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="notification-title"
+      {/* Table */}
+      <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+        {loading && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur-[1px]">
+            <span className="text-sm text-gray-500">Loading…</span>
+          </div>
+        )}
+
+        {/* Sort toggle */}
+        <div className="flex items-center justify-between border-b border-gray-100 bg-gray-50 px-5 py-3">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+            {filteredSorted.length} employee{filteredSorted.length !== 1 ? 's' : ''}
+          </span>
+          <button
+            type="button"
+            onClick={() => setSortAsc(v => !v)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:border-blue-400 hover:text-blue-600 transition"
           >
-            <div
-              className={`flex items-center justify-between gap-3 px-5 py-4 text-white ${
-                notification.type === 'success' ? 'bg-emerald-600' : 'bg-red-600'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-white/20 p-2">
-                  {notification.type === 'success' ? (
-                    <CheckCircle2 className="h-5 w-5" />
-                  ) : (
-                    <AlertCircle className="h-5 w-5" />
+            <ArrowUpDown className="h-3.5 w-3.5" />
+            {sortAsc ? 'Lowest to highest' : 'Highest to lowest'}
+          </button>
+        </div>
+
+        {/* Column headers */}
+        <div className="grid grid-cols-12 items-center border-b border-gray-100 px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+          <div className="col-span-4">Employee</div>
+          <div className="col-span-3">Position</div>
+          <div className="col-span-2 text-center">Rating</div>
+          <div className="col-span-3">Period</div>
+        </div>
+
+        {/* Rows */}
+        {filteredSorted.length === 0 && !loading ? (
+          <div className="py-12">
+            <EmptyState
+              title="No employees found"
+              description="No IPCR records match the current search."
+            />
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {filteredSorted.map(row => {
+              const isLow =
+                row.numericalRating !== null &&
+                row.numericalRating < NEEDS_IMPROVEMENT_THRESHOLD;
+              const adj = getAdjectival(row.numericalRating);
+              const hasGaps = (row.competencies ?? []).some(c => c.isGap);
+              const open = !!expandedRows[row.id];
+              return (
+                <div key={row.id}>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedRows(p => ({ ...p, [row.id]: !p[row.id] }))}
+                    className={[
+                      'grid w-full grid-cols-12 items-center border-l-4 px-5 py-3.5 text-left transition hover:bg-gray-50/50',
+                      isLow ? 'border-l-amber-400' : 'border-l-transparent',
+                    ].join(' ')}
+                  >
+                    <div className="col-span-4">
+                      <p className="text-sm font-semibold text-gray-900">{row.name}</p>
+                      <p className="mt-0.5 text-xs text-gray-400">{row.department}</p>
+                      <span className="mt-0.5 flex flex-wrap gap-1">
+                        {isLow && <span className="inline-block text-[10px] font-semibold text-amber-600">Low performer</span>}
+                        {hasGaps && (
+                          <span className="inline-flex items-center rounded border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-600">
+                            Training recommended
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                    <div className="col-span-3 text-xs text-gray-500 leading-snug pr-2">
+                      {row.position}
+                    </div>
+                    <div className="col-span-2 flex flex-col items-center gap-1">
+                      <span className="text-sm font-bold text-gray-900">
+                        {row.numericalRating !== null ? row.numericalRating.toFixed(2) : '—'}
+                      </span>
+                      <span className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${adj.pillClass}`}>
+                        {adj.label}
+                      </span>
+                    </div>
+                    <div className="col-span-3 flex items-center justify-between text-xs text-gray-500">
+                      <span>{row.period}</span>
+                      <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+                    </div>
+                  </button>
+                  {open && (
+                    <div className="border-t border-gray-100 bg-gray-50/60 p-4">
+                      <CompetencyGapPanel record={row} />
+                    </div>
                   )}
                 </div>
-                <h3 id="notification-title" className="text-base font-bold leading-tight">
-                  {notification.title}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setNotification(null)}
-                className="rounded p-1 text-white/80 hover:bg-white/10 hover:text-white transition"
-                aria-label="Close"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="px-5 py-5">
-              <p className="text-sm text-slate-700 leading-relaxed">{notification.message}</p>
-            </div>
-            <div className="flex items-center justify-end border-t border-slate-200 bg-slate-50 px-5 py-3">
-              <button
-                type="button"
-                onClick={() => setNotification(null)}
-                className={`rounded-lg px-4 py-2 text-sm font-semibold text-white transition ${
-                  notification.type === 'success'
-                    ? 'bg-emerald-600 hover:bg-emerald-700'
-                    : 'bg-red-600 hover:bg-red-700'
-                }`}
-                autoFocus
-              >
-                OK
-              </button>
-            </div>
+              );
+            })}
           </div>
-        </div>
+        )}
+      </div>
+      </>
       )}
     </div>
   );
