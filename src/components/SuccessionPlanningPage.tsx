@@ -354,6 +354,7 @@ export const SuccessionPlanningPage = () => {
           <CandidatePicker
             employees={employees}
             departmentName={candidateModal.departmentName}
+            positionTitle={candidateModal.positionTitle}
             pick={candidatePick}
             setPick={setCandidatePick}
           />
@@ -739,27 +740,64 @@ const CandidateRow = ({
 // Candidate picker (same-department-first, searchable company-wide)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Generic rank/level words carry no field meaning, so they're stripped before
+// comparing two job titles — otherwise every "… Officer" would match every
+// other. What's left is the role's field keyword ("engineer", "accountant",
+// "nurse"), which is what makes an employee a plausible successor.
+const TITLE_STOPWORDS = new Set([
+  'i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii', 'ix', 'x',
+  'of', 'the', 'and', 'for', 'to', 'in', 'a', 'an',
+  'officer', 'office', 'head', 'chief', 'senior', 'junior', 'assistant',
+  'associate', 'staff', 'division', 'unit', 'city', 'manager', 'supervisor',
+  'administrator', 'coordinator', 'aide', 'ii', 'level',
+]);
+
+const titleKeywords = (text: string): Set<string> =>
+  new Set(
+    String(text ?? '')
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length > 2 && !TITLE_STOPWORDS.has(w)),
+  );
+
+/**
+ * The shared field keyword between two job titles, or null. E.g. "Engineer II"
+ * and "Chief Engineer" both reduce to "engineer" → a match. Used to flag
+ * employees who share the critical position's field as eligible successors.
+ */
+const sharedFieldKeyword = (a: string, b: string): string | null => {
+  const ka = titleKeywords(a);
+  for (const w of titleKeywords(b)) if (ka.has(w)) return w;
+  return null;
+};
+
 const CandidatePicker = ({
   employees,
   departmentName,
+  positionTitle,
   pick,
   setPick,
 }: {
   employees: EmployeeOption[];
   departmentName: string;
+  positionTitle: string;
   pick: { employeeId: string; note: string; search: string };
   setPick: (v: { employeeId: string; note: string; search: string }) => void;
 }) => {
   const norm = (s: string) => s.trim().toLowerCase();
   const q = norm(pick.search);
   const filtered = employees
-    .filter((e) => !q || norm(e.fullName).includes(q) || norm(e.position ?? '').includes(q))
+    .map((e) => ({ e, match: sharedFieldKeyword(e.position ?? '', positionTitle) }))
+    .filter(({ e }) => !q || norm(e.fullName).includes(q) || norm(e.position ?? '').includes(q))
     .sort((a, b) => {
-      // Same department surfaces first.
-      const aSame = norm(a.department ?? '') === norm(departmentName) ? 0 : 1;
-      const bSame = norm(b.department ?? '') === norm(departmentName) ? 0 : 1;
+      // Field match (eligible successor) surfaces first, then same department.
+      const aMatch = a.match ? 0 : 1;
+      const bMatch = b.match ? 0 : 1;
+      if (aMatch !== bMatch) return aMatch - bMatch;
+      const aSame = norm(a.e.department ?? '') === norm(departmentName) ? 0 : 1;
+      const bSame = norm(b.e.department ?? '') === norm(departmentName) ? 0 : 1;
       if (aSame !== bSame) return aSame - bSame;
-      return a.fullName.localeCompare(b.fullName);
+      return a.e.fullName.localeCompare(b.e.fullName);
     })
     .slice(0, 40);
 
@@ -777,11 +815,16 @@ const CandidatePicker = ({
             className="sp-input !pl-9"
           />
         </div>
+        <p className="mt-1.5 text-xs text-[var(--text-secondary)]">
+          Employees whose position shares the same field as{' '}
+          <span className="font-medium">{positionTitle}</span> are flagged and shown first — they're
+          the eligible successors.
+        </p>
         <div className="mt-2 max-h-56 overflow-y-auto rounded-lg border border-[var(--border-color)]">
           {filtered.length === 0 && (
             <p className="px-3 py-4 text-center text-sm text-[var(--text-secondary)]">No matching employees.</p>
           )}
-          {filtered.map((e) => {
+          {filtered.map(({ e, match }) => {
             const selected = pick.employeeId === e.id;
             const sameDept = norm(e.department ?? '') === norm(departmentName);
             return (
@@ -798,11 +841,21 @@ const CandidatePicker = ({
                     {e.position ?? '—'}{e.department ? ` · ${e.department}` : ''}
                   </span>
                 </span>
-                {sameDept && (
-                  <span className="shrink-0 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-blue-700">
-                    Same dept
-                  </span>
-                )}
+                <span className="flex shrink-0 items-center gap-1.5">
+                  {match && (
+                    <span
+                      className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-green-700"
+                      title={`Shares the "${match}" field with ${positionTitle}`}
+                    >
+                      Same field
+                    </span>
+                  )}
+                  {sameDept && (
+                    <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-blue-700">
+                      Same dept
+                    </span>
+                  )}
+                </span>
               </button>
             );
           })}
