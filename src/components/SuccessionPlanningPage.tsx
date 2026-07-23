@@ -22,7 +22,7 @@ import { Button } from './Button';
 import {
   listDepartmentSummaries,
   listCriticalPositions,
-  listCandidates,
+  listAutoSuccessors,
   addCandidate,
   updateCandidateNote,
   removeCandidate,
@@ -30,9 +30,10 @@ import {
   listCompetencyRequirements,
   listPositionQualificationsForDepartment,
   diffQualifications,
+  sharedFieldKeyword,
   type DepartmentSummary,
   type CriticalPosition,
-  type RankedCandidate,
+  type AutoSuccessor,
   type EmployeeOption,
   type CompetencyRequirement,
   type QualificationDrift,
@@ -74,7 +75,7 @@ export const SuccessionPlanningPage = () => {
 
   const [positionsByDept, setPositionsByDept] = useState<Record<string, CriticalPosition[]>>({});
   const [loadingPositions, setLoadingPositions] = useState<Record<string, boolean>>({});
-  const [candidatesByPosition, setCandidatesByPosition] = useState<Record<string, RankedCandidate[]>>({});
+  const [candidatesByPosition, setCandidatesByPosition] = useState<Record<string, AutoSuccessor[]>>({});
   const [loadingCandidates, setLoadingCandidates] = useState<Record<string, boolean>>({});
 
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
@@ -112,7 +113,7 @@ export const SuccessionPlanningPage = () => {
 
   const loadCandidates = async (positionId: string) => {
     setLoadingCandidates((p) => ({ ...p, [positionId]: true }));
-    const res = await listCandidates(positionId);
+    const res = await listAutoSuccessors(positionId);
     if (res.ok === false) setError(res.error);
     else setCandidatesByPosition((prev) => ({ ...prev, [positionId]: res.data }));
     setLoadingCandidates((p) => ({ ...p, [positionId]: false }));
@@ -186,10 +187,11 @@ export const SuccessionPlanningPage = () => {
     await loadCandidates(positionId);
   };
 
-  const editNote = async (candidate: RankedCandidate) => {
-    const next = window.prompt('Note for this candidate:', candidate.note ?? '');
+  const editNote = async (candidate: AutoSuccessor) => {
+    if (!candidate.candidateId) return; // auto-discovered only, no row to edit
+    const next = window.prompt('Note for this candidate:', candidate.manualNote ?? '');
     if (next === null) return;
-    const res = await updateCandidateNote(candidate.id, next);
+    const res = await updateCandidateNote(candidate.candidateId, next);
     if (res.ok === false) {
       setError(res.error);
       return;
@@ -197,9 +199,10 @@ export const SuccessionPlanningPage = () => {
     if (expandedPositionId) loadCandidates(expandedPositionId);
   };
 
-  const confirmRemoveCandidate = async (candidate: RankedCandidate) => {
+  const confirmRemoveCandidate = async (candidate: AutoSuccessor) => {
+    if (!candidate.candidateId) return; // auto-discovered only, no row to remove
     if (!window.confirm(`Remove ${candidate.employeeName} from this succession list?`)) return;
-    const res = await removeCandidate(candidate.id);
+    const res = await removeCandidate(candidate.candidateId);
     if (res.ok === false) {
       setError(res.error);
       return;
@@ -394,12 +397,12 @@ type CriticalPositionsPanelProps = {
   positions: CriticalPosition[] | undefined;
   loading: boolean | undefined;
   expandedPositionId: string | null;
-  candidatesByPosition: Record<string, RankedCandidate[]>;
+  candidatesByPosition: Record<string, AutoSuccessor[]>;
   loadingCandidates: Record<string, boolean>;
   onTogglePosition: (id: string) => void;
   onAddCandidate: (p: CriticalPosition) => void;
-  onEditNote: (c: RankedCandidate) => void;
-  onRemoveCandidate: (c: RankedCandidate) => void;
+  onEditNote: (c: AutoSuccessor) => void;
+  onRemoveCandidate: (c: AutoSuccessor) => void;
 };
 
 const CriticalPositionsPanel = (props: CriticalPositionsPanelProps) => {
@@ -618,62 +621,66 @@ const RequirementsPanel = ({
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Candidates panel (inside an expanded critical position) — ranked live
+// Auto-populated successors panel (replaces manual CandidatesPanel)
+//
+// Shows auto-discovered candidates ranked by Readiness Score (100-point rubric)
+// with a transparent points breakdown per candidate.
 // ─────────────────────────────────────────────────────────────────────────────
 
+const MEDAL = ['🥇', '🥈', '🥉'] as const;
+
 type CandidatesPanelProps = {
-  candidates: RankedCandidate[] | undefined;
+  candidates: AutoSuccessor[] | undefined;
   loading: boolean | undefined;
   onAddCandidate: () => void;
-  onEditNote: (c: RankedCandidate) => void;
-  onRemoveCandidate: (c: RankedCandidate) => void;
+  onEditNote: (c: AutoSuccessor) => void;
+  onRemoveCandidate: (c: AutoSuccessor) => void;
 };
 
 const CandidatesPanel = (props: CandidatesPanelProps) => {
   const { candidates, loading } = props;
-  const rated = (candidates ?? []).filter((c) => c.rated);
-  const unrated = (candidates ?? []).filter((c) => !c.rated);
+  const list = candidates ?? [];
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h4 className="!mb-0 flex items-center gap-1.5 text-sm font-semibold text-[var(--text-primary)]">
-          <Users size={15} /> Succession Candidates
+          <Users size={15} /> Auto-Ranked Successors
         </h4>
         <Button size="sm" variant="secondary" onClick={props.onAddCandidate} className="flex items-center gap-1.5">
-          <Plus size={14} /> Add Candidate
+          <Plus size={14} /> Add Manual Candidate
         </Button>
       </div>
 
-      {loading && <p className="text-sm text-[var(--text-secondary)]">Loading candidates…</p>}
+      <p className="!mb-0 text-xs text-[var(--text-secondary)]">
+        Candidates are automatically discovered from employees with a completed IPCR whose position field matches this role. Ranked by Readiness Score (Performance 60 + Tenure 25 + Field 15 = 100 points).
+      </p>
 
-      {!loading && (candidates?.length ?? 0) === 0 && (
+      {loading && <p className="text-sm text-[var(--text-secondary)]">Discovering eligible successors…</p>}
+
+      {!loading && list.length === 0 && (
         <div className="rounded-lg border border-dashed border-[var(--border-color)] bg-white px-5 py-8 text-center">
-          <p className="!mb-1 text-sm font-medium text-[var(--text-primary)]">No succession candidates identified yet</p>
+          <p className="!mb-1 text-sm font-medium text-[var(--text-primary)]">No eligible successors found</p>
           <p className="!mb-0 text-sm text-[var(--text-secondary)]">
-            Nominate an employee — ideally from the same department — as a potential successor.
+            No employees with a completed IPCR and matching position field were found. You can still add a manual candidate.
           </p>
         </div>
       )}
 
-      {!loading && rated.length > 0 && (
+      {!loading && list.length > 0 && (
         <div className="overflow-hidden rounded-lg border border-[var(--border-color)] bg-white">
-          <div className="flex items-center gap-1.5 border-b border-[var(--border-color)] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
-            <Award size={13} className="text-green-600" /> Ranked by latest completed IPCR
+          <div className="flex items-center gap-1.5 border-b border-[var(--border-color)] bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-blue-700">
+            <Award size={13} /> Readiness-Ranked · {list.length} candidate{list.length !== 1 ? 's' : ''}
           </div>
-          {rated.map((c, i) => (
-            <CandidateRow key={c.id} candidate={c} rank={i + 1} onEditNote={props.onEditNote} onRemove={props.onRemoveCandidate} />
-          ))}
-        </div>
-      )}
-
-      {!loading && unrated.length > 0 && (
-        <div className="overflow-hidden rounded-lg border border-dashed border-slate-300 bg-white">
-          <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Not yet rated · {unrated.length} — no completed IPCR to rank on
-          </div>
-          {unrated.map((c) => (
-            <CandidateRow key={c.id} candidate={c} rank={null} onEditNote={props.onEditNote} onRemove={props.onRemoveCandidate} />
+          {list.map((c, i) => (
+            <AutoSuccessorRow
+              key={c.employeeId}
+              successor={c}
+              rank={i + 1}
+              isTopPick={i === 0}
+              onEditNote={props.onEditNote}
+              onRemove={props.onRemoveCandidate}
+            />
           ))}
         </div>
       )}
@@ -681,95 +688,135 @@ const CandidatesPanel = (props: CandidatesPanelProps) => {
   );
 };
 
-const CandidateRow = ({
-  candidate,
+/** Mini progress bar used for each score component. */
+const ScoreBar = ({ value, max, color }: { value: number; max: number; color: string }) => {
+  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100" style={{ minWidth: 64 }}>
+        <div
+          className="h-full rounded-full transition-all"
+          style={{ width: `${pct}%`, background: color }}
+        />
+      </div>
+      <span className="text-[10px] font-semibold tabular-nums" style={{ color }}>
+        {value}/{max}
+      </span>
+    </div>
+  );
+};
+
+const AutoSuccessorRow = ({
+  successor,
   rank,
+  isTopPick,
   onEditNote,
   onRemove,
 }: {
-  candidate: RankedCandidate;
-  rank: number | null;
-  onEditNote: (c: RankedCandidate) => void;
-  onRemove: (c: RankedCandidate) => void;
-}) => (
-  <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-3 last:border-0">
-    <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-      rank === null ? 'bg-slate-100 text-slate-400' : 'bg-blue-600 text-white'
-    }`}>
-      {rank ?? '—'}
-    </div>
-    <div className="min-w-0 flex-1">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-semibold text-[var(--text-primary)]">{candidate.employeeName}</span>
-        {candidate.rated ? (
-          <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${adjectivalTone(candidate.adjectival)}`}>
-            {candidate.adjectival} · {candidate.overallScore?.toFixed(2)}
-          </span>
-        ) : (
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-500">
-            Not yet rated
-          </span>
+  successor: AutoSuccessor;
+  rank: number;
+  isTopPick: boolean;
+  onEditNote: (c: AutoSuccessor) => void;
+  onRemove: (c: AutoSuccessor) => void;
+}) => {
+  const r = successor.readiness;
+  const medal = rank <= 3 ? MEDAL[rank - 1] : null;
+
+  return (
+    <div className={`border-b border-slate-100 px-4 py-3.5 last:border-0 ${isTopPick ? 'bg-gradient-to-r from-amber-50/60 to-yellow-50/40' : ''}`}>
+      {/* Top row: rank + name + total score */}
+      <div className="flex items-start gap-3">
+        <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+          isTopPick ? 'bg-amber-500 text-white shadow-sm' : rank <= 3 ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-600'
+        }`}>
+          {medal ?? rank}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold text-[var(--text-primary)]">{successor.employeeName}</span>
+            {/* Total score badge */}
+            <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+              r.total >= 80 ? 'bg-green-100 text-green-700' :
+              r.total >= 60 ? 'bg-blue-100 text-blue-700' :
+              r.total >= 40 ? 'bg-amber-100 text-amber-700' :
+              'bg-slate-100 text-slate-600'
+            }`}>
+              {r.total} pts
+            </span>
+            {isTopPick && (
+              <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm">
+                ★ System Recommendation
+              </span>
+            )}
+            {successor.isManuallyAdded && (
+              <span className="rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-[10px] font-semibold uppercase text-purple-600">
+                Manually added
+              </span>
+            )}
+            {r.adjectival && (
+              <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${adjectivalTone(r.adjectival)}`}>
+                {r.adjectival}
+              </span>
+            )}
+          </div>
+          <p className="!mb-0 mt-0.5 text-sm text-[var(--text-secondary)]">
+            {successor.currentPosition ?? '—'}{successor.department ? ` · ${successor.department}` : ''}
+            {r.ratedPeriod ? ` · ${r.ratedPeriod}` : ''}
+          </p>
+
+          {/* Points breakdown */}
+          <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">Performance</span>
+              <ScoreBar value={r.performance} max={r.performanceMax} color="#3b82f6" />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">Tenure</span>
+              <ScoreBar value={r.tenure} max={r.tenureMax} color="#8b5cf6" />
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">Field</span>
+              <ScoreBar value={r.fieldMatch} max={r.fieldMatchMax} color="#10b981" />
+            </div>
+          </div>
+
+          {/* Raw data detail line */}
+          <p className="!mb-0 mt-1 text-[10px] text-slate-400">
+            IPCR {r.ipcrScore != null ? r.ipcrScore.toFixed(2) : '—'}/5 · {r.yearsOfService.toFixed(1)} yr tenure
+            {r.matchedKeyword ? ` · field: "${r.matchedKeyword}"` : ''}
+          </p>
+
+          {successor.manualNote && <p className="!mb-0 mt-1 text-xs italic text-slate-500">"{successor.manualNote}"</p>}
+        </div>
+
+        {/* Actions — only shown for candidates with a succession_candidates row */}
+        {successor.candidateId && (
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button
+              onClick={() => onEditNote(successor)}
+              className="rounded-lg border border-[var(--border-color)] p-1.5 text-blue-600 hover:bg-blue-50"
+              title="Edit note"
+            >
+              <Pencil size={13} />
+            </button>
+            <button
+              onClick={() => onRemove(successor)}
+              className="rounded-lg border border-[var(--border-color)] p-1.5 text-red-500 hover:bg-red-50"
+              title="Remove candidate"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
         )}
       </div>
-      <p className="!mb-0 mt-0.5 text-sm text-[var(--text-secondary)]">
-        {candidate.currentPosition ?? '—'}{candidate.department ? ` · ${candidate.department}` : ''}
-        {candidate.rated && candidate.ratedPeriod ? ` · ${candidate.ratedPeriod}` : ''}
-      </p>
-      {candidate.note && <p className="!mb-0 mt-1 text-xs italic text-slate-500">“{candidate.note}”</p>}
     </div>
-    <div className="flex shrink-0 items-center gap-1.5">
-      <button
-        onClick={() => onEditNote(candidate)}
-        className="rounded-lg border border-[var(--border-color)] p-1.5 text-blue-600 hover:bg-blue-50"
-        title="Edit note"
-      >
-        <Pencil size={13} />
-      </button>
-      <button
-        onClick={() => onRemove(candidate)}
-        className="rounded-lg border border-[var(--border-color)] p-1.5 text-red-500 hover:bg-red-50"
-        title="Remove candidate"
-      >
-        <Trash2 size={13} />
-      </button>
-    </div>
-  </div>
-);
+  );
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Candidate picker (same-department-first, searchable company-wide)
+// Uses sharedFieldKeyword imported from succession.ts
 // ─────────────────────────────────────────────────────────────────────────────
-
-// Generic rank/level words carry no field meaning, so they're stripped before
-// comparing two job titles — otherwise every "… Officer" would match every
-// other. What's left is the role's field keyword ("engineer", "accountant",
-// "nurse"), which is what makes an employee a plausible successor.
-const TITLE_STOPWORDS = new Set([
-  'i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii', 'ix', 'x',
-  'of', 'the', 'and', 'for', 'to', 'in', 'a', 'an',
-  'officer', 'office', 'head', 'chief', 'senior', 'junior', 'assistant',
-  'associate', 'staff', 'division', 'unit', 'city', 'manager', 'supervisor',
-  'administrator', 'coordinator', 'aide', 'ii', 'level',
-]);
-
-const titleKeywords = (text: string): Set<string> =>
-  new Set(
-    String(text ?? '')
-      .toLowerCase()
-      .split(/[^a-z0-9]+/)
-      .filter((w) => w.length > 2 && !TITLE_STOPWORDS.has(w)),
-  );
-
-/**
- * The shared field keyword between two job titles, or null. E.g. "Engineer II"
- * and "Chief Engineer" both reduce to "engineer" → a match. Used to flag
- * employees who share the critical position's field as eligible successors.
- */
-const sharedFieldKeyword = (a: string, b: string): string | null => {
-  const ka = titleKeywords(a);
-  for (const w of titleKeywords(b)) if (ka.has(w)) return w;
-  return null;
-};
 
 const CandidatePicker = ({
   employees,
@@ -869,7 +916,7 @@ const CandidatePicker = ({
           onChange={(e) => setPick({ ...pick, note: e.target.value })}
           placeholder="e.g. Strong technical background, needs more supervisory experience"
           className="sp-input resize-y"
-        />
+         />
       </div>
     </div>
   );
