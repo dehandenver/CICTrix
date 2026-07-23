@@ -106,6 +106,72 @@ export interface EmployeeOption {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Readiness Score — transparent 100-point rubric
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ReadinessScore {
+  total: number;           // 0–100
+  performance: number;     // 0–60 (IPCR score ÷ 5 × 60)
+  performanceMax: 60;
+  tenure: number;          // 0–25 (years_of_service, capped at 20 years = 25 pts)
+  tenureMax: 25;
+  fieldMatch: number;      // 0 or 15 (exact keyword match = 15)
+  fieldMatchMax: 15;
+  ipcrScore: number | null;      // raw 1–5 IPCR score
+  adjectival: string | null;
+  ratedPeriod: string | null;
+  yearsOfService: number;        // raw years
+  matchedKeyword: string | null; // the keyword that matched
+}
+
+export interface AutoSuccessor {
+  employeeId: string;
+  employeeName: string;
+  currentPosition: string | null;
+  department: string | null;
+  readiness: ReadinessScore;
+  isManuallyAdded: boolean;  // false for auto-discovered, true for manually added
+  manualNote: string | null; // only for manually-added entries
+  candidateId: string | null; // succession_candidates.id, null for auto-discovered
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Position-field keyword matching (shared utilities)
+//
+// Generic rank/level words carry no field meaning, so they're stripped before
+// comparing two job titles — otherwise every "… Officer" would match every
+// other. What's left is the role's field keyword ("engineer", "accountant",
+// "nurse"), which is what makes an employee a plausible successor.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const TITLE_STOPWORDS = new Set([
+  'i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii', 'ix', 'x',
+  'of', 'the', 'and', 'for', 'to', 'in', 'a', 'an',
+  'officer', 'office', 'head', 'chief', 'senior', 'junior', 'assistant',
+  'associate', 'staff', 'division', 'unit', 'city', 'manager', 'supervisor',
+  'administrator', 'coordinator', 'aide', 'level',
+]);
+
+export const titleKeywords = (text: string): Set<string> =>
+  new Set(
+    String(text ?? '')
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length > 2 && !TITLE_STOPWORDS.has(w)),
+  );
+
+/**
+ * The shared field keyword between two job titles, or null. E.g. "Engineer II"
+ * and "Chief Engineer" both reduce to "engineer" → a match. Used to flag
+ * employees who share the critical position's field as eligible successors.
+ */
+export const sharedFieldKeyword = (a: string, b: string): string | null => {
+  const ka = titleKeywords(a);
+  for (const w of titleKeywords(b)) if (ka.has(w)) return w;
+  return null;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Live IPCR score roll-up (derived, never stored on the succession tables)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -915,5 +981,206 @@ export async function listPositionTitlesForDepartment(departmentName: string): P
     return [...titles].sort((a, b) => a.localeCompare(b));
   } catch {
     return [];
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Auto-Successor Discovery Engine
+//
+// For each critical position, automatically discovers eligible successors:
+//   1. Eligibility gate — completed IPCR (Phase 2 approved)
+//   2. Field matching  — position-title keyword match
+//   3. Readiness score — 60 performance + 25 tenure + 15 field alignment
+//   4. Merge manual    — manually-added candidates are included too
+// ─────────────────────────────────────────────────────────────────────────────
+
+function computeReadinessScore(
+  ipcrScore: number | null,
+  adjectival: string | null,
+  ratedPeriod: string | null,
+  yearsOfService: number,
+  matchedKeyword: string | null,
+): ReadinessScore {
+  const performance = ipcrScore != null ? Number(((ipcrScore / 5) * 60).toFixed(1)) : 0;
+  const tenure = Number((Math.min(yearsOfService, 20) / 20 * 25).toFixed(1));
+  const fieldMatch = matchedKeyword ? 15 : 0;
+  return {
+    total: Number((performance + tenure + fieldMatch).toFixed(1)),
+    performance,
+    performanceMax: 60,
+    tenure,
+    tenureMax: 25,
+    fieldMatch,
+    fieldMatchMax: 15,
+    ipcrScore,
+    adjectival,
+    ratedPeriod,
+    yearsOfService,
+    matchedKeyword,
+  };
+}
+
+/** Years since date_hired until today, floored at 0. */
+function yearsFromHireDate(dateHired: string | null): number {
+  if (!dateHired) return 0;
+  const d = new Date(dateHired);
+  if (Number.isNaN(d.getTime())) return 0;
+  const ms = Date.now() - d.getTime();
+  return Math.max(0, Number((ms / (365.25 * 24 * 60 * 60 * 1000)).toFixed(1)));
+}
+
+/**
+ * Auto-discover, score, and rank successors for a critical position.
+ *
+ * The engine works in five steps:
+ *   1. Gate: only employees with a completed IPCR enter the pool.
+ *   2. Filter: the employee's current position must share a field keyword
+ *      with the critical position's title.
+ *   3. Score: transparent 100-point rubric (Performance 60, Tenure 25, Field 15).
+ *   4. Merge: manually-added succession_candidates are included and scored
+ *      the same way (but flagged as manual).
+ *   5. Rank: highest readiness score first.
+ */
+export async function listAutoSuccessors(
+  criticalPositionId: string,
+): Promise<Result<AutoSuccessor[]>> {
+  try {
+    // ── Fetch the critical position title ───────────────────────────────────
+    const { data: posRow, error: posErr } = await supabase
+      .from('critical_positions')
+      .select('id, title')
+      .eq('id', criticalPositionId)
+      .maybeSingle();
+    if (posErr) return { ok: false, error: posErr.message };
+    if (!posRow) return { ok: false, error: 'Critical position not found.' };
+    const positionTitle = String(posRow.title ?? '');
+
+    // ── Step 1: Eligibility gate — all employees with completed IPCR ───────
+    // Fetch all approved+completed target_settings to discover who has a
+    // completed IPCR. We need the employee IDs first.
+    const { data: completedSettings } = await supabase
+      .from('target_settings')
+      .select('employee_id')
+      .eq('status', 'approved')
+      .eq('phase2_status', 'completed');
+    const completedEmployeeIds = [...new Set(
+      ((completedSettings ?? []) as any[]).map((s) => String(s.employee_id)).filter(Boolean),
+    )];
+    if (!completedEmployeeIds.length) return { ok: true, data: [] };
+
+    // ── Fetch employee details + scores + tenure in parallel ────────────────
+    const [{ data: empRows }, scores, { data: hireRows }] = await Promise.all([
+      supabase
+        .from('employees_with_department')
+        .select('id, full_name, current_position, department')
+        .in('id', completedEmployeeIds),
+      getLatestOverallScores(completedEmployeeIds),
+      supabase
+        .from('employees')
+        .select('id, date_hired')
+        .in('id', completedEmployeeIds),
+    ]);
+
+    const hireDateById = new Map<string, string>();
+    for (const h of (hireRows ?? []) as any[]) {
+      if (h.date_hired) hireDateById.set(String(h.id), String(h.date_hired));
+    }
+
+    // ── Step 2 & 3: Field match + Score ─────────────────────────────────────
+    const autoMap = new Map<string, AutoSuccessor>();
+    for (const emp of (empRows ?? []) as any[]) {
+      const empId = String(emp.id);
+      const empPosition = String(emp.current_position ?? '');
+      const keyword = sharedFieldKeyword(empPosition, positionTitle);
+      if (!keyword) continue; // no field match → excluded
+
+      const score = scores.get(empId);
+      if (!score) continue; // completed IPCR but no rolled-up score (edge case) → skip
+
+      const yos = yearsFromHireDate(hireDateById.get(empId) ?? null);
+      const readiness = computeReadinessScore(
+        score.overallScore,
+        score.adjectival,
+        score.period,
+        yos,
+        keyword,
+      );
+
+      autoMap.set(empId, {
+        employeeId: empId,
+        employeeName: String(emp.full_name ?? '').trim(),
+        currentPosition: empPosition || null,
+        department: emp.department ?? null,
+        readiness,
+        isManuallyAdded: false,
+        manualNote: null,
+        candidateId: null,
+      });
+    }
+
+    // ── Step 4: Merge manually-added candidates ────────────────────────────
+    const { data: manualRows } = await supabase
+      .from('succession_candidates')
+      .select('*')
+      .eq('critical_position_id', criticalPositionId);
+
+    for (const mc of (manualRows ?? []) as any[]) {
+      const mcId = String(mc.employee_id);
+      if (autoMap.has(mcId)) {
+        // Already auto-discovered — just attach the candidate row ID and note.
+        const existing = autoMap.get(mcId)!;
+        existing.candidateId = String(mc.id);
+        existing.manualNote = mc.note ?? null;
+        // Keep isManuallyAdded = false — they qualified automatically.
+        continue;
+      }
+
+      // Not auto-discovered — score them anyway (they may not field-match,
+      // but RSP explicitly added them so they should appear).
+      const { data: mcEmp } = await supabase
+        .from('employees_with_department')
+        .select('id, full_name, current_position, department')
+        .eq('id', mcId)
+        .maybeSingle();
+      const { data: mcHire } = await supabase
+        .from('employees')
+        .select('date_hired')
+        .eq('id', mcId)
+        .maybeSingle();
+
+      const mcScore = scores.get(mcId) ?? (await getLatestOverallScores([mcId])).get(mcId);
+      const mcPosition = String(mcEmp?.current_position ?? '');
+      const mcKeyword = sharedFieldKeyword(mcPosition, positionTitle);
+      const mcYos = yearsFromHireDate(mcHire?.date_hired ?? null);
+      const readiness = computeReadinessScore(
+        mcScore?.overallScore ?? null,
+        mcScore?.adjectival ?? null,
+        mcScore?.period ?? null,
+        mcYos,
+        mcKeyword,
+      );
+
+      autoMap.set(mcId, {
+        employeeId: mcId,
+        employeeName: String(mcEmp?.full_name ?? '(unknown)').trim(),
+        currentPosition: mcPosition || null,
+        department: mcEmp?.department ?? null,
+        readiness,
+        isManuallyAdded: true,
+        manualNote: mc.note ?? null,
+        candidateId: String(mc.id),
+      });
+    }
+
+    // ── Step 5: Sort — highest total first, tie-break by performance then name
+    const result = [...autoMap.values()].sort((a, b) => {
+      if (b.readiness.total !== a.readiness.total) return b.readiness.total - a.readiness.total;
+      if (b.readiness.performance !== a.readiness.performance) return b.readiness.performance - a.readiness.performance;
+      return a.employeeName.localeCompare(b.employeeName);
+    });
+
+    return { ok: true, data: result };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Failed to load auto-successors.' };
   }
 }
