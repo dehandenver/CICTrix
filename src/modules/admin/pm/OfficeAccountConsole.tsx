@@ -367,9 +367,8 @@ export const OfficeAccountConsole: React.FC = () => {
     void refreshPendingApprovals();
   };
   const switchEnabled = officeRole !== null;
-  // Navigation tabs: 'targets' | 'ratings' | 'training-requests' | 'training-attendees' | 'critical-positions' | 'gap-analysis'
-  // Note: 'training-courses' (read-only) was removed — 'training-attendees' is the sole training nav item, renamed 'Training Courses' in the UI.
-  const [activeTab, setActiveTab] = useState<'targets' | 'ratings' | 'training-requests' | 'training-attendees' | 'critical-positions' | 'gap-analysis'>('targets');
+  const [activeTab, setActiveTab] = useState<'ipcr' | 'training-requests' | 'training-attendees' | 'critical-positions' | 'gap-analysis'>('ipcr');
+  const [ipcrSubtab, setIpcrSubtab] = useState<'targets' | 'ratings'>('targets');
 
   // Subtabs
   const [targetsSubtab, setTargetsSubtab] = useState<'verify' | 'transmittal'>('verify');
@@ -880,34 +879,18 @@ export const OfficeAccountConsole: React.FC = () => {
           </div>
           <nav className="space-y-1.5">
             <button
-              onClick={() => setActiveTab('targets')}
+              onClick={() => setActiveTab('ipcr')}
               className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${
-                activeTab === 'targets' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
+                activeTab === 'ipcr' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
               }`}
             >
-              <FileText className={`h-5 w-5 ${activeTab === 'targets' ? 'text-white' : 'text-black'}`} />
+              <ClipboardCheck className={`h-5 w-5 ${activeTab === 'ipcr' ? 'text-white' : 'text-black'}`} />
               <div>
-                <p className={`text-sm font-semibold leading-tight ${activeTab === 'targets' ? 'text-white' : 'text-black'}`}>
-                  Targets
+                <p className={`text-sm font-semibold leading-tight ${activeTab === 'ipcr' ? 'text-white' : 'text-black'}`}>
+                  IPCR
                 </p>
-                <p className={`text-[11px] mt-0.5 ${activeTab === 'targets' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
-                  Adjust employee targets
-                </p>
-              </div>
-            </button>
-            <button
-              onClick={() => setActiveTab('ratings')}
-              className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${
-                activeTab === 'ratings' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
-              }`}
-            >
-              <Sliders className={`h-5 w-5 ${activeTab === 'ratings' ? 'text-white' : 'text-black'}`} />
-              <div>
-                <p className={`text-sm font-semibold leading-tight ${activeTab === 'ratings' ? 'text-white' : 'text-black'}`}>
-                  Ratings
-                </p>
-                <p className={`text-[11px] mt-0.5 ${activeTab === 'ratings' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
-                  Validate self-ratings
+                <p className={`text-[11px] mt-0.5 ${activeTab === 'ipcr' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
+                  Targets &amp; ratings validation
                 </p>
               </div>
             </button>
@@ -999,16 +982,18 @@ export const OfficeAccountConsole: React.FC = () => {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 pb-5">
             <div>
               <h2 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2.5">
-                {activeTab === 'targets' ? (
-                  <>
-                    <FileText className="h-7 w-7 text-indigo-600" />
-                    Phase 1: Target Interception & Adjustment
-                  </>
-                ) : activeTab === 'ratings' ? (
-                  <>
-                    <Sliders className="h-7 w-7 text-indigo-600" />
-                    Phase 2: Ratings Validation & Cascading Summaries
-                  </>
+                {activeTab === 'ipcr' ? (
+                  ipcrSubtab === 'targets' ? (
+                    <>
+                      <FileText className="h-7 w-7 text-indigo-600" />
+                      Phase 1: Target Interception &amp; Adjustment
+                    </>
+                  ) : (
+                    <>
+                      <Sliders className="h-7 w-7 text-indigo-600" />
+                      Phase 2: Ratings Validation &amp; Cascading Summaries
+                    </>
+                  )
                 ) : activeTab === 'training-attendees' ? (
                   <>
                     <UserCheck className="h-7 w-7 text-indigo-600" />
@@ -1022,10 +1007,10 @@ export const OfficeAccountConsole: React.FC = () => {
                 )}
               </h2>
               <p className="text-sm text-slate-500 mt-1">
-                {activeTab === 'targets'
-                  ? 'Audit and direct-edit employee target submissions before transmitting them to the central PM registrar.'
-                  : activeTab === 'ratings'
-                  ? 'Verify accomplishments at the 6-month mark, apply rating overrides, and generate automated DPCR/OPCR summaries.'
+                {activeTab === 'ipcr'
+                  ? ipcrSubtab === 'targets'
+                    ? 'Audit and direct-edit employee target submissions before transmitting them to the central PM registrar.'
+                    : 'Verify accomplishments at the 6-month mark, apply rating overrides, and generate automated DPCR/OPCR summaries.'
                   : activeTab === 'training-attendees'
                   ? 'Browse published trainings and review L&D\'s roster recommendations for your office. Add employees L&D missed, then send the list back for enrollment.'
                   : 'Request trainings from L&D and track their decisions.'}
@@ -1048,6 +1033,26 @@ export const OfficeAccountConsole: React.FC = () => {
 
           {/* Main Panel Card */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden min-h-[450px]">
+            {activeTab === 'ipcr' && (
+              <div className="flex border-b border-slate-200 bg-slate-50/50 px-4 py-2 gap-2">
+                <button
+                  onClick={() => setIpcrSubtab('targets')}
+                  className={`px-4 py-2 text-xs font-bold rounded-md transition ${
+                    ipcrSubtab === 'targets' ? 'bg-white text-indigo-650 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  Targets
+                </button>
+                <button
+                  onClick={() => setIpcrSubtab('ratings')}
+                  className={`px-4 py-2 text-xs font-bold rounded-md transition ${
+                    ipcrSubtab === 'ratings' ? 'bg-white text-indigo-650 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  Ratings
+                </button>
+              </div>
+            )}
 
             {activeTab === 'training-attendees' && (
               <OfficeTrainingCourses
@@ -1069,7 +1074,7 @@ export const OfficeAccountConsole: React.FC = () => {
             )}
 
             {/* 📥 TAB 2.1: TARGET INTERCEPTION */}
-            {activeTab === 'targets' && (
+            {activeTab === 'ipcr' && ipcrSubtab === 'targets' && (
               <div>
                 <div className="flex border-b border-slate-100 bg-slate-50/50 px-4 py-2">
                   <button
@@ -1293,7 +1298,7 @@ export const OfficeAccountConsole: React.FC = () => {
             )}
 
             {/* 📈 TAB 2.2: RATINGS VALIDATION */}
-            {activeTab === 'ratings' && (
+            {activeTab === 'ipcr' && ipcrSubtab === 'ratings' && (
               <div>
                 <div className="flex border-b border-slate-100 bg-slate-50/50 px-4 py-2">
                   <button
