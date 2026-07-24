@@ -47,6 +47,7 @@ interface Attachment {
 
 interface EvaluationData {
   interviewer_name: string;
+  written_exam_score?: number | null;
   communication_skills_score: number;
   confidence_score: number;
   comprehension_score: number;
@@ -71,7 +72,7 @@ const INTERVIEWER_SCORE_SNAPSHOT_STORAGE_KEY = 'cictrix_interviewer_score_snapsh
 const saveInterviewerScoreSnapshot = (
   applicantId: string | undefined,
   applicantEmail: string | undefined,
-  snapshot: { pcptAverage?: number; oralAverage?: number }
+  snapshot: { pcptAverage?: number; oralAverage?: number; writtenExamScore?: number }
 ) => {
   if (!applicantId && !applicantEmail) return;
 
@@ -80,13 +81,19 @@ const saveInterviewerScoreSnapshot = (
     return Number(Math.max(1, Math.min(5, value)).toFixed(2));
   };
 
+  const cleanWrittenScore = (value?: number) => {
+    if (typeof value !== 'number' || Number.isNaN(value) || value < 0) return undefined;
+    return Number(Math.max(0, Math.min(100, value)).toFixed(2));
+  };
+
   const payload = {
     pcptAverage: cleanScore(snapshot.pcptAverage),
     oralAverage: cleanScore(snapshot.oralAverage),
+    writtenExamScore: cleanWrittenScore(snapshot.writtenExamScore),
     updatedAt: new Date().toISOString(),
   };
 
-  if (!payload.pcptAverage && !payload.oralAverage) return;
+  if (!payload.pcptAverage && !payload.oralAverage && payload.writtenExamScore === undefined) return;
 
   try {
     const raw = localStorage.getItem(INTERVIEWER_SCORE_SNAPSHOT_STORAGE_KEY);
@@ -160,10 +167,11 @@ export function EvaluationForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [activeTab, setActiveTab] = useState<'pcpt' | 'oral'>('pcpt');
+  const [activeTab, setActiveTab] = useState<'pcpt' | 'oral' | 'written'>('oral');
   const [appointmentType, setAppointmentType] = useState<AppointmentType>('original');
   const [isInterviewerNameLocked, setIsInterviewerNameLocked] = useState(false);
   const [, setAssignedPositions] = useState<string[]>([]);
+  const [writtenExamScore, setWrittenExamScore] = useState<number | ''>('');
   
   const [evaluation, setEvaluation] = useState<EvaluationData>({
     interviewer_name: '',
@@ -394,6 +402,7 @@ export function EvaluationForm() {
         applicant_id: id || null,
         job_posting_id: applicant?.job_posting_id || null,
         interviewer_name: evaluation.interviewer_name || null,
+        written_exam_score: typeof writtenExamScore === 'number' && !isNaN(writtenExamScore) && writtenExamScore >= 0 ? writtenExamScore : null,
         communication_skills_score: evaluation.communication_skills_score > 0 ? evaluation.communication_skills_score : null,
         confidence_score: evaluation.confidence_score > 0 ? evaluation.confidence_score : null,
         comprehension_score: evaluation.comprehension_score > 0 ? evaluation.comprehension_score : null,
@@ -485,6 +494,7 @@ export function EvaluationForm() {
       saveInterviewerScoreSnapshot(id, applicant?.email, {
         pcptAverage: averagePcpt,
         oralAverage,
+        writtenExamScore: typeof writtenExamScore === 'number' && !isNaN(writtenExamScore) ? writtenExamScore : undefined,
       });
 
       // Keep recruitment fallback data in sync so InterviewerApplicantsList can show Reviewed/Evaluated.
@@ -565,22 +575,33 @@ export function EvaluationForm() {
 
       {applicant && (
         <div className="evaluation-content">
-          <div className="evaluation-tabs" style={{ gridTemplateColumns: '1fr' }}>
+          <div className="evaluation-tabs" style={{ display: 'flex', gap: '0.5rem' }}>
             {appointmentType === 'promotional' && (
               <button
                 type="button"
-                className="evaluation-tab active"
+                className={`evaluation-tab ${activeTab === 'pcpt' ? 'active' : ''}`}
+                onClick={() => setActiveTab('pcpt')}
               >
                 PCPT Evaluation
               </button>
             )}
             {appointmentType === 'original' && (
-              <button
-                type="button"
-                className="evaluation-tab active"
-              >
-                Oral Interview Form
-              </button>
+              <>
+                <button
+                  type="button"
+                  className={`evaluation-tab ${activeTab === 'oral' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('oral')}
+                >
+                  Oral Interview Form
+                </button>
+                <button
+                  type="button"
+                  className={`evaluation-tab ${activeTab === 'written' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('written')}
+                >
+                  Written Examination Score
+                </button>
+              </>
             )}
           </div>
 
@@ -836,6 +857,103 @@ export function EvaluationForm() {
                   </div>
                 </form>
               )}
+            </div>
+          )}
+          {activeTab === 'written' && (
+            <div className="pcpt-tab-content">
+              <div className="oral-form-header">
+                <h1 className="oral-title">WRITTEN EXAMINATION EVALUATION</h1>
+                <p className="oral-subtitle">Enter the applicant's raw written examination score (0–100)</p>
+                <hr className="oral-divider" />
+              </div>
+
+              <div className="oral-info-section">
+                <div className="oral-info-row">
+                  <div className="oral-info-group">
+                    <label className="oral-label">Applicant Name:</label>
+                    <span className="oral-value">{getFullName(applicant)}</span>
+                  </div>
+                  <div className="oral-info-group">
+                    <label className="oral-label">Position Applied For:</label>
+                    <span className="oral-value">{applicant.position}</span>
+                  </div>
+                </div>
+
+                <div className="oral-info-row">
+                  <div className="oral-info-group">
+                    <label className="oral-label">Interviewer Name:</label>
+                    <input
+                      type="text"
+                      className="oral-input"
+                      value={evaluation.interviewer_name}
+                      onChange={(e) => handleInputChange('interviewer_name', e.target.value)}
+                      placeholder={isInterviewerNameLocked ? 'Auto-filled from your account' : 'Enter your name'}
+                      readOnly={isInterviewerNameLocked}
+                      required
+                    />
+                  </div>
+                  <div className="oral-info-group">
+                    <label className="oral-label">Department:</label>
+                    <span className="oral-value">{applicant.office}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rating-scale-box" style={{ marginTop: '1rem', marginBottom: '1.5rem' }}>
+                <strong>Written Examination Weight:</strong>
+                <span>Raw score 0–100. Contributes 30% to overall selection total.</span>
+              </div>
+
+              <form onSubmit={handleSubmit}>
+                <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                  <label className="form-label" style={{ fontWeight: 700, fontSize: '1rem', color: '#1e293b' }}>
+                    WRITTEN EXAMINATION SCORE (0–100):
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={writtenExamScore}
+                    onChange={(e) => setWrittenExamScore(e.target.value === '' ? '' : Math.max(0, Math.min(100, Number(e.target.value))))}
+                    placeholder="Enter written examination score (e.g. 85)"
+                    className="oral-input"
+                    style={{ fontSize: '1.1rem', fontWeight: 600, padding: '0.75rem', width: '100%', maxWidth: '320px', borderRadius: '10px', border: '1px solid #cbd5e1', marginTop: '0.5rem' }}
+                  />
+                  {typeof writtenExamScore === 'number' && (
+                    <p style={{ marginTop: '0.5rem', fontSize: '0.875rem', color: '#475569', fontWeight: 600 }}>
+                      Equivalent Contribution (30%): <span style={{ color: '#2563eb', fontWeight: 700 }}>{(writtenExamScore * 0.30).toFixed(2)} pts</span>
+                    </p>
+                  )}
+                </div>
+
+                <div className="form-group interview-notes-group">
+                  <label className="form-label">INTERVIEW &amp; EXAMINATION NOTES:</label>
+                  <textarea
+                    className="form-textarea interview-notes-textarea"
+                    value={evaluation.interview_notes}
+                    onChange={(e) => handleInputChange('interview_notes', e.target.value)}
+                    rows={5}
+                    placeholder="Summarize key points, observations, and written exam notes..."
+                    required
+                  />
+                </div>
+
+                {error && (
+                  <div className="error-message">
+                    ❌ {error}
+                  </div>
+                )}
+
+                <div className="oral-form-actions" style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
+                  <Button type="button" variant="secondary" onClick={() => setActiveTab('oral')}>
+                    Go to Oral Interview Form
+                  </Button>
+                  <Button type="submit" disabled={submitting} className="submit-btn">
+                    {submitting ? 'Submitting...' : 'Submit Final Evaluation'}
+                  </Button>
+                </div>
+              </form>
             </div>
           )}
 
