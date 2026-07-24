@@ -1034,19 +1034,23 @@ export const OfficeAccountConsole: React.FC = () => {
           {/* Main Panel Card */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden min-h-[450px]">
             {activeTab === 'ipcr' && (
-              <div className="flex border-b border-slate-200 bg-slate-50/50 px-4 py-2 gap-2">
+              <div className="flex border-b border-slate-200 bg-slate-50/60 px-4 py-2.5 gap-2">
                 <button
                   onClick={() => setIpcrSubtab('targets')}
-                  className={`px-4 py-2 text-xs font-bold rounded-md transition ${
-                    ipcrSubtab === 'targets' ? 'bg-white text-indigo-650 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
+                    ipcrSubtab === 'targets'
+                      ? 'bg-indigo-600 text-white shadow-md'
+                      : 'text-slate-700 hover:text-slate-900 hover:bg-slate-200/70 font-semibold'
                   }`}
                 >
                   Targets
                 </button>
                 <button
                   onClick={() => setIpcrSubtab('ratings')}
-                  className={`px-4 py-2 text-xs font-bold rounded-md transition ${
-                    ipcrSubtab === 'ratings' ? 'bg-white text-indigo-650 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
+                    ipcrSubtab === 'ratings'
+                      ? 'bg-indigo-600 text-white shadow-md'
+                      : 'text-slate-700 hover:text-slate-900 hover:bg-slate-200/70 font-semibold'
                   }`}
                 >
                   Ratings
