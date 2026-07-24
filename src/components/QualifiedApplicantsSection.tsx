@@ -209,29 +209,20 @@ const normalizeApplicationType = (value: string | null | undefined): Appointment
 const deriveInitial = (
   applicant: ApplicantRecord,
   saved: Record<string, ApplicantCategoryScores>,
-  evalSnapshot?: EvaluationSnapshot | null,
-  posExamScore?: string,
 ): ApplicantCategoryScores => {
   const pct = (applicant.total_score ?? 0) / 100;
   const autoEdu = educationLevelToPoints(applicant.education_level);
   const autoExp = experienceYearsToPoints(applicant.years_of_experience);
-
-  const pcptRaw = typeof evalSnapshot?.pcptRawScore === 'number' ? evalSnapshot.pcptRawScore : null;
-  const writtenRaw = typeof evalSnapshot?.writtenExamRawScore === 'number'
-    ? evalSnapshot.writtenExamRawScore
-    : (posExamScore && !isNaN(Number(posExamScore)) ? Number(posExamScore) : null);
-  const oralRaw = typeof evalSnapshot?.oralRawScore === 'number' ? evalSnapshot.oralRawScore : null;
-
   // Full template with every category present — the reader (calcOverall, sv,
   // the score grid) assumes all seven keys exist.
   const fresh: ApplicantCategoryScores = {
     education:   { initialScore: autoEdu ?? +((pct * 20).toFixed(1)),  finalScore: autoEdu,  remarks: '' },
     experience:  { initialScore: autoExp ?? +((pct * 25).toFixed(1)),  finalScore: autoExp,  remarks: '' },
     performance: { initialScore: +((pct * 20).toFixed(1)),             finalScore: null,     remarks: '' },
-    pcpt:        { initialScore: pcptRaw ?? +((pct * 20).toFixed(1)),  finalScore: pcptRaw === null ? null : pcptRawToConvertedScore(pcptRaw), remarks: '' },
+    pcpt:        { initialScore: +((pct * 20).toFixed(1)),             finalScore: null,     remarks: '' },
     potential:   { initialScore: +((pct * 25).toFixed(1)),             finalScore: null,     remarks: '' },
-    writtenExam: { initialScore: writtenRaw ?? 0,                      finalScore: writtenRaw, remarks: '' },
-    oralExam:    { initialScore: oralRaw ?? 0,                         finalScore: oralRaw === null ? null : oralRawToConvertedScore(oralRaw), remarks: '' },
+    writtenExam: { initialScore: 0,                                    finalScore: null,     remarks: '' },
+    oralExam:    { initialScore: 0,                                    finalScore: null,     remarks: '' },
     appointmentType: normalizeApplicationType(applicant.application_type),
     positionType: 'rank-and-file',
   };
@@ -240,15 +231,7 @@ const deriveInitial = (
   // or writtenExam) would otherwise leave a category undefined and crash the
   // reader with "Cannot read properties of undefined (reading 'finalScore')".
   const savedScores = saved[applicant.id];
-  if (!savedScores) return fresh;
-
-  return {
-    ...fresh,
-    ...savedScores,
-    writtenExam: savedScores.writtenExam?.finalScore != null ? savedScores.writtenExam : fresh.writtenExam,
-    oralExam: savedScores.oralExam?.finalScore != null ? savedScores.oralExam : fresh.oralExam,
-    pcpt: savedScores.pcpt?.finalScore != null ? savedScores.pcpt : fresh.pcpt,
-  };
+  return savedScores ? { ...fresh, ...savedScores } : fresh;
 };
 
 const calcOverall = (scores: ApplicantCategoryScores): { value: number | null; pct: string | null } => {
@@ -1231,8 +1214,6 @@ interface ApplicantsListViewProps {
   folder:                 PositionFolder;
   completedEvaluationIds: Set<string>;
   savedCatScores:         Record<string, ApplicantCategoryScores>;
-  evaluationsByApplicant?: Record<string, EvaluationSnapshot>;
-  examScores?:            Record<string, Record<string, string>>;
   onBack:                 () => void;
   onUpdateScores:         (applicant: ApplicantRecord) => void;
 }
@@ -1254,15 +1235,7 @@ const PROMOTIONAL_SCORE_COLS: ScoreCol[] = [
   { key: 'pcpt',        label: 'PCPT /20' },
 ];
 
-const ApplicantsListView = ({
-  folder,
-  completedEvaluationIds,
-  savedCatScores,
-  evaluationsByApplicant,
-  examScores,
-  onBack,
-  onUpdateScores,
-}: ApplicantsListViewProps) => {
+const ApplicantsListView = ({ folder, completedEvaluationIds, savedCatScores, onBack, onUpdateScores }: ApplicantsListViewProps) => {
   const [search, setSearch] = useState('');
   const [scoreTab, setScoreTab] = useState<AppointmentType>('original');
 
@@ -1270,13 +1243,11 @@ const ApplicantsListView = ({
   // the Original / Promotional tab and count each track independently.
   const typed = useMemo(() =>
     folder.applicants.map(a => {
-      const evalSnapshot = evaluationsByApplicant?.[a.id] ?? null;
-      const posExam = examScores?.[folder.position]?.[a.id];
-      const cs = deriveInitial(a, savedCatScores, evalSnapshot, posExam);
+      const cs = deriveInitial(a, savedCatScores);
       const apptType: AppointmentType = cs.appointmentType ?? 'original';
       return { ...a, overallScore: calcOverall(cs).value, catScores: cs, apptType };
     }),
-    [folder.applicants, folder.position, savedCatScores, evaluationsByApplicant, examScores],
+    [folder.applicants, savedCatScores],
   );
 
   const originalCount = useMemo(() => typed.filter(t => t.apptType !== 'promotional').length, [typed]);
@@ -1576,8 +1547,6 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
           folder={liveOpenFolder}
           completedEvaluationIds={completedEvaluationIds}
           savedCatScores={catScores}
-          evaluationsByApplicant={evaluationsByApplicant}
-          examScores={examScores}
           onBack={() => setOpenFolder(null)}
           onUpdateScores={(a) => setScoresCtx({ applicant: a, folder: liveOpenFolder })}
         />

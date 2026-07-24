@@ -353,10 +353,7 @@ const computeScoreBreakdown = (
   const education = clamp20((technicalScore > 0 ? technicalScore : 0) / 1.5);
   const experience = to20FromFivePoint(jobKnowledgeScore);
   const performance = to20FromFivePoint(overallImpressionScore);
-  const explicitWrittenScore = parseScore((evaluation as any)?.written_exam_score);
-  const written = explicitWrittenScore > 0
-    ? explicitWrittenScore
-    : clamp20((technicalScore > 0 ? technicalScore : 0) / 1.5);
+  const written = clamp20((technicalScore > 0 ? technicalScore : 0) / 1.5);
 
   const oralRaw = [
     communicationSkillsScore,
