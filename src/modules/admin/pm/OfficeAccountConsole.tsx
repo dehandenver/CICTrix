@@ -24,6 +24,8 @@ import {
   GraduationCap,
   BookOpen,
   ChevronDown,
+  ChevronRight,
+  ArrowLeft,
   Search,
   Check,
   Target,
@@ -372,6 +374,7 @@ export const OfficeAccountConsole: React.FC = () => {
 
   // Subtabs
   const [targetsSubtab, setTargetsSubtab] = useState<'verify' | 'transmittal'>('verify');
+  const [selectedTargetId, setSelectedTargetId] = useState<string | null>(null);
   const [ratingsSubtab, setRatingsSubtab] = useState<'review' | 'dpcr' | 'opcr'>('review');
 
   // State arrays
@@ -1114,6 +1117,123 @@ export const OfficeAccountConsole: React.FC = () => {
                           <p className="text-sm font-semibold text-slate-600">No IPCRs are awaiting approval.</p>
                           <p className="text-xs text-slate-400 mt-1">Submissions appear here once an employee clicks “Submit Targets for Approval”.</p>
                         </div>
+                      ) : selectedTargetId !== null ? (
+                        (() => {
+                          const p = pendingApprovals.find((x) => x.targetSettingId === selectedTargetId);
+                          if (!p) {
+                            setSelectedTargetId(null);
+                            return null;
+                          }
+                          const isOwn = !!currentEmployeeId && currentEmployeeId === p.employeeId;
+                          const busy = approvalBusyId === p.targetSettingId;
+
+                          return (
+                            <div className="space-y-4">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedTargetId(null)}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-sm transition"
+                              >
+                                <ArrowLeft className="h-4 w-4 text-slate-500" />
+                                Back to Position List
+                              </button>
+
+                              <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-4 bg-slate-50/50">
+                                  <div>
+                                    <h3 className="text-base font-bold text-slate-900">{p.employeeName}</h3>
+                                    <p className="text-xs text-slate-500 font-medium mt-0.5">
+                                      {[p.position, p.department].filter(Boolean).join(' · ') || '—'}
+                                    </p>
+                                  </div>
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800 border border-amber-200/60">
+                                    Submitted for approval
+                                  </span>
+                                </div>
+
+                                <div className="px-5 py-5 space-y-6">
+                                  {(['core', 'strategic', 'support'] as const).map((ft) => {
+                                    const group = p.mfos.filter((m) => m.functionType === ft);
+                                    if (group.length === 0) return null;
+                                    const label = ft === 'core' ? 'Core Functions' : ft === 'strategic' ? 'Strategic Functions' : 'Support Functions';
+                                    return (
+                                      <div key={ft} className="space-y-3">
+                                        <p className="text-xs font-bold uppercase tracking-wider text-indigo-600 border-b border-indigo-100 pb-1.5">{label}</p>
+                                        <ul className="space-y-3">
+                                          {group.map((m) => {
+                                            const editing = editingId === p.targetSettingId;
+                                            return (
+                                              <li key={m.id} className="rounded-xl bg-slate-50/60 border border-slate-200 p-4 space-y-2">
+                                                {editing ? (
+                                                  <input
+                                                    value={editMfo[m.id] ?? ''}
+                                                    onChange={(e) => setEditMfo((prev) => ({ ...prev, [m.id]: e.target.value }))}
+                                                    className="w-full rounded-lg border border-indigo-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                                  />
+                                                ) : (
+                                                  <p className="text-sm font-bold text-slate-900">{m.title || '(untitled MFO)'}</p>
+                                                )}
+                                                {m.indicators.length > 0 && (
+                                                  <ul className={`mt-2 text-xs text-slate-700 ${editing ? 'space-y-2' : 'list-disc pl-5 space-y-1'}`}>
+                                                    {m.indicators.map((si) => (
+                                                      <li key={si.id}>
+                                                        {editing ? (
+                                                          <input
+                                                            value={editSi[si.id] ?? ''}
+                                                            onChange={(e) => setEditSi((prev) => ({ ...prev, [si.id]: e.target.value }))}
+                                                            className="w-full rounded-lg border border-indigo-300 bg-white px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                                          />
+                                                        ) : (
+                                                          si.description
+                                                        )}
+                                                      </li>
+                                                    ))}
+                                                  </ul>
+                                                )}
+                                              </li>
+                                            );
+                                          })}
+                                        </ul>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-5 py-4 bg-slate-50/30">
+                                  {isOwn ? (
+                                    <p className="text-xs font-semibold text-slate-500">This is your own IPCR — it must be approved by another office account.</p>
+                                  ) : editingId === p.targetSettingId ? (
+                                    <div className="flex flex-1 flex-wrap items-center gap-2">
+                                      <span className="text-xs font-semibold text-indigo-600">Editing — change any MFO / Success Indicator text, then save your overrides.</span>
+                                      <div className="ml-auto flex gap-2">
+                                        <button onClick={() => void saveEdits(p)} disabled={savingEdits} className="rounded-lg bg-emerald-600 hover:bg-emerald-700 px-4 py-2 text-xs font-bold text-white shadow-sm disabled:opacity-50">{savingEdits ? 'Saving…' : 'Save Edits'}</button>
+                                        <button onClick={() => setEditingId(null)} disabled={savingEdits} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+                                      </div>
+                                    </div>
+                                  ) : returnDraftId === p.targetSettingId ? (
+                                    <div className="flex flex-1 flex-wrap items-center gap-2">
+                                      <input
+                                        type="text"
+                                        value={returnComment}
+                                        onChange={(e) => setReturnComment(e.target.value)}
+                                        placeholder="Reason for returning (optional)"
+                                        className="flex-1 min-w-[220px] rounded-lg border border-slate-300 px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                      />
+                                      <button onClick={() => void handleReturn(p)} disabled={busy} className="rounded-lg bg-amber-600 hover:bg-amber-700 px-4 py-2 text-xs font-bold text-white shadow-sm disabled:opacity-50">Confirm Return</button>
+                                      <button onClick={() => { setReturnDraftId(null); setReturnComment(''); }} disabled={busy} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <button onClick={() => void handleApprove(p)} disabled={busy} className="rounded-lg bg-emerald-600 hover:bg-emerald-700 px-4 py-2 text-xs font-bold text-white shadow-sm disabled:opacity-50">{busy ? 'Working…' : 'Approve & Freeze'}</button>
+                                      <button onClick={() => startEdit(p)} disabled={busy} className="rounded-lg border border-indigo-300 bg-white hover:bg-indigo-50 px-4 py-2 text-xs font-bold text-indigo-700 shadow-2xs disabled:opacity-50">Edit / Override</button>
+                                      <button onClick={() => { setReturnDraftId(p.targetSettingId); setReturnComment(''); }} disabled={busy} className="rounded-lg border border-amber-300 bg-white hover:bg-amber-50 px-4 py-2 text-xs font-bold text-amber-700 shadow-2xs disabled:opacity-50">Return for Revision</button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()
                       ) : (
                         <div className="space-y-6">
                           {groupedApprovals.map(([pos, items]) => {
@@ -1139,102 +1259,34 @@ export const OfficeAccountConsole: React.FC = () => {
                                 </button>
 
                                 {!isCollapsed && (
-                                  <div className="space-y-4 pl-1">
-                                    {items.map((p) => {
-                                      const isOwn = !!currentEmployeeId && currentEmployeeId === p.employeeId;
-                                      const busy = approvalBusyId === p.targetSettingId;
-                                      return (
-                                        <div key={p.targetSettingId} className="rounded-xl border border-slate-200 bg-white shadow-sm">
-                                          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
-                                            <div>
-                                              <p className="text-sm font-bold text-slate-800">{p.employeeName}</p>
-                                              <p className="text-[11px] text-slate-500">{[p.position, p.department].filter(Boolean).join(' · ') || '—'}</p>
-                                            </div>
-                                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-bold text-amber-800">Submitted for approval</span>
+                                  <div className="grid grid-cols-1 gap-2.5 pl-1">
+                                    {items.map((p) => (
+                                      <div
+                                        key={p.targetSettingId}
+                                        onClick={() => setSelectedTargetId(p.targetSettingId)}
+                                        className="group flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition-all hover:border-indigo-300 hover:shadow-md cursor-pointer"
+                                      >
+                                        <div className="flex items-center gap-3">
+                                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-50 font-bold text-indigo-700 text-sm">
+                                            {p.employeeName ? p.employeeName.charAt(0).toUpperCase() : 'E'}
                                           </div>
-
-                                          <div className="px-4 py-3 space-y-3">
-                                            {(['core', 'strategic', 'support'] as const).map((ft) => {
-                                              const group = p.mfos.filter((m) => m.functionType === ft);
-                                              if (group.length === 0) return null;
-                                              const label = ft === 'core' ? 'Core Functions' : ft === 'strategic' ? 'Strategic Functions' : 'Support Functions';
-                                              return (
-                                                <div key={ft}>
-                                                  <p className="text-[11px] font-bold uppercase tracking-wide text-indigo-600">{label}</p>
-                                                  <ul className="mt-1 space-y-1.5">
-                                                    {group.map((m) => {
-                                                      const editing = editingId === p.targetSettingId;
-                                                      return (
-                                                        <li key={m.id} className="rounded-lg bg-slate-50 px-3 py-2">
-                                                          {editing ? (
-                                                            <input
-                                                              value={editMfo[m.id] ?? ''}
-                                                              onChange={(e) => setEditMfo((prev) => ({ ...prev, [m.id]: e.target.value }))}
-                                                              className="w-full rounded border border-indigo-200 bg-white px-2 py-1 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                                            />
-                                                          ) : (
-                                                            <p className="text-xs font-semibold text-slate-800">{m.title || '(untitled MFO)'}</p>
-                                                          )}
-                                                          {m.indicators.length > 0 && (
-                                                            <ul className={`mt-1 text-[11px] text-slate-600 ${editing ? 'space-y-1' : 'list-disc pl-5'}`}>
-                                                              {m.indicators.map((si) => (
-                                                                <li key={si.id}>
-                                                                  {editing ? (
-                                                                    <input
-                                                                      value={editSi[si.id] ?? ''}
-                                                                      onChange={(e) => setEditSi((prev) => ({ ...prev, [si.id]: e.target.value }))}
-                                                                      className="w-full rounded border border-indigo-200 bg-white px-2 py-1 text-[11px] text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                                                    />
-                                                                  ) : (
-                                                                    si.description
-                                                                  )}
-                                                                </li>
-                                                              ))}
-                                                            </ul>
-                                                          )}
-                                                        </li>
-                                                      );
-                                                    })}
-                                                  </ul>
-                                                </div>
-                                              );
-                                            })}
-                                          </div>
-
-                                          <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-4 py-3">
-                                            {isOwn ? (
-                                              <p className="text-[11px] font-semibold text-slate-500">This is your own IPCR — it must be approved by another office account.</p>
-                                            ) : editingId === p.targetSettingId ? (
-                                              <div className="flex flex-1 flex-wrap items-center gap-2">
-                                                <span className="text-[11px] font-semibold text-indigo-600">Editing — change any MFO / Success Indicator text, then save your overrides.</span>
-                                                <div className="ml-auto flex gap-2">
-                                                  <button onClick={() => void saveEdits(p)} disabled={savingEdits} className="rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{savingEdits ? 'Saving…' : 'Save Edits'}</button>
-                                                  <button onClick={() => setEditingId(null)} disabled={savingEdits} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600">Cancel</button>
-                                                </div>
-                                              </div>
-                                            ) : returnDraftId === p.targetSettingId ? (
-                                              <div className="flex flex-1 flex-wrap items-center gap-2">
-                                                <input
-                                                  type="text"
-                                                  value={returnComment}
-                                                  onChange={(e) => setReturnComment(e.target.value)}
-                                                  placeholder="Reason for returning (optional)"
-                                                  className="flex-1 min-w-[200px] rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                                />
-                                                <button onClick={() => void handleReturn(p)} disabled={busy} className="rounded-lg bg-amber-600 hover:bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Confirm Return</button>
-                                                <button onClick={() => { setReturnDraftId(null); setReturnComment(''); }} disabled={busy} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600">Cancel</button>
-                                              </div>
-                                            ) : (
-                                              <>
-                                                <button onClick={() => void handleApprove(p)} disabled={busy} className="rounded-lg bg-emerald-600 hover:bg-emerald-700 px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{busy ? 'Working…' : 'Approve & Freeze'}</button>
-                                                <button onClick={() => startEdit(p)} disabled={busy} className="rounded-lg border border-indigo-300 bg-white hover:bg-indigo-50 px-4 py-1.5 text-xs font-semibold text-indigo-700 disabled:opacity-50">Edit / Override</button>
-                                                <button onClick={() => { setReturnDraftId(p.targetSettingId); setReturnComment(''); }} disabled={busy} className="rounded-lg border border-amber-300 bg-white hover:bg-amber-50 px-4 py-1.5 text-xs font-semibold text-amber-700 disabled:opacity-50">Return for Revision</button>
-                                              </>
-                                            )}
+                                          <div>
+                                            <p className="text-sm font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">
+                                              {p.employeeName}
+                                            </p>
+                                            <p className="text-xs text-slate-500">
+                                              {[p.position, p.department].filter(Boolean).join(' · ') || '—'}
+                                            </p>
                                           </div>
                                         </div>
-                                      );
-                                    })}
+                                        <div className="flex items-center gap-3">
+                                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800 border border-amber-200/60">
+                                            Submitted for approval
+                                          </span>
+                                          <ChevronRight className="h-5 w-5 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
+                                        </div>
+                                      </div>
+                                    ))}
                                   </div>
                                 )}
                               </div>
