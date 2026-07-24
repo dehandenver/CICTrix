@@ -48,7 +48,7 @@ export const deriveEvaluationSnapshot = (row: any): EvaluationSnapshot | null =>
 
   const oralCriteriaScores = ORAL_CRITERIA_FIELDS
     .map((field) => row?.[field])
-    .filter((value): value is number => typeof value === 'number');
+    .filter((value): value is number => typeof value === 'number' && value > 0);
 
   const oralRawScore = oralCriteriaScores.length > 0
     ? +(oralCriteriaScores.reduce((sum, value) => sum + value, 0) / oralCriteriaScores.length).toFixed(4)
