@@ -279,6 +279,7 @@ const AddAttendeeModal = ({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [override, setOverride] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -308,18 +309,21 @@ const AddAttendeeModal = ({
     }
   };
 
-  const toggle = (id: string) =>
+  const toggle = (id: string) => {
+    setError(null); // clear any prior error when selection changes
     setSelected((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
+  };
 
   const projected = target.currentCount + selected.size;
   const overCapacity = target.capacity > 0 && projected > target.capacity;
   const canConfirm = selected.size > 0 && (!overCapacity || override) && !busy;
 
   const confirm = async () => {
+    setError(null);
     setBusy(true);
     const res = await lndAddAttendees({
       sessionId: target.sessionId,
@@ -327,7 +331,10 @@ const AddAttendeeModal = ({
       competency: target.competencies[0] ?? null,
     });
     setBusy(false);
-    if (!res.ok) return;
+    if (!res.ok) {
+      setError(res.error ?? 'Failed to add attendee(s). Please try again.');
+      return;
+    }
     onAdded(res.added ?? 0);
   };
 
@@ -422,12 +429,17 @@ const AddAttendeeModal = ({
                                     <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-gray-500">
                                       {already ? (
                                         <span className="font-semibold text-gray-400">already on this course</span>
-                                      ) : (
+                                      ) : e.hasIpcr ? (
                                         <>
                                           <GraduationCap className="h-3 w-3 text-gray-400" />
                                           IPCR {e.overallLabel}
                                           {e.cycle ? ` · ${e.cycle}` : ''}
                                         </>
+                                      ) : (
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                                          <GraduationCap className="h-2.5 w-2.5" />
+                                          New employee — no rating yet
+                                        </span>
                                       )}
                                     </span>
                                   </label>
@@ -446,6 +458,12 @@ const AddAttendeeModal = ({
         </div>
 
         <div className="border-t border-gray-100 px-6 py-3">
+          {error && (
+            <div className="mb-3 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
           {overCapacity && (
             <label className="mb-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
               <input

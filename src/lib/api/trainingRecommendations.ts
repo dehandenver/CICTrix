@@ -1251,10 +1251,17 @@ export type PickerEmployee = {
   id: string;
   name: string;
   position: string | null;
-  /** e.g. "3.5/5" or "No finalized IPCR". */
+  /** e.g. "3.5/5" or "No rating yet" (never had a finalized IPCR). */
   overallLabel: string;
   /** Performance cycle the score is from, or null. */
   cycle: string | null;
+  /**
+   * False when the employee has never had a finalized IPCR record.
+   * Used by the UI to style them as "new hire" rather than a data error.
+   * They are still selectable — L&D may legitimately add new employees
+   * to foundational trainings like Ethical Public Service Foundations.
+   */
+  hasIpcr: boolean;
 };
 
 /** Active employees in one office, each with their latest finalized IPCR overall + cycle. */
@@ -1274,12 +1281,16 @@ export async function getOfficeEmployeesWithScores(office: string): Promise<Pick
     .map((e): PickerEmployee => {
       const s = scores.get(String(e.id));
       const score = s?.overallScore ?? null;
+      const hasIpcr = s != null; // has at least one finalized IPCR record
       return {
         id: String(e.id),
         name: String(e.full_name ?? '').trim() || 'Unknown employee',
         position: e.current_position ?? null,
-        overallLabel: score != null ? `${Number(score).toFixed(score % 1 === 0 ? 0 : 1)}/5` : 'No finalized IPCR',
+        overallLabel: score != null
+          ? `${Number(score).toFixed(score % 1 === 0 ? 0 : 1)}/5`
+          : 'No rating yet',
         cycle: s?.period ?? null,
+        hasIpcr,
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
