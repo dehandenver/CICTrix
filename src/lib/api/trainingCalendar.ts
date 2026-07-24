@@ -1,6 +1,7 @@
 import { supabase as supabaseClient } from '../supabase';
 import type { TrainingCategory } from '../../modules/admin/trainingCategories';
 import { COMPETENCIES } from '../../constants/positions';
+import { setSessionCompetencies } from './trainingCompetencies';
 
 const supabase = supabaseClient as any;
 
@@ -76,7 +77,17 @@ export type CalendarEvent = {
   id: string;
   title: string;
   category: string | null;
-  /** One of the 12 canonical competencies (the recommendation join key), or null. */
+  /**
+   * Structured competency tags from the training_competencies join table.
+   * Preferred by the AI Matcher over the objectives-parsing fallback.
+   * Empty array for trainings not yet tagged via the new form.
+   */
+  competencies: string[];
+  /**
+   * @deprecated Use competencies[]. Single primary competency kept for backward
+   * compat with callers not yet updated. Derived from join table when available,
+   * otherwise from objectives parsing.
+   */
   competency: string | null;
   /** ISO timestamp of the first day. */
   startDate: string;
@@ -139,6 +150,10 @@ const EVENT_SELECT = `
   objectives, description, materials, prerequisites, status, capacity, roster_finalized_at,
   training_enrollments (
     id, employee_id, enrollment_status, attendance_status
+  ),
+  training_competencies (
+    competency_id,
+    training_competency_tags ( id, name )
   )
 `;
 
@@ -158,26 +173,37 @@ const mapAttendee = (
   };
 };
 
-const mapEvent = (row: EventRow, identities: Map<string, EmployeeIdentity>): CalendarEvent => ({
-  id: row.id,
-  title: row.title,
-  category: row.category,
-  competency: competencyFromObjectives(row.objectives),
-  startDate: row.scheduled_date,
-  endDate: row.end_date,
-  speaker: row.instructor_name,
-  location: row.location,
-  objectives: row.objectives ?? [],
-  description: row.description ?? null,
-  materials: row.materials ?? null,
-  prerequisites: row.prerequisites ?? null,
-  status: row.status,
-  capacity: row.capacity ?? 0,
-  rosterFinalizedAt: row.roster_finalized_at,
-  attendees: (row.training_enrollments ?? [])
-    .map((e) => mapAttendee(e, identities))
-    .sort((a, b) => a.name.localeCompare(b.name)),
-});
+const mapEvent = (row: EventRow, identities: Map<string, EmployeeIdentity>): CalendarEvent => {
+  // Prefer structured join-table tags; fall back to objectives parsing for
+  // trainings created before this feature was introduced.
+  const joinTags: string[] = ((row as any).training_competencies ?? [])
+    .map((tc: any) => tc.training_competency_tags?.name as string | undefined)
+    .filter((n: string | undefined): n is string => typeof n === 'string' && n.length > 0);
+  const competenciesResolved =
+    joinTags.length > 0 ? joinTags : competenciesFromObjectives(row.objectives);
+
+  return {
+    id: row.id,
+    title: row.title,
+    category: row.category,
+    competencies: competenciesResolved,
+    competency: competenciesResolved[0] ?? null,
+    startDate: row.scheduled_date,
+    endDate: row.end_date,
+    speaker: row.instructor_name,
+    location: row.location,
+    objectives: row.objectives ?? [],
+    description: row.description ?? null,
+    materials: row.materials ?? null,
+    prerequisites: row.prerequisites ?? null,
+    status: row.status,
+    capacity: row.capacity ?? 0,
+    rosterFinalizedAt: row.roster_finalized_at,
+    attendees: (row.training_enrollments ?? [])
+      .map((e) => mapAttendee(e, identities))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  };
+};
 
 /** Resolve enrolled employees' names/positions/departments in one round-trip. */
 async function resolveIdentities(rows: EventRow[]): Promise<Map<string, EmployeeIdentity>> {
@@ -261,6 +287,12 @@ export type CalendarEventInput = {
   prerequisites?: string;
   status: CalendarEventStatus;
   capacity?: number;
+  /**
+   * IDs from training_competency_tags to associate with this session.
+   * When provided, setSessionCompetencies is called after the session upsert
+   * to atomically replace the session's tag set.
+   */
+  competencyIds?: string[];
 };
 
 const toRow = (input: CalendarEventInput) => ({
@@ -293,6 +325,12 @@ export async function createCalendarEvent(
     .single();
 
   if (error) return { ok: false, error: error.message };
+
+  // Sync competency tags if any were provided.
+  if (input.competencyIds?.length) {
+    await setSessionCompetencies(data.id, input.competencyIds);
+  }
+
   return { ok: true, id: data.id };
 }
 
@@ -306,7 +344,16 @@ export async function updateCalendarEvent(
     .from('training_sessions')
     .update({ ...toRow(input), updated_at: new Date().toISOString() })
     .eq('id', id);
-  return error ? { ok: false, error: error.message } : { ok: true };
+  if (error) return { ok: false, error: error.message };
+
+  // Sync competency tags. competencyIds===undefined means the caller didn't
+  // touch the field (e.g. an Office Account status update); skip in that case.
+  if (input.competencyIds !== undefined) {
+    const tagResult = await setSessionCompetencies(id, input.competencyIds);
+    if (!tagResult.ok) return { ok: false, error: tagResult.error };
+  }
+
+  return { ok: true };
 }
 
 /** Cancelling preserves the event and its roster; it is not a delete. */

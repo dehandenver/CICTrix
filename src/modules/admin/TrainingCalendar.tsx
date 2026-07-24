@@ -9,12 +9,20 @@ import {
   Plus,
   Rows3,
   Sparkles,
+  Tag,
   Target,
   User,
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { EmptyState } from '../../components/EmptyState';
+import { CompetencyTagInput } from '../../components/CompetencyTagInput';
+import {
+  listCompetencyTags,
+  getSessionCompetencies,
+  upsertCompetencyTag,
+  type CompetencyTag,
+} from '../../lib/api/trainingCompetencies';
 import {
   cancelCalendarEvent,
   createCalendarEvent,
@@ -227,6 +235,26 @@ const EventFormModal = ({ initialDate, event, onClose, onSaved }: EventFormProps
   const [prerequisites, setPrerequisites] = useState(event?.prerequisites ?? '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Competency tags
+  const [allTags, setAllTags] = useState<CompetencyTag[]>([]);
+  const [selectedTags, setSelectedTags] = useState<CompetencyTag[]>([]);
+  const [tagsLoaded, setTagsLoaded] = useState(false);
+
+  // Load master tag list + existing session tags on open.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [master, existing] = await Promise.all([
+        listCompetencyTags(),
+        event?.id ? getSessionCompetencies(event.id) : Promise.resolve([]),
+      ]);
+      if (cancelled) return;
+      setAllTags(master);
+      setSelectedTags(existing);
+      setTagsLoaded(true);
+    })();
+    return () => { cancelled = true; };
+  }, [event?.id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -250,6 +278,8 @@ const EventFormModal = ({ initialDate, event, onClose, onSaved }: EventFormProps
       prerequisites,
       status,
       capacity: Number(capacity) || 0,
+      // Pass the selected tag IDs so the API syncs the join table.
+      competencyIds: selectedTags.map((t) => t.id),
     };
 
     const result = isEdit
@@ -344,8 +374,35 @@ const EventFormModal = ({ initialDate, event, onClose, onSaved }: EventFormProps
             <p className="mt-1 text-xs text-gray-400">One goal per line. Blank lines are ignored.</p>
           </div>
 
-          {/* Detail fields — filling all of these (plus facilitator + venue) moves
-              a training from "planning" to "published". */}
+          {/* ── Competencies ─────────────────────────────────────────────── */}
+          <div>
+            <label className={labelClass}>
+              <span className="inline-flex items-center gap-1.5">
+                <Tag className="h-3 w-3" />
+                Competencies
+              </span>
+            </label>
+            <CompetencyTagInput
+              value={selectedTags}
+              onChange={setSelectedTags}
+              allTags={allTags}
+              onCreateTag={async (name) => {
+                const tag = await upsertCompetencyTag(name);
+                if (tag) setAllTags((prev) => [...prev.filter((t) => t.id !== tag.id), tag].sort((a, b) => a.name.localeCompare(b.name)));
+                return tag;
+              }}
+              placeholder={tagsLoaded ? 'Type a competency and press Enter…' : 'Loading…'}
+            />
+            {selectedTags.length === 0 ? (
+              <p className="mt-1.5 text-xs text-amber-600">
+                ⚠ No competencies tagged — this training won't generate AI recommendations.
+              </p>
+            ) : (
+              <p className="mt-1.5 text-xs text-gray-400">
+                Tag every competency this training develops. Add as many as apply — this powers employee recommendations.
+              </p>
+            )}
+          </div>
           <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-4 space-y-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
               Detail fields <span className="font-normal normal-case text-gray-400">— complete these (with facilitator &amp; venue) to publish</span>
@@ -511,6 +568,34 @@ const EventDetailPanel = ({ event, onClose, onEdit, onChanged }: DetailProps) =>
               </ul>
             )}
           </section>
+
+          {/* Competencies — read-only chips, links to AI matching. */}
+          {event.competencies.length > 0 && (
+            <section>
+              <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">
+                <Tag className="h-3.5 w-3.5" /> Competencies
+              </h3>
+              <div className="flex flex-wrap gap-1.5">
+                {event.competencies.map((c, i) => {
+                  const chipColors = [
+                    'bg-indigo-50 text-indigo-700 border-indigo-200',
+                    'bg-violet-50 text-violet-700 border-violet-200',
+                    'bg-blue-50 text-blue-700 border-blue-200',
+                    'bg-teal-50 text-teal-700 border-teal-200',
+                    'bg-emerald-50 text-emerald-700 border-emerald-200',
+                  ];
+                  return (
+                    <span
+                      key={c}
+                      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${chipColors[i % chipColors.length]}`}
+                    >
+                      {c}
+                    </span>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
           {/* Roster — read-only membership, editable attendance. */}
           <section>

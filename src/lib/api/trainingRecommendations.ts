@@ -211,7 +211,7 @@ export async function generateRecommendations(
     const { data: sessions, error: sErr } = await supabase
       .from('training_sessions')
       .select(
-        'id, title, category, objectives, status, capacity, scheduled_date, instructor_name, location, description, materials, prerequisites',
+        'id, title, category, objectives, status, capacity, scheduled_date, instructor_name, location, description, materials, prerequisites, training_competencies(training_competency_tags(name))',
       )
       .in('status', ['Scheduled', 'Ongoing'])
       .gte('scheduled_date', targetStart.toISOString())
@@ -228,7 +228,18 @@ export async function generateRecommendations(
       // planning (any detail field blank, shown dashed on the calendar) is
       // excluded, so recommendations track the calendar's published set exactly.
       if (!isPublishable(lifecycleFieldsFromRow(s))) continue;
-      for (const competency of competenciesFromObjectives(s.objectives)) {
+
+      // Prefer structured join-table tags; fall back to objectives parsing for
+      // trainings created before the competency tag feature was introduced.
+      const joinNames: string[] = ((s.training_competencies ?? []) as any[])
+        .map((tc: any) => tc.training_competency_tags?.name as string | undefined)
+        .filter((n): n is string => typeof n === 'string' && n.length > 0);
+      const courseCompetencies =
+        joinNames.length > 0
+          ? joinNames.map((n) => canonicalizeCompetency(n) ?? n).filter(Boolean)
+          : competenciesFromObjectives(s.objectives);
+
+      for (const competency of courseCompetencies) {
         const list = coursesByCompetency.get(competency) ?? [];
         list.push(String(s.id));
         coursesByCompetency.set(competency, list);
@@ -799,7 +810,7 @@ export async function listNextMonthPublishedCourses(): Promise<NextMonthCourse[]
   const { data, error } = await supabase
     .from('training_sessions')
     .select(
-      'id, title, category, scheduled_date, capacity, objectives, instructor_name, location, description, materials, prerequisites, status',
+      'id, title, category, scheduled_date, capacity, objectives, instructor_name, location, description, materials, prerequisites, status, training_competencies(training_competency_tags(name))',
     )
     .gte('scheduled_date', start)
     .lt('scheduled_date', end)
@@ -810,14 +821,24 @@ export async function listNextMonthPublishedCourses(): Promise<NextMonthCourse[]
   }
   return (data ?? [])
     .filter((r: any) => isPublishable(lifecycleFieldsFromRow(r)))
-    .map((r: any): NextMonthCourse => ({
-      sessionId: String(r.id),
-      title: r.title,
-      category: r.category,
-      start: r.scheduled_date,
-      capacity: r.capacity ?? 0,
-      competencies: competenciesFromObjectives(r.objectives),
-    }))
+    .map((r: any): NextMonthCourse => {
+      // Prefer join-table tags; fall back to objectives parsing.
+      const joinNames: string[] = ((r.training_competencies ?? []) as any[])
+        .map((tc: any) => tc.training_competency_tags?.name as string | undefined)
+        .filter((n): n is string => typeof n === 'string' && n.length > 0);
+      const competencies =
+        joinNames.length > 0
+          ? joinNames.map((n: string) => canonicalizeCompetency(n) ?? n).filter(Boolean)
+          : competenciesFromObjectives(r.objectives);
+      return {
+        sessionId: String(r.id),
+        title: r.title,
+        category: r.category,
+        start: r.scheduled_date,
+        capacity: r.capacity ?? 0,
+        competencies,
+      };
+    })
     .sort((a: NextMonthCourse, b: NextMonthCourse) => a.start.localeCompare(b.start));
 }
 
