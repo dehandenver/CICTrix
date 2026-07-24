@@ -215,7 +215,7 @@ export const OfficeAccountConsole: React.FC = () => {
       ]);
       const combined = [...tNotifs, ...rNotifs];
       combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      
+
       const officeId = officeRole?.officeId;
       const filtered = combined.filter(n => n.office_id === null || (officeId && n.office_id === officeId));
       setBellNotifications(filtered);
@@ -720,7 +720,7 @@ export const OfficeAccountConsole: React.FC = () => {
               </button>
 
               {showBellDropdown && (
-                <div 
+                <div
                   className="absolute right-0 mt-2 w-80 rounded-xl bg-white text-slate-800 shadow-xl border border-slate-100 py-2 z-50 animate-fade-in"
                   style={{ maxHeight: '350px', overflowY: 'auto' }}
                 >
@@ -741,8 +741,8 @@ export const OfficeAccountConsole: React.FC = () => {
                       {bellNotifications.map((n) => {
                         const isUnread = !bellSeenAt || n.created_at > bellSeenAt;
                         return (
-                          <div 
-                            key={n.id} 
+                          <div
+                            key={n.id}
                             className={`px-4 py-3 flex gap-3 hover:bg-slate-50 transition ${isUnread ? 'bg-indigo-50/20' : ''}`}
                           >
                             <Bell className={`h-4 w-4 mt-0.5 shrink-0 ${n.phase === 'target' ? 'text-indigo-600' : 'text-emerald-600'}`} />
@@ -880,9 +880,8 @@ export const OfficeAccountConsole: React.FC = () => {
           <nav className="space-y-1.5">
             <button
               onClick={() => setActiveTab('ipcr')}
-              className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${
-                activeTab === 'ipcr' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
-              }`}
+              className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${activeTab === 'ipcr' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
+                }`}
             >
               <ClipboardCheck className={`h-5 w-5 ${activeTab === 'ipcr' ? 'text-white' : 'text-black'}`} />
               <div>
@@ -896,9 +895,8 @@ export const OfficeAccountConsole: React.FC = () => {
             </button>
             <button
               onClick={() => setActiveTab('training-requests')}
-              className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${
-                activeTab === 'training-requests' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
-              }`}
+              className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${activeTab === 'training-requests' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
+                }`}
             >
               <GraduationCap className={`h-5 w-5 ${activeTab === 'training-requests' ? 'text-white' : 'text-black'}`} />
               <div>
@@ -912,18 +910,16 @@ export const OfficeAccountConsole: React.FC = () => {
             </button>
             <button
               onClick={() => setActiveTab('training-attendees')}
-              className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${
-                activeTab === 'training-attendees' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
-              }`}
+              className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${activeTab === 'training-attendees' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
+                }`}
             >
               <UserCheck className={`h-5 w-5 ${activeTab === 'training-attendees' ? 'text-white' : 'text-black'}`} />
               <div className="flex-1">
                 <p className={`text-sm font-semibold leading-tight flex items-center gap-2 ${activeTab === 'training-attendees' ? 'text-white' : 'text-black'}`}>
                   Training Courses
                   {recsToReview.length > 0 && (
-                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
-                      activeTab === 'training-attendees' ? 'bg-white text-indigo-700' : 'bg-indigo-600 text-white'
-                    }`}>
+                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${activeTab === 'training-attendees' ? 'bg-white text-indigo-700' : 'bg-indigo-600 text-white'
+                      }`}>
                       {recsToReview.length}
                     </span>
                   )}
@@ -935,9 +931,8 @@ export const OfficeAccountConsole: React.FC = () => {
             </button>
             <button
               onClick={() => setActiveTab('critical-positions')}
-              className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${
-                activeTab === 'critical-positions' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
-              }`}
+              className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${activeTab === 'critical-positions' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
+                }`}
             >
               <Target className={`h-5 w-5 ${activeTab === 'critical-positions' ? 'text-white' : 'text-black'}`} />
               <div>
@@ -951,9 +946,8 @@ export const OfficeAccountConsole: React.FC = () => {
             </button>
             <button
               onClick={() => setActiveTab('gap-analysis')}
-              className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${
-                activeTab === 'gap-analysis' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
-              }`}
+              className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${activeTab === 'gap-analysis' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
+                }`}
             >
               <GitCompare className={`h-5 w-5 ${activeTab === 'gap-analysis' ? 'text-white' : 'text-black'}`} />
               <div>
@@ -970,7 +964,7 @@ export const OfficeAccountConsole: React.FC = () => {
 
         {/* Content Body */}
         <main className="flex-1 p-6 space-y-6">
-          
+
           {/* Section Header */}
           {activeTab === 'critical-positions' || activeTab === 'gap-analysis' ? (
             <div className="flex justify-end border-b border-slate-200 pb-5">
@@ -979,48 +973,48 @@ export const OfficeAccountConsole: React.FC = () => {
               </div>
             </div>
           ) : (
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 pb-5">
-            <div>
-              <h2 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2.5">
-                {activeTab === 'ipcr' ? (
-                  ipcrSubtab === 'targets' ? (
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 pb-5">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2.5">
+                  {activeTab === 'ipcr' ? (
+                    ipcrSubtab === 'targets' ? (
+                      <>
+                        <FileText className="h-7 w-7 text-indigo-600" />
+                        Phase 1: Target Interception &amp; Adjustment
+                      </>
+                    ) : (
+                      <>
+                        <Sliders className="h-7 w-7 text-indigo-600" />
+                        Phase 2: Ratings Validation &amp; Cascading Summaries
+                      </>
+                    )
+                  ) : activeTab === 'training-attendees' ? (
                     <>
-                      <FileText className="h-7 w-7 text-indigo-600" />
-                      Phase 1: Target Interception &amp; Adjustment
+                      <UserCheck className="h-7 w-7 text-indigo-600" />
+                      Training Courses
                     </>
                   ) : (
                     <>
-                      <Sliders className="h-7 w-7 text-indigo-600" />
-                      Phase 2: Ratings Validation &amp; Cascading Summaries
+                      <GraduationCap className="h-7 w-7 text-indigo-600" />
+                      Training Request Guidance Desk
                     </>
-                  )
-                ) : activeTab === 'training-attendees' ? (
-                  <>
-                    <UserCheck className="h-7 w-7 text-indigo-600" />
-                    Training Courses
-                  </>
-                ) : (
-                  <>
-                    <GraduationCap className="h-7 w-7 text-indigo-600" />
-                    Training Request Guidance Desk
-                  </>
-                )}
-              </h2>
-              <p className="text-sm text-slate-500 mt-1">
-                {activeTab === 'ipcr'
-                  ? ipcrSubtab === 'targets'
-                    ? 'Audit and direct-edit employee target submissions before transmitting them to the central PM registrar.'
-                    : 'Verify accomplishments at the 6-month mark, apply rating overrides, and generate automated DPCR/OPCR summaries.'
-                  : activeTab === 'training-attendees'
-                  ? 'Browse published trainings and review L&D\'s roster recommendations for your office. Add employees L&D missed, then send the list back for enrollment.'
-                  : 'Request trainings from L&D and track their decisions.'}
-              </p>
-            </div>
+                  )}
+                </h2>
+                <p className="text-sm text-slate-500 mt-1">
+                  {activeTab === 'ipcr'
+                    ? ipcrSubtab === 'targets'
+                      ? 'Audit and direct-edit employee target submissions before transmitting them to the central PM registrar.'
+                      : 'Verify accomplishments at the 6-month mark, apply rating overrides, and generate automated DPCR/OPCR summaries.'
+                    : activeTab === 'training-attendees'
+                      ? 'Browse published trainings and review L&D\'s roster recommendations for your office. Add employees L&D missed, then send the list back for enrollment.'
+                      : 'Request trainings from L&D and track their decisions.'}
+                </p>
+              </div>
 
-            <div className="flex items-center gap-2 rounded-lg bg-indigo-50 border border-indigo-200 px-3 py-1.5 text-xs font-semibold text-indigo-800">
-              <Shield className="h-4 w-4" /> Office Account Authorized
+              <div className="flex items-center gap-2 rounded-lg bg-indigo-50 border border-indigo-200 px-3 py-1.5 text-xs font-semibold text-indigo-800">
+                <Shield className="h-4 w-4" /> Office Account Authorized
+              </div>
             </div>
-          </div>
           )}
 
           {/* Success Banner */}
@@ -1034,24 +1028,18 @@ export const OfficeAccountConsole: React.FC = () => {
           {/* Main Panel Card */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden min-h-[450px]">
             {activeTab === 'ipcr' && (
-              <div className="flex border-b border-slate-200 bg-slate-50/60 px-4 py-2.5 gap-2">
+              <div className="flex border-b border-slate-200 bg-slate-50/50 px-4 py-2 gap-2">
                 <button
                   onClick={() => setIpcrSubtab('targets')}
-                  className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
-                    ipcrSubtab === 'targets'
-                      ? 'bg-indigo-600 text-white shadow-md'
-                      : 'text-slate-700 hover:text-slate-900 hover:bg-slate-200/70 font-semibold'
-                  }`}
+                  className={`px-4 py-2 text-xs font-bold rounded-md transition ${ipcrSubtab === 'targets' ? 'bg-white text-indigo-650 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    }`}
                 >
                   Targets
                 </button>
                 <button
                   onClick={() => setIpcrSubtab('ratings')}
-                  className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
-                    ipcrSubtab === 'ratings'
-                      ? 'bg-indigo-600 text-white shadow-md'
-                      : 'text-slate-700 hover:text-slate-900 hover:bg-slate-200/70 font-semibold'
-                  }`}
+                  className={`px-4 py-2 text-xs font-bold rounded-md transition ${ipcrSubtab === 'ratings' ? 'bg-white text-indigo-650 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    }`}
                 >
                   Ratings
                 </button>
@@ -1083,17 +1071,15 @@ export const OfficeAccountConsole: React.FC = () => {
                 <div className="flex border-b border-slate-100 bg-slate-50/50 px-4 py-2">
                   <button
                     onClick={() => setTargetsSubtab('verify')}
-                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
-                      targetsSubtab === 'verify' ? 'bg-white text-indigo-650 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                    }`}
+                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${targetsSubtab === 'verify' ? 'bg-white text-indigo-650 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                      }`}
                   >
                     Individual Target Verification
                   </button>
                   <button
                     onClick={() => setTargetsSubtab('transmittal')}
-                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
-                      targetsSubtab === 'transmittal' ? 'bg-white text-indigo-650 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                    }`}
+                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${targetsSubtab === 'transmittal' ? 'bg-white text-indigo-650 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                      }`}
                   >
                     PM Transmittal Log
                   </button>
@@ -1147,9 +1133,8 @@ export const OfficeAccountConsole: React.FC = () => {
                                   </div>
                                   <ChevronDown
                                     size={16}
-                                    className={`text-slate-400 transition-transform duration-200 ${
-                                      isCollapsed ? '-rotate-90' : ''
-                                    }`}
+                                    className={`text-slate-400 transition-transform duration-200 ${isCollapsed ? '-rotate-90' : ''
+                                      }`}
                                   />
                                 </button>
 
@@ -1307,25 +1292,22 @@ export const OfficeAccountConsole: React.FC = () => {
                 <div className="flex border-b border-slate-100 bg-slate-50/50 px-4 py-2">
                   <button
                     onClick={() => setRatingsSubtab('review')}
-                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
-                      ratingsSubtab === 'review' ? 'bg-white text-indigo-650 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                    }`}
+                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${ratingsSubtab === 'review' ? 'bg-white text-indigo-650 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                      }`}
                   >
                     Accomplishment & Rating Review
                   </button>
                   <button
                     onClick={() => setRatingsSubtab('dpcr')}
-                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
-                      ratingsSubtab === 'dpcr' ? 'bg-white text-indigo-650 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                    }`}
+                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${ratingsSubtab === 'dpcr' ? 'bg-white text-indigo-650 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                      }`}
                   >
                     DPCR Automation Engine
                   </button>
                   <button
                     onClick={() => setRatingsSubtab('opcr')}
-                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${
-                      ratingsSubtab === 'opcr' ? 'bg-white text-indigo-650 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                    }`}
+                    className={`px-4 py-2 text-xs font-bold rounded-md transition ${ratingsSubtab === 'opcr' ? 'bg-white text-indigo-650 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                      }`}
                   >
                     OPCR Master Generation
                   </button>
@@ -1421,13 +1403,12 @@ export const OfficeAccountConsole: React.FC = () => {
                                   {r.rationale || '—'}
                                 </td>
                                 <td className="px-4 py-3 text-center">
-                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
-                                    r.status === 'Overridden' 
-                                      ? 'bg-red-50 text-red-800' 
+                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${r.status === 'Overridden'
+                                      ? 'bg-red-50 text-red-800'
                                       : r.status === 'Validated'
-                                      ? 'bg-emerald-50 text-emerald-800'
-                                      : 'bg-amber-50 text-amber-800'
-                                  }`}>
+                                        ? 'bg-emerald-50 text-emerald-800'
+                                        : 'bg-amber-50 text-amber-800'
+                                    }`}>
                                     {r.status}
                                   </span>
                                 </td>
@@ -1536,7 +1517,7 @@ export const OfficeAccountConsole: React.FC = () => {
                               <p className="text-xl font-bold text-slate-800">#OPCR-HRMO-2025-1ST</p>
                             </div>
                           </div>
-                          
+
                           <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-lg flex items-center gap-2">
                             <CheckCircle className="h-4 w-4 text-emerald-600" />
                             Package compiled successfully: 1 Supervisor DPCR + 1 Dept. Head OPCR + All Employee IPCRs are securely bundled and uploaded to PM.
@@ -1764,15 +1745,14 @@ export const OfficeAccountConsole: React.FC = () => {
                                   <p className="font-bold text-indigo-900 max-w-[160px]">{req.competency ?? '—'}</p>
                                   {req.category && (
                                     <span
-                                      className={`mt-1 inline-block px-2 py-0.5 rounded text-[9px] font-bold ${
-                                        req.category === 'Cultural Transformation'
+                                      className={`mt-1 inline-block px-2 py-0.5 rounded text-[9px] font-bold ${req.category === 'Cultural Transformation'
                                           ? 'bg-purple-50 text-purple-700 border border-purple-100'
                                           : req.category === 'Employee Development'
-                                          ? 'bg-blue-50 text-blue-700 border border-blue-100'
-                                          : req.category === 'Leadership'
-                                          ? 'bg-indigo-50 text-indigo-700 border border-indigo-100'
-                                          : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                                      }`}
+                                            ? 'bg-blue-50 text-blue-700 border border-blue-100'
+                                            : req.category === 'Leadership'
+                                              ? 'bg-indigo-50 text-indigo-700 border border-indigo-100'
+                                              : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                        }`}
                                     >
                                       {req.category}
                                     </span>
@@ -1806,9 +1786,9 @@ export const OfficeAccountConsole: React.FC = () => {
               </div>
             )}
 
-            </div>
-          </main>
-        </div>
+          </div>
+        </main>
       </div>
+    </div>
   );
 };
