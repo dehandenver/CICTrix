@@ -14,7 +14,10 @@ export type EvaluationSnapshot = {
 };
 
 export const deriveEvaluationSnapshot = (row: any): EvaluationSnapshot | null => {
-  const applicantId = String(row?.applicant_id ?? '').trim();
+  const rawId = String(row?.applicant_id ?? row?.applicantId ?? row?.id ?? '').trim();
+  const rawEmail = String(row?.applicant_email ?? row?.email ?? '').trim().toLowerCase();
+  const rawName = String(row?.applicant_name ?? row?.name ?? row?.full_name ?? '').trim().toLowerCase();
+  const applicantId = rawId || (rawEmail ? `email:${rawEmail}` : rawName ? `name:${rawName}` : '');
   if (!applicantId) return null;
 
   const jobId = String(row?.job_posting_id ?? row?.job_id ?? '').trim() || null;
@@ -27,16 +30,6 @@ export const deriveEvaluationSnapshot = (row: any): EvaluationSnapshot | null =>
         : typeof row?.technical_score === 'number'
           ? row.technical_score
           : null;
-  // Oral Examination is the interview as a whole, so it averages every criterion
-  // the interviewer rated (each 1-5) — the same six the form totals out of 30.
-  // It previously read `overall_impression_score` alone, which threw away the
-  // other five ratings: a candidate scoring 5s across the board but a 3 on
-  // overall impression was awarded 12/20 instead of 18.67/20, a 6.67-point swing
-  // on a 100-point ranking.
-  //
-  // Averaging (rather than summing) keeps the result on the 1-5 scale the
-  // downstream conversion expects, so partially-filled evaluations still scale
-  // correctly instead of being penalised for the criteria left blank.
   const ORAL_CRITERIA_FIELDS = [
     'communication_skills_score',
     'confidence_score',
@@ -86,6 +79,7 @@ export const deriveEvaluationSnapshot = (row: any): EvaluationSnapshot | null =>
 export const buildEvaluationSnapshotMap = (rows: any[] = []) => {
   const map = new Map<string, EvaluationSnapshot>();
 
+  // 1. Process DB rows
   rows.forEach((row) => {
     const snapshot = deriveEvaluationSnapshot(row);
     if (!snapshot) return;
@@ -93,6 +87,14 @@ export const buildEvaluationSnapshotMap = (rows: any[] = []) => {
     const keys = new Set<string>([snapshot.applicantId]);
     if (snapshot.jobId) {
       keys.add(`job:${snapshot.jobId}`);
+    }
+    const email = String(row?.applicant_email ?? row?.email ?? '').trim().toLowerCase();
+    if (email) {
+      keys.add(`email:${email}`);
+    }
+    const name = String(row?.applicant_name ?? row?.name ?? row?.full_name ?? '').trim().toLowerCase();
+    if (name) {
+      keys.add(`name:${name}`);
     }
 
     keys.forEach((key) => {
@@ -102,6 +104,58 @@ export const buildEvaluationSnapshotMap = (rows: any[] = []) => {
       }
     });
   });
+
+  // 2. Process cictrix_evaluations from localStorage (mock/offline evaluations)
+  try {
+    const localEvalsRaw = typeof window !== 'undefined' ? localStorage.getItem('cictrix_evaluations') : null;
+    const localEvals = localEvalsRaw ? JSON.parse(localEvalsRaw) : [];
+    if (Array.isArray(localEvals)) {
+      localEvals.forEach((row) => {
+        const snapshot = deriveEvaluationSnapshot(row);
+        if (!snapshot) return;
+        const keys = new Set<string>([snapshot.applicantId]);
+        const email = String(row?.applicant_email ?? row?.email ?? '').trim().toLowerCase();
+        if (email) keys.add(`email:${email}`);
+        const name = String(row?.applicant_name ?? row?.name ?? row?.full_name ?? '').trim().toLowerCase();
+        if (name) keys.add(`name:${name}`);
+
+        keys.forEach((key) => {
+          const current = map.get(key);
+          if (!current || new Date(snapshot.updatedAt).getTime() >= new Date(current.updatedAt).getTime()) {
+            map.set(key, snapshot);
+          }
+        });
+      });
+    }
+  } catch {
+    /* Ignore localStorage parse errors */
+  }
+
+  // 3. Process cictrix_interviewer_score_snapshot from localStorage
+  try {
+    const rawSnapshots = typeof window !== 'undefined' ? localStorage.getItem('cictrix_interviewer_score_snapshot') : null;
+    const parsedSnapshots = rawSnapshots ? JSON.parse(rawSnapshots) : {};
+    Object.entries(parsedSnapshots).forEach(([key, val]: [string, any]) => {
+      if (!val || typeof val !== 'object') return;
+      const synthSnapshot: EvaluationSnapshot = {
+        applicantId: key.replace(/^(id|email|name):/, ''),
+        jobId: null,
+        score: null,
+        pcptRawScore: typeof val.pcptAverage === 'number' ? val.pcptAverage : null,
+        writtenExamRawScore: typeof val.writtenExamScore === 'number' ? val.writtenExamScore : null,
+        oralRawScore: typeof val.oralAverage === 'number' ? val.oralAverage : null,
+        completed: true,
+        updatedAt: String(val.updatedAt ?? new Date().toISOString()),
+        row: val,
+      };
+      const current = map.get(key);
+      if (!current || new Date(synthSnapshot.updatedAt).getTime() >= new Date(current.updatedAt).getTime()) {
+        map.set(key, synthSnapshot);
+      }
+    });
+  } catch {
+    /* Ignore localStorage parse errors */
+  }
 
   return map;
 };

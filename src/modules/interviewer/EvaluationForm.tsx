@@ -392,6 +392,8 @@ export function EvaluationForm() {
 
       const insertData: any = {
         applicant_id: id || null,
+        applicant_email: applicant?.email || null,
+        applicant_name: getFullName(applicant) || null,
         job_posting_id: applicant?.job_posting_id || null,
         interviewer_name: evaluation.interviewer_name || null,
         communication_skills_score: evaluation.communication_skills_score > 0 ? evaluation.communication_skills_score : null,

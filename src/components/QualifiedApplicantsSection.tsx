@@ -1270,7 +1270,10 @@ const ApplicantsListView = ({
   // the Original / Promotional tab and count each track independently.
   const typed = useMemo(() =>
     folder.applicants.map(a => {
-      const evalSnapshot = evaluationsByApplicant?.[a.id] ?? (a.email ? evaluationsByApplicant?.[`email:${a.email.toLowerCase()}`] : null) ?? null;
+      const evalSnapshot = evaluationsByApplicant?.[a.id]
+        ?? (a.email ? evaluationsByApplicant?.[`email:${a.email.toLowerCase().trim()}`] : null)
+        ?? (a.full_name ? evaluationsByApplicant?.[`name:${a.full_name.toLowerCase().trim()}`] : null)
+        ?? null;
       const posExam = examScores?.[folder.position]?.[a.id];
       const cs = deriveInitial(a, savedCatScores, evalSnapshot, posExam);
       const apptType: AppointmentType = cs.appointmentType ?? 'original';
