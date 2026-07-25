@@ -108,29 +108,46 @@ export interface EmployeeOption {
 // ─────────────────────────────────────────────────────────────────────────────
 // Readiness Score — transparent 100-point weighted rubric
 //
-// Criterion weights (Succession Planning spec):
-//   Educational Qualification  20
+// Weights are CONFIGURABLE via SUCCESSION_WEIGHTS (single source of truth), so
+// HR can retune the model without touching scoring logic. Defaults:
 //   Latest IPCR Rating         30
-//   Relevant Training History  20
-//   Civil Service Eligibility  10
+//   Relevant Training History  25
 //   Tenure                     20
+//   Educational Qualification  15
+//   Civil Service Eligibility  10
 // Every component is computed from verified records only; a missing required
 // record (no finalized IPCR) marks the candidate Incomplete and drops them from
 // the ranked list rather than guessing a value.
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Criterion weights (must sum to 100). Centralised so the model is tunable in
+ * one place — a future HR "adjust weights per critical role" UI writes here.
+ */
+export const SUCCESSION_WEIGHTS = {
+  ipcr: 30,
+  training: 25,
+  tenure: 20,
+  education: 15,
+  eligibility: 10,
+} as const;
+
+export type SuccessionTier = 'Ready Now' | 'Ready in 1–2 Years' | 'Developmental';
+
 export interface ReadinessScore {
   total: number;                 // 0–100 (weighted sum; 0 when data incomplete)
-  education: number;             // 0–20
-  educationMax: 20;
-  ipcr: number;                  // 0–30
-  ipcrMax: 30;
-  training: number;              // 0–20
-  trainingMax: 20;
-  eligibility: number;           // 0–10
-  eligibilityMax: 10;
-  tenure: number;                // 0–20
-  tenureMax: 20;
+  education: number;
+  educationMax: number;
+  ipcr: number;
+  ipcrMax: number;
+  training: number;
+  trainingMax: number;
+  eligibility: number;
+  eligibilityMax: number;
+  tenure: number;
+  tenureMax: number;
+  /** Readiness tier from the total; null when data is incomplete. */
+  tier: SuccessionTier | null;
   // Raw context shown alongside the bars
   ipcrScore: number | null;      // raw 1–5 IPCR score
   adjectival: string | null;
@@ -141,6 +158,7 @@ export interface ReadinessScore {
   relevantTrainings: number;
   relevantTrainingHours: number;
   mostRecentTrainingDate: string | null;
+  mostRecentTrainingTitle: string | null;
   matchedKeyword: string | null; // field keyword that matched the position
   /** False when a required record (IPCR) is missing — excluded from ranking. */
   dataComplete: boolean;
@@ -1030,27 +1048,32 @@ function educationRank(label: string | null | undefined): number {
   return 0; // high school / other recorded
 }
 
-/** Education criterion (max 20). No requirement = full credit when a record exists. */
-function scoreEducation(empEdu: string | null, requiredEdu: string | null): number {
+/** Education fit as a 0–1 ratio. No requirement = full when a record exists. */
+function educationRatio(empEdu: string | null, requiredEdu: string | null): number {
   const empRank = educationRank(empEdu);
   if (empRank < 0) return 0; // no record → cannot credit (don't infer)
   const reqRank = educationRank(requiredEdu);
-  if (reqRank < 0) return 20; // no stated requirement → a recorded attainment meets it
-  if (empRank >= reqRank) return 20;
-  if (empRank === reqRank - 1) return 12;
-  return 6;
+  if (reqRank < 0) return 1; // no stated requirement → a recorded attainment meets it
+  if (empRank >= reqRank) return 1;
+  if (empRank === reqRank - 1) return 0.6;
+  return 0.3;
 }
 
-/** Eligibility criterion (max 10) from recorded values only. */
-function scoreEligibility(empElig: string | null, requiredElig: string | null): number {
+/** Eligibility fit as a 0–1 ratio, from recorded values only. */
+function eligibilityRatio(empElig: string | null, requiredElig: string | null): number {
   const emp = String(empElig ?? '').trim().toLowerCase();
   if (!emp) return 0; // no record
   const req = String(requiredElig ?? '').trim().toLowerCase();
-  if (!req) return 10; // no requirement → a recorded eligibility meets it
-  // Shared significant token (e.g. "professional", "ra 1080", "bar") = a match.
+  if (!req) return 1; // no requirement → a recorded eligibility meets it
   const tokens = req.split(/[^a-z0-9]+/).filter((t) => t.length > 2);
-  const matches = tokens.some((t) => emp.includes(t));
-  return matches ? 10 : 5;
+  return tokens.some((t) => emp.includes(t)) ? 1 : 0.5;
+}
+
+/** Readiness tier from the weighted total. */
+function tierFromTotal(total: number): SuccessionTier {
+  if (total >= 80) return 'Ready Now';
+  if (total >= 60) return 'Ready in 1–2 Years';
+  return 'Developmental';
 }
 
 function computeReadinessScore(input: {
@@ -1066,12 +1089,17 @@ function computeReadinessScore(input: {
   relevantTrainings: number;
   relevantTrainingHours: number;
   mostRecentTrainingDate: string | null;
+  mostRecentTrainingTitle: string | null;
 }): ReadinessScore {
-  const education = scoreEducation(input.empEducation, input.requiredEducation);
-  const ipcr = input.ipcrScore != null ? Number(((input.ipcrScore / 5) * 30).toFixed(1)) : 0;
-  const training = Number(((Math.min(input.relevantTrainings, 3) / 3) * 20).toFixed(1));
-  const eligibility = scoreEligibility(input.empEligibility, input.requiredEligibility);
-  const tenure = Number(((Math.min(input.yearsOfService, 15) / 15) * 20).toFixed(1));
+  const W = SUCCESSION_WEIGHTS;
+  const w1 = (ratio: number, weight: number) => Number((ratio * weight).toFixed(1));
+
+  const education = w1(educationRatio(input.empEducation, input.requiredEducation), W.education);
+  const ipcr = input.ipcrScore != null ? w1(input.ipcrScore / 5, W.ipcr) : 0;
+  const training = w1(Math.min(input.relevantTrainings, 3) / 3, W.training);
+  const eligibility = w1(eligibilityRatio(input.empEligibility, input.requiredEligibility), W.eligibility);
+  const tenure = w1(Math.min(input.yearsOfService, 15) / 15, W.tenure);
+
   const dataComplete = input.ipcrScore != null; // IPCR is the required record for scoring
   const total = dataComplete
     ? Number((education + ipcr + training + eligibility + tenure).toFixed(1))
@@ -1079,15 +1107,16 @@ function computeReadinessScore(input: {
   return {
     total,
     education,
-    educationMax: 20,
+    educationMax: W.education,
     ipcr,
-    ipcrMax: 30,
+    ipcrMax: W.ipcr,
     training,
-    trainingMax: 20,
+    trainingMax: W.training,
     eligibility,
-    eligibilityMax: 10,
+    eligibilityMax: W.eligibility,
     tenure,
-    tenureMax: 20,
+    tenureMax: W.tenure,
+    tier: dataComplete ? tierFromTotal(total) : null,
     ipcrScore: input.ipcrScore,
     adjectival: input.adjectival,
     ratedPeriod: input.ratedPeriod,
@@ -1097,6 +1126,7 @@ function computeReadinessScore(input: {
     relevantTrainings: input.relevantTrainings,
     relevantTrainingHours: input.relevantTrainingHours,
     mostRecentTrainingDate: input.mostRecentTrainingDate,
+    mostRecentTrainingTitle: input.mostRecentTrainingTitle,
     matchedKeyword: input.matchedKeyword,
     dataComplete,
     incompleteReason: dataComplete ? null : 'No current IPCR record',
@@ -1179,14 +1209,17 @@ export async function listAutoSuccessors(
     ]);
 
     // Aggregate relevant trainings per employee.
-    const trainAgg = new Map<string, { count: number; hours: number; latest: string | null }>();
+    const trainAgg = new Map<string, { count: number; hours: number; latest: string | null; latestTitle: string | null }>();
     for (const t of (trainingRows ?? []) as any[]) {
       if (!isRelevantTraining(t.training_title)) continue;
       const id = String(t.employee_id);
-      const cur = trainAgg.get(id) ?? { count: 0, hours: 0, latest: null };
+      const cur = trainAgg.get(id) ?? { count: 0, hours: 0, latest: null, latestTitle: null };
       cur.count += 1;
       cur.hours += Number(t.number_of_hours ?? 0);
-      if (t.from_date && (!cur.latest || t.from_date > cur.latest)) cur.latest = t.from_date;
+      if (t.from_date && (!cur.latest || t.from_date > cur.latest)) {
+        cur.latest = t.from_date;
+        cur.latestTitle = t.training_title ?? null;
+      }
       trainAgg.set(id, cur);
     }
 
@@ -1194,7 +1227,7 @@ export async function listAutoSuccessors(
     for (const { e, keyword } of matched) {
       const empId = String(e.id);
       const score = scores.get(empId);
-      const agg = trainAgg.get(empId) ?? { count: 0, hours: 0, latest: null };
+      const agg = trainAgg.get(empId) ?? { count: 0, hours: 0, latest: null, latestTitle: null };
       const readiness = computeReadinessScore({
         ipcrScore: score?.overallScore ?? null,
         adjectival: score?.adjectival ?? null,
@@ -1208,6 +1241,7 @@ export async function listAutoSuccessors(
         relevantTrainings: agg.count,
         relevantTrainingHours: agg.hours,
         mostRecentTrainingDate: agg.latest,
+        mostRecentTrainingTitle: agg.latestTitle,
       });
       autoMap.set(empId, {
         employeeId: empId,
@@ -1245,11 +1279,11 @@ export async function listAutoSuccessors(
         .from('employee_training')
         .select('training_title, number_of_hours, from_date')
         .eq('employee_id', mcId);
-      let count = 0, hours = 0, latest: string | null = null;
+      let count = 0, hours = 0, latest: string | null = null, latestTitle: string | null = null;
       for (const t of (mcTrain ?? []) as any[]) {
         if (!isRelevantTraining(t.training_title)) continue;
         count += 1; hours += Number(t.number_of_hours ?? 0);
-        if (t.from_date && (!latest || t.from_date > latest)) latest = t.from_date;
+        if (t.from_date && (!latest || t.from_date > latest)) { latest = t.from_date; latestTitle = t.training_title ?? null; }
       }
       const readiness = computeReadinessScore({
         ipcrScore: mcScore?.overallScore ?? null,
@@ -1264,6 +1298,7 @@ export async function listAutoSuccessors(
         relevantTrainings: count,
         relevantTrainingHours: hours,
         mostRecentTrainingDate: latest,
+        mostRecentTrainingTitle: latestTitle,
       });
       autoMap.set(mcId, {
         employeeId: mcId,

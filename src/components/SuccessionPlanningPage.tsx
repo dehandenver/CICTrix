@@ -653,7 +653,7 @@ const CandidatesPanel = (props: CandidatesPanelProps) => {
       </div>
 
       <p className="!mb-0 text-xs text-[var(--text-secondary)]">
-        Candidates are Regular/Permanent, Active, non-probationary employees whose position field matches this role. Ranked by weighted Succession Score (Education 20 + IPCR 30 + Training 20 + Eligibility 10 + Tenure 20 = 100). Employees with no finalized IPCR are shown as Incomplete Data and are not ranked.
+        Candidates are Regular/Permanent, Active, non-probationary employees whose position field matches this role. Ranked by weighted Succession Score (IPCR 30 + Training 25 + Tenure 20 + Education 15 + Eligibility 10 = 100) and tiered Ready Now / Ready in 1–2 Years / Developmental. Employees with no finalized IPCR are shown as Incomplete Data and are not ranked.
       </p>
 
       {loading && <p className="text-sm text-[var(--text-secondary)]">Discovering eligible successors…</p>}
@@ -749,6 +749,15 @@ const AutoSuccessorRow = ({
                 Incomplete Data
               </span>
             )}
+            {r.dataComplete && r.tier && (
+              <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                r.tier === 'Ready Now' ? 'bg-green-100 text-green-700' :
+                r.tier === 'Ready in 1–2 Years' ? 'bg-blue-100 text-blue-700' :
+                'bg-amber-100 text-amber-700'
+              }`}>
+                {r.tier}
+              </span>
+            )}
             {isTopPick && r.dataComplete && (
               <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm">
                 ★ System Recommendation
@@ -796,14 +805,21 @@ const AutoSuccessorRow = ({
                 </div>
               </div>
 
-              {/* Raw data detail line */}
+              {/* Raw data detail line — sources shown; missing fields read "Not on file" */}
               <p className="!mb-0 mt-1 text-[10px] text-slate-400">
-                IPCR {r.ipcrScore != null ? r.ipcrScore.toFixed(2) : '—'}/5 · {r.yearsOfService.toFixed(1)} yr tenure
+                IPCR {r.ipcrScore != null ? r.ipcrScore.toFixed(2) : 'Not on file'}/5 · {r.yearsOfService.toFixed(1)} yr tenure
                 {` · ${r.relevantTrainings} relevant training${r.relevantTrainings === 1 ? '' : 's'}`}
                 {r.relevantTrainingHours ? ` (${r.relevantTrainingHours}h)` : ''}
-                {r.educationLabel ? ` · ${r.educationLabel}` : ''}
-                {r.eligibilityLabel ? ` · ${r.eligibilityLabel}` : ''}
+                {` · Educ: ${r.educationLabel ?? 'Not on file'}`}
+                {` · Elig: ${r.eligibilityLabel ?? 'Not on file'}`}
               </p>
+              {r.mostRecentTrainingTitle && (
+                <p className="!mb-0 mt-0.5 text-[10px] text-slate-400">
+                  Most recent training: <span className="text-slate-500">{r.mostRecentTrainingTitle}</span>
+                  {r.mostRecentTrainingDate ? ` (${new Date(r.mostRecentTrainingDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })})` : ''}
+                  {' · see L&D Archive'}
+                </p>
+              )}
             </>
           ) : (
             <p className="!mb-0 mt-1.5 flex items-center gap-1.5 rounded-md bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-500">
