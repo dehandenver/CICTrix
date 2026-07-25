@@ -1693,7 +1693,7 @@ export const QualifiedApplicantsSection = ({ applicants, completedEvaluationIds,
                           onClick={(e) => { e.stopPropagation(); setExamModal(folder); }}
                           className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors whitespace-nowrap"
                         >
-                          <Pencil size={12} /> Edit Total Score
+                          <Pencil size={12} /> Edit Written Exam Score
                         </button>
                       </td>
                       <td className="w-8 px-3 py-4 text-slate-400 group-hover:text-blue-600 transition-colors">
