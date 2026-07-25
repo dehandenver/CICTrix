@@ -199,7 +199,7 @@ export const EmployeePhase2: React.FC<{ employeeId: string | null; phaseOpen?: b
     allIds.length > 0 &&
     allIds.every((id) => {
       const e = entries[id];
-      return e && e.quality != null && e.efficiency != null && e.timeliness != null;
+      return e && (e.quality != null || e.efficiency != null || e.timeliness != null);
     });
 
   const setField = (id: string, field: keyof Entry, value: string | number | null) =>
@@ -432,7 +432,7 @@ export const EmployeePhase2: React.FC<{ employeeId: string | null; phaseOpen?: b
             <button
               onClick={() => void persist(true)}
               disabled={saving || !isComplete || !canSubmit}
-              title={!canSubmit ? 'Submission opens during the rating period.' : isComplete ? '' : 'Rate every indicator on Q, E and T first.'}
+              title={!canSubmit ? 'Submission opens during the rating period.' : isComplete ? '' : 'Please rate at least one dimension (Q, E, or T) for each indicator.'}
               className="inline-flex items-center gap-1 rounded-lg bg-[#363EE8] hover:bg-[#2e35d4] text-white px-4 py-2 text-xs font-semibold shadow transition disabled:bg-slate-400 disabled:cursor-not-allowed"
             >
               {canSubmit ? <CheckCircle className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />} Submit Self-Ratings
