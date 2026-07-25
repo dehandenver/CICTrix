@@ -1171,11 +1171,11 @@ const ProbationaryPanel = ({
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-4 items-center justify-between bg-[#FAFBFD] rounded-2xl border border-slate-200/80 p-4 shadow-xs">
+      <div className="flex flex-wrap gap-4 items-center justify-between bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
         {/* Left: Evaluation Period Information */}
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 shadow-2xs">
-            <Calendar className="h-5 w-5" />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-600 shadow-2xs">
+            <Calendar className="h-4.5 w-4.5" />
           </div>
           <div>
             <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Evaluation Period</p>
@@ -1183,29 +1183,26 @@ const ProbationaryPanel = ({
           </div>
         </div>
         
-        {/* Right: Dual Phase Control Modules */}
-        <div className="flex flex-wrap gap-3 items-center">
-          {/* Phase 1 Control Module */}
-          <div className="flex items-center gap-3 rounded-xl border border-slate-200/80 bg-white p-2.5 shadow-2xs">
-            <div>
-              <span className="text-[11px] font-bold text-slate-700 block leading-none">Phase 1 (Target)</span>
-              <span
-                className={`mt-1.5 inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase ${
-                  systemStates.target_setting === 'Open'
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80'
-                    : 'bg-slate-100 text-slate-600 border border-slate-200/80'
-                }`}
-              >
-                <span className={`h-1.5 w-1.5 rounded-full ${systemStates.target_setting === 'Open' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
-                {systemStates.target_setting}
-              </span>
-            </div>
-
+        {/* Right: Phase Controls (Direct inline without nested white pill boxes) */}
+        <div className="flex flex-wrap gap-4 items-center">
+          {/* Phase 1 Gating */}
+          <div className="flex items-center gap-2.5 border-r border-slate-200/80 pr-4">
+            <span className="text-xs font-bold text-slate-700">Phase 1 (Target):</span>
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase ${
+                systemStates.target_setting === 'Open'
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80'
+                  : 'bg-slate-100 text-slate-600 border border-slate-200/80'
+              }`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${systemStates.target_setting === 'Open' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+              {systemStates.target_setting}
+            </span>
             {systemStates.target_setting === 'Closed' ? (
               <button
                 type="button"
                 onClick={() => setShowConfirmOpen1(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all active:scale-95"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all active:scale-95"
               >
                 <Unlock className="h-3.5 w-3.5" />
                 Open Phase 1
@@ -1214,7 +1211,7 @@ const ProbationaryPanel = ({
               <button
                 type="button"
                 onClick={() => setShowConfirmClose1(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold border border-rose-200 bg-rose-50/50 text-rose-700 hover:bg-rose-100/80 rounded-lg transition-all active:scale-95"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold border border-rose-200 bg-rose-50/50 text-rose-700 hover:bg-rose-100/80 rounded-lg transition-all active:scale-95"
               >
                 <Lock className="h-3.5 w-3.5" />
                 Close Phase 1
@@ -1222,27 +1219,24 @@ const ProbationaryPanel = ({
             )}
           </div>
 
-          {/* Phase 2 Control Module */}
-          <div className="flex items-center gap-3 rounded-xl border border-slate-200/80 bg-white p-2.5 shadow-2xs">
-            <div>
-              <span className="text-[11px] font-bold text-slate-700 block leading-none">Phase 2 (Rating)</span>
-              <span
-                className={`mt-1.5 inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase ${
-                  systemStates.rating === 'Open'
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80'
-                    : 'bg-slate-100 text-slate-600 border border-slate-200/80'
-                }`}
-              >
-                <span className={`h-1.5 w-1.5 rounded-full ${systemStates.rating === 'Open' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
-                {systemStates.rating}
-              </span>
-            </div>
-
+          {/* Phase 2 Gating */}
+          <div className="flex items-center gap-2.5">
+            <span className="text-xs font-bold text-slate-700">Phase 2 (Rating):</span>
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase ${
+                systemStates.rating === 'Open'
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80'
+                  : 'bg-slate-100 text-slate-600 border border-slate-200/80'
+              }`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${systemStates.rating === 'Open' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+              {systemStates.rating}
+            </span>
             {systemStates.rating === 'Closed' ? (
               <button
                 type="button"
                 onClick={() => setShowConfirmOpen2(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all active:scale-95"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all active:scale-95"
               >
                 <Unlock className="h-3.5 w-3.5" />
                 Open Phase 2
@@ -1251,7 +1245,7 @@ const ProbationaryPanel = ({
               <button
                 type="button"
                 onClick={() => setShowConfirmClose2(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold border border-rose-200 bg-rose-50/50 text-rose-700 hover:bg-rose-100/80 rounded-lg transition-all active:scale-95"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold border border-rose-200 bg-rose-50/50 text-rose-700 hover:bg-rose-100/80 rounded-lg transition-all active:scale-95"
               >
                 <Lock className="h-3.5 w-3.5" />
                 Close Phase 2
@@ -1639,11 +1633,11 @@ const RegularPanel = ({
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-4 items-center justify-between bg-[#FAFBFD] rounded-2xl border border-slate-200/80 p-4 shadow-xs">
+      <div className="flex flex-wrap gap-4 items-center justify-between bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
         {/* Left: Evaluation Period Information */}
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 shadow-2xs">
-            <Calendar className="h-5 w-5" />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-600 shadow-2xs">
+            <Calendar className="h-4.5 w-4.5" />
           </div>
           <div>
             <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Evaluation Period</p>
@@ -1651,29 +1645,26 @@ const RegularPanel = ({
           </div>
         </div>
         
-        {/* Right: Dual Phase Control Modules */}
-        <div className="flex flex-wrap gap-3 items-center">
-          {/* Phase 1 Control Module */}
-          <div className="flex items-center gap-3 rounded-xl border border-slate-200/80 bg-white p-2.5 shadow-2xs">
-            <div>
-              <span className="text-[11px] font-bold text-slate-700 block leading-none">Phase 1 (Target)</span>
-              <span
-                className={`mt-1.5 inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase ${
-                  systemStates.target_setting === 'Open'
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80'
-                    : 'bg-slate-100 text-slate-600 border border-slate-200/80'
-                }`}
-              >
-                <span className={`h-1.5 w-1.5 rounded-full ${systemStates.target_setting === 'Open' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
-                {systemStates.target_setting}
-              </span>
-            </div>
-
+        {/* Right: Phase Controls (Direct inline without nested white pill boxes) */}
+        <div className="flex flex-wrap gap-4 items-center">
+          {/* Phase 1 Gating */}
+          <div className="flex items-center gap-2.5 border-r border-slate-200/80 pr-4">
+            <span className="text-xs font-bold text-slate-700">Phase 1 (Target):</span>
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase ${
+                systemStates.target_setting === 'Open'
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80'
+                  : 'bg-slate-100 text-slate-600 border border-slate-200/80'
+              }`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${systemStates.target_setting === 'Open' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+              {systemStates.target_setting}
+            </span>
             {systemStates.target_setting === 'Closed' ? (
               <button
                 type="button"
                 onClick={() => setShowConfirmOpen1(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all active:scale-95"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all active:scale-95"
               >
                 <Unlock className="h-3.5 w-3.5" />
                 Open Phase 1
@@ -1682,7 +1673,7 @@ const RegularPanel = ({
               <button
                 type="button"
                 onClick={() => setShowConfirmClose1(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold border border-rose-200 bg-rose-50/50 text-rose-700 hover:bg-rose-100/80 rounded-lg transition-all active:scale-95"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold border border-rose-200 bg-rose-50/50 text-rose-700 hover:bg-rose-100/80 rounded-lg transition-all active:scale-95"
               >
                 <Lock className="h-3.5 w-3.5" />
                 Close Phase 1
@@ -1690,27 +1681,24 @@ const RegularPanel = ({
             )}
           </div>
 
-          {/* Phase 2 Control Module */}
-          <div className="flex items-center gap-3 rounded-xl border border-slate-200/80 bg-white p-2.5 shadow-2xs">
-            <div>
-              <span className="text-[11px] font-bold text-slate-700 block leading-none">Phase 2 (Rating)</span>
-              <span
-                className={`mt-1.5 inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase ${
-                  systemStates.rating === 'Open'
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80'
-                    : 'bg-slate-100 text-slate-600 border border-slate-200/80'
-                }`}
-              >
-                <span className={`h-1.5 w-1.5 rounded-full ${systemStates.rating === 'Open' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
-                {systemStates.rating}
-              </span>
-            </div>
-
+          {/* Phase 2 Gating */}
+          <div className="flex items-center gap-2.5">
+            <span className="text-xs font-bold text-slate-700">Phase 2 (Rating):</span>
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase ${
+                systemStates.rating === 'Open'
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80'
+                  : 'bg-slate-100 text-slate-600 border border-slate-200/80'
+              }`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${systemStates.rating === 'Open' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+              {systemStates.rating}
+            </span>
             {systemStates.rating === 'Closed' ? (
               <button
                 type="button"
                 onClick={() => setShowConfirmOpen2(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all active:scale-95"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all active:scale-95"
               >
                 <Unlock className="h-3.5 w-3.5" />
                 Open Phase 2
@@ -1719,7 +1707,7 @@ const RegularPanel = ({
               <button
                 type="button"
                 onClick={() => setShowConfirmClose2(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold border border-rose-200 bg-rose-50/50 text-rose-700 hover:bg-rose-100/80 rounded-lg transition-all active:scale-95"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold border border-rose-200 bg-rose-50/50 text-rose-700 hover:bg-rose-100/80 rounded-lg transition-all active:scale-95"
               >
                 <Lock className="h-3.5 w-3.5" />
                 Close Phase 2
