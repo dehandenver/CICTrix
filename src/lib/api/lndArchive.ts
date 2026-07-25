@@ -119,3 +119,58 @@ export async function listArchiveOffices(): Promise<string[]> {
   const all = await listTrainingArchive();
   return [...new Set(all.map((e) => e.department).filter((d): d is string => !!d))].sort();
 }
+
+export type ArchiveOffice = {
+  office: string;
+  /** Employees in this office with ≥1 training record. */
+  employeesWithRecords: number;
+  /** Total training entries logged for the office. */
+  recordCount: number;
+  /** Most recent training start date across the office, ISO or null. */
+  latestDate: string | null;
+};
+
+/**
+ * Office-level roll-up for the archive's Level-1 directory. Every ACTIVE office
+ * appears — offices with no records show zeros (the archive represents the whole
+ * org, not just offices with data) — plus any office that owns records even if
+ * it is no longer active, so history never disappears.
+ */
+export async function listArchiveOfficeDirectory(): Promise<ArchiveOffice[]> {
+  const [{ data: depts }, { data: trainings }] = await Promise.all([
+    supabase.from('departments').select('name, is_active'),
+    supabase.from('employee_training').select('employee_id, from_date'),
+  ]);
+  const activeOffices = (depts ?? []).filter((d: any) => d.is_active).map((d: any) => String(d.name));
+
+  const rows = (trainings ?? []) as any[];
+  const empIds = [...new Set(rows.map((t) => String(t.employee_id)).filter(Boolean))];
+  const { data: emps } = empIds.length
+    ? await supabase.from('employees').select('id, department').in('id', empIds)
+    : { data: [] as any[] };
+  const deptByEmp = new Map<string, string>((emps ?? []).map((e: any) => [String(e.id), String(e.department ?? '')]));
+
+  const agg = new Map<string, { emps: Set<string>; count: number; latest: string | null }>();
+  for (const t of rows) {
+    const office = deptByEmp.get(String(t.employee_id));
+    if (!office) continue;
+    if (!agg.has(office)) agg.set(office, { emps: new Set(), count: 0, latest: null });
+    const a = agg.get(office)!;
+    a.emps.add(String(t.employee_id));
+    a.count += 1;
+    if (t.from_date && (!a.latest || t.from_date > a.latest)) a.latest = t.from_date;
+  }
+
+  const allOffices = new Set<string>([...activeOffices, ...agg.keys()]);
+  return [...allOffices]
+    .map((office): ArchiveOffice => {
+      const a = agg.get(office);
+      return {
+        office,
+        employeesWithRecords: a ? a.emps.size : 0,
+        recordCount: a ? a.count : 0,
+        latestDate: a ? a.latest : null,
+      };
+    })
+    .sort((a, b) => a.office.localeCompare(b.office));
+}

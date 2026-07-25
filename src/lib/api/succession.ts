@@ -155,10 +155,13 @@ export interface ReadinessScore {
   yearsOfService: number;        // raw years
   educationLabel: string | null;
   eligibilityLabel: string | null;
+  /** Count of completed trainings on file (drives Volume/Recency/Hours). */
   relevantTrainings: number;
   relevantTrainingHours: number;
   mostRecentTrainingDate: string | null;
   mostRecentTrainingTitle: string | null;
+  /** Subset that are role/category-fit (Leadership or field-matching) — the Relevance bonus. */
+  categoryFitTrainings: number;
   matchedKeyword: string | null; // field keyword that matched the position
   /** False when a required record (IPCR) is missing — excluded from ranking. */
   dataComplete: boolean;
@@ -1069,6 +1072,35 @@ function eligibilityRatio(empElig: string | null, requiredElig: string | null): 
   return tokens.some((t) => emp.includes(t)) ? 1 : 0.5;
 }
 
+/**
+ * Training subscore, out of SUCCESSION_WEIGHTS.training (default 25), from an
+ * employee's completed L&D Archive records. Documented 4-part budget:
+ *   Volume    10  — 0=0, 1–2=4, 3–5=7, 6+=10 completed trainings
+ *   Recency    8  — last completed ≤12mo=8, ≤24mo=6, ≤36mo=3, else/none=0
+ *   Relevance  5  — role/category-fit trainings (Leadership or field-matching)
+ *   Hours      2  — total hours toward a 40-hr threshold
+ * Counts ALL completed trainings for volume/recency/hours (a completed training
+ * is developmental regardless of exact title); relevance is the only field-gated
+ * part. Scaled to the configured training weight if it differs from 25.
+ */
+function scoreTraining(input: {
+  completed: number;
+  hours: number;
+  mostRecentDate: string | null;
+  categoryFit: number;
+}): number {
+  const volume = input.completed === 0 ? 0 : input.completed <= 2 ? 4 : input.completed <= 5 ? 7 : 10;
+  let recency = 0;
+  if (input.mostRecentDate) {
+    const months = (Date.now() - new Date(input.mostRecentDate).getTime()) / (30.44 * 24 * 60 * 60 * 1000);
+    recency = months <= 12 ? 8 : months <= 24 ? 6 : months <= 36 ? 3 : 0;
+  }
+  const relevance = (Math.min(input.categoryFit, 3) / 3) * 5;
+  const hours = (Math.min(input.hours, 40) / 40) * 2;
+  const outOf25 = volume + recency + relevance + hours; // 0–25
+  return Number(((outOf25 / 25) * SUCCESSION_WEIGHTS.training).toFixed(1));
+}
+
 /** Readiness tier from the weighted total. */
 function tierFromTotal(total: number): SuccessionTier {
   if (total >= 80) return 'Ready Now';
@@ -1090,13 +1122,19 @@ function computeReadinessScore(input: {
   relevantTrainingHours: number;
   mostRecentTrainingDate: string | null;
   mostRecentTrainingTitle: string | null;
+  categoryFitTrainings: number;
 }): ReadinessScore {
   const W = SUCCESSION_WEIGHTS;
   const w1 = (ratio: number, weight: number) => Number((ratio * weight).toFixed(1));
 
   const education = w1(educationRatio(input.empEducation, input.requiredEducation), W.education);
   const ipcr = input.ipcrScore != null ? w1(input.ipcrScore / 5, W.ipcr) : 0;
-  const training = w1(Math.min(input.relevantTrainings, 3) / 3, W.training);
+  const training = scoreTraining({
+    completed: input.relevantTrainings,
+    hours: input.relevantTrainingHours,
+    mostRecentDate: input.mostRecentTrainingDate,
+    categoryFit: input.categoryFitTrainings,
+  });
   const eligibility = w1(eligibilityRatio(input.empEligibility, input.requiredEligibility), W.eligibility);
   const tenure = w1(Math.min(input.yearsOfService, 15) / 15, W.tenure);
 
@@ -1127,6 +1165,7 @@ function computeReadinessScore(input: {
     relevantTrainingHours: input.relevantTrainingHours,
     mostRecentTrainingDate: input.mostRecentTrainingDate,
     mostRecentTrainingTitle: input.mostRecentTrainingTitle,
+    categoryFitTrainings: input.categoryFitTrainings,
     matchedKeyword: input.matchedKeyword,
     dataComplete,
     incompleteReason: dataComplete ? null : 'No current IPCR record',
@@ -1203,23 +1242,31 @@ export async function listAutoSuccessors(
       matchedIds.length
         ? supabase
             .from('employee_training')
-            .select('employee_id, training_title, number_of_hours, from_date')
+            .select('employee_id, training_title, training_type, number_of_hours, from_date')
             .in('employee_id', matchedIds)
         : Promise.resolve({ data: [] as any[] }),
     ]);
 
-    // Aggregate relevant trainings per employee.
-    const trainAgg = new Map<string, { count: number; hours: number; latest: string | null; latestTitle: string | null }>();
-    for (const t of (trainingRows ?? []) as any[]) {
-      if (!isRelevantTraining(t.training_title)) continue;
-      const id = String(t.employee_id);
-      const cur = trainAgg.get(id) ?? { count: 0, hours: 0, latest: null, latestTitle: null };
-      cur.count += 1;
-      cur.hours += Number(t.number_of_hours ?? 0);
-      if (t.from_date && (!cur.latest || t.from_date > cur.latest)) {
-        cur.latest = t.from_date;
-        cur.latestTitle = t.training_title ?? null;
+    // Aggregate ALL completed trainings per employee (volume/recency/hours),
+    // tracking the role/category-fit subset (Leadership or field-matching) for
+    // the Relevance bonus. A completed training counts regardless of whether its
+    // title literally names the target position.
+    type Agg = { count: number; hours: number; latest: string | null; latestTitle: string | null; fit: number };
+    const emptyAgg = (): Agg => ({ count: 0, hours: 0, latest: null, latestTitle: null, fit: 0 });
+    const addTraining = (agg: Agg, t: any) => {
+      agg.count += 1;
+      agg.hours += Number(t.number_of_hours ?? 0);
+      if (t.from_date && (!agg.latest || t.from_date > agg.latest)) {
+        agg.latest = t.from_date;
+        agg.latestTitle = t.training_title ?? null;
       }
+      if (t.training_type === 'Leadership' || isRelevantTraining(t.training_title)) agg.fit += 1;
+    };
+    const trainAgg = new Map<string, Agg>();
+    for (const t of (trainingRows ?? []) as any[]) {
+      const id = String(t.employee_id);
+      const cur = trainAgg.get(id) ?? emptyAgg();
+      addTraining(cur, t);
       trainAgg.set(id, cur);
     }
 
@@ -1227,7 +1274,7 @@ export async function listAutoSuccessors(
     for (const { e, keyword } of matched) {
       const empId = String(e.id);
       const score = scores.get(empId);
-      const agg = trainAgg.get(empId) ?? { count: 0, hours: 0, latest: null, latestTitle: null };
+      const agg = trainAgg.get(empId) ?? emptyAgg();
       const readiness = computeReadinessScore({
         ipcrScore: score?.overallScore ?? null,
         adjectival: score?.adjectival ?? null,
@@ -1242,6 +1289,7 @@ export async function listAutoSuccessors(
         relevantTrainingHours: agg.hours,
         mostRecentTrainingDate: agg.latest,
         mostRecentTrainingTitle: agg.latestTitle,
+        categoryFitTrainings: agg.fit,
       });
       autoMap.set(empId, {
         employeeId: empId,
@@ -1277,14 +1325,10 @@ export async function listAutoSuccessors(
       const mcScore = scores.get(mcId) ?? (await getLatestOverallScores([mcId])).get(mcId);
       const { data: mcTrain } = await supabase
         .from('employee_training')
-        .select('training_title, number_of_hours, from_date')
+        .select('training_title, training_type, number_of_hours, from_date')
         .eq('employee_id', mcId);
-      let count = 0, hours = 0, latest: string | null = null, latestTitle: string | null = null;
-      for (const t of (mcTrain ?? []) as any[]) {
-        if (!isRelevantTraining(t.training_title)) continue;
-        count += 1; hours += Number(t.number_of_hours ?? 0);
-        if (t.from_date && (!latest || t.from_date > latest)) { latest = t.from_date; latestTitle = t.training_title ?? null; }
-      }
+      const mcAgg = emptyAgg();
+      for (const t of (mcTrain ?? []) as any[]) addTraining(mcAgg, t);
       const readiness = computeReadinessScore({
         ipcrScore: mcScore?.overallScore ?? null,
         adjectival: mcScore?.adjectival ?? null,
@@ -1295,10 +1339,11 @@ export async function listAutoSuccessors(
         requiredEducation,
         empEligibility: mcEmp?.eligibility ?? null,
         requiredEligibility,
-        relevantTrainings: count,
-        relevantTrainingHours: hours,
-        mostRecentTrainingDate: latest,
-        mostRecentTrainingTitle: latestTitle,
+        relevantTrainings: mcAgg.count,
+        relevantTrainingHours: mcAgg.hours,
+        mostRecentTrainingDate: mcAgg.latest,
+        mostRecentTrainingTitle: mcAgg.latestTitle,
+        categoryFitTrainings: mcAgg.fit,
       });
       autoMap.set(mcId, {
         employeeId: mcId,

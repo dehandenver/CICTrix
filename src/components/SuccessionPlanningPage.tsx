@@ -808,26 +808,34 @@ const AutoSuccessorRow = ({
               {/* Raw data detail line — sources shown; missing fields read "Not on file" */}
               <p className="!mb-0 mt-1 text-[10px] text-slate-400">
                 IPCR {r.ipcrScore != null ? r.ipcrScore.toFixed(2) : 'Not on file'}/5 · {r.yearsOfService.toFixed(1)} yr tenure
-                {` · ${r.relevantTrainings} relevant training${r.relevantTrainings === 1 ? '' : 's'}`}
+                {` · ${r.relevantTrainings} completed training${r.relevantTrainings === 1 ? '' : 's'}`}
                 {r.relevantTrainingHours ? ` (${r.relevantTrainingHours}h)` : ''}
+                {r.mostRecentTrainingDate ? ` · last ${new Date(r.mostRecentTrainingDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}` : ''}
                 {` · Educ: ${r.educationLabel ?? 'Not on file'}`}
                 {` · Elig: ${r.eligibilityLabel ?? 'Not on file'}`}
               </p>
               {r.mostRecentTrainingTitle && (
                 <p className="!mb-0 mt-0.5 text-[10px] text-slate-400">
                   Most recent training: <span className="text-slate-500">{r.mostRecentTrainingTitle}</span>
-                  {r.mostRecentTrainingDate ? ` (${new Date(r.mostRecentTrainingDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })})` : ''}
                   {' · see L&D Archive'}
                 </p>
               )}
             </>
           ) : (
-            <p className="!mb-0 mt-1.5 flex items-center gap-1.5 rounded-md bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-500">
-              <AlertTriangle size={12} className="shrink-0 text-amber-500" />
-              {r.incompleteReason ?? 'Incomplete data'} — not ranked. {r.yearsOfService.toFixed(1)} yr tenure
-              {r.educationLabel ? ` · ${r.educationLabel}` : ''}
-              {r.eligibilityLabel ? ` · ${r.eligibilityLabel}` : ''}
-            </p>
+            <div className="!mb-0 mt-1.5 rounded-md bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-500">
+              <p className="!mb-0 flex items-center gap-1.5">
+                <AlertTriangle size={12} className="shrink-0 text-amber-500" />
+                {r.incompleteReason ?? 'Incomplete data'} — not ranked (only IPCR is missing; other records below).
+              </p>
+              <p className="!mb-0 mt-1 pl-[18px] text-slate-500">
+                {r.yearsOfService.toFixed(1)} yr tenure
+                {` · Educ: ${r.educationLabel ?? 'Not on file'}`}
+                {` · Elig: ${r.eligibilityLabel ?? 'Not on file'}`}
+                {` · ${r.relevantTrainings} completed training${r.relevantTrainings === 1 ? '' : 's'}`}
+                {r.relevantTrainingHours ? ` (${r.relevantTrainingHours}h)` : ''}
+                {r.mostRecentTrainingDate ? ` · last ${new Date(r.mostRecentTrainingDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}` : ''}
+              </p>
+            </div>
           )}
 
           {successor.manualNote && <p className="!mb-0 mt-1 text-xs italic text-slate-500">"{successor.manualNote}"</p>}
