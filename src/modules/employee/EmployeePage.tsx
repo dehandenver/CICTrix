@@ -348,7 +348,33 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   }, [probationarySchedule, systemSchedules]);
 
   // Module 3 IPCR Workspace & New Entrants State
-  const [ipcrSubtab, setIpcrSubtab] = useState<'phase1' | 'phase2'>('phase1');
+  // Persist the subtab across page refreshes so users stay on Phase 2 when they
+  // were working there. Falls back to 'phase2' when accomplishment rating is
+  // active and there's no stored preference, so the most relevant tab shows first.
+  const [ipcrSubtab, setIpcrSubtab] = useState<'phase1' | 'phase2'>(() => {
+    try {
+      const stored = sessionStorage.getItem('cictrix_ipcr_subtab');
+      if (stored === 'phase1' || stored === 'phase2') return stored;
+    } catch { /* sessionStorage unavailable */ }
+    return 'phase1';
+  });
+  useEffect(() => {
+    try { sessionStorage.setItem('cictrix_ipcr_subtab', ipcrSubtab); } catch { /* ignore */ }
+  }, [ipcrSubtab]);
+  // Auto-switch to Phase 2 on first load when accomplishment rating is active
+  // and no explicit tab was stored (so the user sees the open phase by default).
+  const hasAutoSwitchedRef = useRef(false);
+  useEffect(() => {
+    if (hasAutoSwitchedRef.current) return;
+    if (isAccomplishmentRatingActive && location.pathname.includes('/ipcr-workspace')) {
+      try {
+        if (!sessionStorage.getItem('cictrix_ipcr_subtab')) {
+          setIpcrSubtab('phase2');
+        }
+      } catch { /* ignore */ }
+      hasAutoSwitchedRef.current = true;
+    }
+  }, [isAccomplishmentRatingActive, location.pathname]);
   const [newEntrantsSubtab, setNewEntrantsSubtab] = useState<'checklist' | 'scheduler'>('checklist');
   const [employeeTargets, setEmployeeTargets] = useState({
     core: '',

@@ -44,6 +44,9 @@ const avgOf = (nums: Array<number | null>): number | null => {
   return f.length ? Number((f.reduce((a, b) => a + b, 0) / f.length).toFixed(2)) : null;
 };
 
+/** sessionStorage key for caching unsaved Phase 2 entries so they survive refresh. */
+const draftCacheKey = (empId: string) => `cictrix_phase2_draft_${empId}`;
+
 export const EmployeePhase2: React.FC<{ employeeId: string | null; phaseOpen?: boolean }> = ({ employeeId, phaseOpen }) => {
   const [loading, setLoading] = useState(true);
   const [sheet, setSheet] = useState<EmployeeRatingSheet | null>(null);
@@ -88,7 +91,37 @@ export const EmployeePhase2: React.FC<{ employeeId: string | null; phaseOpen?: b
         const init: Record<string, Entry> = {};
         for (const m of s.mfos) for (const si of m.indicators)
           init[si.successIndicatorId] = { accomplishment: si.accomplishment, quality: si.quality, efficiency: si.efficiency, timeliness: si.timeliness };
-        setEntries(init);
+
+        // Restore any unsaved draft from sessionStorage so edits survive refresh.
+        let merged = init;
+        try {
+          const cached = sessionStorage.getItem(draftCacheKey(employeeId));
+          if (cached) {
+            const draft: Record<string, Entry> = JSON.parse(cached);
+            // Only merge entries whose keys exist in the DB result (guards
+            // against stale/orphaned keys from a previous rating period).
+            let hasDiff = false;
+            const result = { ...init };
+            for (const id of Object.keys(init)) {
+              if (draft[id]) {
+                const db = init[id];
+                const dr = draft[id];
+                if (
+                  (dr.accomplishment ?? '') !== (db.accomplishment ?? '') ||
+                  (dr.quality ?? null) !== (db.quality ?? null) ||
+                  (dr.efficiency ?? null) !== (db.efficiency ?? null) ||
+                  (dr.timeliness ?? null) !== (db.timeliness ?? null)
+                ) {
+                  result[id] = dr;
+                  hasDiff = true;
+                }
+              }
+            }
+            if (hasDiff) merged = result;
+          }
+        } catch { /* corrupt / unavailable cache — ignore */ }
+
+        setEntries(merged);
       }
       // Opening Phase 2 clears the "self-rating opened" notification badge.
       void markEmployeeNotificationsRead(employeeId);
@@ -104,6 +137,19 @@ export const EmployeePhase2: React.FC<{ employeeId: string | null; phaseOpen?: b
   useEffect(() => {
     void loadSheet();
   }, [loadSheet]);
+
+  // Debounce-save entries to sessionStorage so unsaved edits survive refresh.
+  const cacheTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!employeeId || !sheet) return;
+    if (cacheTimerRef.current) clearTimeout(cacheTimerRef.current);
+    cacheTimerRef.current = setTimeout(() => {
+      try {
+        sessionStorage.setItem(draftCacheKey(employeeId), JSON.stringify(entries));
+      } catch { /* storage full or unavailable */ }
+    }, 800);
+    return () => { if (cacheTimerRef.current) clearTimeout(cacheTimerRef.current); };
+  }, [entries, employeeId, sheet]);
 
   useRealtimeRefresh({
     channel: `employee-phase2-${employeeId || 'anon'}`,
@@ -183,6 +229,8 @@ export const EmployeePhase2: React.FC<{ employeeId: string | null; phaseOpen?: b
       text: submit ? `Submitted. Overall rating: ${res.data.overallScore ?? '—'} (${res.data.adjectival ?? '—'}).` : 'Draft saved.',
     });
     setHasNewerData(false);
+    // Clear the sessionStorage draft cache — data is now persisted in the DB.
+    try { if (employeeId) sessionStorage.removeItem(draftCacheKey(employeeId)); } catch { /* ignore */ }
     void loadSheet(true);
   };
 
