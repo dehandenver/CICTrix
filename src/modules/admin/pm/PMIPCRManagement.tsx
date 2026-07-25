@@ -1188,68 +1188,72 @@ const ProbationaryPanel = ({
           {/* Phase 1 Gating */}
           <div className="flex items-center gap-2.5 border-r border-slate-200/80 pr-4">
             <span className="text-xs font-bold text-slate-700">Phase 1 (Target):</span>
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase ${
-                systemStates.target_setting === 'Open'
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80'
-                  : 'bg-slate-100 text-slate-600 border border-slate-200/80'
-              }`}
-            >
-              <span className={`h-1.5 w-1.5 rounded-full ${systemStates.target_setting === 'Open' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
-              {systemStates.target_setting}
-            </span>
-            {systemStates.target_setting === 'Closed' ? (
-              <button
-                type="button"
-                onClick={() => setShowConfirmOpen1(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all active:scale-95"
-              >
-                <Unlock className="h-3.5 w-3.5" />
-                Open Phase 1
-              </button>
+            {systemStates.target_setting === 'Open' ? (
+              <>
+                <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  OPEN
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmClose1(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold border border-rose-200/80 bg-rose-50/70 text-rose-700 hover:bg-rose-100/90 rounded-lg transition-all active:scale-95 shadow-2xs"
+                >
+                  <Lock className="h-3.5 w-3.5 text-rose-600" />
+                  Close phase
+                </button>
+              </>
             ) : (
-              <button
-                type="button"
-                onClick={() => setShowConfirmClose1(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold border border-rose-200 bg-rose-50/50 text-rose-700 hover:bg-rose-100/80 rounded-lg transition-all active:scale-95"
-              >
-                <Lock className="h-3.5 w-3.5" />
-                Close Phase 1
-              </button>
+              <>
+                <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase bg-slate-100 text-slate-600 border border-slate-200/80">
+                  <Lock className="h-3 w-3 text-slate-500" />
+                  CLOSED
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmOpen1(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all active:scale-95"
+                >
+                  <Unlock className="h-3.5 w-3.5" />
+                  Open Phase 1
+                </button>
+              </>
             )}
           </div>
 
           {/* Phase 2 Gating */}
           <div className="flex items-center gap-2.5">
             <span className="text-xs font-bold text-slate-700">Phase 2 (Rating):</span>
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase ${
-                systemStates.rating === 'Open'
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80'
-                  : 'bg-slate-100 text-slate-600 border border-slate-200/80'
-              }`}
-            >
-              <span className={`h-1.5 w-1.5 rounded-full ${systemStates.rating === 'Open' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
-              {systemStates.rating}
-            </span>
-            {systemStates.rating === 'Closed' ? (
-              <button
-                type="button"
-                onClick={() => setShowConfirmOpen2(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all active:scale-95"
-              >
-                <Unlock className="h-3.5 w-3.5" />
-                Open Phase 2
-              </button>
+            {systemStates.rating === 'Open' ? (
+              <>
+                <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  OPEN
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmClose2(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold border border-rose-200/80 bg-rose-50/70 text-rose-700 hover:bg-rose-100/90 rounded-lg transition-all active:scale-95 shadow-2xs"
+                >
+                  <Lock className="h-3.5 w-3.5 text-rose-600" />
+                  Close phase
+                </button>
+              </>
             ) : (
-              <button
-                type="button"
-                onClick={() => setShowConfirmClose2(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold border border-rose-200 bg-rose-50/50 text-rose-700 hover:bg-rose-100/80 rounded-lg transition-all active:scale-95"
-              >
-                <Lock className="h-3.5 w-3.5" />
-                Close Phase 2
-              </button>
+              <>
+                <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase bg-slate-100 text-slate-600 border border-slate-200/80">
+                  <Lock className="h-3 w-3 text-slate-500" />
+                  CLOSED
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmOpen2(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all active:scale-95"
+                >
+                  <Unlock className="h-3.5 w-3.5" />
+                  Open Phase 2
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -1377,14 +1381,35 @@ const ProbationaryPanel = ({
       )}
 
       {showConfirmOpen1 && (
-        <Dialog open onClose={() => setShowConfirmOpen1(false)} title="Open Phase 1 (Target Setting)">
-          <div className="text-slate-800 text-sm space-y-2.5">
-            <p>Are you sure you want to open Phase 1 (Target Setting) system-wide?</p>
-            <p className="text-xs text-slate-500">
-              This will notify all Office Accounts and allow employees to prepare/submit their targets.
+        <Dialog open onClose={() => setShowConfirmOpen1(false)}>
+          <div className="w-[460px] max-w-full space-y-5 p-1">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3.5">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-100/70 text-indigo-600">
+                  <Unlock className="h-5 w-5" />
+                </div>
+                <h2 className="text-xl font-bold text-slate-900 tracking-tight">Open Phase 1?</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowConfirmOpen1(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-medium p-1 rounded-lg transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-sm text-slate-600 leading-relaxed">
+              This opens <strong className="font-bold text-slate-900">Target Setting</strong> system-wide and allows all regular and probationary employees to prepare and submit their IPCR targets.
             </p>
-            <div className="flex justify-end gap-2 pt-4">
-              <button type="button" onClick={() => setShowConfirmOpen1(false)} disabled={actionBusy} className="px-4 py-2 text-xs font-bold border border-slate-200 text-slate-650 rounded-lg hover:bg-slate-50">
+
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowConfirmOpen1(false)}
+                disabled={actionBusy}
+                className="px-5 py-2 text-sm font-bold border border-slate-200 text-slate-700 bg-white rounded-xl hover:bg-slate-50 transition active:scale-95 disabled:opacity-50"
+              >
                 Cancel
               </button>
               <button
@@ -1401,9 +1426,9 @@ const ProbationaryPanel = ({
                   }
                 }}
                 disabled={actionBusy}
-                className="px-4 py-2 text-xs font-bold bg-[#363EE8] text-white rounded-lg hover:bg-[#2931c5]"
+                className="px-5 py-2 text-sm font-bold bg-[#363EE8] hover:bg-[#2931c5] text-white rounded-xl shadow-xs transition active:scale-95 disabled:opacity-50"
               >
-                {actionBusy ? 'Opening…' : 'Confirm Open'}
+                {actionBusy ? 'Opening…' : 'Confirm open'}
               </button>
             </div>
           </div>
@@ -1411,14 +1436,35 @@ const ProbationaryPanel = ({
       )}
 
       {showConfirmClose1 && (
-        <Dialog open onClose={() => setShowConfirmClose1(false)} title="Close Phase 1 (Target Setting)">
-          <div className="text-slate-800 text-sm space-y-2.5">
-            <p>Are you sure you want to close Phase 1 (Target Setting) system-wide?</p>
-            <p className="text-xs text-rose-600 font-semibold">
-              This will lock the target submission window for all regular and probationary employees.
+        <Dialog open onClose={() => setShowConfirmClose1(false)}>
+          <div className="w-[460px] max-w-full space-y-5 p-1">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3.5">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-rose-100/70 text-rose-600">
+                  <Lock className="h-5 w-5" />
+                </div>
+                <h2 className="text-xl font-bold text-slate-900 tracking-tight">Close Phase 1?</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowConfirmClose1(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-medium p-1 rounded-lg transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-sm text-slate-600 leading-relaxed">
+              This closes <strong className="font-bold text-slate-900">Target Setting</strong> system-wide and locks the submission window for all regular and probationary employees.
             </p>
-            <div className="flex justify-end gap-2 pt-4">
-              <button type="button" onClick={() => setShowConfirmClose1(false)} disabled={actionBusy} className="px-4 py-2 text-xs font-bold border border-slate-200 text-slate-650 rounded-lg hover:bg-slate-50">
+
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowConfirmClose1(false)}
+                disabled={actionBusy}
+                className="px-5 py-2 text-sm font-bold border border-slate-200 text-slate-700 bg-white rounded-xl hover:bg-slate-50 transition active:scale-95 disabled:opacity-50"
+              >
                 Cancel
               </button>
               <button
@@ -1435,9 +1481,9 @@ const ProbationaryPanel = ({
                   }
                 }}
                 disabled={actionBusy}
-                className="px-4 py-2 text-xs font-bold bg-rose-600 text-white rounded-lg hover:bg-rose-700"
+                className="px-5 py-2 text-sm font-bold bg-[#e11d48] hover:bg-[#be123c] text-white rounded-xl shadow-xs transition active:scale-95 disabled:opacity-50"
               >
-                {actionBusy ? 'Closing…' : 'Confirm Close'}
+                {actionBusy ? 'Closing…' : 'Confirm close'}
               </button>
             </div>
           </div>
@@ -1445,14 +1491,35 @@ const ProbationaryPanel = ({
       )}
 
       {showConfirmOpen2 && (
-        <Dialog open onClose={() => setShowConfirmOpen2(false)} title="Open Phase 2 (Accomplishment Rating)">
-          <div className="text-slate-800 text-sm space-y-2.5">
-            <p>Are you sure you want to open Phase 2 (Accomplishment Rating) system-wide?</p>
-            <p className="text-xs text-slate-500">
-              This will notify all Office Accounts and allow employees to prepare/submit their self-ratings.
+        <Dialog open onClose={() => setShowConfirmOpen2(false)}>
+          <div className="w-[460px] max-w-full space-y-5 p-1">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3.5">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-100/70 text-indigo-600">
+                  <Unlock className="h-5 w-5" />
+                </div>
+                <h2 className="text-xl font-bold text-slate-900 tracking-tight">Open Phase 2?</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowConfirmOpen2(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-medium p-1 rounded-lg transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-sm text-slate-600 leading-relaxed">
+              This opens <strong className="font-bold text-slate-900">Accomplishment Rating</strong> system-wide and allows all regular and probationary employees to submit their self-ratings.
             </p>
-            <div className="flex justify-end gap-2 pt-4">
-              <button type="button" onClick={() => setShowConfirmOpen2(false)} disabled={actionBusy} className="px-4 py-2 text-xs font-bold border border-slate-200 text-slate-650 rounded-lg hover:bg-slate-50">
+
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowConfirmOpen2(false)}
+                disabled={actionBusy}
+                className="px-5 py-2 text-sm font-bold border border-slate-200 text-slate-700 bg-white rounded-xl hover:bg-slate-50 transition active:scale-95 disabled:opacity-50"
+              >
                 Cancel
               </button>
               <button
@@ -1469,9 +1536,9 @@ const ProbationaryPanel = ({
                   }
                 }}
                 disabled={actionBusy}
-                className="px-4 py-2 text-xs font-bold bg-[#363EE8] text-white rounded-lg hover:bg-[#2931c5]"
+                className="px-5 py-2 text-sm font-bold bg-[#363EE8] hover:bg-[#2931c5] text-white rounded-xl shadow-xs transition active:scale-95 disabled:opacity-50"
               >
-                {actionBusy ? 'Opening…' : 'Confirm Open'}
+                {actionBusy ? 'Opening…' : 'Confirm open'}
               </button>
             </div>
           </div>
@@ -1479,14 +1546,35 @@ const ProbationaryPanel = ({
       )}
 
       {showConfirmClose2 && (
-        <Dialog open onClose={() => setShowConfirmClose2(false)} title="Close Phase 2 (Accomplishment Rating)">
-          <div className="text-slate-800 text-sm space-y-2.5">
-            <p>Are you sure you want to close Phase 2 (Accomplishment Rating) system-wide?</p>
-            <p className="text-xs text-rose-600 font-semibold">
-              This will lock the accomplishment rating submission window for all regular and probationary employees.
+        <Dialog open onClose={() => setShowConfirmClose2(false)}>
+          <div className="w-[460px] max-w-full space-y-5 p-1">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3.5">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-rose-100/70 text-rose-600">
+                  <Lock className="h-5 w-5" />
+                </div>
+                <h2 className="text-xl font-bold text-slate-900 tracking-tight">Close Phase 2?</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowConfirmClose2(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-medium p-1 rounded-lg transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-sm text-slate-600 leading-relaxed">
+              This closes <strong className="font-bold text-slate-900">Accomplishment Rating</strong> system-wide and locks the submission window for all regular and probationary employees.
             </p>
-            <div className="flex justify-end gap-2 pt-4">
-              <button type="button" onClick={() => setShowConfirmClose2(false)} disabled={actionBusy} className="px-4 py-2 text-xs font-bold border border-slate-200 text-slate-650 rounded-lg hover:bg-slate-50">
+
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowConfirmClose2(false)}
+                disabled={actionBusy}
+                className="px-5 py-2 text-sm font-bold border border-slate-200 text-slate-700 bg-white rounded-xl hover:bg-slate-50 transition active:scale-95 disabled:opacity-50"
+              >
                 Cancel
               </button>
               <button
@@ -1503,9 +1591,9 @@ const ProbationaryPanel = ({
                   }
                 }}
                 disabled={actionBusy}
-                className="px-4 py-2 text-xs font-bold bg-rose-600 text-white rounded-lg hover:bg-rose-700"
+                className="px-5 py-2 text-sm font-bold bg-[#e11d48] hover:bg-[#be123c] text-white rounded-xl shadow-xs transition active:scale-95 disabled:opacity-50"
               >
-                {actionBusy ? 'Closing…' : 'Confirm Close'}
+                {actionBusy ? 'Closing…' : 'Confirm close'}
               </button>
             </div>
           </div>
