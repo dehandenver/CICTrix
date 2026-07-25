@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getAdminEmail } from '../lib/adminSession';
 import {
   Building2,
@@ -17,6 +18,7 @@ import {
   Search,
   Award,
   ShieldAlert,
+  ExternalLink,
 } from 'lucide-react';
 import { Button } from './Button';
 import {
@@ -721,6 +723,12 @@ const AutoSuccessorRow = ({
 }) => {
   const r = successor.readiness;
   const medal = rank <= 3 ? MEDAL[rank - 1] : null;
+  const navigate = useNavigate();
+  const openArchive = () => {
+    const params = new URLSearchParams({ module: 'archive', employee: successor.employeeId });
+    if (successor.department) params.set('office', successor.department);
+    navigate(`/admin/lnd?${params.toString()}`);
+  };
 
   return (
     <div className={`border-b border-slate-100 px-4 py-3.5 last:border-0 ${isTopPick ? 'bg-gradient-to-r from-amber-50/60 to-yellow-50/40' : ''}`}>
@@ -841,25 +849,36 @@ const AutoSuccessorRow = ({
           {successor.manualNote && <p className="!mb-0 mt-1 text-xs italic text-slate-500">"{successor.manualNote}"</p>}
         </div>
 
-        {/* Actions — only shown for candidates with a succession_candidates row */}
-        {successor.candidateId && (
-          <div className="flex shrink-0 items-center gap-1.5">
-            <button
-              onClick={() => onEditNote(successor)}
-              className="rounded-lg border border-[var(--border-color)] p-1.5 text-blue-600 hover:bg-blue-50"
-              title="Edit note"
-            >
-              <Pencil size={13} />
-            </button>
-            <button
-              onClick={() => onRemove(successor)}
-              className="rounded-lg border border-[var(--border-color)] p-1.5 text-red-500 hover:bg-red-50"
-              title="Remove candidate"
-            >
-              <Trash2 size={13} />
-            </button>
-          </div>
-        )}
+        {/* Actions */}
+        <div className="flex shrink-0 items-center gap-1.5">
+          {/* End-to-end link into this employee's full L&D Archive training history */}
+          <button
+            onClick={openArchive}
+            className="inline-flex items-center gap-1 rounded-lg border border-[var(--border-color)] px-2 py-1.5 text-[11px] font-semibold text-blue-600 hover:bg-blue-50"
+            title="Open this employee's L&D Archive training history"
+          >
+            <ExternalLink size={12} /> L&D Archive
+          </button>
+          {/* Edit/remove only for candidates with a succession_candidates row */}
+          {successor.candidateId && (
+            <>
+              <button
+                onClick={() => onEditNote(successor)}
+                className="rounded-lg border border-[var(--border-color)] p-1.5 text-blue-600 hover:bg-blue-50"
+                title="Edit note"
+              >
+                <Pencil size={13} />
+              </button>
+              <button
+                onClick={() => onRemove(successor)}
+                className="rounded-lg border border-[var(--border-color)] p-1.5 text-red-500 hover:bg-red-50"
+                title="Remove candidate"
+              >
+                <Trash2 size={13} />
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

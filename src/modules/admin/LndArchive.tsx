@@ -10,8 +10,9 @@
  * Planning) via the initialOffice / focusEmployeeId props.
  */
 
-import { Archive, ArrowLeft, Building2, CalendarClock, ChevronRight, FileText, Search } from 'lucide-react';
+import { Archive, ArrowLeft, Building2, CalendarClock, ChevronRight, ExternalLink, FileText, Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { EmptyState } from '../../components/EmptyState';
 import {
   listArchiveOfficeDirectory,
@@ -42,6 +43,7 @@ export const LndArchive = ({
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'office', dir: 'asc' });
   const [empSearch, setEmpSearch] = useState('');
   const focusRef = useRef<HTMLDivElement | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     let cancelled = false;
@@ -260,9 +262,19 @@ export const LndArchive = ({
                         {emp.employeeNumber ? ` · ${emp.employeeNumber}` : ''}
                       </p>
                     </div>
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-                      <CalendarClock className="h-3.5 w-3.5" /> Hired {fmtDate(emp.dateHired)}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                        <CalendarClock className="h-3.5 w-3.5" /> Hired {fmtDate(emp.dateHired)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => navigate('/admin/rsp/succession')}
+                        title="View this office's succession pipeline"
+                        className="inline-flex items-center gap-1 rounded-lg border border-gray-300 px-2.5 py-1 text-[11px] font-semibold text-gray-600 hover:border-blue-400 hover:text-blue-600"
+                      >
+                        <ExternalLink className="h-3 w-3" /> Succession Planning
+                      </button>
+                    </div>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[880px] border-collapse text-sm">

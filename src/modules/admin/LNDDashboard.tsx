@@ -708,6 +708,23 @@ const LndDashboardContent = () => {
 
 export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boolean }) => {
   const [activeModule, setActiveModule] = useState<MenuId>('dashboard');
+  // Deep-link support: /admin/lnd?module=archive&office=…&employee=… lands
+  // straight on the L&D Archive at a specific office/employee (e.g. from a
+  // Succession Planning candidate card). Read once on mount.
+  const [archiveDeepLink, setArchiveDeepLink] = useState<{ office: string | null; employee: string | null }>({
+    office: null,
+    employee: null,
+  });
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mod = params.get('module');
+    if (mod && LND_MENU.some((m) => m.id === mod)) {
+      setActiveModule(mod as MenuId);
+      if (mod === 'archive') {
+        setArchiveDeepLink({ office: params.get('office'), employee: params.get('employee') });
+      }
+    }
+  }, []);
 
   return (
     <div className="brand-text min-h-screen bg-slate-100 font-sans text-[#040E6B]">
@@ -733,7 +750,7 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
           ) : activeModule === 'training-evaluation' ? (
             <LndTrainingEvaluation />
           ) : activeModule === 'archive' ? (
-            <LndArchive />
+            <LndArchive initialOffice={archiveDeepLink.office} focusEmployeeId={archiveDeepLink.employee} />
           ) : activeModule === 'office-directory' ? (
             <OfficeDirectorySection showBulkRequest={false} />
           ) : (
