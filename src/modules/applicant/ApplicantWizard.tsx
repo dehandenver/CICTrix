@@ -1254,7 +1254,7 @@ const handleNextToReview = () => {
                     </div>
                     {formData.gov_id_type && (
                       <div>
-                        <label>Government ID Type</label>
+                        <label>Government Issued ID Type</label>
                         <p>{formData.gov_id_type} {formData.gov_id_expiration ? `(Expires: ${formData.gov_id_expiration})` : '(No Expiration)'}</p>
                       </div>
                     )}

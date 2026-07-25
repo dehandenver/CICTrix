@@ -311,7 +311,7 @@ export const AttachmentsUploadForm: React.FC<AttachmentsUploadFormProps> = ({
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label htmlFor="gov-id-type" className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Government ID Type <span className="text-red-500">*</span>
+                  Government Issued ID Type <span className="text-red-500">*</span>
                 </label>
                 <select
                   id="gov-id-type"
