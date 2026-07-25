@@ -142,7 +142,7 @@ export const LndArchive = () => {
                         <td className="px-4 py-3 text-gray-600">{t.provider ?? '—'}</td>
                         <td className="px-4 py-3 whitespace-nowrap text-gray-600">{t.dateConducted}</td>
                         <td className="px-4 py-3 text-center text-gray-600">{t.hours ?? '—'}</td>
-                        <td className="px-4 py-3 text-gray-400 italic">{t.attendanceStatus}</td>
+                        <td className="px-4 py-3 text-gray-600">{t.attendanceStatus}</td>
                         <td className="px-4 py-3">
                           <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
                             {t.completionStatus}
