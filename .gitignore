@@ -53,3 +53,7 @@ coverage
 # Ignored so the working copy left on disk can't be committed back in as a
 # 160 MB directory.
 mabuh-ai/
+
+# Local dev/one-off scripts — often contain hardcoded service-role keys.
+# Never commit (would leak DB credentials).
+scratch/
