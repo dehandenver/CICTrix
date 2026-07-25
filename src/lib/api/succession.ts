@@ -143,6 +143,17 @@ export type SuccessionWeights = typeof SUCCESSION_WEIGHTS;
 
 export type SuccessionTier = 'Ready Now' | 'Ready in 1–2 Years' | 'Developmental';
 
+/** One required competency and whether the candidate's trainings cover it. */
+export interface CompetencyCoverage {
+  name: string;
+  met: boolean;
+  /** Training title that satisfied it, or null when unmet. */
+  satisfiedBy: string | null;
+}
+
+/** Default months to close each missing competency (Timeline column, Part 4). */
+export const DEFAULT_MONTHS_PER_MISSING_COMPETENCY = 6;
+
 export interface ReadinessScore {
   total: number;                 // 0–100 (weighted sum)
   education: number;
@@ -173,6 +184,14 @@ export interface ReadinessScore {
   trainingHoursRequired: number | null;
   /** True when the employee meets the position's training hours + category gate. */
   trainingMeetsRequirement: boolean;
+  /**
+   * Stage-2 competency readiness (2026-07-26 spec): share of the position's
+   * required competencies covered by ≥1 completed training. null when the
+   * position has no required competencies configured (then the weighted total
+   * drives the tier instead).
+   */
+  competencyMatchPct: number | null;
+  competencyBreakdown: CompetencyCoverage[];
   matchedKeyword: string | null; // field keyword that matched the position
   /** Always true here — non-passers never reach ReadinessScore; they land in GateFailure. */
   dataComplete: boolean;
@@ -192,6 +211,12 @@ export interface GateFailure {
   department: string | null;
   /** Each string describes one failed gate, e.g. "Missing finalized IPCR". */
   failedGates: string[];
+  /** Auto-generated: what's missing (mirrors failedGates, Part 4 Gap Analysis). */
+  gapAnalysis: string[];
+  /** Auto-generated next step(s) per failed gate (Part 4 Required Actions). */
+  requiredActions: string[];
+  /** True when the only blocker is a missing finalized IPCR (Pending Evaluation). */
+  pendingEvaluation: boolean;
   /** Present when the employee also has a manual succession_candidates row. */
   candidateId: string | null;
 }
@@ -215,6 +240,12 @@ export interface AutoSuccessor {
   candidateId: string | null; // succession_candidates.id, null for auto-discovered
   /** True for manually-added entries that bypassed Stage 1 gates. */
   gatesBypassed: boolean;
+  /** Auto-generated gap text for missing competencies (Part 4 Gap Analysis). */
+  gapAnalysis: string[];
+  /** Auto-generated next step(s) to close the competency gap. */
+  requiredActions: string[];
+  /** Estimated time to reach 100% competency, e.g. "12 months"; null at 100%. */
+  timeline: string | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1128,8 +1159,16 @@ function eligibilityLevel(label: string | null | undefined): number {
   if (!s) return 0;
   // "sub-professional" must be checked first (contains "professional" as substring)
   if (s.includes('sub-professional') || s.includes('sub professional')) return 1;
-  if (s.includes('professional')) return 2;
-  // Has some eligibility on file but not CSC professional scale — treat as sub-pro level
+  // Professional-level markers: CSC Professional, plus board/licensure eligibilities
+  // that RA 1080 confers Professional standing to (PRC licence, Bar, board exams).
+  if (
+    s.includes('professional') ||
+    s.includes('ra 1080') || s.includes('ra1080') ||
+    s.includes('board') || s.includes('bar') || s.includes('prc') || s.includes('licens')
+  ) {
+    return 2;
+  }
+  // Has some eligibility on file but not on the CSC professional scale — sub-pro level.
   return 1;
 }
 
@@ -1219,6 +1258,80 @@ function tierFromTotal(total: number): SuccessionTier {
   return 'Developmental';
 }
 
+/** Significant keywords from a competency name (drops generic/level words). */
+function competencyKeywords(name: string): string[] {
+  return String(name ?? '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length > 3 && !TITLE_STOPWORDS.has(w));
+}
+
+/**
+ * Stage-2 coverage: for each required competency, find a completed training that
+ * satisfies it. A training satisfies a competency when its title shares a
+ * significant keyword; leadership/supervisory competencies are also satisfied by
+ * any Leadership-category training. (Heuristic name match — the archive has no
+ * per-record competency tags yet; see the phase-2 note.)
+ */
+function computeCompetencyCoverage(
+  required: string[],
+  trainingTitles: string[],
+  categories: string[],
+): CompetencyCoverage[] {
+  const titles = trainingTitles.map((t) => ({ orig: t, lc: t.toLowerCase() }));
+  const catsLc = categories.map((c) => c.toLowerCase());
+  return required.map((name) => {
+    const kws = competencyKeywords(name);
+    let satisfiedBy: string | null = null;
+    for (const t of titles) {
+      if (kws.some((k) => t.lc.includes(k))) { satisfiedBy = t.orig; break; }
+    }
+    if (!satisfiedBy && /lead|supervis|manageri|management/.test(name.toLowerCase())) {
+      if (catsLc.some((c) => c.includes('leadership'))) satisfiedBy = 'Leadership training';
+    }
+    return { name, met: !!satisfiedBy, satisfiedBy };
+  });
+}
+
+const EDU_LEVEL_WORDS = new Set([
+  'bachelor', 'bachelors', 'master', 'masters', 'masteral', 'doctorate', 'doctoral', 'phd',
+  'degree', 'graduate', 'undergraduate', 'college', 'level', 'course', 'science', 'arts',
+  'related', 'field', 'units', 'postgraduate', 'post', 'school', 'diploma', 'vocational',
+  'technical', 'associate', 'studies', 'major',
+]);
+
+/** Field-of-study tokens from an education string, stripping level/degree words. */
+function educationFields(text: string): string[] {
+  return String(text ?? '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length > 3 && !EDU_LEVEL_WORDS.has(w));
+}
+
+/**
+ * Education gate as a COURSE/FIELD match (2026-07-26 spec §2.1), not a generic
+ * attainment ladder: passes when the position names no specific field, or the
+ * employee's degree/field shares a field token with the required field(s). So a
+ * Master's in an unrelated field does not auto-pass, and a Bachelor's in the
+ * exact required field can.
+ */
+function educationFieldMatches(empEdu: string | null, requiredEdu: string | null): boolean {
+  const reqFields = educationFields(requiredEdu ?? '');
+  if (reqFields.length === 0) return true; // no specific field required
+  const empFields = new Set(educationFields(empEdu ?? ''));
+  return reqFields.some((f) => empFields.has(f));
+}
+
+/** Auto-suggested next step for a failed gate (Part 4 Required Actions). */
+function actionForGate(gate: string): string {
+  const g = gate.toLowerCase();
+  if (g.includes('education')) return 'Complete relevant units/certification in the required field, or consider an alternate candidate.';
+  if (g.includes('eligibility')) return 'Take and pass the required CSC eligibility exam.';
+  if (g.includes('ipcr')) return g.includes('missing') ? 'Complete the current IPCR cycle so a rating is finalized.' : 'Sustain improved performance through the next rating cycle(s).';
+  if (g.includes('training')) return "Attend the training needed to meet the position's requirement.";
+  return 'Address the noted requirement.';
+}
+
 function computeReadinessScore(input: {
   ipcrScore: number | null;
   adjectival: string | null;
@@ -1236,6 +1349,8 @@ function computeReadinessScore(input: {
   empTrainingCategories: string[];        // category labels employee has completed
   requiredTrainingHours: number | null;   // position's required hours threshold
   requiredTrainingCategories: string[];   // position's required category labels
+  requiredCompetencies: string[];         // position's required competencies (Stage 2)
+  trainingTitles: string[];               // employee's completed training titles
   W: SuccessionWeights;                   // weights (per-position or global defaults)
 }): ReadinessScore {
   const w1 = (ratio: number, weight: number) => Number((ratio * weight).toFixed(1));
@@ -1260,6 +1375,26 @@ function computeReadinessScore(input: {
     ? Number((education + ipcr + training + eligibility).toFixed(1))
     : 0;
 
+  // Stage-2 competency readiness. When the position lists required competencies,
+  // it drives the tier (Ready Now = 100%); otherwise the weighted total does.
+  const competencyBreakdown = computeCompetencyCoverage(
+    input.requiredCompetencies,
+    input.trainingTitles,
+    input.empTrainingCategories,
+  );
+  const competencyMatchPct = input.requiredCompetencies.length
+    ? Math.round((competencyBreakdown.filter((c) => c.met).length / input.requiredCompetencies.length) * 100)
+    : null;
+  const tier: SuccessionTier | null = !dataComplete
+    ? null
+    : competencyMatchPct != null
+      ? competencyMatchPct >= 100
+        ? 'Ready Now'
+        : competencyMatchPct >= 50
+          ? 'Ready in 1–2 Years'
+          : 'Developmental'
+      : tierFromTotal(total);
+
   // Check if training meets the threshold (informational, gate already passed)
   const hoursReq = input.requiredTrainingHours;
   const trainingMeetsRequirement =
@@ -1282,7 +1417,9 @@ function computeReadinessScore(input: {
     trainingMax: input.W.training,
     eligibility,
     eligibilityMax: input.W.eligibility,
-    tier: dataComplete ? tierFromTotal(total) : null,
+    tier,
+    competencyMatchPct,
+    competencyBreakdown,
     ipcrScore: input.ipcrScore,
     adjectival: input.adjectival,
     ratedPeriod: input.ratedPeriod,
@@ -1406,11 +1543,12 @@ export async function listAutoSuccessors(
         : Promise.resolve({ data: [] as any[] }),
     ]);
 
-    type Agg = { count: number; hours: number; latest: string | null; latestTitle: string | null; fit: number; categories: string[] };
-    const emptyAgg = (): Agg => ({ count: 0, hours: 0, latest: null, latestTitle: null, fit: 0, categories: [] });
+    type Agg = { count: number; hours: number; latest: string | null; latestTitle: string | null; fit: number; categories: string[]; titles: string[] };
+    const emptyAgg = (): Agg => ({ count: 0, hours: 0, latest: null, latestTitle: null, fit: 0, categories: [], titles: [] });
     const addTraining = (agg: Agg, t: any) => {
       agg.count += 1;
       agg.hours += Number(t.number_of_hours ?? 0);
+      if (t.training_title) agg.titles.push(String(t.training_title));
       if (t.from_date && (!agg.latest || t.from_date > agg.latest)) {
         agg.latest = t.from_date;
         agg.latestTitle = t.training_title ?? null;
@@ -1427,6 +1565,20 @@ export async function listAutoSuccessors(
       trainAgg.set(id, cur);
     }
 
+    // Stage-2 required competencies for this position (drives competency match %).
+    const compReqRes = await listCompetencyRequirements(criticalPositionId);
+    const requiredCompetencies = compReqRes.ok ? compReqRes.data.map((c) => c.competencyName) : [];
+
+    // Gap analysis / required actions / timeline from a gate-passer's missing competencies.
+    const buildQualifiedGaps = (readiness: ReadinessScore) => {
+      const missing = readiness.competencyBreakdown.filter((c) => !c.met);
+      return {
+        gapAnalysis: missing.map((c) => `Lacking training in ${c.name}`),
+        requiredActions: missing.map((c) => `Attend training relevant to ${c.name}`),
+        timeline: missing.length ? `${missing.length * DEFAULT_MONTHS_PER_MISSING_COMPETENCY} months` : null,
+      };
+    };
+
     // ── Stage 1: Evaluate all gates; split into passers and failures ─────────
     const qualifiedMap = new Map<string, AutoSuccessor>();
     const notQualified: GateFailure[] = [];
@@ -1437,15 +1589,13 @@ export async function listAutoSuccessors(
       const agg = trainAgg.get(empId) ?? emptyAgg();
       const failedGates: string[] = [];
 
-      // Gate 3: Minimum Education
+      // Gate 3: Education — course/field match (not a generic attainment ladder).
       if (requiredEducation) {
-        const empRank = educationRank(e.highest_educational_attainment ?? null);
-        const reqRank = educationRank(requiredEducation);
-        if (empRank < 0 || (reqRank >= 0 && empRank < reqRank)) {
-          const empEduLabel = e.highest_educational_attainment
-            ? `Education: ${e.highest_educational_attainment}`
-            : 'No education record on file';
-          failedGates.push(`${empEduLabel} — requires ${requiredEducation}`);
+        const empEdu = e.highest_educational_attainment ?? null;
+        if (!empEdu) {
+          failedGates.push(`No education record on file — requires ${requiredEducation}`);
+        } else if (!educationFieldMatches(empEdu, requiredEducation)) {
+          failedGates.push(`Course mismatch — position requires ${requiredEducation}, candidate holds ${empEdu}`);
         }
       }
 
@@ -1490,6 +1640,11 @@ export async function listAutoSuccessors(
           currentPosition: String(e.position ?? '') || null,
           department: e.department ?? null,
           failedGates,
+          gapAnalysis: failedGates,
+          requiredActions: [...new Set(failedGates.map(actionForGate))],
+          // "Incomplete — Pending Evaluation" is distinct from "Not Qualified":
+          // it means the ONLY blocker is a missing finalized IPCR (a data gap).
+          pendingEvaluation: failedGates.length === 1 && failedGates[0] === 'Missing finalized IPCR',
           candidateId: null,
         });
         continue;
@@ -1513,6 +1668,8 @@ export async function listAutoSuccessors(
         empTrainingCategories: agg.categories,
         requiredTrainingHours,
         requiredTrainingCategories,
+        requiredCompetencies,
+        trainingTitles: agg.titles,
         W,
       });
       qualifiedMap.set(empId, {
@@ -1525,6 +1682,7 @@ export async function listAutoSuccessors(
         manualNote: null,
         candidateId: null,
         gatesBypassed: false,
+        ...buildQualifiedGaps(readiness),
       });
     }
 
@@ -1582,6 +1740,8 @@ export async function listAutoSuccessors(
         empTrainingCategories: mcAgg.categories,
         requiredTrainingHours,
         requiredTrainingCategories,
+        requiredCompetencies,
+        trainingTitles: mcAgg.titles,
         W,
       });
       qualifiedMap.set(mcId, {
@@ -1594,10 +1754,15 @@ export async function listAutoSuccessors(
         manualNote: mc.note ?? null,
         candidateId: String(mc.id),
         gatesBypassed: true,
+        ...buildQualifiedGaps(readiness),
       });
     }
 
     const qualifiedList = [...qualifiedMap.values()].sort((a, b) => {
+      // Rank by competency match % (Part 5); IPCR numeric is the tiebreaker.
+      const am = a.readiness.competencyMatchPct;
+      const bm = b.readiness.competencyMatchPct;
+      if (am != null && bm != null && bm !== am) return bm - am;
       if (b.readiness.total !== a.readiness.total) return b.readiness.total - a.readiness.total;
       if (b.readiness.ipcr !== a.readiness.ipcr) return b.readiness.ipcr - a.readiness.ipcr;
       return a.employeeName.localeCompare(b.employeeName);

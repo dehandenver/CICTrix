@@ -659,7 +659,7 @@ const CandidatesPanel = (props: CandidatesPanelProps) => {
       </div>
 
       <p className="!mb-0 text-xs text-[var(--text-secondary)]">
-        Only Regular/Permanent, Active employees who pass all eligibility gates (Employment Status · Position Match · Education · CSC Eligibility · IPCR · Training) appear here, ranked by weighted Succession Score: IPCR 35 + Training 30 + Education 20 + Eligibility 15 = 100. Employees who fail any gate are listed separately below.
+        Two-stage model. Stage 1 — mandatory gates (Employment · Position Match · Education field-match · CSC Eligibility · IPCR ≥ threshold · Training): fail any and the employee drops to "Not Yet Qualified" below, never ranked here. Stage 2 — gate-passers are graded on Competency Readiness (required competencies covered by completed trainings): 100% = Ready Now, partial = Ready in [timeline]. Ranked by competency match %, with the weighted score (IPCR 35 + Training 30 + Education 20 + Eligibility 15) as tiebreaker.
       </p>
 
       {loading && <p className="text-sm text-[var(--text-secondary)]">Discovering eligible successors…</p>}
@@ -863,6 +863,53 @@ const AutoSuccessorRow = ({
                   {' · see L&D Archive'}
                 </p>
               )}
+
+              {/* Stage-2 competency readiness (graded %, per-competency breakdown) */}
+              {r.competencyMatchPct != null && (
+                <div className="mt-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">Competency readiness</span>
+                    <div className="h-1.5 w-28 overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{
+                          width: `${r.competencyMatchPct}%`,
+                          background: r.competencyMatchPct >= 100 ? '#16a34a' : r.competencyMatchPct >= 50 ? '#3b82f6' : '#f59e0b',
+                        }}
+                      />
+                    </div>
+                    <span className="text-[10px] font-bold tabular-nums text-[var(--text-primary)]">{r.competencyMatchPct}%</span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {r.competencyBreakdown.map((c) => (
+                      <span
+                        key={c.name}
+                        title={c.met ? `Met via ${c.satisfiedBy}` : 'No matching completed training on file'}
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                          c.met ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'
+                        }`}
+                      >
+                        {c.met ? '✓' : '✗'} {c.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Gap analysis / required actions / timeline (Part 4) */}
+              {(successor.gapAnalysis.length > 0 || successor.timeline) && (
+                <div className="mt-2 rounded-md border border-amber-200 bg-amber-50/60 px-2.5 py-1.5 text-[10px] leading-relaxed text-amber-800">
+                  {successor.gapAnalysis.length > 0 && (
+                    <p className="!mb-0"><span className="font-semibold">Gap analysis:</span> {successor.gapAnalysis.join('; ')}</p>
+                  )}
+                  {successor.requiredActions.length > 0 && (
+                    <p className="!mb-0"><span className="font-semibold">Required action:</span> {successor.requiredActions.join('; ')}</p>
+                  )}
+                  {successor.timeline && (
+                    <p className="!mb-0"><span className="font-semibold">Timeline:</span> {successor.timeline}</p>
+                  )}
+                </div>
+              )}
             </>
           )}
 
@@ -1028,7 +1075,16 @@ const GateFailureRow = ({ failure }: { failure: GateFailure }) => {
   return (
     <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1.5 border-b border-slate-100 px-4 py-3 last:border-0">
       <div className="min-w-0">
-        <p className="!mb-0 text-sm font-semibold text-[var(--text-primary)]">{failure.employeeName}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="!mb-0 text-sm font-semibold text-[var(--text-primary)]">{failure.employeeName}</p>
+          <span
+            className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+              failure.pendingEvaluation ? 'bg-slate-200 text-slate-600' : 'bg-red-100 text-red-700'
+            }`}
+          >
+            {failure.pendingEvaluation ? 'Incomplete — Pending Evaluation' : 'Not Qualified'}
+          </span>
+        </div>
         <p className="!mb-0 text-xs text-[var(--text-secondary)]">
           {failure.currentPosition ?? '—'}
           {failure.department ? ` · ${failure.department}` : ''}
@@ -1044,6 +1100,11 @@ const GateFailureRow = ({ failure }: { failure: GateFailure }) => {
             </span>
           ))}
         </div>
+        {failure.requiredActions.length > 0 && (
+          <p className="!mb-0 mt-1 text-[10px] text-slate-500">
+            <span className="font-semibold">Required action:</span> {failure.requiredActions.join('; ')}
+          </p>
+        )}
       </div>
       <button
         onClick={openArchive}
