@@ -36,6 +36,8 @@ import {
   type DepartmentSummary,
   type CriticalPosition,
   type AutoSuccessor,
+  type AutoSuccessorsResult,
+  type GateFailure,
   type EmployeeOption,
   type CompetencyRequirement,
   type QualificationDrift,
@@ -77,7 +79,7 @@ export const SuccessionPlanningPage = () => {
 
   const [positionsByDept, setPositionsByDept] = useState<Record<string, CriticalPosition[]>>({});
   const [loadingPositions, setLoadingPositions] = useState<Record<string, boolean>>({});
-  const [candidatesByPosition, setCandidatesByPosition] = useState<Record<string, AutoSuccessor[]>>({});
+  const [candidatesByPosition, setCandidatesByPosition] = useState<Record<string, AutoSuccessorsResult>>({});
   const [loadingCandidates, setLoadingCandidates] = useState<Record<string, boolean>>({});
 
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
@@ -399,7 +401,7 @@ type CriticalPositionsPanelProps = {
   positions: CriticalPosition[] | undefined;
   loading: boolean | undefined;
   expandedPositionId: string | null;
-  candidatesByPosition: Record<string, AutoSuccessor[]>;
+  candidatesByPosition: Record<string, AutoSuccessorsResult>;
   loadingCandidates: Record<string, boolean>;
   onTogglePosition: (id: string) => void;
   onAddCandidate: (p: CriticalPosition) => void;
@@ -468,7 +470,7 @@ const CriticalPositionsPanel = (props: CriticalPositionsPanelProps) => {
               <div className="space-y-4 border-t border-[var(--border-color)] bg-slate-50/50 p-4">
                 <RequirementsPanel position={position} departmentName={props.dept.departmentName} />
                 <CandidatesPanel
-                  candidates={props.candidatesByPosition[position.id]}
+                  result={props.candidatesByPosition[position.id]}
                   loading={props.loadingCandidates[position.id]}
                   onAddCandidate={() => props.onAddCandidate(position)}
                   onEditNote={props.onEditNote}
@@ -632,7 +634,7 @@ const RequirementsPanel = ({
 const MEDAL = ['🥇', '🥈', '🥉'] as const;
 
 type CandidatesPanelProps = {
-  candidates: AutoSuccessor[] | undefined;
+  result: AutoSuccessorsResult | undefined;
   loading: boolean | undefined;
   onAddCandidate: () => void;
   onEditNote: (c: AutoSuccessor) => void;
@@ -640,8 +642,10 @@ type CandidatesPanelProps = {
 };
 
 const CandidatesPanel = (props: CandidatesPanelProps) => {
-  const { candidates, loading } = props;
-  const list = candidates ?? [];
+  const { result, loading } = props;
+  const list = result?.qualified ?? [];
+  const notQualified = result?.notQualified ?? [];
+  const [showNotQualified, setShowNotQualified] = useState(false);
 
   return (
     <div className="space-y-3">
@@ -655,16 +659,16 @@ const CandidatesPanel = (props: CandidatesPanelProps) => {
       </div>
 
       <p className="!mb-0 text-xs text-[var(--text-secondary)]">
-        Candidates are Regular/Permanent, Active, non-probationary employees whose position field matches this role. Ranked by weighted Succession Score (IPCR 30 + Training 25 + Tenure 20 + Education 15 + Eligibility 10 = 100) and tiered Ready Now / Ready in 1–2 Years / Developmental. Employees with no finalized IPCR are shown as Incomplete Data and are not ranked.
+        Only Regular/Permanent, Active employees who pass all eligibility gates (Employment Status · Position Match · Education · CSC Eligibility · IPCR · Training) appear here, ranked by weighted Succession Score: IPCR 35 + Training 30 + Education 20 + Eligibility 15 = 100. Employees who fail any gate are listed separately below.
       </p>
 
       {loading && <p className="text-sm text-[var(--text-secondary)]">Discovering eligible successors…</p>}
 
       {!loading && list.length === 0 && (
         <div className="rounded-lg border border-dashed border-[var(--border-color)] bg-white px-5 py-8 text-center">
-          <p className="!mb-1 text-sm font-medium text-[var(--text-primary)]">No eligible successors found</p>
+          <p className="!mb-1 text-sm font-medium text-[var(--text-primary)]">No gate-qualified successors found</p>
           <p className="!mb-0 text-sm text-[var(--text-secondary)]">
-            No employees with a completed IPCR and matching position field were found. You can still add a manual candidate.
+            No employees cleared all eligibility gates for this position. Check the "Not Yet Qualified" section below for details, or add a manual candidate.
           </p>
         </div>
       )}
@@ -672,7 +676,7 @@ const CandidatesPanel = (props: CandidatesPanelProps) => {
       {!loading && list.length > 0 && (
         <div className="overflow-hidden rounded-lg border border-[var(--border-color)] bg-white">
           <div className="flex items-center gap-1.5 border-b border-[var(--border-color)] bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-blue-700">
-            <Award size={13} /> Readiness-Ranked · {list.length} candidate{list.length !== 1 ? 's' : ''}
+            <Award size={13} /> Readiness-Ranked · {list.length} qualified candidate{list.length !== 1 ? 's' : ''}
           </div>
           {list.map((c, i) => (
             <AutoSuccessorRow
@@ -684,6 +688,36 @@ const CandidatesPanel = (props: CandidatesPanelProps) => {
               onRemove={props.onRemoveCandidate}
             />
           ))}
+        </div>
+      )}
+
+      {/* Not Yet Qualified section */}
+      {!loading && notQualified.length > 0 && (
+        <div className="overflow-hidden rounded-lg border border-amber-200 bg-amber-50/60">
+          <button
+            onClick={() => setShowNotQualified((v) => !v)}
+            className="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left"
+          >
+            <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-amber-700">
+              <AlertTriangle size={13} />
+              Not Yet Qualified ({notQualified.length} employee{notQualified.length !== 1 ? 's' : ''})
+            </span>
+            {showNotQualified ? (
+              <ChevronDown size={15} className="text-amber-600" />
+            ) : (
+              <ChevronRight size={15} className="text-amber-600" />
+            )}
+          </button>
+          {showNotQualified && (
+            <div className="border-t border-amber-200 bg-white">
+              <p className="border-b border-slate-100 px-4 py-2 text-xs text-slate-500">
+                These employees' position field matches this role but they failed one or more eligibility gates. They are not ranked. This view is for HR audit and targeted development planning — their L&amp;D Archive and RSP profiles are linked below.
+              </p>
+              {notQualified.map((f) => (
+                <GateFailureRow key={f.employeeId} failure={f} />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -787,8 +821,8 @@ const AutoSuccessorRow = ({
             {r.ratedPeriod ? ` · ${r.ratedPeriod}` : ''}
           </p>
 
-          {/* Weighted points breakdown — only when the record is complete enough to score */}
-          {r.dataComplete ? (
+          {/* Weighted points breakdown */}
+          {r.dataComplete && (
             <>
               <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5">
                 <div className="flex items-center gap-1.5">
@@ -807,17 +841,18 @@ const AutoSuccessorRow = ({
                   <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">Eligibility</span>
                   <ScoreBar value={r.eligibility} max={r.eligibilityMax} color="#f59e0b" />
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">Tenure</span>
-                  <ScoreBar value={r.tenure} max={r.tenureMax} color="#8b5cf6" />
-                </div>
               </div>
 
-              {/* Raw data detail line — sources shown; missing fields read "Not on file" */}
+              {/* Raw data detail line */}
               <p className="!mb-0 mt-1 text-[10px] text-slate-400">
-                IPCR {r.ipcrScore != null ? r.ipcrScore.toFixed(2) : 'Not on file'}/5 · {r.yearsOfService.toFixed(1)} yr tenure
+                IPCR {r.ipcrScore != null ? r.ipcrScore.toFixed(2) : 'Not on file'}/5
                 {` · ${r.relevantTrainings} completed training${r.relevantTrainings === 1 ? '' : 's'}`}
-                {r.relevantTrainingHours ? ` (${r.relevantTrainingHours}h)` : ''}
+                {r.relevantTrainingHours ? ` (${r.relevantTrainingHours}h` : ''}
+                {r.trainingHoursRequired != null
+                  ? ` / ${r.trainingHoursRequired}h required — ${
+                      r.trainingMeetsRequirement ? '✓ meets requirement' : '⚠ below requirement'
+                    })`
+                  : r.relevantTrainingHours ? ')' : ''}
                 {r.mostRecentTrainingDate ? ` · last ${new Date(r.mostRecentTrainingDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}` : ''}
                 {` · Educ: ${r.educationLabel ?? 'Not on file'}`}
                 {` · Elig: ${r.eligibilityLabel ?? 'Not on file'}`}
@@ -829,21 +864,6 @@ const AutoSuccessorRow = ({
                 </p>
               )}
             </>
-          ) : (
-            <div className="!mb-0 mt-1.5 rounded-md bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-500">
-              <p className="!mb-0 flex items-center gap-1.5">
-                <AlertTriangle size={12} className="shrink-0 text-amber-500" />
-                {r.incompleteReason ?? 'Incomplete data'} — not ranked (only IPCR is missing; other records below).
-              </p>
-              <p className="!mb-0 mt-1 pl-[18px] text-slate-500">
-                {r.yearsOfService.toFixed(1)} yr tenure
-                {` · Educ: ${r.educationLabel ?? 'Not on file'}`}
-                {` · Elig: ${r.eligibilityLabel ?? 'Not on file'}`}
-                {` · ${r.relevantTrainings} completed training${r.relevantTrainings === 1 ? '' : 's'}`}
-                {r.relevantTrainingHours ? ` (${r.relevantTrainingHours}h)` : ''}
-                {r.mostRecentTrainingDate ? ` · last ${new Date(r.mostRecentTrainingDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}` : ''}
-              </p>
-            </div>
           )}
 
           {successor.manualNote && <p className="!mb-0 mt-1 text-xs italic text-slate-500">"{successor.manualNote}"</p>}
@@ -989,6 +1009,49 @@ const CandidatePicker = ({
           className="sp-input resize-y"
          />
       </div>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GateFailureRow — renders one employee in the "Not Yet Qualified" section
+// ─────────────────────────────────────────────────────────────────────────────
+
+const GateFailureRow = ({ failure }: { failure: GateFailure }) => {
+  const navigate = useNavigate();
+  const openArchive = () => {
+    const params = new URLSearchParams({ module: 'archive', employee: failure.employeeId });
+    if (failure.department) params.set('office', failure.department);
+    navigate(`/admin/lnd?${params.toString()}`);
+  };
+
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1.5 border-b border-slate-100 px-4 py-3 last:border-0">
+      <div className="min-w-0">
+        <p className="!mb-0 text-sm font-semibold text-[var(--text-primary)]">{failure.employeeName}</p>
+        <p className="!mb-0 text-xs text-[var(--text-secondary)]">
+          {failure.currentPosition ?? '—'}
+          {failure.department ? ` · ${failure.department}` : ''}
+        </p>
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {failure.failedGates.map((g, i) => (
+            <span
+              key={i}
+              className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-medium text-red-700"
+            >
+              <AlertTriangle size={10} className="shrink-0" />
+              {g}
+            </span>
+          ))}
+        </div>
+      </div>
+      <button
+        onClick={openArchive}
+        className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-[var(--border-color)] px-2 py-1.5 text-[11px] font-semibold text-blue-600 hover:bg-blue-50"
+        title="Open this employee's L&D Archive training history"
+      >
+        <ExternalLink size={12} /> L&D Archive
+      </button>
     </div>
   );
 };

@@ -38,6 +38,16 @@ import {
   type TrainingRequirement,
 } from '../lib/api/succession';
 
+/** Predefined training category options for the multi-select gate field. */
+export const SUCCESSION_TRAINING_CATEGORIES = [
+  'Leadership',
+  'Technical',
+  'Supervisory/Managerial',
+  'Values and Ethics',
+  'Customer Service',
+  'Administrative',
+] as const;
+
 export const IPCR_RATING_OPTIONS = ['Outstanding', 'Very Satisfactory', 'Satisfactory', 'Unsatisfactory', 'Poor'] as const;
 
 interface CriticalPositionPageProps {
@@ -65,6 +75,9 @@ type PositionFormState = {
   competencyDrafts: CompetencyDraftRow[];
   trainingDrafts: string[];
   trainingDraft: string;
+  // Training gate thresholds (migration 20260818)
+  requiredTrainingHours: string;         // '' = no threshold
+  requiredTrainingCategories: string[];  // e.g. ["Leadership", "Technical"]
 };
 
 const emptyForm: PositionFormState = {
@@ -82,6 +95,8 @@ const emptyForm: PositionFormState = {
   competencyDrafts: [],
   trainingDrafts: [],
   trainingDraft: '',
+  requiredTrainingHours: '',
+  requiredTrainingCategories: [],
 };
 
 export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: CriticalPositionPageProps) => {
@@ -285,6 +300,8 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
       competencyDrafts: [],
       trainingDrafts: [],
       trainingDraft: '',
+      requiredTrainingHours: position.requiredTrainingHours != null ? String(position.requiredTrainingHours) : '',
+      requiredTrainingCategories: position.requiredTrainingCategories ?? [],
     });
     setModal({ mode, position });
 
@@ -311,12 +328,16 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
     // time) keeps RSP's Succession Planning and Gap Analysis reading one shape,
     // and they refresh from the posting whenever this is saved.
     const posted = selectedQuals;
+    const trainingHours = form.requiredTrainingHours.trim() !== '' ? Number(form.requiredTrainingHours) : null;
     const payload = {
       positionDescription: posted?.positionDescription || null,
       minYearsExperience: posted?.minYearsExperience ? Number(posted.minYearsExperience) : null,
       requiredEducation: posted?.requiredEducation || null,
       requiredEligibility: posted?.requiredEligibility || null,
       requiredCertifications: posted?.requiredCertifications ?? [],
+      // Training gate thresholds (admin-editable, not pulled from job posting)
+      requiredTrainingHours: trainingHours,
+      requiredTrainingCategories: form.requiredTrainingCategories,
     };
 
     const res =
@@ -713,6 +734,69 @@ export const CriticalPositionPage = ({ officeId, officeName, currentUserName }: 
                     )}
                   </div>
                 </Field>
+
+                {/* ── Succession Training Gate Thresholds ── */}
+                <div className="border-t border-slate-100 pt-4 space-y-4">
+                  <div>
+                    <h4 className="!mb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Succession Gate · Training Thresholds</h4>
+                    <p className="!mb-3 text-xs text-[var(--text-muted)]">
+                      Stage 1 of succession gate. Employees who fail either criterion are moved to "Not Yet Qualified" and excluded from the ranked list.
+                    </p>
+                  </div>
+                  <Field label="Minimum training hours (optional)">
+                    {readOnly ? (
+                      <p className="cp-static">{form.requiredTrainingHours ? `${form.requiredTrainingHours} hours` : <span className="text-slate-400">No minimum set</span>}</p>
+                    ) : (
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={form.requiredTrainingHours}
+                        onChange={(e) => setForm((f) => ({ ...f, requiredTrainingHours: e.target.value }))}
+                        placeholder="e.g. 40"
+                        className="cp-input"
+                      />
+                    )}
+                    <p className="!mb-0 mt-1 text-xs text-[var(--text-muted)]">Leave blank for no minimum. Employees below this total are excluded from the ranked list.</p>
+                  </Field>
+                  <Field label="Required training categories (optional)">
+                    {readOnly ? (
+                      <p className="cp-static">
+                        {form.requiredTrainingCategories.length > 0
+                          ? form.requiredTrainingCategories.join(', ')
+                          : <span className="text-slate-400">No category gate set</span>}
+                      </p>
+                    ) : (
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        {SUCCESSION_TRAINING_CATEGORIES.map((cat) => {
+                          const selected = form.requiredTrainingCategories.includes(cat);
+                          return (
+                            <button
+                              key={cat}
+                              type="button"
+                              onClick={() =>
+                                setForm((f) => ({
+                                  ...f,
+                                  requiredTrainingCategories: selected
+                                    ? f.requiredTrainingCategories.filter((c) => c !== cat)
+                                    : [...f.requiredTrainingCategories, cat],
+                                }))
+                              }
+                              className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                                selected
+                                  ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                                  : 'border-[var(--border-color)] bg-white text-[var(--text-secondary)] hover:border-indigo-300 hover:bg-indigo-50/40'
+                              }`}
+                            >
+                              {selected && '✓ '}{cat}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <p className="!mb-0 mt-1 text-xs text-[var(--text-muted)]">Employees must have at least one completed training in each selected category.</p>
+                  </Field>
+                </div>
 
               </div>
             </div>

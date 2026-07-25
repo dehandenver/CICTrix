@@ -63,6 +63,10 @@ export interface CriticalPosition {
   requiredEducation: string | null;
   requiredEligibility: string | null;
   requiredCertifications: string[];
+  // Training gate + weight overrides (migration 20260818)
+  requiredTrainingHours: number | null;           // minimum hours floor for Stage 1 gate
+  requiredTrainingCategories: string[];           // required category labels (e.g. ["Leadership"])
+  successionWeights: SuccessionWeights | null;    // per-position override; null = use global defaults
 }
 
 export interface CompetencyRequirement {
@@ -109,33 +113,38 @@ export interface EmployeeOption {
 // Readiness Score — transparent 100-point weighted rubric
 //
 // Weights are CONFIGURABLE via SUCCESSION_WEIGHTS (single source of truth), so
-// HR can retune the model without touching scoring logic. Defaults:
-//   Latest IPCR Rating         30
-//   Relevant Training History  25
-//   Tenure                     20
-//   Educational Qualification  15
-//   Civil Service Eligibility  10
+// HR can retune the model without touching scoring logic. Defaults (Tenure
+// removed per 2026-07-26 spec update):
+//   Latest IPCR Rating         35
+//   Relevant Training History  30
+//   Educational Qualification  20
+//   Civil Service Eligibility  15
 // Every component is computed from verified records only; a missing required
-// record (no finalized IPCR) marks the candidate Incomplete and drops them from
-// the ranked list rather than guessing a value.
+// record (no finalized IPCR) marks the candidate as a gate failure and moves
+// them to the "Not Yet Qualified" section rather than ranking them at zero.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Criterion weights (must sum to 100). Centralised so the model is tunable in
- * one place — a future HR "adjust weights per critical role" UI writes here.
+ * Global default criterion weights (must sum to 100). Centralised so the model
+ * is tunable in one place. Per-position overrides can be stored in
+ * critical_positions.succession_weights (JSONB) — the scoring functions accept
+ * an optional weights parameter and fall back to these defaults.
+ *
+ * Tenure has been removed entirely per the 2026-07-26 succession-gate spec.
  */
 export const SUCCESSION_WEIGHTS = {
-  ipcr: 30,
-  training: 25,
-  tenure: 20,
-  education: 15,
-  eligibility: 10,
+  ipcr: 35,
+  training: 30,
+  education: 20,
+  eligibility: 15,
 } as const;
+
+export type SuccessionWeights = typeof SUCCESSION_WEIGHTS;
 
 export type SuccessionTier = 'Ready Now' | 'Ready in 1–2 Years' | 'Developmental';
 
 export interface ReadinessScore {
-  total: number;                 // 0–100 (weighted sum; 0 when data incomplete)
+  total: number;                 // 0–100 (weighted sum)
   education: number;
   educationMax: number;
   ipcr: number;
@@ -144,28 +153,55 @@ export interface ReadinessScore {
   trainingMax: number;
   eligibility: number;
   eligibilityMax: number;
-  tenure: number;
-  tenureMax: number;
-  /** Readiness tier from the total; null when data is incomplete. */
+  // Tenure removed per 2026-07-26 spec — no tenure field here any more.
+  /** Readiness tier from the total. */
   tier: SuccessionTier | null;
   // Raw context shown alongside the bars
   ipcrScore: number | null;      // raw 1–5 IPCR score
   adjectival: string | null;
   ratedPeriod: string | null;
-  yearsOfService: number;        // raw years
   educationLabel: string | null;
   eligibilityLabel: string | null;
-  /** Count of completed trainings on file (drives Volume/Recency/Hours). */
+  /** Count of completed trainings on file. */
   relevantTrainings: number;
   relevantTrainingHours: number;
   mostRecentTrainingDate: string | null;
   mostRecentTrainingTitle: string | null;
-  /** Subset that are role/category-fit (Leadership or field-matching) — the Relevance bonus. */
+  /** Subset that are role/category-fit (Leadership or field-matching). */
   categoryFitTrainings: number;
+  /** Required training hours for this position (null = no threshold set). */
+  trainingHoursRequired: number | null;
+  /** True when the employee meets the position's training hours + category gate. */
+  trainingMeetsRequirement: boolean;
   matchedKeyword: string | null; // field keyword that matched the position
-  /** False when a required record (IPCR) is missing — excluded from ranking. */
+  /** Always true here — non-passers never reach ReadinessScore; they land in GateFailure. */
   dataComplete: boolean;
   incompleteReason: string | null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Gate-failure record — employees who did NOT clear all Stage 1 gates.
+// Returned in the "notQualified" array of AutoSuccessorsResult so the UI can
+// render a collapsed "Not Yet Qualified (N)" section with per-gate reasons.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface GateFailure {
+  employeeId: string;
+  employeeName: string;
+  currentPosition: string | null;
+  department: string | null;
+  /** Each string describes one failed gate, e.g. "Missing finalized IPCR". */
+  failedGates: string[];
+  /** Present when the employee also has a manual succession_candidates row. */
+  candidateId: string | null;
+}
+
+/** Combined result from listAutoSuccessors. */
+export interface AutoSuccessorsResult {
+  /** Gate-passers, ranked highest score first. */
+  qualified: AutoSuccessor[];
+  /** Gate-failures, in alphabetical order. */
+  notQualified: GateFailure[];
 }
 
 export interface AutoSuccessor {
@@ -177,6 +213,8 @@ export interface AutoSuccessor {
   isManuallyAdded: boolean;  // false for auto-discovered, true for manually added
   manualNote: string | null; // only for manually-added entries
   candidateId: string | null; // succession_candidates.id, null for auto-discovered
+  /** True for manually-added entries that bypassed Stage 1 gates. */
+  gatesBypassed: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -420,6 +458,10 @@ export async function listCriticalPositions(departmentId: string): Promise<Resul
       requiredEducation: r.required_education ?? null,
       requiredEligibility: r.required_eligibility ?? null,
       requiredCertifications: Array.isArray(r.required_certifications) ? r.required_certifications : [],
+      // Training gate + weight overrides (migration 20260818)
+      requiredTrainingHours: r.required_training_hours != null ? Number(r.required_training_hours) : null,
+      requiredTrainingCategories: Array.isArray(r.required_training_categories) ? r.required_training_categories : [],
+      successionWeights: r.succession_weights ?? null,
     }));
     return { ok: true, data: data2 };
   } catch (err) {
@@ -450,6 +492,9 @@ export async function createCriticalPosition(input: {
   requiredEducation?: string | null;
   requiredEligibility?: string | null;
   requiredCertifications?: string[];
+  requiredTrainingHours?: number | null;
+  requiredTrainingCategories?: string[];
+  successionWeights?: SuccessionWeights | null;
 }): Promise<Result<CriticalPosition>> {
   try {
     if (!input.title.trim()) return { ok: false, error: 'A position title is required.' };
@@ -468,6 +513,9 @@ export async function createCriticalPosition(input: {
         required_education: input.requiredEducation?.trim() || null,
         required_eligibility: input.requiredEligibility?.trim() || null,
         required_certifications: input.requiredCertifications ?? [],
+        required_training_hours: input.requiredTrainingHours ?? null,
+        required_training_categories: input.requiredTrainingCategories ?? [],
+        succession_weights: input.successionWeights ?? null,
       })
       .select()
       .single();
@@ -491,6 +539,9 @@ export async function createCriticalPosition(input: {
         requiredEducation: data.required_education ?? null,
         requiredEligibility: data.required_eligibility ?? null,
         requiredCertifications: Array.isArray(data.required_certifications) ? data.required_certifications : [],
+        requiredTrainingHours: data.required_training_hours != null ? Number(data.required_training_hours) : null,
+        requiredTrainingCategories: Array.isArray(data.required_training_categories) ? data.required_training_categories : [],
+        successionWeights: data.succession_weights ?? null,
       },
     };
   } catch (err) {
@@ -511,6 +562,9 @@ export async function updateCriticalPosition(
     requiredEducation?: string | null;
     requiredEligibility?: string | null;
     requiredCertifications?: string[];
+    requiredTrainingHours?: number | null;
+    requiredTrainingCategories?: string[];
+    successionWeights?: SuccessionWeights | null;
   },
 ): Promise<Result<null>> {
   try {
@@ -525,6 +579,9 @@ export async function updateCriticalPosition(
     if (patch.requiredEducation !== undefined) update.required_education = patch.requiredEducation?.trim() || null;
     if (patch.requiredEligibility !== undefined) update.required_eligibility = patch.requiredEligibility?.trim() || null;
     if (patch.requiredCertifications !== undefined) update.required_certifications = patch.requiredCertifications;
+    if (patch.requiredTrainingHours !== undefined) update.required_training_hours = patch.requiredTrainingHours;
+    if (patch.requiredTrainingCategories !== undefined) update.required_training_categories = patch.requiredTrainingCategories;
+    if (patch.successionWeights !== undefined) update.succession_weights = patch.successionWeights;
     const { error } = await supabase.from('critical_positions').update(update).eq('id', id);
     if (error) return { ok: false, error: error.message };
     return { ok: true, data: null };
@@ -1062,43 +1119,97 @@ function educationRatio(empEdu: string | null, requiredEdu: string | null): numb
   return 0.3;
 }
 
-/** Eligibility fit as a 0–1 ratio, from recorded values only. */
+/**
+ * Eligibility tier level for Professional vs Sub-Professional gate comparison.
+ * Returns 2 for Professional, 1 for Sub-Professional, 0 for nothing on record.
+ */
+function eligibilityLevel(label: string | null | undefined): number {
+  const s = String(label ?? '').trim().toLowerCase();
+  if (!s) return 0;
+  // "sub-professional" must be checked first (contains "professional" as substring)
+  if (s.includes('sub-professional') || s.includes('sub professional')) return 1;
+  if (s.includes('professional')) return 2;
+  // Has some eligibility on file but not CSC professional scale — treat as sub-pro level
+  return 1;
+}
+
+/** Required eligibility level from the position's requiredEligibility text. */
+function requiredEligibilityLevel(req: string | null | undefined): number {
+  const s = String(req ?? '').trim().toLowerCase();
+  if (!s) return 0; // no requirement
+  if (s.includes('sub-professional') || s.includes('sub professional')) return 1;
+  if (s.includes('professional')) return 2;
+  return 1; // generic "eligibility required" → at least sub-pro
+}
+
+/** Eligibility fit as a 0–1 ratio for scoring (gate check is stricter). */
 function eligibilityRatio(empElig: string | null, requiredElig: string | null): number {
-  const emp = String(empElig ?? '').trim().toLowerCase();
-  if (!emp) return 0; // no record
-  const req = String(requiredElig ?? '').trim().toLowerCase();
-  if (!req) return 1; // no requirement → a recorded eligibility meets it
-  const tokens = req.split(/[^a-z0-9]+/).filter((t) => t.length > 2);
-  return tokens.some((t) => emp.includes(t)) ? 1 : 0.5;
+  const empLevel = eligibilityLevel(empElig);
+  if (empLevel === 0) return 0; // no record
+  const reqLevel = requiredEligibilityLevel(requiredElig);
+  if (reqLevel === 0) return 1; // no requirement → a recorded eligibility meets it
+  return empLevel >= reqLevel ? 1 : 0.5;
 }
 
 /**
- * Training subscore, out of SUCCESSION_WEIGHTS.training (default 25), from an
- * employee's completed L&D Archive records. Documented 4-part budget:
- *   Volume    10  — 0=0, 1–2=4, 3–5=7, 6+=10 completed trainings
- *   Recency    8  — last completed ≤12mo=8, ≤24mo=6, ≤36mo=3, else/none=0
- *   Relevance  5  — role/category-fit trainings (Leadership or field-matching)
- *   Hours      2  — total hours toward a 40-hr threshold
- * Counts ALL completed trainings for volume/recency/hours (a completed training
- * is developmental regardless of exact title); relevance is the only field-gated
- * part. Scaled to the configured training weight if it differs from 25.
+ * Training subscore, out of W.training (default 30), measured relative to the
+ * position's required training threshold:
+ *
+ *   If the position has a required_training_hours threshold (T):
+ *     - Hours component (60% of weight): employee_hours / T, capped at 1.0
+ *     - Recency component (25% of weight): same bands as before
+ *     - Category fit component (15% of weight): any required-category training met
+ *
+ *   If no threshold is set (T = null):
+ *     Falls back to the volume/recency/relevance/hours heuristic used before
+ *     (same logic, just relative to the 40-hr default).
+ *
+ * Scaled to the configured training weight.
  */
 function scoreTraining(input: {
   completed: number;
   hours: number;
   mostRecentDate: string | null;
   categoryFit: number;
+  requiredHours: number | null;
+  requiredCategories: string[];
+  empCategories: string[];       // actual training category labels employee has
+  W: SuccessionWeights;
 }): number {
-  const volume = input.completed === 0 ? 0 : input.completed <= 2 ? 4 : input.completed <= 5 ? 7 : 10;
+  const { W } = input;
+  const totalWeight = W.training; // e.g. 30
+
+  // Recency component (shared between both modes)
   let recency = 0;
   if (input.mostRecentDate) {
     const months = (Date.now() - new Date(input.mostRecentDate).getTime()) / (30.44 * 24 * 60 * 60 * 1000);
-    recency = months <= 12 ? 8 : months <= 24 ? 6 : months <= 36 ? 3 : 0;
+    recency = months <= 12 ? 1 : months <= 24 ? 0.75 : months <= 36 ? 0.375 : 0;
   }
+
+  if (input.requiredHours != null && input.requiredHours > 0) {
+    // Threshold-relative mode
+    const hoursRatio = Math.min(1, input.hours / input.requiredHours);    // 60%
+    const recencyRatio = recency;                                          // 25%
+    // Category fit: full credit if all required categories met, partial otherwise
+    let catRatio = 1;
+    if (input.requiredCategories.length > 0) {
+      const empCatNorm = input.empCategories.map((c) => c.trim().toLowerCase());
+      const met = input.requiredCategories.filter((rc) =>
+        empCatNorm.some((ec) => ec.includes(rc.toLowerCase()) || rc.toLowerCase().includes(ec)),
+      ).length;
+      catRatio = met / input.requiredCategories.length;                    // 15%
+    }
+    const ratio = 0.60 * hoursRatio + 0.25 * recencyRatio + 0.15 * catRatio;
+    return Number((ratio * totalWeight).toFixed(1));
+  }
+
+  // Heuristic mode (no hours threshold)
+  const volume = input.completed === 0 ? 0 : input.completed <= 2 ? 4 : input.completed <= 5 ? 7 : 10;
+  const recencyPts = recency * 8;
   const relevance = (Math.min(input.categoryFit, 3) / 3) * 5;
   const hours = (Math.min(input.hours, 40) / 40) * 2;
-  const outOf25 = volume + recency + relevance + hours; // 0–25
-  return Number(((outOf25 / 25) * SUCCESSION_WEIGHTS.training).toFixed(1));
+  const outOf25 = volume + recencyPts + relevance + hours; // 0–25 (legacy scale)
+  return Number(((outOf25 / 25) * totalWeight).toFixed(1));
 }
 
 /** Readiness tier from the weighted total. */
@@ -1112,7 +1223,6 @@ function computeReadinessScore(input: {
   ipcrScore: number | null;
   adjectival: string | null;
   ratedPeriod: string | null;
-  yearsOfService: number;
   matchedKeyword: string | null;
   empEducation: string | null;
   requiredEducation: string | null;
@@ -1123,42 +1233,59 @@ function computeReadinessScore(input: {
   mostRecentTrainingDate: string | null;
   mostRecentTrainingTitle: string | null;
   categoryFitTrainings: number;
+  empTrainingCategories: string[];        // category labels employee has completed
+  requiredTrainingHours: number | null;   // position's required hours threshold
+  requiredTrainingCategories: string[];   // position's required category labels
+  W: SuccessionWeights;                   // weights (per-position or global defaults)
 }): ReadinessScore {
-  const W = SUCCESSION_WEIGHTS;
   const w1 = (ratio: number, weight: number) => Number((ratio * weight).toFixed(1));
 
-  const education = w1(educationRatio(input.empEducation, input.requiredEducation), W.education);
-  const ipcr = input.ipcrScore != null ? w1(input.ipcrScore / 5, W.ipcr) : 0;
+  const education = w1(educationRatio(input.empEducation, input.requiredEducation), input.W.education);
+  const ipcr = input.ipcrScore != null ? w1(input.ipcrScore / 5, input.W.ipcr) : 0;
   const training = scoreTraining({
     completed: input.relevantTrainings,
     hours: input.relevantTrainingHours,
     mostRecentDate: input.mostRecentTrainingDate,
     categoryFit: input.categoryFitTrainings,
+    requiredHours: input.requiredTrainingHours,
+    requiredCategories: input.requiredTrainingCategories,
+    empCategories: input.empTrainingCategories,
+    W: input.W,
   });
-  const eligibility = w1(eligibilityRatio(input.empEligibility, input.requiredEligibility), W.eligibility);
-  const tenure = w1(Math.min(input.yearsOfService, 15) / 15, W.tenure);
+  const eligibility = w1(eligibilityRatio(input.empEligibility, input.requiredEligibility), input.W.eligibility);
 
-  const dataComplete = input.ipcrScore != null; // IPCR is the required record for scoring
+  // Gate-passers always have a valid IPCR score (non-passers are GateFailure)
+  const dataComplete = input.ipcrScore != null;
   const total = dataComplete
-    ? Number((education + ipcr + training + eligibility + tenure).toFixed(1))
+    ? Number((education + ipcr + training + eligibility).toFixed(1))
     : 0;
+
+  // Check if training meets the threshold (informational, gate already passed)
+  const hoursReq = input.requiredTrainingHours;
+  const trainingMeetsRequirement =
+    (hoursReq == null || input.relevantTrainingHours >= hoursReq) &&
+    (input.requiredTrainingCategories.length === 0 ||
+      (() => {
+        const empCatNorm = input.empTrainingCategories.map((c) => c.trim().toLowerCase());
+        return input.requiredTrainingCategories.every((rc) =>
+          empCatNorm.some((ec) => ec.includes(rc.toLowerCase()) || rc.toLowerCase().includes(ec)),
+        );
+      })());
+
   return {
     total,
     education,
-    educationMax: W.education,
+    educationMax: input.W.education,
     ipcr,
-    ipcrMax: W.ipcr,
+    ipcrMax: input.W.ipcr,
     training,
-    trainingMax: W.training,
+    trainingMax: input.W.training,
     eligibility,
-    eligibilityMax: W.eligibility,
-    tenure,
-    tenureMax: W.tenure,
+    eligibilityMax: input.W.eligibility,
     tier: dataComplete ? tierFromTotal(total) : null,
     ipcrScore: input.ipcrScore,
     adjectival: input.adjectival,
     ratedPeriod: input.ratedPeriod,
-    yearsOfService: input.yearsOfService,
     educationLabel: input.empEducation,
     eligibilityLabel: input.empEligibility,
     relevantTrainings: input.relevantTrainings,
@@ -1166,13 +1293,15 @@ function computeReadinessScore(input: {
     mostRecentTrainingDate: input.mostRecentTrainingDate,
     mostRecentTrainingTitle: input.mostRecentTrainingTitle,
     categoryFitTrainings: input.categoryFitTrainings,
+    trainingHoursRequired: input.requiredTrainingHours,
+    trainingMeetsRequirement,
     matchedKeyword: input.matchedKeyword,
     dataComplete,
     incompleteReason: dataComplete ? null : 'No current IPCR record',
   };
 }
 
-/** Years since date_hired until today, floored at 0. */
+/** Years since date_hired until today, floored at 0. (Kept for reference; no longer scored.) */
 function yearsFromHireDate(dateHired: string | null): number {
   if (!dateHired) return 0;
   const d = new Date(dateHired);
@@ -1181,41 +1310,71 @@ function yearsFromHireDate(dateHired: string | null): number {
   return Math.max(0, Number((ms / (365.25 * 24 * 60 * 60 * 1000)).toFixed(1)));
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// IPCR adjectival rank (for minimum-IPCR gate comparison)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const IPCR_RANK: Record<string, number> = {
+  Poor: 1,
+  Unsatisfactory: 2,
+  Satisfactory: 3,
+  'Very Satisfactory': 4,
+  Outstanding: 5,
+};
+
+function ipcrRank(adjectival: string | null): number {
+  return IPCR_RANK[String(adjectival ?? '').trim()] ?? 0;
+}
+
 /**
  * Auto-discover, score, and rank successors for a critical position.
  *
- * The engine works in five steps:
- *   1. Gate: only employees with a completed IPCR enter the pool.
- *   2. Filter: the employee's current position must share a field keyword
- *      with the critical position's title.
- *   3. Score: transparent 100-point rubric (Performance 60, Tenure 25, Field 15).
- *   4. Merge: manually-added succession_candidates are included and scored
- *      the same way (but flagged as manual).
- *   5. Rank: highest readiness score first.
+ * Two-stage model (per 2026-07-26 succession-gate spec):
+ *
+ *   Stage 1 — Eligibility Gate (pass/fail):
+ *     An employee must pass ALL of the following to enter the ranked list:
+ *       1. Employment Status: Regular/Permanent, Active, not Probationary
+ *       2. Position Match: position-field keyword match with the critical role
+ *       3. Minimum Education: meets or exceeds the position's education floor
+ *       4. Eligibility Match: CSC level meets or exceeds the position's requirement
+ *       5. Minimum IPCR: has a finalized IPCR at or above the position's min rating
+ *       6. Minimum Training: meets the position's required hours and/or categories
+ *     Employees failing even one gate go to notQualified (not shown inline).
+ *
+ *   Stage 2 — Weighted Scoring (gate-passers only):
+ *     IPCR 35 + Training 30 + Education 20 + Eligibility 15 = 100 pts.
+ *     Per-position weight overrides from critical_positions.succession_weights
+ *     are applied when present.
+ *
+ *   Manually-added succession_candidates bypass Stage 1 gates (they are
+ *   deliberate HR decisions) and are always placed in the ranked list,
+ *   with gatesBypassed = true.
  */
 export async function listAutoSuccessors(
   criticalPositionId: string,
-): Promise<Result<AutoSuccessor[]>> {
+): Promise<Result<AutoSuccessorsResult>> {
   try {
-    // ── Fetch the critical position + its qualification requirements ─────────
+    // ── Fetch the critical position + all gate/scoring configuration ───────────
     const { data: posRow, error: posErr } = await supabase
       .from('critical_positions')
-      .select('id, title, required_education, required_eligibility')
+      .select('id, title, required_education, required_eligibility, min_ipcr_rating, required_training_hours, required_training_categories, succession_weights')
       .eq('id', criticalPositionId)
       .maybeSingle();
     if (posErr) return { ok: false, error: posErr.message };
     if (!posRow) return { ok: false, error: 'Critical position not found.' };
-    const positionTitle = String(posRow.title ?? '');
-    const requiredEducation = posRow.required_education ?? null;
-    const requiredEligibility = posRow.required_eligibility ?? null;
 
-    // ── Eligibility gate — Regular/Permanent, Active, not Probationary ───────
-    // Unlike before, IPCR is NOT a gate: a gate-passing employee with no
-    // finalized IPCR still appears, flagged "Incomplete Data" and excluded from
-    // ranking (per spec) rather than silently dropped.
+    const positionTitle = String(posRow.title ?? '');
+    const requiredEducation: string | null = posRow.required_education ?? null;
+    const requiredEligibility: string | null = posRow.required_eligibility ?? null;
+    const minIpcrRating: string | null = posRow.min_ipcr_rating ?? null;
+    const requiredTrainingHours: number | null = posRow.required_training_hours != null ? Number(posRow.required_training_hours) : null;
+    const requiredTrainingCategories: string[] = Array.isArray(posRow.required_training_categories) ? posRow.required_training_categories : [];
+    const W: SuccessionWeights = posRow.succession_weights ?? SUCCESSION_WEIGHTS;
+
+    // ── Load all Regular/Permanent, Active employees ───────────────────────
     const { data: empRows, error: empErr } = await supabase
       .from('employees')
-      .select('id, first_name, middle_name, last_name, position, department, employment_status, status, date_hired, highest_educational_attainment, eligibility')
+      .select('id, first_name, middle_name, last_name, position, department, employment_status, status, highest_educational_attainment, eligibility')
       .eq('status', 'Active')
       .in('employment_status', ['Regular', 'Permanent']);
     if (empErr) return { ok: false, error: empErr.message };
@@ -1228,31 +1387,27 @@ export async function listAutoSuccessors(
       return !!sharedFieldKeyword(title, positionTitle) || posTokens.some((tok) => t.includes(tok));
     };
 
-    // Field-match the gated pool against the target position.
-    const matched = ((empRows ?? []) as any[])
+    // Gate 1+2: Status + position-field keyword match (pre-filter)
+    const positioned = ((empRows ?? []) as any[])
       .filter((e) => String(e.employment_status ?? '').toLowerCase() !== 'probationary')
       .map((e) => ({ e, keyword: sharedFieldKeyword(String(e.position ?? ''), positionTitle) }))
       .filter(({ keyword }) => !!keyword);
 
-    const matchedIds = matched.map(({ e }) => String(e.id));
+    const positionedIds = positioned.map(({ e }) => String(e.id));
 
-    // Scores + relevant training history for the matched pool.
+    // ── Bulk-fetch IPCR scores + training history for the positioned pool ────
     const [scores, { data: trainingRows }] = await Promise.all([
-      getLatestOverallScores(matchedIds),
-      matchedIds.length
+      getLatestOverallScores(positionedIds),
+      positionedIds.length
         ? supabase
             .from('employee_training')
             .select('employee_id, training_title, training_type, number_of_hours, from_date')
-            .in('employee_id', matchedIds)
+            .in('employee_id', positionedIds)
         : Promise.resolve({ data: [] as any[] }),
     ]);
 
-    // Aggregate ALL completed trainings per employee (volume/recency/hours),
-    // tracking the role/category-fit subset (Leadership or field-matching) for
-    // the Relevance bonus. A completed training counts regardless of whether its
-    // title literally names the target position.
-    type Agg = { count: number; hours: number; latest: string | null; latestTitle: string | null; fit: number };
-    const emptyAgg = (): Agg => ({ count: 0, hours: 0, latest: null, latestTitle: null, fit: 0 });
+    type Agg = { count: number; hours: number; latest: string | null; latestTitle: string | null; fit: number; categories: string[] };
+    const emptyAgg = (): Agg => ({ count: 0, hours: 0, latest: null, latestTitle: null, fit: 0, categories: [] });
     const addTraining = (agg: Agg, t: any) => {
       agg.count += 1;
       agg.hours += Number(t.number_of_hours ?? 0);
@@ -1260,7 +1415,9 @@ export async function listAutoSuccessors(
         agg.latest = t.from_date;
         agg.latestTitle = t.training_title ?? null;
       }
-      if (t.training_type === 'Leadership' || isRelevantTraining(t.training_title)) agg.fit += 1;
+      const cat = String(t.training_type ?? '').trim();
+      if (cat && !agg.categories.includes(cat)) agg.categories.push(cat);
+      if (cat === 'Leadership' || isRelevantTraining(t.training_title)) agg.fit += 1;
     };
     const trainAgg = new Map<string, Agg>();
     for (const t of (trainingRows ?? []) as any[]) {
@@ -1270,16 +1427,79 @@ export async function listAutoSuccessors(
       trainAgg.set(id, cur);
     }
 
-    const autoMap = new Map<string, AutoSuccessor>();
-    for (const { e, keyword } of matched) {
+    // ── Stage 1: Evaluate all gates; split into passers and failures ─────────
+    const qualifiedMap = new Map<string, AutoSuccessor>();
+    const notQualified: GateFailure[] = [];
+
+    for (const { e, keyword } of positioned) {
       const empId = String(e.id);
       const score = scores.get(empId);
       const agg = trainAgg.get(empId) ?? emptyAgg();
+      const failedGates: string[] = [];
+
+      // Gate 3: Minimum Education
+      if (requiredEducation) {
+        const empRank = educationRank(e.highest_educational_attainment ?? null);
+        const reqRank = educationRank(requiredEducation);
+        if (empRank < 0 || (reqRank >= 0 && empRank < reqRank)) {
+          const empEduLabel = e.highest_educational_attainment
+            ? `Education: ${e.highest_educational_attainment}`
+            : 'No education record on file';
+          failedGates.push(`${empEduLabel} — requires ${requiredEducation}`);
+        }
+      }
+
+      // Gate 4: Eligibility Match (strict Professional vs Sub-Professional)
+      if (requiredEligibility) {
+        const reqLevel = requiredEligibilityLevel(requiredEligibility);
+        const empLevel = eligibilityLevel(e.eligibility ?? null);
+        if (reqLevel > 0 && empLevel < reqLevel) {
+          const empEligLabel = e.eligibility ? `Eligibility: ${e.eligibility}` : 'No eligibility on file';
+          const reqLabel = reqLevel === 2 ? 'Professional' : 'Sub-Professional';
+          failedGates.push(`${empEligLabel} — requires ${reqLabel}`);
+        }
+      }
+
+      // Gate 5: Minimum IPCR Rating
+      if (!score) {
+        failedGates.push('Missing finalized IPCR');
+      } else if (minIpcrRating && ipcrRank(score.adjectival) < ipcrRank(minIpcrRating)) {
+        failedGates.push(`IPCR: ${score.adjectival ?? 'Unknown'} — requires ${minIpcrRating} or higher`);
+      }
+
+      // Gate 6: Minimum Training (hours floor + category requirements)
+      if (requiredTrainingHours != null && agg.hours < requiredTrainingHours) {
+        failedGates.push(`Training: ${agg.hours.toFixed(0)}/${requiredTrainingHours.toFixed(0)} required hours`);
+      }
+      if (requiredTrainingCategories.length > 0) {
+        const empCatNorm = agg.categories.map((c) => c.trim().toLowerCase());
+        const missingCats = requiredTrainingCategories.filter(
+          (rc) => !empCatNorm.some((ec) => ec.includes(rc.toLowerCase()) || rc.toLowerCase().includes(ec)),
+        );
+        if (missingCats.length > 0) {
+          failedGates.push(
+            `Training: missing required categor${missingCats.length === 1 ? 'y' : 'ies'}: ${missingCats.join(', ')}`,
+          );
+        }
+      }
+
+      if (failedGates.length > 0) {
+        notQualified.push({
+          employeeId: empId,
+          employeeName: fullName(e),
+          currentPosition: String(e.position ?? '') || null,
+          department: e.department ?? null,
+          failedGates,
+          candidateId: null,
+        });
+        continue;
+      }
+
+      // ── Stage 2: Score gate-passers ─────────────────────────────────────
       const readiness = computeReadinessScore({
         ipcrScore: score?.overallScore ?? null,
         adjectival: score?.adjectival ?? null,
         ratedPeriod: score?.period ?? null,
-        yearsOfService: yearsFromHireDate(e.date_hired ?? null),
         matchedKeyword: keyword,
         empEducation: e.highest_educational_attainment ?? null,
         requiredEducation,
@@ -1290,8 +1510,12 @@ export async function listAutoSuccessors(
         mostRecentTrainingDate: agg.latest,
         mostRecentTrainingTitle: agg.latestTitle,
         categoryFitTrainings: agg.fit,
+        empTrainingCategories: agg.categories,
+        requiredTrainingHours,
+        requiredTrainingCategories,
+        W,
       });
-      autoMap.set(empId, {
+      qualifiedMap.set(empId, {
         employeeId: empId,
         employeeName: fullName(e),
         currentPosition: String(e.position ?? '') || null,
@@ -1300,26 +1524,37 @@ export async function listAutoSuccessors(
         isManuallyAdded: false,
         manualNote: null,
         candidateId: null,
+        gatesBypassed: false,
       });
     }
 
-    // ── Merge manually-added candidates (bypass the field-match gate) ────────
+    // ── Merge manually-added candidates (bypass Stage 1 gates) ────────────
     const { data: manualRows } = await supabase
       .from('succession_candidates')
       .select('*')
       .eq('critical_position_id', criticalPositionId);
 
+    const failureByEmpId = new Map(notQualified.map((f) => [f.employeeId, f]));
+
     for (const mc of (manualRows ?? []) as any[]) {
       const mcId = String(mc.employee_id);
-      if (autoMap.has(mcId)) {
-        const existing = autoMap.get(mcId)!;
+
+      if (qualifiedMap.has(mcId)) {
+        const existing = qualifiedMap.get(mcId)!;
         existing.candidateId = String(mc.id);
         existing.manualNote = mc.note ?? null;
         continue;
       }
+
+      if (failureByEmpId.has(mcId)) {
+        failureByEmpId.get(mcId)!.candidateId = String(mc.id);
+        continue;
+      }
+
+      // Employee is outside the position-matched pool — fetch + score, bypassing gates
       const { data: mcEmp } = await supabase
         .from('employees')
-        .select('id, first_name, middle_name, last_name, position, department, date_hired, highest_educational_attainment, eligibility')
+        .select('id, first_name, middle_name, last_name, position, department, highest_educational_attainment, eligibility')
         .eq('id', mcId)
         .maybeSingle();
       const mcScore = scores.get(mcId) ?? (await getLatestOverallScores([mcId])).get(mcId);
@@ -1329,11 +1564,11 @@ export async function listAutoSuccessors(
         .eq('employee_id', mcId);
       const mcAgg = emptyAgg();
       for (const t of (mcTrain ?? []) as any[]) addTraining(mcAgg, t);
+
       const readiness = computeReadinessScore({
         ipcrScore: mcScore?.overallScore ?? null,
         adjectival: mcScore?.adjectival ?? null,
         ratedPeriod: mcScore?.period ?? null,
-        yearsOfService: yearsFromHireDate(mcEmp?.date_hired ?? null),
         matchedKeyword: sharedFieldKeyword(String(mcEmp?.position ?? ''), positionTitle),
         empEducation: mcEmp?.highest_educational_attainment ?? null,
         requiredEducation,
@@ -1344,8 +1579,12 @@ export async function listAutoSuccessors(
         mostRecentTrainingDate: mcAgg.latest,
         mostRecentTrainingTitle: mcAgg.latestTitle,
         categoryFitTrainings: mcAgg.fit,
+        empTrainingCategories: mcAgg.categories,
+        requiredTrainingHours,
+        requiredTrainingCategories,
+        W,
       });
-      autoMap.set(mcId, {
+      qualifiedMap.set(mcId, {
         employeeId: mcId,
         employeeName: mcEmp ? fullName(mcEmp) : '(unknown)',
         currentPosition: String(mcEmp?.position ?? '') || null,
@@ -1354,18 +1593,19 @@ export async function listAutoSuccessors(
         isManuallyAdded: true,
         manualNote: mc.note ?? null,
         candidateId: String(mc.id),
+        gatesBypassed: true,
       });
     }
 
-    // ── Sort: complete records ranked by weighted score; incomplete last ─────
-    const result = [...autoMap.values()].sort((a, b) => {
-      if (a.readiness.dataComplete !== b.readiness.dataComplete) return a.readiness.dataComplete ? -1 : 1;
+    const qualifiedList = [...qualifiedMap.values()].sort((a, b) => {
       if (b.readiness.total !== a.readiness.total) return b.readiness.total - a.readiness.total;
       if (b.readiness.ipcr !== a.readiness.ipcr) return b.readiness.ipcr - a.readiness.ipcr;
       return a.employeeName.localeCompare(b.employeeName);
     });
 
-    return { ok: true, data: result };
+    notQualified.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+
+    return { ok: true, data: { qualified: qualifiedList, notQualified } };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Failed to load auto-successors.' };
   }
