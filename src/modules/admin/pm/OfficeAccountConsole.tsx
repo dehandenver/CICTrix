@@ -1374,7 +1374,6 @@ export const OfficeAccountConsole: React.FC = () => {
                           ? { officeId: officeRole.officeId, officeName: officeRole.officeName }
                           : null
                       }
-                      allowPhaseControl={false}
                     />
                   )}
 

@@ -31,8 +31,7 @@ type LocalScore = { quality: number | null; efficiency: number | null; timelines
 export const Phase2RatingPanel: React.FC<{
   currentEmployeeId: string | null;
   officeScope?: OfficeScope | null;
-  allowPhaseControl?: boolean;
-}> = ({ currentEmployeeId, officeScope, allowPhaseControl = false }) => {
+}> = ({ currentEmployeeId, officeScope }) => {
   const [submissions, setSubmissions] = useState<RatingSheet[]>([]);
   const [collapsedPositions, setCollapsedPositions] = useState<Set<string>>(new Set());
   const [selectedSheetId, setSelectedSheetId] = useState<string | null>(null);
@@ -289,24 +288,22 @@ export const Phase2RatingPanel: React.FC<{
             Review submitted accomplishments and self-ratings, enter supervisor scores (Quality, Efficiency, Timeliness), and approve or return for revision.
           </p>
         </div>
-        {allowPhaseControl && (
-          <div className="flex shrink-0 gap-2">
-            <button
-              onClick={() => void openWindow()}
-              disabled={opening || closing}
-              className="rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3 py-2 text-xs font-semibold text-white shadow disabled:opacity-50"
-            >
-              {opening ? 'Opening…' : 'Open Rating Period'}
-            </button>
-            <button
-              onClick={() => void closeWindow()}
-              disabled={opening || closing}
-              className="rounded-lg border border-amber-300 bg-white hover:bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 disabled:opacity-50"
-            >
-              {closing ? 'Closing…' : 'Close Rating Period'}
-            </button>
-          </div>
-        )}
+        <div className="flex shrink-0 gap-2">
+          <button
+            onClick={() => void openWindow()}
+            disabled={opening || closing}
+            className="rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3 py-2 text-xs font-semibold text-white shadow disabled:opacity-50"
+          >
+            {opening ? 'Opening…' : 'Open Rating Period'}
+          </button>
+          <button
+            onClick={() => void closeWindow()}
+            disabled={opening || closing}
+            className="rounded-lg border border-amber-300 bg-white hover:bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 disabled:opacity-50"
+          >
+            {closing ? 'Closing…' : 'Close Rating Period'}
+          </button>
+        </div>
       </div>
 
       {notice && (
