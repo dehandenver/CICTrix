@@ -653,7 +653,7 @@ const CandidatesPanel = (props: CandidatesPanelProps) => {
       </div>
 
       <p className="!mb-0 text-xs text-[var(--text-secondary)]">
-        Candidates are automatically discovered from employees with a completed IPCR whose position field matches this role. Ranked by Readiness Score (Performance 60 + Tenure 25 + Field 15 = 100 points).
+        Candidates are Regular/Permanent, Active, non-probationary employees whose position field matches this role. Ranked by weighted Succession Score (Education 20 + IPCR 30 + Training 20 + Eligibility 10 + Tenure 20 = 100). Employees with no finalized IPCR are shown as Incomplete Data and are not ranked.
       </p>
 
       {loading && <p className="text-sm text-[var(--text-secondary)]">Discovering eligible successors…</p>}
@@ -734,16 +734,22 @@ const AutoSuccessorRow = ({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-semibold text-[var(--text-primary)]">{successor.employeeName}</span>
-            {/* Total score badge */}
-            <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
-              r.total >= 80 ? 'bg-green-100 text-green-700' :
-              r.total >= 60 ? 'bg-blue-100 text-blue-700' :
-              r.total >= 40 ? 'bg-amber-100 text-amber-700' :
-              'bg-slate-100 text-slate-600'
-            }`}>
-              {r.total} pts
-            </span>
-            {isTopPick && (
+            {/* Total score badge — or Incomplete Data when a required record is missing */}
+            {r.dataComplete ? (
+              <span className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                r.total >= 80 ? 'bg-green-100 text-green-700' :
+                r.total >= 60 ? 'bg-blue-100 text-blue-700' :
+                r.total >= 40 ? 'bg-amber-100 text-amber-700' :
+                'bg-slate-100 text-slate-600'
+              }`}>
+                {r.total} pts
+              </span>
+            ) : (
+              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-500" title={r.incompleteReason ?? undefined}>
+                Incomplete Data
+              </span>
+            )}
+            {isTopPick && r.dataComplete && (
               <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm">
                 ★ System Recommendation
               </span>
@@ -764,27 +770,49 @@ const AutoSuccessorRow = ({
             {r.ratedPeriod ? ` · ${r.ratedPeriod}` : ''}
           </p>
 
-          {/* Points breakdown */}
-          <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">Performance</span>
-              <ScoreBar value={r.performance} max={r.performanceMax} color="#3b82f6" />
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">Tenure</span>
-              <ScoreBar value={r.tenure} max={r.tenureMax} color="#8b5cf6" />
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">Field</span>
-              <ScoreBar value={r.fieldMatch} max={r.fieldMatchMax} color="#10b981" />
-            </div>
-          </div>
+          {/* Weighted points breakdown — only when the record is complete enough to score */}
+          {r.dataComplete ? (
+            <>
+              <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">Education</span>
+                  <ScoreBar value={r.education} max={r.educationMax} color="#0ea5e9" />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">IPCR</span>
+                  <ScoreBar value={r.ipcr} max={r.ipcrMax} color="#3b82f6" />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">Training</span>
+                  <ScoreBar value={r.training} max={r.trainingMax} color="#10b981" />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">Eligibility</span>
+                  <ScoreBar value={r.eligibility} max={r.eligibilityMax} color="#f59e0b" />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">Tenure</span>
+                  <ScoreBar value={r.tenure} max={r.tenureMax} color="#8b5cf6" />
+                </div>
+              </div>
 
-          {/* Raw data detail line */}
-          <p className="!mb-0 mt-1 text-[10px] text-slate-400">
-            IPCR {r.ipcrScore != null ? r.ipcrScore.toFixed(2) : '—'}/5 · {r.yearsOfService.toFixed(1)} yr tenure
-            {r.matchedKeyword ? ` · field: "${r.matchedKeyword}"` : ''}
-          </p>
+              {/* Raw data detail line */}
+              <p className="!mb-0 mt-1 text-[10px] text-slate-400">
+                IPCR {r.ipcrScore != null ? r.ipcrScore.toFixed(2) : '—'}/5 · {r.yearsOfService.toFixed(1)} yr tenure
+                {` · ${r.relevantTrainings} relevant training${r.relevantTrainings === 1 ? '' : 's'}`}
+                {r.relevantTrainingHours ? ` (${r.relevantTrainingHours}h)` : ''}
+                {r.educationLabel ? ` · ${r.educationLabel}` : ''}
+                {r.eligibilityLabel ? ` · ${r.eligibilityLabel}` : ''}
+              </p>
+            </>
+          ) : (
+            <p className="!mb-0 mt-1.5 flex items-center gap-1.5 rounded-md bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-500">
+              <AlertTriangle size={12} className="shrink-0 text-amber-500" />
+              {r.incompleteReason ?? 'Incomplete data'} — not ranked. {r.yearsOfService.toFixed(1)} yr tenure
+              {r.educationLabel ? ` · ${r.educationLabel}` : ''}
+              {r.eligibilityLabel ? ` · ${r.eligibilityLabel}` : ''}
+            </p>
+          )}
 
           {successor.manualNote && <p className="!mb-0 mt-1 text-xs italic text-slate-500">"{successor.manualNote}"</p>}
         </div>

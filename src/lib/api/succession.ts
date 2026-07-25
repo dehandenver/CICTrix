@@ -106,22 +106,45 @@ export interface EmployeeOption {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Readiness Score — transparent 100-point rubric
+// Readiness Score — transparent 100-point weighted rubric
+//
+// Criterion weights (Succession Planning spec):
+//   Educational Qualification  20
+//   Latest IPCR Rating         30
+//   Relevant Training History  20
+//   Civil Service Eligibility  10
+//   Tenure                     20
+// Every component is computed from verified records only; a missing required
+// record (no finalized IPCR) marks the candidate Incomplete and drops them from
+// the ranked list rather than guessing a value.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface ReadinessScore {
-  total: number;           // 0–100
-  performance: number;     // 0–60 (IPCR score ÷ 5 × 60)
-  performanceMax: 60;
-  tenure: number;          // 0–25 (years_of_service, capped at 20 years = 25 pts)
-  tenureMax: 25;
-  fieldMatch: number;      // 0 or 15 (exact keyword match = 15)
-  fieldMatchMax: 15;
+  total: number;                 // 0–100 (weighted sum; 0 when data incomplete)
+  education: number;             // 0–20
+  educationMax: 20;
+  ipcr: number;                  // 0–30
+  ipcrMax: 30;
+  training: number;              // 0–20
+  trainingMax: 20;
+  eligibility: number;           // 0–10
+  eligibilityMax: 10;
+  tenure: number;                // 0–20
+  tenureMax: 20;
+  // Raw context shown alongside the bars
   ipcrScore: number | null;      // raw 1–5 IPCR score
   adjectival: string | null;
   ratedPeriod: string | null;
   yearsOfService: number;        // raw years
-  matchedKeyword: string | null; // the keyword that matched
+  educationLabel: string | null;
+  eligibilityLabel: string | null;
+  relevantTrainings: number;
+  relevantTrainingHours: number;
+  mostRecentTrainingDate: string | null;
+  matchedKeyword: string | null; // field keyword that matched the position
+  /** False when a required record (IPCR) is missing — excluded from ranking. */
+  dataComplete: boolean;
+  incompleteReason: string | null;
 }
 
 export interface AutoSuccessor {
@@ -994,29 +1017,89 @@ export async function listPositionTitlesForDepartment(departmentName: string): P
 //   4. Merge manual    — manually-added candidates are included too
 // ─────────────────────────────────────────────────────────────────────────────
 
-function computeReadinessScore(
-  ipcrScore: number | null,
-  adjectival: string | null,
-  ratedPeriod: string | null,
-  yearsOfService: number,
-  matchedKeyword: string | null,
-): ReadinessScore {
-  const performance = ipcrScore != null ? Number(((ipcrScore / 5) * 60).toFixed(1)) : 0;
-  const tenure = Number((Math.min(yearsOfService, 20) / 20 * 25).toFixed(1));
-  const fieldMatch = matchedKeyword ? 15 : 0;
+/** Coarse education level ranking, used only to compare against a requirement. */
+function educationRank(label: string | null | undefined): number {
+  const s = String(label ?? '').toLowerCase();
+  if (!s.trim()) return -1; // no record
+  if (s.includes('ph.d') || s.includes('phd') || s.includes('doctorate') || s.includes('doctor of philosophy')) return 6;
+  if (s.includes('doctor of medicine') || s.includes('dental medicine') || s.includes('juris doctor') || s.includes('bachelor of laws') || s.includes('ll.b') || s.includes('ll.m')) return 5;
+  if (s.includes('master') || s.includes('m.a') || s.includes('m.s') || s.includes('mba')) return 4;
+  if (s.includes('bachelor') || s.includes('college graduate') || s.includes('degree')) return 3;
+  if (s.includes('vocational') || s.includes('technical') || s.includes('two-year') || s.includes('associate')) return 2;
+  if (s.includes('college level') || s.includes('undergraduate')) return 1;
+  return 0; // high school / other recorded
+}
+
+/** Education criterion (max 20). No requirement = full credit when a record exists. */
+function scoreEducation(empEdu: string | null, requiredEdu: string | null): number {
+  const empRank = educationRank(empEdu);
+  if (empRank < 0) return 0; // no record → cannot credit (don't infer)
+  const reqRank = educationRank(requiredEdu);
+  if (reqRank < 0) return 20; // no stated requirement → a recorded attainment meets it
+  if (empRank >= reqRank) return 20;
+  if (empRank === reqRank - 1) return 12;
+  return 6;
+}
+
+/** Eligibility criterion (max 10) from recorded values only. */
+function scoreEligibility(empElig: string | null, requiredElig: string | null): number {
+  const emp = String(empElig ?? '').trim().toLowerCase();
+  if (!emp) return 0; // no record
+  const req = String(requiredElig ?? '').trim().toLowerCase();
+  if (!req) return 10; // no requirement → a recorded eligibility meets it
+  // Shared significant token (e.g. "professional", "ra 1080", "bar") = a match.
+  const tokens = req.split(/[^a-z0-9]+/).filter((t) => t.length > 2);
+  const matches = tokens.some((t) => emp.includes(t));
+  return matches ? 10 : 5;
+}
+
+function computeReadinessScore(input: {
+  ipcrScore: number | null;
+  adjectival: string | null;
+  ratedPeriod: string | null;
+  yearsOfService: number;
+  matchedKeyword: string | null;
+  empEducation: string | null;
+  requiredEducation: string | null;
+  empEligibility: string | null;
+  requiredEligibility: string | null;
+  relevantTrainings: number;
+  relevantTrainingHours: number;
+  mostRecentTrainingDate: string | null;
+}): ReadinessScore {
+  const education = scoreEducation(input.empEducation, input.requiredEducation);
+  const ipcr = input.ipcrScore != null ? Number(((input.ipcrScore / 5) * 30).toFixed(1)) : 0;
+  const training = Number(((Math.min(input.relevantTrainings, 3) / 3) * 20).toFixed(1));
+  const eligibility = scoreEligibility(input.empEligibility, input.requiredEligibility);
+  const tenure = Number(((Math.min(input.yearsOfService, 15) / 15) * 20).toFixed(1));
+  const dataComplete = input.ipcrScore != null; // IPCR is the required record for scoring
+  const total = dataComplete
+    ? Number((education + ipcr + training + eligibility + tenure).toFixed(1))
+    : 0;
   return {
-    total: Number((performance + tenure + fieldMatch).toFixed(1)),
-    performance,
-    performanceMax: 60,
+    total,
+    education,
+    educationMax: 20,
+    ipcr,
+    ipcrMax: 30,
+    training,
+    trainingMax: 20,
+    eligibility,
+    eligibilityMax: 10,
     tenure,
-    tenureMax: 25,
-    fieldMatch,
-    fieldMatchMax: 15,
-    ipcrScore,
-    adjectival,
-    ratedPeriod,
-    yearsOfService,
-    matchedKeyword,
+    tenureMax: 20,
+    ipcrScore: input.ipcrScore,
+    adjectival: input.adjectival,
+    ratedPeriod: input.ratedPeriod,
+    yearsOfService: input.yearsOfService,
+    educationLabel: input.empEducation,
+    eligibilityLabel: input.empEligibility,
+    relevantTrainings: input.relevantTrainings,
+    relevantTrainingHours: input.relevantTrainingHours,
+    mostRecentTrainingDate: input.mostRecentTrainingDate,
+    matchedKeyword: input.matchedKeyword,
+    dataComplete,
+    incompleteReason: dataComplete ? null : 'No current IPCR record',
   };
 }
 
@@ -1045,72 +1128,92 @@ export async function listAutoSuccessors(
   criticalPositionId: string,
 ): Promise<Result<AutoSuccessor[]>> {
   try {
-    // ── Fetch the critical position title ───────────────────────────────────
+    // ── Fetch the critical position + its qualification requirements ─────────
     const { data: posRow, error: posErr } = await supabase
       .from('critical_positions')
-      .select('id, title')
+      .select('id, title, required_education, required_eligibility')
       .eq('id', criticalPositionId)
       .maybeSingle();
     if (posErr) return { ok: false, error: posErr.message };
     if (!posRow) return { ok: false, error: 'Critical position not found.' };
     const positionTitle = String(posRow.title ?? '');
+    const requiredEducation = posRow.required_education ?? null;
+    const requiredEligibility = posRow.required_eligibility ?? null;
 
-    // ── Step 1: Eligibility gate — all employees with completed IPCR ───────
-    // Fetch all approved+completed target_settings to discover who has a
-    // completed IPCR. We need the employee IDs first.
-    const { data: completedSettings } = await supabase
-      .from('target_settings')
-      .select('employee_id')
-      .eq('status', 'approved')
-      .eq('phase2_status', 'completed');
-    const completedEmployeeIds = [...new Set(
-      ((completedSettings ?? []) as any[]).map((s) => String(s.employee_id)).filter(Boolean),
-    )];
-    if (!completedEmployeeIds.length) return { ok: true, data: [] };
+    // ── Eligibility gate — Regular/Permanent, Active, not Probationary ───────
+    // Unlike before, IPCR is NOT a gate: a gate-passing employee with no
+    // finalized IPCR still appears, flagged "Incomplete Data" and excluded from
+    // ranking (per spec) rather than silently dropped.
+    const { data: empRows, error: empErr } = await supabase
+      .from('employees')
+      .select('id, first_name, middle_name, last_name, position, department, employment_status, status, date_hired, highest_educational_attainment, eligibility')
+      .eq('status', 'Active')
+      .in('employment_status', ['Regular', 'Permanent']);
+    if (empErr) return { ok: false, error: empErr.message };
 
-    // ── Fetch employee details + scores + tenure in parallel ────────────────
-    const [{ data: empRows }, scores, { data: hireRows }] = await Promise.all([
-      supabase
-        .from('employees_with_department')
-        .select('id, full_name, current_position, department')
-        .in('id', completedEmployeeIds),
-      getLatestOverallScores(completedEmployeeIds),
-      supabase
-        .from('employees')
-        .select('id, date_hired')
-        .in('id', completedEmployeeIds),
+    const fullName = (e: any) =>
+      [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ').trim() || '(unknown)';
+    const posTokens = positionTitle.toLowerCase().split(/[^a-z]+/).filter((t) => t.length > 3);
+    const isRelevantTraining = (title: string): boolean => {
+      const t = String(title ?? '').toLowerCase();
+      return !!sharedFieldKeyword(title, positionTitle) || posTokens.some((tok) => t.includes(tok));
+    };
+
+    // Field-match the gated pool against the target position.
+    const matched = ((empRows ?? []) as any[])
+      .filter((e) => String(e.employment_status ?? '').toLowerCase() !== 'probationary')
+      .map((e) => ({ e, keyword: sharedFieldKeyword(String(e.position ?? ''), positionTitle) }))
+      .filter(({ keyword }) => !!keyword);
+
+    const matchedIds = matched.map(({ e }) => String(e.id));
+
+    // Scores + relevant training history for the matched pool.
+    const [scores, { data: trainingRows }] = await Promise.all([
+      getLatestOverallScores(matchedIds),
+      matchedIds.length
+        ? supabase
+            .from('employee_training')
+            .select('employee_id, training_title, number_of_hours, from_date')
+            .in('employee_id', matchedIds)
+        : Promise.resolve({ data: [] as any[] }),
     ]);
 
-    const hireDateById = new Map<string, string>();
-    for (const h of (hireRows ?? []) as any[]) {
-      if (h.date_hired) hireDateById.set(String(h.id), String(h.date_hired));
+    // Aggregate relevant trainings per employee.
+    const trainAgg = new Map<string, { count: number; hours: number; latest: string | null }>();
+    for (const t of (trainingRows ?? []) as any[]) {
+      if (!isRelevantTraining(t.training_title)) continue;
+      const id = String(t.employee_id);
+      const cur = trainAgg.get(id) ?? { count: 0, hours: 0, latest: null };
+      cur.count += 1;
+      cur.hours += Number(t.number_of_hours ?? 0);
+      if (t.from_date && (!cur.latest || t.from_date > cur.latest)) cur.latest = t.from_date;
+      trainAgg.set(id, cur);
     }
 
-    // ── Step 2 & 3: Field match + Score ─────────────────────────────────────
     const autoMap = new Map<string, AutoSuccessor>();
-    for (const emp of (empRows ?? []) as any[]) {
-      const empId = String(emp.id);
-      const empPosition = String(emp.current_position ?? '');
-      const keyword = sharedFieldKeyword(empPosition, positionTitle);
-      if (!keyword) continue; // no field match → excluded
-
+    for (const { e, keyword } of matched) {
+      const empId = String(e.id);
       const score = scores.get(empId);
-      if (!score) continue; // completed IPCR but no rolled-up score (edge case) → skip
-
-      const yos = yearsFromHireDate(hireDateById.get(empId) ?? null);
-      const readiness = computeReadinessScore(
-        score.overallScore,
-        score.adjectival,
-        score.period,
-        yos,
-        keyword,
-      );
-
+      const agg = trainAgg.get(empId) ?? { count: 0, hours: 0, latest: null };
+      const readiness = computeReadinessScore({
+        ipcrScore: score?.overallScore ?? null,
+        adjectival: score?.adjectival ?? null,
+        ratedPeriod: score?.period ?? null,
+        yearsOfService: yearsFromHireDate(e.date_hired ?? null),
+        matchedKeyword: keyword,
+        empEducation: e.highest_educational_attainment ?? null,
+        requiredEducation,
+        empEligibility: e.eligibility ?? null,
+        requiredEligibility,
+        relevantTrainings: agg.count,
+        relevantTrainingHours: agg.hours,
+        mostRecentTrainingDate: agg.latest,
+      });
       autoMap.set(empId, {
         employeeId: empId,
-        employeeName: String(emp.full_name ?? '').trim(),
-        currentPosition: empPosition || null,
-        department: emp.department ?? null,
+        employeeName: fullName(e),
+        currentPosition: String(e.position ?? '') || null,
+        department: e.department ?? null,
         readiness,
         isManuallyAdded: false,
         manualNote: null,
@@ -1118,7 +1221,7 @@ export async function listAutoSuccessors(
       });
     }
 
-    // ── Step 4: Merge manually-added candidates ────────────────────────────
+    // ── Merge manually-added candidates (bypass the field-match gate) ────────
     const { data: manualRows } = await supabase
       .from('succession_candidates')
       .select('*')
@@ -1127,43 +1230,45 @@ export async function listAutoSuccessors(
     for (const mc of (manualRows ?? []) as any[]) {
       const mcId = String(mc.employee_id);
       if (autoMap.has(mcId)) {
-        // Already auto-discovered — just attach the candidate row ID and note.
         const existing = autoMap.get(mcId)!;
         existing.candidateId = String(mc.id);
         existing.manualNote = mc.note ?? null;
-        // Keep isManuallyAdded = false — they qualified automatically.
         continue;
       }
-
-      // Not auto-discovered — score them anyway (they may not field-match,
-      // but RSP explicitly added them so they should appear).
       const { data: mcEmp } = await supabase
-        .from('employees_with_department')
-        .select('id, full_name, current_position, department')
-        .eq('id', mcId)
-        .maybeSingle();
-      const { data: mcHire } = await supabase
         .from('employees')
-        .select('date_hired')
+        .select('id, first_name, middle_name, last_name, position, department, date_hired, highest_educational_attainment, eligibility')
         .eq('id', mcId)
         .maybeSingle();
-
       const mcScore = scores.get(mcId) ?? (await getLatestOverallScores([mcId])).get(mcId);
-      const mcPosition = String(mcEmp?.current_position ?? '');
-      const mcKeyword = sharedFieldKeyword(mcPosition, positionTitle);
-      const mcYos = yearsFromHireDate(mcHire?.date_hired ?? null);
-      const readiness = computeReadinessScore(
-        mcScore?.overallScore ?? null,
-        mcScore?.adjectival ?? null,
-        mcScore?.period ?? null,
-        mcYos,
-        mcKeyword,
-      );
-
+      const { data: mcTrain } = await supabase
+        .from('employee_training')
+        .select('training_title, number_of_hours, from_date')
+        .eq('employee_id', mcId);
+      let count = 0, hours = 0, latest: string | null = null;
+      for (const t of (mcTrain ?? []) as any[]) {
+        if (!isRelevantTraining(t.training_title)) continue;
+        count += 1; hours += Number(t.number_of_hours ?? 0);
+        if (t.from_date && (!latest || t.from_date > latest)) latest = t.from_date;
+      }
+      const readiness = computeReadinessScore({
+        ipcrScore: mcScore?.overallScore ?? null,
+        adjectival: mcScore?.adjectival ?? null,
+        ratedPeriod: mcScore?.period ?? null,
+        yearsOfService: yearsFromHireDate(mcEmp?.date_hired ?? null),
+        matchedKeyword: sharedFieldKeyword(String(mcEmp?.position ?? ''), positionTitle),
+        empEducation: mcEmp?.highest_educational_attainment ?? null,
+        requiredEducation,
+        empEligibility: mcEmp?.eligibility ?? null,
+        requiredEligibility,
+        relevantTrainings: count,
+        relevantTrainingHours: hours,
+        mostRecentTrainingDate: latest,
+      });
       autoMap.set(mcId, {
         employeeId: mcId,
-        employeeName: String(mcEmp?.full_name ?? '(unknown)').trim(),
-        currentPosition: mcPosition || null,
+        employeeName: mcEmp ? fullName(mcEmp) : '(unknown)',
+        currentPosition: String(mcEmp?.position ?? '') || null,
         department: mcEmp?.department ?? null,
         readiness,
         isManuallyAdded: true,
@@ -1172,10 +1277,11 @@ export async function listAutoSuccessors(
       });
     }
 
-    // ── Step 5: Sort — highest total first, tie-break by performance then name
+    // ── Sort: complete records ranked by weighted score; incomplete last ─────
     const result = [...autoMap.values()].sort((a, b) => {
+      if (a.readiness.dataComplete !== b.readiness.dataComplete) return a.readiness.dataComplete ? -1 : 1;
       if (b.readiness.total !== a.readiness.total) return b.readiness.total - a.readiness.total;
-      if (b.readiness.performance !== a.readiness.performance) return b.readiness.performance - a.readiness.performance;
+      if (b.readiness.ipcr !== a.readiness.ipcr) return b.readiness.ipcr - a.readiness.ipcr;
       return a.employeeName.localeCompare(b.employeeName);
     });
 

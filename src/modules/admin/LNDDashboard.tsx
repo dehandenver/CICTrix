@@ -57,6 +57,7 @@ import { OfficeDirectorySection } from '../../components/OfficeDirectorySection'
 import { LndSummaryOfRatings } from './LndSummaryOfRatings';
 import { LndTrainingEvaluation } from './LndTrainingEvaluation';
 import { LndTrainingNeeds } from './LndTrainingNeeds';
+import { LndArchive } from './LndArchive';
 
 type MenuId =
   | 'dashboard'
@@ -66,6 +67,7 @@ type MenuId =
   | 'training-needs'
   | 'seminar-enrollment'
   | 'training-evaluation'
+  | 'archive'
   | 'office-directory'
   | 'settings';
 
@@ -96,6 +98,7 @@ const LND_MENU: MenuItem[] = [
   { id: 'training-needs', label: 'Requests & Needs', sublabel: 'Office requests and Training Needs Assessment', icon: Sparkles },
   { id: 'seminar-enrollment', label: 'Seminar Enrollment', sublabel: 'Registrations and slots', icon: ClipboardCheck },
   { id: 'training-evaluation', label: 'Training Evaluation', sublabel: 'Pre/post-test results', icon: TrendingUp },
+  { id: 'archive', label: 'L&D Archive', sublabel: 'Historical training records', icon: FileText },
   { id: 'office-directory', label: 'Office Directory', sublabel: 'All employees', icon: Users },
   { id: 'settings', label: 'Settings', sublabel: 'Division preferences', icon: Settings },
 ];
@@ -729,6 +732,8 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
             <SeminarEnrollment />
           ) : activeModule === 'training-evaluation' ? (
             <LndTrainingEvaluation />
+          ) : activeModule === 'archive' ? (
+            <LndArchive />
           ) : activeModule === 'office-directory' ? (
             <OfficeDirectorySection showBulkRequest={false} />
           ) : (
