@@ -1171,9 +1171,10 @@ const ProbationaryPanel = ({
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-4 items-center justify-between bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+      {/* Main White Container Card with Evaluation Period & Vertically Stacked Phase Rows */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between bg-white rounded-xl border border-slate-200 p-4 shadow-sm gap-4">
         {/* Left: Evaluation Period Information */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 shrink-0">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-600 shadow-2xs">
             <Calendar className="h-4.5 w-4.5" />
           </div>
@@ -1182,79 +1183,93 @@ const ProbationaryPanel = ({
             <p className="text-sm font-bold text-slate-900 mt-0.5">{currentPeriod || 'No active period'}</p>
           </div>
         </div>
-        
-        {/* Right: Phase Controls (Direct inline without nested white pill boxes) */}
-        <div className="flex flex-wrap gap-4 items-center">
-          {/* Phase 1 Gating */}
-          <div className="flex items-center gap-2.5 border-r border-slate-200/80 pr-4">
-            <span className="text-xs font-bold text-slate-700">Phase 1 (Target):</span>
-            {systemStates.target_setting === 'Open' ? (
-              <>
-                <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase bg-emerald-50 text-emerald-700 border border-emerald-200/80">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  OPEN
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmClose1(true)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold border border-rose-200/80 bg-rose-50/70 text-rose-700 hover:bg-rose-100/90 rounded-lg transition-all active:scale-95 shadow-2xs"
-                >
-                  <Lock className="h-3.5 w-3.5 text-rose-600" />
-                  Close phase
-                </button>
-              </>
-            ) : (
-              <>
-                <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase bg-slate-100 text-slate-600 border border-slate-200/80">
-                  <Lock className="h-3 w-3 text-slate-500" />
-                  CLOSED
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmOpen1(true)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all active:scale-95"
-                >
-                  <Unlock className="h-3.5 w-3.5" />
-                  Open Phase 1
-                </button>
-              </>
-            )}
+
+        {/* Right: Vertically Stacked Phase Rows */}
+        <div className="flex flex-col gap-2.5 w-full lg:w-auto min-w-[340px] sm:min-w-[400px]">
+          {/* Phase 1 Row */}
+          <div className="flex items-center justify-between gap-4 bg-slate-50/60 border border-slate-200/70 rounded-xl p-3 shadow-2xs">
+            <div>
+              <span className="text-xs font-bold text-slate-900">Phase 1 (Target)</span>
+              {systemStates.target_setting === 'Closed' && (
+                <p className="text-[9px] text-slate-400 font-normal">once closed</p>
+              )}
+            </div>
+            <div className="flex items-center gap-2.5">
+              {systemStates.target_setting === 'Open' ? (
+                <>
+                  <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    OPEN
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmClose1(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border border-rose-200/80 bg-rose-50/70 text-rose-700 hover:bg-rose-100/90 rounded-lg transition-all active:scale-95 shadow-2xs"
+                  >
+                    <Lock className="h-3.5 w-3.5 text-rose-600" />
+                    Close phase
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase bg-slate-100 text-slate-600 border border-slate-200/80">
+                    <Lock className="h-3 w-3 text-slate-500" />
+                    CLOSED
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmOpen1(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all active:scale-95"
+                  >
+                    <Unlock className="h-3.5 w-3.5" />
+                    Open Phase 1
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
-          {/* Phase 2 Gating */}
-          <div className="flex items-center gap-2.5">
-            <span className="text-xs font-bold text-slate-700">Phase 2 (Rating):</span>
-            {systemStates.rating === 'Open' ? (
-              <>
-                <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase bg-emerald-50 text-emerald-700 border border-emerald-200/80">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  OPEN
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmClose2(true)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold border border-rose-200/80 bg-rose-50/70 text-rose-700 hover:bg-rose-100/90 rounded-lg transition-all active:scale-95 shadow-2xs"
-                >
-                  <Lock className="h-3.5 w-3.5 text-rose-600" />
-                  Close phase
-                </button>
-              </>
-            ) : (
-              <>
-                <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase bg-slate-100 text-slate-600 border border-slate-200/80">
-                  <Lock className="h-3 w-3 text-slate-500" />
-                  CLOSED
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmOpen2(true)}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all active:scale-95"
-                >
-                  <Unlock className="h-3.5 w-3.5" />
-                  Open Phase 2
-                </button>
-              </>
-            )}
+          {/* Phase 2 Row */}
+          <div className="flex items-center justify-between gap-4 bg-slate-50/60 border border-slate-200/70 rounded-xl p-3 shadow-2xs">
+            <div>
+              <span className="text-xs font-bold text-slate-900">Phase 2 (Rating)</span>
+              {systemStates.rating === 'Closed' && (
+                <p className="text-[9px] text-slate-400 font-normal">once closed</p>
+              )}
+            </div>
+            <div className="flex items-center gap-2.5">
+              {systemStates.rating === 'Open' ? (
+                <>
+                  <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    OPEN
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmClose2(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border border-rose-200/80 bg-rose-50/70 text-rose-700 hover:bg-rose-100/90 rounded-lg transition-all active:scale-95 shadow-2xs"
+                  >
+                    <Lock className="h-3.5 w-3.5 text-rose-600" />
+                    Close phase
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase bg-slate-100 text-slate-600 border border-slate-200/80">
+                    <Lock className="h-3 w-3 text-slate-500" />
+                    CLOSED
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmOpen2(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all active:scale-95"
+                  >
+                    <Unlock className="h-3.5 w-3.5" />
+                    Open Phase 2
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -1721,9 +1736,10 @@ const RegularPanel = ({
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-4 items-center justify-between bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+      {/* Main White Container Card with Evaluation Period & Vertically Stacked Phase Rows */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between bg-white rounded-xl border border-slate-200 p-4 shadow-sm gap-4">
         {/* Left: Evaluation Period Information */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 shrink-0">
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-600 shadow-2xs">
             <Calendar className="h-4.5 w-4.5" />
           </div>
@@ -1732,75 +1748,93 @@ const RegularPanel = ({
             <p className="text-sm font-bold text-slate-900 mt-0.5">{currentPeriod || 'No active period'}</p>
           </div>
         </div>
-        
-        {/* Right: Phase Controls (Direct inline without nested white pill boxes) */}
-        <div className="flex flex-wrap gap-4 items-center">
-          {/* Phase 1 Gating */}
-          <div className="flex items-center gap-2.5 border-r border-slate-200/80 pr-4">
-            <span className="text-xs font-bold text-slate-700">Phase 1 (Target):</span>
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase ${
-                systemStates.target_setting === 'Open'
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80'
-                  : 'bg-slate-100 text-slate-600 border border-slate-200/80'
-              }`}
-            >
-              <span className={`h-1.5 w-1.5 rounded-full ${systemStates.target_setting === 'Open' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
-              {systemStates.target_setting}
-            </span>
-            {systemStates.target_setting === 'Closed' ? (
-              <button
-                type="button"
-                onClick={() => setShowConfirmOpen1(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all active:scale-95"
-              >
-                <Unlock className="h-3.5 w-3.5" />
-                Open Phase 1
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setShowConfirmClose1(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold border border-rose-200 bg-rose-50/50 text-rose-700 hover:bg-rose-100/80 rounded-lg transition-all active:scale-95"
-              >
-                <Lock className="h-3.5 w-3.5" />
-                Close Phase 1
-              </button>
-            )}
+
+        {/* Right: Vertically Stacked Phase Rows */}
+        <div className="flex flex-col gap-2.5 w-full lg:w-auto min-w-[340px] sm:min-w-[400px]">
+          {/* Phase 1 Row */}
+          <div className="flex items-center justify-between gap-4 bg-slate-50/60 border border-slate-200/70 rounded-xl p-3 shadow-2xs">
+            <div>
+              <span className="text-xs font-bold text-slate-900">Phase 1 (Target)</span>
+              {systemStates.target_setting === 'Closed' && (
+                <p className="text-[9px] text-slate-400 font-normal">once closed</p>
+              )}
+            </div>
+            <div className="flex items-center gap-2.5">
+              {systemStates.target_setting === 'Open' ? (
+                <>
+                  <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    OPEN
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmClose1(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border border-rose-200/80 bg-rose-50/70 text-rose-700 hover:bg-rose-100/90 rounded-lg transition-all active:scale-95 shadow-2xs"
+                  >
+                    <Lock className="h-3.5 w-3.5 text-rose-600" />
+                    Close phase
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase bg-slate-100 text-slate-600 border border-slate-200/80">
+                    <Lock className="h-3 w-3 text-slate-500" />
+                    CLOSED
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmOpen1(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all active:scale-95"
+                  >
+                    <Unlock className="h-3.5 w-3.5" />
+                    Open Phase 1
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
-          {/* Phase 2 Gating */}
-          <div className="flex items-center gap-2.5">
-            <span className="text-xs font-bold text-slate-700">Phase 2 (Rating):</span>
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase ${
-                systemStates.rating === 'Open'
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/80'
-                  : 'bg-slate-100 text-slate-600 border border-slate-200/80'
-              }`}
-            >
-              <span className={`h-1.5 w-1.5 rounded-full ${systemStates.rating === 'Open' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
-              {systemStates.rating}
-            </span>
-            {systemStates.rating === 'Closed' ? (
-              <button
-                type="button"
-                onClick={() => setShowConfirmOpen2(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all active:scale-95"
-              >
-                <Unlock className="h-3.5 w-3.5" />
-                Open Phase 2
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setShowConfirmClose2(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold border border-rose-200 bg-rose-50/50 text-rose-700 hover:bg-rose-100/80 rounded-lg transition-all active:scale-95"
-              >
-                <Lock className="h-3.5 w-3.5" />
-                Close Phase 2
-              </button>
-            )}
+          {/* Phase 2 Row */}
+          <div className="flex items-center justify-between gap-4 bg-slate-50/60 border border-slate-200/70 rounded-xl p-3 shadow-2xs">
+            <div>
+              <span className="text-xs font-bold text-slate-900">Phase 2 (Rating)</span>
+              {systemStates.rating === 'Closed' && (
+                <p className="text-[9px] text-slate-400 font-normal">once closed</p>
+              )}
+            </div>
+            <div className="flex items-center gap-2.5">
+              {systemStates.rating === 'Open' ? (
+                <>
+                  <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    OPEN
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmClose2(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold border border-rose-200/80 bg-rose-50/70 text-rose-700 hover:bg-rose-100/90 rounded-lg transition-all active:scale-95 shadow-2xs"
+                  >
+                    <Lock className="h-3.5 w-3.5 text-rose-600" />
+                    Close phase
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wide uppercase bg-slate-100 text-slate-600 border border-slate-200/80">
+                    <Lock className="h-3 w-3 text-slate-500" />
+                    CLOSED
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmOpen2(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs transition-all active:scale-95"
+                  >
+                    <Unlock className="h-3.5 w-3.5" />
+                    Open Phase 2
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
