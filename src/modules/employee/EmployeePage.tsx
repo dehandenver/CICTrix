@@ -831,6 +831,10 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       return;
     }
 
+    // Update Phase 1 UI state immediately to prevent double-submit if Phase 2 save fails
+    setTargetStatus(targetRes.data.status);
+    if (submit) setTargetReviewComment(null);
+
     // Mirror a flattened summary into ipcr_workspace, which Phase 2 and the
     // generated IPCR PDF still read from.
     const flattened = {
@@ -850,8 +854,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       setIpcrError(res.error || 'Failed to save targets.');
       return;
     }
-    setTargetStatus(targetRes.data.status);
-    if (submit) setTargetReviewComment(null);
+    
     setWorkspaceRow(res.row);
     setIpcrApproved(res.row.status !== 'Draft Targets');
     snapshotLoaded(
