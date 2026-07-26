@@ -10,6 +10,7 @@ import {
   Lock,
   Mail,
   MessageSquare,
+  RefreshCw,
   Send,
   Star,
   User,
@@ -459,15 +460,36 @@ const buildAttachmentRowsFromRecruitment = (applicant: Applicant | null): Attach
 
 const mergeAttachmentRows = (primary: AttachmentRecord[], fallback: AttachmentRecord[]) => {
   const merged: AttachmentRecord[] = [];
-  const seen = new Set<string>();
+  const seenKeys = new Set<string>();
 
-  [...primary, ...fallback].forEach((row, index) => {
-    const dedupeKey = `${row.file_name}|${row.file_path}`;
-    if ((!row.file_name && !row.file_path) || seen.has(dedupeKey)) return;
-    seen.add(dedupeKey);
+  primary.forEach((row, index) => {
+    const rawType = (row.document_type as string | null) || FILE_NAME_TO_TYPE[row.file_name] || 'other';
+    const dedupeKey = `${rawType}|${row.file_name}|${row.file_path}`;
+    if ((!row.file_name && !row.file_path) || seenKeys.has(dedupeKey)) return;
+    seenKeys.add(dedupeKey);
     merged.push({
       ...row,
-      id: row.id || `${dedupeKey}-${index}`,
+      id: row.id || `primary-${index}`,
+      file_name: labelize(row.file_name || row.file_path),
+    });
+  });
+
+  fallback.forEach((row, index) => {
+    const rawType = (row.document_type as string | null) || FILE_NAME_TO_TYPE[row.file_name] || 'other';
+    const dedupeKey = `${rawType}|${row.file_name}|${row.file_path}`;
+
+    const typeHasPrimary = primary.some((p) => {
+      const pType = (p.document_type as string | null) || FILE_NAME_TO_TYPE[p.file_name] || 'other';
+      return pType === rawType && p.document_type !== 'resubmission_request' && p.document_type !== 'resubmission_resolved' && p.document_type !== 'doc_validated';
+    });
+
+    if (seenKeys.has(dedupeKey) || (typeHasPrimary && !row.file_path.startsWith('data:'))) {
+      return;
+    }
+    seenKeys.add(dedupeKey);
+    merged.push({
+      ...row,
+      id: row.id || `fallback-${index}`,
       file_name: labelize(row.file_name || row.file_path),
     });
   });
@@ -1824,6 +1846,14 @@ export function ApplicantDetailsPage() {
                       </button>
                       <button
                         type="button"
+                        disabled={isDocLocked()}
+                        onClick={openResubmitModal}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-amber-400 bg-white px-4 py-2 text-sm font-semibold text-amber-700 shadow-sm hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <RefreshCw size={14} /> Request Resubmission
+                      </button>
+                      <button
+                        type="button"
                         // Once documents are validated the applicant has moved past the
                         // "needs more documents" step, so shortlisting no longer applies.
                         disabled={isApplicantDisqualified || (docsValidatedEffective && !isApplicantShortlisted)}
@@ -1836,7 +1866,7 @@ export function ApplicantDetailsPage() {
                           if (isApplicantShortlisted) {
                             void persistStatus('unshortlist');
                           } else {
-                            openResubmitModal();
+                            void persistStatus('shortlist');
                           }
                         }}
                         className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${isApplicantShortlisted
@@ -2045,9 +2075,27 @@ export function ApplicantDetailsPage() {
                               <div className="min-w-0 flex-1">
                                 <div className="flex flex-wrap items-center justify-between gap-1.5">
                                   <span className="text-sm font-semibold" style={{ color: '#040E6B' }}>{slot.label}</span>
-                                  {hasSupabaseResubmissionRequest && (
-                                    <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Resubmission Requested</span>
-                                  )}
+                                  <div className="flex items-center gap-2">
+                                    {hasSupabaseResubmissionRequest && (
+                                      <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Resubmission Requested</span>
+                                    )}
+                                    {!isDocLocked() && isSubmitted && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setResubmitSelectedSlots([slot.label]);
+                                          setResubmitReason('');
+                                          setResubmitNotes('');
+                                          setResubmitSuccess(null);
+                                          setResubmitError(null);
+                                          setShowResubmitModal(true);
+                                        }}
+                                        className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 hover:text-amber-800"
+                                      >
+                                        <RefreshCw size={12} /> Request Resubmission
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
 
                                 {/* Resubmission notice detail */}
@@ -2074,18 +2122,25 @@ export function ApplicantDetailsPage() {
                                   const review = docReviews[reviewKey];
                                   const localStatus: DocReviewStatus = review?.status ?? 'pending';
                                   const isLatest = versionIdx === matched.length - 1;
-                                  const isResubmission = versionIdx > 0;
+                                  
+                                  const isTrueResubmission = versionIdx > 0 && (
+                                    hasSupabaseResubmissionRequest ||
+                                    localStatus === 'resubmission_requested' ||
+                                    attachments.some((a) => a.document_type === 'resubmission_request' && a.file_name.includes(slot.label))
+                                  );
 
-                                  const versionLabel = isResubmission
+                                  const versionLabel = isTrueResubmission
                                     ? `Resubmission #${versionIdx}`
-                                    : 'Original Submission';
+                                    : versionIdx > 0
+                                      ? `Submission Version ${versionIdx + 1}`
+                                      : 'Original Submission';
 
                                   return (
-                                    <div key={doc.id} className={`mt-2 rounded-lg border px-3 py-2 ${isResubmission ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-100 bg-slate-50'}`}>
+                                    <div key={doc.id} className={`mt-2 rounded-lg border px-3 py-2 ${isTrueResubmission ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-100 bg-slate-50'}`}>
                                       <div className="flex items-start justify-between gap-4">
                                         <button className="flex-1 text-left" onClick={() => void handleOpenDocument(doc.file_path)}>
                                           <div className="flex items-center gap-1.5 flex-wrap">
-                                            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${isResubmission ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                                            <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${isTrueResubmission ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
                                               {versionLabel}
                                             </span>
                                             {isLatest && (
