@@ -1335,7 +1335,7 @@ const ProbationaryPanel = ({
                     'Position',
                     'Date Hired',
                     'Current Stage',
-                    'Due Date',
+                    'Deadline',
                   ].map((h) => (
                     <th
                       key={h}
@@ -1838,7 +1838,7 @@ const RegularPanel = ({
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50/60 border-b border-slate-200">
-                  {['Employee', 'Position', 'Current Stage', 'Due Date'].map((h) => (
+                  {['Employee', 'Position', 'Current Stage', 'Deadline'].map((h) => (
                     <th
                       key={h}
                       className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap"

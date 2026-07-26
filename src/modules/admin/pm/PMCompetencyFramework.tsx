@@ -283,7 +283,7 @@ const PositionRequirementsPanel = ({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="w-full min-w-[280px] sm:w-80">
+        <div className="w-full min-w-[280px] sm:max-w-2xl sm:flex-1">
           <PositionSearchInput positions={positions} value={position} onChange={setPosition} />
         </div>
         {position && (

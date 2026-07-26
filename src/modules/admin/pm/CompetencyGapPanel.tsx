@@ -2,13 +2,13 @@
  * Per-employee competency gap panel — shared by the PM and L&D Summary of
  * Ratings so both portals show the same gap breakdown + AI summary.
  *
- * The "AI gap summary" is generated from the employee's competency breakdown
+ * The "Assessment Summary" is generated from the employee's competency breakdown
  * (possessed vs required proficiency from v_competency_gap_analysis). It reads
  * as a narrative explaining where the employee lacks; swap summarizeGaps() for a
  * live LLM call if/when one is wired up — the inputs are already assembled here.
  */
 
-import { AlertCircle, CheckCircle2, ChevronDown, Sparkles } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronDown } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { IPCRRatingRecord } from './SummaryOfRatings';
 import { supabase } from '../../../lib/supabase';
@@ -103,25 +103,25 @@ export const CompetencyGapPanel = ({ record }: { record: IPCRRatingRecord }) => 
 
   return (
     <div>
-      {/* AI gap summary */}
+      {/* Assessment summary */}
       <div className="mb-3 rounded-lg border border-indigo-200 bg-indigo-50/70 p-3">
-        <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-indigo-700">
-          <Sparkles className="h-3.5 w-3.5" /> AI gap summary
+        <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-700">
+          Assessment Summary
         </p>
         <p className="mt-1 text-sm leading-relaxed text-slate-700">{summarizeGaps(record)}</p>
       </div>
 
-      {/* Recommended Learning Interventions */}
+      {/* Recommended Training */}
       {loadingRec ? (
         <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50/70 p-3 animate-pulse">
           <p className="text-[11px] font-bold uppercase tracking-wider text-blue-700">
-            Loading Recommended Learning Interventions...
+            Loading Recommended Training...
           </p>
         </div>
       ) : recommendations ? (
         <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50/70 p-3">
-          <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-blue-700">
-            <Sparkles className="h-3.5 w-3.5" /> Recommended Learning Interventions
+          <p className="text-[11px] font-bold uppercase tracking-wider text-blue-700">
+            Recommended Training
           </p>
           <p className="mt-1 text-sm leading-relaxed text-slate-700 whitespace-pre-wrap">{recommendations}</p>
         </div>
@@ -252,26 +252,39 @@ const TraceDetail = ({
           </p>
         ) : (
           <ul className="mt-1 space-y-2">
-            {targets.map((t, i) => (
-              <li key={i} className="rounded border border-slate-200 bg-slate-50 p-2">
-                <div className="flex items-start justify-between gap-3">
-                  <span className="text-xs text-slate-700">
-                    {t.functionType && <span className="font-semibold text-slate-500">{t.functionType} — </span>}
-                    {t.targetText.replace(/^.*?—\s*/, '')}
-                  </span>
-                  <span className="shrink-0 text-sm font-bold text-slate-800">
-                    {t.individualScore != null ? t.individualScore.toFixed(2) : '—'}
-                  </span>
-                </div>
-                <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-slate-400">
-                  {t.quality != null && <span>Q {t.quality}</span>}
-                  {t.efficiency != null && <span>E {t.efficiency}</span>}
-                  {t.timeliness != null && <span>T {t.timeliness}</span>}
-                  {t.confidence != null && <span>· AI confidence {(t.confidence * 100).toFixed(0)}%</span>}
-                </div>
-                {t.justification && <p className="mt-1 text-[11px] italic text-slate-500">{t.justification}</p>}
-              </li>
-            ))}
+            {targets.map((t, i) => {
+              // The individual IPCR rating for this target. When the Q/E/T detail
+              // isn't populated but this is the sole mapped target, Possessed comes
+              // directly from it, so show that number rather than a blank dash.
+              const targetScore =
+                t.individualScore != null
+                  ? t.individualScore
+                  : targets.length === 1 && possessed != null
+                    ? possessed
+                    : null;
+              return (
+                <li key={i} className="rounded border border-slate-200 bg-slate-50 p-2">
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="text-xs text-slate-700">
+                      {t.functionType && <span className="font-semibold text-slate-500">{t.functionType} — </span>}
+                      {t.targetText.replace(/^.*?—\s*/, '')}
+                    </span>
+                    <span className="shrink-0 text-right">
+                      <span className="block text-[9px] font-semibold uppercase tracking-wider text-slate-400">IPCR rating</span>
+                      <span className="text-sm font-bold text-slate-800">
+                        {targetScore != null ? targetScore.toFixed(2) : '—'}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-slate-400">
+                    {t.quality != null && <span>Q {t.quality}</span>}
+                    {t.efficiency != null && <span>E {t.efficiency}</span>}
+                    {t.timeliness != null && <span>T {t.timeliness}</span>}
+                  </div>
+                  {t.justification && <p className="mt-1 text-[11px] italic text-slate-500">{t.justification}</p>}
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

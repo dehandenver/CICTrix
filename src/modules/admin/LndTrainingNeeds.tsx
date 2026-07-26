@@ -12,7 +12,7 @@
  */
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Search, Sparkles } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Search } from 'lucide-react';
 import {
   computeNeedsAssessment,
   decideRequest,
@@ -48,7 +48,6 @@ export const LndTrainingNeeds = () => {
   const [needs, setNeeds] = useState<CompetencyNeed[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<'All' | RequestStatus>('Pending');
-  const [openOffices, setOpenOffices] = useState<Set<string>>(new Set());
   const [openComps, setOpenComps] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -64,26 +63,19 @@ export const LndTrainingNeeds = () => {
 
   const flash = (m: string) => { setNotice(m); window.setTimeout(() => setNotice((c) => (c === m ? null : c)), 3500); };
 
-  // ── Section 1 grouping ──────────────────────────────────────────────────
-  const officeGroups = useMemo(() => {
-    const map = new Map<string, OfficeRequest[]>();
-    for (const r of requests) {
-      if (statusFilter !== 'All' && r.status !== statusFilter) continue;
-      const list = map.get(r.office) ?? [];
-      list.push(r);
-      map.set(r.office, list);
-    }
-    return [...map.entries()]
-      .map(([office, reqs]) => ({
-        office,
-        reqs: reqs.sort((a, b) => (b.requestedAt ?? '').localeCompare(a.requestedAt ?? '')),
-        pending: reqs.filter((r) => r.status === 'Pending').length,
-      }))
-      .sort((a, b) => b.reqs.length - a.reqs.length || a.office.localeCompare(b.office));
-  }, [requests, statusFilter]);
+  // ── Section 1: a single flat, filterable request table ──────────────────
+  const filteredRequests = useMemo(
+    () =>
+      requests
+        .filter((r) => statusFilter === 'All' || r.status === statusFilter)
+        .sort(
+          (a, b) =>
+            a.office.localeCompare(b.office) ||
+            (b.requestedAt ?? '').localeCompare(a.requestedAt ?? ''),
+        ),
+    [requests, statusFilter],
+  );
 
-  const toggleOffice = (office: string) =>
-    setOpenOffices((prev) => { const n = new Set(prev); n.has(office) ? n.delete(office) : n.add(office); return n; });
   const toggleComp = (c: string) =>
     setOpenComps((prev) => { const n = new Set(prev); n.has(c) ? n.delete(c) : n.add(c); return n; });
 
@@ -141,7 +133,7 @@ export const LndTrainingNeeds = () => {
             <div className="rounded-2xl border border-slate-200 bg-white px-5 py-12 text-center text-slate-500">
               Loading requests…
             </div>
-          ) : officeGroups.length === 0 ? (
+          ) : filteredRequests.length === 0 ? (
             <div className="rounded-2xl border border-slate-200 bg-white px-5 py-12 text-center text-slate-500">
               <Search className="mx-auto mb-2 h-8 w-8 text-slate-300" />
               <p className="font-medium">
@@ -149,103 +141,84 @@ export const LndTrainingNeeds = () => {
               </p>
               <p className="mt-1 text-xs text-slate-400">
                 {requests.length === 0
-                  ? 'Requests submitted by office accounts will appear here, grouped by office.'
+                  ? 'Requests submitted by office accounts will appear here.'
                   : 'Try another status tab.'}
               </p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {officeGroups.map((g) => {
-                const open = openOffices.has(g.office);
-                return (
-                  <div key={g.office} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                    <button
-                      type="button"
-                      onClick={() => toggleOffice(g.office)}
-                      className="flex w-full items-center justify-between px-5 py-4 text-left transition hover:bg-slate-50"
-                    >
-                      <span className="flex items-center gap-2">
-                        {open
-                          ? <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
-                          : <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />}
-                        <span className="text-sm font-bold text-slate-900">{g.office}</span>
-                      </span>
-                      <span className="text-xs font-medium text-slate-500">{rowLabel(g.reqs.length)}</span>
-                    </button>
-
-                    {open && (
-                      <table className="w-full min-w-full border-t border-slate-200">
-                        <thead>
-                          <tr className="border-b border-slate-200 bg-slate-50">
-                            <th className={TH}>Training Requested</th>
-                            <th className={TH}>Requested By</th>
-                            <th className={TH}>Competency</th>
-                            <th className={TH}>Status</th>
-                            <th className={`${TH} text-right`}>Action</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {g.reqs.map((r) => (
-                            <tr key={r.id} className="border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50">
-                              <td className="px-5 py-4">
-                                <p className="text-sm font-semibold text-slate-900">{r.title}</p>
-                                {r.justification && (
-                                  <p className="mt-0.5 max-w-xl text-xs italic text-slate-500">“{r.justification}”</p>
-                                )}
-                              </td>
-                              <td className="px-5 py-4 text-sm text-slate-700">{r.requestedBy || '—'}</td>
-                              <td className="px-5 py-4 text-sm text-slate-700">{r.competency || '—'}</td>
-                              <td className="px-5 py-4">
-                                <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_PILL[r.status]}`}>
-                                  {r.status}
-                                </span>
-                              </td>
-                              <td className="px-5 py-4 text-right">
-                                {r.status === 'Pending' ? (
-                                  <div className="flex items-center justify-end gap-1.5">
-                                    <button
-                                      type="button"
-                                      disabled={busy === r.id}
-                                      onClick={() => void decide(r, 'Approved')}
-                                      className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-                                    >
-                                      <Check className="h-3.5 w-3.5" /> Approve
-                                    </button>
-                                    <button
-                                      type="button"
-                                      disabled={busy === r.id}
-                                      onClick={() => void decide(r, 'Dismissed')}
-                                      className="inline-flex items-center rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:border-rose-300 hover:text-rose-600 disabled:opacity-60"
-                                    >
-                                      Dismiss
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <span className="text-xs text-slate-400">—</span>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
-                );
-              })}
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              <div className="border-b border-slate-100 px-5 py-2.5 text-xs font-medium text-slate-500">
+                {rowLabel(filteredRequests.length)}
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-full">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50">
+                      <th className={TH}>Office</th>
+                      <th className={TH}>Training Requested</th>
+                      <th className={TH}>Requested By</th>
+                      <th className={TH}>Competency</th>
+                      <th className={TH}>Status</th>
+                      <th className={`${TH} text-right`}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredRequests.map((r) => (
+                      <tr key={r.id} className="border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50">
+                        <td className="px-5 py-4 text-sm font-semibold text-slate-900">{r.office}</td>
+                        <td className="px-5 py-4">
+                          <p className="text-sm font-semibold text-slate-900">{r.title}</p>
+                          {r.justification && (
+                            <p className="mt-0.5 max-w-xl text-xs italic text-slate-500">“{r.justification}”</p>
+                          )}
+                        </td>
+                        <td className="px-5 py-4 text-sm text-slate-700">{r.requestedBy || '—'}</td>
+                        <td className="px-5 py-4 text-sm text-slate-700">{r.competency || '—'}</td>
+                        <td className="px-5 py-4">
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_PILL[r.status]}`}>
+                            {r.status}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4 text-right">
+                          {r.status === 'Pending' ? (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                disabled={busy === r.id}
+                                onClick={() => void decide(r, 'Approved')}
+                                className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                              >
+                                <Check className="h-3.5 w-3.5" /> Approve
+                              </button>
+                              <button
+                                type="button"
+                                disabled={busy === r.id}
+                                onClick={() => void decide(r, 'Dismissed')}
+                                className="inline-flex items-center rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:border-rose-300 hover:text-rose-600 disabled:opacity-60"
+                              >
+                                Dismiss
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-slate-400">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </section>
 
         {/* ── Section 2: Training needs assessment ────────────────────────── */}
         <section className="space-y-3">
-          <div className="flex items-start gap-2">
-            <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-[#363EE8]" />
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">Training needs assessment</h2>
-              <p className="text-sm text-slate-500">
-                Generated from summary of ratings and the competency framework, sorted by demand — click a row for the offices driving it
-              </p>
-            </div>
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">Training needs assessment</h2>
+            <p className="text-sm text-slate-500">
+              Generated from summary of ratings and the competency framework, sorted by demand — click a row for the offices driving it
+            </p>
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
