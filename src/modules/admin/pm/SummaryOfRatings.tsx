@@ -15,7 +15,25 @@ export interface IPCRRatingRecord {
   numericalRating: number | null;
   remarks: string;
   submissionStatus: 'SUBMITTED' | 'PENDING' | 'OVERDUE';
-  competencies?: { name: string; possessed: number; required: number; isGap: boolean }[];
+  competencies?: {
+    name: string;
+    possessed: number;
+    required: number;
+    isGap: boolean;
+    /**
+     * False when no possessed score exists for this competency yet (the employee
+     * submitted their IPCR but the AI competency assessment hasn't run). The
+     * `possessed` number is meaningless in that case — the UI shows "Not yet
+     * assessed" instead. Absent/undefined means assessed (the default, so the
+     * existing gap-view section is unaffected).
+     */
+    possessedAvailable?: boolean;
+  }[];
+  /**
+   * Competency id used by the drill-down trace API (semester section only). The
+   * existing gap-view section doesn't set it and its cards stay non-expandable.
+   */
+  cycleId?: number | null;
 }
 
 export type Adjectival = 'Outstanding' | 'Very Satisfactory' | 'Satisfactory' | 'Unsatisfactory' | 'Poor' | 'Non-Submission';

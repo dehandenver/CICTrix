@@ -23,7 +23,6 @@
 
 import type { IPCRRatingRecord } from '../../modules/admin/pm/SummaryOfRatings';
 import { supabase as supabaseClient } from '../supabase';
-import { getSystemPhaseStates } from './ipcrPhaseControl';
 import { getTransitionState } from './semesterTransition';
 import { getActiveOfficeNameSet } from './departments';
 import { listCompetencyStandards, PROFICIENCY_NUMERIC, type ProficiencyLevel } from './pmCompetency';
@@ -41,13 +40,20 @@ export interface SemesterSectionState {
 
 /**
  * Whether the new "Semester Summary of Ratings" section should show, and for
- * which cycle. Visible only when Phase 2 (rating) is Open AND at least one
- * finalized IPCR (approved + phase2 completed) exists for the new cycle.
+ * which cycle.
+ *
+ * Submission-driven, NOT phase-flag-driven: the section appears the moment any
+ * office has ≥1 finalized IPCR (approved + phase2 completed) for the new cycle.
+ * The rating-phase Open/Closed flag is deliberately NOT a gate — offices finalize
+ * on staggered calendars and the flag can read Closed while finalized records
+ * already exist (the exact case where City Engineer's submissions weren't
+ * showing). The `new_cycle_id` pointer already scopes this to the collecting
+ * semester; once a PM confirms the transition it goes null and the section hides.
  */
 export async function getSemesterSectionState(): Promise<SemesterSectionState> {
-  const [phases, state] = await Promise.all([getSystemPhaseStates(), getTransitionState()]);
+  const state = await getTransitionState();
   const newCycleId = state.newCycleId;
-  if (phases.rating !== 'Open' || newCycleId == null) {
+  if (newCycleId == null) {
     return { visible: false, newCycleId, newCyclePeriod: null };
   }
 
@@ -106,27 +112,42 @@ async function buildRequiredMap(): Promise<RequiredMap> {
  * Per-employee Required-vs-Possessed for the new (collecting) semester, in the
  * same IPCRRatingRecord shape the Summary of Ratings tables consume.
  *
- * Possessed is scoped to `newCycleId` via employee_competencies; the employee
- * set is exactly those with new-cycle competency data, in an active office.
+ * The employee set is driven off FINALIZED IPCRs for the new cycle (approved +
+ * phase2 completed) across all active offices — so the section backfills every
+ * office that has submitted (Requirement 2C), not just the handful the AI
+ * competency assessor has already scored. Possessed is then LEFT-joined from
+ * employee_competencies for the new cycle: where the assessor has run, the real
+ * score shows; where it hasn't yet, the competency is flagged "not yet assessed"
+ * (possessedAvailable=false) rather than shown as a bogus 0.
  */
 export async function getSemesterRatingRecords(newCycleId: number): Promise<IPCRRatingRecord[]> {
-  const [requiredMap, { data: possessedRows }, { data: emps }, activeOffices] = await Promise.all([
-    buildRequiredMap(),
-    supabase
-      .from('employee_competencies')
-      .select('employee_id, proficiency_level, competencies ( name )')
-      .eq('cycle_id', newCycleId),
-    supabase
-      .from('employees_with_department')
-      .select('id, employee_id, full_name, current_position, department, status')
-      .eq('status', 'Active'),
-    getActiveOfficeNameSet(),
-  ]);
+  const [requiredMap, { data: finalizedRows }, { data: possessedRows }, { data: emps }, activeOffices] =
+    await Promise.all([
+      buildRequiredMap(),
+      supabase
+        .from('target_settings')
+        .select('employee_id')
+        .eq('status', 'approved')
+        .eq('phase2_status', 'completed')
+        .eq('cycle_id', newCycleId),
+      supabase
+        .from('employee_competencies')
+        .select('employee_id, proficiency_level, competencies ( name )')
+        .eq('cycle_id', newCycleId),
+      supabase
+        .from('employees_with_department')
+        .select('id, employee_id, full_name, current_position, department, status')
+        .eq('status', 'Active'),
+      getActiveOfficeNameSet(),
+    ]);
 
   const inActive = (dept: unknown) =>
     activeOffices.size === 0 || activeOffices.has(norm(dept));
 
-  // employeeId → competencyName(lower) → possessed level
+  // Employees whose new-cycle IPCR is finalized — the authoritative population.
+  const finalizedIds = new Set(((finalizedRows ?? []) as any[]).map((r) => String(r.employee_id)));
+
+  // employeeId → competencyName(lower) → possessed level (may be absent).
   const possessedByEmp = new Map<string, Map<string, number>>();
   for (const r of (possessedRows ?? []) as any[]) {
     const empId = String(r.employee_id);
@@ -137,39 +158,43 @@ export async function getSemesterRatingRecords(newCycleId: number): Promise<IPCR
     possessedByEmp.get(empId)!.set(name, level);
   }
 
-  const empById = new Map<string, any>(((emps ?? []) as any[]).map((e) => [String(e.id), e]));
-
   const records: IPCRRatingRecord[] = [];
-  for (const [empId, possessed] of possessedByEmp.entries()) {
-    const emp = empById.get(empId);
-    if (!emp || !inActive(emp.department)) continue; // inactive / non-active-office → skip
+  for (const emp of (emps ?? []) as any[]) {
+    const empId = String(emp.id);
+    if (!finalizedIds.has(empId)) continue; // no finalized new-cycle IPCR → not in this section
+    if (!inActive(emp.department)) continue; // outside the active offices
 
     const positionKey = norm(emp.current_position);
     const positionReqs = requiredMap.get(positionKey);
     if (!positionReqs || positionReqs.size === 0) continue; // no Map competencies for this position
 
+    const possessed = possessedByEmp.get(empId) ?? new Map<string, number>();
+
     // Every competency the Map assigns to the position — Required vs the new
-    // semester's Possessed (null when not assessed this semester).
+    // semester's Possessed. `possessedAvailable` distinguishes "assessed at 0"
+    // (never happens; ratings are 1-5) from "not yet assessed".
     const competencies = [...positionReqs.values()].map((req) => {
       const level = possessed.get(norm(req.name));
-      const possessedVal = level != null ? level : 0;
+      const available = level != null;
       return {
         name: req.name,
-        possessed: possessedVal,
+        possessed: available ? level : 0,
         required: req.required,
-        isGap: level != null && level < req.required,
+        isGap: available && level < req.required,
+        possessedAvailable: available,
       };
     });
 
-    // Headline averages only the competencies actually assessed this semester.
-    const rated = competencies.filter((c) => c.possessed > 0);
+    // Headline averages only the competencies actually assessed this semester;
+    // null when the AI assessment hasn't run for this employee yet.
+    const rated = competencies.filter((c) => c.possessedAvailable);
     const avg = rated.length ? rated.reduce((s, c) => s + c.possessed, 0) / rated.length : null;
     const needsTraining = competencies.some((c) => c.isGap);
 
     const parts = String(emp.full_name ?? '').trim();
     records.push({
-      // employee_number so CompetencyGapPanel's learning-interventions lookup
-      // (keyed on employees.employee_number) resolves; falls back to the uuid.
+      // employee_number so CompetencyGapPanel's learning-interventions + trace
+      // lookups (keyed on employees.employee_number) resolve; falls back to uuid.
       id: String(emp.employee_id ?? empId),
       department: emp.department ?? '—',
       name: parts || 'Unknown employee',
@@ -179,6 +204,7 @@ export async function getSemesterRatingRecords(newCycleId: number): Promise<IPCR
       remarks: needsTraining ? 'Training Recommended' : '',
       submissionStatus: 'SUBMITTED',
       competencies,
+      cycleId: newCycleId,
     });
   }
 

@@ -222,12 +222,23 @@ export const SemesterSummarySection = () => {
                     </div>
                     <div className="col-span-4 pr-2 text-xs leading-snug text-gray-500">{row.position}</div>
                     <div className="col-span-2 flex flex-col items-center gap-1">
-                      <span className="text-sm font-bold text-gray-900">
-                        {row.numericalRating !== null ? row.numericalRating.toFixed(2) : '—'}
-                      </span>
-                      <span className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${adj.pillClass}`}>
-                        {adj.label}
-                      </span>
+                      {row.numericalRating !== null ? (
+                        <>
+                          <span className="text-sm font-bold text-gray-900">
+                            {row.numericalRating.toFixed(2)}
+                          </span>
+                          <span className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${adj.pillClass}`}>
+                            {adj.label}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-sm font-bold text-gray-300">—</span>
+                          <span className="inline-flex rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-700">
+                            Awaiting assessment
+                          </span>
+                        </>
+                      )}
                     </div>
                     <div className="col-span-2 flex items-center justify-center gap-2">
                       {gapCount > 0 ? (
