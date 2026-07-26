@@ -118,13 +118,16 @@ export const ForHiringPage = () => {
           }
         } catch { /* ignore */ }
 
+        const isGenericCategory = (val: string) =>
+          !val || ['operations', 'finance', 'human resources', 'unassigned', 'unassigned department'].includes(val.toLowerCase().trim());
+
         const resolveOffice = (pos: string, rawOffice?: string, rawDept?: string): string => {
           const o = String(rawOffice || '').trim();
           const d = String(rawDept || '').trim();
           const titleKey = String(pos || '').trim().toLowerCase();
 
-          if (o && o.toLowerCase() !== 'unassigned') return o;
-          if (d && d.toLowerCase() !== 'unassigned') return d;
+          if (o && !isGenericCategory(o)) return o;
+          if (d && !isGenericCategory(d)) return d;
           if (titleKey && jobDeptMap.has(titleKey)) return jobDeptMap.get(titleKey)!;
           if (o) return o;
           if (d) return d;
@@ -136,14 +139,14 @@ export const ForHiringPage = () => {
         // if it has been disqualified/rejected or if credentials have already been generated.
         const completedIds = await buildCompletedSet();
         const generatedApplicantIds = new Set<string>();
-        const generatedEmployeeIds = new Set<string>();
+        const generatedEmails = new Set<string>();
 
         try {
           const newlyHired = await getNewlyHiredFromSupabase();
           if (Array.isArray(newlyHired)) {
             newlyHired.forEach(nh => {
               if (nh.applicantId) generatedApplicantIds.add(String(nh.applicantId));
-              if (nh.employeeId) generatedEmployeeIds.add(String(nh.employeeId));
+              if (nh.employeeInfo?.email) generatedEmails.add(String(nh.employeeInfo.email).toLowerCase().trim());
             });
           }
         } catch { /* fallback to portal accounts */ }
@@ -152,29 +155,25 @@ export const ForHiringPage = () => {
           const portalAccounts = getEmployeePortalAccounts();
           if (Array.isArray(portalAccounts)) {
             portalAccounts.forEach(acc => {
-              if (acc.username) generatedEmployeeIds.add(String(acc.username));
-              if (acc.employee?.employeeId) generatedEmployeeIds.add(String(acc.employee.employeeId));
+              if (acc.employee?.email) generatedEmails.add(String(acc.employee.email).toLowerCase().trim());
             });
           }
         } catch { /* ignore */ }
 
-        const includeApplicant = (id: string, status: string, empId?: string) => {
+        const includeApplicant = (id: string, status: string, email?: string) => {
           const sid = String(id);
-          const eid = String(empId || '').trim();
+          const normalizedEmail = (email || '').toLowerCase().trim();
           if (isRejected(status)) return false;
 
           // Exclude ONLY if account/credentials have actually been generated for this applicant
-          const isGenerated =
-            (eid.length > 0 && eid !== 'null' && eid !== 'undefined') ||
-            generatedApplicantIds.has(sid) ||
-            (eid.length > 0 && generatedEmployeeIds.has(eid));
-
-          if (isGenerated) return false;
+          if (generatedApplicantIds.has(sid) || (normalizedEmail && generatedEmails.has(normalizedEmail))) {
+            return false;
+          }
 
           return isForHiring(status) || completedIds.has(sid);
         };
 
-        const local = getApplicants().filter(a => includeApplicant(a.id, a.status, (a as any).employeeId || (a as any).employee_id));
+        const local = getApplicants().filter(a => includeApplicant(a.id, a.status, a.personalInfo?.email));
 
         const remoteData: any[] = [];
         try {
@@ -189,7 +188,7 @@ export const ForHiringPage = () => {
           try {
             const { data } = await (supabase as any)
               .from('applicants')
-              .select('id,first_name,last_name,middle_name,full_name,email,position,office,department,status,employee_id,qualification_score,total_score');
+              .select('id,first_name,last_name,middle_name,full_name,email,position,office,department,status,qualification_score,total_score');
             if (Array.isArray(data)) remoteData.push(...data);
           } catch { /* local store only */ }
         }
@@ -200,8 +199,8 @@ export const ForHiringPage = () => {
 
         remoteData.forEach((r: any) => {
           const status = String(r.status ?? '');
-          const empId = String(r.employee_id ?? r.employeeId ?? '');
-          if (!includeApplicant(String(r.id), status, empId)) return;
+          const email = String(r.email ?? '');
+          if (!includeApplicant(String(r.id), status, email)) return;
 
           const fullName = [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')
             || r.full_name || '';
