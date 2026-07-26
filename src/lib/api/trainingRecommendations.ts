@@ -20,6 +20,7 @@
 
 import { supabase as supabaseClient } from '../supabase';
 import { getLatestOverallScores } from './succession';
+import { getLndSourceCycleId } from './semesterTransition';
 import { competencyFromObjectives, competenciesFromObjectives, canonicalizeCompetency } from './trainingCalendar';
 import { getActiveOfficeNameSet, getActiveOfficeNames } from './departments';
 import { isPublishable, lifecycleFieldsFromRow } from './trainingLifecycle';
@@ -283,8 +284,11 @@ export async function generateRecommendations(
         ? [specificEmployeeId]
         : [...competenciesByEmployee.keys()];
       
-      // 3. Latest finalized overall score per employee (live roll-up).
-      const scores = await getLatestOverallScores(employeeIds);
+      // 3. Latest finalized overall score per employee (live roll-up), pinned to
+      //    the L&D "current" semester so recommendations never pull from a
+      //    half-collected new semester until the PM confirms the transition.
+      const lndCycleId = await getLndSourceCycleId();
+      const scores = await getLatestOverallScores(employeeIds, lndCycleId);
 
       // 4. Build gap rows.
       for (const employeeId of employeeIds) {
@@ -1297,7 +1301,10 @@ export async function getOfficeEmployeesWithScores(office: string): Promise<Pick
     return [];
   }
   const rows = (emps ?? []) as any[];
-  const scores = await getLatestOverallScores(rows.map((e) => String(e.id)));
+  // Same L&D semester pin as the recommendation engine, so the picker shows the
+  // score from the current (fully-completed) semester, not a new in-progress one.
+  const lndCycleId = await getLndSourceCycleId();
+  const scores = await getLatestOverallScores(rows.map((e) => String(e.id)), lndCycleId);
   return rows
     .map((e): PickerEmployee => {
       const s = scores.get(String(e.id));

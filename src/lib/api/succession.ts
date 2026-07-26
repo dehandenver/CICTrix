@@ -350,21 +350,29 @@ function overallFromMfoRows(mfoRows: any[]): number | null {
  * recently approved completed record for each employee (their newest rated
  * period), then rolls its Q/E/T up. Employees with no completed record are simply
  * absent from the returned map (callers treat that as "not yet rated").
+ *
+ * `cycleId` pins the read to a specific semester — the L&D transition gate passes
+ * the "current" (fully-completed) cycle so recommendations never pull from a
+ * half-collected new semester (see semesterTransition.getLndSourceCycleId). When
+ * omitted or null it keeps the original "newest across all semesters" behaviour.
  */
 export async function getLatestOverallScores(
   employeeIds: string[],
+  cycleId?: number | null,
 ): Promise<Map<string, EmployeeScore>> {
   const result = new Map<string, EmployeeScore>();
   const ids = [...new Set(employeeIds)].filter(Boolean);
   if (!ids.length) return result;
 
-  const { data: settings } = await supabase
+  let settingsQuery = supabase
     .from('target_settings')
     .select('id, employee_id, cycle_id, approved_at')
     .eq('status', 'approved')
     .eq('phase2_status', 'completed')
     .in('employee_id', ids)
     .order('approved_at', { ascending: false });
+  if (cycleId != null) settingsQuery = settingsQuery.eq('cycle_id', cycleId);
+  const { data: settings } = await settingsQuery;
   const rows = (settings ?? []) as any[];
   if (!rows.length) return result;
 

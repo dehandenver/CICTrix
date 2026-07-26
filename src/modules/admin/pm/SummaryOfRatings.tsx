@@ -4,6 +4,7 @@ import { useRealtimeRefresh } from '../../../hooks/useRealtimeRefresh';
 import { EmptyState } from '../../../components/EmptyState';
 import { getIPCRRecordsFromGapView } from '../../../lib/api/competencyGapAnalysis';
 import { CompetencyGapPanel } from './CompetencyGapPanel';
+import { SemesterSummarySection } from './SemesterSummarySection';
 
 export interface IPCRRatingRecord {
   id: string;
@@ -459,6 +460,11 @@ export const SummaryOfRatings = () => {
       </div>
       </>
       )}
+
+      {/* New "Semester Summary of Ratings" — own section beneath the existing
+          one (Requirement 2). Renders itself only when Phase 2 is open and the
+          new semester has finalized IPCRs; otherwise it returns null. */}
+      <SemesterSummarySection />
     </div>
   );
 };

@@ -13,6 +13,7 @@
 
 import { supabase as supabaseClient } from '../supabase';
 import { getActiveOfficeNameSet } from './departments';
+import { getLndSourcePeriodKey, normalizeSemesterKey } from './semesterTransition';
 
 const supabase = supabaseClient as any;
 
@@ -172,20 +173,34 @@ export async function computeNeedsAssessment(): Promise<CompetencyNeed[]> {
   const totalLgu = officeByEmp.size;
   if (!totalLgu) return [];
 
-  const { data: matches, error: mErr } = await supabase
-    .from('ipcr_competency_matches')
-    .select('employee_id, competency')
-    .not('competency', 'is', null)
-    .not('employee_id', 'is', null);
+  const [{ data: matches, error: mErr }, lndPeriodKey] = await Promise.all([
+    supabase
+      .from('ipcr_competency_matches')
+      .select('employee_id, competency, rating_period')
+      .not('competency', 'is', null)
+      .not('employee_id', 'is', null),
+    getLndSourcePeriodKey(),
+  ]);
   if (mErr) {
     console.error('Error loading competency matches:', mErr);
     return [];
   }
 
+  // L&D transition gate: while the new semester is still collecting, the needs
+  // assessment must reflect the current (fully-completed) semester only. Drop
+  // matches whose period is a DIFFERENT, recognisable semester; rows with an
+  // unparseable/blank period are kept (legacy data, no way to place them). When
+  // there's no pinned semester (lndPeriodKey null) nothing is filtered.
+  const matchesInScope = ((matches ?? []) as any[]).filter((m) => {
+    if (!lndPeriodKey) return true;
+    const key = normalizeSemesterKey(m.rating_period);
+    return key == null || key === lndPeriodKey;
+  });
+
   // competency -> office -> set of distinct employee ids
   const byComp = new Map<string, Map<string, Set<string>>>();
   const affectedByComp = new Map<string, Set<string>>();
-  for (const m of (matches ?? []) as any[]) {
+  for (const m of matchesInScope) {
     const comp = String(m.competency);
     const emp = String(m.employee_id);
     const office = officeByEmp.get(emp);
