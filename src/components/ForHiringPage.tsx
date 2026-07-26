@@ -6,6 +6,7 @@ import { hireApplicant } from '../lib/api/employeesApi';
 import {
   ensureRecruitmentSeedData,
   getApplicants,
+  getNewlyHiredFromSupabase,
   saveApplicants,
   saveNewlyHired,
 } from '../lib/recruitmentData';
@@ -48,7 +49,6 @@ interface CredentialResult {
 }
 
 const QUALIFY_STATUSES = ['qualified', 'recommended for hiring', 'accepted', 'for hiring'];
-const EXACT_QUALIFY = ['hired'];
 
 // Disqualified/rejected applicants never surface here, regardless of scores.
 const isRejected = (status: string) => {
@@ -56,11 +56,15 @@ const isRejected = (status: string) => {
   return s.includes('not qualified') || s.includes('disqualif') || s.includes('reject');
 };
 
+const isHiredStatus = (status: string) => {
+  const s = status.toLowerCase().trim();
+  return s === 'hired' || (s.includes('hired') && !s.includes('recommended for hiring'));
+};
+
 const isForHiring = (status: string) => {
   const s = status.toLowerCase().trim();
-  // Exclude disqualified/rejected statuses — "not qualified" contains "qualified" so check this first.
-  if (isRejected(status)) return false;
-  return QUALIFY_STATUSES.some(q => s.includes(q)) || EXACT_QUALIFY.includes(s);
+  if (isRejected(status) || isHiredStatus(status)) return false;
+  return QUALIFY_STATUSES.some(q => s.includes(q));
 };
 
 const CAT_SCORES_KEY = 'cictrix_category_scores';
@@ -107,10 +111,25 @@ export const ForHiringPage = () => {
 
         // Applicant qualifies for this list if it is already flagged for hiring
         // OR it is "completed" (Finalized) on the Applicant Score tab — but never
-        // if it has been disqualified/rejected.
+        // if it has been disqualified/rejected or already HIRED.
         const completedIds = await buildCompletedSet();
-        const includeApplicant = (id: string, status: string) =>
-          !isRejected(status) && (isForHiring(status) || completedIds.has(String(id)));
+        const hiredApplicantIds = new Set<string>();
+        try {
+          const newlyHired = await getNewlyHiredFromSupabase();
+          if (Array.isArray(newlyHired)) {
+            newlyHired.forEach(nh => {
+              if (nh.applicantId) hiredApplicantIds.add(String(nh.applicantId));
+            });
+          }
+        } catch { /* fallback to status check */ }
+
+        const includeApplicant = (id: string, status: string) => {
+          const sid = String(id);
+          if (isRejected(status) || isHiredStatus(status) || hiredApplicantIds.has(sid)) {
+            return false;
+          }
+          return isForHiring(status) || completedIds.has(sid);
+        };
 
         const local = getApplicants().filter(a => includeApplicant(a.id, a.status));
 
@@ -375,6 +394,8 @@ export const ForHiringPage = () => {
            portal account's creation date if this write didn't land */
       }
     }
+
+    window.dispatchEvent(new Event('cictrix:applicants-updated'));
 
     setHiring(false);
     setConfirmTarget(null);
