@@ -12,7 +12,7 @@ import {
 } from '../lib/recruitmentData';
 import type { NewlyHired } from '../types/recruitment.types';
 import { sendEmail } from '../lib/email';
-import { createPassword, upsertEmployeePortalAccount } from '../lib/employeePortalData';
+import { createPassword, getEmployeePortalAccounts, upsertEmployeePortalAccount } from '../lib/employeePortalData';
 import { supabase } from '../lib/supabase';
 import { buildEvaluationSnapshotMap } from '../lib/evaluationScores';
 import {
@@ -48,7 +48,7 @@ interface CredentialResult {
   department: string;
 }
 
-const QUALIFY_STATUSES = ['qualified', 'recommended for hiring', 'accepted', 'for hiring'];
+const QUALIFY_STATUSES = ['qualified', 'recommended for hiring', 'accepted', 'for hiring', 'hired'];
 
 // Disqualified/rejected applicants never surface here, regardless of scores.
 const isRejected = (status: string) => {
@@ -56,14 +56,9 @@ const isRejected = (status: string) => {
   return s.includes('not qualified') || s.includes('disqualif') || s.includes('reject');
 };
 
-const isHiredStatus = (status: string) => {
-  const s = status.toLowerCase().trim();
-  return s === 'hired' || (s.includes('hired') && !s.includes('recommended for hiring'));
-};
-
 const isForHiring = (status: string) => {
   const s = status.toLowerCase().trim();
-  if (isRejected(status) || isHiredStatus(status)) return false;
+  if (isRejected(status)) return false;
   return QUALIFY_STATUSES.some(q => s.includes(q));
 };
 
@@ -111,27 +106,44 @@ export const ForHiringPage = () => {
 
         // Applicant qualifies for this list if it is already flagged for hiring
         // OR it is "completed" (Finalized) on the Applicant Score tab — but never
-        // if it has been disqualified/rejected or already HIRED.
+        // if it has been disqualified/rejected or if credentials have already been generated.
         const completedIds = await buildCompletedSet();
-        const hiredApplicantIds = new Set<string>();
+        const generatedApplicantIds = new Set<string>();
+        const generatedEmails = new Set<string>();
+
         try {
           const newlyHired = await getNewlyHiredFromSupabase();
           if (Array.isArray(newlyHired)) {
             newlyHired.forEach(nh => {
-              if (nh.applicantId) hiredApplicantIds.add(String(nh.applicantId));
+              if (nh.applicantId) generatedApplicantIds.add(String(nh.applicantId));
+              if (nh.employeeInfo?.email) generatedEmails.add(String(nh.employeeInfo.email).toLowerCase().trim());
             });
           }
-        } catch { /* fallback to status check */ }
+        } catch { /* fallback to portal accounts */ }
 
-        const includeApplicant = (id: string, status: string) => {
+        try {
+          const portalAccounts = getEmployeePortalAccounts();
+          if (Array.isArray(portalAccounts)) {
+            portalAccounts.forEach(acc => {
+              if (acc.employee?.email) generatedEmails.add(String(acc.employee.email).toLowerCase().trim());
+            });
+          }
+        } catch { /* ignore */ }
+
+        const includeApplicant = (id: string, status: string, email?: string) => {
           const sid = String(id);
-          if (isRejected(status) || isHiredStatus(status) || hiredApplicantIds.has(sid)) {
+          const normalizedEmail = (email || '').toLowerCase().trim();
+          if (isRejected(status)) return false;
+
+          // Exclude ONLY if account/credentials have actually been generated for this applicant
+          if (generatedApplicantIds.has(sid) || (normalizedEmail && generatedEmails.has(normalizedEmail))) {
             return false;
           }
+
           return isForHiring(status) || completedIds.has(sid);
         };
 
-        const local = getApplicants().filter(a => includeApplicant(a.id, a.status));
+        const local = getApplicants().filter(a => includeApplicant(a.id, a.status, a.personalInfo?.email));
 
         const remoteData: any[] = [];
         try {
@@ -157,7 +169,8 @@ export const ForHiringPage = () => {
 
         remoteData.forEach((r: any) => {
           const status = String(r.status ?? '');
-          if (!includeApplicant(String(r.id), status)) return;
+          const email = String(r.email ?? '');
+          if (!includeApplicant(String(r.id), status, email)) return;
 
           const fullName = [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')
             || r.full_name || '';
