@@ -1273,22 +1273,19 @@ function competencyKeywords(name: string): string[] {
  * any Leadership-category training. (Heuristic name match — the archive has no
  * per-record competency tags yet; see the phase-2 note.)
  */
+/**
+ * Stage-2 coverage from the REAL join (employee_training_competencies), not a
+ * keyword heuristic: a required competency is met when one of the employee's
+ * completed trainings is tagged with it. `tagged` maps a competency_id to the
+ * title of a training that satisfied it. (Migration 20260828; the old title
+ * heuristic silently over-credited via generic tokens like "public"/"management".)
+ */
 function computeCompetencyCoverage(
-  required: string[],
-  trainingTitles: string[],
-  categories: string[],
+  required: { id: string; name: string }[],
+  tagged: Map<string, string>,
 ): CompetencyCoverage[] {
-  const titles = trainingTitles.map((t) => ({ orig: t, lc: t.toLowerCase() }));
-  const catsLc = categories.map((c) => c.toLowerCase());
-  return required.map((name) => {
-    const kws = competencyKeywords(name);
-    let satisfiedBy: string | null = null;
-    for (const t of titles) {
-      if (kws.some((k) => t.lc.includes(k))) { satisfiedBy = t.orig; break; }
-    }
-    if (!satisfiedBy && /lead|supervis|manageri|management/.test(name.toLowerCase())) {
-      if (catsLc.some((c) => c.includes('leadership'))) satisfiedBy = 'Leadership training';
-    }
+  return required.map(({ id, name }) => {
+    const satisfiedBy = tagged.get(id) ?? null;
     return { name, met: !!satisfiedBy, satisfiedBy };
   });
 }
@@ -1349,8 +1346,8 @@ function computeReadinessScore(input: {
   empTrainingCategories: string[];        // category labels employee has completed
   requiredTrainingHours: number | null;   // position's required hours threshold
   requiredTrainingCategories: string[];   // position's required category labels
-  requiredCompetencies: string[];         // position's required competencies (Stage 2)
-  trainingTitles: string[];               // employee's completed training titles
+  requiredCompetencies: { id: string; name: string }[]; // position's required competencies (Stage 2)
+  taggedCompetencies: Map<string, string>;              // employee's tagged competency_id → satisfying training title
   W: SuccessionWeights;                   // weights (per-position or global defaults)
 }): ReadinessScore {
   const w1 = (ratio: number, weight: number) => Number((ratio * weight).toFixed(1));
@@ -1379,8 +1376,7 @@ function computeReadinessScore(input: {
   // it drives the tier (Ready Now = 100%); otherwise the weighted total does.
   const competencyBreakdown = computeCompetencyCoverage(
     input.requiredCompetencies,
-    input.trainingTitles,
-    input.empTrainingCategories,
+    input.taggedCompetencies,
   );
   const competencyMatchPct = input.requiredCompetencies.length
     ? Math.round((competencyBreakdown.filter((c) => c.met).length / input.requiredCompetencies.length) * 100)
@@ -1538,7 +1534,7 @@ export async function listAutoSuccessors(
       positionedIds.length
         ? supabase
             .from('employee_training')
-            .select('employee_id, training_title, training_type, number_of_hours, from_date')
+            .select('id, employee_id, training_title, training_type, number_of_hours, from_date')
             .in('employee_id', positionedIds)
         : Promise.resolve({ data: [] as any[] }),
     ]);
@@ -1567,7 +1563,33 @@ export async function listAutoSuccessors(
 
     // Stage-2 required competencies for this position (drives competency match %).
     const compReqRes = await listCompetencyRequirements(criticalPositionId);
-    const requiredCompetencies = compReqRes.ok ? compReqRes.data.map((c) => c.competencyName) : [];
+    const requiredCompetencies = compReqRes.ok
+      ? compReqRes.data.map((c) => ({ id: c.competencyId, name: c.competencyName }))
+      : [];
+
+    // Real competency tags from employee_training_competencies (migration 20260828),
+    // replacing the title/keyword heuristic. Map each employee → (competency_id →
+    // a satisfying training title), for the whole positioned pool in one query.
+    const trainingById = new Map<string, { empId: string; title: string }>();
+    for (const t of (trainingRows ?? []) as any[]) {
+      trainingById.set(String(t.id), { empId: String(t.employee_id), title: String(t.training_title ?? '') });
+    }
+    const taggedByEmp = new Map<string, Map<string, string>>();
+    const allTrainingIds = [...trainingById.keys()];
+    if (allTrainingIds.length) {
+      const { data: tagRows } = await supabase
+        .from('employee_training_competencies')
+        .select('employee_training_id, competency_id')
+        .in('employee_training_id', allTrainingIds);
+      for (const g of (tagRows ?? []) as any[]) {
+        const tr = trainingById.get(String(g.employee_training_id));
+        if (!tr) continue;
+        if (!taggedByEmp.has(tr.empId)) taggedByEmp.set(tr.empId, new Map());
+        const m = taggedByEmp.get(tr.empId)!;
+        if (!m.has(String(g.competency_id))) m.set(String(g.competency_id), tr.title);
+      }
+    }
+    const emptyTagMap = new Map<string, string>();
 
     // Gap analysis / required actions / timeline from a gate-passer's missing competencies.
     const buildQualifiedGaps = (readiness: ReadinessScore) => {
@@ -1669,7 +1691,7 @@ export async function listAutoSuccessors(
         requiredTrainingHours,
         requiredTrainingCategories,
         requiredCompetencies,
-        trainingTitles: agg.titles,
+        taggedCompetencies: taggedByEmp.get(empId) ?? emptyTagMap,
         W,
       });
       qualifiedMap.set(empId, {
@@ -1718,10 +1740,27 @@ export async function listAutoSuccessors(
       const mcScore = scores.get(mcId) ?? (await getLatestOverallScores([mcId])).get(mcId);
       const { data: mcTrain } = await supabase
         .from('employee_training')
-        .select('training_title, training_type, number_of_hours, from_date')
+        .select('id, training_title, training_type, number_of_hours, from_date')
         .eq('employee_id', mcId);
       const mcAgg = emptyAgg();
-      for (const t of (mcTrain ?? []) as any[]) addTraining(mcAgg, t);
+      const mcTitleById = new Map<string, string>();
+      for (const t of (mcTrain ?? []) as any[]) {
+        addTraining(mcAgg, t);
+        mcTitleById.set(String(t.id), String(t.training_title ?? ''));
+      }
+      const mcTagged = new Map<string, string>();
+      const mcTrIds = [...mcTitleById.keys()];
+      if (mcTrIds.length) {
+        const { data: mcTagRows } = await supabase
+          .from('employee_training_competencies')
+          .select('employee_training_id, competency_id')
+          .in('employee_training_id', mcTrIds);
+        for (const g of (mcTagRows ?? []) as any[]) {
+          if (!mcTagged.has(String(g.competency_id))) {
+            mcTagged.set(String(g.competency_id), mcTitleById.get(String(g.employee_training_id)) ?? '');
+          }
+        }
+      }
 
       const readiness = computeReadinessScore({
         ipcrScore: mcScore?.overallScore ?? null,
@@ -1741,7 +1780,7 @@ export async function listAutoSuccessors(
         requiredTrainingHours,
         requiredTrainingCategories,
         requiredCompetencies,
-        trainingTitles: mcAgg.titles,
+        taggedCompetencies: mcTagged,
         W,
       });
       qualifiedMap.set(mcId, {
