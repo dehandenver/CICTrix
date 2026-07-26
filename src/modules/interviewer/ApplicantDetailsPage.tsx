@@ -1846,14 +1846,6 @@ export function ApplicantDetailsPage() {
                       </button>
                       <button
                         type="button"
-                        disabled={isDocLocked()}
-                        onClick={openResubmitModal}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-amber-400 bg-white px-4 py-2 text-sm font-semibold text-amber-700 shadow-sm hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        <RefreshCw size={14} /> Request Resubmission
-                      </button>
-                      <button
-                        type="button"
                         // Once documents are validated the applicant has moved past the
                         // "needs more documents" step, so shortlisting no longer applies.
                         disabled={isApplicantDisqualified || (docsValidatedEffective && !isApplicantShortlisted)}
@@ -1866,7 +1858,7 @@ export function ApplicantDetailsPage() {
                           if (isApplicantShortlisted) {
                             void persistStatus('unshortlist');
                           } else {
-                            void persistStatus('shortlist');
+                            openResubmitModal();
                           }
                         }}
                         className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-semibold shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${isApplicantShortlisted
@@ -2075,27 +2067,9 @@ export function ApplicantDetailsPage() {
                               <div className="min-w-0 flex-1">
                                 <div className="flex flex-wrap items-center justify-between gap-1.5">
                                   <span className="text-sm font-semibold" style={{ color: '#040E6B' }}>{slot.label}</span>
-                                  <div className="flex items-center gap-2">
-                                    {hasSupabaseResubmissionRequest && (
-                                      <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Resubmission Requested</span>
-                                    )}
-                                    {!isDocLocked() && isSubmitted && (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setResubmitSelectedSlots([slot.label]);
-                                          setResubmitReason('');
-                                          setResubmitNotes('');
-                                          setResubmitSuccess(null);
-                                          setResubmitError(null);
-                                          setShowResubmitModal(true);
-                                        }}
-                                        className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 hover:text-amber-800"
-                                      >
-                                        <RefreshCw size={12} /> Request Resubmission
-                                      </button>
-                                    )}
-                                  </div>
+                                  {hasSupabaseResubmissionRequest && (
+                                    <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">Resubmission Requested</span>
+                                  )}
                                 </div>
 
                                 {/* Resubmission notice detail */}
