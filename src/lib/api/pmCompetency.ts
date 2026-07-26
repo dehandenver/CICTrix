@@ -24,6 +24,22 @@ export const PROFICIENCY_CODE: Record<ProficiencyLevel, string> = {
   Advanced: 'A',
 };
 
+/**
+ * Numeric equivalent of each Map level, on the same 1-5 scale IPCR ratings use.
+ * This is what turns the Map's Basic/Intermediate/Advanced into the "Required"
+ * value the Summary of Ratings gap analysis compares against a possessed rating.
+ * Spread across the top band (3/4/5) so Intermediate/Advanced requirements can
+ * actually surface a gap against typical possessed ratings (~4.0-4.6).
+ */
+export const PROFICIENCY_NUMERIC: Record<ProficiencyLevel, number> = {
+  Basic: 3,
+  Intermediate: 4,
+  Advanced: 5,
+};
+
+/** How a requirement row got into the Map: PM-curated vs reconciliation backfill. */
+export type RequirementSource = 'manual' | 'auto-synced';
+
 export interface CompetencyStandard {
   id: number;
   competency_name: string;
@@ -35,6 +51,10 @@ export interface PositionRequirement {
   position_title: string;
   competency_id: number;
   proficiency_level: ProficiencyLevel;
+  // 'auto-synced' rows were backfilled from the gap-analysis reconciliation and
+  // are up for PM review; a PM Save flips them to 'manual'. Absent on databases
+  // that predate the source column, so callers treat undefined as 'manual'.
+  source?: RequirementSource;
   updated_by: string | null;
   updated_at: string;
 }
@@ -118,6 +138,8 @@ export async function saveRequirement(input: {
             position_title: input.positionTitle.trim(),
             competency_id: input.competencyId,
             proficiency_level: input.proficiencyLevel,
+            // A PM saving a row means it's now curated — clear any auto-synced tag.
+            source: 'manual',
             updated_by: input.updatedBy,
             updated_at: new Date().toISOString(),
           },

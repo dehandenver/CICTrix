@@ -431,6 +431,7 @@ interface MapRow {
   competencyName: string;
   trainingStream: string;
   level: ProficiencyLevel;
+  autoSynced: boolean;
 }
 
 const CompetencyMapPanel = ({
@@ -475,6 +476,7 @@ const CompetencyMapPanel = ({
             competencyName: standard?.competency_name ?? `Competency ${r.competency_id}`,
             trainingStream: standard?.training_stream ?? '',
             level: r.proficiency_level,
+            autoSynced: r.source === 'auto-synced',
           };
         })
         .sort(
@@ -684,6 +686,14 @@ const CompetencyMapPanel = ({
                               </span>
                               <span className="text-[11px]">{row.level}</span>
                             </span>
+                            {row.autoSynced && (
+                              <span
+                                title="Backfilled from the Summary of Ratings reconciliation. Save it to confirm as curated."
+                                className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700"
+                              >
+                                Auto-synced
+                              </span>
+                            )}
                             <button
                               type="button"
                               onClick={() => setPendingDelete(row)}
@@ -738,6 +748,12 @@ const CompetencyMapPanel = ({
         <span><strong className="text-[#363EE8]">B</strong> = Basic</span>
         <span><strong className="text-[#363EE8]">I</strong> = Intermediate</span>
         <span><strong className="text-[#363EE8]">A</strong> = Advanced</span>
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+            Auto-synced
+          </span>
+          = backfilled from ratings, pending PM review
+        </span>
       </div>
     </div>
   );
