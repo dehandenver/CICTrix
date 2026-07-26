@@ -7,6 +7,7 @@ import {
   ensureRecruitmentSeedData,
   getApplicants,
   getNewlyHiredFromSupabase,
+  resolveDepartmentForPosition,
   saveApplicants,
   saveNewlyHired,
 } from '../lib/recruitmentData';
@@ -104,6 +105,35 @@ export const ForHiringPage = () => {
       try {
         ensureRecruitmentSeedData();
 
+        // Build job position -> department lookup from Supabase job postings
+        const jobDeptMap = new Map<string, string>();
+        try {
+          const { data: jobData } = await (supabase as any).from('job_postings').select('*');
+          if (Array.isArray(jobData)) {
+            jobData.forEach((j: any) => {
+              const titleKey = String(j.title || '').trim().toLowerCase();
+              const deptName = String(j.department || j.office || '').trim();
+              if (titleKey && deptName) jobDeptMap.set(titleKey, deptName);
+            });
+          }
+        } catch { /* ignore */ }
+
+        const isGenericCategory = (val: string) =>
+          !val || ['operations', 'finance', 'human resources', 'unassigned', 'unassigned department'].includes(val.toLowerCase().trim());
+
+        const resolveOffice = (pos: string, rawOffice?: string, rawDept?: string): string => {
+          const o = String(rawOffice || '').trim();
+          const d = String(rawDept || '').trim();
+          const titleKey = String(pos || '').trim().toLowerCase();
+
+          if (o && !isGenericCategory(o)) return o;
+          if (d && !isGenericCategory(d)) return d;
+          if (titleKey && jobDeptMap.has(titleKey)) return jobDeptMap.get(titleKey)!;
+          if (o) return o;
+          if (d) return d;
+          return resolveDepartmentForPosition(pos) || 'Operations';
+        };
+
         // Applicant qualifies for this list if it is already flagged for hiring
         // OR it is "completed" (Finalized) on the Applicant Score tab — but never
         // if it has been disqualified/rejected or if credentials have already been generated.
@@ -174,12 +204,14 @@ export const ForHiringPage = () => {
 
           const fullName = [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ')
             || r.full_name || '';
+          const position = r.position || '';
+          const department = resolveOffice(position, r.office, r.department);
           const row: HiringRow = {
             id:            String(r.id),
             fullName:      fullName || (r.email ? String(r.email).split('@')[0] : '—'),
             email:         r.email ?? '',
-            position:      r.position || '',
-            department:    r.office || r.department || '',
+            position,
+            department,
             interviewScore: r.total_score        != null ? Number(r.total_score)        : null,
             examScore:      r.qualification_score != null ? Number(r.qualification_score) : null,
             status,
@@ -219,12 +251,14 @@ export const ForHiringPage = () => {
         local.forEach(a => {
           const fullName = [a.personalInfo.firstName, a.personalInfo.lastName].filter(Boolean).join(' ')
             || a.personalInfo.email?.split('@')[0] || '—';
+          const position = (a as any).position ?? '';
+          const department = resolveOffice(position, (a as any).office, (a as any).department);
           mergedMap.set(a.id, {
             id:            a.id,
             fullName,
             email:         a.personalInfo.email ?? '',
-            position:      (a as any).position ?? '',
-            department:    (a as any).department ?? (a as any).office ?? '',
+            position,
+            department,
             interviewScore: null,
             examScore:      Number(a.qualificationScore ?? 0) || null,
             status:         a.status,
