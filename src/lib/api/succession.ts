@@ -51,6 +51,8 @@ export interface CriticalPosition {
   title: string;
   incumbentEmployeeId: string | null;
   incumbentName: string | null;
+  /** Expected leaving/retirement date of the incumbent (migration 20260828), or null. */
+  incumbentLeavingDate: string | null;
   criticalityReason: string | null;
   createdBy: string | null;
   createdAt: string;
@@ -211,6 +213,10 @@ export interface GateFailure {
   department: string | null;
   /** Each string describes one failed gate, e.g. "Missing finalized IPCR". */
   failedGates: string[];
+  /** Per-gate pass/fail for the OCBO table's Qualification columns. */
+  gates: { education: boolean; eligibility: boolean; performance: boolean; training: boolean };
+  /** Competency match % if computable (they're unranked, but the table still shows it). */
+  competencyMatchPct: number | null;
   /** Auto-generated: what's missing (mirrors failedGates, Part 4 Gap Analysis). */
   gapAnalysis: string[];
   /** Auto-generated next step(s) per failed gate (Part 4 Required Actions). */
@@ -478,6 +484,7 @@ export async function listCriticalPositions(departmentId: string): Promise<Resul
       title: String(r.title ?? ''),
       incumbentEmployeeId: r.incumbent_employee_id ? String(r.incumbent_employee_id) : null,
       incumbentName: r.incumbent_employee_id ? nameById.get(String(r.incumbent_employee_id)) ?? null : null,
+      incumbentLeavingDate: r.incumbent_leaving_date ?? null,
       criticalityReason: r.criticality_reason ?? null,
       createdBy: r.created_by ?? null,
       createdAt: String(r.created_at),
@@ -559,6 +566,7 @@ export async function createCriticalPosition(input: {
         title: String(data.title),
         incumbentEmployeeId: data.incumbent_employee_id ? String(data.incumbent_employee_id) : null,
         incumbentName: null,
+        incumbentLeavingDate: data.incumbent_leaving_date ?? null,
         criticalityReason: data.criticality_reason ?? null,
         createdBy: data.created_by ?? null,
         createdAt: String(data.created_at),
@@ -1483,6 +1491,44 @@ function ipcrRank(adjectival: string | null): number {
  *   deliberate HR decisions) and are always placed in the ranked list,
  *   with gatesBypassed = true.
  */
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-candidate Remarks (OCBO table Remarks column; migration 20260828)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Remarks for every candidate under a position, keyed by employee_id. */
+export async function getCandidateRemarks(criticalPositionId: string): Promise<Map<string, string>> {
+  const m = new Map<string, string>();
+  const { data, error } = await supabase
+    .from('succession_candidate_remarks')
+    .select('employee_id, remarks')
+    .eq('critical_position_id', criticalPositionId);
+  if (error) { console.error('getCandidateRemarks error:', error); return m; }
+  for (const r of (data ?? []) as any[]) if (r.remarks) m.set(String(r.employee_id), String(r.remarks));
+  return m;
+}
+
+/** Upsert one candidate's Remarks (works for auto-discovered and manual candidates). */
+export async function saveCandidateRemark(input: {
+  criticalPositionId: string;
+  employeeId: string;
+  remarks: string;
+  updatedBy: string;
+}): Promise<Result<null>> {
+  const { error } = await supabase
+    .from('succession_candidate_remarks')
+    .upsert(
+      {
+        critical_position_id: input.criticalPositionId,
+        employee_id: input.employeeId,
+        remarks: input.remarks.trim() || null,
+        updated_by: input.updatedBy,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'critical_position_id,employee_id' },
+    );
+  return error ? { ok: false, error: error.message } : { ok: true, data: null };
+}
+
 export async function listAutoSuccessors(
   criticalPositionId: string,
 ): Promise<Result<AutoSuccessorsResult>> {
@@ -1656,12 +1702,24 @@ export async function listAutoSuccessors(
       }
 
       if (failedGates.length > 0) {
+        // Per-gate pass/fail for the table, derived from the (authored) messages.
+        const gates = {
+          education: !failedGates.some((g) => g.startsWith('Course mismatch') || g.startsWith('No education record')),
+          eligibility: !failedGates.some((g) => g.includes('requires Professional') || g.includes('requires Sub-Professional') || g.startsWith('No eligibility')),
+          performance: !failedGates.some((g) => g === 'Missing finalized IPCR' || g.startsWith('IPCR:')),
+          training: !failedGates.some((g) => g.startsWith('Training:')),
+        };
+        const nqTagged = taggedByEmp.get(empId) ?? emptyTagMap;
+        const nqMet = requiredCompetencies.filter((rc) => nqTagged.has(rc.id)).length;
+        const nqPct = requiredCompetencies.length ? Math.round((nqMet / requiredCompetencies.length) * 100) : null;
         notQualified.push({
           employeeId: empId,
           employeeName: fullName(e),
           currentPosition: String(e.position ?? '') || null,
           department: e.department ?? null,
           failedGates,
+          gates,
+          competencyMatchPct: nqPct,
           gapAnalysis: failedGates,
           requiredActions: [...new Set(failedGates.map(actionForGate))],
           // "Incomplete — Pending Evaluation" is distinct from "Not Qualified":

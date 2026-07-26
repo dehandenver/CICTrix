@@ -31,6 +31,8 @@ import {
   listEmployeeOptions,
   listCompetencyRequirements,
   listPositionQualificationsForDepartment,
+  getCandidateRemarks,
+  saveCandidateRemark,
   diffQualifications,
   sharedFieldKeyword,
   type DepartmentSummary,
@@ -85,6 +87,7 @@ export const SuccessionPlanningPage = () => {
   const [employees, setEmployees] = useState<EmployeeOption[]>([]);
 
   const [refreshing, setRefreshing] = useState(false);
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('table');
 
   // ── Modals ────────────────────────────────────────────────────────────────
   const [candidateModal, setCandidateModal] = useState<
@@ -231,11 +234,33 @@ export const SuccessionPlanningPage = () => {
             flagged by each office's Department Head; candidates are ranked live by their latest completed IPCR score.
           </p>
         </div>
-        <Button variant="secondary" onClick={refreshAll} loading={refreshing}>
-          <RefreshCw size={15} /> Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex overflow-hidden rounded-lg border border-[var(--border-color)]">
+            <button
+              onClick={() => setViewMode('table')}
+              className={`px-3 py-1.5 text-xs font-semibold ${viewMode === 'table' ? 'bg-blue-600 text-white' : 'bg-white text-[var(--text-secondary)] hover:bg-slate-50'}`}
+            >
+              Succession Plan
+            </button>
+            <button
+              onClick={() => setViewMode('cards')}
+              className={`px-3 py-1.5 text-xs font-semibold ${viewMode === 'cards' ? 'bg-blue-600 text-white' : 'bg-white text-[var(--text-secondary)] hover:bg-slate-50'}`}
+            >
+              Ranked cards
+            </button>
+          </div>
+          {viewMode === 'cards' && (
+            <Button variant="secondary" onClick={refreshAll} loading={refreshing}>
+              <RefreshCw size={15} /> Refresh
+            </Button>
+          )}
+        </div>
       </div>
 
+      {viewMode === 'table' && <OcboTableView admin={admin} />}
+
+      {viewMode === 'cards' && (
+      <>
       {/* Breadcrumb */}
       <nav className="flex flex-wrap items-center gap-1.5 text-sm">
         <button
@@ -350,6 +375,8 @@ export const SuccessionPlanningPage = () => {
           </tbody>
         </table>
       </div>
+      </>
+      )}
 
       {/* Add candidate modal */}
       {candidateModal && (
@@ -1150,3 +1177,255 @@ const Modal = ({
     </div>
   </div>
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// OcboTableView — the official OCBO Succession Plan layout.
+//
+// Department -> Key Position (incumbent + leaving date) -> one row per candidate
+// (qualified AND not-qualified, for full pipeline transparency), with the four
+// Qualification columns (Education/Eligibility/Performance check/x + Training
+// bar/%), Overall Status, Gap Analysis, Required Actions, Timeline, and an
+// editable Remarks cell. All data comes from the same two-stage engine the
+// ranked cards use — this is presentation only.
+// ─────────────────────────────────────────────────────────────────────────────
+
+type OcboRow = {
+  employeeId: string;
+  name: string;
+  presentPosition: string | null;
+  department: string | null;
+  education: boolean;
+  eligibility: boolean;
+  performance: boolean;
+  trainingPct: number | null;
+  status: string;
+  statusTone: string;
+  gapAnalysis: string[];
+  requiredActions: string[];
+  timeline: string | null;
+};
+
+const ocboStatusTone = (s: string): string => {
+  if (s === 'Ready Now') return 'bg-green-100 text-green-700';
+  if (s === 'Ready in 1–2 Years') return 'bg-blue-100 text-blue-700';
+  if (s === 'Developmental') return 'bg-amber-100 text-amber-700';
+  if (s.startsWith('Incomplete')) return 'bg-slate-200 text-slate-600';
+  return 'bg-red-100 text-red-700'; // Not Qualified
+};
+
+const buildOcboRows = (res: AutoSuccessorsResult | undefined): OcboRow[] => {
+  if (!res) return [];
+  const q: OcboRow[] = res.qualified.map((c) => ({
+    employeeId: c.employeeId,
+    name: c.employeeName,
+    presentPosition: c.currentPosition,
+    department: c.department,
+    education: true,
+    eligibility: true,
+    performance: true,
+    trainingPct: c.readiness.competencyMatchPct,
+    status: c.readiness.tier ?? 'Developmental',
+    statusTone: ocboStatusTone(c.readiness.tier ?? 'Developmental'),
+    gapAnalysis: c.gapAnalysis,
+    requiredActions: c.requiredActions,
+    timeline: c.timeline,
+  }));
+  const nq: OcboRow[] = res.notQualified.map((f) => {
+    const status = f.pendingEvaluation ? 'Incomplete — Pending Evaluation' : 'Not Qualified';
+    return {
+      employeeId: f.employeeId,
+      name: f.employeeName,
+      presentPosition: f.currentPosition,
+      department: f.department,
+      education: f.gates.education,
+      eligibility: f.gates.eligibility,
+      performance: f.gates.performance,
+      trainingPct: f.competencyMatchPct,
+      status,
+      statusTone: ocboStatusTone(status),
+      gapAnalysis: f.gapAnalysis,
+      requiredActions: f.requiredActions,
+      timeline: null,
+    };
+  });
+  return [...q, ...nq];
+};
+
+const Tick = ({ ok }: { ok: boolean }) =>
+  ok ? <span className="font-bold text-green-600">✓</span> : <span className="font-bold text-red-500">✗</span>;
+
+const TrainingCell = ({ pct }: { pct: number | null }) => {
+  if (pct == null) return <span className="text-xs text-slate-400">n/a</span>;
+  const color = pct >= 100 ? '#16a34a' : pct >= 50 ? '#3b82f6' : '#f59e0b';
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="h-1.5 w-14 overflow-hidden rounded-full bg-slate-100">
+        <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+      </div>
+      <span className="text-[10px] font-semibold tabular-nums text-slate-600">{pct}%</span>
+    </div>
+  );
+};
+
+const OcboTableView = ({ admin }: { admin: string }) => {
+  const [departments, setDepartments] = useState<DepartmentSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [posByDept, setPosByDept] = useState<Record<string, CriticalPosition[]>>({});
+  const [candByPos, setCandByPos] = useState<Record<string, AutoSuccessorsResult>>({});
+  const [remarksByPos, setRemarksByPos] = useState<Record<string, Record<string, string>>>({});
+  const [loadingDept, setLoadingDept] = useState<Record<string, boolean>>({});
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    listDepartmentSummaries().then((r) => {
+      if (r.ok) setDepartments(r.data);
+      setLoading(false);
+    });
+  }, []);
+
+  const toggle = async (deptId: string) => {
+    const isOpen = expanded.has(deptId);
+    setExpanded((prev) => {
+      const n = new Set(prev);
+      if (isOpen) n.delete(deptId);
+      else n.add(deptId);
+      return n;
+    });
+    if (isOpen || posByDept[deptId]) return;
+    setLoadingDept((p) => ({ ...p, [deptId]: true }));
+    const pr = await listCriticalPositions(deptId);
+    const positions = pr.ok ? pr.data : [];
+    setPosByDept((p) => ({ ...p, [deptId]: positions }));
+    await Promise.all(
+      positions.map(async (pos) => {
+        const [cr, rm] = await Promise.all([listAutoSuccessors(pos.id), getCandidateRemarks(pos.id)]);
+        if (cr.ok) setCandByPos((p) => ({ ...p, [pos.id]: cr.data }));
+        setRemarksByPos((p) => ({ ...p, [pos.id]: Object.fromEntries(rm) }));
+      }),
+    );
+    setLoadingDept((p) => ({ ...p, [deptId]: false }));
+  };
+
+  const saveRemark = async (positionId: string, employeeId: string, value: string) => {
+    setRemarksByPos((p) => ({ ...p, [positionId]: { ...(p[positionId] || {}), [employeeId]: value } }));
+    await saveCandidateRemark({ criticalPositionId: positionId, employeeId, remarks: value, updatedBy: admin });
+  };
+
+  const openArchive = (r: OcboRow) => {
+    const params = new URLSearchParams({ module: 'archive', employee: r.employeeId });
+    if (r.department) params.set('office', r.department);
+    navigate(`/admin/lnd?${params.toString()}`);
+  };
+
+  const fmtLeaving = (iso: string | null) =>
+    iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : null;
+
+  if (loading) return <p className="text-sm text-[var(--text-secondary)]">Loading succession plan…</p>;
+
+  return (
+    <div className="space-y-3">
+      <p className="!mb-0 text-xs text-[var(--text-secondary)]">
+        Official succession-plan view. Every potential candidate is shown — qualified or not — for full pipeline
+        transparency. Education / Eligibility / Performance are mandatory pass/fail gates; Training is a graded
+        competency-readiness match. Remarks are editable.
+      </p>
+      {departments.map((dept) => {
+        const open = expanded.has(dept.departmentId);
+        const positions = posByDept[dept.departmentId] ?? [];
+        return (
+          <div key={dept.departmentId} className="overflow-hidden rounded-xl border border-[var(--border-color)] bg-white">
+            <button
+              onClick={() => toggle(dept.departmentId)}
+              className={`flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-50/60 ${open ? 'bg-slate-50/60' : ''}`}
+            >
+              {open ? <ChevronDown size={18} className="text-blue-600" /> : <ChevronRight size={18} className="text-[var(--text-muted)]" />}
+              <span className="rounded-xl bg-blue-100 p-2 text-blue-600"><Building2 size={16} /></span>
+              <span className="font-semibold text-[var(--text-primary)]">{dept.departmentName}</span>
+              <span className="text-xs text-[var(--text-secondary)]">{dept.criticalPositionCount} critical position{dept.criticalPositionCount === 1 ? '' : 's'}</span>
+            </button>
+
+            {open && (
+              <div className="border-t border-[var(--border-color)] p-4">
+                {loadingDept[dept.departmentId] && <p className="text-sm text-[var(--text-secondary)]">Loading positions…</p>}
+                {!loadingDept[dept.departmentId] && positions.length === 0 && (
+                  <p className="text-sm text-[var(--text-secondary)]">No critical positions flagged for this office.</p>
+                )}
+                {positions.map((pos) => {
+                  const rows = buildOcboRows(candByPos[pos.id]);
+                  const leaving = fmtLeaving(pos.incumbentLeavingDate);
+                  return (
+                    <div key={pos.id} className="mb-5 last:mb-0">
+                      <div className="mb-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                        <span className="font-semibold text-[var(--text-primary)]">{pos.title}</span>
+                        <span className="text-xs text-[var(--text-secondary)]">
+                          Held by: {pos.incumbentName ?? <em className="text-slate-400">Vacant</em>}
+                          {leaving ? ` · leaving ${leaving}` : ''}
+                        </span>
+                      </div>
+                      <div className="overflow-x-auto rounded-lg border border-[var(--border-color)]">
+                        <table className="w-full min-w-[1040px] border-collapse text-xs">
+                          <thead>
+                            <tr className="border-b border-[var(--border-color)] bg-slate-50 text-left text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">
+                              <th className="px-3 py-2">Candidate / Present Position</th>
+                              <th className="px-3 py-2 text-center">Educ.</th>
+                              <th className="px-3 py-2 text-center">Elig.</th>
+                              <th className="px-3 py-2 text-center">Perf.</th>
+                              <th className="px-3 py-2">Training</th>
+                              <th className="px-3 py-2">Overall Status</th>
+                              <th className="px-3 py-2">Gap Analysis</th>
+                              <th className="px-3 py-2">Required Actions</th>
+                              <th className="px-3 py-2">Timeline</th>
+                              <th className="px-3 py-2">Remarks</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {rows.length === 0 && (
+                              <tr><td colSpan={10} className="px-3 py-4 text-center text-slate-400">No candidates whose position field matches this role.</td></tr>
+                            )}
+                            {rows.map((r) => (
+                              <tr key={r.employeeId} className="align-top hover:bg-slate-50/50">
+                                <td className="px-3 py-2">
+                                  <button onClick={() => openArchive(r)} className="text-left font-medium text-blue-600 hover:underline" title="Open L&D Archive">
+                                    {r.name}
+                                  </button>
+                                  <div className="text-[10px] text-slate-400">{r.presentPosition ?? '—'}</div>
+                                </td>
+                                <td className="px-3 py-2 text-center"><Tick ok={r.education} /></td>
+                                <td className="px-3 py-2 text-center"><Tick ok={r.eligibility} /></td>
+                                <td className="px-3 py-2 text-center"><Tick ok={r.performance} /></td>
+                                <td className="px-3 py-2"><TrainingCell pct={r.trainingPct} /></td>
+                                <td className="px-3 py-2">
+                                  <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${r.statusTone}`}>{r.status}</span>
+                                </td>
+                                <td className="px-3 py-2 text-[10px] text-slate-600">{r.gapAnalysis.length ? r.gapAnalysis.join('; ') : '—'}</td>
+                                <td className="px-3 py-2 text-[10px] text-slate-600">{r.requiredActions.length ? r.requiredActions.join('; ') : '—'}</td>
+                                <td className="px-3 py-2 text-[10px] text-slate-600">{r.timeline ?? '—'}</td>
+                                <td className="px-3 py-2">
+                                  <input
+                                    type="text"
+                                    defaultValue={remarksByPos[pos.id]?.[r.employeeId] ?? ''}
+                                    placeholder="Add remark…"
+                                    onBlur={(e) => {
+                                      const v = e.target.value;
+                                      if (v !== (remarksByPos[pos.id]?.[r.employeeId] ?? '')) void saveRemark(pos.id, r.employeeId, v);
+                                    }}
+                                    className="w-40 rounded border border-slate-200 px-2 py-1 text-[11px] focus:border-blue-400 focus:outline-none"
+                                  />
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
