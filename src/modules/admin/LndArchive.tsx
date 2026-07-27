@@ -14,6 +14,7 @@ import { Archive, ArrowLeft, Building2, CalendarClock, ChevronRight, ExternalLin
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { EmptyState } from '../../components/EmptyState';
+import { COMPETENCIES } from '../../constants/positions';
 import {
   listArchiveOfficeDirectory,
   listTrainingArchive,
@@ -42,6 +43,7 @@ export const LndArchive = ({
   const [officeSearch, setOfficeSearch] = useState('');
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'office', dir: 'asc' });
   const [empSearch, setEmpSearch] = useState('');
+  const [competencyFilter, setCompetencyFilter] = useState<string>('');
   const focusRef = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
 
@@ -63,6 +65,7 @@ export const LndArchive = ({
     let cancelled = false;
     setLoadingEmployees(true);
     setEmpSearch('');
+    setCompetencyFilter('');
     (async () => {
       const data = await listTrainingArchive(selectedOffice);
       if (!cancelled) {
@@ -99,13 +102,29 @@ export const LndArchive = ({
 
   const visibleEmployees = useMemo(() => {
     const q = empSearch.trim().toLowerCase();
-    if (!q) return employees;
-    return employees.filter(
-      (e) => e.name.toLowerCase().includes(q) ||
-        (e.position ?? '').toLowerCase().includes(q) ||
-        e.trainings.some((t) => t.title.toLowerCase().includes(q)),
-    );
-  }, [employees, empSearch]);
+    const comp = competencyFilter.trim();
+
+    return employees
+      .map((e) => {
+        // A competency filter narrows each card to its matching trainings and
+        // drops employees left with none; no filter keeps the full history.
+        const trainings = comp ? e.trainings.filter((t) => t.typeOfCompetency === comp) : e.trainings;
+        return { ...e, trainings };
+      })
+      .filter((e) => {
+        if (comp && e.trainings.length === 0) return false;
+        if (!q) return true;
+        return (
+          e.name.toLowerCase().includes(q) ||
+          (e.position ?? '').toLowerCase().includes(q) ||
+          e.trainings.some(
+            (t) =>
+              t.title.toLowerCase().includes(q) ||
+              (t.typeOfCompetency ?? '').toLowerCase().includes(q),
+          )
+        );
+      });
+  }, [employees, empSearch, competencyFilter]);
 
   const toggleSort = (key: SortKey) =>
     setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: key === 'office' ? 'asc' : 'desc' }));
@@ -226,14 +245,27 @@ export const LndArchive = ({
             >
               <ArrowLeft className="h-3.5 w-3.5" /> Back to Offices
             </button>
-            <div className="relative max-w-sm flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <input
-                value={empSearch}
-                onChange={(e) => setEmpSearch(e.target.value)}
-                placeholder="Search employees or training titles…"
-                className="h-10 w-full rounded-lg border border-gray-300 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
+            <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
+              <div className="relative max-w-sm flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  value={empSearch}
+                  onChange={(e) => setEmpSearch(e.target.value)}
+                  placeholder="Search employees, training titles, or competencies…"
+                  className="h-10 w-full rounded-lg border border-gray-300 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+              <select
+                value={competencyFilter}
+                onChange={(e) => setCompetencyFilter(e.target.value)}
+                title="Filter by Type of Competency"
+                className="h-10 rounded-lg border border-gray-300 px-3 text-sm text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="">All competencies</option>
+                {COMPETENCIES.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -243,7 +275,7 @@ export const LndArchive = ({
             <EmptyState
               icon={Archive}
               title="No training records"
-              description={empSearch ? 'No employees or trainings match your search.' : `${selectedOffice} has no training records on file yet.`}
+              description={empSearch || competencyFilter ? 'No employees or trainings match your filters.' : `${selectedOffice} has no training records on file yet.`}
             />
           ) : (
             <div className="space-y-5">
@@ -277,15 +309,14 @@ export const LndArchive = ({
                     </div>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[880px] border-collapse text-sm">
+                    <table className="w-full min-w-[820px] border-collapse text-sm">
                       <thead>
                         <tr className="border-b border-gray-100 bg-white text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500">
                           <th className="px-4 py-2.5">Training Title</th>
-                          <th className="px-4 py-2.5">Category</th>
+                          <th className="px-4 py-2.5">Type of Competency</th>
                           <th className="px-4 py-2.5">Provider</th>
                           <th className="px-4 py-2.5">Date Conducted</th>
-                          <th className="px-4 py-2.5 text-center">Hours</th>
-                          <th className="px-4 py-2.5">Attendance</th>
+                          <th className="px-4 py-2.5 text-center">Attendance</th>
                           <th className="px-4 py-2.5">Completion</th>
                           <th className="px-4 py-2.5">Certificate No.</th>
                           <th className="px-4 py-2.5">Remarks</th>
@@ -295,11 +326,12 @@ export const LndArchive = ({
                         {emp.trainings.map((t) => (
                           <tr key={t.id} className="hover:bg-gray-50/60">
                             <td className="px-4 py-3 font-medium text-gray-900">{t.title}</td>
-                            <td className="px-4 py-3 text-gray-600">{t.category ?? '—'}</td>
+                            <td className="px-4 py-3 text-gray-600">{t.typeOfCompetency ?? '—'}</td>
                             <td className="px-4 py-3 text-gray-600">{t.provider ?? '—'}</td>
                             <td className="px-4 py-3 whitespace-nowrap text-gray-600">{t.dateConducted}</td>
-                            <td className="px-4 py-3 text-center text-gray-600">{t.hours ?? '—'}</td>
-                            <td className="px-4 py-3 text-gray-600">{t.attendanceStatus}</td>
+                            <td className="px-4 py-3 text-center text-gray-600">
+                              {t.attendancePercent != null ? `${t.attendancePercent}%` : '—'}
+                            </td>
                             <td className="px-4 py-3">
                               <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
                                 {t.completionStatus}
