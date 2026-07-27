@@ -66,27 +66,6 @@ const isForHiring = (status: string) => {
 const CAT_SCORES_KEY = 'cictrix_category_scores';
 const EXAM_SCORES_KEY = 'cictrix_exam_scores';
 
-const eff = (cat: { finalScore: number | null; initialScore: number } | undefined): number =>
-  cat?.finalScore ?? cat?.initialScore ?? 0;
-
-const computeCatTotalScore = (scores: any, apptType: 'original' | 'promotional' = 'original'): number | null => {
-  if (!scores) return null;
-  const keys = ['education', 'experience', 'performance', 'potential', 'pcpt', 'writtenExam', 'oralExam'];
-  const hasAny = keys.some(k => scores[k]?.finalScore != null || scores[k]?.initialScore != null);
-  if (!hasAny) return null;
-
-  if (apptType === 'promotional') {
-    return eff(scores.education) +
-           eff(scores.experience) +
-           eff(scores.performance) +
-           eff(scores.potential) +
-           eff(scores.pcpt);
-  }
-  return eff(scores.education) +
-         eff(scores.experience) +
-         eff(scores.oralExam);
-};
-
 const oralRawToConvertedScore = (raw: number) => +Math.min(20, Math.max(0, (raw / 5) * 20)).toFixed(2);
 
 // Mirrors the "Finalized" flag on the Applicant Score tab: an applicant is
@@ -201,7 +180,6 @@ export const ForHiringPage = () => {
           const savedCat = catScores[sid]
             || (semail ? catScores[`email:${semail}`] : null);
 
-          const apptType = savedCat?.appointmentType ?? 'original';
           const posExamScoreStr = position && examScores[position]?.[sid] ? examScores[position][sid] : null;
           const posExamScore = posExamScoreStr && !isNaN(Number(posExamScoreStr)) ? Number(posExamScoreStr) : null;
 
@@ -219,12 +197,9 @@ export const ForHiringPage = () => {
             examScore = dbQualScore;
           }
 
-          // 2. Interview Score (Oral / Total evaluation rating)
+          // 2. Interview Score (Oral Examination / Interviewer Rating)
           let interviewScore: number | null = null;
-          const computedTotal = computeCatTotalScore(savedCat, apptType);
-          if (computedTotal != null && computedTotal > 0) {
-            interviewScore = computedTotal;
-          } else if (savedCat?.oralExam?.finalScore != null) {
+          if (savedCat?.oralExam?.finalScore != null) {
             interviewScore = Number(savedCat.oralExam.finalScore);
           } else if (savedCat?.oralExam?.initialScore != null && savedCat.oralExam.initialScore > 0) {
             interviewScore = Number(savedCat.oralExam.initialScore);
