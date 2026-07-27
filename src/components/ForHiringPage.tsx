@@ -15,7 +15,7 @@ import type { NewlyHired } from '../types/recruitment.types';
 import { sendEmail } from '../lib/email';
 import { createPassword, getEmployeePortalAccounts, upsertEmployeePortalAccount } from '../lib/employeePortalData';
 import { supabase } from '../lib/supabase';
-import { buildEvaluationSnapshotMap } from '../lib/evaluationScores';
+import { buildEvaluationSnapshotMap, subscribeToEvaluationChanges, type EvaluationSnapshot } from '../lib/evaluationScores';
 import {
   ArrowLeft,
   Building2,
@@ -64,6 +64,30 @@ const isForHiring = (status: string) => {
 };
 
 const CAT_SCORES_KEY = 'cictrix_category_scores';
+const EXAM_SCORES_KEY = 'cictrix_exam_scores';
+
+const eff = (cat: { finalScore: number | null; initialScore: number } | undefined): number =>
+  cat?.finalScore ?? cat?.initialScore ?? 0;
+
+const computeCatTotalScore = (scores: any, apptType: 'original' | 'promotional' = 'original'): number | null => {
+  if (!scores) return null;
+  const keys = ['education', 'experience', 'performance', 'potential', 'pcpt', 'writtenExam', 'oralExam'];
+  const hasAny = keys.some(k => scores[k]?.finalScore != null || scores[k]?.initialScore != null);
+  if (!hasAny) return null;
+
+  if (apptType === 'promotional') {
+    return eff(scores.education) +
+           eff(scores.experience) +
+           eff(scores.performance) +
+           eff(scores.potential) +
+           eff(scores.pcpt);
+  }
+  return eff(scores.education) +
+         eff(scores.experience) +
+         eff(scores.oralExam);
+};
+
+const oralRawToConvertedScore = (raw: number) => +Math.min(20, Math.max(0, (raw / 5) * 20)).toFixed(2);
 
 // Mirrors the "Finalized" flag on the Applicant Score tab: an applicant is
 // considered completed once RSP has saved their category scores (localStorage)
@@ -132,6 +156,87 @@ export const ForHiringPage = () => {
           if (o) return o;
           if (d) return d;
           return resolveDepartmentForPosition(pos) || 'Operations';
+        };
+
+        // Load evaluation snapshots from DB & local storage
+        let evalSnapshotMap = new Map<string, EvaluationSnapshot>();
+        try {
+          const { data: evalData } = await (supabase as any).from('evaluations').select('*');
+          if (Array.isArray(evalData)) {
+            evalSnapshotMap = buildEvaluationSnapshotMap(evalData);
+          } else {
+            evalSnapshotMap = buildEvaluationSnapshotMap([]);
+          }
+        } catch {
+          evalSnapshotMap = buildEvaluationSnapshotMap([]);
+        }
+
+        // Load local category and exam scores
+        let catScores: Record<string, any> = {};
+        try {
+          catScores = JSON.parse(localStorage.getItem(CAT_SCORES_KEY) ?? '{}');
+        } catch { /* ignore */ }
+
+        let examScores: Record<string, Record<string, string>> = {};
+        try {
+          examScores = JSON.parse(localStorage.getItem(EXAM_SCORES_KEY) ?? '{}');
+        } catch { /* ignore */ }
+
+        const resolveApplicantScores = (
+          id: string,
+          email?: string,
+          name?: string,
+          position?: string,
+          dbTotalScore?: number | null,
+          dbQualScore?: number | null
+        ) => {
+          const sid = String(id);
+          const semail = (email || '').toLowerCase().trim();
+          const sname = (name || '').toLowerCase().trim();
+
+          const snap = evalSnapshotMap.get(sid)
+            || (semail ? evalSnapshotMap.get(`email:${semail}`) : null)
+            || (sname ? evalSnapshotMap.get(`name:${sname}`) : null);
+
+          const savedCat = catScores[sid]
+            || (semail ? catScores[`email:${semail}`] : null);
+
+          const apptType = savedCat?.appointmentType ?? 'original';
+          const posExamScoreStr = position && examScores[position]?.[sid] ? examScores[position][sid] : null;
+          const posExamScore = posExamScoreStr && !isNaN(Number(posExamScoreStr)) ? Number(posExamScoreStr) : null;
+
+          // 1. Exam score (Written Exam)
+          let examScore: number | null = null;
+          if (savedCat?.writtenExam?.finalScore != null) {
+            examScore = Number(savedCat.writtenExam.finalScore);
+          } else if (savedCat?.writtenExam?.initialScore != null && savedCat.writtenExam.initialScore > 0) {
+            examScore = Number(savedCat.writtenExam.initialScore);
+          } else if (posExamScore != null) {
+            examScore = posExamScore;
+          } else if (typeof snap?.writtenExamRawScore === 'number') {
+            examScore = snap.writtenExamRawScore;
+          } else if (dbQualScore != null && dbQualScore > 0) {
+            examScore = dbQualScore;
+          }
+
+          // 2. Interview Score (Oral / Total evaluation rating)
+          let interviewScore: number | null = null;
+          const computedTotal = computeCatTotalScore(savedCat, apptType);
+          if (computedTotal != null && computedTotal > 0) {
+            interviewScore = computedTotal;
+          } else if (savedCat?.oralExam?.finalScore != null) {
+            interviewScore = Number(savedCat.oralExam.finalScore);
+          } else if (savedCat?.oralExam?.initialScore != null && savedCat.oralExam.initialScore > 0) {
+            interviewScore = Number(savedCat.oralExam.initialScore);
+          } else if (typeof snap?.oralRawScore === 'number') {
+            interviewScore = snap.oralRawScore <= 5 ? oralRawToConvertedScore(snap.oralRawScore) : snap.oralRawScore;
+          } else if (typeof snap?.score === 'number' && snap.score > 0) {
+            interviewScore = snap.score;
+          } else if (dbTotalScore != null && dbTotalScore > 0) {
+            interviewScore = dbTotalScore;
+          }
+
+          return { interviewScore, examScore };
         };
 
         // Applicant qualifies for this list if it is already flagged for hiring
@@ -206,14 +311,23 @@ export const ForHiringPage = () => {
             || r.full_name || '';
           const position = r.position || '';
           const department = resolveOffice(position, r.office, r.department);
+          const { interviewScore, examScore } = resolveApplicantScores(
+            String(r.id),
+            email,
+            fullName,
+            position,
+            r.total_score != null ? Number(r.total_score) : null,
+            r.qualification_score != null ? Number(r.qualification_score) : null
+          );
+
           const row: HiringRow = {
             id:            String(r.id),
             fullName:      fullName || (r.email ? String(r.email).split('@')[0] : '—'),
             email:         r.email ?? '',
             position,
             department,
-            interviewScore: r.total_score        != null ? Number(r.total_score)        : null,
-            examScore:      r.qualification_score != null ? Number(r.qualification_score) : null,
+            interviewScore,
+            examScore,
             status,
           };
           remoteMap.set(row.id, row);
@@ -253,14 +367,23 @@ export const ForHiringPage = () => {
             || a.personalInfo.email?.split('@')[0] || '—';
           const position = (a as any).position ?? '';
           const department = resolveOffice(position, (a as any).office, (a as any).department);
+          const { interviewScore, examScore } = resolveApplicantScores(
+            a.id,
+            a.personalInfo.email,
+            fullName,
+            position,
+            null,
+            Number(a.qualificationScore ?? 0) || null
+          );
+
           mergedMap.set(a.id, {
             id:            a.id,
             fullName,
             email:         a.personalInfo.email ?? '',
             position,
             department,
-            interviewScore: null,
-            examScore:      Number(a.qualificationScore ?? 0) || null,
+            interviewScore,
+            examScore,
             status:         a.status,
           });
         });
@@ -276,9 +399,11 @@ export const ForHiringPage = () => {
       }
     };
     void load();
+    const unsubscribeEvals = subscribeToEvaluationChanges(load);
     window.addEventListener('cictrix:applicants-updated', load);
     window.addEventListener('cictrix:category-scores-updated', load);
     return () => {
+      unsubscribeEvals();
       window.removeEventListener('cictrix:applicants-updated', load);
       window.removeEventListener('cictrix:category-scores-updated', load);
     };
