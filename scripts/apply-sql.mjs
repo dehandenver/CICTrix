@@ -68,6 +68,16 @@ if (!url) {
   process.exit(1);
 }
 
+// The Connect dialog hands out the URI with [YOUR-PASSWORD] in it. Pasted as-is
+// that produces an auth failure (or a DNS error first) that reads like a broken
+// connection rather than an unfinished one, so name it directly.
+if (/\[[^\]]*\]/.test(url)) {
+  console.error('DATABASE_URL still contains a placeholder — it was pasted unedited.');
+  console.error(`  ${url.replace(/:\/\/([^:]+):[^@]*@/, '://$1:***@')}`);
+  console.error('Replace the bracketed value with the actual database password.');
+  process.exit(1);
+}
+
 const host = (() => {
   try { return new URL(url).host; } catch { return '<unparseable>'; }
 })();
