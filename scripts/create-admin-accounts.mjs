@@ -37,13 +37,28 @@ function loadEnv(path) {
     return acc;
   }, {});
 }
-const env = { ...loadEnv('.env'), ...loadEnv('backend/.env') };
+// `--target-env <path>` points this at a non-production project (e.g. the HR
+// demo) without editing .env, which the app and backend also read. Editing .env
+// in place to target the demo is how you end up rotating production passwords by
+// accident, so the override is a separate file rather than a mutation.
+// Not named --env-file: that is a built-in Node flag (20+) and Node consumes it
+// before the script sees it.
+const fileArg = process.argv.indexOf('--target-env');
+const ENV_FILES = fileArg > -1 && process.argv[fileArg + 1]
+  ? [process.argv[fileArg + 1]]
+  : ['.env', 'backend/.env'];
+const env = ENV_FILES.reduce((acc, f) => ({ ...acc, ...loadEnv(f) }), {});
 const URL = env.VITE_SUPABASE_URL || env.SUPABASE_URL;
 const SERVICE_KEY = env.SUPABASE_SERVICE_ROLE_KEY || env.SERVICE_ROLE_KEY;
 if (!URL || !SERVICE_KEY) {
-  console.error('Missing VITE_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY (.env / backend/.env).');
+  console.error(`Missing VITE_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY (${ENV_FILES.join(' / ')}).`);
   process.exit(1);
 }
+// This script mutates auth accounts, so it names its target before doing so —
+// the failure mode it guards against is silently hitting the wrong project.
+console.log(`Target project : ${URL}`);
+console.log(`Env source     : ${ENV_FILES.join(' + ')}`);
+console.log(`Mode           : ${process.argv.includes('--rotate') ? 'ROTATE existing passwords' : 'create missing only'}\n`);
 const supabase = createClient(URL, SERVICE_KEY, { auth: { persistSession: false } });
 
 /**
