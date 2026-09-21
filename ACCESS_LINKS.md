@@ -19,6 +19,34 @@ Reference for local development access to frontend pages and backend API endpoin
 | **Backend API** | [https://cic-trix.vercel.app/api](https://cic-trix.vercel.app/api) | Production API endpoints |
 | **API Docs (Swagger)** | [https://cic-trix.vercel.app/api/docs](https://cic-trix.vercel.app/api/docs) | Production API Documentation |
 
+## HR Demo Environment (Vercel)
+
+> Public sandbox for HR staff to explore and test every feature freely. It runs
+> the same codebase as production but is backed by a **separate Supabase
+> project**, so nothing done here can affect production data.
+>
+> Canonical demo host is **cictrix-hr-demo.vercel.app**. Note that
+> `cictrix-demo.vercel.app` (without `-hr-`) is **not** a real deployment and
+> returns 404 — do not hand that one out.
+
+| Service / Portal | Live URL | Description / Access |
+|---|---|---|
+| **Landing Page (Applicant Portal)** | [https://cictrix-hr-demo.vercel.app/](https://cictrix-hr-demo.vercel.app/) | Public — demo landing page |
+| **Admin Portal** | [https://cictrix-hr-demo.vercel.app/admin/login](https://cictrix-hr-demo.vercel.app/admin/login) | Super Admin, RSP, LND, PM |
+| **Employee Portal** | [https://cictrix-hr-demo.vercel.app/employee/login](https://cictrix-hr-demo.vercel.app/employee/login) | Employee credentials |
+| **Interviewer Portal** | [https://cictrix-hr-demo.vercel.app/interviewer/login](https://cictrix-hr-demo.vercel.app/interviewer/login) | Set up via Admin portal |
+| **Application Status Tracker** | [https://cictrix-hr-demo.vercel.app/track](https://cictrix-hr-demo.vercel.app/track) | Public — look up status by applicant ID |
+
+Backend Supabase projects (public project refs, visible in the deployed bundle):
+
+| Environment | Supabase Project Ref |
+|---|---|
+| Production | `fyzdfgxaaowjzbjpwrii` |
+| HR Demo | `hydqhmtppkghqaatdgwx` |
+
+See `SYSTEM_DUPLICATION_GUIDE.md` for how the demo instance is provisioned,
+cloned, backed up, and restored.
+
 ## Local Environment URLs
 
 | Service | Primary URL | Fallback URL |
@@ -244,4 +272,4 @@ npm run dev
 - Replace local URLs with your production domain in deployment documentation.
 - Default credentials are for local testing only; rotate credentials before production use.
 
-Last updated: July 11, 2026
+Last updated: September 21, 2026
