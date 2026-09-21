@@ -68,14 +68,18 @@ if (!url) {
   process.exit(1);
 }
 
-// The host carries the project ref, so it is what identifies the target — not
-// the env file's name, which says nothing about what is actually inside it.
 const host = (() => {
   try { return new URL(url).host; } catch { return '<unparseable>'; }
 })();
 
-if (host.includes(PROD_REF) && !allowProd) {
-  console.error(`REFUSING: ${host} is the production project.`);
+// Match the ref anywhere in the URL, not just the host. A direct connection puts
+// the ref in the host (db.<ref>.supabase.co), but a pooler URI puts it in the
+// USERNAME instead (postgres.<ref>@aws-0-<region>.pooler.supabase.com) and
+// shares one host across every project in a region. Checking only the host would
+// wave a production pooler string straight through.
+if (url.includes(PROD_REF) && !allowProd) {
+  console.error(`REFUSING: this connection string targets the production project (${PROD_REF}).`);
+  console.error(`  host: ${host}`);
   console.error('Pass --allow-prod if that is genuinely intended.');
   process.exit(1);
 }
