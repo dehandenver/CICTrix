@@ -56,9 +56,10 @@ export const AdminLayout = ({ children, customSidebar, userName = 'Admin', divis
   return (
     <div className="h-screen flex flex-col bg-app text-text-primary overflow-hidden font-sans selection:bg-brand-soft selection:text-brand">
       <AdminHeader userName={sessionName} divisionLabel={sessionDivision} />
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
         {customSidebar !== undefined ? customSidebar : <Sidebar />}
-        <main className="flex-1 overflow-y-auto">
+        {/* min-w-0 keeps wide content inside this column instead of widening the page */}
+        <main className="min-w-0 flex-1 overflow-y-auto">
           {children}
         </main>
       </div>

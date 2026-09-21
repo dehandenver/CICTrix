@@ -927,19 +927,20 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
       <div className="brand-text min-h-screen bg-slate-100 font-sans text-[#040E6B]">
         <AdminHeader userName="PM Admin" divisionLabel="PM Division" />
 
-        <div className="flex">
-          <aside className="w-64 shrink-0 border-r border-slate-200 bg-white min-h-[calc(100vh-70px)] print:hidden">
+        <div className="flex flex-col lg:flex-row">
+          {/* Full-width tab strip under lg, fixed column at lg+ */}
+          <aside className="w-full shrink-0 border-b border-slate-200 bg-white print:hidden lg:min-h-[calc(100vh-70px)] lg:w-64 lg:border-b-0 lg:border-r">
             <div
-              className="border-b border-slate-200 px-6 pb-5 pt-7"
+              className="border-b border-slate-200 px-4 pb-3 pt-4 sm:px-6 lg:pb-5 lg:pt-7"
               style={{ background: 'linear-gradient(135deg, #C8D1FF 0%, #FFFFFF 100%)' }}
             >
-              <h2 className="mb-1 text-xl font-bold" style={{ color: '#040E6B' }}>PM Admin</h2>
+              <h2 className="mb-1 text-lg font-bold sm:text-xl" style={{ color: '#040E6B' }}>PM Admin</h2>
               <span className="block text-xs font-semibold uppercase tracking-wider" style={{ color: '#363EE8' }}>
                 Performance Management
               </span>
             </div>
 
-            <nav className="space-y-1.5 px-3 py-4">
+            <nav className="flex gap-1.5 overflow-x-auto px-3 py-3 lg:flex-col lg:gap-0 lg:space-y-1.5 lg:py-4">
               {sideNavItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = activeSection === item.key;
@@ -948,15 +949,16 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
                     type="button"
                     key={item.key}
                     onClick={() => setActiveSection(item.key)}
-                    className={`w-full rounded-xl px-3 py-2.5 text-left transition ${isActive ? 'shadow-sm' : 'hover:bg-[#C8D1FF]/50'}`}
+                    title={item.subtitle || item.label}
+                    className={`min-h-[44px] shrink-0 rounded-xl px-3 py-2.5 text-left transition lg:w-full lg:shrink ${isActive ? 'shadow-sm' : 'hover:bg-[#C8D1FF]/50'}`}
                     style={isActive ? { backgroundColor: '#363EE8', color: '#FFFFFF' } : { color: '#040E6B' }}
                   >
-                    <div className="flex items-start gap-3">
-                      <Icon className="mt-0.5 h-5 w-5" style={{ color: isActive ? '#FFFFFF' : '#363EE8' }} />
-                      <div>
-                        <p className="text-sm font-semibold leading-tight">{item.label}</p>
+                    <div className="flex items-center gap-2 lg:items-start lg:gap-3">
+                      <Icon className="h-5 w-5 shrink-0 lg:mt-0.5" style={{ color: isActive ? '#FFFFFF' : '#363EE8' }} />
+                      <div className="min-w-0">
+                        <p className="whitespace-nowrap text-sm font-semibold leading-tight lg:whitespace-normal">{item.label}</p>
                         {item.subtitle ? (
-                          <p className="text-xs" style={{ color: isActive ? 'rgba(255,255,255,0.80)' : 'rgba(4,14,107,0.65)' }}>{item.subtitle}</p>
+                          <p className="hidden text-xs lg:block" style={{ color: isActive ? 'rgba(255,255,255,0.80)' : 'rgba(4,14,107,0.65)' }}>{item.subtitle}</p>
                         ) : null}
                       </div>
                     </div>
@@ -966,7 +968,7 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
             </nav>
           </aside>
 
-          <main className="flex-1 p-6">
+          <main className="min-w-0 flex-1 p-4 sm:p-6">
 
             {activeSection === 'office-directory' && (
               <OfficeDirectorySection showBulkRequest={false} />
@@ -1883,10 +1885,10 @@ export const PMDashboard = ({ isDashboardView = true }: { isDashboardView?: bool
   }
 
   return (
-    <div className="flex h-screen bg-slate-50">
+    <div className="flex h-screen flex-col bg-slate-50 md:flex-row">
       <Sidebar />
-      <main className="flex-1 overflow-auto">
-        <div className="p-8">
+      <main className="min-w-0 flex-1 overflow-auto">
+        <div className="p-4 sm:p-6 lg:p-8">
           <div className="flex items-center justify-between mb-8">
             <h1 className="text-3xl font-bold text-slate-900">Performance Management System</h1>
             <Button onClick={() => {

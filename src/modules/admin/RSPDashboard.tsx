@@ -3422,9 +3422,9 @@ export const RSPDashboard = () => {
         <Sidebar activeModule="RSP" userRole="rsp" />
 
         <main className="admin-content !p-0">
-          <div className="border-b border-[var(--border-color)] bg-white px-8 py-6">
-            <h1 className="!mb-1 !text-2xl font-bold">{sectionTitle}</h1>
-            <p className="!mb-0 text-base text-[var(--text-secondary)]">
+          <div className="border-b border-[var(--border-color)] bg-white px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
+            <h1 className="!mb-1 !text-xl font-bold sm:!text-2xl">{sectionTitle}</h1>
+            <p className="!mb-0 text-sm text-[var(--text-secondary)] sm:text-base">
               {section === 'dashboard' && 'Overview of recruitment, selection and placement activities'}
               {section === 'jobs' && 'Manage and monitor all job positions and their applicants'}
               {section === 'qualified' && 'List of applicants who passed the evaluation and are eligible for further processing'}

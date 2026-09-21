@@ -100,8 +100,11 @@ export const LogoutConfirmPopover = ({
       {/* Popover */}
       {open && (
         <div
-          className={`absolute ${popoverPositionClass} z-50 w-64 rounded-xl border border-slate-200 bg-white p-4 shadow-xl`}
+          className={`absolute ${popoverPositionClass} z-50 rounded-xl border border-slate-200 bg-white p-4 shadow-xl`}
           style={{
+            // Never wider than the viewport on small screens (320px included)
+            width: position === 'above' ? undefined : 'min(16rem, calc(100vw - 1.5rem))',
+            maxWidth: 'calc(100vw - 1.5rem)',
             animation: `${animationName} 150ms ease-out`,
           }}
         >

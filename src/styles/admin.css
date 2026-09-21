@@ -7,8 +7,29 @@
 
 .admin-content {
   flex: 1;
+  /* Without min-width:0 a flex item defaults to min-width:auto, so wide tables
+     stretch the whole page sideways and leave the sticky header behind. */
+  min-width: 0;
   margin-left: 0;
   padding: 2rem;
+}
+
+/* ≤768px the sidebar becomes a full-width strip (see sidebar.css), so the
+   layout has to stack instead of keeping it in a row. */
+@media (max-width: 768px) {
+  .admin-layout {
+    flex-direction: column;
+  }
+
+  .admin-content {
+    padding: 1rem;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .admin-content {
+    padding: 1.5rem;
+  }
 }
 
 /* Admin Login Page */

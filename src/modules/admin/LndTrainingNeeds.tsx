@@ -43,6 +43,52 @@ const STATUS_PILL: Record<RequestStatus, string> = {
 
 const TH = 'px-5 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-500';
 
+/**
+ * Approve / Dismiss pair. `variant="card"` is the narrow-screen form: full-width
+ * buttons with 44px tap targets, stacked by the wrapping flex row.
+ */
+const RequestActions = ({
+  request,
+  busy,
+  onDecide,
+  variant,
+}: {
+  request: OfficeRequest;
+  busy: boolean;
+  onDecide: (r: OfficeRequest, decision: 'Approved' | 'Dismissed') => void;
+  variant: 'row' | 'card';
+}) => {
+  if (request.status !== 'Pending') {
+    return <span className="text-xs text-slate-400">—</span>;
+  }
+
+  const card = variant === 'card';
+  const base = card
+    ? 'min-h-[44px] flex-1 justify-center basis-[8rem]'
+    : 'min-h-[36px] shrink-0';
+
+  return (
+    <div className={`flex flex-wrap items-center gap-1.5 ${card ? '' : 'justify-end sm:flex-nowrap'}`}>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => onDecide(request, 'Approved')}
+        className={`inline-flex items-center gap-1 whitespace-nowrap rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60 ${base}`}
+      >
+        <Check className="h-3.5 w-3.5 shrink-0" /> Approve
+      </button>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => onDecide(request, 'Dismissed')}
+        className={`inline-flex items-center whitespace-nowrap rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:border-rose-300 hover:text-rose-600 disabled:opacity-60 ${base}`}
+      >
+        Dismiss
+      </button>
+    </div>
+  );
+};
+
 export const LndTrainingNeeds = () => {
   const [requests, setRequests] = useState<OfficeRequest[]>([]);
   const [needs, setNeeds] = useState<CompetencyNeed[]>([]);
@@ -94,22 +140,22 @@ export const LndTrainingNeeds = () => {
   return (
     <div className="bg-slate-50">
       {/* Page header — matches RSP › Applicants */}
-      <div className="border-b border-slate-200 bg-white px-8 py-6">
-        <h1 className="!mb-1 !text-2xl font-bold">Training Requests &amp; Needs</h1>
-        <p className="!mb-0 text-base text-slate-500">
+      <div className="border-b border-slate-200 bg-white px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
+        <h1 className="!mb-1 !text-xl font-bold sm:!text-2xl">Training Requests &amp; Needs</h1>
+        <p className="!mb-0 text-sm text-slate-500 sm:text-base">
           Office requests and Training Needs Assessment
         </p>
       </div>
 
       {/* Status sub-tabs */}
       <div className="sticky top-0 z-10 border-b border-slate-200 bg-white shadow-sm">
-        <nav className="flex overflow-x-auto px-6" aria-label="Request status tabs">
+        <nav className="flex overflow-x-auto px-2 sm:px-6" aria-label="Request status tabs">
           {STATUS_TABS.map((t) => (
             <button
               key={t}
               type="button"
               onClick={() => setStatusFilter(t)}
-              className={`relative -mb-px whitespace-nowrap border-b-2 px-6 py-4 text-base font-bold transition-colors ${
+              className={`relative -mb-px min-h-[44px] shrink-0 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-bold transition-colors sm:px-6 sm:py-4 sm:text-base ${
                 statusFilter === t
                   ? 'border-[#363EE8] text-[#363EE8]'
                   : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-800'
@@ -121,7 +167,7 @@ export const LndTrainingNeeds = () => {
         </nav>
       </div>
 
-      <div className="space-y-8 p-6">
+      <div className="space-y-8 p-4 sm:p-6">
         {/* ── Section 1: Training requests, grouped by office ─────────────── */}
         <section className="space-y-3">
           <div>
@@ -150,8 +196,37 @@ export const LndTrainingNeeds = () => {
               <div className="border-b border-slate-100 px-5 py-2.5 text-xs font-medium text-slate-500">
                 {rowLabel(filteredRequests.length)}
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-full">
+              {/* Under lg the six columns become one stacked card per request, so
+                  nothing needs a sideways scroll to reach Approve / Dismiss. */}
+              <ul className="divide-y divide-slate-100 lg:hidden">
+                {filteredRequests.map((r) => (
+                  <li key={r.id} className="space-y-2 px-4 py-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="min-w-0 break-words text-sm font-semibold text-slate-900">{r.title}</p>
+                      <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_PILL[r.status]}`}>
+                        {r.status}
+                      </span>
+                    </div>
+                    {r.justification && (
+                      <p className="break-words text-xs italic text-slate-500">“{r.justification}”</p>
+                    )}
+                    <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-xs">
+                      <dt className="font-semibold uppercase tracking-wider text-slate-400">Office</dt>
+                      <dd className="min-w-0 break-words text-slate-700">{r.office}</dd>
+                      <dt className="font-semibold uppercase tracking-wider text-slate-400">By</dt>
+                      <dd className="min-w-0 break-words text-slate-700">{r.requestedBy || '—'}</dd>
+                      <dt className="font-semibold uppercase tracking-wider text-slate-400">Comp.</dt>
+                      <dd className="min-w-0 break-words text-slate-700">{r.competency || '—'}</dd>
+                    </dl>
+                    <RequestActions request={r} busy={busy === r.id} onDecide={decide} variant="card" />
+                  </li>
+                ))}
+              </ul>
+
+              {/* Six columns can't compress below ~44rem and stay readable, so the
+                  table scrolls inside its own card rather than widening the page. */}
+              <div className="hidden overflow-x-auto lg:block">
+                <table className="w-full min-w-[44rem]">
                   <thead>
                     <tr className="border-b border-slate-200 bg-slate-50">
                       <th className={TH}>Office</th>
@@ -180,28 +255,7 @@ export const LndTrainingNeeds = () => {
                           </span>
                         </td>
                         <td className="px-5 py-4 text-right">
-                          {r.status === 'Pending' ? (
-                            <div className="flex items-center justify-end gap-1.5">
-                              <button
-                                type="button"
-                                disabled={busy === r.id}
-                                onClick={() => void decide(r, 'Approved')}
-                                className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-                              >
-                                <Check className="h-3.5 w-3.5" /> Approve
-                              </button>
-                              <button
-                                type="button"
-                                disabled={busy === r.id}
-                                onClick={() => void decide(r, 'Dismissed')}
-                                className="inline-flex items-center rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:border-rose-300 hover:text-rose-600 disabled:opacity-60"
-                              >
-                                Dismiss
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-slate-400">—</span>
-                          )}
+                          <RequestActions request={r} busy={busy === r.id} onDecide={decide} variant="row" />
                         </td>
                       </tr>
                     ))}
@@ -222,7 +276,8 @@ export const LndTrainingNeeds = () => {
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-            <table className="w-full min-w-full">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[21rem]">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">
                   <th className={TH}>Competency</th>
@@ -261,7 +316,7 @@ export const LndTrainingNeeds = () => {
                         </td>
                         <td className="px-5 py-4 text-sm text-slate-700">{n.offices.length}</td>
                         <td className="px-5 py-4">
-                          <div className="flex w-40 items-center gap-2">
+                          <div className="flex w-full min-w-[7rem] max-w-[10rem] items-center gap-2">
                             <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
                               <div className="h-full rounded-full bg-[#363EE8]" style={{ width: `${n.demand}%` }} />
                             </div>
@@ -279,8 +334,13 @@ export const LndTrainingNeeds = () => {
                             <ul className="space-y-2">
                               {n.offices.map((o) => (
                                 <li key={o.office} className="flex items-center gap-3">
-                                  <span className="w-52 shrink-0 truncate text-sm text-slate-700">{o.office}</span>
-                                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200/70">
+                                  <span
+                                    className="w-28 shrink-0 truncate text-sm text-slate-700 sm:w-40 lg:w-52"
+                                    title={o.office}
+                                  >
+                                    {o.office}
+                                  </span>
+                                  <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-200/70">
                                     <div className="h-full rounded-full bg-blue-400" style={{ width: `${o.demand}%` }} />
                                   </div>
                                   <span className="w-16 shrink-0 text-right text-xs font-semibold text-slate-600">
@@ -309,6 +369,7 @@ export const LndTrainingNeeds = () => {
                 )}
               </tbody>
             </table>
+            </div>
           </div>
         </section>
       </div>

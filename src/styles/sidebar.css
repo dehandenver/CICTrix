@@ -1,5 +1,8 @@
 .sidebar {
   width: 260px;
+  flex: 0 0 260px;
+  min-width: 0;
+  box-sizing: border-box;
   /* Offset by the AdminHeader height so the sidebar never slides up over it */
   height: calc(100vh - 4rem);
   background: linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%);
@@ -146,6 +149,8 @@
 
 .sidebar-logout {
   width: 100%;
+  max-width: 100%;
+  min-height: 44px;
   border: 1px solid var(--border-color);
   background: white;
   color: var(--text-primary);
@@ -163,23 +168,57 @@
   border-color: var(--primary-color);
 }
 
+/* Tablet — narrower rail so the content column keeps a usable width */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .sidebar {
+    width: 13.5rem;
+    flex-basis: 13.5rem;
+  }
+
+  .sidebar-nav-item {
+    padding: 0.8rem 1rem;
+  }
+}
+
 @media (max-width: 768px) {
   .sidebar {
     width: 100%;
+    flex: 0 0 auto;
     height: auto;
     position: static;
     border-right: none;
     border-bottom: 1px solid var(--border-color);
   }
   
+  /* `.sidebar-nav` is a block element by default, so `flex-direction` alone did
+     nothing and the strip kept stacking vertically — it needs display:flex. */
   .sidebar-nav {
+    display: flex;
     flex-direction: row;
     overflow-x: auto;
+    overflow-y: hidden;
     padding: 0.5rem 0;
+  }
+
+  .sidebar-nav-item {
+    flex: 0 0 auto;
+  }
+
+  .sidebar-nav-text {
+    align-items: center;
+  }
+
+  /* Sublabels are noise in a horizontal strip. Two classes so this outranks the
+     Tailwind `flex` utility also on the element. */
+  .sidebar-nav-item .sidebar-nav-subtitle {
+    display: none;
   }
   
   .sidebar-nav-item {
     flex-direction: column;
+    justify-content: center;
+    /* Keep a 44px tap target in the horizontal strip */
+    min-height: 44px;
     padding: 0.75rem 1rem;
     gap: 0.25rem;
     font-size: 0.75rem;

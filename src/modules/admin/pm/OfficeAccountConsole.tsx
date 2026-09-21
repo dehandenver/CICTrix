@@ -29,7 +29,8 @@ import {
   Search,
   Check,
   Target,
-  GitCompare
+  GitCompare,
+  LogOut
 } from 'lucide-react';
 import { LogoutConfirmPopover } from '../../../components/LogoutConfirmPopover';
 import { readEmployeeSession } from '../../../lib/employeeSession';
@@ -685,28 +686,28 @@ export const OfficeAccountConsole: React.FC = () => {
         className="sticky top-0 z-40 shadow-md print:hidden"
         style={{ backgroundColor: '#363EE8', fontFamily: "'Poppins', system-ui, -apple-system, sans-serif" }}
       >
-        <div className="flex items-center justify-between px-6 py-3">
+        <div className="flex w-full items-center justify-between gap-2 px-3 py-2 sm:gap-4 sm:px-6 sm:py-3">
 
           {/* Left — Logo & Branding (mirrors AdminHeader) */}
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
             <img
               src={abyanLogo}
               alt="ABYAN HRIS"
-              className="h-10 w-auto object-contain"
+              className="h-8 w-auto shrink-0 object-contain sm:h-10"
               style={{ mixBlendMode: 'screen' }}
             />
-            <div className="flex flex-col items-start text-left leading-tight">
-              <span className="text-lg font-bold tracking-tight" style={{ color: '#ffffff' }}>
+            <div className="flex min-w-0 flex-col items-start text-left leading-tight">
+              <span className="truncate text-base font-bold tracking-tight sm:text-lg" style={{ color: '#ffffff' }}>
                 ABYAN
               </span>
-              <span className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.80)' }}>
+              <span className="hidden truncate text-xs font-medium md:block" style={{ color: 'rgba(255,255,255,0.80)' }}>
                 Human Resource Information System
               </span>
             </div>
           </div>
 
           {/* Right — Notifications + Switch Account + User info + Logout */}
-          <div className="flex items-center gap-4">
+          <div className="flex shrink-0 items-center gap-2 sm:gap-4">
             <div className="relative">
               <button
                 className="relative rounded-full p-2 transition hover:bg-white/20"
@@ -771,10 +772,10 @@ export const OfficeAccountConsole: React.FC = () => {
               )}
             </div>
             {/* Divider */}
-            <div style={{ width: '1px', height: '28px', backgroundColor: 'rgba(255,255,255,0.25)' }} />
+            <div className="hidden sm:block" style={{ width: '1px', height: '28px', backgroundColor: 'rgba(255,255,255,0.25)' }} />
 
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex min-w-0 items-center gap-3">
                 {switchEnabled && (
                   <div className="relative">
                     <button
@@ -849,9 +850,9 @@ export const OfficeAccountConsole: React.FC = () => {
                     )}
                   </div>
                 )}
-                <div className="hidden sm:flex flex-col leading-tight text-left">
-                  <p className="text-sm font-semibold" style={{ color: '#ffffff' }}>{currentUserName}</p>
-                  <p className="text-xs" style={{ color: 'rgba(255,255,255,0.75)' }}>
+                <div className="hidden min-w-0 max-w-[10rem] flex-col text-left leading-tight sm:flex lg:max-w-[16rem]">
+                  <p className="truncate text-sm font-semibold" style={{ color: '#ffffff' }} title={currentUserName}>{currentUserName}</p>
+                  <p className="truncate text-xs" style={{ color: 'rgba(255,255,255,0.75)' }}>
                     {currentUserPosition ?? 'Office Account Console'}
                   </p>
                 </div>
@@ -859,66 +860,69 @@ export const OfficeAccountConsole: React.FC = () => {
             </div>
 
             {/* Divider */}
-            <div style={{ width: '1px', height: '28px', backgroundColor: 'rgba(255,255,255,0.25)' }} />
+            <div className="hidden sm:block" style={{ width: '1px', height: '28px', backgroundColor: 'rgba(255,255,255,0.25)' }} />
 
             <LogoutConfirmPopover
-              buttonClassName="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold transition hover:bg-white/20"
+              buttonClassName="inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition hover:bg-white/20 sm:px-4"
               buttonStyle={{
                 borderColor: 'rgba(255,255,255,0.35)',
                 backgroundColor: 'rgba(255,255,255,0.12)',
                 color: '#ffffff',
               }}
-            />
+            >
+              <LogOut className="h-4 w-4 shrink-0" />
+              <span className="hidden sm:inline">Logout</span>
+            </LogoutConfirmPopover>
           </div>
         </div>
       </header>
 
       {/* ── Main Layout ── */}
-      <div className="flex">
-        {/* Sidebar */}
-        <aside className="w-64 shrink-0 border-r border-slate-200 bg-white px-3 py-4 min-h-[calc(100vh-70px)] print:hidden">
-          <div className="px-3 mb-4">
+      <div className="flex flex-col lg:flex-row">
+        {/* Sidebar — horizontal tab strip under lg, fixed column at lg+ */}
+        <aside className="w-full shrink-0 border-b border-slate-200 bg-white px-3 py-3 print:hidden lg:min-h-[calc(100vh-70px)] lg:w-64 lg:border-b-0 lg:border-r lg:py-4">
+          <div className="mb-2 px-3 lg:mb-4">
             <span className="text-[10px] uppercase font-semibold text-black tracking-wider">Office Console</span>
           </div>
-          <nav className="space-y-1.5">
+          <nav className="flex gap-1.5 overflow-x-auto lg:flex-col lg:space-y-1.5">
             <button
               onClick={() => setActiveTab('ipcr')}
-              className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${activeTab === 'ipcr' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
+              className={`w-auto shrink-0 min-h-[44px] rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 lg:w-full lg:shrink ${activeTab === 'ipcr' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
                 }`}
             >
               <ClipboardCheck className={`h-5 w-5 ${activeTab === 'ipcr' ? 'text-white' : 'text-black'}`} />
               <div>
-                <p className={`text-sm font-semibold leading-tight ${activeTab === 'ipcr' ? 'text-white' : 'text-black'}`}>
+                <p className={`text-sm font-semibold leading-tight whitespace-nowrap lg:whitespace-normal ${activeTab === 'ipcr' ? 'text-white' : 'text-black'}`}>
                   IPCR
                 </p>
-                <p className={`text-[11px] mt-0.5 ${activeTab === 'ipcr' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
+                <p className={`hidden lg:block text-[11px] mt-0.5 ${activeTab === 'ipcr' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
                   Targets &amp; ratings validation
                 </p>
               </div>
             </button>
             <button
               onClick={() => setActiveTab('training-requests')}
-              className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${activeTab === 'training-requests' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
+              className={`w-auto shrink-0 min-h-[44px] rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 lg:w-full lg:shrink ${activeTab === 'training-requests' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
                 }`}
             >
               <GraduationCap className={`h-5 w-5 ${activeTab === 'training-requests' ? 'text-white' : 'text-black'}`} />
               <div>
-                <p className={`text-sm font-semibold leading-tight ${activeTab === 'training-requests' ? 'text-white' : 'text-black'}`}>
+                <p className={`text-sm font-semibold leading-tight whitespace-nowrap lg:whitespace-normal ${activeTab === 'training-requests' ? 'text-white' : 'text-black'}`}>
                   Training Request
                 </p>
-                <p className={`text-[11px] mt-0.5 ${activeTab === 'training-requests' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
+                <p className={`hidden lg:block text-[11px] mt-0.5 ${activeTab === 'training-requests' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
                   Guidance & WSM Prioritization
                 </p>
               </div>
             </button>
             <button
               onClick={() => setActiveTab('training-attendees')}
-              className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${activeTab === 'training-attendees' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
+              className={`w-auto shrink-0 min-h-[44px] rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 lg:w-full lg:shrink ${activeTab === 'training-attendees' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
                 }`}
             >
               <UserCheck className={`h-5 w-5 ${activeTab === 'training-attendees' ? 'text-white' : 'text-black'}`} />
               <div className="flex-1">
-                <p className={`text-sm font-semibold leading-tight flex items-center gap-2 ${activeTab === 'training-attendees' ? 'text-white' : 'text-black'}`}>
+                <p className={`text-sm font-semibold leading-tight flex items-center gap-2 whitespace-nowrap lg:whitespace-normal ${activeTab === 'training-attendees' ? 'text-white' : 'text-black'}`}>
                   Training Courses
                   {recsToReview.length > 0 && (
                     <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${activeTab === 'training-attendees' ? 'bg-white text-indigo-700' : 'bg-indigo-600 text-white'
@@ -927,37 +931,37 @@ export const OfficeAccountConsole: React.FC = () => {
                     </span>
                   )}
                 </p>
-                <p className={`text-[11px] mt-0.5 ${activeTab === 'training-attendees' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
+                <p className={`hidden lg:block text-[11px] mt-0.5 ${activeTab === 'training-attendees' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
                   Review L&amp;D's list, add, send back
                 </p>
               </div>
             </button>
             <button
               onClick={() => setActiveTab('critical-positions')}
-              className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${activeTab === 'critical-positions' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
+              className={`w-auto shrink-0 min-h-[44px] rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 lg:w-full lg:shrink ${activeTab === 'critical-positions' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
                 }`}
             >
               <Target className={`h-5 w-5 ${activeTab === 'critical-positions' ? 'text-white' : 'text-black'}`} />
               <div>
-                <p className={`text-sm font-semibold leading-tight ${activeTab === 'critical-positions' ? 'text-white' : 'text-black'}`}>
+                <p className={`text-sm font-semibold leading-tight whitespace-nowrap lg:whitespace-normal ${activeTab === 'critical-positions' ? 'text-white' : 'text-black'}`}>
                   Critical Positions
                 </p>
-                <p className={`text-[11px] mt-0.5 ${activeTab === 'critical-positions' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
+                <p className={`hidden lg:block text-[11px] mt-0.5 ${activeTab === 'critical-positions' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
                   Manage & configure requirements
                 </p>
               </div>
             </button>
             <button
               onClick={() => setActiveTab('gap-analysis')}
-              className={`w-full rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 ${activeTab === 'gap-analysis' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
+              className={`w-auto shrink-0 min-h-[44px] rounded-lg px-3 py-2.5 text-left transition flex items-center gap-3 lg:w-full lg:shrink ${activeTab === 'gap-analysis' ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-600 hover:text-white' : 'text-black hover:bg-slate-200'
                 }`}
             >
               <GitCompare className={`h-5 w-5 ${activeTab === 'gap-analysis' ? 'text-white' : 'text-black'}`} />
               <div>
-                <p className={`text-sm font-semibold leading-tight ${activeTab === 'gap-analysis' ? 'text-white' : 'text-black'}`}>
+                <p className={`text-sm font-semibold leading-tight whitespace-nowrap lg:whitespace-normal ${activeTab === 'gap-analysis' ? 'text-white' : 'text-black'}`}>
                   Gap Analysis
                 </p>
-                <p className={`text-[11px] mt-0.5 ${activeTab === 'gap-analysis' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
+                <p className={`hidden lg:block text-[11px] mt-0.5 ${activeTab === 'gap-analysis' ? 'text-indigo-200' : 'text-slate-800 font-normal'}`}>
                   Compare employees vs. requirements
                 </p>
               </div>
@@ -966,7 +970,7 @@ export const OfficeAccountConsole: React.FC = () => {
         </aside>
 
         {/* Content Body */}
-        <main className="flex-1 p-6 space-y-6">
+        <main className="min-w-0 flex-1 space-y-6 p-4 sm:p-6">
 
           {/* Section Header */}
           {activeTab === 'critical-positions' || activeTab === 'gap-analysis' ? (

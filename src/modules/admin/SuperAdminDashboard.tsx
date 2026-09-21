@@ -77,10 +77,10 @@ export const SuperAdminDashboard = () => {
   return (
     <div className="min-h-screen bg-slate-100 text-slate-800">
       <AdminHeader userName="Super Admin" divisionLabel="System Administrator" />
-      <div className="flex">
+      <div className="flex flex-col md:flex-row">
       <Sidebar />
-      <main className="flex-1 overflow-auto">
-        <div className="p-8">
+      <main className="min-w-0 flex-1 overflow-auto">
+        <div className="p-4 sm:p-6 lg:p-8">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-slate-900">Super Admin Dashboard</h1>
             <p className="text-slate-500 mt-2">Comprehensive overview of all HRIS divisions</p>

@@ -105,18 +105,21 @@ const LND_MENU: MenuItem[] = [
 
 const LndSidebar = ({ activeModule, onSelect }: { activeModule: MenuId; onSelect: (id: MenuId) => void }) => {
   return (
-    <aside className="w-64 shrink-0 border-r border-slate-200 bg-white min-h-[calc(100vh-70px)]">
+    // Below `lg` the sidebar becomes a full-width, horizontally scrollable tab
+    // strip above the content instead of a fixed 16rem column that would eat
+    // the whole narrow viewport.
+    <aside className="w-full shrink-0 border-b border-slate-200 bg-white lg:min-h-[calc(100vh-70px)] lg:w-64 lg:border-b-0 lg:border-r">
       <div
-        className="border-b border-slate-200 px-6 pb-5 pt-7"
+        className="border-b border-slate-200 px-4 pb-3 pt-4 sm:px-6 lg:pb-5 lg:pt-7"
         style={{ background: 'linear-gradient(135deg, #C8D1FF 0%, #FFFFFF 100%)' }}
       >
-        <h2 className="mb-1 text-xl font-bold" style={{ color: '#040E6B' }}>L&amp;D Admin</h2>
+        <h2 className="mb-1 text-lg font-bold sm:text-xl" style={{ color: '#040E6B' }}>L&amp;D Admin</h2>
         <span className="block text-xs font-semibold uppercase tracking-wider" style={{ color: '#363EE8' }}>
           Learning and Development
         </span>
       </div>
 
-      <nav className="space-y-1.5 px-3 py-4">
+      <nav className="flex gap-1.5 overflow-x-auto px-3 py-3 lg:flex-col lg:space-y-1.5 lg:gap-0 lg:py-4">
         {LND_MENU.map((item) => {
           const Icon = item.icon;
           const isActive = activeModule === item.id;
@@ -125,18 +128,21 @@ const LndSidebar = ({ activeModule, onSelect }: { activeModule: MenuId; onSelect
               key={item.id}
               type="button"
               onClick={() => onSelect(item.id)}
+              title={item.sublabel}
               className={[
-                'flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition',
+                'flex min-h-[44px] shrink-0 items-center gap-2 rounded-xl px-3 py-2.5 text-left transition',
+                'lg:w-full lg:shrink lg:items-start lg:gap-3 lg:py-3',
                 isActive ? 'shadow-sm' : 'hover:bg-[#C8D1FF]/50',
               ].join(' ')}
               style={isActive ? { backgroundColor: '#363EE8', color: '#FFFFFF' } : { color: '#040E6B' }}
             >
-              <span style={{ color: isActive ? '#FFFFFF' : '#363EE8' }}>
-                <Icon className="mt-0.5 h-5 w-5" />
+              <span className="shrink-0" style={{ color: isActive ? '#FFFFFF' : '#363EE8' }}>
+                <Icon className="h-5 w-5 lg:mt-0.5" />
               </span>
-              <span className="flex flex-col">
-                <span className="text-sm font-semibold">{item.label}</span>
-                <span className="text-xs" style={{ color: isActive ? 'rgba(255,255,255,0.80)' : 'rgba(4,14,107,0.65)' }}>{item.sublabel}</span>
+              <span className="flex min-w-0 flex-col">
+                <span className="whitespace-nowrap text-sm font-semibold lg:whitespace-normal">{item.label}</span>
+                {/* Sublabel is noise in the narrow tab strip — title attr keeps it reachable */}
+                <span className="hidden text-xs lg:block" style={{ color: isActive ? 'rgba(255,255,255,0.80)' : 'rgba(4,14,107,0.65)' }}>{item.sublabel}</span>
               </span>
             </button>
           );
@@ -385,7 +391,7 @@ const LndDashboardContent = () => {
   }, [requests, viewDeptDetails]);
 
   return (
-    <div className="space-y-6 p-8">
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
       {/* Header */}
       <section>
         <p className="text-sm font-medium text-gray-500">
@@ -608,7 +614,8 @@ const LndDashboardContent = () => {
           <EmptyState title="No demand data" description="No department competency demand data available yet." />
         ) : (
           <>
-            <div className="grid grid-cols-12 items-center px-4 py-2.5 text-xs font-medium text-gray-500 border-b border-gray-100">
+            {/* Column headers only make sense once the row is actually a grid (lg+) */}
+            <div className="hidden grid-cols-12 items-center border-b border-gray-100 px-4 py-2.5 text-xs font-medium text-gray-500 lg:grid">
               <div className="col-span-3">Department</div>
               <div className="col-span-4">Top requested competency</div>
               <div className="col-span-2">Status</div>
@@ -617,10 +624,10 @@ const LndDashboardContent = () => {
             </div>
             <div className="divide-y divide-gray-100">
               {demandTableData.map(row => (
-                <div key={row.department} className="grid grid-cols-12 items-center px-4 py-3.5 hover:bg-gray-50/50 transition">
-                  <div className="col-span-3 text-sm font-bold text-gray-900">{row.department}</div>
-                  <div className="col-span-4 text-xs text-gray-600 leading-snug pr-3">{row.topCompetency}</div>
-                  <div className="col-span-2 flex">
+                <div key={row.department} className="flex flex-col gap-2 px-4 py-3.5 transition hover:bg-gray-50/50 lg:grid lg:grid-cols-12 lg:items-center lg:gap-0">
+                  <div className="min-w-0 break-words text-sm font-bold text-gray-900 lg:col-span-3">{row.department}</div>
+                  <div className="min-w-0 break-words text-xs leading-snug text-gray-600 lg:col-span-4 lg:pr-3">{row.topCompetency}</div>
+                  <div className="flex lg:col-span-2">
                     {row.priority === 'high' && (
                       <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold bg-red-100 text-red-700">High priority</span>
                     )}
@@ -631,17 +638,17 @@ const LndDashboardContent = () => {
                       <span className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold bg-blue-100 text-blue-700">Emerging need</span>
                     )}
                   </div>
-                  <div className="col-span-2 flex items-center gap-2">
-                    <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+                  <div className="flex min-w-0 items-center gap-2 lg:col-span-2">
+                    <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-gray-100">
                       <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${row.demand}%` }} />
                     </div>
                     <span className="text-xs font-semibold text-gray-700 w-9 shrink-0 text-right">{row.demand}%</span>
                   </div>
-                  <div className="col-span-1 flex justify-end">
+                  <div className="flex justify-start lg:col-span-1 lg:justify-end">
                     <button
                       type="button"
                       onClick={() => setViewDeptDetails(row.department)}
-                      className="rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-semibold text-gray-600 hover:border-blue-400 hover:text-blue-600 transition whitespace-nowrap"
+                      className="inline-flex min-h-[44px] items-center rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs font-semibold text-gray-600 transition hover:border-blue-400 hover:text-blue-600 whitespace-nowrap lg:min-h-0"
                     >
                       View details
                     </button>
@@ -731,9 +738,11 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
         userName="L&D Admin"
         divisionLabel="L&D Division"
       />
-      <div className="flex">
+      <div className="flex flex-col lg:flex-row">
         <LndSidebar activeModule={activeModule} onSelect={setActiveModule} />
-        <main className="flex-1">
+        {/* min-w-0: without it this flex child defaults to min-width:auto and wide
+            tables push the whole page (and the sticky header) sideways. */}
+        <main className="min-w-0 flex-1">
           {activeModule === 'dashboard' ? (
             <LndDashboardContent />
           ) : activeModule === 'summary-of-ratings' ? (
