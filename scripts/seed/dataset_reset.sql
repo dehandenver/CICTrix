@@ -79,7 +79,68 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON exam_interview_schedules TO authenticate
 BEGIN;
 
 -- Full reset: wipe every data table (CASCADE clears dependents too).
-TRUNCATE access_change_audit, applicant_attachments, applicant_scores, applicants, archives, assignments, competencies, competency_change_log, competency_dictionary, competency_requirement_proposals, cycle_compilations, departments, departments_backfill_audit, divisions, employee_competencies, employee_documents, employee_education, employee_eligibility, employee_history, employee_leave_balances, employee_portal_accounts, employee_settings, employee_training, employee_work_experience, employees, evaluation_cycles, evaluations, exam_interview_schedules, ipcr_notifications, ipcr_performance, ipcr_submissions, job_postings, jobs, locked_targets, new_entrant_onboarding, newly_hired, office_cycle_closeouts, office_role_assignments, performance_cycles, performance_evaluations, phase_schedules, pm_lnd_reports, policy_audit, position_competency_requirements, qualification_standards, raters, supervisor_password_resets, supervisors, training_enrollments, training_programs, training_requests, training_sessions, trainings, user_roles RESTART IDENTITY CASCADE;
+--
+-- Done dynamically rather than as one static TRUNCATE, for two reasons:
+--
+--   * Projects drift. A clone can be missing tables this list names — the HR
+--     demo has no `assignments`, `employee_settings`, `jobs` or
+--     `qualification_standards` — and a single missing name aborts the entire
+--     statement with 42P01, so the reset could not run there at all.
+--
+--   * user_roles is deliberately NOT wiped. It maps Supabase Auth users to the
+--     four admin roles, and nothing further down this file recreates it. The
+--     original list truncated it, which would have left every admin portal
+--     rejecting logins with "No role assigned. Contact the admin." — the exact
+--     failure this project already hit once. Employee logins are safe to wipe
+--     because employee_portal_accounts IS regenerated at the end of this file.
+do $$
+declare
+  wanted text[] := array[
+    'access_change_audit', 'applicant_attachments', 'applicant_scores',
+    'applicants', 'archives', 'assignments', 'competencies',
+    'competency_change_log', 'competency_dictionary',
+    'competency_requirement_proposals', 'cycle_compilations', 'departments',
+    'departments_backfill_audit', 'divisions', 'employee_competencies',
+    'employee_documents', 'employee_education', 'employee_eligibility',
+    'employee_history', 'employee_leave_balances', 'employee_portal_accounts',
+    'employee_settings', 'employee_training', 'employee_work_experience',
+    'employees', 'evaluation_cycles', 'evaluations',
+    'exam_interview_schedules', 'ipcr_notifications', 'ipcr_performance',
+    'ipcr_submissions', 'job_postings', 'jobs', 'locked_targets',
+    'new_entrant_onboarding', 'newly_hired', 'office_cycle_closeouts',
+    'office_role_assignments', 'performance_cycles', 'performance_evaluations',
+    'phase_schedules', 'pm_lnd_reports', 'policy_audit',
+    'position_competency_requirements', 'qualification_standards', 'raters',
+    'supervisor_password_resets', 'supervisors', 'training_enrollments',
+    'training_programs', 'training_requests', 'training_sessions', 'trainings'
+  ];
+  target_list text;
+  skipped     text;
+begin
+  select string_agg(format('public.%I', t), ', ' order by t)
+    into target_list
+  from unnest(wanted) t
+  where exists (
+    select 1 from pg_tables p
+    where p.schemaname = 'public' and p.tablename = t
+  );
+
+  select string_agg(t, ', ' order by t)
+    into skipped
+  from unnest(wanted) t
+  where not exists (
+    select 1 from pg_tables p
+    where p.schemaname = 'public' and p.tablename = t
+  );
+
+  if skipped is not null then
+    raise notice 'reset: skipping tables not present in this project: %', skipped;
+  end if;
+
+  if target_list is not null then
+    execute 'truncate ' || target_list || ' restart identity cascade';
+  end if;
+end $$;
 
 -- departments (5)
 INSERT INTO departments (code, name, department_head_name, is_active) VALUES
