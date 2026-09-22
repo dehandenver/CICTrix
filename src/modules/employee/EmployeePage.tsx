@@ -2869,12 +2869,51 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
           setShowSetupWizard(false);
         };
 
-        const StepCircle = ({ n }: { n: number }) => {
+        const StepColumn = ({ n }: { n: number }) => {
           const done = n < wizardStep;
           const active = n === wizardStep;
+          const hasLeftLine = n > 1;
+          const hasRightLine = n < totalSteps;
+          // Left segment connects to previous step; filled if current step is reached
+          const leftLineActive = wizardStep >= n;
+          // Right segment connects to next step; filled if current step is completed
+          const rightLineActive = wizardStep > n;
+
           return (
-<<<<<<< HEAD
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem', position: 'relative', zIndex: 1 }}>
+            <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              {/* Left connector segment (runs from left edge to circle left boundary) */}
+              {hasLeftLine && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 15,
+                    left: 0,
+                    right: 'calc(50% + 18px)',
+                    height: 3,
+                    background: leftLineActive ? '#C8D1FF' : 'rgba(255,255,255,0.25)',
+                    borderRadius: '99px 0 0 99px',
+                    transition: 'background 0.3s ease',
+                  }}
+                />
+              )}
+
+              {/* Right connector segment (runs from circle right boundary to right edge) */}
+              {hasRightLine && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 15,
+                    left: 'calc(50% + 18px)',
+                    right: 0,
+                    height: 3,
+                    background: rightLineActive ? '#C8D1FF' : 'rgba(255,255,255,0.25)',
+                    borderRadius: '0 99px 99px 0',
+                    transition: 'background 0.3s ease',
+                  }}
+                />
+              )}
+
+              {/* Step Circle */}
               <div
                 style={{
                   width: 32,
@@ -2885,31 +2924,35 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                   justifyContent: 'center',
                   fontWeight: 800,
                   fontSize: '0.8rem',
-                  background: done ? '#22C55E' : active ? '#ffffff' : '#3B44DB',
-                  color: done ? '#ffffff' : active ? '#363EE8' : 'rgba(255,255,255,0.7)',
-                  border: done ? 'none' : active ? 'none' : '2px solid rgba(255,255,255,0.35)',
-                  boxShadow: active ? '0 0 0 4px rgba(255,255,255,0.25)' : 'none',
-                  transition: 'all 0.3s',
+                  background: done ? '#4ADE80' : active ? '#363EE8' : 'rgba(255,255,255,0.2)',
+                  color: '#ffffff',
+                  border: done ? 'none' : active ? '2px solid #ffffff' : '2px solid rgba(255,255,255,0.4)',
+                  boxShadow: active ? '0 0 0 3px rgba(255,255,255,0.25)' : 'none',
+                  transition: 'all 0.3s ease',
+                  position: 'relative',
+                  zIndex: 2,
                 }}
               >
-=======
-            // position + zIndex keep the circles above the connector track. The
-            // track is absolutely positioned, and a positioned element paints
-            // over non-positioned in-flow siblings whatever its z-index, so
-            // without this the line runs straight through the numbers.
-            <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem' }}>
-              <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.8rem', background: done ? '#4ADE80' : active ? '#363EE8' : 'rgba(255,255,255,0.2)', color: '#ffffff', border: done || active ? 'none' : '2px solid rgba(255,255,255,0.4)', transition: 'all 0.3s' }}>
->>>>>>> 2a2021cbd68e0315508de038f9251bfd1c887196
                 {done ? '✓' : n}
               </div>
-              <span style={{ fontSize: '0.65rem', color: active ? '#ffffff' : '#C8D1FF', fontWeight: active ? 700 : 500, textAlign: 'center', whiteSpace: 'nowrap' }}>
+
+              {/* Step Label */}
+              <span
+                style={{
+                  fontSize: '0.65rem',
+                  color: active ? '#ffffff' : '#C8D1FF',
+                  fontWeight: active ? 700 : 500,
+                  textAlign: 'center',
+                  marginTop: '0.35rem',
+                  lineHeight: 1.2,
+                  padding: '0 4px',
+                }}
+              >
                 {STEPS[n - 1]}
               </span>
             </div>
           );
         };
-
-        const barPct = ((wizardStep - 1) / (totalSteps - 1)) * 100;
 
         return (
           <>
@@ -2936,11 +2979,8 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                       <X className="h-4 w-4" />
                     </button>
                   </div>
-                  <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ position: 'absolute', top: 15, left: '16.67%', right: '16.67%', height: 3, background: 'rgba(255,255,255,0.2)', borderRadius: 99, zIndex: 0 }}>
-                      <div style={{ width: `${barPct}%`, height: '100%', background: '#C8D1FF', borderRadius: 99, transition: 'width 0.4s ease' }} />
-                    </div>
-                    {[1, 2, 3].map(n => <StepCircle key={n} n={n} />)}
+                  <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%' }}>
+                    {[1, 2, 3].map(n => <StepColumn key={n} n={n} />)}
                   </div>
                 </div>
 
