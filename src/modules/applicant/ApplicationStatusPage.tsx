@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { ATTACHMENTS_BUCKET, supabase } from '../../lib/supabase';
 import { getApplicants, saveApplicants } from '../../lib/recruitmentData';
 import { parseDisqualificationReason, getDisqualificationReasonLabel } from '../../lib/applicationActivity';
+import { fetchApplicantSlotLinks, fetchSlotsByJobPosting } from '../../lib/plantillaSlots';
+import type { ApplicationSlotStatus, PlantillaSlot } from '../../types/recruitment.types';
 
 interface ApplicationRecord {
   id: string;
@@ -248,6 +250,12 @@ export const ApplicationStatusPage = () => {
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState('');
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
+  /**
+   * Per-plantilla outcome. One application can be in the running for several
+   * plantilla items, and they settle independently — "Shortlisted for
+   * Plantilla 1, Not selected for Plantilla 3" is a valid state.
+   */
+  const [slotOutcomes, setSlotOutcomes] = useState<Array<{ slot: PlantillaSlot; status: ApplicationSlotStatus }>>([]);
 
   // Stores the lookup params from the last successful search so polling reuses
   // the SAME query path that handleSearch already uses (which we know works).
@@ -313,6 +321,39 @@ export const ApplicationStatusPage = () => {
       }
     } catch { /* silently ignore */ }
   };
+
+  // Which plantilla items this application is riding on, and where each stands.
+  // Re-reads whenever the record is refreshed by polling, so a hire on one
+  // plantilla shows up without the applicant searching again.
+  useEffect(() => {
+    const applicantId = record?.id;
+    if (!applicantId) {
+      setSlotOutcomes([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const [linksByApplicant, slotsByJob] = await Promise.all([
+        fetchApplicantSlotLinks([applicantId]),
+        fetchSlotsByJobPosting(),
+      ]);
+      if (cancelled) return;
+
+      const slotById = new Map<string, PlantillaSlot>();
+      slotsByJob.forEach((slots) => slots.forEach((slot) => slotById.set(slot.id, slot)));
+
+      const outcomes = (linksByApplicant.get(applicantId) ?? [])
+        .map((link) => {
+          const slot = slotById.get(link.slotId);
+          return slot ? { slot, status: link.status } : null;
+        })
+        .filter(Boolean) as Array<{ slot: PlantillaSlot; status: ApplicationSlotStatus }>;
+
+      outcomes.sort((a, b) => a.slot.slotNumber - b.slot.slotNumber);
+      setSlotOutcomes(outcomes);
+    })();
+    return () => { cancelled = true; };
+  }, [record?.id, record?.updated_at, record?.status]);
 
   // Real-time: applicant_attachments — uses filtered subscription (works with REPLICA IDENTITY FULL).
   // Polling fallback below covers the case where the filter doesn't fire.
@@ -785,6 +826,44 @@ export const ApplicationStatusPage = () => {
                   {badge.label}
                 </span>
               </div>
+
+              {/* Per-plantilla outcome. Only worth showing when this single
+                  application covers more than one plantilla item — otherwise
+                  the badge above already says everything. */}
+              {slotOutcomes.length > 1 && (
+                <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-sm font-semibold" style={{ color: '#363EE8' }}>
+                    Plantilla Items You Applied For
+                  </p>
+                  <ul className="mt-3 space-y-2">
+                    {slotOutcomes.map(({ slot, status }) => {
+                      const tone =
+                        status === 'hired' ? 'bg-emerald-100 text-emerald-700'
+                        : status === 'shortlisted' ? 'bg-blue-100 text-blue-700'
+                        : status === 'not_selected' ? 'bg-rose-100 text-rose-700'
+                        : 'bg-slate-200 text-slate-600';
+                      // 'applied' has no verdict of its own yet, so it defers
+                      // to the application's overall status.
+                      const label =
+                        status === 'hired' ? 'Hired'
+                        : status === 'shortlisted' ? 'Shortlisted'
+                        : status === 'not_selected' ? 'Not selected'
+                        : badge.label;
+                      return (
+                        <li key={slot.id} className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-sm" style={{ color: '#040E6B' }}>
+                            <span className="font-semibold">Plantilla {slot.slotNumber}</span>
+                            <span className="ml-2" style={{ color: '#363EE8' }}>{slot.itemNumber}</span>
+                          </span>
+                          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${tone}`}>
+                            {label} for Plantilla {slot.slotNumber}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
 
               <div className="mt-6 grid grid-cols-1 gap-8 md:grid-cols-2">
                 <div>

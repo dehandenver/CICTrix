@@ -11,7 +11,8 @@ import {
   saveApplicants,
   saveNewlyHired,
 } from '../lib/recruitmentData';
-import type { NewlyHired } from '../types/recruitment.types';
+import type { NewlyHired, PlantillaSlot } from '../types/recruitment.types';
+import { assignApplicantToSlot, fetchApplicantSlotLinks, fetchSlotsByJobPosting } from '../lib/plantillaSlots';
 import { sendEmail } from '../lib/email';
 import { createPassword, getEmployeePortalAccounts, upsertEmployeePortalAccount } from '../lib/employeePortalData';
 import { supabase } from '../lib/supabase';
@@ -100,6 +101,14 @@ export const ForHiringPage = () => {
   const [hiring, setHiring]                     = useState(false);
   const [credentialsResult, setCredentialsResult] = useState<CredentialResult[]>([]);
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
+  /**
+   * A hire fills ONE plantilla item. An applicant who ticked several under the
+   * same application therefore has to be placed explicitly — these hold the
+   * still-open slots they are eligible for, and the admin's choice per person.
+   */
+  const [hireSlotOptions, setHireSlotOptions] = useState<Map<string, PlantillaSlot[]>>(new Map());
+  const [hireSlotChoice, setHireSlotChoice] = useState<Record<string, string>>({});
+  const [loadingSlotOptions, setLoadingSlotOptions] = useState(false);
 
   // ── Data loading ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -427,7 +436,56 @@ export const ForHiringPage = () => {
     const targets = deptApplicants.filter(r => selected.has(r.id));
     if (targets.length === 0) return;
     setConfirmTarget(targets);
+    void loadSlotOptions(targets.map(r => r.id));
   };
+
+  /**
+   * The plantilla items each selected applicant can be placed into: the ones
+   * they actually applied to that are still open. A slot already filled by
+   * someone else drops out; slots on the same posting that nobody has taken
+   * stay available.
+   */
+  const loadSlotOptions = async (applicantIds: string[]) => {
+    setLoadingSlotOptions(true);
+    setHireSlotOptions(new Map());
+    setHireSlotChoice({});
+    try {
+      const [linksByApplicant, slotsByJob] = await Promise.all([
+        fetchApplicantSlotLinks(applicantIds),
+        fetchSlotsByJobPosting(),
+      ]);
+
+      const slotById = new Map<string, PlantillaSlot>();
+      slotsByJob.forEach(slots => slots.forEach(slot => slotById.set(slot.id, slot)));
+
+      const options = new Map<string, PlantillaSlot[]>();
+      const preselected: Record<string, string> = {};
+
+      applicantIds.forEach(applicantId => {
+        const available = (linksByApplicant.get(applicantId) ?? [])
+          .map(link => slotById.get(link.slotId))
+          .filter((slot): slot is PlantillaSlot => Boolean(slot) && slot!.status === 'open')
+          .sort((a, b) => a.slotNumber - b.slotNumber);
+
+        if (available.length > 0) {
+          options.set(applicantId, available);
+          // Only one place to put them — no decision to make.
+          if (available.length === 1) preselected[applicantId] = available[0].id;
+        }
+      });
+
+      setHireSlotOptions(options);
+      setHireSlotChoice(preselected);
+    } finally {
+      setLoadingSlotOptions(false);
+    }
+  };
+
+  /** Every applicant with a choice to make must have made it. */
+  const slotChoicesComplete = (confirmTarget ?? []).every(row => {
+    const options = hireSlotOptions.get(row.id);
+    return !options || options.length === 0 || Boolean(hireSlotChoice[row.id]);
+  });
 
   // ── Hiring flow ───────────────────────────────────────────────────────────
   const handleConfirmHire = async () => {
@@ -437,6 +495,7 @@ export const ForHiringPage = () => {
     const hiredIds: string[] = [];
     const newCredentials: CredentialResult[] = [];
     const newlyHiredRecords: NewlyHired[] = [];
+    const slotPlacementFailures: string[] = [];
     const hiredAt = new Date().toISOString();
 
     for (const row of confirmTarget) {
@@ -447,6 +506,20 @@ export const ForHiringPage = () => {
       } catch (err) {
         console.error(`Failed to hire applicant ${row.id}:`, err);
         continue;
+      }
+
+      // Place the hire into the plantilla item they were selected for. This
+      // closes that one slot only — the rest of the posting keeps taking
+      // applications. Reported but not fatal: the employee record is already
+      // created by this point, so failing here must not abort the hire.
+      const chosenSlotId = hireSlotChoice[row.id];
+      const placedSlot = (hireSlotOptions.get(row.id) ?? []).find(slot => slot.id === chosenSlotId);
+      if (chosenSlotId) {
+        const placement = await assignApplicantToSlot(chosenSlotId, row.id);
+        if (!placement.ok) {
+          console.error(`Failed to place ${row.fullName} into plantilla slot ${chosenSlotId}:`, placement.error);
+          slotPlacementFailures.push(`${row.fullName}: ${placement.error ?? 'unknown error'}`);
+        }
       }
 
       const tempPassword = createPassword();
@@ -492,6 +565,8 @@ export const ForHiringPage = () => {
         },
         position: row.position,
         department: row.department,
+        plantillaItemNumber: placedSlot?.itemNumber,
+        plantillaSlotNumber: placedSlot?.slotNumber,
         employmentType: 'Permanent',
         dateHired: hiredAt,
         expectedStartDate: hiredAt,
@@ -547,7 +622,18 @@ export const ForHiringPage = () => {
     setHiring(false);
     setConfirmTarget(null);
     setSelected(new Set());
+    setHireSlotOptions(new Map());
+    setHireSlotChoice({});
     setRows(prev => prev.filter(r => !hiredIds.includes(r.id)));
+
+    if (slotPlacementFailures.length > 0) {
+      // The hires went through; only the plantilla placement did not. Saying
+      // so plainly beats a silent inconsistency between the two.
+      window.alert(
+        'Hired, but these applicants could not be placed into their plantilla item — set it from the job post:\n\n' +
+        slotPlacementFailures.join('\n'),
+      );
+    }
 
     if (newCredentials.length > 0) {
       setCredentialsResult(newCredentials);
@@ -838,19 +924,62 @@ export const ForHiringPage = () => {
             This will generate their employee account and move them into the Office Directory.
           </p>
 
-          <ul className="mb-3 max-h-48 overflow-y-auto rounded-xl border border-slate-200 divide-y divide-slate-100">
-            {confirmTarget.map(r => (
-              <li key={r.id} className="px-3 py-2.5">
-                <p className="text-sm font-semibold text-slate-800">{r.fullName}</p>
-                <p className="text-xs text-slate-500">{r.position || '—'} — {r.department || '—'}</p>
-              </li>
-            ))}
+          <ul className="mb-3 max-h-64 overflow-y-auto rounded-xl border border-slate-200 divide-y divide-slate-100">
+            {confirmTarget.map(r => {
+              const options = hireSlotOptions.get(r.id) ?? [];
+              return (
+                <li key={r.id} className="px-3 py-2.5">
+                  <p className="text-sm font-semibold text-slate-800">{r.fullName}</p>
+                  <p className="text-xs text-slate-500">{r.position || '—'} — {r.department || '—'}</p>
+
+                  {/* Which plantilla item this hire fills. Only a real question
+                      when they applied to more than one that is still open. */}
+                  {options.length > 1 && (
+                    <div className="mt-2">
+                      <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                        Plantilla item to fill <span className="text-rose-500">*</span>
+                      </label>
+                      <select
+                        className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+                        value={hireSlotChoice[r.id] ?? ''}
+                        onChange={(event) =>
+                          setHireSlotChoice(prev => ({ ...prev, [r.id]: event.target.value }))
+                        }
+                      >
+                        <option value="">Select a plantilla item…</option>
+                        {options.map(slot => (
+                          <option key={slot.id} value={slot.id}>
+                            Plantilla {slot.slotNumber} ({slot.itemNumber})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {options.length === 1 && (
+                    <p className="mt-1.5 text-xs text-slate-600">
+                      Fills <span className="font-semibold">Plantilla {options[0].slotNumber}</span>{' '}
+                      ({options[0].itemNumber})
+                    </p>
+                  )}
+                </li>
+              );
+            })}
           </ul>
+
+          {loadingSlotOptions && (
+            <p className="mb-3 text-xs text-slate-500">Loading plantilla items…</p>
+          )}
+          {!loadingSlotOptions && !slotChoicesComplete && (
+            <p className="mb-3 text-xs font-medium text-rose-600">
+              Select which plantilla item each hire fills before continuing.
+            </p>
+          )}
 
           <div className="mt-5 flex justify-end gap-3">
             <button
               type="button"
-              onClick={() => setConfirmTarget(null)}
+              onClick={() => { setConfirmTarget(null); setHireSlotOptions(new Map()); setHireSlotChoice({}); }}
               disabled={hiring}
               className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             >
@@ -859,7 +988,7 @@ export const ForHiringPage = () => {
             <button
               type="button"
               onClick={handleConfirmHire}
-              disabled={hiring}
+              disabled={hiring || loadingSlotOptions || !slotChoicesComplete}
               className="rounded-xl bg-[#363EE8] px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
             >
               {hiring ? 'Hiring…' : 'Yes, hire'}

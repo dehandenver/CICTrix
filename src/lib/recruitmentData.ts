@@ -7,6 +7,7 @@ import {
     RaterAssignment,
 } from '../types/recruitment.types';
 import { supabase } from './supabase';
+import { fetchSlotsByJobPosting } from './plantillaSlots';
 import { POSITION_TO_DEPARTMENT_MAP } from '../constants/positions';
 
 const APPLICANTS_KEY = 'cictrix_qualified_applicants';
@@ -297,6 +298,13 @@ export const getJobPostingsFromSupabase = async (): Promise<JobPosting[]> => {
 
     console.log('[RECRUITMENT] Fetched from Supabase:', data.length, 'jobs:', data.map((r: any) => ({ id: r.id, title: r.title, dbStatus: r.status })));
 
+    // A posting's real vacancies live in plantilla_slots (migration 20260922).
+    // One read for all postings, grouped here, so the Job Portal / Job Details
+    // / Job Posts list all get the full slot list off a single fetch. Returns
+    // empty before the migration is applied, which leaves the item_number
+    // fallback below in charge.
+    const slotsByJob = await fetchSlotsByJobPosting();
+
     return data.map((row: any): JobPosting => {
       const status = mapSupabaseStatusToJobPostingStatus(row.status);
 
@@ -304,9 +312,27 @@ export const getJobPostingsFromSupabase = async (): Promise<JobPosting[]> => {
       // empty/undefined so the UI can render "Not specified" instead of a
       // made-up requirement (the old mapper hardcoded "Bachelor's Degree" and
       // a 30-day deadline for every single job).
+      const jobId = String(row.id ?? '');
+      const itemNumber = row.item_number || row.jobCode || '';
+      const slots = slotsByJob.get(jobId) ?? [];
+
       return {
-        id: String(row.id ?? ''),
-        jobCode: row.item_number || row.jobCode || '',
+        id: jobId,
+        jobCode: itemNumber,
+        // Pre-migration (or for a posting whose slots have not been written
+        // yet) synthesise the single slot the posting already describes, so
+        // every consumer can assume "at least one slot" unconditionally.
+        plantillaSlots: slots.length > 0
+          ? slots
+          : [{
+              id: `legacy:${jobId}`,
+              jobPostingId: jobId,
+              slotNumber: 1,
+              itemNumber,
+              salaryGrade: row.salary_grade == null ? undefined : Number(row.salary_grade),
+              monthlySalary: row.monthly_salary == null ? undefined : Number(row.monthly_salary),
+              status: String(row.status ?? '').toLowerCase() === 'closed' ? 'closed' : 'open',
+            }],
         title: row.title || '',
         department: row.department || '',
         division: row.division || undefined,
@@ -414,7 +440,10 @@ export const getApplicantPositionOptions = (): ApplicantPositionOption[] =>
 const mapJobPostingToSupabaseRow = (job: JobPosting) => ({
   id: job.id,
   title: job.title,
-  item_number: job.jobCode || '',
+  // Mirror of the first plantilla slot. The DB trigger from migration 20260922
+  // keeps this in step too; writing it here means the mirror is also correct
+  // before that migration has been applied.
+  item_number: job.plantillaSlots?.[0]?.itemNumber || job.jobCode || '',
   department: job.department || '',
   office: job.department || '',
   // job_postings.status has a CHECK constraint allowing only:
@@ -559,6 +588,21 @@ export const saveJobPostings = (rows: JobPosting[]): void => {
 
   // Persist to Supabase in the background (source of truth).
   void persistJobPostingsToSupabase(normalizedRows);
+};
+
+/**
+ * Same as {@link saveJobPostings}, but resolves once Supabase has the rows.
+ *
+ * Anything that writes a child row pointing at a posting — plantilla_slots
+ * above all — has to await this first, otherwise a brand-new posting's slots
+ * hit a foreign key that does not exist yet.
+ */
+export const saveJobPostingsAndWait = async (rows: JobPosting[]): Promise<void> => {
+  const normalizedRows = Array.isArray(rows) ? rows : [];
+  jobPostingsCache = normalizedRows;
+  jobPostingsLoaded = true;
+  dispatchJobPostingsUpdated();
+  await persistJobPostingsToSupabase(normalizedRows);
 };
 
 export const getApplicants = () => safeJsonParse<Applicant[]>(localStorage.getItem(APPLICANTS_KEY), []);
@@ -727,6 +771,8 @@ const mapNewlyHiredRow = (row: any): NewlyHired => ({
   position: String(row?.position ?? ''),
   department: String(row?.department ?? ''),
   division: row?.division ? String(row.division) : undefined,
+  plantillaItemNumber: row?.plantilla_item_number ? String(row.plantilla_item_number) : undefined,
+  plantillaSlotNumber: row?.plantilla_slot_number == null ? undefined : Number(row.plantilla_slot_number),
   employmentType: (row?.employment_type ?? 'Permanent') as NewlyHired['employmentType'],
   dateHired: String(row?.date_hired ?? new Date().toISOString()),
   expectedStartDate: String(row?.expected_start_date ?? new Date().toISOString()),
@@ -781,11 +827,10 @@ export const saveNewlyHired = async (rows: NewlyHired[]) => {
   }
 
   for (const hired of rows) {
-    const { id, applicantId, employeeInfo, position, department, division, employmentType, dateHired, expectedStartDate, supervisor, status, onboardingProgress, deployedDate, employeeId } = hired;
+    const { id, applicantId, employeeInfo, position, department, division, employmentType, dateHired, expectedStartDate, supervisor, status, onboardingProgress, deployedDate, employeeId, plantillaItemNumber, plantillaSlotNumber } = hired;
     const applicant = applicantId ? applicantById.get(String(applicantId)) : undefined;
     try {
-      const result = await (supabase as any).from('newly_hired').upsert([
-        {
+      const buildRow = (withPlantilla: boolean) => ({
           id,
           applicant_id: applicantId,
           first_name: employeeInfo.firstName?.trim() || String(applicant?.first_name ?? '').trim(),
@@ -803,9 +848,24 @@ export const saveNewlyHired = async (rows: NewlyHired[]) => {
           onboarding_progress: onboardingProgress,
           deployed_date: deployedDate,
           employee_id: employeeId,
+          // The specific plantilla item this person fills. Split out so the
+          // retry below can drop it when migration 20260922 has not been run.
+          ...(withPlantilla
+            ? {
+                plantilla_item_number: plantillaItemNumber ?? null,
+                plantilla_slot_number: plantillaSlotNumber ?? null,
+              }
+            : {}),
           // Add other fields as needed
-        }
-      ], { onConflict: 'id' });
+      });
+
+      let result = await (supabase as any).from('newly_hired').upsert([buildRow(true)], { onConflict: 'id' });
+
+      const message = String(result.error?.message ?? '').toLowerCase();
+      if (result.error && message.includes('plantilla')) {
+        result = await (supabase as any).from('newly_hired').upsert([buildRow(false)], { onConflict: 'id' });
+      }
+
       if (result.error) {
         // eslint-disable-next-line no-console
         console.error('Supabase upsert newly_hired failed:', result.error);

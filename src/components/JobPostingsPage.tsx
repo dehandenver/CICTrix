@@ -28,10 +28,18 @@ import {
     getJobPostings,
     saveApplicants,
     saveJobPostings,
+    saveJobPostingsAndWait,
     toTitleCase,
 } from '../lib/recruitmentData';
+import {
+    fetchApplicantSlotLinks,
+    findTakenItemNumbers,
+    saveSlotsForJob,
+    setSlotStatus,
+    summarizeSlots,
+} from '../lib/plantillaSlots';
 import { isMockModeEnabled, supabase } from '../lib/supabase';
-import { JobPosting } from '../types/recruitment.types';
+import { JobPosting, PlantillaSlotStatus } from '../types/recruitment.types';
 import { RecruitmentNavigationGuide } from './RecruitmentNavigationGuide';
 import { AdminHeader } from './AdminHeader';
 import { Sidebar } from './Sidebar';
@@ -60,9 +68,53 @@ const STATUS_LABELS: Record<JobPosting['status'], string> = {
   Filled: 'Filled',
 };
 
+/**
+ * One editable row of the "Plantilla Slots" list.
+ *
+ * `key` is a client-side identity so React keeps focus on the right input
+ * while rows are added/removed; `id` is the DB row and is absent until the
+ * slot has been saved once. The "Plantilla N" label is never stored — it is
+ * the array index + 1, which is what makes deleting a middle row shift the
+ * ones below it up while their item numbers stay put.
+ */
+interface PlantillaSlotFormRow {
+  key: string;
+  id?: string;
+  itemNumber: string;
+  /** Blank means "inherit the shared Salary Grade / Monthly Salary above". */
+  salaryGrade: string;
+  monthlySalary: string;
+  status: PlantillaSlotStatus;
+  filledByApplicantId?: string;
+}
+
+const buildSlotRow = (overrides: Partial<PlantillaSlotFormRow> = {}): PlantillaSlotFormRow => ({
+  key: crypto.randomUUID(),
+  itemNumber: '',
+  salaryGrade: '',
+  monthlySalary: '',
+  status: 'open',
+  ...overrides,
+});
+
+const suggestItemNumber = (existing: PlantillaSlotFormRow[]): string => {
+  // Batch postings run in sequence (…-451, -452, -453), so offer the next
+  // number in the series rather than making the admin retype the prefix.
+  for (let index = existing.length - 1; index >= 0; index -= 1) {
+    const match = /^(.*?)(\d+)\s*$/.exec(existing[index].itemNumber.trim());
+    if (match) {
+      const [, prefix, digits] = match;
+      const next = String(Number(digits) + 1).padStart(digits.length, '0');
+      return `${prefix}${next}`;
+    }
+  }
+  return '';
+};
+
 interface JobPostFormValues {
   title: string;
-  jobCode: string;
+  /** Every plantilla item this post is hiring for. Never empty. */
+  slots: PlantillaSlotFormRow[];
   department: string;
   division: string;
   positionLevel: string;
@@ -100,7 +152,7 @@ interface JobPostFormValues {
 
 const buildDefaultJobForm = (): JobPostFormValues => ({
   title: '',
-  jobCode: `ABYAN-2026-${String(Math.floor(Math.random() * 999) + 1).padStart(3, '0')}`,
+  slots: [buildSlotRow({ itemNumber: `ABYAN-2026-${String(Math.floor(Math.random() * 999) + 1).padStart(3, '0')}` })],
   department: '',
   division: '',
   positionLevel: '',
@@ -147,7 +199,9 @@ export const JobPostingsPage = () => {
   // are silently dropped before counting.
   const [allApplicantsRaw, setAllApplicantsRaw] = useState<any[]>([]);
   const [viewingApplicantsFor, setViewingApplicantsFor] = useState<JobPosting | null>(null);
-  const [jobApplicantsRows, setJobApplicantsRows] = useState<Array<{ id: string; full_name: string; email: string; contact_number: string; status: string; created_at: string; total_score: number | null; position: string; office: string; matched: boolean }>>([]);
+  const [jobApplicantsRows, setJobApplicantsRows] = useState<Array<{ id: string; full_name: string; email: string; contact_number: string; status: string; created_at: string; total_score: number | null; position: string; office: string; matched: boolean; slotIds: string[]; needsSlotReassignment: boolean }>>([]);
+  /** Plantilla slot id, or 'all', for the per-job applicants list. */
+  const [jobApplicantsSlotFilter, setJobApplicantsSlotFilter] = useState<string>('all');
   const [jobApplicantsLoading, setJobApplicantsLoading] = useState(false);
   const [jobApplicantsSearch, setJobApplicantsSearch] = useState('');
   const [showAllApplicants, setShowAllApplicants] = useState(false);
@@ -163,6 +217,13 @@ export const JobPostingsPage = () => {
   const [lockConfirmJob, setLockConfirmJob] = useState<JobPosting | null>(null);
   const [unlockDialogJob, setUnlockDialogJob] = useState<JobPosting | null>(null);
   const [newDeadline, setNewDeadline] = useState('');
+  /** Validation message for the Plantilla Slots section of the modal. */
+  const [slotError, setSlotError] = useState('');
+  const [savingJob, setSavingJob] = useState(false);
+  /** Applicant counts per slot id, so removing a slot can warn about them. */
+  const [slotApplicantCounts, setSlotApplicantCounts] = useState<Map<string, number>>(new Map());
+  /** Job post ids whose Item No. cell is expanded to the full list. */
+  const [expandedSlotJobIds, setExpandedSlotJobIds] = useState<Set<string>>(new Set());
 
   const resolveLiveApplicants = async (jobRows: JobPosting[]) => {
     const localApplicants = getApplicants();
@@ -644,6 +705,12 @@ export const JobPostingsPage = () => {
           if (entry?.id && entry?.status) localStatusById.set(String(entry.id), String(entry.status));
         }
 
+        // Which plantilla slot(s) each applicant ticked. An applicant can be in
+        // the running for several slots on this same posting under one
+        // application, so this is a list, not a single value.
+        const slotIdsOnThisJob = new Set((job.plantillaSlots ?? []).map((slot) => slot.id));
+        const slotLinks = await fetchApplicantSlotLinks();
+
         const mapped = data.map((row: any) => {
           const firstName = String(row.first_name ?? '').trim();
           const middleName = String(row.middle_name ?? '').trim();
@@ -663,6 +730,10 @@ export const JobPostingsPage = () => {
             position: String(row.position ?? ''),
             office: String(row.office ?? ''),
             matched: isMatch(row),
+            slotIds: (slotLinks.get(rowId) ?? [])
+              .map((link) => link.slotId)
+              .filter((slotId) => slotIdsOnThisJob.has(slotId)),
+            needsSlotReassignment: Boolean(row.needs_slot_reassignment),
           };
         });
 
@@ -719,6 +790,26 @@ export const JobPostingsPage = () => {
     }
   }, [showModal]);
 
+  // How many applicants are riding on each plantilla slot, so removing a row
+  // can warn about them before the admin commits to it.
+  useEffect(() => {
+    if (!showModal || !editingId) {
+      setSlotApplicantCounts(new Map());
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const links = await fetchApplicantSlotLinks();
+      if (cancelled) return;
+      const counts = new Map<string, number>();
+      links.forEach((rows) => {
+        rows.forEach((row) => counts.set(row.slotId, (counts.get(row.slotId) ?? 0) + 1));
+      });
+      setSlotApplicantCounts(counts);
+    })();
+    return () => { cancelled = true; };
+  }, [showModal, editingId]);
+
   const clearFilters = () => {
     setSearch('');
     setStatusFilter('all');
@@ -733,6 +824,7 @@ export const JobPostingsPage = () => {
 
   const openCreateModal = () => {
     setEditingId(null);
+    setSlotError('');
     setForm(buildDefaultJobForm());
     setShowModal(true);
     requestAnimationFrame(() => {
@@ -742,9 +834,22 @@ export const JobPostingsPage = () => {
 
   const openEditModal = (job: JobPosting) => {
     setEditingId(job.id);
+    setSlotError('');
     setForm({
       title: job.title,
-      jobCode: job.jobCode,
+      // `legacy:` ids are the synthetic single slot recruitmentData invents for
+      // a posting with no rows yet — send it back without an id so the save
+      // creates a real row instead of upserting a non-existent one.
+      slots: (job.plantillaSlots ?? []).length > 0
+        ? (job.plantillaSlots ?? []).map((slot) => buildSlotRow({
+            id: slot.id.startsWith('legacy:') ? undefined : slot.id,
+            itemNumber: slot.itemNumber,
+            salaryGrade: slot.salaryGrade != null ? String(slot.salaryGrade) : '',
+            monthlySalary: slot.monthlySalary != null ? String(slot.monthlySalary) : '',
+            status: slot.status,
+            filledByApplicantId: slot.filledByApplicantId,
+          }))
+        : [buildSlotRow({ itemNumber: job.jobCode })],
       department: job.department,
       division: job.division ?? '',
       positionLevel: '',
@@ -791,7 +896,84 @@ export const JobPostingsPage = () => {
     });
   };
 
-  const submitForm = (status: JobPosting['status']) => {
+  // ─── Plantilla slot rows ──────────────────────────────────────────────────
+
+  const updateSlot = (key: string, patch: Partial<PlantillaSlotFormRow>) => {
+    setSlotError('');
+    setForm((prev) => ({
+      ...prev,
+      slots: prev.slots.map((slot) => (slot.key === key ? { ...slot, ...patch } : slot)),
+    }));
+  };
+
+  const addSlot = () => {
+    setSlotError('');
+    setForm((prev) => ({
+      ...prev,
+      slots: [...prev.slots, buildSlotRow({ itemNumber: suggestItemNumber(prev.slots) })],
+    }));
+  };
+
+  const removeSlot = (key: string) => {
+    const target = form.slots.find((slot) => slot.key === key);
+    if (!target) return;
+    if (form.slots.length <= 1) return;
+
+    // Removing a slot people already applied to does not delete their
+    // applications — they stay on the job post and get flagged for
+    // reassignment — but that is a decision the admin has to make knowingly.
+    const linked = target.id ? slotApplicantCounts.get(target.id) ?? 0 : 0;
+    if (linked > 0) {
+      const confirmed = window.confirm(
+        `${linked} applicant(s) applied to this plantilla (${target.itemNumber || 'no item number'}).\n\n` +
+        'Removing it keeps their applications on this job post but flags them as needing reassignment to another plantilla.\n\n' +
+        'Remove this plantilla slot?',
+      );
+      if (!confirmed) return;
+    }
+    if (target.status === 'filled') {
+      const confirmed = window.confirm(
+        `This plantilla (${target.itemNumber}) is already marked Filled. Removing it will detach the recorded hire. Continue?`,
+      );
+      if (!confirmed) return;
+    }
+
+    setSlotError('');
+    setForm((prev) => ({ ...prev, slots: prev.slots.filter((slot) => slot.key !== key) }));
+  };
+
+  /**
+   * Slot rules the DB also enforces, checked here so the admin gets a pointed
+   * message instead of a unique-index violation.
+   */
+  const validateSlots = async (): Promise<string> => {
+    const rows = form.slots;
+    if (rows.length === 0) return 'Add at least one plantilla slot.';
+
+    const blankAt = rows.findIndex((slot) => !slot.itemNumber.trim());
+    if (blankAt >= 0) return `Plantilla ${blankAt + 1} needs an item number.`;
+
+    const seen = new Map<string, number>();
+    for (let index = 0; index < rows.length; index += 1) {
+      const key = rows[index].itemNumber.trim().toLowerCase();
+      const first = seen.get(key);
+      if (first != null) {
+        return `Plantilla ${first + 1} and Plantilla ${index + 1} have the same item number (${rows[index].itemNumber.trim()}).`;
+      }
+      seen.set(key, index);
+    }
+
+    const taken = await findTakenItemNumbers(
+      rows.map((slot) => slot.itemNumber),
+      rows.map((slot) => slot.id).filter(Boolean) as string[],
+    );
+    if (taken.size > 0) {
+      return `Already used by another job post: ${Array.from(taken).join(', ')}.`;
+    }
+    return '';
+  };
+
+  const submitForm = async (status: JobPosting['status']) => {
     const missing: string[] = [];
     if (!form.title?.trim()) missing.push('Position Title');
     if (!form.department?.trim()) missing.push('Place of Assignation');
@@ -802,6 +984,16 @@ export const JobPostingsPage = () => {
       setToast(`Missing required field${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}.`);
       return;
     }
+
+    setSavingJob(true);
+    const slotProblem = await validateSlots();
+    if (slotProblem) {
+      setSlotError(slotProblem);
+      setSavingJob(false);
+      modalBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    setSlotError('');
 
     const normalizedResponsibilities = form.responsibilities.map((entry) => entry.trim()).filter(Boolean);
     const requiredDocuments = [...form.requiredDocuments];
@@ -814,9 +1006,30 @@ export const JobPostingsPage = () => {
     const expMonths = parseInt(form.qualExperienceMonths || '0', 10) || 0;
     const totalYears = expYears + expMonths / 12;
 
+    const jobId = editingId ?? crypto.randomUUID();
+    const slotDrafts = form.slots.map((slot) => ({
+      id: slot.id,
+      itemNumber: slot.itemNumber.trim(),
+      // Blank per-slot override falls back to the shared value at the top of
+      // the form, so a batch posting stays consistent unless a row is edited.
+      salaryGrade: slot.salaryGrade ? Number(slot.salaryGrade) : (form.salaryGrade ? Number(form.salaryGrade) : undefined),
+      monthlySalary: slot.monthlySalary ? Number(slot.monthlySalary) : (form.monthlySalary ? Number(form.monthlySalary) : undefined),
+      status: slot.status,
+    }));
+
     const payload: JobPosting = {
-      id: editingId ?? crypto.randomUUID(),
-      jobCode: form.jobCode.trim() || `ABYAN-2026-${String(Math.floor(Math.random() * 999) + 1).padStart(3, '0')}`,
+      id: jobId,
+      // Mirror of Plantilla 1; the authoritative list is plantillaSlots below.
+      jobCode: slotDrafts[0].itemNumber,
+      plantillaSlots: slotDrafts.map((draft, index) => ({
+        id: draft.id ?? `pending:${index}`,
+        jobPostingId: jobId,
+        slotNumber: index + 1,
+        itemNumber: draft.itemNumber,
+        salaryGrade: draft.salaryGrade,
+        monthlySalary: draft.monthlySalary,
+        status: draft.status,
+      })),
       title: toTitleCase(form.title),
       department: form.department,
       division: form.division || undefined,
@@ -858,9 +1071,29 @@ export const JobPostingsPage = () => {
       ? jobs.map((job) => (job.id === editingId ? payload : job))
       : [payload, ...jobs];
 
-    saveJobs(nextJobs);
+    // The posting row has to exist in Supabase before its slots can reference
+    // it, so this one waits rather than firing the write into the background.
+    setJobs(nextJobs);
+    await saveJobPostingsAndWait(nextJobs);
+
+    const slotSave = await saveSlotsForJob(jobId, slotDrafts);
+    setSavingJob(false);
+
+    if (!slotSave.ok) {
+      setSlotError(slotSave.error ?? 'Could not save the plantilla slots.');
+      return;
+    }
+
+    if (slotSave.data && slotSave.data.length > 0) {
+      // Replace the optimistic `pending:` ids with the real rows.
+      const saved = slotSave.data;
+      setJobs((prev) => prev.map((job) => (job.id === jobId ? { ...job, plantillaSlots: saved, jobCode: saved[0].itemNumber } : job)));
+    }
+
     setShowModal(false);
-    setToast(editingId ? 'Job post updated successfully.' : 'Job post created successfully.');
+    const slotCount = slotDrafts.length;
+    const slotNote = slotCount > 1 ? ` with ${slotCount} plantilla slots` : '';
+    setToast(editingId ? `Job post updated successfully${slotNote}.` : `Job post created successfully${slotNote}.`);
   };
 
   const updateStatus = (id: string, nextStatus: JobPosting['status']) => {
@@ -873,17 +1106,49 @@ export const JobPostingsPage = () => {
     }
   };
 
-  const duplicatePosting = (job: JobPosting) => {
+  const duplicatePosting = async (job: JobPosting) => {
+    const duplicatedId = crypto.randomUUID();
+    // Item numbers are unique system-wide, so a copy cannot reuse them. The
+    // -COPY suffix is a placeholder the admin is expected to replace with the
+    // real plantilla numbers before publishing the draft.
+    const duplicatedSlots = (job.plantillaSlots ?? [{
+      id: `legacy:${job.id}`,
+      jobPostingId: job.id,
+      slotNumber: 1,
+      itemNumber: job.jobCode,
+      status: 'open' as PlantillaSlotStatus,
+    }]).map((slot, index) => ({
+      id: `pending:${index}`,
+      jobPostingId: duplicatedId,
+      slotNumber: index + 1,
+      itemNumber: `${slot.itemNumber}-COPY`,
+      salaryGrade: slot.salaryGrade,
+      monthlySalary: slot.monthlySalary,
+      status: 'open' as PlantillaSlotStatus,
+    }));
+
     const duplicated: JobPosting = {
       ...job,
-      id: crypto.randomUUID(),
+      id: duplicatedId,
       title: `${job.title} (Copy)`,
-      jobCode: `${job.jobCode}-COPY`,
+      jobCode: duplicatedSlots[0].itemNumber,
+      plantillaSlots: duplicatedSlots,
       status: 'Draft',
       postedDate: new Date().toISOString(),
     };
-    saveJobs([duplicated, ...jobs]);
-    setToast('Posting duplicated as draft.');
+    setJobs([duplicated, ...jobs]);
+    await saveJobPostingsAndWait([duplicated, ...jobs]);
+
+    const result = await saveSlotsForJob(
+      duplicatedId,
+      duplicatedSlots.map((slot) => ({
+        itemNumber: slot.itemNumber,
+        salaryGrade: slot.salaryGrade,
+        monthlySalary: slot.monthlySalary,
+        status: slot.status,
+      })),
+    );
+    setToast(result.ok ? 'Posting duplicated as draft.' : `Duplicated, but slots failed to save: ${result.error}`);
   };
 
   const deleteJobPosting = async (job: JobPosting) => {
@@ -926,10 +1191,26 @@ export const JobPostingsPage = () => {
     setLockConfirmJob(job);
   };
 
-  const confirmLock = () => {
+  const confirmLock = async () => {
     if (!lockConfirmJob) return;
-    updateStatus(lockConfirmJob.id, 'Closed');
+    const job = lockConfirmJob;
     setLockConfirmJob(null);
+    updateStatus(job.id, 'Closed');
+
+    // Closing the posting has to close its still-open plantilla slots too,
+    // otherwise the portal would keep offering them. Filled slots are left
+    // alone — they record a hire that happened.
+    const openSlots = (job.plantillaSlots ?? []).filter((slot) => slot.status === 'open' && !slot.id.startsWith('legacy:'));
+    if (openSlots.length === 0) return;
+
+    await Promise.allSettled(openSlots.map((slot) => setSlotStatus(slot.id, 'closed')));
+    setJobs((prev) => prev.map((row) => (row.id === job.id
+      ? {
+          ...row,
+          plantillaSlots: (row.plantillaSlots ?? []).map((slot) =>
+            slot.status === 'open' ? { ...slot, status: 'closed' as PlantillaSlotStatus } : slot),
+        }
+      : row)));
   };
 
   const openUnlockDialog = (job: JobPosting) => {
@@ -937,12 +1218,26 @@ export const JobPostingsPage = () => {
     setUnlockDialogJob(job);
   };
 
-  const confirmUnlock = () => {
+  const confirmUnlock = async () => {
     if (!unlockDialogJob) return;
+    const job = unlockDialogJob;
     const now = new Date().toISOString();
+
+    // Reopening the posting reopens the slots that were closed with it. A
+    // filled slot stays filled — its vacancy is gone, not merely paused.
+    const closedSlots = (job.plantillaSlots ?? []).filter((slot) => slot.status === 'closed' && !slot.id.startsWith('legacy:'));
+    await Promise.allSettled(closedSlots.map((slot) => setSlotStatus(slot.id, 'open')));
+
     const nextJobs = jobs.map((j) =>
-      j.id === unlockDialogJob.id
-        ? { ...j, status: 'Active' as JobPosting['status'], postedDate: now, applicationDeadline: newDeadline || j.applicationDeadline }
+      j.id === job.id
+        ? {
+            ...j,
+            status: 'Active' as JobPosting['status'],
+            postedDate: now,
+            applicationDeadline: newDeadline || j.applicationDeadline,
+            plantillaSlots: (j.plantillaSlots ?? []).map((slot) =>
+              slot.status === 'closed' ? { ...slot, status: 'open' as PlantillaSlotStatus } : slot),
+          }
         : j
     );
     saveJobs(nextJobs);
@@ -970,8 +1265,10 @@ export const JobPostingsPage = () => {
 
         {viewingApplicantsFor && (() => {
           const job = viewingApplicantsFor;
+          const jobSlots = job.plantillaSlots ?? [];
+          const slotById = new Map(jobSlots.map((slot) => [slot.id, slot]));
           const term = jobApplicantsSearch.trim().toLowerCase();
-          const searched = term
+          const bySearch = term
             ? jobApplicantsRows.filter((r) =>
                 r.full_name.toLowerCase().includes(term) ||
                 r.email.toLowerCase().includes(term) ||
@@ -979,6 +1276,10 @@ export const JobPostingsPage = () => {
                 r.position.toLowerCase().includes(term),
               )
             : jobApplicantsRows;
+
+          const searched = jobApplicantsSlotFilter === 'all'
+            ? bySearch
+            : bySearch.filter((r) => r.slotIds.includes(jobApplicantsSlotFilter));
 
           const matchedRows = searched.filter((r) => r.matched);
           const otherRows = searched.filter((r) => !r.matched);
@@ -1022,6 +1323,29 @@ export const JobPostingsPage = () => {
                       {a.office && <> · {a.office}</>}
                       {a.created_at && <> · {formatPHDate(a.created_at)}</>}
                     </p>
+                    {/* Which plantilla item(s) this one application covers. */}
+                    {(a.slotIds.length > 0 || a.needsSlotReassignment) && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        {a.slotIds.map((slotId) => {
+                          const slot = slotById.get(slotId);
+                          if (!slot) return null;
+                          return (
+                            <span
+                              key={slotId}
+                              title={slot.itemNumber}
+                              className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-200"
+                            >
+                              Plantilla {slot.slotNumber}
+                            </span>
+                          );
+                        })}
+                        {a.needsSlotReassignment && (
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                            Needs reassignment
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
                 {(() => {
@@ -1058,12 +1382,27 @@ export const JobPostingsPage = () => {
                   </p>
                   <h2 className="!mb-0.5 text-xl font-bold text-slate-900">{job.title}</h2>
                   <p className="!mb-0 text-sm text-slate-600">
-                    {formatOfficeLabel(job.department, job.division)} · Item No. {job.jobCode} · {totalMatched} matched · {totalInDb} in database
+                    {formatOfficeLabel(job.department, job.division)} ·{' '}
+                    {jobSlots.length > 1
+                      ? `${jobSlots.length} plantilla items`
+                      : `Item No. ${jobSlots[0]?.itemNumber || job.jobCode}`}{' '}
+                    · {totalMatched} matched · {totalInDb} in database
                   </p>
                 </div>
-                <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${STATUS_COLORS[job.status]}`}>
-                  {STATUS_LABELS[job.status]}
-                </span>
+                {(() => {
+                  const summary = summarizeSlots(jobSlots);
+                  const multi = jobSlots.length > 1;
+                  const className = multi
+                    ? summary.tone === 'filled' ? STATUS_COLORS.Filled
+                      : summary.tone === 'closed' ? STATUS_COLORS.Closed
+                      : STATUS_COLORS.Active
+                    : STATUS_COLORS[job.status];
+                  return (
+                    <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${className}`}>
+                      {multi ? summary.label : STATUS_LABELS[job.status]}
+                    </span>
+                  );
+                })()}
               </section>
 
               <section className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -1076,6 +1415,21 @@ export const JobPostingsPage = () => {
                     onChange={(event) => setJobApplicantsSearch(event.target.value)}
                   />
                 </div>
+                {jobSlots.length > 1 && (
+                  <select
+                    className="h-10 rounded-xl border border-slate-300 bg-white px-3 text-sm"
+                    value={jobApplicantsSlotFilter}
+                    onChange={(event) => setJobApplicantsSlotFilter(event.target.value)}
+                    aria-label="Filter by plantilla slot"
+                  >
+                    <option value="all">All plantilla items</option>
+                    {jobSlots.map((slot) => (
+                      <option key={slot.id} value={slot.id}>
+                        Plantilla {slot.slotNumber} ({slot.itemNumber})
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <label className="flex items-center gap-2 text-sm text-slate-700">
                   <input
                     type="checkbox"
@@ -1199,20 +1553,69 @@ export const JobPostingsPage = () => {
                 {currentPageJobs.map((job) => {
                   const liveCount = applicantCountsByJob.get(job.id) ?? { applicants: 0, qualified: 0 };
                   const officeLabel = formatOfficeLabel(job.department, job.division);
-                  const statusLabel = STATUS_LABELS[job.status];
+                  const slots = job.plantillaSlots ?? [];
+                  const slotSummary = summarizeSlots(slots);
+                  const isMultiSlot = slots.length > 1;
+                  const expanded = expandedSlotJobIds.has(job.id);
+                  // A multi-slot post reports its own aggregate ("2/4 Open");
+                  // a single-slot post keeps the posting-level label so nothing
+                  // changes for the ordinary case.
+                  const statusLabel = isMultiSlot ? slotSummary.label : STATUS_LABELS[job.status];
+                  const statusClass = isMultiSlot
+                    ? slotSummary.tone === 'filled' ? STATUS_COLORS.Filled
+                      : slotSummary.tone === 'closed' ? STATUS_COLORS.Closed
+                      : STATUS_COLORS.Active
+                    : STATUS_COLORS[job.status];
                   return (
                     <tr key={job.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors last:border-0">
                       <td className="px-5 py-4">
                         <p className="font-semibold text-slate-900 text-sm">{normalizeRomanNumeralsInText(job.title)}</p>
                       </td>
-                      <td className="px-5 py-4 text-sm text-slate-500 whitespace-nowrap">{job.jobCode}</td>
+                      <td className="px-5 py-4 text-sm text-slate-500">
+                        {isMultiSlot ? (
+                          <div>
+                            <button
+                              type="button"
+                              onClick={() => setExpandedSlotJobIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(job.id)) next.delete(job.id); else next.add(job.id);
+                                return next;
+                              })}
+                              className="inline-flex items-center gap-1 whitespace-nowrap font-semibold text-blue-700 hover:underline"
+                              aria-expanded={expanded}
+                            >
+                              {slots.length} Plantilla Items
+                              <ChevronRight className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+                            </button>
+                            {expanded && (
+                              <ul className="mt-1.5 space-y-1">
+                                {slots.map((slot) => (
+                                  <li key={slot.id} className="flex items-center gap-2 whitespace-nowrap text-xs">
+                                    <span className="text-slate-400">P{slot.slotNumber}</span>
+                                    <span className="text-slate-600">{slot.itemNumber}</span>
+                                    {slot.status !== 'open' && (
+                                      <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                                        slot.status === 'filled' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-600'
+                                      }`}>
+                                        {slot.status === 'filled' ? 'Filled' : 'Closed'}
+                                      </span>
+                                    )}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="whitespace-nowrap">{slots[0]?.itemNumber || job.jobCode}</span>
+                        )}
+                      </td>
                       <td className="px-5 py-4 text-sm text-slate-700">{officeLabel}</td>
                       <td className="px-5 py-4 text-sm text-slate-600 whitespace-nowrap">{formatPHDate(job.postedDate)}</td>
                       <td className="px-5 py-4 text-center">
                         <span className="font-bold text-slate-900 text-sm">{liveCount.applicants}</span>
                       </td>
                       <td className="px-5 py-4 text-center">
-                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_COLORS[job.status]}`}>{statusLabel}</span>
+                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusClass}`}>{statusLabel}</span>
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex items-center justify-center gap-1.5">
@@ -1228,9 +1631,17 @@ export const JobPostingsPage = () => {
                             type="button"
                             title="View Applicants"
                             className="rounded-lg bg-slate-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 transition-colors"
-                            onClick={() => { setViewingApplicantsFor(job); setJobApplicantsSearch(''); }}
+                            onClick={() => { setViewingApplicantsFor(job); setJobApplicantsSearch(''); setJobApplicantsSlotFilter('all'); }}
                           >
                             Applicants
+                          </button>
+                          <button
+                            type="button"
+                            title="Edit Position"
+                            className="rounded-lg border border-blue-300 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 transition-colors"
+                            onClick={() => openEditModal(job)}
+                          >
+                            Edit
                           </button>
                           {job.status === 'Active' && (
                             <button type="button" title="Close / Lock Application" onClick={() => closeApplication(job)}
@@ -1290,8 +1701,12 @@ export const JobPostingsPage = () => {
           <div className="flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" style={{ maxHeight: '88vh', fontFamily: 'Poppins, sans-serif' }} onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4" style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)' }}>
               <div>
-                <h2 className="text-xl font-bold text-white">Create New Job Position</h2>
-                <p className="text-sm" style={{ color: '#C8D1FF' }}>Fill in the details to create a new job posting</p>
+                <h2 className="text-xl font-bold text-white">{editingId ? 'Edit Position' : 'Create New Job Position'}</h2>
+                <p className="text-sm" style={{ color: '#C8D1FF' }}>
+                  {editingId
+                    ? 'Update the posting and its plantilla slots'
+                    : 'Fill in the details to create a new job posting'}
+                </p>
               </div>
               <button
                 type="button"
@@ -1319,14 +1734,95 @@ export const JobPostingsPage = () => {
                     />
                   </div>
 
+                  {/* Plantilla Slots — one row per real vacancy. The "Plantilla N"
+                      label is the row's position in this list, so deleting a
+                      middle row renumbers the rest while their item numbers
+                      stay attached to their own data. */}
                   <div>
-                    <label className="mb-2 block text-base font-semibold text-slate-900">Plantilla Item Number <span className="text-red-500">*</span></label>
-                    <input
-                      className="w-full rounded-xl border border-slate-300 p-3 text-base"
-                      placeholder="e.g., SBSEC-04"
-                      value={form.jobCode}
-                      onChange={(event) => setForm((prev) => ({ ...prev, jobCode: event.target.value }))}
-                    />
+                    <div className="mb-2 flex items-baseline justify-between gap-3">
+                      <label className="block text-base font-semibold text-slate-900">
+                        Plantilla Slots <span className="text-red-500">*</span>
+                        <span className="ml-1.5 text-sm font-medium text-slate-500">({form.slots.length})</span>
+                      </label>
+                      <span className="text-xs text-slate-400">Each item number must be unique system-wide</span>
+                    </div>
+
+                    <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      {form.slots.map((slot, index) => {
+                        const linkedApplicants = slot.id ? slotApplicantCounts.get(slot.id) ?? 0 : 0;
+                        return (
+                          <div key={slot.key} className="rounded-lg border border-slate-200 bg-white p-3">
+                            <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
+                              <span className="w-24 shrink-0 text-sm font-bold" style={{ color: '#040E6B' }}>
+                                Plantilla {index + 1}
+                              </span>
+                              <input
+                                className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                                placeholder="Item No. e.g., ABYAN-2026-451"
+                                value={slot.itemNumber}
+                                onChange={(event) => updateSlot(slot.key, { itemNumber: event.target.value })}
+                              />
+                              {slot.status !== 'open' && (
+                                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                  slot.status === 'filled' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-600'
+                                }`}>
+                                  {slot.status === 'filled' ? 'Filled' : 'Closed'}
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                title={form.slots.length === 1 ? 'A job post needs at least one plantilla slot' : 'Remove this plantilla slot'}
+                                disabled={form.slots.length === 1}
+                                onClick={() => removeSlot(slot.key)}
+                                className="shrink-0 rounded-lg border border-rose-200 p-2 text-rose-500 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300 disabled:hover:bg-transparent"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+
+                            {/* Per-slot overrides for a batch whose rows are not
+                                quite identical. Blank = use the shared value. */}
+                            <div className="mt-2 grid grid-cols-1 gap-2 pl-0 sm:grid-cols-2 sm:pl-24">
+                              <input
+                                type="number"
+                                min={1}
+                                className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs"
+                                placeholder={form.salaryGrade ? `Salary Grade (shared: ${form.salaryGrade})` : 'Salary Grade override'}
+                                value={slot.salaryGrade}
+                                onChange={(event) => updateSlot(slot.key, { salaryGrade: event.target.value.replace(/[^0-9]/g, '') })}
+                              />
+                              <input
+                                type="number"
+                                min={0}
+                                className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs"
+                                placeholder={form.monthlySalary ? `Monthly Salary (shared: ${form.monthlySalary})` : 'Monthly Salary override'}
+                                value={slot.monthlySalary}
+                                onChange={(event) => updateSlot(slot.key, { monthlySalary: event.target.value.replace(/[^0-9]/g, '') })}
+                              />
+                            </div>
+
+                            {linkedApplicants > 0 && (
+                              <p className="mt-2 pl-0 text-xs text-slate-500 sm:pl-24">
+                                {linkedApplicants} applicant{linkedApplicants === 1 ? '' : 's'} applied to this plantilla.
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                      <button
+                        type="button"
+                        onClick={addSlot}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-dashed px-3 py-2 text-sm font-semibold transition hover:bg-white"
+                        style={{ borderColor: '#363EE8', color: '#363EE8' }}
+                      >
+                        <Plus size={14} /> Add Another Plantilla
+                      </button>
+                    </div>
+
+                    {slotError && (
+                      <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-600">{slotError}</p>
+                    )}
                   </div>
 
                   <div>
@@ -1489,11 +1985,13 @@ export const JobPostingsPage = () => {
               </button>
               <button
                 type="button"
-                onClick={() => submitForm('Active')}
-                className="inline-flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-semibold text-white"
+                disabled={savingJob}
+                onClick={() => void submitForm('Active')}
+                className="inline-flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-semibold text-white disabled:opacity-60"
                 style={{ backgroundColor: '#363EE8' }}
               >
-                <Plus size={15} /> Create Position
+                <Plus size={15} />
+                {savingJob ? 'Saving…' : editingId ? 'Save Changes' : 'Create Position'}
               </button>
             </div>
           </div>
@@ -1521,7 +2019,7 @@ export const JobPostingsPage = () => {
                 className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">
                 Cancel
               </button>
-              <button type="button" onClick={confirmLock}
+              <button type="button" onClick={() => void confirmLock()}
                 className="rounded-xl bg-orange-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-600">
                 <Lock className="mr-1.5 inline h-3.5 w-3.5" /> Confirm Lock
               </button>
@@ -1565,7 +2063,7 @@ export const JobPostingsPage = () => {
                 className="rounded-xl border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">
                 Cancel
               </button>
-              <button type="button" onClick={confirmUnlock}
+              <button type="button" onClick={() => void confirmUnlock()}
                 className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700">
                 <Unlock className="mr-1.5 inline h-3.5 w-3.5" /> Reopen Position
               </button>

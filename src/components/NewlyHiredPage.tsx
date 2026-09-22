@@ -63,11 +63,20 @@ export const NewlyHiredPage = () => {
         }
 
         // Already-saved newly_hired rows (carries persisted employee_id so credentials survive reloads)
+        // select('*') rather than a column list: plantilla_item_number only
+        // exists once migration 20260922 has been applied, and naming a missing
+        // column would fail the whole read.
         const newlyHiredResult = await (supabase as any)
           .from('newly_hired')
-          .select('applicant_id, employee_id, status, onboarding_progress');
+          .select('*');
 
-        const persistedByApplicantId = new Map<string, { employee_id?: string; status?: string; onboarding_progress?: number }>();
+        const persistedByApplicantId = new Map<string, {
+          employee_id?: string;
+          status?: string;
+          onboarding_progress?: number;
+          plantilla_item_number?: string | null;
+          plantilla_slot_number?: number | null;
+        }>();
         for (const row of (newlyHiredResult.data || []) as any[]) {
           const applicantKey = String(row?.applicant_id ?? '').trim();
           if (!applicantKey) continue;
@@ -82,6 +91,8 @@ export const NewlyHiredPage = () => {
             employee_id: row?.employee_id ?? existing?.employee_id ?? undefined,
             status: row?.status ?? existing?.status ?? undefined,
             onboarding_progress: row?.onboarding_progress ?? existing?.onboarding_progress ?? undefined,
+            plantilla_item_number: row?.plantilla_item_number ?? existing?.plantilla_item_number ?? undefined,
+            plantilla_slot_number: row?.plantilla_slot_number ?? existing?.plantilla_slot_number ?? undefined,
           });
         }
 
@@ -121,6 +132,12 @@ export const NewlyHiredPage = () => {
               },
               position: String(row?.position ?? '').trim(),
               department: String(row?.office ?? '').trim(),
+              plantillaItemNumber: persisted?.plantilla_item_number
+                ? String(persisted.plantilla_item_number)
+                : undefined,
+              plantillaSlotNumber: persisted?.plantilla_slot_number == null
+                ? undefined
+                : Number(persisted.plantilla_slot_number),
               employmentType: 'Permanent',
               dateHired: String(row?.created_at ?? new Date().toISOString()),
               expectedStartDate: String(row?.created_at ?? new Date().toISOString()),
@@ -544,7 +561,18 @@ export const NewlyHiredPage = () => {
                         />
                         <div>
                           <p className="text-xl font-semibold text-slate-900">{fullName}</p>
-                          <p className="text-base text-slate-600">{row.position}</p>
+                          <p className="text-base text-slate-600">
+                            {row.position}
+                            {/* The specific plantilla item filled — a posting
+                                can cover several identical vacancies, so the
+                                title alone does not identify the appointment. */}
+                            {row.plantillaItemNumber && (
+                              <span className="ml-2 rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-200">
+                                {row.plantillaSlotNumber ? `Plantilla ${row.plantillaSlotNumber} · ` : ''}
+                                {row.plantillaItemNumber}
+                              </span>
+                            )}
+                          </p>
                           <p className="text-sm text-slate-500">Rank: #{Math.max(1, Number(row.rankingRank ?? 1))} • Score: {Number(row.rankingScore ?? 0).toFixed(2)} • Hired: {new Date(row.dateHired).toLocaleDateString()}</p>
                         </div>
                       </div>

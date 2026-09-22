@@ -2,6 +2,7 @@ import { ArrowLeft, Briefcase, MapPin, BookOpen, Award, Users, FileText, Calenda
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useState, useEffect, type ReactNode } from 'react';
 import { getJobPostings } from '../lib/recruitmentData';
+import { supabase } from '../lib/supabase';
 import { JobPosting } from '../types/recruitment.types';
 import { QualificationGapPanel } from './QualificationGapPanel';
 
@@ -55,6 +56,8 @@ export const JobDetailsPage = () => {
     () => (location.state?.landingJob?.originalJob as JobPosting | undefined) ?? null,
   );
   const [allPostings, setAllPostings] = useState<JobPosting[]>([]);
+  /** Name of the applicant placed in each filled slot, for the admin view. */
+  const [hireNamesBySlotId, setHireNamesBySlotId] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const jobs = getJobPostings();
@@ -66,6 +69,39 @@ export const JobDetailsPage = () => {
       return jobs.find((j) => j.id === jobId || j.jobCode === jobId) ?? null;
     });
   }, [jobId]);
+
+  // Who was placed in each filled slot. Admin view only — applicants have no
+  // business seeing who took the other plantilla items.
+  useEffect(() => {
+    const filled = (job?.plantillaSlots ?? []).filter((slot) => slot.filledByApplicantId);
+    if (!location.pathname.startsWith('/admin') || filled.length === 0) {
+      setHireNamesBySlotId({});
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await (supabase as any)
+        .from('applicants')
+        .select('id, first_name, last_name')
+        .in('id', filled.map((slot) => slot.filledByApplicantId));
+      if (cancelled || error || !Array.isArray(data)) return;
+
+      const nameById = new Map<string, string>(
+        data.map((row: any) => [
+          String(row.id),
+          [row.first_name, row.last_name].filter(Boolean).join(' ').trim(),
+        ]),
+      );
+      setHireNamesBySlotId(
+        Object.fromEntries(
+          filled
+            .map((slot) => [slot.id, nameById.get(String(slot.filledByApplicantId)) ?? ''])
+            .filter(([, name]) => Boolean(name)),
+        ),
+      );
+    })();
+    return () => { cancelled = true; };
+  }, [job?.id, job?.plantillaSlots, location.pathname]);
 
   if (!job && !landingJob) {
     return (
@@ -91,6 +127,17 @@ export const JobDetailsPage = () => {
   const department = job?.department || landingJob?.department || '';
   const postingDate = landingJob?.postingDate || job?.postedDate || '';
   const closingDate = landingJob?.closingDate || job?.applicationDeadline || '';
+
+  // A posting can advertise several identical vacancies, each with its own
+  // plantilla item number. `itemNo` above is only the first one (the mirror on
+  // the posting row), so the real list comes from the slots.
+  const slots = job?.plantillaSlots ?? [];
+  const isMultiSlot = slots.length > 1;
+  const openSlots = slots.filter((slot) => slot.status === 'open');
+  const isAdminView = location.pathname.startsWith('/admin');
+  // RSP needs the per-slot breakdown even on a single-slot post; the public
+  // portal only gains from it when there is actually a choice to make.
+  const showSlotSection = isMultiSlot || (isAdminView && slots.length > 0);
 
   // Never print "Invalid Date" or a made-up date for a field the posting
   // simply doesn't have.
@@ -122,7 +169,11 @@ export const JobDetailsPage = () => {
                 <h1 className="text-4xl font-bold mb-3">{title}</h1>
                 <div className="flex items-center gap-3 text-slate-100">
                   <Briefcase className="h-5 w-5" />
-                  <span className="text-lg font-semibold">Plantilla Item No. {itemNo}</span>
+                  <span className="text-lg font-semibold">
+                    {isMultiSlot
+                      ? `${slots.length} Plantilla Items · ${openSlots.length} open`
+                      : `Plantilla Item No. ${itemNo}`}
+                  </span>
                 </div>
               </div>
             </div>
@@ -183,6 +234,63 @@ export const JobDetailsPage = () => {
             </div>
           )}
         </div>
+
+        {/* Plantilla Slots */}
+        {showSlotSection && (
+          <div className="bg-white rounded-2xl shadow-lg overflow-hidden mb-6 border-l-4 border-sky-500">
+            <div className="bg-sky-50 px-8 py-6 border-b border-slate-200">
+              <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-3">
+                <Briefcase className="h-6 w-6 text-sky-600" />
+                Plantilla Items ({slots.length})
+              </h2>
+              <p className="mt-1 text-sm text-slate-600">
+                {isAdminView
+                  ? `${openSlots.length} open · ${slots.filter((slot) => slot.status === 'filled').length} filled · ${slots.filter((slot) => slot.status === 'closed').length} closed.`
+                  : `This posting covers ${slots.length} identical vacancies. You can apply to one or several of them in a single application.`}
+              </p>
+            </div>
+            <div className="px-8 py-6">
+              <ul className="divide-y divide-slate-100">
+                {slots.map((slot) => {
+                  const salaryGrade = slot.salaryGrade ?? job?.salaryGrade;
+                  const monthlySalary = slot.monthlySalary ?? job?.monthlySalary;
+                  return (
+                    <li key={slot.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                      <div>
+                        <p className="font-semibold text-slate-900">Plantilla {slot.slotNumber}</p>
+                        <p className="text-sm text-slate-500">{slot.itemNumber}</p>
+                        {isAdminView && hireNamesBySlotId[slot.id] && (
+                          <p className="mt-0.5 text-sm text-blue-700">
+                            Filled by {hireNamesBySlotId[slot.id]}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="text-right text-sm text-slate-600">
+                          {salaryGrade != null && <p>SG {salaryGrade}</p>}
+                          {monthlySalary != null && (
+                            <p>Php {Number(monthlySalary).toLocaleString('en-PH')}</p>
+                          )}
+                        </div>
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                            slot.status === 'open'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : slot.status === 'filled'
+                                ? 'bg-blue-100 text-blue-700'
+                                : 'bg-slate-200 text-slate-600'
+                          }`}
+                        >
+                          {slot.status === 'open' ? 'Open' : slot.status === 'filled' ? 'Filled' : 'Closed'}
+                        </span>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </div>
+        )}
 
         {/* Qualification Standards */}
         {job && (
@@ -432,18 +540,27 @@ export const JobDetailsPage = () => {
         {!location.pathname.startsWith('/admin') && (
           <div className="text-center py-6">
             <button
+              disabled={slots.length > 0 && openSlots.length === 0}
               onClick={() => navigate('/apply', {
                 state: {
                   landingJob: {
                     title,
                     department,
                     itemNumber: itemNo,
+                    // The wizard needs the posting to show the slot picker; the
+                    // item number alone is only the first slot's.
+                    jobPostingId: job?.id ?? '',
+                    plantillaSlots: slots,
                   },
                 },
               })}
-              className="inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-bold text-lg rounded-xl hover:shadow-lg transition-shadow"
+              className="inline-flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-bold text-lg rounded-xl hover:shadow-lg transition-shadow disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Apply for This Position
+              {slots.length > 0 && openSlots.length === 0
+                ? 'All Plantilla Items Filled'
+                : isMultiSlot
+                  ? `Apply for This Position (${openSlots.length} open)`
+                  : 'Apply for This Position'}
             </button>
           </div>
         )}

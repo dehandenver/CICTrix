@@ -8,6 +8,7 @@ import { mockDatabase } from '../lib/mockDatabase';
 import { getPreferredDataSourceMode } from '../lib/dataSourceMode';
 import { ChevronLeft, ChevronRight, Search, Undo2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { fetchApplicantSlotLinks, fetchSlotsByJobPosting } from '../lib/plantillaSlots';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -21,6 +22,13 @@ interface Applicant {
   status: string;
   created_at: string;
   application_type?: string | null;
+  /**
+   * The plantilla item(s) this single application is in the running for. A
+   * posting can advertise several identical vacancies, and one application can
+   * cover more than one of them.
+   */
+  plantilla_slots: Array<{ slotNumber: number; itemNumber: string }>;
+  needs_slot_reassignment: boolean;
 }
 
 const isShortlistedStatus = (status: string) =>
@@ -48,6 +56,32 @@ const fmtDate = (iso: string) => {
 
 
 
+/**
+ * Which plantilla item(s) an application covers. Renders nothing for the
+ * ordinary single-slot posting, where the position title already says it all.
+ */
+const PlantillaTags = ({ applicant }: { applicant: Applicant }) => {
+  if (applicant.plantilla_slots.length < 2 && !applicant.needs_slot_reassignment) return null;
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1">
+      {applicant.plantilla_slots.map(slot => (
+        <span
+          key={slot.itemNumber}
+          title={slot.itemNumber}
+          className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-200"
+        >
+          Plantilla {slot.slotNumber}
+        </span>
+      ))}
+      {applicant.needs_slot_reassignment && (
+        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+          Needs reassignment
+        </span>
+      )}
+    </div>
+  );
+};
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export const ApplicationsListPage = () => {
@@ -69,6 +103,18 @@ export const ApplicationsListPage = () => {
         const preferredMode = isMockModeEnabled ? 'local' : getPreferredDataSourceMode();
         const client: any = preferredMode === 'local' ? mockDatabase : supabase;
         const { data } = await client.from('applicants').select('*').order('created_at', { ascending: false });
+
+        // Resolve each application's plantilla item(s) in two reads rather than
+        // per row. Both return empty before migration 20260922 is applied, and
+        // the tags simply do not render.
+        const [slotLinks, slotsByJob] = await Promise.all([
+          fetchApplicantSlotLinks(),
+          fetchSlotsByJobPosting(),
+        ]);
+        const slotById = new Map<string, { slotNumber: number; itemNumber: string }>();
+        slotsByJob.forEach(slots => slots.forEach(slot =>
+          slotById.set(slot.id, { slotNumber: slot.slotNumber, itemNumber: slot.itemNumber })));
+
         const rows: Applicant[] = (data ?? []).map((r: any) => ({
           id:               String(r.id ?? ''),
           full_name:        [r.first_name, r.middle_name, r.last_name].filter(Boolean).join(' ') || String(r.full_name ?? '—'),
@@ -79,6 +125,11 @@ export const ApplicationsListPage = () => {
           status:           String(r.status ?? ''),
           created_at:       String(r.created_at ?? ''),
           application_type: r.application_type ?? null,
+          plantilla_slots:  (slotLinks.get(String(r.id ?? '')) ?? [])
+                              .map(link => slotById.get(link.slotId))
+                              .filter((slot): slot is { slotNumber: number; itemNumber: string } => Boolean(slot))
+                              .sort((a, b) => a.slotNumber - b.slotNumber),
+          needs_slot_reassignment: Boolean(r.needs_slot_reassignment),
         }));
         setApplicants(rows);
       } catch {
@@ -277,7 +328,10 @@ export const ApplicationsListPage = () => {
                       </td>
 
                       {/* Position */}
-                      <td className="px-5 py-4 text-sm text-slate-700">{a.position || '—'}</td>
+                      <td className="px-5 py-4 text-sm text-slate-700">
+                        {a.position || '—'}
+                        <PlantillaTags applicant={a} />
+                      </td>
 
                       {/* Department */}
                       <td className="px-5 py-4 text-sm text-slate-700">{a.office || '—'}</td>
@@ -368,7 +422,10 @@ export const ApplicationsListPage = () => {
                             <p className="mt-0.5 text-xs text-slate-400">{a.item_number || '—'}</p>
                           </button>
                         </td>
-                        <td className="px-5 py-4 text-sm text-slate-700">{a.position || '—'}</td>
+                        <td className="px-5 py-4 text-sm text-slate-700">
+                          {a.position || '—'}
+                          <PlantillaTags applicant={a} />
+                        </td>
                         <td className="px-5 py-4 text-sm text-slate-700">{a.office || '—'}</td>
                         <td className="px-5 py-4">
                           <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${(a.application_type ?? '').toLowerCase().includes('promot') ? 'bg-purple-100 text-purple-700' : 'bg-sky-100 text-sky-700'}`}>

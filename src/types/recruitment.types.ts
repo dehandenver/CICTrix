@@ -1,9 +1,50 @@
 export type PositionType = 'Civil Service' | 'COS' | 'JO' | 'Contractual';
 export type EmploymentStatus = 'Permanent' | 'Temporary' | 'Contractual';
 
+export type PlantillaSlotStatus = 'open' | 'filled' | 'closed';
+
+/**
+ * One vacant plantilla item inside a job post. A post that advertises four
+ * identical "Admin Aide" vacancies carries four of these, each with its own
+ * real item number — the post itself no longer owns a single item number.
+ *
+ * `slotNumber` is the display ordinal ("Plantilla 1"). It is system-assigned
+ * and re-sequenced when a middle row is removed, so it is NOT a stable key —
+ * `id` and `itemNumber` are.
+ */
+export interface PlantillaSlot {
+  id: string;
+  jobPostingId: string;
+  slotNumber: number;
+  itemNumber: string;
+  /** Per-slot overrides. Undefined means "inherit the posting's shared value". */
+  salaryGrade?: number;
+  monthlySalary?: number;
+  status: PlantillaSlotStatus;
+  filledByApplicantId?: string;
+  filledAt?: string;
+}
+
+export type ApplicationSlotStatus = 'applied' | 'shortlisted' | 'not_selected' | 'hired';
+
+/** One row of the application -> slot many-to-many. */
+export interface ApplicationPlantillaLink {
+  applicantId: string;
+  plantillaSlotId: string;
+  status: ApplicationSlotStatus;
+}
+
 export interface JobPosting {
   id: string;
+  /**
+   * Mirror of the FIRST plantilla slot's item number, kept in step by a DB
+   * trigger (migration 20260922). The authoritative list is `plantillaSlots`;
+   * this stays only because the applicant -> posting linkage across the app is
+   * still string matching on it.
+   */
   jobCode: string;
+  /** Every plantilla item this post is hiring for. Always at least one. */
+  plantillaSlots?: PlantillaSlot[];
   title: string;
   department: string;
   division?: string;
@@ -56,6 +97,14 @@ export type ApplicantStatus =
 export interface Applicant {
   id: string;
   jobPostingId: string;
+  /**
+   * The plantilla slots this single application is in the running for, with a
+   * per-slot outcome. Empty for walk-in/direct applications that were never
+   * filed against a posting.
+   */
+  appliedSlots?: Array<{ slotId: string; status: ApplicationSlotStatus }>;
+  /** Set when the slot(s) this applicant chose were deleted by an admin. */
+  needsSlotReassignment?: boolean;
   applicationType?: 'job' | 'promotion';
   internalApplication?: {
     employeeId: string;
@@ -134,6 +183,13 @@ export interface NewlyHired {
   position: string;
   department: string;
   division?: string;
+  /**
+   * The specific plantilla item this hire fills. A posting can cover several
+   * identical vacancies, so reports and exports must name the item number the
+   * person was actually placed into, not just the position title.
+   */
+  plantillaItemNumber?: string;
+  plantillaSlotNumber?: number;
   employmentType: string;
   dateHired: string;
   expectedStartDate: string;

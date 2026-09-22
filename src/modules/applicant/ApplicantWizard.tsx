@@ -23,10 +23,11 @@ import {
 } from '../../lib/employeePortalData';
 import { syncApplicantSubmissionToRecruitment, getAuthoritativeJobPostings, loadJobPostings } from '../../lib/recruitmentData';
 import { fetchEmployeeApplicationProfile } from '../../lib/api/employeeApplicationProfile';
+import { linkApplicationToSlots } from '../../lib/plantillaSlots';
 import { ATTACHMENTS_BUCKET, supabase } from '../../lib/supabase';
 import '../../styles/wizard.css';
 import type { ApplicantFormData, UploadedFile, ValidationErrors } from '../../types/applicant.types';
-import type { JobPosting } from '../../types/recruitment.types';
+import type { JobPosting, PlantillaSlot } from '../../types/recruitment.types';
 import { validateApplicantForm, validateFiles } from '../../utils/validation';
 import { logErrorForAdmin } from '../../utils/errorLogger';
 import { ApplicantAssessmentForm } from './ApplicantAssessmentForm';
@@ -176,6 +177,14 @@ export const ApplicantWizard: React.FC = () => {
   );
   const [activeJobs, setActiveJobs] = useState<JobPosting[]>([]);
   const [isLockedPosition, setIsLockedPosition] = useState(false);
+  /**
+   * The plantilla items of the posting being applied to. A post can advertise
+   * several identical vacancies; the applicant ticks the ones they want and
+   * still files ONE application linked to all of them.
+   */
+  const [postingSlots, setPostingSlots] = useState<PlantillaSlot[]>([]);
+  const [selectedSlotIds, setSelectedSlotIds] = useState<string[]>([]);
+  const [slotSelectionError, setSlotSelectionError] = useState('');
   const [isLoadingPrefill, setIsLoadingPrefill] = useState(false);
   const isGeneratingItemNumberRef = useRef(false);
   const lastPrefilledRef = useRef<{ employeeId: string; username: string } | null>(null);
@@ -196,7 +205,15 @@ export const ApplicantWizard: React.FC = () => {
   }, [entryMode, applicationType, currentStep, formData, authenticatedEmployeeAccount]);
 
   useEffect(() => {
-    const state = location.state as { landingJob?: { title: string; itemNumber: string; department: string } } | null;
+    const state = location.state as {
+      landingJob?: {
+        title: string;
+        itemNumber: string;
+        department: string;
+        jobPostingId?: string;
+        plantillaSlots?: PlantillaSlot[];
+      };
+    } | null;
     const landingJob = state?.landingJob;
     const searchParams = new URLSearchParams(location.search);
     const positionFromQuery = searchParams.get('position') || undefined;
@@ -229,6 +246,16 @@ export const ApplicantWizard: React.FC = () => {
       setIsLockedPosition(true);
       setSubmitError('');
 
+      // Job Details hands us the posting's plantilla items so the picker can
+      // render without a second fetch. Falling back to the loaded postings
+      // covers a refresh, where router state survives but the array may not.
+      applyPostingSlots(
+        landingJob.plantillaSlots
+          ?? getAuthoritativeJobPostings().find(
+            (job) => job.id === landingJob.jobPostingId || job.jobCode === landingJob.itemNumber,
+          )?.plantillaSlots,
+      );
+
       if (hasInProgressFormData) {
         // Preserve everything the applicant has already filled in; only make
         // sure the position/office/item match the landing job they clicked.
@@ -260,6 +287,16 @@ export const ApplicantWizard: React.FC = () => {
       setEntryMode('wizard');
       setIsLockedPosition(true);
       setSubmitError('');
+
+      // Query-param entry carries no slot data, so resolve the posting from
+      // the loaded list by item number first and title second.
+      const postings = getAuthoritativeJobPostings();
+      const matched = itemNumberFromQuery
+        ? postings.find((job) =>
+            job.jobCode === itemNumberFromQuery ||
+            (job.plantillaSlots ?? []).some((slot) => slot.itemNumber === itemNumberFromQuery))
+        : postings.find((job) => job.title === positionFromQuery);
+      applyPostingSlots(matched?.plantillaSlots);
 
       if (hasInProgressFormData) {
         setFormData((prev) => ({
@@ -447,6 +484,28 @@ export const ApplicantWizard: React.FC = () => {
     setFileError('');
   };
 
+  /**
+   * Seed the plantilla picker for a posting. A posting with a single open slot
+   * has nothing to choose, so it is selected silently and no picker is shown.
+   */
+  const applyPostingSlots = (slots: PlantillaSlot[] | undefined) => {
+    const list = slots ?? [];
+    setPostingSlots(list);
+    const open = list.filter((slot) => slot.status === 'open');
+    setSelectedSlotIds(open.length === 1 ? [open[0].id] : []);
+    setSlotSelectionError('');
+  };
+
+  const toggleSlot = (slotId: string) => {
+    setSlotSelectionError('');
+    setSelectedSlotIds((prev) =>
+      prev.includes(slotId) ? prev.filter((id) => id !== slotId) : [...prev, slotId],
+    );
+  };
+
+  /** Only shown when there is a real choice to make. */
+  const showSlotPicker = postingSlots.filter((slot) => slot.status === 'open').length > 1;
+
   const handleNext = () => {
     const validationErrors = validateApplicantForm(formData, 1);
 
@@ -454,6 +513,12 @@ export const ApplicantWizard: React.FC = () => {
       setErrors(validationErrors);
       setSubmitError('Please complete all required fields before proceeding.');
       logErrorForAdmin('Validation error on step 1 of Applicant Wizard', validationErrors, 'Form Validation');
+      return;
+    }
+
+    if (showSlotPicker && selectedSlotIds.length === 0) {
+      setSlotSelectionError('Select at least one plantilla item you are applying for.');
+      setSubmitError('Please complete all required fields before proceeding.');
       return;
     }
 
@@ -691,6 +756,23 @@ const handleNextToReview = () => {
 
     saveApplicantAppointmentType(applicantData.id, applicationType);
 
+    // One application, linked to every plantilla item the applicant ticked.
+    // `legacy:` ids belong to the synthetic single slot invented for postings
+    // that have no rows yet — there is nothing real to link them to.
+    const slotIdsToLink = selectedSlotIds.filter((id) => id && !id.startsWith('legacy:') && !id.startsWith('pending:'));
+    if (slotIdsToLink.length > 0) {
+      const linkResult = await linkApplicationToSlots(applicantData.id, slotIdsToLink);
+      if (!linkResult.ok) {
+        // The application itself is already saved; a failed link is an HR
+        // follow-up, not a reason to tell the applicant they failed.
+        logErrorForAdmin(
+          'Applicant saved but plantilla slot links failed',
+          { applicantId: applicantData.id, slotIdsToLink, error: linkResult.error },
+          'Database Submission',
+        );
+      }
+    }
+
     const syncedAttachments = await uploadFiles(supabase, applicantData.id);
     await cachePreviewableFiles(applicantData.id);
 
@@ -739,6 +821,9 @@ const handleNextToReview = () => {
     setCurrentStep(1);
     setEntryMode('landing');
     setApplicationType('job');
+    setPostingSlots([]);
+    setSelectedSlotIds([]);
+    setSlotSelectionError('');
     setAuthenticatedEmployeeAccount(null);
     setEmployeeNumber('');
     setEmployeePassword('');
@@ -792,9 +877,11 @@ const handleNextToReview = () => {
         item_number: job.jobCode || '',
       });
       setIsLockedPosition(true);
+      applyPostingSlots(job.plantillaSlots);
     } else {
       setFormData({ ...INITIAL_FORM_DATA, application_type: 'job' });
       setIsLockedPosition(false);
+      applyPostingSlots([]);
     }
     setFiles([]);
     setEntryMode('wizard');
@@ -1127,6 +1214,62 @@ const handleNextToReview = () => {
                   </div>
                 )}
 
+                {/* Plantilla picker. Only rendered when the posting has more
+                    than one open vacancy — otherwise there is no choice and
+                    the single slot is selected behind the scenes. */}
+                {showSlotPicker && (
+                  <div
+                    className="mb-4 rounded-xl border border-slate-200 bg-white p-4"
+                    style={{ borderColor: slotSelectionError ? '#fca5a5' : undefined }}
+                  >
+                    <h3 className="text-base font-bold text-slate-900">
+                      Select Plantilla(s) you&apos;re applying for <span className="text-red-500">*</span>
+                    </h3>
+                    <p className="mt-1 text-sm text-slate-600">
+                      This position has {postingSlots.length} plantilla items. Tick every one you want
+                      to be considered for — you only submit this application once.
+                    </p>
+
+                    <div className="mt-3 space-y-2">
+                      {postingSlots.map((slot) => {
+                        const available = slot.status === 'open';
+                        const checked = selectedSlotIds.includes(slot.id);
+                        return (
+                          <label
+                            key={slot.id}
+                            className={`flex items-center gap-3 rounded-lg border p-3 ${
+                              available
+                                ? 'cursor-pointer border-slate-200 hover:border-blue-300 hover:bg-blue-50/40'
+                                : 'cursor-not-allowed border-slate-100 bg-slate-50 opacity-70'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4"
+                              checked={checked}
+                              disabled={!available}
+                              onChange={() => toggleSlot(slot.id)}
+                            />
+                            <span className="flex-1">
+                              <span className="font-semibold text-slate-900">Plantilla {slot.slotNumber}</span>
+                              <span className="ml-2 text-sm text-slate-500">({slot.itemNumber})</span>
+                            </span>
+                            {!available && (
+                              <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                                {slot.status === 'filled' ? 'Filled' : 'Closed'}
+                              </span>
+                            )}
+                          </label>
+                        );
+                      })}
+                    </div>
+
+                    {slotSelectionError && (
+                      <p className="mt-2 text-sm font-medium text-red-600">{slotSelectionError}</p>
+                    )}
+                  </div>
+                )}
+
                 <div className="wizard-content">
                   <ApplicantAssessmentForm
                       formData={formData}
@@ -1232,6 +1375,17 @@ const handleNextToReview = () => {
                       <label>Position Applying For</label>
                       <p>{formData.position || '-'}</p>
                     </div>
+                    {showSlotPicker && (
+                      <div>
+                        <label>Plantilla Item(s) Applied For</label>
+                        <p>
+                          {postingSlots
+                            .filter((slot) => selectedSlotIds.includes(slot.id))
+                            .map((slot) => `Plantilla ${slot.slotNumber} (${slot.itemNumber})`)
+                            .join(', ') || '-'}
+                        </p>
+                      </div>
+                    )}
                     <div>
                       <label>Address</label>
                       <p>{formData.address || '-'}</p>
