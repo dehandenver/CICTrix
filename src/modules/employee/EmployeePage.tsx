@@ -31,7 +31,6 @@ import { MyArchiveSection } from './MyArchiveSection';
 import { getActiveOfficeRole } from '../../lib/api/officeRoles';
 import abyanLogo from '../../assets/abyan-logo.png';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { DocumentPreviewModal } from '../../components/DocumentPreviewModal';
 import {
   fetchPortalEmployeeById,
   patchPortalEmployee,
@@ -47,14 +46,8 @@ import {
   type IPCRRowDraft,
 } from '../../lib/api/performanceEvaluations';
 import {
-  APPLICATION_DOC_TYPES,
-  EMPLOYEE_DOCUMENTS_UPDATED_EVENT,
   dispatchEmployeeDocumentsUpdated,
-  listEmployeeDocumentsForEmployee,
   uploadEmployeeDocument,
-  type ApplicationDocumentType,
-  type EmployeeDocumentRow,
-  type RequestSource,
 } from '../../lib/employeeDocuments';
 import {
   getWorkspace,
@@ -117,21 +110,6 @@ const OfficeAccountLockedNote = ({ section }: { section: string }) => (
     </div>
   </div>
 );
-
-const SOURCE_BADGE_STYLES: Record<RequestSource, string> = {
-  HR: 'bg-slate-100 text-slate-700 ring-1 ring-slate-200',
-  PM: 'bg-blue-100 text-blue-700 ring-1 ring-blue-200',
-  LND: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200',
-};
-
-const SOURCE_BADGE_LABEL: Record<RequestSource, string> = {
-  HR: 'HR',
-  PM: 'PM',
-  LND: 'L&D',
-};
-
-const resolveSource = (source: RequestSource | null | undefined): RequestSource =>
-  source === 'PM' || source === 'LND' ? source : 'HR';
 import {
   changeEmployeePortalPassword,
   changeEmployeePortalUsername,
@@ -147,7 +125,7 @@ interface EmployeePageProps {
   onLogout: () => void;
 }
 
-type PortalTab = 'personal' | 'documents' | 'submission' | 'account' | 'ipcr-workspace' | 'new-entrants' | 'trainings' | 'archive';
+type PortalTab = 'personal' | 'account' | 'ipcr-workspace' | 'new-entrants' | 'trainings' | 'archive';
 
 interface TabConfig {
   id: PortalTab;
@@ -155,12 +133,6 @@ interface TabConfig {
   icon: React.ComponentType<{ className?: string }>;
   route: string;
   count?: number;
-}
-
-interface RequirementItem {
-  id: ApplicationDocumentType;
-  title: string;
-  description: string;
 }
 
 type EditableSection = 'personal' | 'contact' | 'emergency' | 'government' | null;
@@ -236,24 +208,6 @@ const formatPortalDate = (value: string | null | undefined): string => {
   return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : new Date(value).toISOString().slice(0, 10);
 };
 
-// Whole-day countdown to a due date. Negative => overdue.
-const daysUntil = (dueDate: string | null | undefined): number | null => {
-  if (!dueDate) return null;
-  const due = new Date(`${String(dueDate).slice(0, 10)}T00:00:00`);
-  if (Number.isNaN(due.getTime())) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.round((due.getTime() - today.getTime()) / 86_400_000);
-};
-
-const dueLabel = (dueDate: string | null | undefined): string => {
-  const days = daysUntil(dueDate);
-  if (days === null) return '';
-  if (days < 0) return `${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} overdue`;
-  if (days === 0) return 'due today';
-  return `${days} day${days === 1 ? '' : 's'} left`;
-};
-
 const getPersonalDetailsDraft = (employee: Employee): PersonalDetailsDraft => ({
   fullName: employee.fullName || '',
   dateOfBirth: employee.dateOfBirth || '',
@@ -281,13 +235,6 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   const [showSwitchModal, setShowSwitchModal] = useState(false);
   const [hasOfficeRole, setHasOfficeRole] = useState(false);
   const location = useLocation();
-  const [selectedFile, setSelectedFile] = useState<Record<string, File | null>>({});
-  const [uploadingId, setUploadingId] = useState<string | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
-  const [employeeDocuments, setEmployeeDocuments] = useState<EmployeeDocumentRow[]>([]);
-  const [previewDocument, setPreviewDocument] = useState<EmployeeDocumentRow | null>(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // IPCR performance self-evaluation states
   const [activeCycle, setActiveCycle] = useState<any | null>(null);
@@ -1333,22 +1280,6 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileLoading]);
 
-  // HR-created document requests drive the Submission Bin tab.
-  const hrRequests = useMemo(
-    () => employeeDocuments.filter((d) => d.category === 'hr_request'),
-    [employeeDocuments],
-  );
-
-  const pendingRequests = useMemo(
-    () => hrRequests.filter((d) => d.status === 'Pending' || d.status === 'Rejected'),
-    [hrRequests],
-  );
-
-  const submittedRequests = useMemo(
-    () => hrRequests.filter((d) => d.status === 'Submitted' || d.status === 'Approved'),
-    [hrRequests],
-  );
-
   const SETUP_FIELDS = 10;
   const incompleteSetupCount = useMemo(() => {
     let n = 0;
@@ -1371,14 +1302,6 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
     () => {
       const baseTabs: TabConfig[] = [
         { id: 'personal', label: 'Personal Information', icon: User, route: '/employee/profile' },
-        { id: 'documents', label: 'Document Requirements', icon: FileText, route: '/employee/documents/requirements' },
-        {
-          id: 'submission',
-          label: 'Submission Bin',
-          icon: Bell,
-          route: '/employee/documents/submission',
-          count: (pendingRequests.length + incompleteSetupCount) || undefined,
-        },
         { id: 'ipcr-workspace', label: 'My IPCR Workspace', icon: FileSpreadsheet, route: '/employee/ipcr-workspace' },
         { id: 'trainings', label: 'My Trainings', icon: Calendar, route: '/employee/trainings' },
         { id: 'archive', label: 'My Archive', icon: Archive, route: '/employee/archive' },
@@ -1386,16 +1309,14 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       ];
       // Show new entrants track only for probationary/new hires
       if (profile.employmentStatus === 'Probationary') {
-        baseTabs.splice(4, 0, { id: 'new-entrants', label: 'New Entrants Track', icon: Calendar, route: '/employee/new-entrants' });
+        baseTabs.splice(2, 0, { id: 'new-entrants', label: 'New Entrants Track', icon: Calendar, route: '/employee/new-entrants' });
       }
       return baseTabs;
     },
-    [pendingRequests.length, incompleteSetupCount, profile.employmentStatus]
+    [profile.employmentStatus]
   );
 
   const activeTab = useMemo<PortalTab>(() => {
-    if (location.pathname.includes('/documents/requirements')) return 'documents';
-    if (location.pathname.includes('/documents/submission')) return 'submission';
     if (location.pathname.includes('/ipcr-workspace')) return 'ipcr-workspace';
     if (location.pathname.includes('/trainings')) return 'trainings';
     if (location.pathname.includes('/archive')) return 'archive';
@@ -1406,11 +1327,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   }, [location.pathname]);
 
   useEffect(() => {
-    // The IPCR data (frozen targets, workspace row) is rendered under the
-    // 'ipcr-workspace' tab — load it there. ('submission' is the Submission Bin
-    // and was the historical, now-incorrect trigger, which left the workspace
-    // blank for everyone regardless of what was in the database.)
-    if (activeTab === 'ipcr-workspace' || activeTab === 'submission') {
+    if (activeTab === 'ipcr-workspace') {
       reloadIpcrIfSafe(false);
     }
   }, [activeTab, currentUser?.supabaseId, reloadIpcrIfSafe]);
@@ -1476,131 +1393,8 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
     }
   }, [activeTab]);
 
-  const requirementItems: RequirementItem[] = useMemo(
-    () =>
-      APPLICATION_DOC_TYPES.map((type) => ({
-        id: type.id,
-        title: type.label,
-        description: type.description,
-      })),
-    [],
-  );
-
-  // Index of the most-recent application-document submission per type, so the
-  // Document Requirements tab can show "Uploaded" / "Replace" without
-  // re-rendering the whole list.
-  const latestByType = useMemo(() => {
-    const map = new Map<string, EmployeeDocumentRow>();
-    for (const doc of employeeDocuments) {
-      if (doc.category !== 'application') continue;
-      const existing = map.get(doc.document_type);
-      if (!existing || new Date(doc.uploaded_at) > new Date(existing.uploaded_at)) {
-        map.set(doc.document_type, doc);
-      }
-    }
-    return map;
-  }, [employeeDocuments]);
-
-  const refreshEmployeeDocuments = async () => {
-    // Prefer the internal Supabase UUID (resolves the UUID FK correctly).
-    // Fall back to the text employeeId for demo accounts without a DB row.
-    const idToUse = currentUser.supabaseId ?? currentUser.employeeId;
-    if (!idToUse && !currentUser?.email) return;
-    const rows = await listEmployeeDocumentsForEmployee(
-      idToUse,
-      currentUser.email,
-    );
-    setEmployeeDocuments(rows);
-  };
-
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    try {
-      await refreshEmployeeDocuments();
-      await loadIPCRData();
-    } catch (err) {
-      console.error('Failed to refresh employee documents:', err);
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
-  useEffect(() => {
-    void refreshEmployeeDocuments();
-    const handler = () => { void refreshEmployeeDocuments(); };
-    window.addEventListener(EMPLOYEE_DOCUMENTS_UPDATED_EVENT, handler);
-    return () => window.removeEventListener(EMPLOYEE_DOCUMENTS_UPDATED_EVENT, handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser?.employeeId]);
-
   const handleTabSelect = (tab: TabConfig) => {
     navigate(tab.route);
-  };
-
-  const handleFileSelect = (id: string, file: File | null) => {
-    setSelectedFile((prev) => ({ ...prev, [id]: file }));
-  };
-
-  const handleUpload = async (id: ApplicationDocumentType) => {
-    const file = selectedFile[id];
-    if (!file) {
-      setUploadError('Please choose a file before clicking Upload.');
-      setUploadSuccess(null);
-      return;
-    }
-
-    setUploadingId(id);
-    setUploadError(null);
-    setUploadSuccess(null);
-
-    const result = await uploadEmployeeDocument({
-      employeeId: currentUser.employeeId,
-      email: currentUser.email,
-      documentType: id,
-      file,
-      category: 'application',
-    });
-
-    setUploadingId(null);
-
-    if (result.success === false) {
-      setUploadError(result.error);
-      return;
-    }
-
-    setSelectedFile((prev) => ({ ...prev, [id]: null }));
-    setUploadSuccess(`Uploaded "${file.name}" for ${id}.`);
-    await refreshEmployeeDocuments();
-    dispatchEmployeeDocumentsUpdated();
-  };
-
-  // Submission Bin: attach a file to an HR-created request (status -> 'Submitted').
-  const handleRequestUpload = async (request: EmployeeDocumentRow, file: File | null) => {
-    if (!file) return;
-
-    setUploadingId(request.id);
-    setUploadError(null);
-    setUploadSuccess(null);
-
-    const result = await uploadEmployeeDocument({
-      employeeId: currentUser.employeeId,
-      email: currentUser.email,
-      documentType: request.document_type,
-      file,
-      category: 'hr_request',
-      requestId: request.id,
-    });
-
-    setUploadingId(null);
-
-    if (result.success === false) {
-      setUploadError(result.error);
-      return;
-    }
-
-    setUploadSuccess(`Submitted "${file.name}" for ${request.document_name}.`);
-    await refreshEmployeeDocuments();
-    dispatchEmployeeDocumentsUpdated();
   };
 
   const persistProfilePatch = async (patch: Partial<Employee>) => {
@@ -1957,188 +1751,12 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                 {saveSuccess}
               </p>
             )}
-            <section className="rounded-xl border bg-white p-5" style={{ borderColor: '#C8D1FF' }}>
-              <div className="mb-4">
-                <h2 className="text-lg font-bold" style={{ color: '#363EE8' }}>Personal Information</h2>
-              </div>
-              <FieldRow label="Full Name" value={profile.fullName} />
-              <FieldRow label="Employee ID" value={profile.employeeId} />
-              <FieldRow label="Date of Birth" value={profile.dateOfBirth} />
-              <FieldRow label="Place of Birth" value={profile.placeOfBirth || '--'} />
-              <FieldRow label="Gender" value={profile.gender || '--'} />
-              <FieldRow label="Address" value={profile.homeAddress} />
-              {/* The position and office the applicant was hired into, not a
-                  placeholder — same source the Work Information card reads. */}
-              <FieldRow label="Position" value={(employeeRawDetails?.position ?? profile.currentPosition) || '--'} />
-              <FieldRow label="Department" value={(employeeRawDetails?.department ?? profile.currentDepartment) || '--'} />
-            </section>
 
-            {/* Contact, Emergency, Gov ID — read-only in Personal Info; editable in Submission Bin */}
-            {[
-              {
-                title: 'Contact Information',
-                note: 'Manage your contact details in the Submission Bin.',
-                fields: [
-                  { label: 'Email Address', value: profile.email },
-                  { label: 'Phone Number', value: profile.mobileNumber },
-                  { label: 'Home Address', value: profile.homeAddress },
-                ],
-              },
-              {
-                title: 'Emergency Contact',
-                note: 'Manage your emergency contact in the Submission Bin.',
-                fields: [
-                  { label: 'Contact Name', value: profile.emergencyContactName },
-                  { label: 'Relationship', value: profile.emergencyRelationship },
-                  { label: 'Phone Number', value: profile.emergencyContactNumber },
-                ],
-              },
-              {
-                title: 'Government Identification',
-                note: 'Manage your government IDs in the Submission Bin.',
-                fields: [
-                  { label: 'SSS Number', value: profile.sssNumber },
-                  { label: 'PhilHealth Number', value: profile.philhealthNumber },
-                  { label: 'Pag-IBIG Number', value: profile.pagibigNumber },
-                  { label: 'TIN Number', value: profile.tinNumber },
-                ],
-              },
-            ].map((section) => (
-              <section key={section.title} className="rounded-xl border bg-white p-5" style={{ borderColor: '#C8D1FF' }}>
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-lg font-bold" style={{ color: '#363EE8' }}>{section.title}</h2>
-                    <p className="text-sm" style={{ color: '#040E6B', opacity: 0.65 }}>{section.note}</p>
-                  </div>
-                </div>
-                {section.fields.map(f => <FieldRow key={f.label} label={f.label} value={f.value ?? ''} />)}
-              </section>
-            ))}
-          </div>
-        )}
-
-        {activeTab === 'documents' && (
-          <div className="space-y-4">
-            <div className="rounded-xl border border-blue-200 bg-blue-50 px-5 py-4 text-sm text-blue-800">
-              Manage your original application documents. You can upload or update the required documents below.
-            </div>
-
-            {uploadError && (
-              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {uploadError}
-              </p>
-            )}
-
-            {uploadSuccess && (
-              <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                {uploadSuccess}
-              </p>
-            )}
-
-            <section className="rounded-xl border border-slate-200 bg-white p-6">
-              <h2 className="text-xl font-bold text-slate-900">Requirements Upload Bin</h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Upload or update the documents. Only the document types listed below are allowed.
-              </p>
-
-              <div className="mt-5 space-y-4">
-                {requirementItems.map((item) => {
-                  const latest = latestByType.get(item.id);
-                  const pickedFile = selectedFile[item.id] ?? null;
-                  const isUploading = uploadingId === item.id;
-
-                  return (
-                    <article
-                      key={item.id}
-                      className="rounded-xl border border-slate-200 bg-white px-5 py-4"
-                    >
-                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <FileText className="h-5 w-5 shrink-0 text-indigo-500" />
-                            <h3 className="font-semibold text-slate-900">{item.title}</h3>
-                          </div>
-
-                          {latest ? (
-                            <div className="mt-2 space-y-1 pl-7 text-sm text-slate-500">
-                              <p className="flex items-center gap-2">
-                                <FileText className="h-4 w-4 text-slate-400" />
-                                {latest.file_name}
-                              </p>
-                              <p className="flex items-center gap-2">
-                                <Calendar className="h-4 w-4 text-slate-400" />
-                                Uploaded: {formatPortalDate(latest.uploaded_at)}
-                              </p>
-                            </div>
-                          ) : (
-                            <p className="mt-2 pl-7 text-sm text-slate-400">No file uploaded yet</p>
-                          )}
-
-                          {pickedFile && (
-                            <p className="mt-2 pl-7 text-xs text-indigo-600">
-                              Selected: {pickedFile.name} ({Math.round(pickedFile.size / 1024)} KB)
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="flex shrink-0 items-center gap-2">
-                          {latest && (
-                            <button
-                              type="button"
-                              onClick={() => setPreviewDocument(latest)}
-                              className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
-                            >
-                              <Eye className="h-4 w-4" />
-                              Preview
-                            </button>
-                          )}
-
-                          {pickedFile ? (
-                            <button
-                              type="button"
-                              onClick={() => handleUpload(item.id)}
-                              disabled={isUploading}
-                              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-                            >
-                              <Upload className="h-4 w-4" />
-                              {isUploading ? 'Uploading…' : 'Confirm Upload'}
-                            </button>
-                          ) : (
-                            <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
-                              <input
-                                type="file"
-                                className="hidden"
-                                onChange={(e) => handleFileSelect(item.id, e.target.files?.[0] ?? null)}
-                              />
-                              <Upload className="h-4 w-4" />
-                              {latest ? 'Replace' : 'Upload'}
-                            </label>
-                          )}
-                        </div>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-
-              <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                <span className="font-semibold">Note:</span> Accepted file formats: PDF, DOC, DOCX, JPG, PNG.
-                Maximum file size: 10MB. You can replace an uploaded document at any time — please ensure you
-                upload the correct file.
-              </div>
-            </section>
-          </div>
-        )}
-
-        {activeTab === 'submission' && (
-          <div className="space-y-4">
-
-            {/* ── Profile Completion Card ───────────────────────────────── */}
-            {(() => {
+            {/* ── Profile Completion Card (when profile has incomplete fields) ── */}
+            {incompleteSetupCount > 0 && (() => {
               const R = 54;
               const circ = 2 * Math.PI * R;
               const offset = circ * (1 - completionPercent / 100);
-              const done = completionPercent === 100;
               return (
                 <div style={{ background: 'linear-gradient(135deg, #363EE8 0%, #040E6B 100%)', borderRadius: 20, padding: '1.5rem 2rem', display: 'flex', alignItems: 'center', gap: '2rem', flexWrap: 'wrap' }}>
                   {/* Ring */}
@@ -2147,7 +1765,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                       <circle cx="64" cy="64" r={R} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth="12" />
                       <circle
                         cx="64" cy="64" r={R} fill="none"
-                        stroke={done ? '#4ADE80' : '#C8D1FF'}
+                        stroke="#C8D1FF"
                         strokeWidth="12"
                         strokeLinecap="round"
                         strokeDasharray={circ}
@@ -2163,33 +1781,45 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                   {/* Text + CTA */}
                   <div style={{ flex: 1, minWidth: 200 }}>
                     <p style={{ margin: '0 0 0.25rem', fontWeight: 800, color: '#ffffff', fontSize: '1.15rem' }}>
-                      {done ? 'Profile Complete!' : 'Complete your profile'}
+                      Complete your profile
                     </p>
                     <p style={{ margin: '0 0 1rem', fontSize: '0.85rem', color: '#C8D1FF', lineHeight: 1.5 }}>
-                      {done
-                        ? 'All required information has been filled in.'
-                        : `${incompleteSetupCount} field${incompleteSetupCount !== 1 ? 's' : ''} still missing — fill them in to finish setting up your account.`}
+                      {`${incompleteSetupCount} field${incompleteSetupCount !== 1 ? 's' : ''} still missing — fill them in to finish setting up your account.`}
                     </p>
-                    {!done && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setWContact(getContactDraft(profile));
-                          setWEmergency(getEmergencyDraft(profile));
-                          setWGovt(getGovernmentDraft(profile));
-                          setWizardStep(getWizardStartStep(profile));
-                          setWizardTryNext(false);
-                          setShowSetupWizard(true);
-                        }}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', borderRadius: 10, border: 'none', background: '#ffffff', padding: '0.65rem 1.25rem', fontSize: '0.9rem', fontWeight: 700, color: '#363EE8', cursor: 'pointer', boxShadow: '0 4px 14px rgba(0,0,0,0.18)' }}
-                      >
-                        {getWizardStartStep(profile) === 3 ? 'Complete Account Setup →' : 'Continue set up account →'}
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWContact(getContactDraft(profile));
+                        setWEmergency(getEmergencyDraft(profile));
+                        setWGovt(getGovernmentDraft(profile));
+                        setWizardStep(getWizardStartStep(profile));
+                        setWizardTryNext(false);
+                        setShowSetupWizard(true);
+                      }}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', borderRadius: 10, border: 'none', background: '#ffffff', padding: '0.65rem 1.25rem', fontSize: '0.9rem', fontWeight: 700, color: '#363EE8', cursor: 'pointer', boxShadow: '0 4px 14px rgba(0,0,0,0.18)' }}
+                    >
+                      {getWizardStartStep(profile) === 3 ? 'Complete Account Setup →' : 'Continue set up account →'}
+                    </button>
                   </div>
                 </div>
               );
             })()}
+
+            <section className="rounded-xl border bg-white p-5" style={{ borderColor: '#C8D1FF' }}>
+              <div className="mb-4">
+                <h2 className="text-lg font-bold" style={{ color: '#363EE8' }}>Personal Information</h2>
+              </div>
+              <FieldRow label="Full Name" value={profile.fullName} />
+              <FieldRow label="Employee ID" value={profile.employeeId} />
+              <FieldRow label="Date of Birth" value={profile.dateOfBirth} />
+              <FieldRow label="Place of Birth" value={profile.placeOfBirth || '--'} />
+              <FieldRow label="Gender" value={profile.gender || '--'} />
+              <FieldRow label="Address" value={profile.homeAddress} />
+              {/* The position and office the applicant was hired into, not a
+                  placeholder — same source the Work Information card reads. */}
+              <FieldRow label="Position" value={(employeeRawDetails?.position ?? profile.currentPosition) || '--'} />
+              <FieldRow label="Department" value={(employeeRawDetails?.department ?? profile.currentDepartment) || '--'} />
+            </section>
 
             {/* ── Contact Information Setup ─────────────────────────────── */}
             <section className="rounded-xl border bg-white p-5" style={{ borderColor: '#C8D1FF' }}>
@@ -2304,637 +1934,6 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                   <FieldRow label="TIN Number" value={profile.tinNumber} />
                 </>
               )}
-            </section>
-
-            {/* ── IPCR SUBMISSION BIN SECTION ─────────────────────────── */}
-            {/* IPCR SUBMISSION BIN SECTION */}
-            <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex flex-col justify-between gap-4 border-b border-slate-100 pb-4 mb-5 sm:flex-row sm:items-start">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                    <FileSpreadsheet className="h-5 w-5 text-blue-600" />
-                    Individual Performance Commitment and Review (IPCR)
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500 font-medium">
-                    {ipcrRatingPeriod
-                      ? `Evaluation Period: ${ipcrRatingPeriod}`
-                      : activeCycle
-                        ? `Evaluation Period: ${activeCycle.title || activeCycle.period} (${formatPortalDate(activeCycle.start_date)} to ${formatPortalDate(activeCycle.end_date)})`
-                        : 'No active performance evaluation cycle.'}
-                  </p>
-                </div>
-                {!isEditingIPCR && (
-                  <div className="flex items-center gap-2">
-                    {(!ipcrEvaluation || ipcrEvaluation.status === 'Self Evaluation' || ipcrEvaluation.status === 'Rejected') ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (ipcrRows.length === 0) {
-                            addIPCRRow();
-                          }
-                          setIsEditingIPCR(true);
-                        }}
-                        className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 shadow-sm transition-colors"
-                      >
-                        <Pencil className="h-4 w-4" />
-                        {ipcrEvaluation ? 'Edit IPCR' : 'Create IPCR'}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIpcrEvaluation(null);
-                          setIpcrRows([]);
-                          const now = new Date();
-                          const year = now.getFullYear();
-                          const month = now.getMonth();
-                          const nextPeriod = month < 6 ? `July–December ${year}` : `January–June ${year + 1}`;
-                          setIpcrRatingPeriod(nextPeriod);
-                          addIPCRRow();
-                          setIsEditingIPCR(true);
-                        }}
-                        className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 shadow-sm transition-colors"
-                      >
-                        <Plus className="h-4 w-4" />
-                        New Period IPCR
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {ipcrError && (
-                <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-center gap-2">
-                  <AlertCircle className="h-4 w-4 shrink-0" />
-                  <span>{ipcrError}</span>
-                </div>
-              )}
-
-              {ipcrSuccess && (
-                <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 flex items-center gap-2">
-                  <Check className="h-4 w-4 shrink-0" />
-                  <span>{ipcrSuccess}</span>
-                </div>
-              )}
-
-              {ipcrLoading ? (
-                <div className="py-8 text-center text-slate-500 animate-pulse">
-                  Loading IPCR details...
-                </div>
-              ) : isEditingIPCR ? (
-                /* EDITING VIEW */
-                <div className="space-y-6">
-                   {/* Employee Metadata Info Card */}
-                  <div className="grid grid-cols-1 md:grid-cols-5 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200 text-sm">
-                    <div>
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Employee Details</span>
-                      <span className="font-semibold text-slate-800 block mt-1">{currentUser.fullName}</span>
-                      <span className="text-slate-500 text-xs block">ID: {employeeRawDetails?.employee_number || currentUser.employeeId}</span>
-                    </div>
-                    <div>
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Position & Department</span>
-                      <span className="font-semibold text-slate-800 block mt-1">{employeeRawDetails?.position || currentUser.currentPosition || 'Employee'}</span>
-                      <span className="text-slate-500 text-xs block">{employeeRawDetails?.department || 'Health Office'}</span>
-                    </div>
-                    <div>
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Plantilla & Supervisor ID</span>
-                      <span className="font-semibold text-slate-800 block mt-1">Plantilla: {employeeRawDetails?.plantilla_num || 'N/A'}</span>
-                      <span className="text-slate-500 text-xs block">Supervisor ID: {employeeRawDetails?.reports_to || 'N/A'}</span>
-                    </div>
-                    <div>
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Rating Period</span>
-                      <input
-                        type="text"
-                        value={ipcrRatingPeriod}
-                        onChange={(e) => setIpcrRatingPeriod(e.target.value)}
-                        placeholder="e.g., January–June 2026"
-                        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-1.5 bg-white text-sm text-slate-800 font-semibold focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-                      />
-                    </div>
-                    <div className="flex flex-col justify-between">
-                      <div>
-                        <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Overall Score</span>
-                        <span className="text-lg font-bold text-blue-600 block mt-1">
-                          {ipcrRows.length > 0
-                            ? (ipcrRows.map(r => r.ave_rating).filter(Boolean).reduce((a, b) => a + b, 0) / ipcrRows.map(r => r.ave_rating).filter(Boolean).length || 0).toFixed(2)
-                            : '0.00'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Rejected Rejection Alert */}
-                  {ipcrEvaluation?.status === 'Rejected' && ipcrEvaluation.rejection_reason && (
-                    <div className="p-4 rounded-lg border border-red-200 bg-red-50 text-sm text-red-800">
-                      <span className="font-bold block mb-1">Supervisor Rejection Reason:</span>
-                      <p>{ipcrEvaluation.rejection_reason}</p>
-                    </div>
-                  )}
-
-                  {/* MFO / IPCR Table */}
-                  <div className="overflow-x-auto rounded-lg border border-slate-200">
-                    <table className="min-w-full divide-y divide-slate-200">
-                      <thead className="bg-slate-50">
-                        <tr>
-                          <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider w-[130px]">Type</th>
-                          <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider w-[240px]">MFO & Competency Map</th>
-                          <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">Success Indicators (Target)</th>
-                          <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider">Accomplishments</th>
-                          <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-slate-700 uppercase tracking-wider w-[180px]">Ratings (Q / E / T)</th>
-                          <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-slate-700 uppercase tracking-wider w-[75px]">Ave</th>
-                          <th scope="col" className="px-4 py-3 text-left text-xs font-bold text-slate-700 uppercase tracking-wider w-[120px]">Remarks</th>
-                          <th scope="col" className="px-4 py-3 text-center text-xs font-bold text-slate-700 uppercase tracking-wider w-[50px]">Delete</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-slate-200">
-                        {ipcrRows.map((row, index) => (
-                          <tr key={index} className="hover:bg-slate-50/50">
-                            <td className="px-3 py-3 align-top">
-                              <select
-                                value={row.function_type}
-                                onChange={(e) => updateRowField(index, 'function_type', e.target.value)}
-                                className="w-full text-xs rounded-lg border border-slate-300 bg-white p-1.5 focus:border-blue-500 focus:outline-none"
-                              >
-                                <option value="CORE">CORE</option>
-                                <option value="SUPPORT">SUPPORT</option>
-                              </select>
-                            </td>
-                            <td className="px-3 py-3 align-top space-y-2">
-                              {/* Mapped Competency Selector */}
-                              <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Select Mapped Competency</label>
-                              <select
-                                value={row.competency_id || ''}
-                                onChange={(e) => updateRowField(index, 'competency_id', Number(e.target.value))}
-                                className="w-full text-xs rounded-lg border border-slate-300 bg-white p-1.5 focus:border-blue-500 focus:outline-none"
-                              >
-                                <option value="" disabled>-- Select Competency --</option>
-                                {competencies.map(c => (
-                                  <option key={c.competency_id} value={c.competency_id}>
-                                    {c.competency_standard}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-                            <td className="px-3 py-3 align-top">
-                              <textarea
-                                value={row.target_text}
-                                onChange={(e) => updateRowField(index, 'target_text', e.target.value)}
-                                placeholder="Enter Major Final Output, Success Indicators, and Target Measures..."
-                                className="w-full text-xs rounded-lg border border-slate-300 bg-white p-1.5 focus:border-blue-500 focus:outline-none min-h-[70px] resize-y"
-                              />
-                            </td>
-                            <td className="px-3 py-3 align-top">
-                              <textarea
-                                value={row.accomplishment_text}
-                                onChange={(e) => updateRowField(index, 'accomplishment_text', e.target.value)}
-                                placeholder="Enter Actual Accomplishments..."
-                                className="w-full text-xs rounded-lg border border-slate-300 bg-white p-1.5 focus:border-blue-500 focus:outline-none min-h-[70px] resize-y"
-                              />
-                            </td>
-                            <td className="px-3 py-3 align-top">
-                              <div className="flex gap-1 justify-center">
-                                {/* Q */}
-                                <div className="text-center">
-                                  <span className="text-[10px] text-slate-500 font-semibold uppercase block mb-1">Q</span>
-                                  <select
-                                    value={row.q_rating !== null ? row.q_rating : ''}
-                                    onChange={(e) => updateRowField(index, 'q_rating', e.target.value ? Number(e.target.value) : null)}
-                                    className="text-xs rounded-md border border-slate-300 bg-white p-1 focus:outline-none focus:border-blue-500 w-[45px]"
-                                  >
-                                    <option value="">—</option>
-                                    {[5, 4, 3, 2, 1].map(n => <option key={n} value={n}>{n}</option>)}
-                                  </select>
-                                </div>
-                                {/* E */}
-                                <div className="text-center">
-                                  <span className="text-[10px] text-slate-500 font-semibold uppercase block mb-1">E</span>
-                                  <select
-                                    value={row.e_rating !== null ? row.e_rating : ''}
-                                    onChange={(e) => updateRowField(index, 'e_rating', e.target.value ? Number(e.target.value) : null)}
-                                    className="text-xs rounded-md border border-slate-300 bg-white p-1 focus:outline-none focus:border-blue-500 w-[45px]"
-                                  >
-                                    <option value="">—</option>
-                                    {[5, 4, 3, 2, 1].map(n => <option key={n} value={n}>{n}</option>)}
-                                  </select>
-                                </div>
-                                {/* T */}
-                                <div className="text-center">
-                                  <span className="text-[10px] text-slate-500 font-semibold uppercase block mb-1">T</span>
-                                  <select
-                                    value={row.t_rating !== null ? row.t_rating : ''}
-                                    onChange={(e) => updateRowField(index, 't_rating', e.target.value ? Number(e.target.value) : null)}
-                                    className="text-xs rounded-md border border-slate-300 bg-white p-1 focus:outline-none focus:border-blue-500 w-[45px]"
-                                  >
-                                    <option value="">—</option>
-                                    {[5, 4, 3, 2, 1].map(n => <option key={n} value={n}>{n}</option>)}
-                                  </select>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-3 py-3 text-center align-top pt-8">
-                              <span className="text-xs font-bold text-slate-800">
-                                {row.ave_rating ? row.ave_rating.toFixed(2) : '0.00'}
-                              </span>
-                            </td>
-                            <td className="px-3 py-3 align-top">
-                              <input
-                                type="text"
-                                value={row.remarks}
-                                onChange={(e) => updateRowField(index, 'remarks', e.target.value)}
-                                placeholder="Remarks..."
-                                className="w-full text-xs rounded-lg border border-slate-300 bg-white p-1.5 focus:border-blue-500 focus:outline-none"
-                              />
-                            </td>
-                            <td className="px-3 py-3 text-center align-top pt-6">
-                              <button
-                                type="button"
-                                onClick={() => deleteIPCRRow(index)}
-                                className="p-1 rounded-md text-red-500 hover:bg-red-50 hover:text-red-700"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Table Actions & Scale Legend */}
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pt-2 border-t border-slate-200">
-                    <button
-                      type="button"
-                      onClick={addIPCRRow}
-                      className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors shadow-sm"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      Add MFO Row
-                    </button>
-                    <div className="text-[10px] text-slate-500 bg-slate-50 border border-slate-100 rounded-md p-2 max-w-lg">
-                      <span className="font-bold">Rating Legend:</span> 5 - Outstanding (O), 4 - Very Satisfactory (VS), 3 - Satisfactory (S), 2 - Unsatisfactory (US), 1 - Poor (P)
-                    </div>
-                  </div>
-
-                  {/* Form Submission Controls */}
-                  <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200">
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingIPCR(false)}
-                      disabled={ipcrSaving}
-                      className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleSaveIPCR('Self Evaluation')}
-                      disabled={ipcrSaving}
-                      className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors disabled:opacity-50"
-                    >
-                      {ipcrSaving ? 'Saving...' : 'Save Draft'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleSaveIPCR('Supervisor Review')}
-                      disabled={ipcrSaving}
-                      className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white transition-colors disabled:opacity-50"
-                    >
-                      {ipcrSaving ? 'Submitting...' : 'Submit to Supervisor'}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                /* PREVIEW / READ-ONLY VIEW */
-                <div className="space-y-5">
-                  {!ipcrEvaluation ? (
-                    /* EMPTY STATE */
-                    <div className="text-center py-8 bg-slate-50 rounded-xl border border-dashed border-slate-300">
-                      <FileSpreadsheet className="h-10 w-10 text-slate-400 mx-auto mb-2" />
-                      <h4 className="font-bold text-slate-700 text-sm">No IPCR Created Yet</h4>
-                      <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
-                        Get started by defining your Major Final Outputs (MFOs), success indicators, and actual accomplishments for this evaluation cycle.
-                      </p>
-                    </div>
-                  ) : (
-                    /* SUMMARY STATE */
-                    <div className="space-y-5">
-                      {/* Period Selector Dropdown */}
-                      {employeeEvaluations.length > 0 && (
-                        <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm">
-                          <span className="font-semibold text-slate-700">Select Rating Period to View/Edit:</span>
-                          <select
-                            value={ipcrRatingPeriod}
-                            onChange={(e) => {
-                              const selectedVal = e.target.value;
-                              const found = employeeEvaluations.find(ev => ev.period === selectedVal);
-                              if (found) {
-                                void loadIPCRPeriod(found.period, found.cycle_id);
-                              }
-                            }}
-                            className="rounded-lg border border-slate-300 px-3 py-1.5 bg-white font-semibold text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-                          >
-                            {employeeEvaluations.map((ev) => (
-                              <option key={ev.id} value={ev.period || ''}>
-                                {ev.period || 'Unknown Period'} ({ev.status === 'Self Evaluation' ? 'Draft' : ev.status})
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-
-                      {/* Summary Metrics Row */}
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200 text-sm">
-                        <div>
-                          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">IPCR Status</span>
-                          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold mt-2 ${
-                            ipcrEvaluation.status === 'Approved'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : ipcrEvaluation.status === 'Supervisor Review'
-                              ? 'bg-blue-100 text-blue-800'
-                              : ipcrEvaluation.status === 'Rejected'
-                              ? 'bg-rose-100 text-rose-800'
-                              : 'bg-amber-100 text-amber-800'
-                          }`}>
-                            {ipcrEvaluation.status === 'Self Evaluation' ? 'Draft' : ipcrEvaluation.status}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Overall Score</span>
-                          <span className="text-xl font-bold text-slate-800 block mt-1">
-                            {ipcrEvaluation.final_score ? Number(ipcrEvaluation.final_score).toFixed(2) : '0.00'}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Submitted At</span>
-                          <span className="font-semibold text-slate-800 block mt-1">
-                            {ipcrEvaluation.submitted_at ? formatPortalDate(ipcrEvaluation.submitted_at) : 'Not Submitted'}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Approved At</span>
-                          <span className="font-semibold text-slate-800 block mt-1">
-                            {ipcrEvaluation.approved_at ? formatPortalDate(ipcrEvaluation.approved_at) : 'Not Approved'}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Rejection alert */}
-                      {ipcrEvaluation.status === 'Rejected' && ipcrEvaluation.rejection_reason && (
-                        <div className="p-4 rounded-lg border border-red-200 bg-red-50 text-sm text-red-800">
-                          <span className="font-bold block mb-1">Supervisor Rejection Comments:</span>
-                          <p>{ipcrEvaluation.rejection_reason}</p>
-                        </div>
-                      )}
-
-                      {/* Committed MFO Table Collapsible/View */}
-                      <div className="border border-slate-200 rounded-lg overflow-hidden">
-                        <div className="bg-slate-50 px-4 py-3 border-b border-slate-200">
-                          <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Committed Performance Rows ({ipcrRows.length})</h3>
-                        </div>
-                        {ipcrRows.length === 0 ? (
-                          <p className="p-4 text-xs text-slate-500 text-center">No rows recorded in this IPCR.</p>
-                        ) : (
-                          <div className="overflow-x-auto">
-                            <table className="min-w-full divide-y divide-slate-200">
-                              <thead className="bg-slate-50">
-                                <tr>
-                                  <th scope="col" className="px-4 py-2.5 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-[100px]">Type</th>
-                                  <th scope="col" className="px-4 py-2.5 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-[200px]">Mapped Competency</th>
-                                  <th scope="col" className="px-4 py-2.5 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Targets & Measures</th>
-                                  <th scope="col" className="px-4 py-2.5 text-left text-xs font-bold text-slate-600 uppercase tracking-wider">Accomplishments</th>
-                                  <th scope="col" className="px-4 py-2.5 text-center text-xs font-bold text-slate-600 uppercase tracking-wider w-[120px]">Q / E / T</th>
-                                  <th scope="col" className="px-4 py-2.5 text-center text-xs font-bold text-slate-600 uppercase tracking-wider w-[70px]">Ave</th>
-                                  <th scope="col" className="px-4 py-2.5 text-left text-xs font-bold text-slate-600 uppercase tracking-wider w-[120px]">Remarks</th>
-                                </tr>
-                              </thead>
-                              <tbody className="bg-white divide-y divide-slate-200 text-xs">
-                                {ipcrRows.map((row, idx) => (
-                                  <tr key={idx} className="hover:bg-slate-50/50">
-                                    <td className="px-4 py-3 align-top font-semibold text-slate-600">{row.function_type}</td>
-                                    <td className="px-4 py-3 align-top text-slate-700 font-medium">{row.mapped_competency_standard || '—'}</td>
-                                    <td className="px-4 py-3 align-top whitespace-pre-line text-slate-700">{row.target_text}</td>
-                                    <td className="px-4 py-3 align-top whitespace-pre-line text-slate-700">{row.accomplishment_text || '—'}</td>
-                                    <td className="px-4 py-3 align-top text-center">
-                                      <div className="flex justify-center gap-2">
-                                        <span>{row.q_rating || '—'}</span>
-                                        <span className="text-slate-300">/</span>
-                                        <span>{row.e_rating || '—'}</span>
-                                        <span className="text-slate-300">/</span>
-                                        <span>{row.t_rating || '—'}</span>
-                                      </div>
-                                    </td>
-                                    <td className="px-4 py-3 align-top text-center font-bold text-slate-800">
-                                      {row.ave_rating ? row.ave_rating.toFixed(2) : '0.00'}
-                                    </td>
-                                    <td className="px-4 py-3 align-top text-slate-600">{row.remarks || '—'}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </section>
-
-            {pendingRequests.length > 0 && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800">
-                HR has requested additional documents. Please review and submit the required documents by the due date.
-              </div>
-            )}
-
-            {uploadError && (
-              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {uploadError}
-              </p>
-            )}
-
-            {uploadSuccess && (
-              <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                {uploadSuccess}
-              </p>
-            )}
-
-            <section className="rounded-xl border border-slate-200 bg-white p-6">
-              <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900">Submission Bin</h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    HR, PM, or L&amp;D may request additional documents from time to time. Upload the requested documents by the due date.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleRefresh}
-                  disabled={isRefreshing}
-                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 active:bg-slate-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm self-start sm:self-auto"
-                >
-                  <RefreshCw className={`h-4 w-4 text-slate-500 ${isRefreshing ? 'animate-spin' : ''}`} />
-                  {isRefreshing ? 'Refreshing...' : 'Refresh'}
-                </button>
-              </div>
-
-              {/* Pending Submissions */}
-              <div className="mt-6 flex items-center gap-2">
-                <Clock className="h-5 w-5 text-amber-500" />
-                <h3 className="font-semibold text-slate-900">
-                  Pending Submissions ({pendingRequests.length})
-                </h3>
-              </div>
-
-              <div className="mt-3 space-y-3">
-                {pendingRequests.length === 0 && (
-                  <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                    No pending document requests.
-                  </p>
-                )}
-                {pendingRequests.map((request) => {
-                  const isUploading = uploadingId === request.id;
-                  const days = daysUntil(request.due_date);
-                  const overdue = days !== null && days < 0;
-                  const source = resolveSource(request.request_source);
-
-                  return (
-                    <article
-                      key={request.id}
-                      className="rounded-xl border border-amber-200 border-l-4 border-l-amber-400 bg-amber-50/60 px-5 py-4"
-                    >
-                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h4 className="font-semibold text-slate-900">{request.document_name}</h4>
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${SOURCE_BADGE_STYLES[source]}`}>
-                              {SOURCE_BADGE_LABEL[source]}
-                            </span>
-                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
-                              <Clock className="h-3 w-3" />
-                              {request.status === 'Rejected' ? 'Needs Resubmission' : 'Pending'}
-                            </span>
-                          </div>
-                          {request.description && (
-                            <p className="mt-1 text-sm text-slate-600">{request.description}</p>
-                          )}
-                          <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-500">
-                            <span>
-                              Requested by:{' '}
-                              <span className="font-medium text-slate-700">
-                                {request.requested_by || 'HR Department'}
-                              </span>
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Calendar className="h-3.5 w-3.5" />
-                              Due: {formatPortalDate(request.due_date)}
-                              {request.due_date && (
-                                <span className={overdue ? 'font-semibold text-red-600' : 'font-semibold text-amber-700'}>
-                                  {' '}({dueLabel(request.due_date)})
-                                </span>
-                              )}
-                            </span>
-                          </div>
-                        </div>
-
-                        <label className="inline-flex shrink-0 cursor-pointer items-center gap-2 self-start rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
-                          <input
-                            type="file"
-                            className="hidden"
-                            disabled={isUploading}
-                            onChange={(e) => void handleRequestUpload(request, e.target.files?.[0] ?? null)}
-                          />
-                          <Upload className="h-4 w-4" />
-                          {isUploading ? 'Uploading…' : 'Upload'}
-                        </label>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-
-              {/* Submitted Documents */}
-              <div className="mt-7 flex items-center gap-2">
-                <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-                <h3 className="font-semibold text-slate-900">
-                  Submitted Documents ({submittedRequests.length})
-                </h3>
-              </div>
-
-              <div className="mt-3 space-y-3">
-                {submittedRequests.length === 0 && (
-                  <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
-                    No submitted documents yet.
-                  </p>
-                )}
-                {submittedRequests.map((request) => {
-                  const isUploading = uploadingId === request.id;
-                  const source = resolveSource(request.request_source);
-
-                  return (
-                    <article
-                      key={request.id}
-                      className="rounded-xl border border-emerald-200 border-l-4 border-l-emerald-400 bg-emerald-50/60 px-5 py-4"
-                    >
-                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h4 className="font-semibold text-slate-900">{request.document_name}</h4>
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${SOURCE_BADGE_STYLES[source]}`}>
-                              {SOURCE_BADGE_LABEL[source]}
-                            </span>
-                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-                              <CheckCircle2 className="h-3 w-3" />
-                              {request.status === 'Approved' ? 'Approved' : 'Submitted'}
-                            </span>
-                          </div>
-                          {request.description && (
-                            <p className="mt-1 text-sm text-slate-600">{request.description}</p>
-                          )}
-                          {request.file_name && (
-                            <p className="mt-1 flex items-center gap-2 text-sm text-slate-500">
-                              <FileText className="h-4 w-4 text-slate-400" />
-                              {request.file_name}
-                            </p>
-                          )}
-                          <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-500">
-                            <span>Submitted: {formatPortalDate(request.uploaded_at)}</span>
-                            {request.due_date && <span>Due date: {formatPortalDate(request.due_date)}</span>}
-                          </div>
-                        </div>
-
-                        <div className="flex shrink-0 items-center gap-2 self-start">
-                          {request.file_url && (
-                            <button
-                              type="button"
-                              onClick={() => setPreviewDocument(request)}
-                              className="inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
-                            >
-                              <Eye className="h-4 w-4" />
-                              Preview
-                            </button>
-                          )}
-                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-50">
-                            <input
-                              type="file"
-                              className="hidden"
-                              disabled={isUploading}
-                              onChange={(e) => void handleRequestUpload(request, e.target.files?.[0] ?? null)}
-                            />
-                            <Upload className="h-4 w-4" />
-                            {isUploading ? 'Uploading…' : 'Resubmit'}
-                          </label>
-                        </div>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-
-              <div className="mt-6 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-                <span className="font-semibold">Important:</span> Please submit all requested documents before
-                the due date. Late submissions may affect your employment records. Contact HR if you need an
-                extension or have questions about the requirements.
-              </div>
             </section>
           </div>
         )}
@@ -3874,11 +2873,29 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
           const done = n < wizardStep;
           const active = n === wizardStep;
           return (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem' }}>
-              <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.8rem', background: done ? '#4ADE80' : active ? '#363EE8' : 'rgba(255,255,255,0.2)', color: '#ffffff', border: done || active ? 'none' : '2px solid rgba(255,255,255,0.4)', transition: 'all 0.3s' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem', position: 'relative', zIndex: 1 }}>
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 800,
+                  fontSize: '0.8rem',
+                  background: done ? '#22C55E' : active ? '#ffffff' : '#3B44DB',
+                  color: done ? '#ffffff' : active ? '#363EE8' : 'rgba(255,255,255,0.7)',
+                  border: done ? 'none' : active ? 'none' : '2px solid rgba(255,255,255,0.35)',
+                  boxShadow: active ? '0 0 0 4px rgba(255,255,255,0.25)' : 'none',
+                  transition: 'all 0.3s',
+                }}
+              >
                 {done ? '✓' : n}
               </div>
-              <span style={{ fontSize: '0.65rem', color: active ? '#ffffff' : '#C8D1FF', fontWeight: active ? 700 : 500, whiteSpace: 'nowrap' }}>{STEPS[n - 1]}</span>
+              <span style={{ fontSize: '0.65rem', color: active ? '#ffffff' : '#C8D1FF', fontWeight: active ? 700 : 500, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                {STEPS[n - 1]}
+              </span>
             </div>
           );
         };
@@ -3911,7 +2928,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                     </button>
                   </div>
                   <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ position: 'absolute', top: 15, left: '10%', right: '10%', height: 3, background: 'rgba(255,255,255,0.2)', borderRadius: 99, zIndex: 0 }}>
+                    <div style={{ position: 'absolute', top: 15, left: '16.67%', right: '16.67%', height: 3, background: 'rgba(255,255,255,0.2)', borderRadius: 99, zIndex: 0 }}>
                       <div style={{ width: `${barPct}%`, height: '100%', background: '#C8D1FF', borderRadius: 99, transition: 'width 0.4s ease' }} />
                     </div>
                     {[1, 2, 3].map(n => <StepCircle key={n} n={n} />)}
@@ -4017,20 +3034,6 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
           </>
         );
       })()}
-
-      <DocumentPreviewModal
-        open={previewDocument !== null}
-        fileUrl={previewDocument?.file_url ?? ''}
-        fileName={previewDocument?.file_name ?? ''}
-        fileType={previewDocument?.file_type ?? null}
-        title={previewDocument ? previewDocument.document_type : ''}
-        subtitle={
-          previewDocument
-            ? `${previewDocument.file_name} — uploaded ${new Date(previewDocument.uploaded_at).toLocaleDateString()} (${previewDocument.status})`
-            : ''
-        }
-        onClose={() => setPreviewDocument(null)}
-      />
     </div>
   );
 };

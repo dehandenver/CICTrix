@@ -584,39 +584,11 @@ function AppContent() {
           />
           <Route
             path="/employee/documents/requirements"
-            element={
-              <EmployeeRoute session={employeeSession}>
-                {currentEmployee ? (
-                  <EmployeePage
-                    currentUser={currentEmployee}
-                    loginUsername={employeeSession?.loginUsername}
-                    onLogout={handleEmployeeLogout}
-                  />
-                ) : (
-                  <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-600">
-                    Loading employee profile...
-                  </div>
-                )}
-              </EmployeeRoute>
-            }
+            element={<Navigate to="/employee/profile" replace />}
           />
           <Route
             path="/employee/documents/submission"
-            element={
-              <EmployeeRoute session={employeeSession}>
-                {currentEmployee ? (
-                  <EmployeePage
-                    currentUser={currentEmployee}
-                    loginUsername={employeeSession?.loginUsername}
-                    onLogout={handleEmployeeLogout}
-                  />
-                ) : (
-                  <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-600">
-                    Loading employee profile...
-                  </div>
-                )}
-              </EmployeeRoute>
-            }
+            element={<Navigate to="/employee/profile" replace />}
           />
           <Route
             path="/employee/account"
