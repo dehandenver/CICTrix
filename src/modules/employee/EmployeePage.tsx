@@ -22,12 +22,14 @@ import {
   FileSpreadsheet,
   Check,
   Info,
-  Download
+  Download,
+  Target
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { MyTrainingsSection } from './MyTrainingsSection';
 import { MyArchiveSection } from './MyArchiveSection';
+import { IdpFormSection } from './IdpFormSection';
 import { getActiveOfficeRole } from '../../lib/api/officeRoles';
 import abyanLogo from '../../assets/abyan-logo.png';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -125,7 +127,7 @@ interface EmployeePageProps {
   onLogout: () => void;
 }
 
-type PortalTab = 'personal' | 'account' | 'ipcr-workspace' | 'new-entrants' | 'trainings' | 'archive';
+type PortalTab = 'personal' | 'account' | 'ipcr-workspace' | 'new-entrants' | 'trainings' | 'archive' | 'idp';
 
 interface TabConfig {
   id: PortalTab;
@@ -1304,6 +1306,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
         { id: 'personal', label: 'Personal Information', icon: User, route: '/employee/profile' },
         { id: 'ipcr-workspace', label: 'My IPCR Workspace', icon: FileSpreadsheet, route: '/employee/ipcr-workspace' },
         { id: 'trainings', label: 'My Trainings', icon: Calendar, route: '/employee/trainings' },
+        { id: 'idp', label: 'Individual Development Plan', icon: Target, route: '/employee/idp' },
         { id: 'archive', label: 'My Archive', icon: Archive, route: '/employee/archive' },
         { id: 'account', label: 'Account & Security', icon: Lock, route: '/employee/account' },
       ];
@@ -1319,6 +1322,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   const activeTab = useMemo<PortalTab>(() => {
     if (location.pathname.includes('/ipcr-workspace')) return 'ipcr-workspace';
     if (location.pathname.includes('/trainings')) return 'trainings';
+    if (location.pathname.includes('/idp')) return 'idp';
     if (location.pathname.includes('/archive')) return 'archive';
     if (location.pathname.includes('/new-entrants')) return 'new-entrants';
     if (location.pathname.includes('/account')) return 'account';
@@ -1716,6 +1720,14 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
           isOfficeAccount
             ? <OfficeAccountLockedNote section="Training" />
             : <MyTrainingsSection employeeId={(currentUser.supabaseId as string) ?? ''} />
+        )}
+
+        {activeTab === 'idp' && (
+          // Office accounts are a shared login, not a person, so there is no
+          // individual whose development plan this would be.
+          isOfficeAccount
+            ? <OfficeAccountLockedNote section="Individual Development Plan" />
+            : <IdpFormSection />
         )}
 
         {activeTab === 'archive' && (

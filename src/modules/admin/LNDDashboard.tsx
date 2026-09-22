@@ -19,6 +19,7 @@ import {
   Send,
   Settings,
   ShieldCheck,
+  Target,
   TrendingUp,
   Upload,
   Users,
@@ -43,6 +44,7 @@ import {
 import { AdminHeader } from '../../components/AdminHeader';
 import { supabase } from '../../lib/supabase';
 
+import { LndIdpFormSettings } from './LndIdpFormSettings';
 import { SeminarEnrollment } from './SeminarEnrollment';
 import { TrainingCalendar } from './TrainingCalendar';
 import { TrainingPlan } from './TrainingPlan';
@@ -68,6 +70,7 @@ type MenuId =
   | 'training-evaluation'
   | 'archive'
   | 'office-directory'
+  | 'idp-form'
   | 'settings';
 
 type MenuItem = {
@@ -97,6 +100,7 @@ const LND_MENU: MenuItem[] = [
   { id: 'training-needs', label: 'Requests & Needs', sublabel: 'Office requests and Training Needs Assessment', icon: ClipboardList },
   { id: 'seminar-enrollment', label: 'Seminar Enrollment', sublabel: 'Registrations and slots', icon: ClipboardCheck },
   { id: 'training-evaluation', label: 'Training Evaluation', sublabel: 'Pre/post-test results', icon: TrendingUp },
+  { id: 'idp-form', label: 'IDP Form', sublabel: 'Form link and availability window', icon: Target },
   { id: 'archive', label: 'L&D Archive', sublabel: 'Historical training records', icon: FileText },
   { id: 'office-directory', label: 'Office Directory', sublabel: 'All employees', icon: Users },
   { id: 'settings', label: 'Settings', sublabel: 'Division preferences', icon: Settings },
@@ -761,6 +765,8 @@ export const LNDDashboard = ({ isDashboardView = true }: { isDashboardView?: boo
             <LndArchive initialOffice={archiveDeepLink.office} focusEmployeeId={archiveDeepLink.employee} />
           ) : activeModule === 'office-directory' ? (
             <OfficeDirectorySection showBulkRequest={false} />
+          ) : activeModule === 'idp-form' ? (
+            <LndIdpFormSettings />
           ) : (
             <PlaceholderPage label={LND_MENU.find((item) => item.id === activeModule)?.label || 'Module'} />
           )}
