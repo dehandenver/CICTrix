@@ -2873,6 +2873,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
           const done = n < wizardStep;
           const active = n === wizardStep;
           return (
+<<<<<<< HEAD
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem', position: 'relative', zIndex: 1 }}>
               <div
                 style={{
@@ -2891,6 +2892,14 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
                   transition: 'all 0.3s',
                 }}
               >
+=======
+            // position + zIndex keep the circles above the connector track. The
+            // track is absolutely positioned, and a positioned element paints
+            // over non-positioned in-flow siblings whatever its z-index, so
+            // without this the line runs straight through the numbers.
+            <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem' }}>
+              <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.8rem', background: done ? '#4ADE80' : active ? '#363EE8' : 'rgba(255,255,255,0.2)', color: '#ffffff', border: done || active ? 'none' : '2px solid rgba(255,255,255,0.4)', transition: 'all 0.3s' }}>
+>>>>>>> 2a2021cbd68e0315508de038f9251bfd1c887196
                 {done ? '✓' : n}
               </div>
               <span style={{ fontSize: '0.65rem', color: active ? '#ffffff' : '#C8D1FF', fontWeight: active ? 700 : 500, textAlign: 'center', whiteSpace: 'nowrap' }}>
