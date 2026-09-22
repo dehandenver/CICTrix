@@ -10,7 +10,7 @@
  */
 
 import { supabase as supabaseClient } from '../supabase';
-import type { Employee } from '../../types/employee.types';
+import type { AddressParts, Employee } from '../../types/employee.types';
 
 // Bypass strict generated types — same pattern as the rest of the codebase.
 const supabase = supabaseClient as any;
@@ -23,6 +23,68 @@ const supabase = supabaseClient as any;
  * Map a raw Supabase `employees` row → frontend `Employee` shape.
  * Only maps fields that the Employee Portal actually uses.
  */
+/**
+ * Personal Data Sheet fields that map 1:1 between the `Employee` shape and an
+ * `employees` column.
+ *
+ * Table-driven rather than one hand-written `if` per field: CS Form 212 page 1
+ * contributes about thirty-five of these, and a long ladder of near-identical
+ * assignments is exactly where a mistyped column name hides silently — the
+ * write succeeds against a different column and the value simply never comes
+ * back.
+ */
+const PDS_SCALAR_COLUMNS = {
+  surname: 'last_name',
+  firstName: 'first_name',
+  middleName: 'middle_name',
+  nameExtension: 'suffix',
+  heightM: 'height_m',
+  weightKg: 'weight_kg',
+  bloodType: 'blood_type',
+  umidNumber: 'umid_number',
+  philsysNumber: 'philsys_number',
+  citizenship: 'citizenship',
+  citizenshipBasis: 'citizenship_basis',
+  dualCitizenshipCountry: 'dual_citizenship_country',
+  telephoneNumber: 'telephone_number',
+  spouseSurname: 'spouse_surname',
+  spouseFirstName: 'spouse_first_name',
+  spouseMiddleName: 'spouse_middle_name',
+  spouseNameExtension: 'spouse_suffix',
+  spouseOccupation: 'spouse_occupation',
+  spouseEmployer: 'spouse_employer',
+  spouseBusinessAddress: 'spouse_business_address',
+  spouseTelephone: 'spouse_telephone',
+  fatherSurname: 'father_surname',
+  fatherFirstName: 'father_first_name',
+  fatherMiddleName: 'father_middle_name',
+  fatherNameExtension: 'father_suffix',
+  motherSurname: 'mother_surname',
+  motherFirstName: 'mother_first_name',
+  motherMiddleName: 'mother_middle_name',
+  pdsSignedAt: 'pds_signed_at',
+} as const satisfies Record<string, string>;
+
+/** Suffixes of the seven columns each address block is stored across. */
+const ADDRESS_PART_COLUMNS = {
+  houseLot: 'house_lot',
+  street: 'street',
+  subdivision: 'subdivision',
+  barangay: 'barangay',
+  city: 'city',
+  province: 'province',
+  zip: 'zip',
+} as const satisfies Record<keyof AddressParts, string>;
+
+/** Read one address block (items 17/18) back out of its component columns. */
+function readAddress(row: any, prefix: 'residential' | 'permanent'): AddressParts {
+  const out: AddressParts = {};
+  for (const [key, col] of Object.entries(ADDRESS_PART_COLUMNS)) {
+    out[key as keyof AddressParts] = row[`${prefix}_${col}`] ?? '';
+  }
+  return out;
+}
+
 export function mapSupabaseRowToEmployee(row: any): Employee {
   const firstName = (row.first_name ?? '').trim();
   const middleName = (row.middle_name ?? '').trim();
@@ -113,6 +175,45 @@ export function mapSupabaseRowToEmployee(row: any): Employee {
 
     // personal_details_finalized is an optional DB column — fall back to false if absent.
     personalDetailsFinalized: row.personal_details_finalized ?? false,
+
+    // ── Personal Data Sheet (CS Form 212 page 1) ──────────────────────────
+    // The name parts are surfaced individually as well as joined into
+    // fullName above, because the sheet prints them in separate boxes.
+    surname: lastName,
+    firstName,
+    middleName,
+    nameExtension: suffix,
+    agencyEmployeeNo: row.employee_number ?? '',
+    heightM: row.height_m ?? undefined,
+    weightKg: row.weight_kg ?? undefined,
+    bloodType: row.blood_type ?? '',
+    umidNumber: row.umid_number ?? '',
+    philsysNumber: row.philsys_number ?? '',
+    citizenship: row.citizenship ?? 'Filipino',
+    citizenshipBasis: row.citizenship_basis ?? undefined,
+    dualCitizenshipCountry: row.dual_citizenship_country ?? '',
+    telephoneNumber: row.telephone_number ?? '',
+    residential: readAddress(row, 'residential'),
+    permanent: readAddress(row, 'permanent'),
+
+    spouseSurname: row.spouse_surname ?? '',
+    spouseFirstName: row.spouse_first_name ?? '',
+    spouseMiddleName: row.spouse_middle_name ?? '',
+    spouseNameExtension: row.spouse_suffix ?? '',
+    spouseOccupation: row.spouse_occupation ?? '',
+    spouseEmployer: row.spouse_employer ?? '',
+    spouseBusinessAddress: row.spouse_business_address ?? '',
+    spouseTelephone: row.spouse_telephone ?? '',
+    fatherSurname: row.father_surname ?? '',
+    fatherFirstName: row.father_first_name ?? '',
+    fatherMiddleName: row.father_middle_name ?? '',
+    fatherNameExtension: row.father_suffix ?? '',
+    motherSurname: row.mother_surname ?? '',
+    motherFirstName: row.mother_first_name ?? '',
+    motherMiddleName: row.mother_middle_name ?? '',
+
+    pdsSignedAt: row.pds_signed_at ?? undefined,
+    pdsUpdatedAt: row.pds_updated_at ?? undefined,
   };
 }
 
@@ -173,6 +274,41 @@ function mapPatchToColumns(patch: Partial<Employee>): Record<string, unknown> {
   // Lock flag — written once after the first personal details save.
   if (patch.personalDetailsFinalized !== undefined)
     row.personal_details_finalized = patch.personalDetailsFinalized;
+
+  // ── Personal Data Sheet (CS Form 212 page 1) ────────────────────────────
+  for (const [field, column] of Object.entries(PDS_SCALAR_COLUMNS)) {
+    const value = (patch as Record<string, unknown>)[field];
+    if (value === undefined) continue;
+    // Empty string means "cleared" for a text column, which must be stored as
+    // NULL rather than '' so the printed sheet shows a blank box and a
+    // uniqueness or lookup check does not match on the empty string.
+    row[column] = value === '' ? null : value;
+  }
+
+  // Item 3's height/weight are numeric columns; a cleared box arrives as '' and
+  // would be rejected as invalid input syntax if passed straight through.
+  for (const numeric of ['heightM', 'weightKg'] as const) {
+    if (patch[numeric] === undefined) continue;
+    const raw = patch[numeric];
+    const parsed = typeof raw === 'number' ? raw : Number.parseFloat(String(raw));
+    row[PDS_SCALAR_COLUMNS[numeric]] = Number.isFinite(parsed) ? parsed : null;
+  }
+
+  // 17/18. Address blocks fan out into seven columns each.
+  for (const block of ['residential', 'permanent'] as const) {
+    const parts = patch[block];
+    if (parts === undefined) continue;
+    for (const [key, col] of Object.entries(ADDRESS_PART_COLUMNS)) {
+      const value = parts[key as keyof AddressParts];
+      if (value === undefined) continue;
+      row[`${block}_${col}`] = value === '' ? null : value;
+    }
+  }
+
+  // Any write through this function is an edit to the sheet.
+  if (Object.keys(row).length > 0) {
+    row.pds_updated_at = new Date().toISOString();
+  }
 
   row.modified_at = new Date().toISOString();
 
