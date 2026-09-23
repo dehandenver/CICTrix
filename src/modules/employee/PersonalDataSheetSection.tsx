@@ -22,7 +22,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import type {
   AddressParts,
   Employee,
@@ -333,6 +333,33 @@ const SUB_TABS: { id: SubTab; label: string }[] = [
   { id: 'otherInfo', label: 'Other Information' },
   { id: 'background', label: 'Background Information' },
 ];
+
+/** Back/Next between sections, reachable without scrolling back up to the tab bar. Reuses whatever handler the tab bar itself uses, so behavior (including clearing stale save banners) stays identical either way. */
+const TabNavBar: React.FC<{ activeTab: SubTab; onSelect: (t: SubTab) => void }> = ({ activeTab, onSelect }) => {
+  const idx = SUB_TABS.findIndex((t) => t.id === activeTab);
+  const prev = idx > 0 ? SUB_TABS[idx - 1] : null;
+  const next = idx < SUB_TABS.length - 1 ? SUB_TABS[idx + 1] : null;
+  const navButtonStyle: React.CSSProperties = {
+    display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
+    borderRadius: 8, padding: '0.45rem 0.9rem',
+    fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer',
+    border: `1.5px solid ${BRAND.line}`, background: '#ffffff', color: BRAND.navy,
+  };
+  return (
+    <div className="flex items-center justify-between border-t pt-3" style={{ borderColor: BRAND.line }}>
+      {prev ? (
+        <button type="button" onClick={() => onSelect(prev.id)} style={navButtonStyle}>
+          <ChevronLeft className="h-3.5 w-3.5" /> Back: {prev.label}
+        </button>
+      ) : <span />}
+      {next ? (
+        <button type="button" onClick={() => onSelect(next.id)} style={navButtonStyle}>
+          Next: {next.label} <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      ) : <span />}
+    </div>
+  );
+};
 
 const SaveBar: React.FC<{ saving: boolean; onSave: () => void; label: string; lastSaved?: string }> = ({ saving, onSave, label, lastSaved }) => (
   <div className="flex items-center justify-between pt-1">
@@ -793,6 +820,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
           <Field label="E-mail Address" type="email" value={draft.email} onChange={(v) => set('email', v)} />
         </div>
 
+        <TabNavBar activeTab={activeTab} onSelect={selectTab} />
         <SaveBar saving={saving} onSave={() => void savePersonalInfo()} label="Save Personal Information" lastSaved={profile.pdsUpdatedAt} />
       </SectionCard>
       )}
@@ -868,6 +896,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
           </div>
         </div>
 
+        <TabNavBar activeTab={activeTab} onSelect={selectTab} />
         <SaveBar saving={saving} onSave={() => void saveFamilyBackground()} label="Save Family Background" />
       </SectionCard>
       )}
@@ -897,6 +926,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
           </div>
         )}
 
+        <TabNavBar activeTab={activeTab} onSelect={selectTab} />
         <SaveBar saving={saving} onSave={() => void saveEducationalBackground()} label="Save Educational Background" />
       </SectionCard>
       )}
@@ -940,6 +970,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
           ))}
         </div>
 
+        <TabNavBar activeTab={activeTab} onSelect={selectTab} />
         <SaveBar saving={saving} onSave={() => void saveEligibilitySection()} label="Save Civil Service Eligibility" />
       </SectionCard>
       )}
@@ -982,6 +1013,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
           ))}
         </div>
 
+        <TabNavBar activeTab={activeTab} onSelect={selectTab} />
         <SaveBar saving={saving} onSave={() => void saveWorkExperienceSection()} label="Save Work Experience" />
       </SectionCard>
       )}
@@ -1021,6 +1053,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
           ))}
         </div>
 
+        <TabNavBar activeTab={activeTab} onSelect={selectTab} />
         <SaveBar saving={saving} onSave={() => void saveVoluntaryWorkSection()} label="Save Voluntary Work" />
       </SectionCard>
       )}
@@ -1063,6 +1096,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
           ))}
         </div>
 
+        <TabNavBar activeTab={activeTab} onSelect={selectTab} />
         <SaveBar saving={saving} onSave={() => void saveLdInterventionsSection()} label="Save Learning & Development" />
       </SectionCard>
       )}
@@ -1073,6 +1107,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
         <TextAreaField label="Non-Academic Distinctions/Recognition" value={draft.nonAcademicDistinctions} onChange={(v) => set('nonAcademicDistinctions', v)} />
         <TextAreaField label="Membership in Association/Organization" value={draft.membershipAssociations} onChange={(v) => set('membershipAssociations', v)} />
 
+        <TabNavBar activeTab={activeTab} onSelect={selectTab} />
         <SaveBar saving={saving} onSave={() => void saveOtherInfoSection()} label="Save Other Information" />
       </SectionCard>
       )}
@@ -1219,6 +1254,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
           </div>
         </div>
 
+        <TabNavBar activeTab={activeTab} onSelect={selectTab} />
         <SaveBar saving={saving} onSave={() => void saveBackgroundSection()} label="Save Background Information" />
       </SectionCard>
       )}
