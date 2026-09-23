@@ -686,7 +686,7 @@ const CandidatesPanel = (props: CandidatesPanelProps) => {
       </div>
 
       <p className="!mb-0 text-xs text-[var(--text-secondary)]">
-        Two-stage model. Stage 1 — mandatory gates (Employment · Position Match · Education field-match · CSC Eligibility · IPCR ≥ threshold · Training): fail any and the employee drops to "Not Yet Qualified" below, never ranked here. Stage 2 — gate-passers are graded on Competency Readiness (required competencies covered by completed trainings): 100% = Ready Now, partial = Ready in [timeline]. Ranked by competency match %, with the weighted score (IPCR 35 + Training 30 + Education 20 + Eligibility 15) as tiebreaker.
+        Two-stage model. Stage A — qualifications are minimum requirements, not weighted (Employment · Position Match · Education field-match · CSC Eligibility · Minimum Experience · Training): fail any one and the employee drops to "Not Yet Qualified" below, never ranked here. Stage B — only qualified employees are ranked, on Performance 35 + Relevant Experience 25 + Training 20 + Education beyond minimum 12 + Tenure 8. Education and Training count only what is above the minimum the filter already checked, so clearing the bar is not paid for twice. Performance is ranked but never gates: an unrated employee who meets the four minimums is still ranked, scoring zero on that criterion.
       </p>
 
       {loading && <p className="text-sm text-[var(--text-secondary)]">Discovering eligible successors…</p>}
@@ -865,8 +865,12 @@ const AutoSuccessorRow = ({
                   <ScoreBar value={r.training} max={r.trainingMax} color="#10b981" />
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">Eligibility</span>
-                  <ScoreBar value={r.eligibility} max={r.eligibilityMax} color="#f59e0b" />
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">Experience</span>
+                  <ScoreBar value={r.experience} max={r.experienceMax} color="#f59e0b" />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--text-secondary)]">Tenure</span>
+                  <ScoreBar value={r.tenure} max={r.tenureMax} color="#a855f7" />
                 </div>
               </div>
 
@@ -1183,7 +1187,7 @@ const Modal = ({
 //
 // Department -> Key Position (incumbent + leaving date) -> one row per candidate
 // (qualified AND not-qualified, for full pipeline transparency), with the four
-// Qualification columns (Education/Eligibility/Performance check/x + Training
+// Qualification columns (Education/Eligibility/Experience check/x + Training
 // bar/%), Overall Status, Gap Analysis, Required Actions, Timeline, and an
 // editable Remarks cell. All data comes from the same two-stage engine the
 // ranked cards use — this is presentation only.
@@ -1196,7 +1200,8 @@ type OcboRow = {
   department: string | null;
   education: boolean;
   eligibility: boolean;
-  performance: boolean;
+  /** The fourth minimum requirement. Performance is ranked, never gated. */
+  experience: boolean;
   trainingPct: number | null;
   status: string;
   statusTone: string;
@@ -1222,7 +1227,7 @@ const buildOcboRows = (res: AutoSuccessorsResult | undefined): OcboRow[] => {
     department: c.department,
     education: true,
     eligibility: true,
-    performance: true,
+    experience: true,
     trainingPct: c.readiness.competencyMatchPct,
     status: c.readiness.tier ?? 'Developmental',
     statusTone: ocboStatusTone(c.readiness.tier ?? 'Developmental'),
@@ -1239,7 +1244,7 @@ const buildOcboRows = (res: AutoSuccessorsResult | undefined): OcboRow[] => {
       department: f.department,
       education: f.gates.education,
       eligibility: f.gates.eligibility,
-      performance: f.gates.performance,
+      experience: f.gates.experience,
       trainingPct: f.competencyMatchPct,
       status,
       statusTone: ocboStatusTone(status),
@@ -1327,7 +1332,7 @@ const OcboTableView = ({ admin }: { admin: string }) => {
     <div className="space-y-3">
       <p className="!mb-0 text-xs text-[var(--text-secondary)]">
         Official succession-plan view. Every potential candidate is shown — qualified or not — for full pipeline
-        transparency. Education / Eligibility / Performance are mandatory pass/fail gates; Training is a graded
+        transparency. Education / Eligibility / Experience are mandatory pass/fail gates; Training is a graded
         competency-readiness match. Remarks are editable.
       </p>
       {departments.map((dept) => {
@@ -1370,7 +1375,7 @@ const OcboTableView = ({ admin }: { admin: string }) => {
                               <th className="px-3 py-2">Candidate / Present Position</th>
                               <th className="px-3 py-2 text-center">Educ.</th>
                               <th className="px-3 py-2 text-center">Elig.</th>
-                              <th className="px-3 py-2 text-center">Perf.</th>
+                              <th className="px-3 py-2 text-center">Exp.</th>
                               <th className="px-3 py-2">Training</th>
                               <th className="px-3 py-2">Overall Status</th>
                               <th className="px-3 py-2">Gap Analysis</th>
@@ -1393,7 +1398,7 @@ const OcboTableView = ({ admin }: { admin: string }) => {
                                 </td>
                                 <td className="px-3 py-2 text-center"><Tick ok={r.education} /></td>
                                 <td className="px-3 py-2 text-center"><Tick ok={r.eligibility} /></td>
-                                <td className="px-3 py-2 text-center"><Tick ok={r.performance} /></td>
+                                <td className="px-3 py-2 text-center"><Tick ok={r.experience} /></td>
                                 <td className="px-3 py-2"><TrainingCell pct={r.trainingPct} /></td>
                                 <td className="px-3 py-2">
                                   <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${r.statusTone}`}>{r.status}</span>

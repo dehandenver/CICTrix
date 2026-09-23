@@ -19,6 +19,16 @@ import { categoryAverage, computeOverallScore } from './ipcrWorkspace';
 import { bucketForScore } from './performanceEvaluations';
 import { embeddedRating } from './ipcrRatings';
 import type { FunctionType } from './ipcrTargets';
+import {
+  RANKING_WEIGHTS,
+  educationBeyondMinimumRatio,
+  evaluateQualifications,
+  experienceScore,
+  normalizeWeights,
+  tenureRatio,
+  trainingBeyondMinimumRatio,
+  type RankingWeights,
+} from './successionCriteria';
 
 const supabase = supabaseClient as any;
 
@@ -127,21 +137,18 @@ export interface EmployeeOption {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Global default criterion weights (must sum to 100). Centralised so the model
- * is tunable in one place. Per-position overrides can be stored in
- * critical_positions.succession_weights (JSONB) — the scoring functions accept
- * an optional weights parameter and fall back to these defaults.
+ * Global default criterion weights (sum 100), re-exported from the criteria
+ * module so the model has one home. Per-position overrides are stored in
+ * critical_positions.succession_weights (JSONB); normalizeWeights migrates rows
+ * written under the previous shape, which carried an eligibility weight.
  *
- * Tenure has been removed entirely per the 2026-07-26 succession-gate spec.
+ * Eligibility is no longer ranked — it is a pass/fail qualification, so there
+ * is nothing left to score once it has been met. Tenure returns, with the
+ * smallest weight of the five.
  */
-export const SUCCESSION_WEIGHTS = {
-  ipcr: 35,
-  training: 30,
-  education: 20,
-  eligibility: 15,
-} as const;
+export const SUCCESSION_WEIGHTS = RANKING_WEIGHTS;
 
-export type SuccessionWeights = typeof SUCCESSION_WEIGHTS;
+export type SuccessionWeights = RankingWeights;
 
 export type SuccessionTier = 'Ready Now' | 'Ready in 1–2 Years' | 'Developmental';
 
@@ -164,9 +171,23 @@ export interface ReadinessScore {
   ipcrMax: number;
   training: number;
   trainingMax: number;
-  eligibility: number;
-  eligibilityMax: number;
-  // Tenure removed per 2026-07-26 spec — no tenure field here any more.
+  /** Relevant experience — quality, not only length of service. */
+  experience: number;
+  experienceMax: number;
+  /** Time in the organisation. Smallest weight of the five. */
+  tenure: number;
+  tenureMax: number;
+  /** Years since date_hired, shown alongside the tenure bar. */
+  tenureYears: number;
+  /**
+   * False when career progression could not be assessed because the candidate
+   * has no work history on file. The experience score is then computed from
+   * years and position level alone, and the UI should say so rather than
+   * present it as a complete judgement.
+   */
+  progressionAssessed: boolean;
+  // Eligibility is a qualification gate, not a ranking criterion — it has no
+  // score here. eligibilityLabel below is still shown as context.
   /** Readiness tier from the total. */
   tier: SuccessionTier | null;
   // Raw context shown alongside the bars
@@ -213,8 +234,14 @@ export interface GateFailure {
   department: string | null;
   /** Each string describes one failed gate, e.g. "Missing finalized IPCR". */
   failedGates: string[];
-  /** Per-gate pass/fail for the OCBO table's Qualification columns. */
-  gates: { education: boolean; eligibility: boolean; performance: boolean; training: boolean };
+  /**
+   * Per-gate pass/fail for the Qualification columns.
+   *
+   * `performance` is gone: it is a ranking criterion, not a minimum
+   * requirement, so it can no longer disqualify anyone. `experience` takes its
+   * place as the fourth minimum.
+   */
+  gates: { education: boolean; eligibility: boolean; experience: boolean; training: boolean };
   /** Competency match % if computable (they're unranked, but the table still shows it). */
   competencyMatchPct: number | null;
   /** Auto-generated: what's missing (mirrors failedGates, Part 4 Gap Analysis). */
@@ -1364,12 +1391,41 @@ function computeReadinessScore(input: {
   requiredTrainingCategories: string[];   // position's required category labels
   requiredCompetencies: { id: string; name: string }[]; // position's required competencies (Stage 2)
   taggedCompetencies: Map<string, string>;              // employee's tagged competency_id → satisfying training title
+  // Ranking inputs added with the qualification/criteria split.
+  tenureYears: number;                    // years since date_hired
+  requiredYearsExperience: number | null; // position's minimum, for the years component
+  /** Whether the candidate's higher degree relates to the target position. */
+  educationRelevant: boolean | null;
+  /** Seniority of the current position relative to the target (0–1), or null. */
+  positionLevelRatio: number | null;
+  /** Distinct upward moves on record, or null when no work history exists. */
+  progressionSteps: number | null;
   W: SuccessionWeights;                   // weights (per-position or global defaults)
 }): ReadinessScore {
   const w1 = (ratio: number, weight: number) => Number((ratio * weight).toFixed(1));
 
-  const education = w1(educationRatio(input.empEducation, input.requiredEducation), input.W.education);
+  // Education scores only what is ABOVE the minimum the filter already checked,
+  // and only when the higher degree is relevant to the target position.
+  const education = w1(
+    educationBeyondMinimumRatio({
+      education: input.empEducation,
+      requiredEducation: input.requiredEducation,
+      relevant: input.educationRelevant,
+    }),
+    input.W.education,
+  );
   const ipcr = input.ipcrScore != null ? w1(input.ipcrScore / 5, input.W.ipcr) : 0;
+
+  // Relevant experience: years, seniority and career progression. Tenure is
+  // used as the years proxy — it is what the records actually support.
+  const exp = experienceScore({
+    relevantYears: input.tenureYears,
+    requiredYears: input.requiredYearsExperience,
+    positionLevelRatio: input.positionLevelRatio,
+    progressionSteps: input.progressionSteps,
+  });
+  const experience = w1(exp.ratio, input.W.experience);
+  const tenure = w1(tenureRatio(input.tenureYears), input.W.tenure);
   const training = scoreTraining({
     completed: input.relevantTrainings,
     hours: input.relevantTrainingHours,
@@ -1380,13 +1436,14 @@ function computeReadinessScore(input: {
     empCategories: input.empTrainingCategories,
     W: input.W,
   });
-  const eligibility = w1(eligibilityRatio(input.empEligibility, input.requiredEligibility), input.W.eligibility);
+  // Eligibility is a qualification gate, not a ranking criterion — no score.
 
-  // Gate-passers always have a valid IPCR score (non-passers are GateFailure)
+  // Performance is no longer a gate, so a candidate with no finalized IPCR is
+  // still ranked; they simply score zero on that criterion. dataComplete now
+  // reports whether the ranking is based on a full record, not whether the
+  // candidate belongs in the pool at all.
   const dataComplete = input.ipcrScore != null;
-  const total = dataComplete
-    ? Number((education + ipcr + training + eligibility).toFixed(1))
-    : 0;
+  const total = Number((education + ipcr + training + experience + tenure).toFixed(1));
 
   // Stage-2 competency readiness. When the position lists required competencies,
   // it drives the tier (Ready Now = 100%); otherwise the weighted total does.
@@ -1427,8 +1484,12 @@ function computeReadinessScore(input: {
     ipcrMax: input.W.ipcr,
     training,
     trainingMax: input.W.training,
-    eligibility,
-    eligibilityMax: input.W.eligibility,
+    experience,
+    experienceMax: input.W.experience,
+    tenure,
+    tenureMax: input.W.tenure,
+    tenureYears: input.tenureYears,
+    progressionAssessed: exp.progressionAssessed,
     tier,
     competencyMatchPct,
     competencyBreakdown,
@@ -1544,7 +1605,7 @@ export async function listAutoSuccessors(
     // ── Fetch the critical position + all gate/scoring configuration ───────────
     const { data: posRow, error: posErr } = await supabase
       .from('critical_positions')
-      .select('id, title, required_education, required_eligibility, min_ipcr_rating, required_training_hours, required_training_categories, succession_weights')
+      .select('id, title, required_education, required_eligibility, min_ipcr_rating, min_years_experience, required_training_hours, required_training_categories, succession_weights')
       .eq('id', criticalPositionId)
       .maybeSingle();
     if (posErr) return { ok: false, error: posErr.message };
@@ -1554,14 +1615,18 @@ export async function listAutoSuccessors(
     const requiredEducation: string | null = posRow.required_education ?? null;
     const requiredEligibility: string | null = posRow.required_eligibility ?? null;
     const minIpcrRating: string | null = posRow.min_ipcr_rating ?? null;
+    const requiredYearsExperience: number | null =
+      posRow.min_years_experience != null ? Number(posRow.min_years_experience) : null;
     const requiredTrainingHours: number | null = posRow.required_training_hours != null ? Number(posRow.required_training_hours) : null;
     const requiredTrainingCategories: string[] = Array.isArray(posRow.required_training_categories) ? posRow.required_training_categories : [];
-    const W: SuccessionWeights = posRow.succession_weights ?? SUCCESSION_WEIGHTS;
+    // normalizeWeights migrates a row configured under the previous shape,
+    // which carried an eligibility weight that no longer exists.
+    const W: SuccessionWeights = normalizeWeights(posRow.succession_weights);
 
     // ── Load all Regular/Permanent, Active employees ───────────────────────
     const { data: empRows, error: empErr } = await supabase
       .from('employees')
-      .select('id, first_name, middle_name, last_name, position, department, employment_status, status, highest_educational_attainment, eligibility')
+      .select('id, first_name, middle_name, last_name, position, department, employment_status, status, highest_educational_attainment, eligibility, date_hired')
       .eq('status', 'Active')
       .in('employment_status', ['Regular', 'Permanent']);
     if (empErr) return { ok: false, error: empErr.message };
@@ -1686,11 +1751,23 @@ export async function listAutoSuccessors(
         }
       }
 
-      // Gate 5: Minimum IPCR Rating
-      if (!score) {
-        failedGates.push('Missing finalized IPCR');
-      } else if (minIpcrRating && ipcrRank(score.adjectival) < ipcrRank(minIpcrRating)) {
-        failedGates.push(`IPCR: ${score.adjectival ?? 'Unknown'} — requires ${minIpcrRating} or higher`);
+      // Gate 5: Minimum relevant experience.
+      //
+      // Replaces the former IPCR gate. Performance is a RANKING criterion, not
+      // a qualification: the spec lists Education, Eligibility, Experience and
+      // Relevant Training as the four minimums, so an employee who meets those
+      // belongs in the pool even before they have been rated. They are ranked
+      // with zero on performance rather than excluded outright.
+      //
+      // critical_positions.min_ipcr_rating is consequently no longer consulted
+      // here. The column is left in place rather than dropped, so positions that
+      // set it keep the value if performance is ever reinstated as a gate.
+      const tenureYearsForGate = yearsFromHireDate(e.date_hired ?? null);
+      if (requiredYearsExperience != null && requiredYearsExperience > 0
+          && tenureYearsForGate < requiredYearsExperience) {
+        failedGates.push(
+          `Experience: ${tenureYearsForGate.toFixed(1)}/${requiredYearsExperience} required years`,
+        );
       }
 
       // Gate 6: Minimum Training (hours floor + category requirements)
@@ -1714,7 +1791,7 @@ export async function listAutoSuccessors(
         const gates = {
           education: !failedGates.some((g) => g.startsWith('Course mismatch') || g.startsWith('No education record')),
           eligibility: !failedGates.some((g) => g.includes('requires Professional') || g.includes('requires Sub-Professional') || g.startsWith('No eligibility')),
-          performance: !failedGates.some((g) => g === 'Missing finalized IPCR' || g.startsWith('IPCR:')),
+          experience: !failedGates.some((g) => g.startsWith('Experience:')),
           training: !failedGates.some((g) => g.startsWith('Training:')),
         };
         const nqTagged = taggedByEmp.get(empId) ?? emptyTagMap;
@@ -1730,9 +1807,11 @@ export async function listAutoSuccessors(
           competencyMatchPct: nqPct,
           gapAnalysis: failedGates,
           requiredActions: [...new Set(failedGates.map(actionForGate))],
-          // "Incomplete — Pending Evaluation" is distinct from "Not Qualified":
-          // it means the ONLY blocker is a missing finalized IPCR (a data gap).
-          pendingEvaluation: failedGates.length === 1 && failedGates[0] === 'Missing finalized IPCR',
+          // Nothing blocks on performance any more, so a gate failure is never
+          // "pending evaluation" — an unrated employee who clears the four
+          // minimums is ranked, not held back. Kept false rather than removed
+          // so the field's meaning does not silently change for callers.
+          pendingEvaluation: false,
           candidateId: null,
         });
         continue;
@@ -1758,6 +1837,18 @@ export async function listAutoSuccessors(
         requiredTrainingCategories,
         requiredCompetencies,
         taggedCompetencies: taggedByEmp.get(empId) ?? emptyTagMap,
+        tenureYears: yearsFromHireDate(e.date_hired ?? null),
+        requiredYearsExperience,
+        // Relevance of a higher degree is inferred from the same field keyword
+        // that matched the candidate to the position. null (no keyword match)
+        // means relevance is not established, so the degree earns nothing
+        // rather than being credited on an assumption.
+        educationRelevant: keyword ? true : null,
+        // No position-level ladder and no work history exist yet, so these two
+        // components are dropped rather than scored zero. See the note on
+        // ExperienceScore.progressionAssessed.
+        positionLevelRatio: null,
+        progressionSteps: null,
         W,
       });
       qualifiedMap.set(empId, {
@@ -1800,7 +1891,7 @@ export async function listAutoSuccessors(
       // Employee is outside the position-matched pool — fetch + score, bypassing gates
       const { data: mcEmp } = await supabase
         .from('employees')
-        .select('id, first_name, middle_name, last_name, position, department, highest_educational_attainment, eligibility')
+        .select('id, first_name, middle_name, last_name, position, department, highest_educational_attainment, eligibility, date_hired')
         .eq('id', mcId)
         .maybeSingle();
       const mcScore = scores.get(mcId) ?? (await getLatestOverallScores([mcId])).get(mcId);
@@ -1847,6 +1938,11 @@ export async function listAutoSuccessors(
         requiredTrainingCategories,
         requiredCompetencies,
         taggedCompetencies: mcTagged,
+        tenureYears: yearsFromHireDate(mcEmp?.date_hired ?? null),
+        requiredYearsExperience,
+        educationRelevant: sharedFieldKeyword(String(mcEmp?.position ?? ''), positionTitle) ? true : null,
+        positionLevelRatio: null,
+        progressionSteps: null,
         W,
       });
       qualifiedMap.set(mcId, {
