@@ -1593,7 +1593,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
           // individual whose development plan this would be.
           isOfficeAccount
             ? <OfficeAccountLockedNote section="Individual Development Plan" />
-            : <IdpFormSection />
+            : <IdpFormSection employee={currentUser} />
         )}
 
         {activeTab === 'archive' && (
