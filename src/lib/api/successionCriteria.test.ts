@@ -277,7 +277,7 @@ describe('normalizeWeights', () => {
     const w = normalizeWeights({ ipcr: 35, training: 30, education: 20, eligibility: 15 });
     const total = w.ipcr + w.experience + w.training + w.education + w.tenure;
     expect(total).toBeCloseTo(100, 1);
-    expect((w as Record<string, unknown>).eligibility).toBeUndefined();
+    expect((w as unknown as Record<string, unknown>).eligibility).toBeUndefined();
   });
 
   it('renormalises a hand-edited row that does not total 100', () => {
