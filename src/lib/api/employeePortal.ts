@@ -62,6 +62,44 @@ const PDS_SCALAR_COLUMNS = {
   motherSurname: 'mother_surname',
   motherFirstName: 'mother_first_name',
   motherMiddleName: 'mother_middle_name',
+
+  // VIII. Other Information (31-33)
+  specialSkillsHobbies: 'special_skills_hobbies',
+  nonAcademicDistinctions: 'non_academic_distinctions',
+  membershipAssociations: 'membership_associations',
+
+  // Background information (34-40)
+  relatedThirdDegree: 'related_third_degree',
+  relatedFourthDegree: 'related_fourth_degree',
+  relatedDetails: 'related_details',
+  adminOffenseGuilty: 'admin_offense_guilty',
+  adminOffenseDetails: 'admin_offense_details',
+  criminallyCharged: 'criminally_charged',
+  criminalChargeDetails: 'criminal_charge_details',
+  criminalCaseDateFiled: 'criminal_case_date_filed',
+  criminalCaseStatus: 'criminal_case_status',
+  convictedOfCrime: 'convicted_of_crime',
+  convictedDetails: 'convicted_details',
+  separatedFromService: 'separated_from_service',
+  separatedDetails: 'separated_details',
+  electionCandidate: 'election_candidate',
+  electionCandidateDetails: 'election_candidate_details',
+  resignedToCampaign: 'resigned_to_campaign',
+  resignedToCampaignDetails: 'resigned_to_campaign_details',
+  immigrantStatus: 'immigrant_status',
+  immigrantCountry: 'immigrant_country',
+  indigenousGroupMember: 'indigenous_group_member',
+  indigenousGroupSpecify: 'indigenous_group_specify',
+  personWithDisability: 'person_with_disability',
+  pwdIdNumber: 'pwd_id_number',
+  soloParent: 'solo_parent',
+  soloParentIdNumber: 'solo_parent_id_number',
+
+  // 42. Government-issued ID (data fields only)
+  govIdType: 'gov_id_type',
+  govIdNumber: 'gov_id_number',
+  govIdIssuedDatePlace: 'gov_id_issued_date_place',
+
   pdsSignedAt: 'pds_signed_at',
 } as const satisfies Record<string, string>;
 
@@ -211,6 +249,44 @@ export function mapSupabaseRowToEmployee(row: any): Employee {
     motherSurname: row.mother_surname ?? '',
     motherFirstName: row.mother_first_name ?? '',
     motherMiddleName: row.mother_middle_name ?? '',
+
+    // VIII. Other Information (31-33)
+    specialSkillsHobbies: row.special_skills_hobbies ?? '',
+    nonAcademicDistinctions: row.non_academic_distinctions ?? '',
+    membershipAssociations: row.membership_associations ?? '',
+
+    // Background information (34-40) — left as null/undefined rather than
+    // coerced to false: an unanswered disclosure question is not a "No".
+    relatedThirdDegree: row.related_third_degree ?? null,
+    relatedFourthDegree: row.related_fourth_degree ?? null,
+    relatedDetails: row.related_details ?? '',
+    adminOffenseGuilty: row.admin_offense_guilty ?? null,
+    adminOffenseDetails: row.admin_offense_details ?? '',
+    criminallyCharged: row.criminally_charged ?? null,
+    criminalChargeDetails: row.criminal_charge_details ?? '',
+    criminalCaseDateFiled: row.criminal_case_date_filed ?? '',
+    criminalCaseStatus: row.criminal_case_status ?? '',
+    convictedOfCrime: row.convicted_of_crime ?? null,
+    convictedDetails: row.convicted_details ?? '',
+    separatedFromService: row.separated_from_service ?? null,
+    separatedDetails: row.separated_details ?? '',
+    electionCandidate: row.election_candidate ?? null,
+    electionCandidateDetails: row.election_candidate_details ?? '',
+    resignedToCampaign: row.resigned_to_campaign ?? null,
+    resignedToCampaignDetails: row.resigned_to_campaign_details ?? '',
+    immigrantStatus: row.immigrant_status ?? null,
+    immigrantCountry: row.immigrant_country ?? '',
+    indigenousGroupMember: row.indigenous_group_member ?? null,
+    indigenousGroupSpecify: row.indigenous_group_specify ?? '',
+    personWithDisability: row.person_with_disability ?? null,
+    pwdIdNumber: row.pwd_id_number ?? '',
+    soloParent: row.solo_parent ?? null,
+    soloParentIdNumber: row.solo_parent_id_number ?? '',
+
+    // 42. Government-issued ID
+    govIdType: row.gov_id_type ?? '',
+    govIdNumber: row.gov_id_number ?? '',
+    govIdIssuedDatePlace: row.gov_id_issued_date_place ?? '',
 
     pdsSignedAt: row.pds_signed_at ?? undefined,
     pdsUpdatedAt: row.pds_updated_at ?? undefined,

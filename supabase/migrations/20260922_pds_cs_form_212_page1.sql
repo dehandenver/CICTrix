@@ -100,16 +100,25 @@ create index if not exists employee_children_employee_idx
   on public.employee_children (employee_id, sort_order);
 
 -- ── III. EDUCATIONAL BACKGROUND ─────────────────────────────────────────────
--- employee_education already exists but only held school / degree /
--- year_graduated. The form needs the level it belongs to, the attendance
--- period, units earned when not graduated, and honours received.
+-- CORRECTION (2026-09-23): the paragraph below was wrong — written without
+-- checking the live schema, the same mistake the page 2-4 migration's own
+-- note calls out for employee_eligibility/employee_work_experience. Verified
+-- live via PostgREST: employee_education already has level (with a
+-- valid_education_level check constraint: Elementary/Secondary/Vocational/
+-- College/'Graduate Studies'/Doctorate — note "Vocational", not "Vocational
+-- / Trade Course"), school_name, course, year_graduated, units_earned,
+-- year_attended_from, year_attended_to, honors_awards. None of the five
+-- columns this block used to add here (period_from/period_to/
+-- highest_level_units/scholarship_honors, and a second "level" that was
+-- already there) ever landed on a real row — sort_order is the only column
+-- actually missing.
+--
+-- Original (wrong) comment, kept for history: "employee_education already
+-- exists but only held school / degree / year_graduated. The form needs the
+-- level it belongs to, the attendance period, units earned when not
+-- graduated, and honours received."
 alter table public.employee_education
-  add column if not exists level                text,
-  add column if not exists period_from          text,
-  add column if not exists period_to            text,
-  add column if not exists highest_level_units  text,
-  add column if not exists scholarship_honors   text,
-  add column if not exists sort_order           integer not null default 0;
+  add column if not exists sort_order integer not null default 0;
 
 -- ── Access ──────────────────────────────────────────────────────────────────
 -- Granted explicitly. A clone of this project came up with tables restored but
