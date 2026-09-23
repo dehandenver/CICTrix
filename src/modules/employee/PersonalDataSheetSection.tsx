@@ -182,7 +182,35 @@ const GENDER_OPTIONS = ['Male', 'Female', 'Other', 'Prefer not to say'] as const
 const CIVIL_STATUS_OPTIONS = ['Single', 'Married', 'Widowed', 'Divorced', 'Separated'] as const;
 const CITIZENSHIP_BASIS_OPTIONS = ['By birth', 'By naturalization'] as const;
 
+type SubTab = 'personal' | 'family' | 'education';
+
+const SUB_TABS: { id: SubTab; label: string }[] = [
+  { id: 'personal', label: 'Personal Information' },
+  { id: 'family', label: 'Family Background' },
+  { id: 'education', label: 'Educational Background' },
+];
+
+const SaveBar: React.FC<{ saving: boolean; onSave: () => void; label: string; lastSaved?: string }> = ({ saving, onSave, label, lastSaved }) => (
+  <div className="flex items-center justify-between pt-1">
+    {lastSaved ? (
+      <p className="text-xs" style={{ color: BRAND.navy, opacity: 0.6 }}>
+        Last saved {new Date(lastSaved).toLocaleString()}
+      </p>
+    ) : <span />}
+    <button
+      type="button"
+      onClick={onSave}
+      disabled={saving}
+      className="rounded-lg px-5 py-2.5 text-sm font-bold text-white disabled:opacity-60"
+      style={{ background: BRAND.blue }}
+    >
+      {saving ? 'Saving…' : label}
+    </button>
+  </div>
+);
+
 export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile, onSaved }) => {
+  const [activeTab, setActiveTab] = useState<SubTab>('personal');
   const [draft, setDraft] = useState<ScalarDraft>(getScalarDraft(profile));
   const [residential, setResidential] = useState<AddressParts>(profile.residential || emptyAddress());
   const [permanent, setPermanent] = useState<AddressParts>(profile.permanent || emptyAddress());
@@ -230,7 +258,13 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
   const updateEducation = (i: number, patch: Partial<EmployeeEducation>) =>
     setEducation((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
 
-  const handleSave = async () => {
+  const selectTab = (tab: SubTab) => {
+    setActiveTab(tab);
+    setSaveError(null);
+    setSaveSuccess(null);
+  };
+
+  const savePersonalInfo = async () => {
     setSaving(true);
     setSaveError(null);
     setSaveSuccess(null);
@@ -263,6 +297,26 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       email: draft.email.trim(),
       residential,
       permanent: effectivePermanent,
+    };
+
+    const res = await patchPortalEmployee(employeeId, scalarPatch);
+    if (res.ok === false) {
+      setSaveError(res.error ?? 'Failed to save Personal Information. Please try again.');
+      setSaving(false);
+      return;
+    }
+
+    onSaved(scalarPatch);
+    setSaveSuccess('Personal Information saved.');
+    setSaving(false);
+  };
+
+  const saveFamilyBackground = async () => {
+    setSaving(true);
+    setSaveError(null);
+    setSaveSuccess(null);
+
+    const scalarPatch: Partial<Employee> = {
       spouseSurname: draft.spouseSurname.trim(),
       spouseFirstName: draft.spouseFirstName.trim(),
       spouseMiddleName: draft.spouseMiddleName.trim(),
@@ -280,30 +334,69 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
       motherMiddleName: draft.motherMiddleName.trim(),
     };
 
-    const [scalarRes, childrenRes, educationRes] = await Promise.all([
+    const [scalarRes, childrenRes] = await Promise.all([
       patchPortalEmployee(employeeId, scalarPatch),
       saveChildren(employeeId, children),
-      saveEducation(employeeId, education),
     ]);
 
-    if (scalarRes.ok === false || childrenRes.ok === false || educationRes.ok === false) {
+    if (scalarRes.ok === false || childrenRes.ok === false) {
       const error =
         (scalarRes.ok === false && scalarRes.error) ||
         (childrenRes.ok === false && childrenRes.error) ||
-        (educationRes.ok === false && educationRes.error) ||
-        'Failed to save the Personal Data Sheet. Please try again.';
+        'Failed to save Family Background. Please try again.';
       setSaveError(error);
       setSaving(false);
       return;
     }
 
     onSaved(scalarPatch);
-    setSaveSuccess('Personal Data Sheet saved.');
+    setSaveSuccess('Family Background saved.');
+    setSaving(false);
+  };
+
+  const saveEducationalBackground = async () => {
+    setSaving(true);
+    setSaveError(null);
+    setSaveSuccess(null);
+
+    const res = await saveEducation(employeeId, education);
+    if (res.ok === false) {
+      setSaveError(res.error ?? 'Failed to save Educational Background. Please try again.');
+      setSaving(false);
+      return;
+    }
+
+    onSaved({});
+    setSaveSuccess('Educational Background saved.');
     setSaving(false);
   };
 
   return (
     <div className="space-y-5">
+      <div className="flex flex-wrap gap-1.5">
+        {SUB_TABS.map((tab) => {
+          const isActive = tab.id === activeTab;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => selectTab(tab.id)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+                borderRadius: 8, padding: '0.45rem 0.9rem',
+                fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer',
+                border: isActive ? `1.5px solid ${BRAND.blue}` : `1.5px solid ${BRAND.line}`,
+                background: isActive ? BRAND.blue : '#F0F2FD',
+                color: isActive ? '#ffffff' : BRAND.navy,
+                transition: 'all 0.15s',
+              }}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
       {saveError && (
         <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">{saveError}</p>
       )}
@@ -311,6 +404,7 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
         <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">{saveSuccess}</p>
       )}
 
+      {activeTab === 'personal' && (
       <SectionCard title="I. Personal Information">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
           <Field label="Surname" value={draft.surname} onChange={(v) => set('surname', v)} />
@@ -367,8 +461,12 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
           <Field label="Mobile No." value={draft.mobileNumber} onChange={(v) => set('mobileNumber', v)} />
           <Field label="E-mail Address" type="email" value={draft.email} onChange={(v) => set('email', v)} />
         </div>
-      </SectionCard>
 
+        <SaveBar saving={saving} onSave={() => void savePersonalInfo()} label="Save Personal Information" lastSaved={profile.pdsUpdatedAt} />
+      </SectionCard>
+      )}
+
+      {activeTab === 'family' && (
       <SectionCard title="II. Family Background">
         <div>
           <h3 className="mb-2 text-sm font-bold" style={{ color: BRAND.navy }}>Spouse</h3>
@@ -438,8 +536,12 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
             <Field label="Middle Name" value={draft.motherMiddleName} onChange={(v) => set('motherMiddleName', v)} />
           </div>
         </div>
-      </SectionCard>
 
+        <SaveBar saving={saving} onSave={() => void saveFamilyBackground()} label="Save Family Background" />
+      </SectionCard>
+      )}
+
+      {activeTab === 'education' && (
       <SectionCard title="III. Educational Background" description="Elementary through Graduate Studies.">
         {listsLoading ? (
           <p className="text-sm" style={{ color: BRAND.navy, opacity: 0.6 }}>Loading…</p>
@@ -463,24 +565,10 @@ export const PersonalDataSheetSection: React.FC<Props> = ({ employeeId, profile,
             ))}
           </div>
         )}
-      </SectionCard>
 
-      <div className="flex items-center justify-between">
-        {profile.pdsUpdatedAt ? (
-          <p className="text-xs" style={{ color: BRAND.navy, opacity: 0.6 }}>
-            Last saved {new Date(profile.pdsUpdatedAt).toLocaleString()}
-          </p>
-        ) : <span />}
-        <button
-          type="button"
-          onClick={() => void handleSave()}
-          disabled={saving}
-          className="rounded-lg px-5 py-2.5 text-sm font-bold text-white disabled:opacity-60"
-          style={{ background: BRAND.blue }}
-        >
-          {saving ? 'Saving…' : 'Save Personal Data Sheet'}
-        </button>
-      </div>
+        <SaveBar saving={saving} onSave={() => void saveEducationalBackground()} label="Save Educational Background" />
+      </SectionCard>
+      )}
     </div>
   );
 };

@@ -43,7 +43,9 @@
       "Bash(echo \"EXIT_CODE:$?\")",
       "Bash(npx vite *)",
       "Bash(npx eslint *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(echo \"TSC_EXIT:$?\")",
+      "Bash(echo \"BUILD_EXIT:$?\")"
     ]
   }
 }
