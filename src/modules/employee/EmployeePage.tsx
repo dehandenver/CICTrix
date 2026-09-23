@@ -10,9 +10,7 @@ import {
   Home,
   Lock,
   LogOut,
-  Pencil,
   RefreshCw,
-  Save,
   Upload,
   User,
   X,
@@ -30,6 +28,7 @@ import { useRealtimeRefresh } from '../../hooks/useRealtimeRefresh';
 import { MyTrainingsSection } from './MyTrainingsSection';
 import { MyArchiveSection } from './MyArchiveSection';
 import { IdpFormSection } from './IdpFormSection';
+import { PersonalDataSheetSection } from './PersonalDataSheetSection';
 import { getActiveOfficeRole } from '../../lib/api/officeRoles';
 import abyanLogo from '../../assets/abyan-logo.png';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -137,8 +136,6 @@ interface TabConfig {
   count?: number;
 }
 
-type EditableSection = 'personal' | 'contact' | 'emergency' | 'government' | null;
-
 type ContactDraft = {
   email: string;
   mobileNumber: string;
@@ -157,22 +154,6 @@ type GovernmentDraft = {
   pagibigNumber: string;
   tinNumber: string;
 };
-
-type PersonalDetailsDraft = {
-  fullName: string;
-  dateOfBirth: string;
-  placeOfBirth: string;
-  gender: string;
-  homeAddress: string;
-};
-
-interface EditableInputProps {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  type?: string;
-  disabled?: boolean;
-}
 
 const getContactDraft = (employee: Employee): ContactDraft => ({
   email: employee.email || '',
@@ -209,27 +190,6 @@ const formatPortalDate = (value: string | null | undefined): string => {
   const iso = String(value).slice(0, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : new Date(value).toISOString().slice(0, 10);
 };
-
-const getPersonalDetailsDraft = (employee: Employee): PersonalDetailsDraft => ({
-  fullName: employee.fullName || '',
-  dateOfBirth: employee.dateOfBirth || '',
-  placeOfBirth: employee.placeOfBirth || '',
-  gender: employee.gender || '',
-  homeAddress: employee.homeAddress || '',
-});
-
-const EditableInput: React.FC<EditableInputProps> = ({ label, value, onChange, type = 'text', disabled = false }) => (
-  <label className="block">
-    <span className="mb-2 block text-sm font-semibold text-slate-700">{label}</span>
-    <input
-      type={type}
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      disabled={disabled}
-      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700 focus:border-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
-    />
-  </label>
-);
 
 export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUsername, onLogout }) => {
   const navigate = useNavigate();
@@ -1208,12 +1168,6 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       text: 'Password updated. Use the new password the next time you log in.',
     });
   };
-  const [editingSection, setEditingSection] = useState<EditableSection>(null);
-  const [contactDraft, setContactDraft] = useState<ContactDraft>(getContactDraft(currentUser));
-  const [emergencyDraft, setEmergencyDraft] = useState<EmergencyDraft>(getEmergencyDraft(currentUser));
-  const [governmentDraft, setGovernmentDraft] = useState<GovernmentDraft>(getGovernmentDraft(currentUser));
-  const [personalDraft, setPersonalDraft] = useState<PersonalDetailsDraft>(getPersonalDetailsDraft(currentUser));
-
   // DB-hydration state — true while the initial Supabase fetch is in-flight.
   const [profileLoading, setProfileLoading] = useState(false);
   // Setup wizard
@@ -1236,11 +1190,6 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
     // Suppress the sync when the DB hydration has already applied fresher data.
     if (dbHydrated.current) return;
     setProfile(currentUser);
-    setContactDraft(getContactDraft(currentUser));
-    setEmergencyDraft(getEmergencyDraft(currentUser));
-    setGovernmentDraft(getGovernmentDraft(currentUser));
-    setPersonalDraft(getPersonalDetailsDraft(currentUser));
-    setEditingSection(null);
   }, [profileSyncVersion]);
 
   // ── DB hydration (mount-only) ──────────────────────────────────────────────
@@ -1254,10 +1203,6 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
         const live = result.data;
         dbHydrated.current = true;
         setProfile(live);
-        setContactDraft(getContactDraft(live));
-        setEmergencyDraft(getEmergencyDraft(live));
-        setGovernmentDraft(getGovernmentDraft(live));
-        setPersonalDraft(getPersonalDetailsDraft(live));
       }
       setProfileLoading(false);
     });
@@ -1303,7 +1248,7 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
   const tabs: TabConfig[] = useMemo(
     () => {
       const baseTabs: TabConfig[] = [
-        { id: 'personal', label: 'Personal Information', icon: User, route: '/employee/profile' },
+        { id: 'personal', label: 'Personal Data Sheet', icon: User, route: '/employee/profile' },
         { id: 'ipcr-workspace', label: 'My IPCR Workspace', icon: FileSpreadsheet, route: '/employee/ipcr-workspace' },
         { id: 'trainings', label: 'My Trainings', icon: Calendar, route: '/employee/trainings' },
         { id: 'idp', label: 'Individual Development Plan', icon: Target, route: '/employee/idp' },
@@ -1424,85 +1369,6 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
       updateEmployeePortalEmployee(profile.employeeId, patch);
     }
   };
-
-  const startEditing = (section: Exclude<EditableSection, null>) => {
-    if (section === 'personal') {
-      setPersonalDraft(getPersonalDetailsDraft(profile));
-    }
-    if (section === 'contact') {
-      setContactDraft(getContactDraft(profile));
-    }
-    if (section === 'emergency') {
-      setEmergencyDraft(getEmergencyDraft(profile));
-    }
-    if (section === 'government') {
-      setGovernmentDraft(getGovernmentDraft(profile));
-    }
-    setEditingSection(section);
-  };
-
-  const cancelEditing = () => {
-    setContactDraft(getContactDraft(profile));
-    setEmergencyDraft(getEmergencyDraft(profile));
-    setGovernmentDraft(getGovernmentDraft(profile));
-    setPersonalDraft(getPersonalDetailsDraft(profile));
-    setEditingSection(null);
-  };
-
-  const saveContactInfo = () => {
-    void persistProfilePatch({
-      email: contactDraft.email.trim(),
-      mobileNumber: contactDraft.mobileNumber.trim(),
-      homeAddress: contactDraft.homeAddress.trim(),
-    });
-    setEditingSection(null);
-  };
-
-  const saveEmergencyInfo = () => {
-    void persistProfilePatch({
-      emergencyContactName: emergencyDraft.emergencyContactName.trim(),
-      emergencyRelationship: emergencyDraft.emergencyRelationship.trim(),
-      emergencyContactNumber: emergencyDraft.emergencyContactNumber.trim(),
-    });
-    setEditingSection(null);
-  };
-
-  const saveGovernmentInfo = () => {
-    void persistProfilePatch({
-      sssNumber: governmentDraft.sssNumber.trim(),
-      philhealthNumber: governmentDraft.philhealthNumber.trim(),
-      pagibigNumber: governmentDraft.pagibigNumber.trim(),
-      tinNumber: governmentDraft.tinNumber.trim(),
-    });
-    setEditingSection(null);
-  };
-
-  const savePersonalInfo = () => {
-    const trimmedGender = personalDraft.gender.trim();
-    const allowedGenders: Employee['gender'][] = ['Male', 'Female', 'Other', 'Prefer not to say'];
-    const safeGender: Employee['gender'] = (allowedGenders as string[]).includes(trimmedGender)
-      ? (trimmedGender as Employee['gender'])
-      : 'Prefer not to say';
-
-    void persistProfilePatch({
-      fullName: personalDraft.fullName.trim(),
-      dateOfBirth: personalDraft.dateOfBirth.trim(),
-      placeOfBirth: personalDraft.placeOfBirth.trim(),
-      gender: safeGender,
-      homeAddress: personalDraft.homeAddress.trim(),
-      personalDetailsFinalized: true, // Lock editing after first save
-    });
-    setEditingSection(null);
-  };
-
-  const FieldRow: React.FC<{ label: string; value?: string }> = ({ label, value }) => (
-    <div className="grid grid-cols-1 gap-1 py-2 md:grid-cols-[210px_1fr] md:gap-3">
-      <div className="text-sm font-semibold" style={{ color: '#040E6B' }}>{label}:</div>
-      <div className="rounded-md border px-3 py-2 text-sm" style={{ borderColor: '#C8D1FF', background: '#F4F5FD', color: value?.trim() ? '#040E6B' : '#A5ACEE', fontStyle: value?.trim() ? 'normal' : 'italic' }}>
-        {value?.trim() || 'Not provided'}
-      </div>
-    </div>
-  );
 
   return (
     <div className="brand-text min-h-screen" style={{ background: '#F0F2FD', fontFamily: "'Poppins', sans-serif" }}>
@@ -1817,136 +1683,11 @@ export const EmployeePage: React.FC<EmployeePageProps> = ({ currentUser, loginUs
               );
             })()}
 
-            <section className="rounded-xl border bg-white p-5" style={{ borderColor: '#C8D1FF' }}>
-              <div className="mb-4">
-                <h2 className="text-lg font-bold" style={{ color: '#363EE8' }}>Personal Information</h2>
-              </div>
-              <FieldRow label="Full Name" value={profile.fullName} />
-              <FieldRow label="Employee ID" value={profile.employeeId} />
-              <FieldRow label="Date of Birth" value={profile.dateOfBirth} />
-              <FieldRow label="Place of Birth" value={profile.placeOfBirth || '--'} />
-              <FieldRow label="Gender" value={profile.gender || '--'} />
-              <FieldRow label="Address" value={profile.homeAddress} />
-              {/* The position and office the applicant was hired into, not a
-                  placeholder — same source the Work Information card reads. */}
-              <FieldRow label="Position" value={(employeeRawDetails?.position ?? profile.currentPosition) || '--'} />
-              <FieldRow label="Department" value={(employeeRawDetails?.department ?? profile.currentDepartment) || '--'} />
-            </section>
-
-            {/* ── Contact Information Setup ─────────────────────────────── */}
-            <section className="rounded-xl border bg-white p-5" style={{ borderColor: '#C8D1FF' }}>
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-bold" style={{ color: '#363EE8' }}>Contact Information</h2>
-                  <p className="text-sm" style={{ color: '#040E6B', opacity: 0.7 }}>Your contact details for official communication.</p>
-                </div>
-                {editingSection === 'contact' ? (
-                  <div className="flex items-center gap-2">
-                    <button type="button" onClick={cancelEditing} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', borderRadius: 7, border: '1.5px solid #C8D1FF', background: '#fff', padding: '0.3rem 0.7rem', fontSize: '0.78rem', fontWeight: 600, color: '#040E6B', cursor: 'pointer' }}>
-                      <X className="h-3.5 w-3.5" /> Cancel
-                    </button>
-                    <button type="button" onClick={saveContactInfo} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', borderRadius: 7, border: 'none', background: '#363EE8', padding: '0.3rem 0.7rem', fontSize: '0.78rem', fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
-                      <Save className="h-3.5 w-3.5" /> Save
-                    </button>
-                  </div>
-                ) : (
-                  <button type="button" onClick={() => startEditing('contact')} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', borderRadius: 7, border: '1.5px solid #C8D1FF', background: '#EEF0FD', padding: '0.3rem 0.75rem', fontSize: '0.78rem', fontWeight: 700, color: '#363EE8', cursor: 'pointer' }}>
-                    <Pencil className="h-3 w-3" /> Edit
-                  </button>
-                )}
-              </div>
-              {editingSection === 'contact' ? (
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <EditableInput label="Mobile Number" value={contactDraft.mobileNumber} onChange={(v) => setContactDraft((p) => ({ ...p, mobileNumber: v }))} />
-                  <EditableInput label="Email Address" value={contactDraft.email} type="email" onChange={(v) => setContactDraft((p) => ({ ...p, email: v }))} />
-                  <div className="md:col-span-2">
-                    <EditableInput label="Home Address" value={contactDraft.homeAddress} onChange={(v) => setContactDraft((p) => ({ ...p, homeAddress: v }))} />
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <FieldRow label="Email Address" value={profile.email} />
-                  <FieldRow label="Phone Number" value={profile.mobileNumber} />
-                  <FieldRow label="Home Address" value={profile.homeAddress} />
-                </>
-              )}
-            </section>
-
-            {/* ── Emergency Contact Setup ───────────────────────────────── */}
-            <section className="rounded-xl border bg-white p-5" style={{ borderColor: '#C8D1FF' }}>
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-bold" style={{ color: '#363EE8' }}>Emergency Contact</h2>
-                  <p className="text-sm" style={{ color: '#040E6B', opacity: 0.7 }}>Person to contact in case of emergency.</p>
-                </div>
-                {editingSection === 'emergency' ? (
-                  <div className="flex items-center gap-2">
-                    <button type="button" onClick={cancelEditing} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', borderRadius: 7, border: '1.5px solid #C8D1FF', background: '#fff', padding: '0.3rem 0.7rem', fontSize: '0.78rem', fontWeight: 600, color: '#040E6B', cursor: 'pointer' }}>
-                      <X className="h-3.5 w-3.5" /> Cancel
-                    </button>
-                    <button type="button" onClick={saveEmergencyInfo} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', borderRadius: 7, border: 'none', background: '#363EE8', padding: '0.3rem 0.7rem', fontSize: '0.78rem', fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
-                      <Save className="h-3.5 w-3.5" /> Save
-                    </button>
-                  </div>
-                ) : (
-                  <button type="button" onClick={() => startEditing('emergency')} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', borderRadius: 7, border: '1.5px solid #C8D1FF', background: '#EEF0FD', padding: '0.3rem 0.75rem', fontSize: '0.78rem', fontWeight: 700, color: '#363EE8', cursor: 'pointer' }}>
-                    <Pencil className="h-3 w-3" /> Edit
-                  </button>
-                )}
-              </div>
-              {editingSection === 'emergency' ? (
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                  <EditableInput label="Contact Person Name" value={emergencyDraft.emergencyContactName} onChange={(v) => setEmergencyDraft((p) => ({ ...p, emergencyContactName: v }))} />
-                  <EditableInput label="Relationship" value={emergencyDraft.emergencyRelationship} onChange={(v) => setEmergencyDraft((p) => ({ ...p, emergencyRelationship: v }))} />
-                  <EditableInput label="Contact Number" value={emergencyDraft.emergencyContactNumber} onChange={(v) => setEmergencyDraft((p) => ({ ...p, emergencyContactNumber: v }))} />
-                </div>
-              ) : (
-                <>
-                  <FieldRow label="Contact Name" value={profile.emergencyContactName} />
-                  <FieldRow label="Relationship" value={profile.emergencyRelationship} />
-                  <FieldRow label="Phone Number" value={profile.emergencyContactNumber} />
-                </>
-              )}
-            </section>
-
-            {/* ── Government Identification Setup ───────────────────────── */}
-            <section className="rounded-xl border bg-white p-5" style={{ borderColor: '#C8D1FF' }}>
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-bold" style={{ color: '#363EE8' }}>Government Identification</h2>
-                  <p className="text-sm" style={{ color: '#040E6B', opacity: 0.7 }}>Your government membership and tax ID numbers.</p>
-                </div>
-                {editingSection === 'government' ? (
-                  <div className="flex items-center gap-2">
-                    <button type="button" onClick={cancelEditing} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', borderRadius: 7, border: '1.5px solid #C8D1FF', background: '#fff', padding: '0.3rem 0.7rem', fontSize: '0.78rem', fontWeight: 600, color: '#040E6B', cursor: 'pointer' }}>
-                      <X className="h-3.5 w-3.5" /> Cancel
-                    </button>
-                    <button type="button" onClick={saveGovernmentInfo} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', borderRadius: 7, border: 'none', background: '#363EE8', padding: '0.3rem 0.7rem', fontSize: '0.78rem', fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
-                      <Save className="h-3.5 w-3.5" /> Save
-                    </button>
-                  </div>
-                ) : (
-                  <button type="button" onClick={() => startEditing('government')} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', borderRadius: 7, border: '1.5px solid #C8D1FF', background: '#EEF0FD', padding: '0.3rem 0.75rem', fontSize: '0.78rem', fontWeight: 700, color: '#363EE8', cursor: 'pointer' }}>
-                    <Pencil className="h-3 w-3" /> Edit
-                  </button>
-                )}
-              </div>
-              {editingSection === 'government' ? (
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <EditableInput label="SSS Number" value={governmentDraft.sssNumber} onChange={(v) => setGovernmentDraft((p) => ({ ...p, sssNumber: v }))} />
-                  <EditableInput label="PhilHealth Number" value={governmentDraft.philhealthNumber} onChange={(v) => setGovernmentDraft((p) => ({ ...p, philhealthNumber: v }))} />
-                  <EditableInput label="Pag-IBIG Number" value={governmentDraft.pagibigNumber} onChange={(v) => setGovernmentDraft((p) => ({ ...p, pagibigNumber: v }))} />
-                  <EditableInput label="TIN Number" value={governmentDraft.tinNumber} onChange={(v) => setGovernmentDraft((p) => ({ ...p, tinNumber: v }))} />
-                </div>
-              ) : (
-                <>
-                  <FieldRow label="SSS Number" value={profile.sssNumber} />
-                  <FieldRow label="PhilHealth Number" value={profile.philhealthNumber} />
-                  <FieldRow label="Pag-IBIG Number" value={profile.pagibigNumber} />
-                  <FieldRow label="TIN Number" value={profile.tinNumber} />
-                </>
-              )}
-            </section>
+            <PersonalDataSheetSection
+              employeeId={currentUser.supabaseId ?? ''}
+              profile={profile}
+              onSaved={(patch) => void persistProfilePatch(patch)}
+            />
           </div>
         )}
 
