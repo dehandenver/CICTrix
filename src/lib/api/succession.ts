@@ -2009,11 +2009,18 @@ export async function listAutoSuccessors(
     }
 
     const qualifiedList = [...qualifiedMap.values()].sort((a, b) => {
-      // Rank by competency match % (Part 5); IPCR numeric is the tiebreaker.
+      // Ranked by the weighted score of the five criteria in specification B —
+      // that is what "Ranked Succession Pool" means in the section E flow.
+      //
+      // This previously ordered by competency match % with the weighted score
+      // only as a tiebreaker, which put a candidate with more covered
+      // competencies above one who scored higher on performance, experience,
+      // training, education and tenure combined. Competency match is Stage-2
+      // readiness, not one of the ranking criteria, so it drops to a tiebreak.
+      if (b.readiness.total !== a.readiness.total) return b.readiness.total - a.readiness.total;
       const am = a.readiness.competencyMatchPct;
       const bm = b.readiness.competencyMatchPct;
       if (am != null && bm != null && bm !== am) return bm - am;
-      if (b.readiness.total !== a.readiness.total) return b.readiness.total - a.readiness.total;
       if (b.readiness.ipcr !== a.readiness.ipcr) return b.readiness.ipcr - a.readiness.ipcr;
       return a.employeeName.localeCompare(b.employeeName);
     });

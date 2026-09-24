@@ -1210,10 +1210,14 @@ type OcboRow = {
   name: string;
   presentPosition: string | null;
   department: string | null;
-  education: boolean;
-  eligibility: boolean;
-  /** The fourth minimum requirement. Performance is ranked, never gated. */
-  experience: boolean;
+  /** 1-based place in the ranked pool. */
+  rank: number;
+  /** Weighted score out of 100, from the five criteria in specification B. */
+  score: number;
+  /** Per-criterion contribution, for the expanded breakdown. */
+  criteria: { label: string; value: number; max: number }[];
+  /** False when career progression could not be assessed — no work history. */
+  progressionAssessed: boolean;
   trainingPct: number | null;
   status: string;
   statusTone: string;
@@ -1244,15 +1248,23 @@ const ocboStatusTone = (s: string): string => {
  */
 const buildOcboRows = (res: AutoSuccessorsResult | undefined): OcboRow[] => {
   if (!res) return [];
-  return res.qualified.map((c) => ({
+  // res.qualified arrives sorted by weighted score, so index is the rank.
+  return res.qualified.map((c, i) => ({
     employeeId: c.employeeId,
     name: c.employeeName,
     presentPosition: c.currentPosition,
     department: c.department,
-    // Always true: a candidate only reaches this list by passing every gate.
-    education: true,
-    eligibility: true,
-    experience: true,
+    rank: i + 1,
+    score: c.readiness.total,
+    // Ordered as specification B lists them.
+    criteria: [
+      { label: 'Performance', value: c.readiness.ipcr, max: c.readiness.ipcrMax },
+      { label: 'Experience', value: c.readiness.experience, max: c.readiness.experienceMax },
+      { label: 'Training', value: c.readiness.training, max: c.readiness.trainingMax },
+      { label: 'Education', value: c.readiness.education, max: c.readiness.educationMax },
+      { label: 'Tenure', value: c.readiness.tenure, max: c.readiness.tenureMax },
+    ],
+    progressionAssessed: c.readiness.progressionAssessed,
     trainingPct: c.readiness.competencyMatchPct,
     status: c.readiness.tier ?? 'Developmental',
     statusTone: ocboStatusTone(c.readiness.tier ?? 'Developmental'),
@@ -1261,9 +1273,6 @@ const buildOcboRows = (res: AutoSuccessorsResult | undefined): OcboRow[] => {
     timeline: c.timeline,
   }));
 };
-
-const Tick = ({ ok }: { ok: boolean }) =>
-  ok ? <span className="font-bold text-green-600">✓</span> : <span className="font-bold text-red-500">✗</span>;
 
 const TrainingCell = ({ pct }: { pct: number | null }) => {
   if (pct == null) return <span className="text-xs text-slate-400">n/a</span>;
@@ -1348,9 +1357,9 @@ const OcboTableView = ({ admin }: { admin: string }) => {
       <p className="!mb-0 text-xs text-[var(--text-secondary)]">
         Official succession-plan view. Only employees who meet <strong>all four</strong> minimum requirements —
         Education, Eligibility, Experience and Training — appear here; anyone failing one is filtered out and
-        counted beside the position. Training shows the graded competency-readiness match. Click a name to see
-        that candidate&rsquo;s gap analysis and required actions, and click again to close — several can be open
-        at once for comparison.
+        counted beside the position. Those who qualify are ranked by weighted score: Performance 30, Relevant
+        Experience 25, Relevant Training 20, Education beyond minimum 15, Tenure 10. Click a name for the score
+        breakdown, gap analysis and required actions — several can be open at once for comparison.
       </p>
       {departments.map((dept) => {
         const open = expanded.has(dept.departmentId);
@@ -1403,29 +1412,33 @@ const OcboTableView = ({ admin }: { admin: string }) => {
                         <table className="w-full min-w-[640px] border-collapse text-xs">
                           <thead>
                             <tr className="border-b border-[var(--border-color)] bg-slate-50 text-left text-[10px] uppercase tracking-wide text-[var(--text-secondary)]">
+                              <th className="px-3 py-2 text-center">Rank</th>
                               <th className="px-3 py-2">Candidate / Present Position</th>
-                              <th className="px-3 py-2 text-center">Educ.</th>
-                              <th className="px-3 py-2 text-center">Elig.</th>
-                              <th className="px-3 py-2 text-center">Exp.</th>
-                              <th className="px-3 py-2">Training</th>
-                              <th className="px-3 py-2">Overall Status</th>
+                              <th className="px-3 py-2">Weighted Score</th>
+                              <th className="px-3 py-2">Competency Match</th>
+                              <th className="px-3 py-2">Readiness</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                             {rows.length === 0 && (
-                              <tr><td colSpan={6} className="px-3 py-4 text-center text-slate-400">No employee meets all four minimum requirements for this position.</td></tr>
+                              <tr><td colSpan={5} className="px-3 py-4 text-center text-slate-400">No employee meets all four minimum requirements for this position.</td></tr>
                             )}
                             {rows.map((r) => {
                               const detailOpen = openDetail.has(`${pos.id}:${r.employeeId}`);
                               return (
                                 <Fragment key={r.employeeId}>
                                   <tr className={`align-top hover:bg-slate-50/50 ${detailOpen ? 'bg-slate-50' : ''}`}>
+                                    <td className="px-3 py-2 text-center">
+                                      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-[11px] font-bold tabular-nums text-slate-700">
+                                        {r.rank}
+                                      </span>
+                                    </td>
                                     <td className="px-3 py-2">
                                       <button
                                         type="button"
                                         onClick={() => toggleDetail(pos.id, r.employeeId)}
                                         aria-expanded={detailOpen}
-                                        title={detailOpen ? 'Hide gap analysis' : 'Show gap analysis and required actions'}
+                                        title={detailOpen ? 'Hide score breakdown' : 'Show score breakdown, gap analysis and required actions'}
                                         className="flex items-start gap-1 text-left font-medium text-blue-600 hover:underline"
                                       >
                                         <span className={`mt-[3px] inline-block text-[9px] transition-transform ${detailOpen ? 'rotate-90' : ''}`}>&#9654;</span>
@@ -1433,9 +1446,27 @@ const OcboTableView = ({ admin }: { admin: string }) => {
                                       </button>
                                       <div className="pl-[14px] text-[10px] text-slate-400">{r.presentPosition ?? '—'}</div>
                                     </td>
-                                    <td className="px-3 py-2 text-center"><Tick ok={r.education} /></td>
-                                    <td className="px-3 py-2 text-center"><Tick ok={r.eligibility} /></td>
-                                    <td className="px-3 py-2 text-center"><Tick ok={r.experience} /></td>
+                                    <td className="px-3 py-2">
+                                      <div className="flex items-center gap-2">
+                                        <span className="w-10 text-right text-[13px] font-bold tabular-nums text-slate-800">
+                                          {r.score.toFixed(1)}
+                                        </span>
+                                        <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200" aria-hidden="true">
+                                          <span
+                                            className="block h-full rounded-full bg-blue-500"
+                                            style={{ width: `${Math.max(0, Math.min(r.score, 100))}%` }}
+                                          />
+                                        </span>
+                                      </div>
+                                      {!r.progressionAssessed && (
+                                        <span
+                                          title="Career progression could not be assessed — no work history on file."
+                                          className="cursor-help pl-[2px] text-[9px] font-semibold text-amber-600"
+                                        >
+                                          partial
+                                        </span>
+                                      )}
+                                    </td>
                                     <td className="px-3 py-2"><TrainingCell pct={r.trainingPct} /></td>
                                     <td className="px-3 py-2">
                                       <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${r.statusTone}`}>{r.status}</span>
@@ -1443,8 +1474,38 @@ const OcboTableView = ({ admin }: { admin: string }) => {
                                   </tr>
                                   {detailOpen && (
                                     <tr className="bg-slate-50">
-                                      <td colSpan={6} className="px-3 pb-3 pt-0">
+                                      <td colSpan={5} className="px-3 pb-3 pt-0">
                                         <div className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-white p-3 sm:grid-cols-2">
+                                          {/* Specification B's five criteria, each showing what it
+                                              contributed out of its weight — so a rank can be
+                                              explained rather than just asserted. */}
+                                          <div className="sm:col-span-2">
+                                            <p className="!mb-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                                              Score breakdown &mdash; {r.score.toFixed(1)} / 100
+                                            </p>
+                                            <div className="grid grid-cols-1 gap-x-5 gap-y-1 sm:grid-cols-2">
+                                              {r.criteria.map((c) => (
+                                                <div key={c.label} className="flex items-center gap-2">
+                                                  <span className="w-20 shrink-0 text-[11px] text-slate-600">{c.label}</span>
+                                                  <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-200" aria-hidden="true">
+                                                    <span
+                                                      className="block h-full rounded-full bg-blue-400"
+                                                      style={{ width: `${c.max > 0 ? Math.min((c.value / c.max) * 100, 100) : 0}%` }}
+                                                    />
+                                                  </span>
+                                                  <span className="w-14 shrink-0 text-right text-[10px] tabular-nums text-slate-500">
+                                                    {c.value.toFixed(1)} / {c.max}
+                                                  </span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                            {!r.progressionAssessed && (
+                                              <p className="!mb-0 mt-1.5 text-[10px] text-amber-700">
+                                                Experience is scored on years and current position only &mdash; no work
+                                                history on file, so career progression could not be assessed.
+                                              </p>
+                                            )}
+                                          </div>
                                           <div>
                                             <p className="!mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">Gap Analysis</p>
                                             {r.gapAnalysis.length ? (
