@@ -152,6 +152,16 @@ describe('B. Tenure', () => {
     expect(tenureRatio(40)).toBe(1);
   });
 
+  it('matches the weights given in specification E', () => {
+    // Pinned so a future edit to the model is a deliberate, visible change
+    // rather than a silent drift away from the document.
+    expect(RANKING_WEIGHTS).toEqual({
+      ipcr: 30, experience: 25, training: 20, education: 15, tenure: 10,
+    });
+    const total = Object.values(RANKING_WEIGHTS).reduce((a, b) => a + b, 0);
+    expect(total).toBe(100);
+  });
+
   it('carries the smallest weight of the five criteria', () => {
     const w = RANKING_WEIGHTS;
     expect(w.tenure).toBeLessThan(w.ipcr);

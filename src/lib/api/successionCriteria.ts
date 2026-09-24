@@ -40,20 +40,24 @@ export interface RankingWeights {
 }
 
 /**
- * Default ranking weights (sum 100).
+ * Default ranking weights (sum 100), as given in section E of the succession
+ * specification.
  *
  * Tenure is lowest on purpose: the spec is explicit that longer service alone
  * does not make somebody more qualified, so it can break a tie without
  * outweighing performance or relevant experience.
  *
- * Per-position overrides live in critical_positions.succession_weights.
+ * The spec calls these "proposed initial weights" to be validated by HR or
+ * derived through a method such as AHP, so treat them as a starting point
+ * rather than a settled model. Per-position overrides live in
+ * critical_positions.succession_weights and go through normalizeWeights.
  */
 export const RANKING_WEIGHTS: RankingWeights = {
-  ipcr: 35,
+  ipcr: 30,
   experience: 25,
   training: 20,
-  education: 12,
-  tenure: 8,
+  education: 15,
+  tenure: 10,
 };
 
 /**

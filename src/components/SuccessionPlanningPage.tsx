@@ -686,7 +686,7 @@ const CandidatesPanel = (props: CandidatesPanelProps) => {
       </div>
 
       <p className="!mb-0 text-xs text-[var(--text-secondary)]">
-        Two-stage model. Stage A — qualifications are minimum requirements, not weighted (Employment · Position Match · Education field-match · CSC Eligibility · Minimum Experience · Training): fail any one and the employee drops to "Not Yet Qualified" below, never ranked here. Stage B — only qualified employees are ranked, on Performance 35 + Relevant Experience 25 + Training 20 + Education beyond minimum 12 + Tenure 8. Education and Training count only what is above the minimum the filter already checked, so clearing the bar is not paid for twice. Performance is ranked but never gates: an unrated employee who meets the four minimums is still ranked, scoring zero on that criterion.
+        Two-stage model. Stage A — qualifications are minimum requirements, not weighted (Employment · Position Match · Education field-match · CSC Eligibility · Minimum Experience · Training): fail any one and the employee drops to "Not Yet Qualified" below, never ranked here. Stage B — only qualified employees are ranked, on Performance 30 + Relevant Experience 25 + Training 20 + Education beyond minimum 15 + Tenure 10. Education and Training count only what is above the minimum the filter already checked, so clearing the bar is not paid for twice. Performance is ranked but never gates: an unrated employee who meets the four minimums is still ranked, scoring zero on that criterion.
       </p>
 
       {loading && <p className="text-sm text-[var(--text-secondary)]">Discovering eligible successors…</p>}
